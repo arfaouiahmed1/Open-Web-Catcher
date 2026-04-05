@@ -1,6 +1,7 @@
 #!/usr/bin/env pwsh
 [CmdletBinding()]
 param(
+    [switch]$Volumes,
     [switch]$RemoveImage,
     [switch]$PruneBuildCache,
     [switch]$Yes,
@@ -13,64 +14,36 @@ Set-StrictMode -Version Latest
 . (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "_common.ps1")
 
 $context = Get-OwcContext -CallerPath $MyInvocation.MyCommand.Path
+Assert-OwcProjectFiles -Context $context
 Assert-DockerAvailable
 
-Write-OwcSection "Clean"
-Write-OwcInfo "Container: $($context.Container)"
+Write-OwcHeader "Open Web Catcher - Clean"
+Write-OwcInfo "Compose file: $($context.ComposeFile)"
 Write-OwcInfo "Image: $($context.ImageRef)"
 
-$containerExists = Test-OwcContainerExists -Container $context.Container
-$imageExists = Test-OwcImageExists -ImageRef $context.ImageRef
-
-if (-not $containerExists -and -not $imageExists -and -not $PruneBuildCache) {
-    Write-OwcInfo "Nothing to clean. No matching container or image was found."
-    return
-}
-
-if (-not (Confirm-OwcAction -Prompt "Clean Docker artifacts for '$($context.Container)'?" -DefaultYes:$false -Yes:$Yes -NoPrompt:$NoPrompt)) {
+if (-not (Confirm-OwcAction -Prompt "Remove the compose stack resources now?" -DefaultYes:$false -Yes:$Yes -NoPrompt:$NoPrompt)) {
     Write-OwcInfo "Clean cancelled."
     return
 }
 
-if ($containerExists) {
-    if (Test-OwcContainerRunning -Container $context.Container) {
-        Write-OwcInfo "Stopping container '$($context.Container)'..."
-        Invoke-DockerChecked -Arguments @("stop", $context.Container)
-    }
+$startedAt = Get-Date
 
-    Write-OwcInfo "Removing container '$($context.Container)'..."
-    Invoke-DockerChecked -Arguments @("rm", "-v", $context.Container)
-    Write-OwcSuccess "Removed container '$($context.Container)'."
+$downArgs = @("down", "--remove-orphans")
+if ($Volumes) {
+    $downArgs += "--volumes"
 }
-else {
-    Write-OwcInfo "Container '$($context.Container)' was not present."
+if ($RemoveImage) {
+    $downArgs += @("--rmi", "local")
 }
 
-$shouldRemoveImage = $RemoveImage
-if (-not $RemoveImage) {
-    $shouldRemoveImage = Confirm-OwcAction -Prompt "Remove image $($context.ImageRef) as well?" -DefaultYes:$false -Yes:$Yes -NoPrompt:$NoPrompt
+Write-OwcStep "Removing compose resources..."
+Invoke-OwcComposeChecked -Context $context -Arguments $downArgs | Out-Null
+
+if ($PruneBuildCache) {
+    Write-OwcStep "Pruning Docker builder cache..."
+    Invoke-DockerChecked -Arguments @("builder", "prune", "-f") | Out-Null
 }
 
-if ($shouldRemoveImage) {
-    if (Test-OwcImageExists -ImageRef $context.ImageRef) {
-        Write-OwcInfo "Removing image '$($context.ImageRef)'..."
-        Invoke-DockerChecked -Arguments @("rmi", $context.ImageRef)
-        Write-OwcSuccess "Removed image '$($context.ImageRef)'."
-    }
-    else {
-        Write-OwcInfo "Image '$($context.ImageRef)' was not present."
-    }
-}
-
-$shouldPruneCache = $PruneBuildCache
-if (-not $PruneBuildCache) {
-    $shouldPruneCache = Confirm-OwcAction -Prompt "Prune Docker build cache too?" -DefaultYes:$false -Yes:$Yes -NoPrompt:$NoPrompt
-}
-
-if ($shouldPruneCache) {
-    Write-OwcInfo "Pruning Docker build cache..."
-    Invoke-DockerChecked -Arguments @("builder", "prune", "-f")
-    Write-OwcSuccess "Docker build cache pruned."
-}
-
-Write-OwcSuccess "Clean complete."
+$duration = Format-OwcDuration -Duration ((Get-Date) - $startedAt)
+Write-OwcDivider
+Write-OwcSuccess "Cleanup finished in $duration."

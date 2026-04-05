@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [switch]$Yes,
-    [int]$TimeoutSeconds = 180
+    [int]$TimeoutSeconds = 240
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,41 +11,41 @@ Set-StrictMode -Version Latest
 . (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "_common.ps1")
 
 $context = Get-OwcContext -CallerPath $MyInvocation.MyCommand.Path
+Assert-OwcProjectFiles -Context $context
 Assert-DockerAvailable
+Ensure-OwcDataDir -Context $context
+Ensure-OwcEnvFile -Context $context -Yes:$Yes
 
-Write-OwcSection "Restart"
-Write-OwcInfo "Container: $($context.Container)"
+Write-OwcHeader "Open Web Catcher - Restart"
+Write-OwcInfo "Compose file: $($context.ComposeFile)"
 
-if (-not (Test-OwcContainerExists -Container $context.Container)) {
-    Write-OwcWarn "Container '$($context.Container)' does not exist."
-    if (-not (Confirm-OwcAction -Prompt "Start it now instead?" -DefaultYes -Yes:$Yes)) {
-        Write-OwcInfo "Restart cancelled."
-        return
+$startedAt = Get-Date
+if (Test-OwcServicePresent -Context $context) {
+    $serviceState = Get-OwcServiceState -Context $context
+    if ($serviceState -eq "running") {
+        if (-not (Confirm-OwcAction -Prompt "Restart the compose stack now?" -DefaultYes -Yes:$Yes)) {
+            Write-OwcInfo "Restart cancelled."
+            return
+        }
+
+        Write-OwcStep "Restarting stack..."
+        Invoke-OwcComposeChecked -Context $context -Arguments @("restart") | Out-Null
     }
-
-    & (Join-Path $context.ScriptDir "start.ps1") -Yes -TimeoutSeconds $TimeoutSeconds
-    return
-}
-
-if (Test-OwcContainerRunning -Container $context.Container) {
-    if (-not (Confirm-OwcAction -Prompt "Restart container '$($context.Container)' now?" -DefaultYes -Yes:$Yes)) {
-        Write-OwcInfo "Restart cancelled."
-        return
+    else {
+        Write-OwcWarn "Stack exists but is not running (state: $serviceState). Starting it instead."
+        Invoke-OwcComposeChecked -Context $context -Arguments @("start") | Out-Null
     }
-
-    Invoke-DockerChecked -Arguments @("restart", $context.Container)
-    Wait-OwcContainerHealthy -Container $context.Container -TimeoutSeconds $TimeoutSeconds
-    Write-OwcSuccess "Container '$($context.Container)' restarted."
-    Show-OwcEndpoints -Context $context
-    return
+}
+else {
+    Write-OwcWarn "Stack is not running. Starting it instead."
+    Invoke-OwcComposeChecked -Context $context -Arguments @("up", "-d", "--remove-orphans") | Out-Null
 }
 
-if (-not (Confirm-OwcAction -Prompt "Container '$($context.Container)' is stopped. Start it now?" -DefaultYes -Yes:$Yes)) {
-    Write-OwcInfo "Restart cancelled."
-    return
-}
+Write-OwcStep "Waiting for application health..."
+Wait-OwcServiceHealthy -Context $context -TimeoutSeconds $TimeoutSeconds
 
-Invoke-DockerChecked -Arguments @("start", $context.Container)
-Wait-OwcContainerHealthy -Container $context.Container -TimeoutSeconds $TimeoutSeconds
-Write-OwcSuccess "Container '$($context.Container)' started."
+$duration = Format-OwcDuration -Duration ((Get-Date) - $startedAt)
+Write-OwcDivider
+Write-OwcSuccess "Stack ready after $duration."
 Show-OwcEndpoints -Context $context
+Show-OwcComposeStatus -Context $context

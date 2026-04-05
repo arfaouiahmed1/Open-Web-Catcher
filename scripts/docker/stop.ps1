@@ -10,25 +10,32 @@ Set-StrictMode -Version Latest
 . (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "_common.ps1")
 
 $context = Get-OwcContext -CallerPath $MyInvocation.MyCommand.Path
+Assert-OwcProjectFiles -Context $context
 Assert-DockerAvailable
 
-Write-OwcSection "Stop"
-Write-OwcInfo "Container: $($context.Container)"
+Write-OwcHeader "Open Web Catcher - Stop"
+Write-OwcInfo "Compose file: $($context.ComposeFile)"
 
-if (-not (Test-OwcContainerExists -Container $context.Container)) {
-    Write-OwcInfo "Container '$($context.Container)' does not exist."
+if (-not (Test-OwcServicePresent -Context $context)) {
+    Write-OwcInfo "The stack is not running."
     return
 }
 
-if (-not (Test-OwcContainerRunning -Container $context.Container)) {
-    Write-OwcInfo "Container '$($context.Container)' is already stopped."
+$serviceState = Get-OwcServiceState -Context $context
+if ($serviceState -ne "running") {
+    Write-OwcInfo "The stack already exists but is not running (state: $serviceState)."
     return
 }
 
-if (-not (Confirm-OwcAction -Prompt "Stop container '$($context.Container)' now?" -DefaultYes -Yes:$Yes)) {
+if (-not (Confirm-OwcAction -Prompt "Stop the compose stack now?" -DefaultYes -Yes:$Yes)) {
     Write-OwcInfo "Stop cancelled."
     return
 }
 
-Invoke-DockerChecked -Arguments @("stop", $context.Container)
-Write-OwcSuccess "Container '$($context.Container)' stopped."
+$startedAt = Get-Date
+Write-OwcStep "Stopping stack..."
+Invoke-OwcComposeChecked -Context $context -Arguments @("stop") | Out-Null
+
+$duration = Format-OwcDuration -Duration ((Get-Date) - $startedAt)
+Write-OwcDivider
+Write-OwcSuccess "Stack stopped in $duration."

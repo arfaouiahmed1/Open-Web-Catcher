@@ -10,7 +10,7 @@ services:
       dockerfile: Dockerfile
       cache_from:
         - ${OWC_IMAGE:-open-web-catcher}:${OWC_TAG:-latest}
-    container_name: owc
+    container_name: ${OWC_CONTAINER:-owc}
     restart: unless-stopped
     shm_size: "2gb"
     ports:

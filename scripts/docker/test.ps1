@@ -2,8 +2,8 @@
 [CmdletBinding()]
 param(
     [switch]$Yes,
-    [int]$TimeoutSeconds = 180,
-    [Parameter(ValueFromRemainingArguments = $true)]
+    [int]$TimeoutSeconds = 240,
+    [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
     [string[]]$PytestArgs
 )
 
@@ -36,26 +36,25 @@ function Add-PytestDefaultArg {
 }
 
 $context = Get-OwcContext -CallerPath $MyInvocation.MyCommand.Path
+Assert-OwcProjectFiles -Context $context
 Assert-DockerAvailable
+Ensure-OwcDataDir -Context $context
+Ensure-OwcEnvFile -Context $context -Yes:$Yes
 
-Write-OwcSection "Test"
-Write-OwcInfo "Container: $($context.Container)"
+Write-OwcHeader "Open Web Catcher - Test"
+Write-OwcInfo "Compose file: $($context.ComposeFile)"
+Write-OwcInfo "Service: $($context.Service)"
 
 if (-not $PytestArgs -or $PytestArgs.Count -eq 0) {
     $PytestArgs = @("tests/")
 }
 
-if (-not (Test-OwcContainerExists -Container $context.Container) -or -not (Test-OwcContainerRunning -Container $context.Container)) {
-    Write-OwcWarn "Container '$($context.Container)' is not running."
-    if (-not (Confirm-OwcAction -Prompt "Start it now before running tests?" -DefaultYes -Yes:$Yes)) {
-        Write-OwcInfo "Test run cancelled."
-        return
-    }
-
+if (-not (Test-OwcServicePresent -Context $context) -or (Get-OwcServiceState -Context $context) -ne "running") {
+    Write-OwcWarn "Stack is not running. Starting it before tests."
     & (Join-Path $context.ScriptDir "start.ps1") -Yes -TimeoutSeconds $TimeoutSeconds
 }
 else {
-    Wait-OwcContainerHealthy -Container $context.Container -TimeoutSeconds $TimeoutSeconds
+    Wait-OwcServiceHealthy -Context $context -TimeoutSeconds $TimeoutSeconds
 }
 
 $pytestList = [System.Collections.Generic.List[string]]::new()
@@ -68,15 +67,18 @@ Add-PytestDefaultArg -ArgsList $pytestList -MatchValues @("-v", "--verbose") -Va
 Add-PytestDefaultArg -ArgsList $pytestList -MatchValues @("--asyncio-mode") -ValueToAdd @("--asyncio-mode=auto")
 
 $pytestPreview = $pytestList -join " "
-if (-not (Confirm-OwcAction -Prompt "Run pytest in '$($context.Container)' with: $pytestPreview ?" -DefaultYes -Yes:$Yes)) {
+if (-not (Confirm-OwcAction -Prompt "Run pytest in service '$($context.Service)' with: $pytestPreview ?" -DefaultYes -Yes:$Yes)) {
     Write-OwcInfo "Test run cancelled."
     return
 }
 
-$execArgs = @("exec") + (Get-OwcDockerExecFlags) + @($context.Container, "/app/.venv/bin/python", "-m", "pytest") + $pytestList
-& docker @execArgs
-if ($LASTEXITCODE -ne 0) {
-    throw "pytest failed with exit code $LASTEXITCODE."
+$startedAt = Get-Date
+$execArgs = @("exec") + (Get-OwcComposeExecFlags) + @($context.Service, "/app/.venv/bin/python", "-m", "pytest") + $pytestList
+$result = Invoke-OwcComposeCapture -Context $context -Arguments $execArgs -StreamOutput
+if ($result.ExitCode -ne 0) {
+    throw "pytest failed with exit code $($result.ExitCode)."
 }
 
-Write-OwcSuccess "Tests finished successfully."
+$duration = Format-OwcDuration -Duration ((Get-Date) - $startedAt)
+Write-OwcDivider
+Write-OwcSuccess "Tests finished successfully in $duration."
