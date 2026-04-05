@@ -11,10 +11,8 @@
     "dev": "node --watch mcp-server.js"
   },
   "dependencies": {
-    "@ghostery/adblocker-puppeteer": "^2.0.0",
     "@modelcontextprotocol/sdk": "^1.10.0",
     "cloudinary": "^2.0.0",
-    "cross-fetch": "^4.0.0",
     "express": "^4.19.0",
     "puppeteer-core": "^22.0.0",
     "zod": "^3.23.0"

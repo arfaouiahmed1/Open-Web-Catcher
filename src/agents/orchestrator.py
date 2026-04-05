@@ -44,6 +44,7 @@ from src.tools.email_tool import EmailTool
 from src.tools.ipinfo_tool import IPInfoTool
 from src.utils.config import Settings
 from src.utils.logging import get_logger
+from src.utils.observability import RunObserver, get_langsmith_status, run_registry
 
 logger = get_logger(__name__)
 
@@ -60,6 +61,7 @@ class _ClassifyTool(BaseTool):
         "confidence, and reasoning. Call this FIRST."
     )
     settings: Settings = Field(exclude=True)
+    observer: RunObserver | None = Field(default=None, exclude=True)
 
     class Config:
         arbitrary_types_allowed = True
@@ -69,7 +71,8 @@ class _ClassifyTool(BaseTool):
 
     async def _arun(self, url: str) -> str:
         from src.agents.classification import ClassificationAgent
-        result = await ClassificationAgent(self.settings).run(url=url)
+        child = self.observer.child("classification", AgentType.CLASSIFICATION) if self.observer else None
+        result = await ClassificationAgent(self.settings).run(url=url, observer=child)
         return result.model_dump_json()
 
 
@@ -82,6 +85,7 @@ class _LandingTool(BaseTool):
         "Call when classify_page returns 'landing_page'."
     )
     settings: Settings = Field(exclude=True)
+    observer: RunObserver | None = Field(default=None, exclude=True)
 
     class Config:
         arbitrary_types_allowed = True
@@ -91,7 +95,8 @@ class _LandingTool(BaseTool):
 
     async def _arun(self, url: str) -> str:
         from src.agents.landing_page import LandingPageAgent
-        result = await LandingPageAgent(self.settings).run(url=url)
+        child = self.observer.child("landing", AgentType.LANDING_PAGE) if self.observer else None
+        result = await LandingPageAgent(self.settings).run(url=url, observer=child)
         return result.model_dump_json()
 
 
@@ -104,6 +109,7 @@ class _HostingTool(BaseTool):
         "embedded_url — pass that to run_embedded_agent."
     )
     settings: Settings = Field(exclude=True)
+    observer: RunObserver | None = Field(default=None, exclude=True)
 
     class Config:
         arbitrary_types_allowed = True
@@ -113,7 +119,8 @@ class _HostingTool(BaseTool):
 
     async def _arun(self, url: str) -> str:
         from src.agents.hosting_page import HostingPageAgent
-        result = await HostingPageAgent(self.settings).run(url=url)
+        child = self.observer.child("hosting", AgentType.HOSTING_PAGE) if self.observer else None
+        result = await HostingPageAgent(self.settings).run(url=url, observer=child)
         return result.model_dump_json()
 
 
@@ -126,6 +133,7 @@ class _EmbeddedTool(BaseTool):
         "Returns m3u8/mpd/mp4 streams and screenshots."
     )
     settings: Settings = Field(exclude=True)
+    observer: RunObserver | None = Field(default=None, exclude=True)
 
     class Config:
         arbitrary_types_allowed = True
@@ -135,7 +143,8 @@ class _EmbeddedTool(BaseTool):
 
     async def _arun(self, url: str) -> str:
         from src.agents.embedded_page import EmbeddedPageAgent
-        result = await EmbeddedPageAgent(self.settings).run(url=url)
+        child = self.observer.child("embedded", AgentType.EMBEDDED_PAGE) if self.observer else None
+        result = await EmbeddedPageAgent(self.settings).run(url=url, observer=child)
         return result.model_dump_json()
 
 
@@ -148,14 +157,15 @@ class OrchestratorAgent:
     Sub-agents use gemini-2.5-flash for tool-calling loops + vision.
     """
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, observer: RunObserver | None = None) -> None:
         self.settings = settings
+        self.observer = observer
         self.llm = build_llm(settings, model_override=settings.orchestrator_model)
         self.tools: list[BaseTool] = [
-            _ClassifyTool(settings=settings),
-            _LandingTool(settings=settings),
-            _HostingTool(settings=settings),
-            _EmbeddedTool(settings=settings),
+            _ClassifyTool(settings=settings, observer=observer),
+            _LandingTool(settings=settings, observer=observer),
+            _HostingTool(settings=settings, observer=observer),
+            _EmbeddedTool(settings=settings, observer=observer),
             IPInfoTool(ipinfo_token=settings.ipinfo_token),
             EmailTool(),
         ]
@@ -166,38 +176,85 @@ class OrchestratorAgent:
         )
 
     async def run(self, url: str) -> PipelineResult:
-        run_id = str(uuid.uuid4())
+        run_id = self.observer.run_id if self.observer is not None else str(uuid.uuid4())
         logger.info("Pipeline started: run_id=%s url=%s", run_id, url)
+        if self.observer is not None:
+            self.observer.set_url(url)
+            self.observer.mark_agent(AgentType.ORCHESTRATOR)
+            self.observer.emit("pipeline_started", f"Pipeline started for {url}")
+        try:
+            loop_result = await run_agent_loop(
+                llm=self.llm,
+                tools=self.tools,
+                system_prompt=self._system_prompt,
+                initial_message=f"Process this URL through the full extraction pipeline:\n\n{url}",
+                max_tool_calls=self.settings.orchestrator_max_tool_calls,
+                budget_exhausted_message=(
+                    "Budget exhausted. If you haven't already, call analyze_providers "
+                    "and generate_takedown_emails with what you have, then stop."
+                ),
+                observer=self.observer,
+                run_name="orchestrator_agent",
+            )
 
-        loop_result = await run_agent_loop(
-            llm=self.llm,
-            tools=self.tools,
-            system_prompt=self._system_prompt,
-            initial_message=f"Process this URL through the full extraction pipeline:\n\n{url}",
-            max_tool_calls=self.settings.orchestrator_max_tool_calls,
-            budget_exhausted_message=(
-                "Budget exhausted. If you haven't already, call analyze_providers "
-                "and generate_takedown_emails with what you have, then stop."
-            ),
-        )
-
-        result = _build_pipeline_result(run_id, url, loop_result.messages)
-        logger.info(
-            "Pipeline finished: run_id=%s status=%s streams=%d emails=%d",
-            run_id, result.final_status, len(result.all_streams), len(result.takedown_emails),
-        )
-        return result
+            result = _build_pipeline_result(
+                run_id,
+                url,
+                loop_result.messages,
+                metrics=self.observer.trace().metrics if self.observer else None,
+            )
+            if self.observer is not None:
+                failure_mode = "" if result.final_status == ExtractionStatus.SUCCESS else result.final_status.value
+                self.observer.emit(
+                    "pipeline_finished",
+                    f"Pipeline finished with status {result.final_status}",
+                    status="success" if result.final_status == ExtractionStatus.SUCCESS else "warning",
+                    details={
+                        "streams_found": len(result.all_streams),
+                        "emails_generated": len(result.takedown_emails),
+                    },
+                )
+                self.observer.finish(
+                    success=result.final_status == ExtractionStatus.SUCCESS,
+                    failure_mode=failure_mode,
+                )
+                result.metrics = self.observer.trace().metrics
+            logger.info(
+                "Pipeline finished: run_id=%s status=%s streams=%d emails=%d",
+                run_id, result.final_status, len(result.all_streams), len(result.takedown_emails),
+            )
+            return result
+        except Exception as exc:
+            if self.observer is not None:
+                self.observer.emit("pipeline_failed", str(exc), status="error")
+                self.observer.finish(success=False, failure_mode=type(exc).__name__)
+            raise
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
 
-async def run_pipeline(url: str, settings: Settings) -> PipelineResult:
-    return await OrchestratorAgent(settings).run(url)
+async def run_pipeline(
+    url: str,
+    settings: Settings,
+    observer: RunObserver | None = None,
+) -> PipelineResult:
+    if observer is None:
+        observer = run_registry.create(
+            run_id=str(uuid.uuid4()),
+            root_actor="orchestrator",
+            langsmith=get_langsmith_status(settings),
+        )
+    return await OrchestratorAgent(settings, observer=observer).run(url)
 
 
 # ── Result builder ────────────────────────────────────────────────────────────
 
-def _build_pipeline_result(run_id: str, url: str, messages: list) -> PipelineResult:
+def _build_pipeline_result(
+    run_id: str,
+    url: str,
+    messages: list,
+    metrics: Any | None = None,
+) -> PipelineResult:
     """Reconstruct a PipelineResult by replaying all ToolMessage outputs."""
     classification: ClassificationResult | None = None
     matches: list[MatchInfo] = []
@@ -276,6 +333,7 @@ def _build_pipeline_result(run_id: str, url: str, messages: list) -> PipelineRes
         all_screenshots=list(dict.fromkeys(all_screenshots)),
         provider_analysis=provider_analysis,
         takedown_emails=takedown_emails,
+        metrics=metrics,
     )
 
 

@@ -6,6 +6,10 @@ Each agent profile maps to an SSE endpoint on the MCP server:
     hosting        → /mcp/hosting/sse         (inspect, interact, harvest, screenshot, navigate)
     embedded       → /mcp/embedded/sse        (inspect, interact, harvest, screenshot, navigate)
 
+When the MCP server runs with MCP_BROWSER_MODE=isolated, each SSE session also
+gets its own temporary browser instance. That browser is reused across tool
+calls for the lifetime of the agent session and then shut down automatically.
+
 The MCP server enforces which tools are visible per profile — the LLM only
 sees tools registered for its profile, not the full tool set.
 

@@ -18,6 +18,7 @@ from src.models.schemas import ExtractionResult, StreamURL
 from src.tools.mcp_client import agent_tools
 from src.utils.config import Settings
 from src.utils.logging import get_logger
+from src.utils.observability import RunObserver
 
 logger = get_logger(__name__)
 
@@ -34,8 +35,11 @@ class EmbeddedPageAgent:
             else "Extract all stream URLs from this embedded video player page."
         )
 
-    async def run(self, url: str) -> ExtractionResult:
+    async def run(self, url: str, observer: RunObserver | None = None) -> ExtractionResult:
         logger.info("EmbeddedPageAgent: %s", url)
+        if observer is not None:
+            observer.mark_agent(AgentType.EMBEDDED_PAGE)
+            observer.emit("agent_started", f"Embedded page agent started for {url}")
         async with agent_tools("embedded", self.settings) as tools:
             result = await run_agent_loop(
                 llm=self.llm,
@@ -48,6 +52,8 @@ class EmbeddedPageAgent:
                 ),
                 max_tool_calls=self.settings.embedded_page_max_tool_calls,
                 budget_exhausted_message="Budget exhausted. Output your final JSON now.",
+                observer=observer,
+                run_name="embedded_page_agent",
             )
 
         output = result.parse_json()
@@ -60,7 +66,7 @@ class EmbeddedPageAgent:
             ExtractionStatus.FAILED
         )
 
-        return ExtractionResult(
+        extraction = ExtractionResult(
             url=url,
             page_type=PageType.EMBEDDED,
             status=status,
@@ -69,6 +75,14 @@ class EmbeddedPageAgent:
             tool_calls_used=result.tool_calls_made,
             metadata=output,
         )
+        if observer is not None:
+            observer.emit(
+                "agent_finished",
+                f"Embedded page agent finished with {len(streams)} streams",
+                status="success" if streams else "warning",
+                details={"streams_found": len(streams), "successful_servers": successful},
+            )
+        return extraction
 
 
 def _collect_streams(output: dict) -> list[StreamURL]:

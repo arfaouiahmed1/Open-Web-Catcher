@@ -16,6 +16,7 @@ from src.models.schemas import ExtractionResult, StreamURL
 from src.tools.mcp_client import agent_tools
 from src.utils.config import Settings
 from src.utils.logging import get_logger
+from src.utils.observability import RunObserver
 
 logger = get_logger(__name__)
 
@@ -32,8 +33,11 @@ class HostingPageAgent:
             else "Extract all stream URLs from this hosting page."
         )
 
-    async def run(self, url: str) -> ExtractionResult:
+    async def run(self, url: str, observer: RunObserver | None = None) -> ExtractionResult:
         logger.info("HostingPageAgent: %s", url)
+        if observer is not None:
+            observer.mark_agent(AgentType.HOSTING_PAGE)
+            observer.emit("agent_started", f"Hosting page agent started for {url}")
         async with agent_tools("hosting", self.settings) as tools:
             result = await run_agent_loop(
                 llm=self.llm,
@@ -42,6 +46,8 @@ class HostingPageAgent:
                 initial_message=f"Extract all stream URLs from this hosting page.\n\nmainUrl: {url}",
                 max_tool_calls=self.settings.hosting_page_max_tool_calls,
                 budget_exhausted_message="Budget exhausted. Output your final JSON now.",
+                observer=observer,
+                run_name="hosting_page_agent",
             )
 
         output = result.parse_json()
@@ -54,7 +60,7 @@ class HostingPageAgent:
             ExtractionStatus.FAILED
         )
 
-        return ExtractionResult(
+        extraction = ExtractionResult(
             url=url,
             page_type=PageType.HOSTING,
             status=status,
@@ -65,6 +71,18 @@ class HostingPageAgent:
             tool_calls_used=result.tool_calls_made,
             metadata=output,
         )
+        if observer is not None:
+            observer.emit(
+                "agent_finished",
+                f"Hosting page agent finished with {len(streams)} streams",
+                status="success" if streams else "warning",
+                details={
+                    "streams_found": len(streams),
+                    "embedded_urls": extraction.embedded_urls,
+                    "decision": decision,
+                },
+            )
+        return extraction
 
 
 def _collect_streams(output: dict) -> list[StreamURL]:

@@ -18,11 +18,11 @@ class RunRepository:
         record = RunRecord(
             run_id=result.run_id,
             url=result.url,
-            page_type=result.classification.page_type if result.classification else "unknown",
-            status=result.final_status,
-            streams_found=len(result.streams),
-            success=result.final_status == "success",
-            result_json=result.model_dump(),
+            page_type=result.classification.page_type.value if result.classification else "unknown",
+            status=result.final_status.value,
+            streams_found=len(result.all_streams),
+            success=result.final_status.value == "success",
+            result_json=result.model_dump(mode="json"),
         )
         if result.metrics:
             record.tokens_in = result.metrics.total_tokens_in

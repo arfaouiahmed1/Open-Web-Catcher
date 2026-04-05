@@ -147,7 +147,7 @@ open-web-catcher/
 │       └── gradio_app.py         # Gradio dashboard: per-agent testing + full pipeline demo
 │
 ├── tools_js/                     # ── JavaScript tools (Node.js) ──
-│   ├── package.json              # puppeteer, puppeteer-extra, ghostery-adblocker, cross-fetch
+│   ├── package.json              # puppeteer-core, express, zod, Cloudinary
 │   ├── inspect.js                # DOM scan + element extraction + screenshot
 │   ├── interact.js               # Click/play/type/select/coordinates + anti-bot
 │   ├── harvest.js                # 6-layer CDP stream detection
@@ -157,7 +157,7 @@ open-web-catcher/
 │       ├── browser.js            # puppeteer.connect() wrapper
 │       ├── upload.js             # Cloudinary upload with timeout
 │       ├── screenshot.js         # screenshotFull / screenshotViewport / screenshotPlayer
-│       └── adblocker.js          # Ghostery filter list setup
+│       └── adblocker.js          # uBO-style cosmetic filterlist loader (no network blocking)
 │
 ├── configs/                      # ── Configuration ──
 │   ├── settings.yaml             # Runtime config (budgets, timeouts, model params)

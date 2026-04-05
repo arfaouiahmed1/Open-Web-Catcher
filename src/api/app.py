@@ -19,10 +19,12 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from src.models.schemas import ClassificationResult, ExtractionResult, PipelineResult
+from src.evaluation.tracing import setup_tracing_from_settings
 from src.storage.database import create_tables, get_session
 from src.storage.repositories import RunRepository
 from src.utils.config import Settings
 from src.utils.logging import get_logger, setup_logging
+from src.utils.observability import get_langsmith_status, run_registry
 
 logger = get_logger(__name__)
 
@@ -42,6 +44,7 @@ def get_settings() -> Settings:
 async def lifespan(app: FastAPI):
     settings = get_settings()
     setup_logging(level=settings.log_level, log_file=settings.log_file)
+    setup_tracing_from_settings(settings)
     create_tables()
     logger.info(
         "Open Web Catcher API started | orchestrator=%s | agents=%s",
@@ -88,6 +91,7 @@ def health():
         "status": "ok",
         "orchestrator_model": settings.orchestrator_model,
         "agent_model": settings.agent_model,
+        "langsmith": get_langsmith_status(settings).model_dump(),
     }
 
 
@@ -154,6 +158,9 @@ def list_runs(limit: int = 50):
                 "emails_generated": len((r.result_json or {}).get("takedown_emails", [])),
                 "success": r.success,
                 "duration_seconds": r.duration_seconds,
+                "tool_calls": r.tool_calls,
+                "tokens_in": r.tokens_in,
+                "tokens_out": r.tokens_out,
                 "created_at": r.created_at.isoformat(),
             }
             for r in records
@@ -188,6 +195,53 @@ def get_run_emails(run_id: str):
             "run_id": run_id,
             "url": result_json.get("url", ""),
             "emails": result_json.get("takedown_emails", []),
+        }
+    finally:
+        session.close()
+
+
+@app.get("/runs/{run_id}/events")
+def get_run_events(run_id: str):
+    """Get the in-memory runtime event trace for a run if available."""
+    trace = run_registry.get(run_id)
+    if trace is None:
+        raise HTTPException(status_code=404, detail=f"Run trace '{run_id}' not found")
+    return trace.model_dump(mode="json")
+
+
+@app.get("/observability")
+def observability(limit: int = 10):
+    """Return LangSmith status, recent runtime traces, and DB-level metrics."""
+    settings = get_settings()
+    session = get_session()
+    try:
+        repo = RunRepository(session)
+        recent = repo.list_recent(limit=limit)
+        return {
+            "langsmith": get_langsmith_status(settings).model_dump(),
+            "database_metrics": {
+                "success_rate": repo.success_rate(),
+                "run_count": len(recent),
+            },
+            "recent_runs": [
+                {
+                    "run_id": record.run_id,
+                    "url": record.url,
+                    "status": record.status,
+                    "success": record.success,
+                    "streams_found": record.streams_found,
+                    "tool_calls": record.tool_calls,
+                    "tokens_in": record.tokens_in,
+                    "tokens_out": record.tokens_out,
+                    "duration_seconds": record.duration_seconds,
+                    "created_at": record.created_at.isoformat(),
+                }
+                for record in recent
+            ],
+            "active_traces": [
+                trace.model_dump(mode="json")
+                for trace in run_registry.list_recent(limit=limit)
+            ],
         }
     finally:
         session.close()

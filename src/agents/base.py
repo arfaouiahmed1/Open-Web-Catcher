@@ -17,6 +17,7 @@ Why not LangChain create_react_agent / AgentExecutor?
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -25,6 +26,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 from src.utils.config import Settings
 from src.utils.logging import get_logger
+from src.utils.observability import RunObserver
 
 logger = get_logger(__name__)
 
@@ -49,6 +51,10 @@ def build_llm(
         google_api_key=settings.google_api_key,
         temperature=temperature if temperature is not None else settings.gemini_temperature,
         convert_system_message_to_human=True,
+        metadata={
+            "ls_provider": "google_genai",
+            "ls_model_name": model_override or settings.agent_model,
+        },
     )
 
 
@@ -82,6 +88,8 @@ async def run_agent_loop(
     initial_message: str,
     max_tool_calls: int = 20,
     budget_exhausted_message: str = "Budget exhausted. Output your final JSON now.",
+    observer: RunObserver | None = None,
+    run_name: str = "agent_loop",
 ) -> AgentLoopResult:
     """Run an async Gemini function-calling loop.
 
@@ -112,12 +120,40 @@ async def run_agent_loop(
     ]
     tool_calls_made = 0
 
+    if observer is not None:
+        observer.emit(
+            "agent_loop_started",
+            f"{run_name} started",
+            details={"max_tool_calls": max_tool_calls},
+        )
+
     while tool_calls_made < max_tool_calls:
-        response: AIMessage = await llm_with_tools.ainvoke(messages)
+        response: AIMessage = await llm_with_tools.ainvoke(
+            messages,
+            config={"run_name": run_name},
+        )
         messages.append(response)
+
+        if observer is not None:
+            observer.add_llm_usage(getattr(response, "usage_metadata", None))
+            observer.emit(
+                "llm_response",
+                "Model responded",
+                details={
+                    "tool_calls": len(response.tool_calls or []),
+                    "has_text": bool(response.content),
+                },
+            )
 
         if not response.tool_calls:
             logger.debug("Agent finished after %d tool calls", tool_calls_made)
+            if observer is not None:
+                observer.emit(
+                    "agent_loop_finished",
+                    f"{run_name} finished",
+                    details={"tool_calls_made": tool_calls_made},
+                    status="success",
+                )
             return AgentLoopResult(
                 final_text=response.content or "",
                 tool_calls_made=tool_calls_made,
@@ -134,28 +170,70 @@ async def run_agent_loop(
                 "Tool call [%d/%d]: %s(%s)",
                 tool_calls_made, max_tool_calls, tool_name, list(tool_args.keys()),
             )
+            started_at = time.perf_counter()
+            if observer is not None:
+                observer.increment_tool_calls()
+                observer.emit(
+                    "tool_call_started",
+                    f"Calling {tool_name}",
+                    details={
+                        "tool_name": tool_name,
+                        "tool_args": tool_args,
+                        "tool_call_number": tool_calls_made,
+                        "tool_call_budget": max_tool_calls,
+                    },
+                )
 
             tool = tool_map.get(tool_name)
             if tool is None:
                 result_content = json.dumps({"error": f"Unknown tool: {tool_name}"})
+                tool_status = "error"
             else:
                 try:
                     # Use arun if available, otherwise fall back to sync _run
                     raw = await tool.arun(tool_args)
                     result_content = raw if isinstance(raw, str) else json.dumps(raw)
+                    tool_status = "success"
                 except Exception as e:
                     logger.warning("Tool %s raised: %s", tool_name, e)
                     result_content = json.dumps({"error": str(e)})
+                    tool_status = "error"
 
             messages.append(ToolMessage(content=result_content, tool_call_id=tool_id))
+            if observer is not None:
+                observer.emit(
+                    "tool_call_finished",
+                    f"{tool_name} completed",
+                    status=tool_status,
+                    details={
+                        "tool_name": tool_name,
+                        "duration_seconds": round(time.perf_counter() - started_at, 3),
+                        "result_preview": result_content[:800],
+                    },
+                )
 
             if tool_calls_made >= max_tool_calls:
                 break
 
     # Budget exhausted — force final answer without tools
     logger.info("Budget exhausted (%d calls). Forcing final answer.", tool_calls_made)
+    if observer is not None:
+        observer.emit(
+            "budget_exhausted",
+            "Tool-call budget exhausted; requesting final answer",
+            status="warning",
+            details={"tool_calls_made": tool_calls_made, "max_tool_calls": max_tool_calls},
+        )
     messages.append(HumanMessage(content=budget_exhausted_message))
-    final: AIMessage = await llm.ainvoke(messages)
+    final: AIMessage = await llm.ainvoke(messages, config={"run_name": f"{run_name}_final"})
+    if observer is not None:
+        observer.add_llm_usage(getattr(final, "usage_metadata", None))
+        observer.emit(
+            "agent_loop_finished",
+            f"{run_name} finished after budget exhaustion",
+            details={"tool_calls_made": tool_calls_made},
+            status="warning",
+        )
 
     return AgentLoopResult(
         final_text=final.content or "",

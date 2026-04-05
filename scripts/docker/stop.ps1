@@ -1,21 +1,34 @@
 #!/usr/bin/env pwsh
 [CmdletBinding()]
-param()
+param(
+    [switch]$Yes
+)
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$container = if ($env:OWC_CONTAINER) { $env:OWC_CONTAINER } else { "owc" }
+. (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "_common.ps1")
 
-$runningContainerId = (& docker ps -q -f "name=^$container$").Trim()
-if ($runningContainerId) {
-    Write-Host "Stopping '$container'..."
-    & docker stop $container | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
-    }
-    Write-Host "Stopped."
+$context = Get-OwcContext -CallerPath $MyInvocation.MyCommand.Path
+Assert-DockerAvailable
+
+Write-OwcSection "Stop"
+Write-OwcInfo "Container: $($context.Container)"
+
+if (-not (Test-OwcContainerExists -Container $context.Container)) {
+    Write-OwcInfo "Container '$($context.Container)' does not exist."
+    return
 }
-else {
-    Write-Host "Container '$container' is not running."
+
+if (-not (Test-OwcContainerRunning -Container $context.Container)) {
+    Write-OwcInfo "Container '$($context.Container)' is already stopped."
+    return
 }
+
+if (-not (Confirm-OwcAction -Prompt "Stop container '$($context.Container)' now?" -DefaultYes -Yes:$Yes)) {
+    Write-OwcInfo "Stop cancelled."
+    return
+}
+
+Invoke-DockerChecked -Arguments @("stop", $context.Container)
+Write-OwcSuccess "Container '$($context.Container)' stopped."

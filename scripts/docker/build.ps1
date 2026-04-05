@@ -1,31 +1,22 @@
 #!/usr/bin/env pwsh
 [CmdletBinding()]
 param(
-    [switch]$NoCache
+    [switch]$NoCache,
+    [switch]$Yes
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$rootDir = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
+. (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "_common.ps1")
 
-$image = if ($env:OWC_IMAGE) { $env:OWC_IMAGE } else { "open-web-catcher" }
-$tag = if ($env:OWC_TAG) { $env:OWC_TAG } else { "latest" }
-$imageRef = "$image`:$tag"
+$context = Get-OwcContext -CallerPath $MyInvocation.MyCommand.Path
+Assert-DockerAvailable
 
-$mode = if ($NoCache) { "no cache" } else { "with cache" }
-Write-Host "Building $imageRef ($mode)..."
+Write-OwcSection "Build"
+Write-OwcInfo "Image: $($context.ImageRef)"
 
-$buildArgs = @("build")
-if ($NoCache) {
-    $buildArgs += "--no-cache"
-}
-$buildArgs += @("-t", $imageRef, $rootDir)
+$useCache = Resolve-OwcBuildUsesCache -NoCache:$NoCache -Yes:$Yes
+Write-OwcInfo "Mode: $(if ($useCache) { 'with cache' } else { 'without cache' })"
 
-& docker @buildArgs
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
-}
-
-Write-Host "Done: $imageRef"
+Invoke-OwcBuild -Context $context -NoCache:(-not $useCache)

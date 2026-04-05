@@ -79,7 +79,6 @@ because it needs `pg_ctlcluster` which runs as the `postgres` system user.
 | `@modelcontextprotocol/sdk` | MCP server + SSE transport |
 | `express` | HTTP server for SSE endpoints |
 | `puppeteer-core` | Headless browser automation |
-| `@ghostery/adblocker-puppeteer` | Ad/tracker blocking during extraction |
 | `cloudinary` | Screenshot upload |
 | `zod` | Tool parameter schema validation |
 

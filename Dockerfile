@@ -64,12 +64,13 @@ ENV PUPPETEER_CACHE_DIR=/opt/puppeteer
 
 # ── Python deps (cached layer — only re-runs when pyproject.toml changes) ────
 COPY pyproject.toml .
+COPY src/        src/
 RUN uv venv .venv --python 3.11 && \
     uv pip install --python .venv/bin/python -e ".[dev]"
 
 # ── Node.js deps ──────────────────────────────────────────────────────────────
 COPY tools_js/package*.json tools_js/
-RUN cd tools_js && npm ci --omit=dev \
+RUN cd tools_js && npm install --omit=dev \
     && npx --yes @puppeteer/browsers@latest install chrome@stable --path "${PUPPETEER_CACHE_DIR}" \
     && CHROME_BIN="$(find "${PUPPETEER_CACHE_DIR}/chrome" -type f -path '*/chrome-linux64/chrome' | head -n 1)" \
     && test -n "${CHROME_BIN}" \
@@ -77,7 +78,6 @@ RUN cd tools_js && npm ci --omit=dev \
     && ln -sf /usr/local/bin/google-chrome-stable /usr/local/bin/google-chrome
 
 # ── Application source ────────────────────────────────────────────────────────
-COPY src/        src/
 COPY tools_js/   tools_js/
 COPY configs/    configs/
 COPY tests/      tests/
@@ -97,12 +97,16 @@ ENV PATH="/app/.venv/bin:$PATH" \
     # Chrome path for Puppeteer
     PUPPETEER_EXECUTABLE_PATH=/usr/local/bin/google-chrome-stable \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    MCP_BROWSER_MODE=isolated \
     # Internal service URLs (Chrome + MCP run in same container)
     BROWSER_WS_ENDPOINT=ws://localhost:9222 \
     MCP_SERVER_URL=http://localhost:3000 \
     # PostgreSQL (local, managed by supervisord)
     DATABASE_URL=postgresql+psycopg2://owc:owc@localhost:5432/owc \
-    # LangSmith tracing enabled by default — set LANGCHAIN_API_KEY to activate
+    # LangSmith tracing enabled by default — set LANGSMITH_API_KEY to activate
+    LANGSMITH_TRACING=true \
+    LANGSMITH_PROJECT=open-web-catcher \
+    LANGSMITH_ENDPOINT=https://api.smith.langchain.com \
     LANGCHAIN_TRACING_V2=true \
     LANGCHAIN_PROJECT=open-web-catcher
 

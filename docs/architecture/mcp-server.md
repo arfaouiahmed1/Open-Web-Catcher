@@ -15,6 +15,10 @@ Each agent connects to a **profile-specific SSE endpoint**. The server creates a
 `McpServer` instance for that connection and registers **only the tools allowed by that
 profile**. The LLM agent physically cannot call tools outside its profile.
 
+In the isolated-browser setup, each SSE session also gets its own temporary
+browser instance. That makes agent sessions parallelizable without sharing page
+state, cookies, tabs, or overlays across agents.
+
 ---
 
 ## Architecture
@@ -42,7 +46,7 @@ Python Agent (async context manager)
         │                                                                 │
         │              Tool Handler (e.g. harvest.js)                    │
         │  ┌──────────────────────────────────────────────────────────┐  │
-        │  │  puppeteer.connect(BROWSER_WS_ENDPOINT)                 │  │
+        │  │  puppeteer.connect(sessionBrowserWsEndpoint)            │  │
         │  │  CDP intercept / page.evaluate / ...                    │  │
         │  │  upload screenshot to Cloudinary                        │  │
         │  │  return structured JSON                                  │  │
@@ -286,10 +290,10 @@ Modes: `viewport` (default), `full` (full page), `element` (specific CSS selecto
 
 | Module | Exports | Purpose |
 |--------|---------|---------|
-| `browser.js` | `connectBrowser(wsEndpoint)` | `puppeteer.connect()` wrapper with retry |
+| `browser.js` | `connectBrowser(wsEndpoint)`, isolated browser helpers | Connect to or launch per-session browser instances |
 | `upload.js` | `uploadScreenshot(buffer)` | Cloudinary upload with timeout + error handling |
 | `screenshot.js` | `screenshotViewport`, `screenshotFull`, `screenshotElement` | Screenshot helpers used by all tools |
-| `adblocker.js` | `setupAdblocker(page)` | Ghostery filter list to block ads/trackers |
+| `adblocker.js` | `enableBlocking(page)` | Cosmetic-only filtering with a shared selector list and no network blocking |
 
 ---
 

@@ -5,6 +5,13 @@
 All browser tools run inside the Node.js MCP server (`tools_js/`). They connect to
 Chrome via DevTools Protocol (CDP) WebSocket and return structured JSON.
 
+## Agent-Specific Tool Sets
+
+- [Classification Agent](classification/README.md)
+- [Landing Agent](landing/README.md)
+- [Hosting Agent](hosting/README.md)
+- [Embedded Agent](embedded/README.md)
+
 ---
 
 ## Tool-to-Profile Mapping
@@ -396,10 +403,11 @@ export async function screenshotElement(page, selector)  // specific element
 ### `adblocker.js`
 
 ```javascript
-export async function setupAdblocker(page) {
-  // Loads Ghostery filter lists
-  // Blocks ads, trackers, and cookie consent popups
-  // Reduces false positives in harvest (no ad stream URLs)
+export async function enableBlocking(page) {
+  // Cosmetic-only filtering with uBO-style filterlists
+  // Reads rules from tools_js/shared/filterlists/*.txt
+  // Supports common rules like ##selector, example.com##selector, and #@# exceptions
+  // Does not block network requests
 }
 ```
 

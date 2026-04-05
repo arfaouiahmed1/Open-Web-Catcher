@@ -1,54 +1,80 @@
 #!/usr/bin/env bash
-# =============================================================================
-#  Container entrypoint — runs once at startup
-#  1. Initialises PostgreSQL cluster (first boot only)
-#  2. Creates the owc role + database
-#  3. Creates runtime data directories
-#  4. Hands off to supervisord (which starts Chrome, MCP, API, Gradio)
-# =============================================================================
 set -euo pipefail
 
-PG_VERSION=15
-PG_CLUSTER=main
+PG_VERSION="${PG_VERSION:-15}"
+PG_CLUSTER="${PG_CLUSTER:-main}"
 PG_DATA="/var/lib/postgresql/${PG_VERSION}/${PG_CLUSTER}"
-PG_USER=owc
-PG_PASS=owc
-PG_DB=owc
+PG_USER="${POSTGRES_USER:-owc}"
+PG_PASS="${POSTGRES_PASSWORD:-owc}"
+PG_DB="${POSTGRES_DB:-owc}"
+PG_READY_TIMEOUT="${PG_READY_TIMEOUT:-30}"
 
-echo "[entrypoint] ── PostgreSQL ──────────────────────────────────────"
+log() {
+    printf '[entrypoint] %s\n' "$1"
+}
 
-# Debian's postgresql package pre-creates the cluster; just make sure it exists
-if [ ! -f "${PG_DATA}/PG_VERSION" ]; then
-    echo "[entrypoint] Creating PostgreSQL cluster ${PG_VERSION}/${PG_CLUSTER}..."
-    pg_createcluster "${PG_VERSION}" "${PG_CLUSTER}" --start
-else
-    echo "[entrypoint] Starting existing cluster ${PG_VERSION}/${PG_CLUSTER}..."
-    pg_ctlcluster "${PG_VERSION}" "${PG_CLUSTER}" start || true
-fi
+start_postgres() {
+    log "Preparing PostgreSQL ${PG_VERSION}/${PG_CLUSTER}."
 
-# Wait for PostgreSQL to accept connections
-for i in $(seq 1 20); do
-    if su -c "pg_isready -q" postgres 2>/dev/null; then
-        echo "[entrypoint] PostgreSQL is ready (attempt ${i})."
-        break
+    if [ ! -f "${PG_DATA}/PG_VERSION" ]; then
+        log "Creating PostgreSQL cluster ${PG_VERSION}/${PG_CLUSTER}."
+        pg_createcluster "${PG_VERSION}" "${PG_CLUSTER}" --start
+        return
     fi
-    echo "[entrypoint] Waiting for PostgreSQL... (${i}/20)"
-    sleep 1
-done
 
-# Idempotent: create role and database if they don't exist
-su -c "psql -tc \"SELECT 1 FROM pg_roles WHERE rolname='${PG_USER}'\" \
-       | grep -q 1 \
-       || psql -c \"CREATE ROLE ${PG_USER} WITH LOGIN PASSWORD '${PG_PASS}'\"" postgres
+    log "Starting existing PostgreSQL cluster ${PG_VERSION}/${PG_CLUSTER}."
+    pg_ctlcluster "${PG_VERSION}" "${PG_CLUSTER}" start || true
+}
 
-su -c "psql -tc \"SELECT 1 FROM pg_database WHERE datname='${PG_DB}'\" \
-       | grep -q 1 \
-       || psql -c \"CREATE DATABASE ${PG_DB} OWNER ${PG_USER}\"" postgres
+wait_for_postgres() {
+    local attempt=1
 
-echo "[entrypoint] PostgreSQL ready — database '${PG_DB}' owned by '${PG_USER}'."
+    while [ "${attempt}" -le "${PG_READY_TIMEOUT}" ]; do
+        if su -c "pg_isready -q" postgres 2>/dev/null; then
+            log "PostgreSQL is ready (attempt ${attempt}/${PG_READY_TIMEOUT})."
+            return 0
+        fi
 
-echo "[entrypoint] ── Runtime directories ──────────────────────────────"
-mkdir -p /app/data/{logs,raw,processed,reports}
+        log "Waiting for PostgreSQL... (${attempt}/${PG_READY_TIMEOUT})"
+        sleep 1
+        attempt=$((attempt + 1))
+    done
 
-echo "[entrypoint] ── Handing off to supervisord ───────────────────────"
+    log "PostgreSQL did not become ready in ${PG_READY_TIMEOUT} seconds."
+    return 1
+}
+
+ensure_role() {
+    if su -c "psql -v ON_ERROR_STOP=1 -tAc \"SELECT 1 FROM pg_roles WHERE rolname='${PG_USER}'\"" postgres | grep -q 1; then
+        log "PostgreSQL role '${PG_USER}' already exists."
+        return
+    fi
+
+    log "Creating PostgreSQL role '${PG_USER}'."
+    su -c "psql -v ON_ERROR_STOP=1 -c \"CREATE ROLE ${PG_USER} WITH LOGIN PASSWORD '${PG_PASS}'\"" postgres
+}
+
+ensure_database() {
+    if su -c "psql -v ON_ERROR_STOP=1 -tAc \"SELECT 1 FROM pg_database WHERE datname='${PG_DB}'\"" postgres | grep -q 1; then
+        log "PostgreSQL database '${PG_DB}' already exists."
+        return
+    fi
+
+    log "Creating PostgreSQL database '${PG_DB}'."
+    su -c "psql -v ON_ERROR_STOP=1 -c \"CREATE DATABASE ${PG_DB} OWNER ${PG_USER}\"" postgres
+}
+
+prepare_runtime_dirs() {
+    log "Preparing runtime directories."
+    mkdir -p /app/data/logs /app/data/raw /app/data/processed /app/data/reports
+}
+
+start_postgres
+wait_for_postgres
+ensure_role
+ensure_database
+prepare_runtime_dirs
+
+log "PostgreSQL is ready. Database '${PG_DB}' is owned by '${PG_USER}'."
+log "Handing off to supervisord."
 exec /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf

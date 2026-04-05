@@ -3,62 +3,74 @@
 param(
     [switch]$RemoveImage,
     [switch]$PruneBuildCache,
+    [switch]$Yes,
     [switch]$NoPrompt
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$container = if ($env:OWC_CONTAINER) { $env:OWC_CONTAINER } else { "owc" }
-$image = if ($env:OWC_IMAGE) { $env:OWC_IMAGE } else { "open-web-catcher" }
-$tag = if ($env:OWC_TAG) { $env:OWC_TAG } else { "latest" }
-$imageRef = "$image`:$tag"
+. (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "_common.ps1")
 
-$runningContainerId = (& docker ps -q -f "name=^$container$").Trim()
-if ($runningContainerId) {
-    Write-Host "Stopping '$container'..."
-    & docker stop $container | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
-    }
+$context = Get-OwcContext -CallerPath $MyInvocation.MyCommand.Path
+Assert-DockerAvailable
+
+Write-OwcSection "Clean"
+Write-OwcInfo "Container: $($context.Container)"
+Write-OwcInfo "Image: $($context.ImageRef)"
+
+$containerExists = Test-OwcContainerExists -Container $context.Container
+$imageExists = Test-OwcImageExists -ImageRef $context.ImageRef
+
+if (-not $containerExists -and -not $imageExists -and -not $PruneBuildCache) {
+    Write-OwcInfo "Nothing to clean. No matching container or image was found."
+    return
 }
 
-$existingContainerId = (& docker ps -aq -f "name=^$container$").Trim()
-if ($existingContainerId) {
-    Write-Host "Removing container '$container'..."
-    & docker rm -v $container | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
+if (-not (Confirm-OwcAction -Prompt "Clean Docker artifacts for '$($context.Container)'?" -DefaultYes:$false -Yes:$Yes -NoPrompt:$NoPrompt)) {
+    Write-OwcInfo "Clean cancelled."
+    return
+}
+
+if ($containerExists) {
+    if (Test-OwcContainerRunning -Container $context.Container) {
+        Write-OwcInfo "Stopping container '$($context.Container)'..."
+        Invoke-DockerChecked -Arguments @("stop", $context.Container)
     }
+
+    Write-OwcInfo "Removing container '$($context.Container)'..."
+    Invoke-DockerChecked -Arguments @("rm", "-v", $context.Container)
+    Write-OwcSuccess "Removed container '$($context.Container)'."
+}
+else {
+    Write-OwcInfo "Container '$($context.Container)' was not present."
 }
 
 $shouldRemoveImage = $RemoveImage
-if (-not $RemoveImage -and -not $NoPrompt) {
-    $answer = Read-Host "Remove image $imageRef as well? [y/N]"
-    $shouldRemoveImage = $answer -match '^[Yy]$'
+if (-not $RemoveImage) {
+    $shouldRemoveImage = Confirm-OwcAction -Prompt "Remove image $($context.ImageRef) as well?" -DefaultYes:$false -Yes:$Yes -NoPrompt:$NoPrompt
 }
 
 if ($shouldRemoveImage) {
-    & docker rmi $imageRef | Out-Null
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "Image removed."
+    if (Test-OwcImageExists -ImageRef $context.ImageRef) {
+        Write-OwcInfo "Removing image '$($context.ImageRef)'..."
+        Invoke-DockerChecked -Arguments @("rmi", $context.ImageRef)
+        Write-OwcSuccess "Removed image '$($context.ImageRef)'."
     }
     else {
-        Write-Host "Image not found or could not be removed."
+        Write-OwcInfo "Image '$($context.ImageRef)' was not present."
     }
 }
 
 $shouldPruneCache = $PruneBuildCache
-if (-not $PruneBuildCache -and -not $NoPrompt) {
-    $answer2 = Read-Host "Prune Docker build cache? [y/N]"
-    $shouldPruneCache = $answer2 -match '^[Yy]$'
+if (-not $PruneBuildCache) {
+    $shouldPruneCache = Confirm-OwcAction -Prompt "Prune Docker build cache too?" -DefaultYes:$false -Yes:$Yes -NoPrompt:$NoPrompt
 }
 
 if ($shouldPruneCache) {
-    & docker builder prune -f
-    if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
-    }
+    Write-OwcInfo "Pruning Docker build cache..."
+    Invoke-DockerChecked -Arguments @("builder", "prune", "-f")
+    Write-OwcSuccess "Docker build cache pruned."
 }
 
-Write-Host "Clean complete."
+Write-OwcSuccess "Clean complete."

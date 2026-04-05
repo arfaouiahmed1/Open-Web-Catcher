@@ -13,11 +13,12 @@ import re
 from pathlib import Path
 
 from src.agents.base import build_llm, run_agent_loop
-from src.models.enums import Confidence, PageType
+from src.models.enums import AgentType, Confidence, PageType
 from src.models.schemas import ClassificationResult
 from src.tools.mcp_client import agent_tools
 from src.utils.config import Settings
 from src.utils.logging import get_logger
+from src.utils.observability import RunObserver
 
 logger = get_logger(__name__)
 
@@ -35,8 +36,11 @@ class ClassificationAgent:
             else _DEFAULT_PROMPT
         )
 
-    async def run(self, url: str) -> ClassificationResult:
+    async def run(self, url: str, observer: RunObserver | None = None) -> ClassificationResult:
         logger.info("ClassificationAgent: %s", url)
+        if observer is not None:
+            observer.mark_agent(AgentType.CLASSIFICATION)
+            observer.emit("agent_started", f"Classification agent started for {url}")
         async with agent_tools("classification", self.settings) as tools:
             result = await run_agent_loop(
                 llm=self.llm,
@@ -45,9 +49,22 @@ class ClassificationAgent:
                 initial_message=f"Classify this page: {url}",
                 max_tool_calls=MAX_TOOL_CALLS,
                 budget_exhausted_message="Output your classification now using the exact Output Format.",
+                observer=observer,
+                run_name="classification_agent",
             )
         parsed = _parse_output(result.final_text, url)
         logger.info("→ %s (%s)", parsed.page_type, parsed.confidence)
+        if observer is not None:
+            observer.emit(
+                "agent_finished",
+                f"Classification decided {parsed.page_type}",
+                status="success",
+                details={
+                    "page_type": parsed.page_type.value,
+                    "confidence": parsed.confidence.value,
+                    "tool_calls_used": result.tool_calls_made,
+                },
+            )
         return parsed
 
 

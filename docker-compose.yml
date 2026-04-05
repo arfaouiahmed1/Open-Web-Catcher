@@ -6,6 +6,7 @@ version: "3.9"
 
 services:
   owc:
+    image: ${OWC_IMAGE:-open-web-catcher}:${OWC_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile
