@@ -193,12 +193,12 @@ async def classify(req: ClassifyRequest):
 - `pyproject.toml` — added `gradio>=4.36`, `psycopg2-binary>=2.9`, `langchain-mcp-adapters>=0.1`
 
 **Scripts created:**
-- `scripts/docker/build.sh` — build with cache (`--no-cache` for fresh build)
-- `scripts/docker/start.sh` — run container with volumes + env
-- `scripts/docker/stop.sh` — stop container
-- `scripts/docker/restart.sh` — restart without rebuild
-- `scripts/docker/clean.sh` — full cleanup with prompts
-- `scripts/docker/test.sh` — run pytest inside running container
+- `scripts/docker/build.ps1` — build with cache (`-NoCache` for fresh build)
+- `scripts/docker/start.ps1` — run container with volumes + env
+- `scripts/docker/stop.ps1` — stop container
+- `scripts/docker/restart.ps1` — restart without rebuild
+- `scripts/docker/clean.ps1` — full cleanup with prompts
+- `scripts/docker/test.ps1` — run pytest inside running container
 
 **`.gitattributes` added** to enforce LF line endings on `.sh` files (prevents Windows CRLF corruption).
 

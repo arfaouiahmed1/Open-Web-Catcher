@@ -192,12 +192,12 @@ open-web-catcher/
 │
 ├── scripts/                      # ── Utility scripts ──
 │   ├── docker/                   # Docker lifecycle helpers + container entrypoint
-│   │   ├── build.sh              # Build image (add --no-cache for fresh builds)
-│   │   ├── start.sh              # Run container with volumes + env
-│   │   ├── stop.sh               # Stop container
-│   │   ├── restart.sh            # Restart container
-│   │   ├── clean.sh              # Cleanup container/image/build cache
-│   │   ├── test.sh               # Run pytest inside running container
+│   │   ├── build.ps1             # Build image (add -NoCache for fresh builds)
+│   │   ├── start.ps1             # Run container with volumes + env
+│   │   ├── stop.ps1              # Stop container
+│   │   ├── restart.ps1           # Restart container
+│   │   ├── clean.ps1             # Cleanup container/image/build cache
+│   │   ├── test.ps1              # Run pytest inside running container
 │   │   └── entrypoint.sh         # In-container startup script (PostgreSQL + supervisord)
 │   ├── extract_tools_from_n8n.py # Extract JS code from n8n workflow JSON files
 │   ├── run_batch.py              # Batch process a list of URLs

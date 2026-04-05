@@ -41,10 +41,10 @@ See [Configuration](configuration.md) for all available variables.
 
 ```bash
 # With layer cache (faster on rebuild)
-bash scripts/docker/build.sh
+./scripts/docker/build.ps1
 
 # First build or clean slate
-bash scripts/docker/build.sh --no-cache
+./scripts/docker/build.ps1 -NoCache
 ```
 
 The build installs Python (via `uv`), Node.js, Google Chrome, and PostgreSQL 15
@@ -56,7 +56,7 @@ when only Python source changes.
 ## 3. Start
 
 ```bash
-bash scripts/docker/start.sh
+./scripts/docker/start.ps1
 ```
 
 This runs the container with:
@@ -132,9 +132,9 @@ LLM call, tool call, token count, and cost.
 ## 6. Stop / Restart / Clean
 
 ```bash
-bash scripts/docker/stop.sh       # stop the container
-bash scripts/docker/restart.sh    # restart without rebuilding
-bash scripts/docker/clean.sh      # stop + remove container (prompts before removing image)
+./scripts/docker/stop.ps1       # stop the container
+./scripts/docker/restart.ps1    # restart without rebuilding
+./scripts/docker/clean.ps1      # stop + remove container (prompts before removing image)
 ```
 
 ---
@@ -143,13 +143,13 @@ bash scripts/docker/clean.sh      # stop + remove container (prompts before remo
 
 ```bash
 # Tests run inside the container (no separate test environment needed)
-bash scripts/docker/test.sh
+./scripts/docker/test.ps1
 
 # Run a specific test file
-bash scripts/docker/test.sh tests/test_agents.py
+./scripts/docker/test.ps1 tests/test_agents.py
 
 # Filter by test name
-bash scripts/docker/test.sh -k "classification"
+./scripts/docker/test.ps1 -k "classification"
 ```
 
 ---

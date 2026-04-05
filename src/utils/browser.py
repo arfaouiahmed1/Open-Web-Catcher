@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 from typing import Any
@@ -38,8 +39,9 @@ def get_ws_endpoint(cdp_url: str = "http://localhost:9222") -> str:
 
 def launch_chrome(port: int = 9222) -> subprocess.Popen:
     """Launch a local headless Chrome process. Returns the Popen handle."""
+    chrome_binary = os.environ.get("PUPPETEER_EXECUTABLE_PATH", "google-chrome")
     cmd = [
-        "google-chrome",
+        chrome_binary,
         "--headless",
         "--no-sandbox",
         "--disable-gpu",

@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libnss3 \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
+    libvulkan1 \
     libx11-6 \
     libx11-xcb1 \
     libxcb1 \
@@ -54,15 +55,12 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Google Chrome stable ──────────────────────────────────────────────────────
-RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-    && apt-get install -y ./google-chrome-stable_current_amd64.deb \
-    && rm google-chrome-stable_current_amd64.deb \
-    && rm -rf /var/lib/apt/lists/*
-
 # ── uv (Python package manager) ───────────────────────────────────────────────
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
+
+ENV PUPPETEER_CACHE_DIR=/opt/puppeteer
 
 # ── Python deps (cached layer — only re-runs when pyproject.toml changes) ────
 COPY pyproject.toml .
@@ -71,7 +69,12 @@ RUN uv venv .venv --python 3.11 && \
 
 # ── Node.js deps ──────────────────────────────────────────────────────────────
 COPY tools_js/package*.json tools_js/
-RUN cd tools_js && npm ci --omit=dev
+RUN cd tools_js && npm ci --omit=dev \
+    && npx --yes @puppeteer/browsers@latest install chrome@stable --path "${PUPPETEER_CACHE_DIR}" \
+    && CHROME_BIN="$(find "${PUPPETEER_CACHE_DIR}/chrome" -type f -path '*/chrome-linux64/chrome' | head -n 1)" \
+    && test -n "${CHROME_BIN}" \
+    && ln -sf "${CHROME_BIN}" /usr/local/bin/google-chrome-stable \
+    && ln -sf /usr/local/bin/google-chrome-stable /usr/local/bin/google-chrome
 
 # ── Application source ────────────────────────────────────────────────────────
 COPY src/        src/
@@ -92,7 +95,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     # Chrome path for Puppeteer
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
+    PUPPETEER_EXECUTABLE_PATH=/usr/local/bin/google-chrome-stable \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     # Internal service URLs (Chrome + MCP run in same container)
     BROWSER_WS_ENDPOINT=ws://localhost:9222 \

@@ -43,18 +43,21 @@ If Chrome or MCP crashes, supervisord automatically restarts them.
 All scripts accept environment variable overrides:
 
 ```bash
-OWC_IMAGE=my-registry/owc OWC_TAG=v1.2 OWC_CONTAINER=owc-prod bash scripts/docker/start.sh
+$env:OWC_IMAGE = "my-registry/owc"
+$env:OWC_TAG = "v1.2"
+$env:OWC_CONTAINER = "owc-prod"
+./scripts/docker/start.ps1
 ```
 
 | Script | Command | Description |
 |--------|---------|-------------|
-| `build.sh` | `docker build -t open-web-catcher:latest .` | Build with layer cache |
-| `build.sh --no-cache` | `docker build --no-cache ...` | Full fresh build |
-| `start.sh` | `docker run -d --name owc ...` | Start with volumes + env file |
-| `stop.sh` | `docker stop owc` | Graceful stop |
-| `restart.sh` | `docker restart owc` | Restart without rebuilding |
-| `clean.sh` | Stop + remove + optionally remove image + prune cache | Full cleanup |
-| `test.sh` | `docker exec owc pytest tests/` | Run test suite in running container |
+| `build.ps1` | `docker build -t open-web-catcher:latest .` | Build with layer cache |
+| `build.ps1 -NoCache` | `docker build --no-cache ...` | Full fresh build |
+| `start.ps1` | `docker run -d --name owc ...` | Start with volumes + env file |
+| `stop.ps1` | `docker stop owc` | Graceful stop |
+| `restart.ps1` | `docker restart owc` | Restart without rebuilding |
+| `clean.ps1` | Stop + remove + optionally remove image + prune cache | Full cleanup |
+| `test.ps1` | `docker exec owc pytest tests/` | Run test suite in running container |
 
 ### `start.sh` Details
 
@@ -80,16 +83,16 @@ Key flags:
 
 ```bash
 # Run all tests
-bash scripts/docker/test.sh
+./scripts/docker/test.ps1
 
 # Run specific file
-bash scripts/docker/test.sh tests/test_agents.py
+./scripts/docker/test.ps1 tests/test_agents.py
 
 # Filter by name
-bash scripts/docker/test.sh -k "classification"
+./scripts/docker/test.ps1 -k "classification"
 
 # With coverage
-bash scripts/docker/test.sh --cov=src --cov-report=term-missing
+./scripts/docker/test.ps1 --cov=src --cov-report=term-missing
 ```
 
 Tests run inside the running container against the real PostgreSQL database
@@ -240,7 +243,8 @@ services:
 docker compose up --build
 
 # Or use the scripts (which don't require compose)
-bash scripts/docker/build.sh && bash scripts/docker/start.sh
+./scripts/docker/build.ps1
+./scripts/docker/start.ps1
 ```
 
 ---
