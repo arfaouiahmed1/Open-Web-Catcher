@@ -26,10 +26,12 @@ data/raw/*
 data/processed/*
 data/reports/*
 data/logs/*
+data/cache/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/reports/.gitkeep
 !data/logs/.gitkeep
+!data/cache/.gitkeep
 
 # Database
 *.db

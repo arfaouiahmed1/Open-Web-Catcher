@@ -98,14 +98,71 @@ function Assert-DockerAvailable {
     }
 }
 
+function ConvertTo-OwcCommandLineArgument {
+    param([AllowNull()][string]$Value)
+
+    if ($null -eq $Value -or $Value -eq "") {
+        return '""'
+    }
+
+    if ($Value -notmatch '[\s"]') {
+        return $Value
+    }
+
+    $escaped = $Value -replace '(\\*)"', '$1$1\"'
+    $escaped = $escaped -replace '(\\+)$', '$1$1'
+    return '"' + $escaped + '"'
+}
+
+function Join-OwcCommandLineArguments {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    return (($Arguments | ForEach-Object { ConvertTo-OwcCommandLineArgument -Value $_ }) -join ' ')
+}
+
 function Invoke-DockerCapture {
     param(
         [Parameter(Mandatory = $true)]
         [string[]]$Arguments
     )
 
-    $output = @(& docker @Arguments 2>&1)
-    $exitCode = $LASTEXITCODE
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = "docker"
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.CreateNoWindow = $true
+
+    $argumentListProperty = $startInfo.GetType().GetProperty("ArgumentList")
+    if ($null -ne $argumentListProperty) {
+        foreach ($argument in $Arguments) {
+            [void]$startInfo.ArgumentList.Add($argument)
+        }
+    }
+    else {
+        $startInfo.Arguments = Join-OwcCommandLineArguments -Arguments $Arguments
+    }
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+
+    $null = $process.Start()
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+
+    $output = @()
+    if (-not [string]::IsNullOrWhiteSpace($stdout)) {
+        $output += ($stdout.TrimEnd("`r", "`n") -split "\r?\n")
+    }
+    if (-not [string]::IsNullOrWhiteSpace($stderr)) {
+        $output += ($stderr.TrimEnd("`r", "`n") -split "\r?\n")
+    }
+
+    $exitCode = $process.ExitCode
 
     [pscustomobject]@{
         Arguments = $Arguments
@@ -121,9 +178,15 @@ function Invoke-DockerChecked {
         [string[]]$Arguments
     )
 
-    & docker @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "Docker command failed: docker $($Arguments -join ' ')"
+    $result = Invoke-DockerCapture -Arguments $Arguments
+
+    foreach ($line in $result.Output) {
+        Write-Host $line
+    }
+
+    if ($result.ExitCode -ne 0) {
+        $details = if ($result.Text) { "`n$($result.Text)" } else { "" }
+        throw "Docker command failed: docker $($Arguments -join ' ')$details"
     }
 }
 

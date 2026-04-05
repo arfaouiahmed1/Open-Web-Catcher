@@ -13,6 +13,14 @@ from pydantic import BaseModel, Field
 from src.models.enums import AgentType
 from src.models.schemas import RunMetrics
 from src.utils.config import Settings
+from src.utils.langsmith import (
+    is_self_hosted_langsmith,
+    resolve_langsmith_api_key,
+    resolve_langsmith_endpoint,
+    resolve_langsmith_project,
+    resolve_langsmith_tracing,
+    resolve_langsmith_ui_url,
+)
 
 
 class RuntimeEvent(BaseModel):
@@ -30,6 +38,8 @@ class LangSmithStatus(BaseModel):
     api_key_configured: bool
     project: str
     endpoint: str
+    ui_url: str
+    deployment: str
     tracing_env: str
     warnings: list[str] = Field(default_factory=list)
 
@@ -195,19 +205,27 @@ class RunRegistry:
 
 
 def get_langsmith_status(settings: Settings) -> LangSmithStatus:
-    tracing_env = os.getenv("LANGSMITH_TRACING") or (
-        "true" if settings.langchain_tracing_v2 else "false"
-    )
+    enabled = resolve_langsmith_tracing(settings)
+    tracing_env = "true" if enabled else "false"
+    api_key = resolve_langsmith_api_key(settings)
+    endpoint = resolve_langsmith_endpoint(settings)
+    ui_url = resolve_langsmith_ui_url(settings)
+    project = resolve_langsmith_project(settings)
+    deployment = "self-hosted" if is_self_hosted_langsmith(settings) else "cloud"
     warnings: list[str] = []
-    if tracing_env.lower() == "true" and not settings.langchain_api_key:
+    if enabled and not api_key:
         warnings.append("Tracing is enabled but LANGSMITH_API_KEY / LANGCHAIN_API_KEY is missing.")
-    if tracing_env.lower() == "true" and not settings.langchain_project:
+    if enabled and not project:
         warnings.append("Tracing is enabled but no LangSmith project is configured.")
+    if enabled and not ui_url:
+        warnings.append("Tracing is enabled but no LangSmith UI URL could be derived.")
     return LangSmithStatus(
-        enabled=tracing_env.lower() == "true",
-        api_key_configured=bool(settings.langchain_api_key),
-        project=settings.langchain_project,
-        endpoint=settings.langsmith_endpoint,
+        enabled=enabled,
+        api_key_configured=bool(api_key),
+        project=project,
+        endpoint=endpoint,
+        ui_url=ui_url,
+        deployment=deployment,
         tracing_env=tracing_env,
         warnings=warnings,
     )

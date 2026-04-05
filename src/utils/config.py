@@ -41,6 +41,10 @@ class Settings(BaseSettings):
         default="https://api.smith.langchain.com",
         validation_alias=AliasChoices("LANGSMITH_ENDPOINT"),
     )
+    langsmith_ui_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("LANGSMITH_UI_URL"),
+    )
 
     # ── Cloudinary ────────────────────────────────────────────────────────────
     cloudinary_cloud_name: str = ""

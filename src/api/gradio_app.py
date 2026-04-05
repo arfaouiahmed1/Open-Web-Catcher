@@ -11,6 +11,7 @@ from typing import Any
 
 import gradio as gr
 
+from src.evaluation.tracing import setup_tracing_from_settings
 from src.agents.classification import ClassificationAgent
 from src.agents.embedded_page import EmbeddedPageAgent
 from src.agents.hosting_page import HostingPageAgent
@@ -21,9 +22,11 @@ from src.models.schemas import ClassificationResult, ExtractionResult, PipelineR
 from src.storage.database import get_session
 from src.storage.repositories import RunRepository
 from src.utils.config import Settings
+from src.utils.logging import get_logger, setup_logging
 from src.utils.observability import RunObserver, RuntimeEvent, get_langsmith_status, run_registry
 
 settings = Settings.from_yaml()
+logger = get_logger(__name__)
 
 APP_CSS = """
 .app-shell {max-width: 1320px; margin: 0 auto; padding-bottom: 2rem;}
@@ -53,9 +56,11 @@ def _langsmith_markdown() -> str:
     return (
         "### LangSmith\n"
         f"- State: `{state}`\n"
+        f"- Deployment: `{status.deployment}`\n"
         f"- API key: `{key_state}`\n"
         f"- Project: `{status.project}`\n"
         f"- Endpoint: `{status.endpoint}`\n"
+        f"- UI: `{status.ui_url or 'not resolved'}`\n"
         f"- Tracing env: `{status.tracing_env}`\n"
         f"- Warnings:\n{warning_lines}"
     )
@@ -172,7 +177,11 @@ def _test_verdict_markdown(
     return "\n".join(lines)
 
 
-def _event_to_chat_row(event: RuntimeEvent) -> tuple[str | None, str | None]:
+def _chat_message(role: str, content: str) -> dict[str, str]:
+    return {"role": role, "content": content}
+
+
+def _event_to_chat_message(event: RuntimeEvent) -> dict[str, str]:
     details = []
     if "tool_name" in event.details:
         details.append(f"tool `{event.details['tool_name']}`")
@@ -191,7 +200,7 @@ def _event_to_chat_row(event: RuntimeEvent) -> tuple[str | None, str | None]:
         "error": "Error",
     }.get(event.status, "Step")
     content = f"**{prefix} | {event.actor}**\n\n{event.message}{suffix}"
-    return (None, content)
+    return _chat_message("assistant", content)
 
 
 def _new_observer(root_actor: str, url: str) -> RunObserver:
@@ -215,14 +224,14 @@ def _run_async(target: Any, result_holder: dict[str, Any], error_holder: dict[st
 def _poll_run(
     observer: RunObserver,
     worker: threading.Thread,
-    chat_history: list[tuple[str | None, str | None]],
+    chat_history: list[dict[str, str]],
     error_holder: dict[str, Any],
 ):
     last_seq = 0
     while worker.is_alive() or observer.events_since(last_seq):
         new_events = observer.events_since(last_seq)
         for event in new_events:
-            chat_history.append(_event_to_chat_row(event))
+            chat_history.append(_event_to_chat_message(event))
             last_seq = event.seq
         yield chat_history, observer.trace()
         time.sleep(0.25)
@@ -232,7 +241,7 @@ def _poll_run(
         error = error_holder["error"]
         observer.emit("run_failed", str(error), status="error")
         observer.finish(success=False, failure_mode=type(error).__name__)
-        chat_history.append((None, f"**Error | {observer.actor}**\n\n{error}"))
+        chat_history.append(_chat_message("assistant", f"**Error | {observer.actor}**\n\n{error}"))
     yield chat_history, observer.trace()
 
 
@@ -243,11 +252,9 @@ def _run_pipeline_stream(url: str):
 
     normalized_url = url.strip()
     observer = _new_observer("orchestrator", normalized_url)
-    chat_history: list[tuple[str | None, str | None]] = [
-        (
-            f"Run the orchestrator for `{normalized_url}`.",
-            "Preparing pipeline, sub-agents, and observability.",
-        )
+    chat_history: list[dict[str, str]] = [
+        _chat_message("user", f"Run the orchestrator for `{normalized_url}`."),
+        _chat_message("assistant", "Preparing pipeline, sub-agents, and observability."),
     ]
     result_holder: dict[str, Any] = {}
     error_holder: dict[str, Any] = {}
@@ -297,11 +304,9 @@ def _run_agent_test_stream(
 
     normalized_url = url.strip()
     observer = _new_observer(agent_key, normalized_url)
-    chat_history: list[tuple[str | None, str | None]] = [
-        (
-            f"Run the `{agent_key}` agent as a test for `{normalized_url}`.",
-            "Launching the selected agent and collecting step-by-step trace data.",
-        )
+    chat_history: list[dict[str, str]] = [
+        _chat_message("user", f"Run the `{agent_key}` agent as a test for `{normalized_url}`."),
+        _chat_message("assistant", "Launching the selected agent and collecting step-by-step trace data."),
     ]
     result_holder: dict[str, Any] = {}
     error_holder: dict[str, Any] = {}
@@ -400,7 +405,7 @@ def build_ui() -> gr.Blocks:
 
                 with gr.Row():
                     with gr.Column(scale=7):
-                        pipeline_chat = gr.Chatbot(label="Step-by-Step Console", height=520)
+                        pipeline_chat = gr.Chatbot(label="Step-by-Step Console", height=520, type="messages")
                     with gr.Column(scale=5):
                         pipeline_status = gr.Markdown("### Run Summary\n_Waiting for a run._")
                         pipeline_metrics = gr.Markdown("### Metrics\n_No metrics recorded yet._")
@@ -469,7 +474,7 @@ def build_ui() -> gr.Blocks:
 
                 with gr.Row():
                     with gr.Column(scale=7):
-                        agent_chat = gr.Chatbot(label="Agent Trace", height=480)
+                        agent_chat = gr.Chatbot(label="Agent Trace", height=480, type="messages")
                     with gr.Column(scale=5):
                         verdict_md = gr.Markdown("### Test Verdict\n_No test yet._")
                         agent_metrics = gr.Markdown("### Metrics\n_No metrics recorded yet._")
@@ -516,6 +521,9 @@ def build_ui() -> gr.Blocks:
 
 
 def launch(server_name: str = "0.0.0.0", server_port: int = 7860) -> None:
+    setup_logging(level=settings.log_level, log_file=settings.log_file)
+    setup_tracing_from_settings(settings)
+    logger.info("Starting Gradio dashboard on %s:%s", server_name, server_port)
     build_ui().queue(default_concurrency_limit=4).launch(
         server_name=server_name,
         server_port=server_port,

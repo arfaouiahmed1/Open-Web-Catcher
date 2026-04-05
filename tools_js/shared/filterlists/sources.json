@@ -1,0 +1,68 @@
+[
+  {
+    "id": "easylist",
+    "name": "EasyList",
+    "url": "https://easylist.to/easylist/easylist.txt",
+    "enabled": true
+  },
+  {
+    "id": "easyprivacy",
+    "name": "EasyPrivacy",
+    "url": "https://easylist.to/easylist/easyprivacy.txt",
+    "enabled": true
+  },
+  {
+    "id": "hagezi-pro",
+    "name": "HaGeZi Pro",
+    "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt",
+    "enabled": true
+  },
+  {
+    "id": "oisd-small",
+    "name": "OISD Small",
+    "url": "https://small.oisd.nl/",
+    "enabled": true
+  },
+  {
+    "id": "ublock-filters",
+    "name": "uBlock Origin Filters",
+    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/filters.txt",
+    "enabled": true
+  },
+  {
+    "id": "ublock-privacy",
+    "name": "uBlock Origin Privacy",
+    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/privacy.txt",
+    "enabled": true
+  },
+  {
+    "id": "ublock-badware",
+    "name": "uBlock Origin Badware",
+    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/badware.txt",
+    "enabled": true
+  },
+  {
+    "id": "ublock-resource-abuse",
+    "name": "uBlock Origin Resource Abuse",
+    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/resource-abuse.txt",
+    "enabled": true
+  },
+  {
+    "id": "ublock-unbreak",
+    "name": "uBlock Origin Unbreak",
+    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/unbreak.txt",
+    "enabled": true
+  },
+  {
+    "id": "ublock-quick-fixes",
+    "name": "uBlock Origin Quick Fixes",
+    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/quick-fixes.txt",
+    "enabled": true
+  },
+  {
+    "id": "ublock-annoyances",
+    "name": "uBlock Origin Annoyances",
+    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/annoyances.txt",
+    "enabled": true
+  }
+]

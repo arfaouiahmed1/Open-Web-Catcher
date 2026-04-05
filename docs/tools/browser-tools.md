@@ -404,10 +404,10 @@ export async function screenshotElement(page, selector)  // specific element
 
 ```javascript
 export async function enableBlocking(page) {
-  // Cosmetic-only filtering with uBO-style filterlists
-  // Reads rules from tools_js/shared/filterlists/*.txt
-  // Supports common rules like ##selector, example.com##selector, and #@# exceptions
-  // Does not block network requests
+  // Ghostery-backed blocking with cached EasyList/EasyPrivacy/HaGeZi/OISD/uBO lists
+  // Reads remote sources from tools_js/shared/filterlists/sources.json
+  // Caches downloaded lists and the compiled engine under data/cache/adblocker/
+  // Exposes network/cosmetic mode flags, with cosmetic-only split kept as a placeholder
 }
 ```
 

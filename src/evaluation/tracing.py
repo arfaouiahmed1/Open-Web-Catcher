@@ -5,6 +5,12 @@ from __future__ import annotations
 import os
 
 from src.utils.config import Settings
+from src.utils.langsmith import (
+    resolve_langsmith_api_key,
+    resolve_langsmith_endpoint,
+    resolve_langsmith_project,
+    resolve_langsmith_tracing,
+)
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -43,8 +49,8 @@ def setup_tracing(
 
 def setup_tracing_from_settings(settings: Settings) -> None:
     setup_tracing(
-        project=settings.langchain_project,
-        api_key=settings.langchain_api_key,
-        enabled=settings.langchain_tracing_v2,
-        endpoint=settings.langsmith_endpoint,
+        project=resolve_langsmith_project(settings),
+        api_key=resolve_langsmith_api_key(settings),
+        enabled=resolve_langsmith_tracing(settings),
+        endpoint=resolve_langsmith_endpoint(settings),
     )

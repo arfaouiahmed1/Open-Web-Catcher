@@ -157,7 +157,7 @@ open-web-catcher/
 │       ├── browser.js            # puppeteer.connect() wrapper
 │       ├── upload.js             # Cloudinary upload with timeout
 │       ├── screenshot.js         # screenshotFull / screenshotViewport / screenshotPlayer
-│       └── adblocker.js          # uBO-style cosmetic filterlist loader (no network blocking)
+│       └── adblocker.js          # Ghostery-backed adblocker with cached filterlists
 │
 ├── configs/                      # ── Configuration ──
 │   ├── settings.yaml             # Runtime config (budgets, timeouts, model params)

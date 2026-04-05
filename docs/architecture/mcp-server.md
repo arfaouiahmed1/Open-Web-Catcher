@@ -293,7 +293,7 @@ Modes: `viewport` (default), `full` (full page), `element` (specific CSS selecto
 | `browser.js` | `connectBrowser(wsEndpoint)`, isolated browser helpers | Connect to or launch per-session browser instances |
 | `upload.js` | `uploadScreenshot(buffer)` | Cloudinary upload with timeout + error handling |
 | `screenshot.js` | `screenshotViewport`, `screenshotFull`, `screenshotElement` | Screenshot helpers used by all tools |
-| `adblocker.js` | `enableBlocking(page)` | Cosmetic-only filtering with a shared selector list and no network blocking |
+| `adblocker.js` | `enableBlocking(page)` | Ghostery-backed blocking with cached filterlists and explicit network/cosmetic mode flags |
 
 ---
 
