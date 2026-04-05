@@ -41,10 +41,10 @@ See [Configuration](configuration.md) for all available variables.
 
 ```bash
 # With layer cache (faster on rebuild)
-bash scripts/build.sh
+bash scripts/docker/build.sh
 
 # First build or clean slate
-bash scripts/build-nocache.sh
+bash scripts/docker/build.sh --no-cache
 ```
 
 The build installs Python (via `uv`), Node.js, Google Chrome, and PostgreSQL 15
@@ -56,7 +56,7 @@ when only Python source changes.
 ## 3. Start
 
 ```bash
-bash scripts/start.sh
+bash scripts/docker/start.sh
 ```
 
 This runs the container with:
@@ -132,9 +132,9 @@ LLM call, tool call, token count, and cost.
 ## 6. Stop / Restart / Clean
 
 ```bash
-bash scripts/stop.sh       # stop the container
-bash scripts/restart.sh    # restart without rebuilding
-bash scripts/clean.sh      # stop + remove container (prompts before removing image)
+bash scripts/docker/stop.sh       # stop the container
+bash scripts/docker/restart.sh    # restart without rebuilding
+bash scripts/docker/clean.sh      # stop + remove container (prompts before removing image)
 ```
 
 ---
@@ -143,20 +143,20 @@ bash scripts/clean.sh      # stop + remove container (prompts before removing im
 
 ```bash
 # Tests run inside the container (no separate test environment needed)
-bash scripts/test.sh
+bash scripts/docker/test.sh
 
 # Run a specific test file
-bash scripts/test.sh tests/test_agents.py
+bash scripts/docker/test.sh tests/test_agents.py
 
 # Filter by test name
-bash scripts/test.sh -k "classification"
+bash scripts/docker/test.sh -k "classification"
 ```
 
 ---
 
 ## What Happens on First Boot?
 
-The container's [entrypoint script](../../scripts/entrypoint.sh) runs once at startup:
+The container's [entrypoint script](../../scripts/docker/entrypoint.sh) runs once at startup:
 
 1. Initialises the PostgreSQL 15 cluster (if not already done)
 2. Creates the `owc` database role and `owc` database (idempotent)

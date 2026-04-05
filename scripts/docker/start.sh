@@ -2,12 +2,15 @@
 # Start (or re-create) the OWC container from a .env file
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
 CONTAINER="${OWC_CONTAINER:-owc}"
 IMAGE="${OWC_IMAGE:-open-web-catcher}"
 TAG="${OWC_TAG:-latest}"
-ENV_FILE="$(dirname "$0")/../.env"
-DATA_DIR="$(dirname "$0")/../data"
-CONFIGS_DIR="$(dirname "$0")/../configs"
+ENV_FILE="${ROOT_DIR}/.env"
+DATA_DIR="${ROOT_DIR}/data"
+CONFIGS_DIR="${ROOT_DIR}/configs"
 
 # Stop existing container if running
 if docker ps -q -f name="^${CONTAINER}$" | grep -q .; then

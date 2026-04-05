@@ -19,7 +19,7 @@
 |-----|---------------|
 | [Quickstart](setup/quickstart.md) | Running the container in 5 minutes |
 | [Configuration](setup/configuration.md) | All environment variables + `settings.yaml` reference |
-| [Docker & Scripts](setup/docker.md) | Single-container architecture, `scripts/` reference, supervisord |
+| [Docker & Scripts](setup/docker.md) | Single-container architecture, `scripts/docker/` reference, supervisord |
 
 ### API Reference
 | Doc | What it covers |
@@ -95,7 +95,9 @@ open-web-catcher/
 │   └── utils/            Config · Logging · IPInfo HTTP client
 ├── tools_js/             Node.js MCP server + 5 Puppeteer tool handlers
 ├── configs/              settings.yaml · supervisord.conf · agent prompts/
-├── scripts/              build · start · stop · restart · clean · test
+├── scripts/              Python utilities + Docker helper scripts
+│   ├── docker/           build · start · stop · restart · clean · test
+│   └── *.py              batch runs · exports · migrations
 ├── tests/                pytest suite (unit + integration)
 ├── docs/                 ← you are here
 │   ├── architecture/

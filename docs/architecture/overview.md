@@ -48,7 +48,7 @@ They start in priority order to satisfy dependencies:
 | 30 | `api` | `uvicorn src.api.app:app` | 8000 | mcp |
 | 30 | `gradio` | `python -m src.api.gradio_app` | 7860 | mcp |
 
-PostgreSQL is started in [`scripts/entrypoint.sh`](../../scripts/entrypoint.sh) before supervisord,
+PostgreSQL is started in [`scripts/docker/entrypoint.sh`](../../scripts/docker/entrypoint.sh) before supervisord,
 because it needs `pg_ctlcluster` which runs as the `postgres` system user.
 
 ---

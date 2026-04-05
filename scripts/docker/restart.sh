@@ -9,6 +9,6 @@ if docker ps -aq -f name="^${CONTAINER}$" | grep -q .; then
     docker restart "${CONTAINER}"
     echo "Restarted."
 else
-    echo "Container '${CONTAINER}' not found — run scripts/start.sh first."
+    echo "Container '${CONTAINER}' not found - run scripts/docker/start.sh first."
     exit 1
 fi

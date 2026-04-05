@@ -167,7 +167,7 @@ no outer event loop in the thread to conflict with `asyncio.run()`.
 
 **Symptom:** Git showed CRLF warnings for `.sh` files:
 ```
-warning: in the working copy of 'scripts/entrypoint.sh', LF will be replaced by CRLF
+warning: in the working copy of 'scripts/docker/entrypoint.sh', LF will be replaced by CRLF
 ```
 
 If committed with CRLF endings, shell scripts fail inside the Linux container:
@@ -179,7 +179,7 @@ If committed with CRLF endings, shell scripts fail inside the Linux container:
 **Fix:** Added `.gitattributes` to force LF for shell scripts:
 ```
 *.sh text eol=lf
-scripts/entrypoint.sh text eol=lf
+scripts/docker/*.sh text eol=lf
 ```
 
 Also ran `git update-index --chmod=+x scripts/*.sh` to mark scripts as executable
@@ -262,7 +262,7 @@ sqlalchemy.exc.OperationalError: could not connect to server: Connection refused
 to be "ready" — only for its process to be alive. PostgreSQL takes 2-3 seconds to
 initialise before it accepts connections.
 
-**Fix:** PostgreSQL is started in `scripts/entrypoint.sh` **before** supervisord:
+**Fix:** PostgreSQL is started in `scripts/docker/entrypoint.sh` **before** supervisord:
 ```bash
 pg_ctlcluster 15 main start
 # wait for pg_isready (up to 20 attempts)

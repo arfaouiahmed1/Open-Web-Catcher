@@ -191,6 +191,14 @@ open-web-catcher/
 │   └── 05_model_comparison.ipynb       # Gemini Flash vs Pro vs other models
 │
 ├── scripts/                      # ── Utility scripts ──
+│   ├── docker/                   # Docker lifecycle helpers + container entrypoint
+│   │   ├── build.sh              # Build image (add --no-cache for fresh builds)
+│   │   ├── start.sh              # Run container with volumes + env
+│   │   ├── stop.sh               # Stop container
+│   │   ├── restart.sh            # Restart container
+│   │   ├── clean.sh              # Cleanup container/image/build cache
+│   │   ├── test.sh               # Run pytest inside running container
+│   │   └── entrypoint.sh         # In-container startup script (PostgreSQL + supervisord)
 │   ├── extract_tools_from_n8n.py # Extract JS code from n8n workflow JSON files
 │   ├── run_batch.py              # Batch process a list of URLs
 │   ├── export_metrics.py         # Export metrics to CSV for notebook analysis

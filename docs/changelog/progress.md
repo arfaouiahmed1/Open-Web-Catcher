@@ -181,25 +181,24 @@ async def classify(req: ClassifyRequest):
 - Python deps via `uv`
 - Node deps via `npm ci`
 - Process manager: `supervisord` (chrome → mcp → api + gradio)
-- PostgreSQL: started in `scripts/entrypoint.sh` before supervisord
+- PostgreSQL: started in `scripts/docker/entrypoint.sh` before supervisord
 
 **Files created/updated:**
 - `Dockerfile` — single-stage, all-in-one
 - `configs/supervisord.conf` — 4 programs (chrome, mcp, api, gradio)
-- `scripts/entrypoint.sh` — pg init + supervisord exec
+- `scripts/docker/entrypoint.sh` — pg init + supervisord exec
 - `docker-compose.yml` — single `owc` service with `shm_size: 2gb`
 - `src/storage/database.py` — `connect_args` now conditional on SQLite vs PostgreSQL
 - `src/api/gradio_app.py` — `asyncio.run()` wrappers for async agents
 - `pyproject.toml` — added `gradio>=4.36`, `psycopg2-binary>=2.9`, `langchain-mcp-adapters>=0.1`
 
 **Scripts created:**
-- `scripts/build.sh` — build with cache
-- `scripts/build-nocache.sh` — full fresh build
-- `scripts/start.sh` — run container with volumes + env
-- `scripts/stop.sh` — stop container
-- `scripts/restart.sh` — restart without rebuild
-- `scripts/clean.sh` — full cleanup with prompts
-- `scripts/test.sh` — run pytest inside running container
+- `scripts/docker/build.sh` — build with cache (`--no-cache` for fresh build)
+- `scripts/docker/start.sh` — run container with volumes + env
+- `scripts/docker/stop.sh` — stop container
+- `scripts/docker/restart.sh` — restart without rebuild
+- `scripts/docker/clean.sh` — full cleanup with prompts
+- `scripts/docker/test.sh` — run pytest inside running container
 
 **`.gitattributes` added** to enforce LF line endings on `.sh` files (prevents Windows CRLF corruption).
 

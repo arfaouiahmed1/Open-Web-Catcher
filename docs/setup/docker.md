@@ -38,18 +38,18 @@ If Chrome or MCP crashes, supervisord automatically restarts them.
 
 ---
 
-## `scripts/` Reference
+## `scripts/docker/` Reference
 
 All scripts accept environment variable overrides:
 
 ```bash
-OWC_IMAGE=my-registry/owc OWC_TAG=v1.2 OWC_CONTAINER=owc-prod bash scripts/start.sh
+OWC_IMAGE=my-registry/owc OWC_TAG=v1.2 OWC_CONTAINER=owc-prod bash scripts/docker/start.sh
 ```
 
 | Script | Command | Description |
 |--------|---------|-------------|
 | `build.sh` | `docker build -t open-web-catcher:latest .` | Build with layer cache |
-| `build-nocache.sh` | `docker build --no-cache ...` | Full fresh build |
+| `build.sh --no-cache` | `docker build --no-cache ...` | Full fresh build |
 | `start.sh` | `docker run -d --name owc ...` | Start with volumes + env file |
 | `stop.sh` | `docker stop owc` | Graceful stop |
 | `restart.sh` | `docker restart owc` | Restart without rebuilding |
@@ -80,16 +80,16 @@ Key flags:
 
 ```bash
 # Run all tests
-bash scripts/test.sh
+bash scripts/docker/test.sh
 
 # Run specific file
-bash scripts/test.sh tests/test_agents.py
+bash scripts/docker/test.sh tests/test_agents.py
 
 # Filter by name
-bash scripts/test.sh -k "classification"
+bash scripts/docker/test.sh -k "classification"
 
 # With coverage
-bash scripts/test.sh --cov=src --cov-report=term-missing
+bash scripts/docker/test.sh --cov=src --cov-report=term-missing
 ```
 
 Tests run inside the running container against the real PostgreSQL database
@@ -240,7 +240,7 @@ services:
 docker compose up --build
 
 # Or use the scripts (which don't require compose)
-bash scripts/build.sh && bash scripts/start.sh
+bash scripts/docker/build.sh && bash scripts/docker/start.sh
 ```
 
 ---

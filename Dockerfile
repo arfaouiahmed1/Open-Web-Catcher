@@ -82,7 +82,7 @@ COPY scripts/    scripts/
 
 # ── Runtime directories ───────────────────────────────────────────────────────
 RUN mkdir -p data/logs data/raw data/processed data/reports \
-    && chmod +x scripts/entrypoint.sh
+    && chmod +x scripts/docker/entrypoint.sh
 
 # ── Supervisord config ────────────────────────────────────────────────────────
 COPY configs/supervisord.conf /etc/supervisor/conf.d/owc.conf
@@ -106,4 +106,4 @@ ENV PATH="/app/.venv/bin:$PATH" \
 # ── Ports ─────────────────────────────────────────────────────────────────────
 EXPOSE 8000 7860 3000
 
-ENTRYPOINT ["scripts/entrypoint.sh"]
+ENTRYPOINT ["scripts/docker/entrypoint.sh"]
