@@ -1,74 +1,100 @@
-"""Classification Agent: LangChain chain + optional bind_tools for low-confidence pages."""
+"""Classification Agent — single-purpose page type classifier.
+
+MCP profile: 'classification'
+Tools visible: inspect, navigate
+
+Flow: URL → inspect (optionally navigate once) → structured ClassificationResult
+Not a full loop agent — 1-5 tool calls max.
+"""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.output_parsers import JsonOutputParser
-from langchain_core.prompts import ChatPromptTemplate
-
-from src.agents.base import build_llm
-from src.models.schemas import ClassificationResult
+from src.agents.base import build_llm, run_agent_loop
 from src.models.enums import Confidence, PageType
-from src.tools.bridge import JSToolBridge
-from src.tools.inspect_tool import InspectTool
-from src.tools.screenshot_tool import ScreenshotTool
+from src.models.schemas import ClassificationResult
+from src.tools.mcp_client import agent_tools
 from src.utils.config import Settings
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 PROMPT_PATH = Path("configs/prompts/classification_v1.md")
+MAX_TOOL_CALLS = 5
 
 
 class ClassificationAgent:
-    """Single-shot LLM classification with optional tool calls for low-confidence pages."""
-
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.llm = build_llm(settings)
-        self.bridge = JSToolBridge(
-            browser_ws_endpoint=settings.browser_ws_endpoint,
-            timeout=settings.tool_timeout_seconds,
-        )
-        self.inspect_tool = InspectTool(bridge=self.bridge)
-        self.screenshot_tool = ScreenshotTool(bridge=self.bridge)
-        self._system_prompt = PROMPT_PATH.read_text(encoding="utf-8") if PROMPT_PATH.exists() else ""
-
-    def run(self, url: str, html_snippet: str = "", screenshot_url: str = "") -> ClassificationResult:
-        """Classify the page type for the given URL."""
-        logger.info("Classifying URL: %s", url)
-
-        content_parts: list = [{"type": "text", "text": f"URL: {url}\n\n{html_snippet}"}]
-        if screenshot_url:
-            content_parts.append({"type": "image_url", "image_url": {"url": screenshot_url}})
-
-        messages = [
-            SystemMessage(content=self._system_prompt or "Classify the streaming page type."),
-            HumanMessage(content=content_parts),
-        ]
-
-        llm_with_tools = self.llm.bind_tools(
-            [self.inspect_tool, self.screenshot_tool],
-            tool_choice="auto",
+        self._system_prompt = (
+            PROMPT_PATH.read_text(encoding="utf-8")
+            if PROMPT_PATH.exists()
+            else _DEFAULT_PROMPT
         )
 
-        response = llm_with_tools.invoke(messages)
-        logger.debug("Classification response: %s", response.content)
-
-        # Parse structured output from response
-        try:
-            parser = JsonOutputParser(pydantic_object=ClassificationResult)
-            result = parser.parse(response.content)
-        except Exception:
-            # Fallback: best-effort parse
-            result = ClassificationResult(
-                url=url,
-                page_type=PageType.UNKNOWN,
-                confidence=Confidence.LOW,
-                reasoning=str(response.content),
+    async def run(self, url: str) -> ClassificationResult:
+        logger.info("ClassificationAgent: %s", url)
+        async with agent_tools("classification", self.settings) as tools:
+            result = await run_agent_loop(
+                llm=self.llm,
+                tools=tools,
+                system_prompt=self._system_prompt,
+                initial_message=f"Classify this page: {url}",
+                max_tool_calls=MAX_TOOL_CALLS,
+                budget_exhausted_message="Output your classification now using the exact Output Format.",
             )
+        parsed = _parse_output(result.final_text, url)
+        logger.info("→ %s (%s)", parsed.page_type, parsed.confidence)
+        return parsed
 
-        logger.info("Classified as %s (confidence: %s)", result.page_type, result.confidence)
-        return result
+
+# ── Output parser ─────────────────────────────────────────────────────────────
+
+_PAGE_TYPE_MAP = {
+    "landing_page": PageType.LANDING, "host_page": PageType.HOSTING,
+    "hosting_page": PageType.HOSTING, "embed_video_page": PageType.EMBEDDED,
+    "embedded_page": PageType.EMBEDDED, "other": PageType.UNKNOWN, "unknown": PageType.UNKNOWN,
+}
+_CONF_MAP = {"high": Confidence.HIGH, "medium": Confidence.MEDIUM, "low": Confidence.LOW}
+
+
+def _parse_output(text: str, url: str) -> ClassificationResult:
+    page_type  = PageType.UNKNOWN
+    confidence = Confidence.LOW
+    reasoning  = ""
+
+    meta = re.search(r"METADATA:\s*\npage_type:\s*(\S+)\s*\nconfidence:\s*(\S+)", text, re.I)
+    if meta:
+        page_type  = _PAGE_TYPE_MAP.get(meta.group(1).lower(), PageType.UNKNOWN)
+        confidence = _CONF_MAP.get(meta.group(2).lower(), Confidence.LOW)
+    else:
+        m = re.search(r"CLASSIFICATION:\s*(\S+)", text, re.I)
+        if m: page_type = _PAGE_TYPE_MAP.get(m.group(1).lower(), PageType.UNKNOWN)
+        c = re.search(r"CONFIDENCE:\s*(\S+)", text, re.I)
+        if c: confidence = _CONF_MAP.get(c.group(1).lower(), Confidence.LOW)
+
+    r = re.search(r"REASONING:\s*\n(.*?)(?:\n[A-Z_]+:|$)", text, re.DOTALL | re.I)
+    if r: reasoning = r.group(1).strip()
+
+    return ClassificationResult(url=url, page_type=page_type, confidence=confidence, reasoning=reasoning or text[:500])
+
+
+_DEFAULT_PROMPT = """\
+You are a web page classifier for illegal streaming sites.
+Call inspect first to gather page signals. You may navigate once if ambiguous.
+
+Output format:
+CLASSIFICATION: [landing_page/host_page/embed_video_page/other]
+CONFIDENCE: [high/medium/low]
+EVIDENCE:
+- signal 1
+REASONING:
+Why this type fits.
+METADATA:
+page_type: [landing_page/host_page/embed_video_page/other]
+confidence: [high/medium/low]
+tools_used: [list]
+"""

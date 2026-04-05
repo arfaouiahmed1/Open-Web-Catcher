@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import gradio as gr
@@ -12,17 +13,16 @@ settings = Settings.from_yaml()
 
 
 def _run_pipeline(url: str) -> tuple[str, str, str]:
-    """Run the full pipeline on a URL. Returns (status, streams_json, screenshots_md)."""
     from src.agents.orchestrator import run_pipeline
 
     if not url.strip():
         return "Error", "Please provide a URL.", ""
     try:
-        result = run_pipeline(url=url.strip(), settings=settings)
-        status = f"{result.final_status} | {len(result.streams)} streams found"
-        streams = json.dumps([s.model_dump() for s in result.streams], indent=2)
-        screenshots = "\n\n".join(f"![]({u})" for u in result.screenshots) or "_No screenshots._"
-        return status, streams, screenshots
+        result = asyncio.run(run_pipeline(url=url.strip(), settings=settings))
+        status = f"{result.final_status} | {len(result.all_streams)} streams"
+        streams = json.dumps([s.model_dump() for s in result.all_streams], indent=2)
+        shots = "\n\n".join(f"![]({u})" for u in result.all_screenshots) or "_No screenshots._"
+        return status, streams, shots
     except Exception as e:
         return "Error", str(e), ""
 
@@ -33,8 +33,7 @@ def _run_classification(url: str) -> str:
     if not url.strip():
         return "Please provide a URL."
     try:
-        agent = ClassificationAgent(settings)
-        result = agent.run(url=url.strip())
+        result = asyncio.run(ClassificationAgent(settings).run(url=url.strip()))
         return result.model_dump_json(indent=2)
     except Exception as e:
         return f"Error: {e}"
@@ -46,8 +45,7 @@ def _run_landing(url: str) -> str:
     if not url.strip():
         return "Please provide a URL."
     try:
-        agent = LandingPageAgent(settings)
-        result = agent.run(url=url.strip())
+        result = asyncio.run(LandingPageAgent(settings).run(url=url.strip()))
         return result.model_dump_json(indent=2)
     except Exception as e:
         return f"Error: {e}"
@@ -59,8 +57,7 @@ def _run_hosting(url: str) -> str:
     if not url.strip():
         return "Please provide a URL."
     try:
-        agent = HostingPageAgent(settings)
-        result = agent.run(url=url.strip())
+        result = asyncio.run(HostingPageAgent(settings).run(url=url.strip()))
         return result.model_dump_json(indent=2)
     except Exception as e:
         return f"Error: {e}"
@@ -72,8 +69,7 @@ def _run_embedded(url: str) -> str:
     if not url.strip():
         return "Please provide a URL."
     try:
-        agent = EmbeddedPageAgent(settings)
-        result = agent.run(url=url.strip())
+        result = asyncio.run(EmbeddedPageAgent(settings).run(url=url.strip()))
         return result.model_dump_json(indent=2)
     except Exception as e:
         return f"Error: {e}"
@@ -81,7 +77,7 @@ def _run_embedded(url: str) -> str:
 
 def build_ui() -> gr.Blocks:
     with gr.Blocks(title="Open Web Catcher", theme=gr.themes.Soft()) as demo:
-        gr.Markdown("# Open Web Catcher\nMulti-agent streaming URL extractor.")
+        gr.Markdown("# Open Web Catcher\nMulti-agent streaming URL extractor + DMCA takedown generator.")
 
         with gr.Tab("Full Pipeline"):
             url_in = gr.Textbox(label="Target URL", placeholder="https://example-streaming-site.com/movie/123")

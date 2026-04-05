@@ -1,21 +1,19 @@
-"""Hosting Page Agent: ReAct loop to extract stream URLs from a known hosting page."""
+"""Hosting Page Agent.
+
+MCP profile: 'hosting'
+Tools visible: inspect, interact, harvest, screenshot, navigate
+
+Extracts m3u8/mpd/mp4 streams from a hosting page, cycling all servers.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain_core.prompts import PromptTemplate
-
-from src.agents.base import build_llm
+from src.agents.base import build_llm, run_agent_loop
 from src.models.enums import AgentType, ExtractionStatus, PageType
 from src.models.schemas import ExtractionResult, StreamURL
-from src.tools.bridge import JSToolBridge
-from src.tools.harvest_tool import HarvestTool
-from src.tools.inspect_tool import InspectTool
-from src.tools.interact_tool import InteractTool
-from src.tools.navigate_tool import NavigateTool
-from src.tools.screenshot_tool import ScreenshotTool
+from src.tools.mcp_client import agent_tools
 from src.utils.config import Settings
 from src.utils.logging import get_logger
 
@@ -25,82 +23,61 @@ PROMPT_PATH = Path("configs/prompts/hosting_page_v1.md")
 
 
 class HostingPageAgent:
-    """ReAct agent for hosting pages. Uses OBSERVE→STATE→PLAN reasoning.
-
-    Tools: inspect, interact, navigate, screenshot, harvest.
-    Budget: 20 tool calls.
-    """
-
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.llm = build_llm(settings)
-        self.bridge = JSToolBridge(
-            browser_ws_endpoint=settings.browser_ws_endpoint,
-            timeout=settings.tool_timeout_seconds,
+        self._system_prompt = (
+            PROMPT_PATH.read_text(encoding="utf-8")
+            if PROMPT_PATH.exists()
+            else "Extract all stream URLs from this hosting page."
         )
-        self.tools = [
-            InspectTool(bridge=self.bridge),
-            InteractTool(bridge=self.bridge),
-            NavigateTool(bridge=self.bridge),
-            ScreenshotTool(bridge=self.bridge),
-            HarvestTool(bridge=self.bridge),
-        ]
-        prompt_text = PROMPT_PATH.read_text(encoding="utf-8") if PROMPT_PATH.exists() else _DEFAULT_PROMPT
-        self.prompt = PromptTemplate.from_template(prompt_text)
-        self.max_iterations = settings.hosting_page_max_tool_calls
 
-    def run(self, url: str) -> ExtractionResult:
-        logger.info("HostingPageAgent starting on: %s", url)
-        agent = create_react_agent(self.llm, self.tools, self.prompt)
-        executor = AgentExecutor(
-            agent=agent,
-            tools=self.tools,
-            max_iterations=self.max_iterations,
-            verbose=True,
-            handle_parsing_errors=True,
-        )
-        try:
-            output = executor.invoke({"input": url, "url": url})
-            raw_streams = output.get("streams", [])
-            streams = [StreamURL(**s) if isinstance(s, dict) else s for s in raw_streams]
-            status = ExtractionStatus.SUCCESS if streams else ExtractionStatus.FAILED
-            return ExtractionResult(
-                url=url,
-                page_type=PageType.HOSTING,
-                status=status,
-                streams=streams,
-                agent_type=AgentType.HOSTING_PAGE,
-                metadata={"agent_output": output.get("output", "")},
-            )
-        except Exception as e:
-            logger.exception("HostingPageAgent failed: %s", e)
-            return ExtractionResult(
-                url=url,
-                page_type=PageType.HOSTING,
-                status=ExtractionStatus.FAILED,
-                agent_type=AgentType.HOSTING_PAGE,
-                error_message=str(e),
+    async def run(self, url: str) -> ExtractionResult:
+        logger.info("HostingPageAgent: %s", url)
+        async with agent_tools("hosting", self.settings) as tools:
+            result = await run_agent_loop(
+                llm=self.llm,
+                tools=tools,
+                system_prompt=self._system_prompt,
+                initial_message=f"Extract all stream URLs from this hosting page.\n\nmainUrl: {url}",
+                max_tool_calls=self.settings.hosting_page_max_tool_calls,
+                budget_exhausted_message="Budget exhausted. Output your final JSON now.",
             )
 
+        output = result.parse_json()
+        streams = _collect_streams(output)
+        decision = output.get("decision", "")
 
-_DEFAULT_PROMPT = """\
-You are the Hosting Page Agent. Your goal is to extract streaming URLs from this video hosting page.
-Use OBSERVE→STATE→PLAN reasoning at each step.
+        status = (
+            ExtractionStatus.SUCCESS if streams else
+            ExtractionStatus.PARTIAL if decision in ("needs_embed_agent", "partial_success_needs_embed") else
+            ExtractionStatus.FAILED
+        )
 
-URL: {url}
+        return ExtractionResult(
+            url=url,
+            page_type=PageType.HOSTING,
+            status=status,
+            streams=streams,
+            screenshots=[s["screenshot_url"] for s in output.get("servers", []) if s.get("screenshot_url")],
+            embedded_urls=[s["embedded_url"] for s in output.get("servers", []) if s.get("embedded_url")],
+            agent_type=AgentType.HOSTING_PAGE,
+            tool_calls_used=result.tool_calls_made,
+            metadata=output,
+        )
 
-You have access to the following tools:
-{tools}
 
-Use the following format:
-Thought: OBSERVE what is on the page, STATE the current extraction status, PLAN the next action
-Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action
-Observation: the result of the action
-... (repeat as needed, budget: 20 calls)
-Thought: I have extracted the stream URLs
-Final Answer: list of stream URLs found
-
-Begin!
-{agent_scratchpad}
-"""
+def _collect_streams(output: dict) -> list[StreamURL]:
+    seen: set[str] = set()
+    streams: list[StreamURL] = []
+    for entry in output.get("streaming_urls", []):
+        url = entry.get("url", "")
+        if url and url not in seen:
+            seen.add(url)
+            streams.append(StreamURL(url=url, protocol=entry.get("type", ""), source_layer=entry.get("source", "")))
+    for server in output.get("servers", []):
+        for url in server.get("m3u8_urls", []) + server.get("mpd_urls", []) + server.get("mp4_urls", []):
+            if url and url not in seen:
+                seen.add(url)
+                streams.append(StreamURL(url=url, source_layer=server.get("label", "")))
+    return streams

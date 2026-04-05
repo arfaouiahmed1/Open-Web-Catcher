@@ -47,5 +47,6 @@ RUN npm ci --omit=dev
 
 COPY tools_js/ .
 
-# No persistent process needed — tools are called via subprocess
-CMD ["node", "--version"]
+EXPOSE 3000
+
+CMD ["node", "mcp-server.js"]

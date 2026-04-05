@@ -1,19 +1,22 @@
 {
-  "name": "open-web-catcher-tools",
+  "name": "open-web-catcher-mcp",
   "version": "1.0.0",
-  "description": "Node.js tools for Open Web Catcher (Puppeteer + CDP)",
+  "description": "MCP server exposing Puppeteer tools per agent profile",
+  "type": "module",
   "private": true,
-  "type": "commonjs",
-  "engines": {
-    "node": ">=18"
-  },
+  "engines": { "node": ">=20" },
+  "main": "mcp-server.js",
   "scripts": {
-    "test": "node --test tests/"
+    "start": "node mcp-server.js",
+    "dev": "node --watch mcp-server.js"
   },
   "dependencies": {
     "@ghostery/adblocker-puppeteer": "^2.0.0",
+    "@modelcontextprotocol/sdk": "^1.10.0",
     "cloudinary": "^2.0.0",
     "cross-fetch": "^4.0.0",
-    "puppeteer-core": "^22.0.0"
+    "express": "^4.19.0",
+    "puppeteer-core": "^22.0.0",
+    "zod": "^3.23.0"
   }
 }

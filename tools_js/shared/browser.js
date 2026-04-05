@@ -1,18 +1,20 @@
 /**
- * shared/browser.js — puppeteer.connect() wrapper.
- * All tools call connectBrowser(wsEndpoint) instead of launching a new browser.
+ * shared/browser.js — Puppeteer connect() wrapper.
+ *
+ * Tools never launch their own browser. They connect to the shared
+ * headless Chrome instance via its WebSocket endpoint (provided by the
+ * BROWSER_WS_ENDPOINT environment variable or the session context).
  */
 
-"use strict";
+import puppeteer from 'puppeteer-core';
 
-const puppeteer = require("puppeteer-core");
+const WS_ENDPOINT = process.env.BROWSER_WS_ENDPOINT || 'ws://chrome:3000';
 
 /**
- * Connect to a running browser via WebSocket endpoint.
- * @param {string} wsEndpoint  e.g. "ws://localhost:9222/..."
- * @returns {Promise<import('puppeteer-core').Browser>}
+ * Connect to the shared browser. Returns a Browser instance.
+ * Always call browser.disconnect() when done — never browser.close().
  */
-async function connectBrowser(wsEndpoint) {
+export async function connectBrowser(wsEndpoint = WS_ENDPOINT) {
   return puppeteer.connect({
     browserWSEndpoint: wsEndpoint,
     defaultViewport: { width: 1280, height: 800 },
@@ -20,15 +22,10 @@ async function connectBrowser(wsEndpoint) {
 }
 
 /**
- * Get or open a page on the connected browser.
- * Reuses an existing blank page if available; otherwise opens a new one.
- * @param {import('puppeteer-core').Browser} browser
- * @returns {Promise<import('puppeteer-core').Page>}
+ * Get the active page (reuse blank page or open a new one).
  */
-async function getPage(browser) {
+export async function getPage(browser) {
   const pages = await browser.pages();
-  const blank = pages.find((p) => p.url() === "about:blank");
-  return blank || (await browser.newPage());
+  const blank = pages.find(p => p.url() === 'about:blank');
+  return blank ?? browser.newPage();
 }
-
-module.exports = { connectBrowser, getPage };

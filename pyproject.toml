@@ -8,12 +8,12 @@ version = "0.1.0"
 description = "Multi-agent AI pipeline for extracting streaming URLs from illegal streaming websites"
 requires-python = ">=3.11"
 dependencies = [
-    # LangChain / LangGraph
-    "langchain>=0.3",
-    "langchain-core>=0.3",
-    "langchain-google-genai>=2.0",
-    "langgraph>=0.2",
-    "langsmith>=0.1",
+    # LLM client + tracing
+    "langchain-core>=0.3",          # BaseMessage, BaseTool, ToolMessage
+    "langchain-google-genai>=2.0",  # ChatGoogleGenerativeAI + bind_tools
+    "langgraph>=0.2",               # StateGraph for the orchestrator only
+    "langchain-mcp-adapters>=0.1",   # MCP → LangChain BaseTool bridge
+    "langsmith>=0.1",               # optional tracing
 
     # Pydantic / settings
     "pydantic>=2.7",
@@ -26,8 +26,13 @@ dependencies = [
     # Cloudinary (image upload for vision)
     "cloudinary>=1.40",
 
-    # UI
-    "gradio>=4.40",
+    # Database driver (PostgreSQL)
+    "psycopg2-binary>=2.9",
+
+    # API + UI
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "gradio>=4.36",
 
     # CLI
     "typer>=0.12",

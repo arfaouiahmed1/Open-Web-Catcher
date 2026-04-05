@@ -1,9 +1,13 @@
 # Open Web Catcher — runtime configuration
 # These values override .env defaults. Keep secrets in .env.
 
-# LLM
-gemini_model: "gemini-1.5-flash"
+# LLM models
+orchestrator_model: "gemini-2.5-flash-lite-preview-05-20"
+agent_model: "gemini-2.5-flash-preview-05-20"
 gemini_temperature: 0.0
+
+# IPInfo
+ipinfo_token: ""
 
 # Agent budgets (max tool calls per agent run)
 classification_max_tool_calls: 5

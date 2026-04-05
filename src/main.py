@@ -29,14 +29,15 @@ def run(
 
 
 @app.command()
-def ui(
-    host: str = typer.Option("0.0.0.0", help="Gradio host"),
-    port: int = typer.Option(7860, help="Gradio port"),
+def serve(
+    host: str = typer.Option("0.0.0.0", help="Uvicorn host"),
+    port: int = typer.Option(8000, help="Uvicorn port"),
+    reload: bool = typer.Option(False, "--reload", help="Enable auto-reload (dev mode)"),
 ):
-    """Launch the Gradio demo UI."""
-    from src.api.gradio_app import launch
+    """Launch the FastAPI server via uvicorn."""
+    import uvicorn
 
-    launch(server_name=host, server_port=port)
+    uvicorn.run("src.api.app:app", host=host, port=port, reload=reload)
 
 
 if __name__ == "__main__":
