@@ -405,7 +405,7 @@ def build_ui() -> gr.Blocks:
 
                 with gr.Row():
                     with gr.Column(scale=7):
-                        pipeline_chat = gr.Chatbot(label="Step-by-Step Console", height=520, type="messages")
+                        pipeline_chat = gr.Chatbot(label="Step-by-Step Console", height=520)
                     with gr.Column(scale=5):
                         pipeline_status = gr.Markdown("### Run Summary\n_Waiting for a run._")
                         pipeline_metrics = gr.Markdown("### Metrics\n_No metrics recorded yet._")
@@ -474,7 +474,7 @@ def build_ui() -> gr.Blocks:
 
                 with gr.Row():
                     with gr.Column(scale=7):
-                        agent_chat = gr.Chatbot(label="Agent Trace", height=480, type="messages")
+                        agent_chat = gr.Chatbot(label="Agent Trace", height=480)
                     with gr.Column(scale=5):
                         verdict_md = gr.Markdown("### Test Verdict\n_No test yet._")
                         agent_metrics = gr.Markdown("### Metrics\n_No metrics recorded yet._")
