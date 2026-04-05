@@ -1,0 +1,19 @@
+{
+  "name": "open-web-catcher-tools",
+  "version": "1.0.0",
+  "description": "Node.js tools for Open Web Catcher (Puppeteer + CDP)",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test tests/"
+  },
+  "dependencies": {
+    "@ghostery/adblocker-puppeteer": "^2.0.0",
+    "cloudinary": "^2.0.0",
+    "cross-fetch": "^4.0.0",
+    "puppeteer-core": "^22.0.0"
+  }
+}

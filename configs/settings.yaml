@@ -1,0 +1,20 @@
+# Open Web Catcher — runtime configuration
+# These values override .env defaults. Keep secrets in .env.
+
+# LLM
+gemini_model: "gemini-1.5-flash"
+gemini_temperature: 0.0
+
+# Agent budgets (max tool calls per agent run)
+classification_max_tool_calls: 5
+landing_page_max_tool_calls: 50
+hosting_page_max_tool_calls: 20
+embedded_page_max_tool_calls: 20
+
+# Timeouts
+tool_timeout_seconds: 30
+agent_timeout_seconds: 300
+
+# Logging
+log_level: "INFO"
+log_file: "data/logs/app.log"

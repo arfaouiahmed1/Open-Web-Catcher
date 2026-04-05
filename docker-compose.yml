@@ -1,0 +1,65 @@
+version: "3.9"
+
+services:
+  chrome:
+    image: browserless/chrome:latest
+    restart: unless-stopped
+    ports:
+      - "9222:3000"
+    environment:
+      - MAX_CONCURRENT_SESSIONS=5
+      - CONNECTION_TIMEOUT=60000
+      - PREBOOT_CHROME=true
+      - DEMO_MODE=false
+      - ENABLE_DEBUGGER=false
+      - TOKEN=${BROWSERLESS_TOKEN:-}
+    networks:
+      - owc-net
+
+  tools:
+    build:
+      context: .
+      dockerfile: Dockerfile.tools
+    restart: unless-stopped
+    depends_on:
+      - chrome
+    environment:
+      - BROWSER_WS_ENDPOINT=ws://chrome:3000
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
+    volumes:
+      - ./tools_js:/app/tools_js:ro
+    networks:
+      - owc-net
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - chrome
+      - tools
+    ports:
+      - "7860:7860"
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-}
+      - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-open-web-catcher}
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
+      - BROWSER_WS_ENDPOINT=ws://chrome:3000
+      - DATABASE_URL=sqlite:////app/data/open_web_catcher.db
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./data:/app/data
+      - ./configs:/app/configs:ro
+    networks:
+      - owc-net
+
+networks:
+  owc-net:
+    driver: bridge

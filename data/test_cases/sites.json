@@ -1,0 +1,20 @@
+[
+  {
+    "url": "https://example-streaming-site.com/movies",
+    "expected_type": "landing_page",
+    "expected_streams": [],
+    "notes": "Movie catalog index page"
+  },
+  {
+    "url": "https://example-streaming-site.com/watch/movie-title",
+    "expected_type": "hosting_page",
+    "expected_streams": [],
+    "notes": "Direct watch page with embedded player"
+  },
+  {
+    "url": "https://streamtape.com/v/XXXX",
+    "expected_type": "embedded_page",
+    "expected_streams": [],
+    "notes": "Third-party embedded player page"
+  }
+]
