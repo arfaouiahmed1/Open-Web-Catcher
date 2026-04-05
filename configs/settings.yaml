@@ -2,9 +2,9 @@
 # These values override .env defaults. Keep secrets in .env.
 
 # LLM models
-orchestrator_model: "gemini-2.5-flash-lite-preview-05-20"
-agent_model: "gemini-2.5-flash-preview-05-20"
-gemini_temperature: 0.0
+orchestrator_model: "gemini-2.5-flash-lite"
+agent_model: "gemini-2.5-flash"
+gemini_temperature: 1.0
 
 # IPInfo
 ipinfo_token: ""

@@ -112,10 +112,11 @@ ENV PATH="/app/.venv/bin:$PATH" \
     BROWSER_WS_ENDPOINT=ws://localhost:9222 \
     MCP_SERVER_URL=http://localhost:3000 \
     DATABASE_URL=postgresql+psycopg2://owc:owc@localhost:5432/owc \
-    LANGSMITH_TRACING=true \
+    LANGSMITH_TRACING=false \
     LANGSMITH_PROJECT=open-web-catcher \
-    LANGSMITH_ENDPOINT=https://api.smith.langchain.com \
-    LANGCHAIN_TRACING_V2=true \
+    LANGSMITH_ENDPOINT=http://langchain-frontend:1980 \
+    LANGSMITH_UI_URL=http://localhost:1980 \
+    LANGCHAIN_TRACING_V2=false \
     LANGCHAIN_PROJECT=open-web-catcher
 
 EXPOSE 8000 7860 3000
