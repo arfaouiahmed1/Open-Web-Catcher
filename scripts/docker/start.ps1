@@ -34,7 +34,7 @@ if ($needsBuild) {
 $startedAt = Get-Date
 Write-OwcDivider
 Write-OwcStep "Starting stack..."
-Invoke-OwcComposeChecked -Context $context -Arguments @("up", "-d", "--remove-orphans") | Out-Null
+Invoke-OwcComposeChecked -Context $context -Arguments @("up", "-d", "--remove-orphans", $context.Service) | Out-Null
 
 if (-not $NoWait) {
     Write-OwcStep "Waiting for application health..."

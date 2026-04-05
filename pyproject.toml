@@ -13,7 +13,9 @@ dependencies = [
     "langchain-google-genai>=2.0",  # ChatGoogleGenerativeAI + bind_tools
     "langgraph>=0.2",               # StateGraph for the orchestrator only
     "langchain-mcp-adapters>=0.1",   # MCP → LangChain BaseTool bridge
-    "langsmith>=0.1",               # optional tracing
+    "langsmith>=0.1",               # legacy optional fallback tracing
+    "arize-phoenix-otel>=0.8",
+    "openinference-instrumentation-langchain>=0.1",
 
     # Pydantic / settings
     "pydantic>=2.7",

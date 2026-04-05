@@ -30,7 +30,7 @@ function Get-OwcContext {
         HealthUrl = "http://localhost:8000/health"
         ApiUrl = "http://localhost:8000"
         GradioUrl = "http://localhost:7860"
-        LangSmithUrl = "http://localhost:1980"
+        PhoenixUrl = "http://localhost:6006"
     }
 }
 
@@ -439,7 +439,7 @@ function Show-OwcEndpoints {
     Write-Host "  App health -> $($Context.HealthUrl)"
     Write-Host "  FastAPI    -> $($Context.ApiUrl)"
     Write-Host "  Gradio     -> $($Context.GradioUrl)"
-    Write-Host "  LangSmith  -> $($Context.LangSmithUrl)"
+    Write-Host "  Phoenix    -> $($Context.PhoenixUrl)"
 }
 
 function Show-OwcComposeStatus {

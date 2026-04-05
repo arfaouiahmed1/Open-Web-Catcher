@@ -15,6 +15,7 @@ Assert-DockerAvailable
 
 Write-OwcHeader "Open Web Catcher - Stop"
 Write-OwcInfo "Compose file: $($context.ComposeFile)"
+Write-OwcInfo "Service: $($context.Service)"
 
 if (-not (Test-OwcServicePresent -Context $context)) {
     Write-OwcInfo "The stack is not running."
@@ -34,7 +35,7 @@ if (-not (Confirm-OwcAction -Prompt "Stop the compose stack now?" -DefaultYes -Y
 
 $startedAt = Get-Date
 Write-OwcStep "Stopping stack..."
-Invoke-OwcComposeChecked -Context $context -Arguments @("stop") | Out-Null
+Invoke-OwcComposeChecked -Context $context -Arguments @("stop", $context.Service) | Out-Null
 
 $duration = Format-OwcDuration -Duration ((Get-Date) - $startedAt)
 Write-OwcDivider

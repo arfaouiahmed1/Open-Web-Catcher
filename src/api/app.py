@@ -24,7 +24,7 @@ from src.storage.database import create_tables, get_session
 from src.storage.repositories import RunRepository
 from src.utils.config import Settings
 from src.utils.logging import get_logger, setup_logging
-from src.utils.observability import get_langsmith_status, run_registry
+from src.utils.observability import get_tracing_status, run_registry
 
 logger = get_logger(__name__)
 
@@ -91,7 +91,7 @@ def health():
         "status": "ok",
         "orchestrator_model": settings.orchestrator_model,
         "agent_model": settings.agent_model,
-        "langsmith": get_langsmith_status(settings).model_dump(),
+        "tracing": get_tracing_status(settings).model_dump(),
     }
 
 
@@ -211,14 +211,14 @@ def get_run_events(run_id: str):
 
 @app.get("/observability")
 def observability(limit: int = 10):
-    """Return LangSmith status, recent runtime traces, and DB-level metrics."""
+    """Return tracing status, recent runtime traces, and DB-level metrics."""
     settings = get_settings()
     session = get_session()
     try:
         repo = RunRepository(session)
         recent = repo.list_recent(limit=limit)
         return {
-            "langsmith": get_langsmith_status(settings).model_dump(),
+            "tracing": get_tracing_status(settings).model_dump(),
             "database_metrics": {
                 "success_rate": repo.success_rate(),
                 "run_count": len(recent),

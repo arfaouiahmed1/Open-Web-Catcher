@@ -1,8 +1,7 @@
-"""Runtime observability helpers for agent events, metrics, and LangSmith status."""
+"""Runtime observability helpers for agent events, metrics, and tracing status."""
 
 from __future__ import annotations
 
-import os
 from collections import OrderedDict
 from datetime import datetime
 from threading import Lock
@@ -13,13 +12,13 @@ from pydantic import BaseModel, Field
 from src.models.enums import AgentType
 from src.models.schemas import RunMetrics
 from src.utils.config import Settings
-from src.utils.langsmith import (
-    is_self_hosted_langsmith,
-    resolve_langsmith_api_key,
-    resolve_langsmith_endpoint,
-    resolve_langsmith_project,
-    resolve_langsmith_tracing,
-    resolve_langsmith_ui_url,
+from src.utils.phoenix import (
+    is_self_hosted_phoenix,
+    resolve_phoenix_api_key,
+    resolve_phoenix_collector_endpoint,
+    resolve_phoenix_project_name,
+    resolve_phoenix_tracing,
+    resolve_phoenix_ui_url,
 )
 
 
@@ -33,7 +32,8 @@ class RuntimeEvent(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
-class LangSmithStatus(BaseModel):
+class TracingStatus(BaseModel):
+    provider: str
     enabled: bool
     api_key_configured: bool
     project: str
@@ -51,15 +51,15 @@ class RunTrace(BaseModel):
     finished_at: datetime | None = None
     events: list[RuntimeEvent] = Field(default_factory=list)
     metrics: RunMetrics | None = None
-    langsmith: LangSmithStatus
+    tracing: TracingStatus
     completed: bool = False
 
 
 class _RunState:
-    def __init__(self, run_id: str, root_actor: str, langsmith: LangSmithStatus) -> None:
+    def __init__(self, run_id: str, root_actor: str, tracing: TracingStatus) -> None:
         self.run_id = run_id
         self.root_actor = root_actor
-        self.langsmith = langsmith
+        self.tracing = tracing
         self.started_at = datetime.utcnow()
         self.finished_at: datetime | None = None
         self.events: list[RuntimeEvent] = []
@@ -77,7 +77,7 @@ class _RunState:
                 finished_at=self.finished_at,
                 events=list(self.events),
                 metrics=self.metrics.model_copy(deep=True),
-                langsmith=self.langsmith,
+                tracing=self.tracing,
                 completed=self.completed,
             )
 
@@ -184,9 +184,9 @@ class RunRegistry:
         self._runs: OrderedDict[str, _RunState] = OrderedDict()
         self._lock = Lock()
 
-    def create(self, run_id: str, root_actor: str, langsmith: LangSmithStatus) -> RunObserver:
+    def create(self, run_id: str, root_actor: str, tracing: TracingStatus) -> RunObserver:
         with self._lock:
-            state = _RunState(run_id=run_id, root_actor=root_actor, langsmith=langsmith)
+            state = _RunState(run_id=run_id, root_actor=root_actor, tracing=tracing)
             self._runs[run_id] = state
             self._runs.move_to_end(run_id)
             while len(self._runs) > self._max_runs:
@@ -204,22 +204,23 @@ class RunRegistry:
         return [state.snapshot() for state in reversed(states)]
 
 
-def get_langsmith_status(settings: Settings) -> LangSmithStatus:
-    enabled = resolve_langsmith_tracing(settings)
+def get_tracing_status(settings: Settings) -> TracingStatus:
+    enabled = resolve_phoenix_tracing(settings)
     tracing_env = "true" if enabled else "false"
-    api_key = resolve_langsmith_api_key(settings)
-    endpoint = resolve_langsmith_endpoint(settings)
-    ui_url = resolve_langsmith_ui_url(settings)
-    project = resolve_langsmith_project(settings)
-    deployment = "self-hosted" if is_self_hosted_langsmith(settings) else "cloud"
+    api_key = resolve_phoenix_api_key(settings)
+    endpoint = resolve_phoenix_collector_endpoint(settings)
+    ui_url = resolve_phoenix_ui_url(settings)
+    project = resolve_phoenix_project_name(settings)
+    deployment = "self-hosted" if is_self_hosted_phoenix(settings) else "cloud"
     warnings: list[str] = []
-    if enabled and not api_key:
-        warnings.append("Tracing is enabled but LANGSMITH_API_KEY / LANGCHAIN_API_KEY is missing.")
+    if enabled and deployment == "cloud" and not api_key:
+        warnings.append("Tracing is enabled for Phoenix Cloud but PHOENIX_API_KEY is missing.")
     if enabled and not project:
-        warnings.append("Tracing is enabled but no LangSmith project is configured.")
+        warnings.append("Tracing is enabled but no Phoenix project is configured.")
     if enabled and not ui_url:
-        warnings.append("Tracing is enabled but no LangSmith UI URL could be derived.")
-    return LangSmithStatus(
+        warnings.append("Tracing is enabled but no Phoenix UI URL could be derived.")
+    return TracingStatus(
+        provider="phoenix",
         enabled=enabled,
         api_key_configured=bool(api_key),
         project=project,

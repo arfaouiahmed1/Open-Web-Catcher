@@ -18,6 +18,7 @@ Ensure-OwcEnvFile -Context $context -Yes:$Yes
 
 Write-OwcHeader "Open Web Catcher - Restart"
 Write-OwcInfo "Compose file: $($context.ComposeFile)"
+Write-OwcInfo "Service: $($context.Service)"
 
 $startedAt = Get-Date
 if (Test-OwcServicePresent -Context $context) {
@@ -29,16 +30,16 @@ if (Test-OwcServicePresent -Context $context) {
         }
 
         Write-OwcStep "Restarting stack..."
-        Invoke-OwcComposeChecked -Context $context -Arguments @("restart") | Out-Null
+        Invoke-OwcComposeChecked -Context $context -Arguments @("restart", $context.Service) | Out-Null
     }
     else {
         Write-OwcWarn "Stack exists but is not running (state: $serviceState). Starting it instead."
-        Invoke-OwcComposeChecked -Context $context -Arguments @("start") | Out-Null
+        Invoke-OwcComposeChecked -Context $context -Arguments @("start", $context.Service) | Out-Null
     }
 }
 else {
     Write-OwcWarn "Stack is not running. Starting it instead."
-    Invoke-OwcComposeChecked -Context $context -Arguments @("up", "-d", "--remove-orphans") | Out-Null
+    Invoke-OwcComposeChecked -Context $context -Arguments @("up", "-d", "--remove-orphans", $context.Service) | Out-Null
 }
 
 Write-OwcStep "Waiting for application health..."

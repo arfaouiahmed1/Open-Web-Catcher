@@ -44,7 +44,7 @@ from src.tools.email_tool import EmailTool
 from src.tools.ipinfo_tool import IPInfoTool
 from src.utils.config import Settings
 from src.utils.logging import get_logger
-from src.utils.observability import RunObserver, get_langsmith_status, run_registry
+from src.utils.observability import RunObserver, get_tracing_status, run_registry
 
 logger = get_logger(__name__)
 
@@ -242,7 +242,7 @@ async def run_pipeline(
         observer = run_registry.create(
             run_id=str(uuid.uuid4()),
             root_actor="orchestrator",
-            langsmith=get_langsmith_status(settings),
+            tracing=get_tracing_status(settings),
         )
     return await OrchestratorAgent(settings, observer=observer).run(url)
 

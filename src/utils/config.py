@@ -24,7 +24,23 @@ class Settings(BaseSettings):
 
     google_api_key: str = ""
 
+    phoenix_tracing: bool = Field(default=False, validation_alias=AliasChoices("PHOENIX_TRACING"))
+    phoenix_api_key: str = Field(default="", validation_alias=AliasChoices("PHOENIX_API_KEY"))
+    phoenix_project_name: str = Field(
+        default="open-web-catcher",
+        validation_alias=AliasChoices("PHOENIX_PROJECT_NAME"),
+    )
+    phoenix_collector_endpoint: str = Field(
+        default="http://localhost:6006",
+        validation_alias=AliasChoices("PHOENIX_COLLECTOR_ENDPOINT"),
+    )
+    phoenix_ui_url: str = Field(
+        default="http://localhost:6006",
+        validation_alias=AliasChoices("PHOENIX_UI_URL"),
+    )
+
     # ── LangSmith ─────────────────────────────────────────────────────────────
+    # Legacy fallback if Phoenix is disabled.
     langchain_tracing_v2: bool = Field(
         default=False,
         validation_alias=AliasChoices("LANGSMITH_TRACING", "LANGCHAIN_TRACING_V2"),

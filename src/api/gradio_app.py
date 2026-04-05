@@ -23,7 +23,7 @@ from src.storage.database import get_session
 from src.storage.repositories import RunRepository
 from src.utils.config import Settings
 from src.utils.logging import get_logger, setup_logging
-from src.utils.observability import RunObserver, RuntimeEvent, get_langsmith_status, run_registry
+from src.utils.observability import RunObserver, RuntimeEvent, get_tracing_status, run_registry
 
 settings = Settings.from_yaml()
 logger = get_logger(__name__)
@@ -48,18 +48,19 @@ def _json_dump(value: Any) -> str:
     return json.dumps(value, indent=2, ensure_ascii=False)
 
 
-def _langsmith_markdown() -> str:
-    status = get_langsmith_status(settings)
+def _tracing_markdown() -> str:
+    status = get_tracing_status(settings)
     state = "Enabled" if status.enabled else "Disabled"
     key_state = "Configured" if status.api_key_configured else "Missing API key"
     warning_lines = "\n".join(f"- {warning}" for warning in status.warnings) or "- None"
     return (
-        "### LangSmith\n"
+        "### Phoenix Tracing\n"
+        f"- Provider: `{status.provider}`\n"
         f"- State: `{state}`\n"
         f"- Deployment: `{status.deployment}`\n"
         f"- API key: `{key_state}`\n"
         f"- Project: `{status.project}`\n"
-        f"- Endpoint: `{status.endpoint}`\n"
+        f"- Collector: `{status.endpoint}`\n"
         f"- UI: `{status.ui_url or 'not resolved'}`\n"
         f"- Tracing env: `{status.tracing_env}`\n"
         f"- Warnings:\n{warning_lines}"
@@ -207,7 +208,7 @@ def _new_observer(root_actor: str, url: str) -> RunObserver:
     observer = run_registry.create(
         run_id=str(uuid.uuid4()),
         root_actor=root_actor,
-        langsmith=get_langsmith_status(settings),
+        tracing=get_tracing_status(settings),
     )
     observer.set_url(url)
     observer.emit("run_created", f"Run created for {url}")
@@ -247,7 +248,7 @@ def _poll_run(
 
 def _run_pipeline_stream(url: str):
     if not url.strip():
-        yield [], "### Run Summary\nPlease provide a URL.", "{}", [], "### Takedown Emails\n_No run yet._", "### Metrics\n_No metrics recorded yet._", _langsmith_markdown(), ""
+        yield [], "### Run Summary\nPlease provide a URL.", "{}", [], "### Takedown Emails\n_No run yet._", "### Metrics\n_No metrics recorded yet._", _tracing_markdown(), ""
         return
 
     normalized_url = url.strip()
@@ -274,7 +275,7 @@ def _run_pipeline_stream(url: str):
             _stream_rows(result),
             _email_markdown(result),
             _metrics_markdown(trace.metrics),
-            _langsmith_markdown(),
+            _tracing_markdown(),
             observer.run_id,
         )
 
@@ -299,7 +300,7 @@ def _run_agent_test_stream(
     min_streams: int,
 ):
     if not url.strip():
-        yield [], "### Test Verdict\nPlease provide a URL.", "{}", "### Metrics\n_No metrics recorded yet._", _langsmith_markdown(), ""
+        yield [], "### Test Verdict\nPlease provide a URL.", "{}", "### Metrics\n_No metrics recorded yet._", _tracing_markdown(), ""
         return
 
     normalized_url = url.strip()
@@ -332,7 +333,7 @@ def _run_agent_test_stream(
             _test_verdict_markdown(agent_key, result, expected_page_type, expected_status, min_streams),
             _json_dump(result),
             _metrics_markdown(trace.metrics),
-            _langsmith_markdown(),
+            _tracing_markdown(),
             observer.run_id,
         )
 
@@ -367,12 +368,12 @@ def _refresh_observability():
             for trace in run_registry.list_recent(limit=15)
         ]
         summary = {
-            "langsmith": get_langsmith_status(settings).model_dump(mode="json"),
+            "tracing": get_tracing_status(settings).model_dump(mode="json"),
             "database_success_rate": repo.success_rate(),
             "recent_run_count": len(run_rows),
             "active_trace_count": len(active_trace_rows),
         }
-        return _langsmith_markdown(), run_rows, active_trace_rows, _json_dump(summary)
+        return _tracing_markdown(), run_rows, active_trace_rows, _json_dump(summary)
     finally:
         session.close()
 
@@ -386,7 +387,7 @@ def build_ui() -> gr.Blocks:
                   <h1>Open Web Catcher Control Room</h1>
                   <p>
                     Run the orchestrator or any specialist agent, watch the pipeline unfold step by step,
-                    and verify LangSmith plus local metrics without leaving the dashboard.
+                    and verify Phoenix traces plus local metrics without leaving the dashboard.
                   </p>
                 </div>
                 """
@@ -409,7 +410,7 @@ def build_ui() -> gr.Blocks:
                     with gr.Column(scale=5):
                         pipeline_status = gr.Markdown("### Run Summary\n_Waiting for a run._")
                         pipeline_metrics = gr.Markdown("### Metrics\n_No metrics recorded yet._")
-                        pipeline_langsmith = gr.Markdown(_langsmith_markdown())
+                        pipeline_tracing = gr.Markdown(_tracing_markdown())
 
                 pipeline_streams = gr.Dataframe(
                     headers=["URL", "Protocol", "Quality", "Source"],
@@ -430,7 +431,7 @@ def build_ui() -> gr.Blocks:
                         pipeline_streams,
                         pipeline_emails,
                         pipeline_metrics,
-                        pipeline_langsmith,
+                        pipeline_tracing,
                         pipeline_run_id,
                     ],
                 )
@@ -478,14 +479,14 @@ def build_ui() -> gr.Blocks:
                     with gr.Column(scale=5):
                         verdict_md = gr.Markdown("### Test Verdict\n_No test yet._")
                         agent_metrics = gr.Markdown("### Metrics\n_No metrics recorded yet._")
-                        agent_langsmith = gr.Markdown(_langsmith_markdown())
+                        agent_tracing = gr.Markdown(_tracing_markdown())
 
                 agent_result = gr.Code(label="Agent Result (JSON)", language="json")
 
                 agent_run_btn.click(
                     _run_agent_test_stream,
                     inputs=[agent_choice, agent_url, expected_page_type, expected_status, min_streams],
-                    outputs=[agent_chat, verdict_md, agent_result, agent_metrics, agent_langsmith, agent_run_id],
+                    outputs=[agent_chat, verdict_md, agent_result, agent_metrics, agent_tracing, agent_run_id],
                 )
 
             with gr.Tab("Observability"):
@@ -498,7 +499,7 @@ def build_ui() -> gr.Blocks:
                     """
                 )
                 refresh_btn = gr.Button("Refresh Observability", variant="secondary")
-                obs_langsmith = gr.Markdown(_langsmith_markdown())
+                obs_tracing = gr.Markdown(_tracing_markdown())
                 recent_runs = gr.Dataframe(
                     headers=["Run ID", "Status", "Streams", "Tool Calls", "Tokens In", "Tokens Out", "Seconds", "Created At"],
                     label="Recent Persisted Runs",
@@ -514,7 +515,7 @@ def build_ui() -> gr.Blocks:
                 obs_summary = gr.Code(label="Observability Snapshot", language="json")
                 refresh_btn.click(
                     _refresh_observability,
-                    outputs=[obs_langsmith, recent_runs, active_traces, obs_summary],
+                    outputs=[obs_tracing, recent_runs, active_traces, obs_summary],
                 )
 
     return demo
