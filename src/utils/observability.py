@@ -61,6 +61,8 @@ class RunTrace(BaseModel):
     metrics: RunMetrics | None = None
     tracing: TracingStatus
     completed: bool = False
+    cancel_requested: bool = False
+    cancel_reason: str = ""
 
 
 class _RunState:
@@ -73,6 +75,8 @@ class _RunState:
         self.events: list[RuntimeEvent] = []
         self.metrics = RunMetrics(run_id=run_id, url="")
         self.completed = False
+        self.cancel_requested = False
+        self.cancel_reason = ""
         self._next_seq = 1
         self._lock = Lock()
 
@@ -99,6 +103,8 @@ class _RunState:
                 metrics=self.metrics.model_copy(deep=True),
                 tracing=self.tracing,
                 completed=self.completed,
+                cancel_requested=self.cancel_requested,
+                cancel_reason=self.cancel_reason,
             )
 
 
@@ -232,6 +238,32 @@ class RunObserver:
         with self._state._lock:
             self._state.metrics.total_tool_calls += count
 
+    def request_cancel(self, reason: str = "") -> bool:
+        with self._state._lock:
+            if self._state.completed or self._state.cancel_requested:
+                return False
+            self._state.cancel_requested = True
+            self._state.cancel_reason = reason or "Cancelled from the control room."
+            event = RuntimeEvent(
+                seq=self._state._next_seq,
+                actor="control-room",
+                kind="cancel_requested",
+                message=self._state.cancel_reason,
+                status="warning",
+                details={"cancel_reason": self._state.cancel_reason},
+            )
+            self._state._next_seq += 1
+            self._state.events.append(event)
+            return True
+
+    def is_cancel_requested(self) -> bool:
+        with self._state._lock:
+            return self._state.cancel_requested
+
+    def cancel_reason(self) -> str:
+        with self._state._lock:
+            return self._state.cancel_reason
+
     def finish(
         self,
         *,
@@ -280,6 +312,15 @@ class RunRegistry:
         with self._lock:
             states = list(self._runs.values())[-limit:]
         return [state.snapshot() for state in reversed(states)]
+
+    def request_cancel(self, run_id: str, reason: str = "") -> bool:
+        with self._lock:
+            state = self._runs.get(run_id)
+        if state is None:
+            return False
+
+        observer = RunObserver(state, "control-room")
+        return observer.request_cancel(reason=reason)
 
 
 def get_tracing_status(settings: Settings) -> TracingStatus:

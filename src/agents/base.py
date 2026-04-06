@@ -38,6 +38,24 @@ from src.utils.phoenix import (
 logger = get_logger(__name__)
 
 
+class RunCancelledError(Exception):
+    """Raised when a live run is cancelled from the UI."""
+
+    pass
+
+
+def _json_ready(value: Any) -> Any:
+    """Convert provider payloads into JSON-safe data for runtime events."""
+    if value is None:
+        return {}
+    if hasattr(value, "model_dump"):
+        value = value.model_dump(mode="json")
+    try:
+        return json.loads(json.dumps(value, default=str))
+    except Exception:
+        return {"repr": repr(value)}
+
+
 def _extract_usage(usage: Any) -> tuple[int, int]:
     usage_dict = usage if isinstance(usage, dict) else getattr(usage, "__dict__", {})
     input_tokens = int(
@@ -55,6 +73,20 @@ def _extract_usage(usage: Any) -> tuple[int, int]:
         or 0
     )
     return input_tokens, output_tokens
+
+
+def _assert_not_cancelled(observer: RunObserver | None, phase: str) -> None:
+    if observer is None or not observer.is_cancel_requested():
+        return
+
+    reason = observer.cancel_reason() or "Cancelled from the control room."
+    observer.emit(
+        "run_cancelled",
+        f"Run cancelled during {phase}",
+        status="warning",
+        details={"phase": phase, "cancel_reason": reason},
+    )
+    raise RunCancelledError(reason)
 
 
 # ── LLM factory ────────────────────────────────────────────────────────────────
@@ -170,6 +202,7 @@ async def run_agent_loop(
             },
         ) as loop_span:
             while tool_calls_made < max_tool_calls:
+                _assert_not_cancelled(observer, "agent loop")
                 message_count = len(messages)
                 with phoenix_span(
                     f"{run_name}.llm_turn",
@@ -222,11 +255,20 @@ async def run_agent_loop(
                         "llm_response",
                         "Model responded",
                         details={
+                            "provider": provider,
+                            "model_name": model_name,
                             "tool_calls": len(response.tool_calls or []),
+                            "tool_call_names": [call.get("name", "") for call in (response.tool_calls or [])],
+                            "tool_calls_payload": _json_ready(response.tool_calls or []),
                             "has_text": bool(response.content),
                             "message_count": len(messages),
                             "input_tokens": input_tokens,
                             "output_tokens": output_tokens,
+                            "usage_metadata": _json_ready(getattr(response, "usage_metadata", None)),
+                            "response_metadata": _json_ready(getattr(response, "response_metadata", None)),
+                            "additional_kwargs": _json_ready(getattr(response, "additional_kwargs", None)),
+                            "response_class": type(response).__name__,
+                            "content_preview": (response.content or "")[:1200],
                         },
                     )
 
@@ -257,6 +299,7 @@ async def run_agent_loop(
                     )
 
                 for tc in response.tool_calls:
+                    _assert_not_cancelled(observer, "tool dispatch")
                     tool_name: str = tc["name"]
                     tool_args: dict = tc["args"]
                     tool_id: str = tc["id"]
@@ -352,6 +395,7 @@ async def run_agent_loop(
                 )
                 observer.record_message("human")
             messages.append(HumanMessage(content=budget_exhausted_message))
+            _assert_not_cancelled(observer, "final answer preparation")
             with phoenix_span(
                 f"{run_name}.final_answer",
                 kind="chain",
