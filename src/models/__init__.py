@@ -3,6 +3,7 @@ from src.models.schemas import (
     ClassificationResult,
     ExtractionResult,
     MatchInfo,
+    ModelUsage,
     PipelineResult,
     ProviderInfo,
     RunMetrics,
@@ -14,6 +15,6 @@ from src.models.schemas import (
 __all__ = [
     "PageType", "Confidence", "ExtractionStatus", "AgentType",
     "ClassificationResult", "ExtractionResult", "ServerResult",
-    "StreamURL", "MatchInfo", "PipelineResult", "RunMetrics",
+    "StreamURL", "MatchInfo", "ModelUsage", "PipelineResult", "RunMetrics",
     "ProviderInfo", "TakedownEmail",
 ]

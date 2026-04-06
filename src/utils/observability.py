@@ -10,12 +10,17 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from src.models.enums import AgentType
-from src.models.schemas import RunMetrics
+from src.models.schemas import ModelUsage, RunMetrics
 from src.utils.config import Settings
 from src.utils.phoenix import (
+    estimate_usage_cost,
     is_self_hosted_phoenix,
+    resolve_model_pricing,
     resolve_phoenix_api_key,
+    resolve_phoenix_base_url,
     resolve_phoenix_collector_endpoint,
+    resolve_phoenix_default_dataset_name,
+    resolve_phoenix_model_pricing,
     resolve_phoenix_project_name,
     resolve_phoenix_tracing,
     resolve_phoenix_ui_url,
@@ -39,8 +44,11 @@ class TracingStatus(BaseModel):
     project: str
     endpoint: str
     ui_url: str
+    base_url: str
     deployment: str
     tracing_env: str
+    default_dataset_name: str
+    pricing_models: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -67,6 +75,18 @@ class _RunState:
         self.completed = False
         self._next_seq = 1
         self._lock = Lock()
+
+    def _get_model_usage(self, model_name: str, provider: str) -> ModelUsage:
+        normalized_model = (model_name or "unknown").strip() or "unknown"
+        normalized_provider = (provider or "").strip()
+
+        for entry in self.metrics.model_usage:
+            if entry.model_name == normalized_model and entry.provider == normalized_provider:
+                return entry
+
+        entry = ModelUsage(model_name=normalized_model, provider=normalized_provider)
+        self.metrics.model_usage.append(entry)
+        return entry
 
     def snapshot(self) -> RunTrace:
         with self._lock:
@@ -107,6 +127,19 @@ class RunObserver:
             if agent_type not in agents:
                 agents.append(agent_type)
 
+    def record_message(self, message_type: str, count: int = 1) -> None:
+        normalized = (message_type or "").strip().lower()
+        with self._state._lock:
+            self._state.metrics.total_messages += count
+            if normalized == "system":
+                self._state.metrics.system_messages += count
+            elif normalized == "human":
+                self._state.metrics.human_messages += count
+            elif normalized == "ai":
+                self._state.metrics.ai_messages += count
+            elif normalized == "tool":
+                self._state.metrics.tool_messages += count
+
     def emit(
         self,
         kind: str,
@@ -128,27 +161,72 @@ class RunObserver:
             self._state.events.append(event)
             return event
 
-    def add_llm_usage(self, usage: Any) -> None:
-        if not usage:
-            return
+    def add_llm_usage(
+        self,
+        usage: Any,
+        *,
+        model_name: str = "",
+        provider: str = "",
+        pricing: dict[str, Any] | None = None,
+    ) -> None:
         usage_dict = usage if isinstance(usage, dict) else getattr(usage, "__dict__", {})
-        input_tokens = (
+        input_tokens = int(
             usage_dict.get("input_tokens")
             or usage_dict.get("prompt_tokens")
             or usage_dict.get("input_token_count")
             or usage_dict.get("prompt_token_count")
             or 0
         )
-        output_tokens = (
+        output_tokens = int(
             usage_dict.get("output_tokens")
             or usage_dict.get("completion_tokens")
             or usage_dict.get("candidates_token_count")
             or usage_dict.get("output_token_count")
             or 0
         )
+        pricing = pricing or {}
+        resolved_provider = str(pricing.get("provider") or provider or "").strip()
+        costs = estimate_usage_cost(
+            input_tokens,
+            output_tokens,
+            input_per_million=float(pricing.get("input_per_million", 0.0) or 0.0),
+            output_per_million=float(pricing.get("output_per_million", 0.0) or 0.0),
+        )
+
         with self._state._lock:
-            self._state.metrics.total_tokens_in += int(input_tokens)
-            self._state.metrics.total_tokens_out += int(output_tokens)
+            metrics = self._state.metrics
+            metrics.total_llm_calls += 1
+            metrics.total_tokens_in += input_tokens
+            metrics.total_tokens_out += output_tokens
+            metrics.estimated_input_cost_usd = round(
+                metrics.estimated_input_cost_usd + costs["estimated_input_cost_usd"],
+                8,
+            )
+            metrics.estimated_output_cost_usd = round(
+                metrics.estimated_output_cost_usd + costs["estimated_output_cost_usd"],
+                8,
+            )
+            metrics.estimated_total_cost_usd = round(
+                metrics.estimated_total_cost_usd + costs["estimated_total_cost_usd"],
+                8,
+            )
+
+            model_usage = self._state._get_model_usage(model_name or "unknown", resolved_provider)
+            model_usage.llm_calls += 1
+            model_usage.input_tokens += input_tokens
+            model_usage.output_tokens += output_tokens
+            model_usage.estimated_input_cost_usd = round(
+                model_usage.estimated_input_cost_usd + costs["estimated_input_cost_usd"],
+                8,
+            )
+            model_usage.estimated_output_cost_usd = round(
+                model_usage.estimated_output_cost_usd + costs["estimated_output_cost_usd"],
+                8,
+            )
+            model_usage.estimated_total_cost_usd = round(
+                model_usage.estimated_total_cost_usd + costs["estimated_total_cost_usd"],
+                8,
+            )
 
     def increment_tool_calls(self, count: int = 1) -> None:
         with self._state._lock:
@@ -210,8 +288,10 @@ def get_tracing_status(settings: Settings) -> TracingStatus:
     api_key = resolve_phoenix_api_key(settings)
     endpoint = resolve_phoenix_collector_endpoint(settings)
     ui_url = resolve_phoenix_ui_url(settings)
+    base_url = resolve_phoenix_base_url(settings)
     project = resolve_phoenix_project_name(settings)
     deployment = "self-hosted" if is_self_hosted_phoenix(settings) else "cloud"
+    pricing_config = resolve_phoenix_model_pricing(settings)
     warnings: list[str] = []
     if enabled and deployment == "cloud" and not api_key:
         warnings.append("Tracing is enabled for Phoenix Cloud but PHOENIX_API_KEY is missing.")
@@ -219,6 +299,10 @@ def get_tracing_status(settings: Settings) -> TracingStatus:
         warnings.append("Tracing is enabled but no Phoenix project is configured.")
     if enabled and not ui_url:
         warnings.append("Tracing is enabled but no Phoenix UI URL could be derived.")
+    if enabled and not pricing_config:
+        warnings.append(
+            "No local model pricing config is set. Token metrics will work, but cost estimates stay at 0 unless Phoenix UI pricing or PHOENIX_MODEL_PRICING_JSON is configured."
+        )
     return TracingStatus(
         provider="phoenix",
         enabled=enabled,
@@ -226,10 +310,21 @@ def get_tracing_status(settings: Settings) -> TracingStatus:
         project=project,
         endpoint=endpoint,
         ui_url=ui_url,
+        base_url=base_url,
         deployment=deployment,
         tracing_env=tracing_env,
+        default_dataset_name=resolve_phoenix_default_dataset_name(settings),
+        pricing_models=sorted(pricing_config.keys()),
         warnings=warnings,
     )
+
+
+def get_model_pricing_for_settings(
+    settings: Settings,
+    model_name: str,
+    provider: str = "",
+) -> dict[str, Any]:
+    return resolve_model_pricing(settings, model_name=model_name, provider=provider)
 
 
 run_registry = RunRegistry()

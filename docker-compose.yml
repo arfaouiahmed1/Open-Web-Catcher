@@ -36,6 +36,7 @@ services:
       PHOENIX_PROJECT_NAME: ${PHOENIX_PROJECT_NAME:-open-web-catcher}
       PHOENIX_COLLECTOR_ENDPOINT: ${PHOENIX_COLLECTOR_ENDPOINT_DOCKER:-http://phoenix:6006}
       PHOENIX_UI_URL: ${PHOENIX_UI_URL:-http://localhost:6006}
+      PHOENIX_BASE_URL: ${PHOENIX_BASE_URL_DOCKER:-http://phoenix:6006}
       PHOENIX_API_KEY: ${PHOENIX_API_KEY:-}
     depends_on:
       phoenix:

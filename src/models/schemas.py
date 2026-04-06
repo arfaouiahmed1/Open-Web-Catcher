@@ -113,6 +113,17 @@ class TakedownEmail(BaseModel):
 
 # ── Pipeline result ───────────────────────────────────────────────────────────
 
+class ModelUsage(BaseModel):
+    model_name: str
+    provider: str = ""
+    llm_calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    estimated_input_cost_usd: float = 0.0
+    estimated_output_cost_usd: float = 0.0
+    estimated_total_cost_usd: float = 0.0
+
+
 class RunMetrics(BaseModel):
     run_id: str
     url: str
@@ -120,9 +131,19 @@ class RunMetrics(BaseModel):
     finished_at: datetime | None = None
     total_tokens_in: int = 0
     total_tokens_out: int = 0
+    total_llm_calls: int = 0
     total_tool_calls: int = 0
+    total_messages: int = 0
+    system_messages: int = 0
+    human_messages: int = 0
+    ai_messages: int = 0
+    tool_messages: int = 0
+    estimated_input_cost_usd: float = 0.0
+    estimated_output_cost_usd: float = 0.0
+    estimated_total_cost_usd: float = 0.0
     total_duration_seconds: float = 0.0
     agents_invoked: list[AgentType] = Field(default_factory=list)
+    model_usage: list[ModelUsage] = Field(default_factory=list)
     success: bool = False
     failure_mode: str = ""
 

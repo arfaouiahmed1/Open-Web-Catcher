@@ -53,6 +53,7 @@ def _tracing_markdown() -> str:
     state = "Enabled" if status.enabled else "Disabled"
     key_state = "Configured" if status.api_key_configured else "Missing API key"
     warning_lines = "\n".join(f"- {warning}" for warning in status.warnings) or "- None"
+    pricing_models = ", ".join(status.pricing_models) or "none"
     return (
         "### Phoenix Tracing\n"
         f"- Provider: `{status.provider}`\n"
@@ -60,8 +61,11 @@ def _tracing_markdown() -> str:
         f"- Deployment: `{status.deployment}`\n"
         f"- API key: `{key_state}`\n"
         f"- Project: `{status.project}`\n"
+        f"- Base URL: `{status.base_url}`\n"
         f"- Collector: `{status.endpoint}`\n"
         f"- UI: `{status.ui_url or 'not resolved'}`\n"
+        f"- Default dataset: `{status.default_dataset_name}`\n"
+        f"- Pricing models: `{pricing_models}`\n"
         f"- Tracing env: `{status.tracing_env}`\n"
         f"- Warnings:\n{warning_lines}"
     )
@@ -72,17 +76,25 @@ def _metrics_markdown(metrics: RunMetrics | None) -> str:
         return "### Metrics\n_No metrics recorded yet._"
     agents = ", ".join(agent.value for agent in metrics.agents_invoked) or "none"
     finished_at = metrics.finished_at.isoformat() if metrics.finished_at else "running"
+    model_lines = "\n".join(
+        f"- `{entry.model_name}` ({entry.provider or 'unknown'}): calls `{entry.llm_calls}`, tokens `{entry.input_tokens}` / `{entry.output_tokens}`, cost `${entry.estimated_total_cost_usd:.6f}`"
+        for entry in metrics.model_usage
+    ) or "- None"
     return (
         "### Metrics\n"
         f"- Run ID: `{metrics.run_id}`\n"
         f"- URL: `{metrics.url}`\n"
         f"- Agents invoked: `{agents}`\n"
+        f"- LLM calls: `{metrics.total_llm_calls}`\n"
         f"- Tool calls: `{metrics.total_tool_calls}`\n"
         f"- Tokens in/out: `{metrics.total_tokens_in}` / `{metrics.total_tokens_out}`\n"
+        f"- Messages: `{metrics.total_messages}` (system `{metrics.system_messages}`, human `{metrics.human_messages}`, ai `{metrics.ai_messages}`, tool `{metrics.tool_messages}`)\n"
+        f"- Estimated cost: `${metrics.estimated_total_cost_usd:.6f}`\n"
         f"- Duration: `{metrics.total_duration_seconds:.2f}s`\n"
         f"- Success: `{metrics.success}`\n"
         f"- Failure mode: `{metrics.failure_mode or 'none'}`\n"
-        f"- Finished: `{finished_at}`"
+        f"- Finished: `{finished_at}`\n"
+        f"- Model usage:\n{model_lines}"
     )
 
 

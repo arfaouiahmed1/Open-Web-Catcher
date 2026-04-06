@@ -18,6 +18,11 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from src.evaluation.datasets import (
+    build_dataset_examples,
+    export_dataset_examples,
+    publish_dataset_to_phoenix,
+)
 from src.models.schemas import ClassificationResult, ExtractionResult, PipelineResult
 from src.evaluation.tracing import setup_tracing_from_settings
 from src.storage.database import create_tables, get_session
@@ -79,6 +84,14 @@ class ExtractRequest(BaseModel):
 
 class RunRequest(BaseModel):
     url: str
+
+
+class DatasetExportRequest(BaseModel):
+    dataset_name: str = ""
+    limit: int = 25
+    path: str = ""
+    upload_to_phoenix: bool = False
+    dataset_description: str = ""
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -161,6 +174,9 @@ def list_runs(limit: int = 50):
                 "tool_calls": r.tool_calls,
                 "tokens_in": r.tokens_in,
                 "tokens_out": r.tokens_out,
+                "estimated_total_cost_usd": ((r.result_json or {}).get("metrics") or {}).get("estimated_total_cost_usd", 0.0),
+                "llm_calls": ((r.result_json or {}).get("metrics") or {}).get("total_llm_calls", 0),
+                "message_count": ((r.result_json or {}).get("metrics") or {}).get("total_messages", 0),
                 "created_at": r.created_at.isoformat(),
             }
             for r in records
@@ -209,6 +225,72 @@ def get_run_events(run_id: str):
     return trace.model_dump(mode="json")
 
 
+@app.get("/datasets/examples")
+def dataset_examples(limit: int = 25):
+    """Build dataset examples from recent persisted runs."""
+    settings = get_settings()
+    session = get_session()
+    try:
+        records = RunRepository(session).list_recent(limit=limit)
+        results: list[PipelineResult] = []
+        for record in records:
+            if not record.result_json:
+                continue
+            try:
+                results.append(PipelineResult.model_validate(record.result_json))
+            except Exception as exc:
+                logger.warning("Skipping run '%s' during dataset build: %s", record.run_id, exc)
+        examples = build_dataset_examples(results)
+        return {
+            "dataset_name": get_tracing_status(settings).default_dataset_name,
+            "example_count": len(examples),
+            "examples": [example.model_dump(mode="json") for example in examples],
+        }
+    finally:
+        session.close()
+
+
+@app.post("/datasets/export")
+def export_dataset(req: DatasetExportRequest):
+    """Export recent runs to JSONL and optionally publish them to Phoenix."""
+    settings = get_settings()
+    session = get_session()
+    try:
+        records = RunRepository(session).list_recent(limit=req.limit)
+        results: list[PipelineResult] = []
+        for record in records:
+            if not record.result_json:
+                continue
+            try:
+                results.append(PipelineResult.model_validate(record.result_json))
+            except Exception as exc:
+                logger.warning("Skipping run '%s' during dataset export: %s", record.run_id, exc)
+        examples = build_dataset_examples(results)
+        export_path = export_dataset_examples(
+            examples,
+            settings=settings,
+            dataset_name=req.dataset_name,
+            path=req.path or None,
+        )
+        response = {
+            "dataset_name": req.dataset_name or get_tracing_status(settings).default_dataset_name,
+            "example_count": len(examples),
+            "path": str(export_path),
+            "uploaded": False,
+        }
+        if req.upload_to_phoenix and examples:
+            response["phoenix"] = publish_dataset_to_phoenix(
+                examples,
+                settings=settings,
+                dataset_name=req.dataset_name,
+                dataset_description=req.dataset_description,
+            )
+            response["uploaded"] = True
+        return response
+    finally:
+        session.close()
+
+
 @app.get("/observability")
 def observability(limit: int = 10):
     """Return tracing status, recent runtime traces, and DB-level metrics."""
@@ -233,6 +315,9 @@ def observability(limit: int = 10):
                     "tool_calls": record.tool_calls,
                     "tokens_in": record.tokens_in,
                     "tokens_out": record.tokens_out,
+                    "estimated_total_cost_usd": ((record.result_json or {}).get("metrics") or {}).get("estimated_total_cost_usd", 0.0),
+                    "llm_calls": ((record.result_json or {}).get("metrics") or {}).get("total_llm_calls", 0),
+                    "message_count": ((record.result_json or {}).get("metrics") or {}).get("total_messages", 0),
                     "duration_seconds": record.duration_seconds,
                     "created_at": record.created_at.isoformat(),
                 }

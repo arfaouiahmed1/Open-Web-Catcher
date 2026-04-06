@@ -45,6 +45,7 @@ from src.tools.ipinfo_tool import IPInfoTool
 from src.utils.config import Settings
 from src.utils.logging import get_logger
 from src.utils.observability import RunObserver, get_tracing_status, run_registry
+from src.utils.phoenix import phoenix_span, set_span_output, using_phoenix_attributes
 
 logger = get_logger(__name__)
 
@@ -183,26 +184,47 @@ class OrchestratorAgent:
             self.observer.mark_agent(AgentType.ORCHESTRATOR)
             self.observer.emit("pipeline_started", f"Pipeline started for {url}")
         try:
-            loop_result = await run_agent_loop(
-                llm=self.llm,
-                tools=self.tools,
-                system_prompt=self._system_prompt,
-                initial_message=f"Process this URL through the full extraction pipeline:\n\n{url}",
-                max_tool_calls=self.settings.orchestrator_max_tool_calls,
-                budget_exhausted_message=(
-                    "Budget exhausted. If you haven't already, call analyze_providers "
-                    "and generate_takedown_emails with what you have, then stop."
-                ),
-                observer=self.observer,
-                run_name="orchestrator_agent",
-            )
+            with using_phoenix_attributes(
+                session_id=self.observer.run_id if self.observer is not None else "",
+                metadata={"agent_type": AgentType.ORCHESTRATOR.value, "url": url},
+                tags=["orchestrator", "pipeline"],
+            ):
+                with phoenix_span(
+                    "orchestrator_agent.run",
+                    kind="agent",
+                    input_value={"url": url},
+                    attributes={"owc.agent_type": AgentType.ORCHESTRATOR.value},
+                ) as span:
+                    loop_result = await run_agent_loop(
+                        settings=self.settings,
+                        llm=self.llm,
+                        tools=self.tools,
+                        system_prompt=self._system_prompt,
+                        initial_message=f"Process this URL through the full extraction pipeline:\n\n{url}",
+                        max_tool_calls=self.settings.orchestrator_max_tool_calls,
+                        budget_exhausted_message=(
+                            "Budget exhausted. If you haven't already, call analyze_providers "
+                            "and generate_takedown_emails with what you have, then stop."
+                        ),
+                        observer=self.observer,
+                        run_name="orchestrator_agent",
+                    )
 
-            result = _build_pipeline_result(
-                run_id,
-                url,
-                loop_result.messages,
-                metrics=self.observer.trace().metrics if self.observer else None,
-            )
+                    result = _build_pipeline_result(
+                        run_id,
+                        url,
+                        loop_result.messages,
+                        metrics=self.observer.trace().metrics if self.observer else None,
+                    )
+                    set_span_output(
+                        span,
+                        {
+                            "final_status": result.final_status.value,
+                            "streams_found": len(result.all_streams),
+                            "emails_generated": len(result.takedown_emails),
+                            "provider_analyses": len(result.provider_analysis),
+                        },
+                    )
             if self.observer is not None:
                 failure_mode = "" if result.final_status == ExtractionStatus.SUCCESS else result.final_status.value
                 self.observer.emit(

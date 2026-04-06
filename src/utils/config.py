@@ -38,6 +38,22 @@ class Settings(BaseSettings):
         default="http://localhost:6006",
         validation_alias=AliasChoices("PHOENIX_UI_URL"),
     )
+    phoenix_base_url: str = Field(
+        default="http://localhost:6006",
+        validation_alias=AliasChoices("PHOENIX_BASE_URL"),
+    )
+    phoenix_default_dataset_name: str = Field(
+        default="open-web-catcher-runs",
+        validation_alias=AliasChoices("PHOENIX_DEFAULT_DATASET_NAME"),
+    )
+    phoenix_dataset_dir: str = Field(
+        default="data/datasets",
+        validation_alias=AliasChoices("PHOENIX_DATASET_DIR"),
+    )
+    phoenix_model_pricing_json: str = Field(
+        default="{}",
+        validation_alias=AliasChoices("PHOENIX_MODEL_PRICING_JSON"),
+    )
 
     # ── LangSmith ─────────────────────────────────────────────────────────────
     # Legacy fallback if Phoenix is disabled.
