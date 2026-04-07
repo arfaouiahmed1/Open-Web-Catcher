@@ -8,7 +8,8 @@
   "main": "mcp-server.js",
   "scripts": {
     "start": "node mcp-server.js",
-    "dev": "node --watch mcp-server.js"
+    "dev": "node --watch mcp-server.js",
+    "test": "node tests/tool-registry.test.js"
   },
   "dependencies": {
     "@ghostery/adblocker-puppeteer": "^2.13.0",

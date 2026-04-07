@@ -1,19 +1,29 @@
 # syntax=docker/dockerfile:1.7
 
 # =============================================================================
-#  Open Web Catcher - single-container build
-#  Processes: PostgreSQL 15, Chrome (headless), MCP server (Node),
-#             FastAPI (uvicorn), and Gradio dashboard
-#  Python managed by uv | JS managed by npm
+#  Open Web Catcher - app container
+#  Processes: Chrome (headless), MCP server (Node), FastAPI (uvicorn), Gradio
+#  PostgreSQL runs as a sidecar in docker-compose for faster builds.
 # =============================================================================
 
-FROM python:3.11-bookworm
+FROM python:3.11-slim-bookworm
+
+WORKDIR /app
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PUPPETEER_CACHE_DIR=/opt/puppeteer \
+    UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1
 
 # -- System packages -----------------------------------------------------------
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl wget ca-certificates gnupg lsb-release procps \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    curl \
+    ca-certificates \
+    gnupg \
     supervisor \
-    postgresql-15 postgresql-client-15 \
     fonts-liberation \
     libasound2 \
     libatk-bridge2.0-0 \
@@ -44,24 +54,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender1 \
     libxss1 \
     libxtst6 \
-    xdg-utils \
-    && rm -rf /var/lib/apt/lists/*
+    xdg-utils
 
 # -- Node.js 20 ---------------------------------------------------------------
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # -- uv (Python package manager) ----------------------------------------------
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-WORKDIR /app
-
-ENV PUPPETEER_CACHE_DIR=/opt/puppeteer
-
 # -- Python dependencies -------------------------------------------------------
-# Keep this layer keyed only on pyproject.toml so normal source edits do not
-# force a full dependency reinstall.
+# Keep this layer keyed only on pyproject.toml so source edits do not force a
+# dependency reinstall.
 COPY pyproject.toml ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv venv .venv --python 3.11 && \
@@ -75,31 +83,31 @@ requirements.extend(data["project"].get("optional-dependencies", {}).get("dev", 
 print("\n".join(requirements))
 PY
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --python .venv/bin/python -r /tmp/requirements-dev.txt
+    uv pip install --python /app/.venv/bin/python -r /tmp/requirements-dev.txt
 
 # -- Node.js dependencies + Chrome for Testing --------------------------------
-# Keep this layer keyed only on package.json and reuse the npm download cache.
+# Cache both npm downloads and the Chrome binary download across builds.
 COPY tools_js/package*.json tools_js/
 RUN --mount=type=cache,target=/root/.npm \
-    cd tools_js && npm install --omit=dev --no-audit --no-fund \
-    && npx --yes @puppeteer/browsers@latest install chrome@stable --path "${PUPPETEER_CACHE_DIR}" \
-    && CHROME_BIN="$(find "${PUPPETEER_CACHE_DIR}/chrome" -type f -path '*/chrome-linux64/chrome' | head -n 1)" \
+    --mount=type=cache,target=/opt/puppeteer \
+    cd tools_js \
+    && npm install --omit=dev --prefer-offline --no-audit --no-fund \
+    && npx --yes @puppeteer/browsers install chrome@stable --path /opt/puppeteer \
+    && CHROME_BIN="$(find /opt/puppeteer/chrome -type f -path '*/chrome-linux64/chrome' | head -n 1)" \
     && test -n "${CHROME_BIN}" \
     && ln -sf "${CHROME_BIN}" /usr/local/bin/google-chrome-stable \
     && ln -sf /usr/local/bin/google-chrome-stable /usr/local/bin/google-chrome
 
 # -- Application source --------------------------------------------------------
-COPY src/      src/
+COPY src/ src/
 COPY tools_js/ tools_js/
-COPY configs/  configs/
-COPY tests/    tests/
-COPY scripts/  scripts/
+COPY configs/ configs/
+COPY tests/ tests/
+COPY scripts/ scripts/
 
-# -- Runtime directories -------------------------------------------------------
+# -- Runtime directories + config ---------------------------------------------
 RUN mkdir -p data/logs data/raw data/processed data/reports \
     && chmod +x scripts/docker/entrypoint.sh
-
-# -- Supervisord config --------------------------------------------------------
 COPY configs/supervisord.conf /etc/supervisor/conf.d/owc.conf
 
 # -- Environment defaults ------------------------------------------------------
@@ -111,7 +119,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     MCP_BROWSER_MODE=isolated \
     BROWSER_WS_ENDPOINT=ws://localhost:9222 \
     MCP_SERVER_URL=http://localhost:3000 \
-    DATABASE_URL=postgresql+psycopg2://owc:owc@localhost:5432/owc \
+    DATABASE_URL=postgresql+psycopg2://owc:owc@postgres:5432/owc \
     LANGSMITH_TRACING=false \
     LANGSMITH_PROJECT=open-web-catcher \
     LANGSMITH_ENDPOINT=http://langchain-frontend:1980 \

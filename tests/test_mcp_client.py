@@ -50,3 +50,19 @@ async def test_agent_tools_yields_when_required_tools_exist(settings):
     with patch("src.tools.mcp_client.MultiServerMCPClient", return_value=DummyMCPClient(tools)):
         async with agent_tools("hosting", settings) as loaded_tools:
             assert [tool.name for tool in loaded_tools] == [tool.name for tool in tools]
+
+
+@pytest.mark.asyncio
+async def test_agent_tools_uses_profile_specific_mcp_url(settings):
+    from src.tools.mcp_client import agent_tools
+
+    settings.mcp_server_url = "http://mcp.local:3000"
+    tools = [DummyTool(name) for name in ["inspect", "navigate"]]
+
+    with patch("src.tools.mcp_client.MultiServerMCPClient", return_value=DummyMCPClient(tools)) as mock_client:
+        async with agent_tools("classification", settings):
+            pass
+
+    assert mock_client.call_args.args[0] == {
+        "classification": {"url": "http://mcp.local:3000/mcp/classification/sse", "transport": "sse"}
+    }

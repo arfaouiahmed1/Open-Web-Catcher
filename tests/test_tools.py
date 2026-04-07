@@ -23,6 +23,17 @@ def bridge():
     return b
 
 
+def test_bridge_injects_browser_endpoint():
+    bridge = JSToolBridge(browser_ws_endpoint="ws://browser.example/devtools/browser/test", timeout=5)
+    with patch("src.tools.bridge.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout='{"ok": true}', stderr="")
+        result = bridge.call("inspect", {})
+
+    assert result == {"ok": True}
+    payload_json = mock_run.call_args.args[0][2]
+    assert '"browserWSEndpoint": "ws://browser.example/devtools/browser/test"' in payload_json
+
+
 def test_inspect_tool_calls_bridge(bridge):
     tool = InspectTool(bridge=bridge)
     tool._run()

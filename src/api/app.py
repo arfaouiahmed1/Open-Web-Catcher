@@ -27,6 +27,7 @@ from src.models.schemas import ClassificationResult, ExtractionResult, PipelineR
 from src.evaluation.tracing import setup_tracing_from_settings
 from src.storage.database import create_tables, get_session
 from src.storage.repositories import RunRepository
+from src.utils.service_health import probe_browser, probe_mcp
 from src.utils.config import Settings
 from src.utils.logging import get_logger, setup_logging
 from src.utils.observability import get_tracing_status, run_registry
@@ -104,6 +105,12 @@ def health():
         "status": "ok",
         "orchestrator_model": settings.orchestrator_model,
         "agent_model": settings.agent_model,
+        "browser_ws_endpoint": settings.browser_ws_endpoint,
+        "mcp_server_url": settings.mcp_server_url,
+        "dependencies": {
+            "browser": probe_browser(settings.browser_ws_endpoint),
+            "mcp": probe_mcp(settings.mcp_server_url),
+        },
         "tracing": get_tracing_status(settings).model_dump(),
     }
 

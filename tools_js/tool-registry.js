@@ -11,11 +11,19 @@
 
 import { z } from 'zod';
 
-import { inspect } from './tools/inspect.js';
-import { interact } from './tools/interact.js';
-import { harvest } from './tools/harvest.js';
-import { navigate } from './tools/navigate.js';
-import { screenshot } from './tools/screenshot.js';
+import { inspect as inspectTool } from './tools/inspect.js';
+import { interact as interactTool } from './tools/interact.js';
+import { harvest as harvestTool } from './tools/harvest.js';
+import { navigate as navigateTool } from './tools/navigate.js';
+import { screenshot as screenshotTool } from './tools/screenshot.js';
+
+const DEFAULT_TOOL_IMPLS = {
+  inspect: inspectTool,
+  interact: interactTool,
+  harvest: harvestTool,
+  navigate: navigateTool,
+  screenshot: screenshotTool,
+};
 
 function formatJsonBlock(label, value) {
   return `${label}:\n\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``;
@@ -60,7 +68,7 @@ const TOOL_SPECS = {
       },
     },
     zodSchema: {},
-    handlerFactory: (browserWsEndpoint) => () => inspect({ browserWsEndpoint }),
+    handlerFactory: (browserWsEndpoint, toolImpls) => () => toolImpls.inspect({ browserWsEndpoint }),
   },
 
   navigate: {
@@ -110,7 +118,7 @@ const TOOL_SPECS = {
         .default('networkidle2'),
       timeout_ms: z.number().optional().default(30_000),
     },
-    handlerFactory: (browserWsEndpoint) => (args) => navigate({ ...args, browserWsEndpoint }),
+    handlerFactory: (browserWsEndpoint, toolImpls) => (args) => toolImpls.navigate({ ...args, browserWsEndpoint }),
   },
 
   interact: {
@@ -192,7 +200,7 @@ const TOOL_SPECS = {
       y: z.number().optional().describe('Viewport Y coordinate for coordinates mode'),
       wait_ms: z.number().optional().default(3000).describe('How long to wait after interaction'),
     },
-    handlerFactory: (browserWsEndpoint) => (args) => interact({ ...args, browserWsEndpoint }),
+    handlerFactory: (browserWsEndpoint, toolImpls) => (args) => toolImpls.interact({ ...args, browserWsEndpoint }),
   },
 
   harvest: {
@@ -239,7 +247,7 @@ const TOOL_SPECS = {
       player_iframe_url: z.string().optional().default('')
         .describe('Iframe URL from inspect output when the player lives in an iframe'),
     },
-    handlerFactory: (browserWsEndpoint) => (args) => harvest({ ...args, browserWsEndpoint }),
+    handlerFactory: (browserWsEndpoint, toolImpls) => (args) => toolImpls.harvest({ ...args, browserWsEndpoint }),
   },
 
   screenshot: {
@@ -276,7 +284,7 @@ const TOOL_SPECS = {
       selector: z.string().optional().default('video')
         .describe('CSS selector for element mode'),
     },
-    handlerFactory: (browserWsEndpoint) => (args) => screenshot({ ...args, browserWsEndpoint }),
+    handlerFactory: (browserWsEndpoint, toolImpls) => (args) => toolImpls.screenshot({ ...args, browserWsEndpoint }),
   },
 };
 
@@ -302,14 +310,14 @@ export function getToolSpec(toolName) {
   return spec ? toPublicToolSpec(toolName, spec) : null;
 }
 
-export function getToolDefinitions(browserWsEndpoint) {
+export function getToolDefinitions(browserWsEndpoint, toolImpls = DEFAULT_TOOL_IMPLS) {
   return Object.fromEntries(
     Object.entries(TOOL_SPECS).map(([name, spec]) => [
       name,
       {
         ...toPublicToolSpec(name, spec),
         schema: spec.zodSchema,
-        handler: spec.handlerFactory(browserWsEndpoint),
+        handler: spec.handlerFactory(browserWsEndpoint, toolImpls),
       },
     ]),
   );
