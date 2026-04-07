@@ -101,6 +101,25 @@ class DatasetExportRequest(BaseModel):
 def health():
     """Liveness check."""
     settings = get_settings()
+    mcp_status = probe_mcp(settings.mcp_server_url)
+    browser_status = probe_browser(settings.browser_ws_endpoint)
+
+    if (
+        not browser_status.get("healthy", False)
+        and mcp_status.get("healthy", False)
+        and mcp_status.get("browser_mode") == "isolated"
+    ):
+        browser_status = {
+            **browser_status,
+            "healthy": True,
+            "managed_by": "mcp_isolated_sidecar",
+            "note": (
+                "Browser lifecycle is owned by the MCP tools container in isolated mode; "
+                "direct CDP probing from the app container is optional."
+            ),
+            "direct_probe_healthy": False,
+        }
+
     return {
         "status": "ok",
         "orchestrator_model": settings.orchestrator_model,
@@ -108,8 +127,8 @@ def health():
         "browser_ws_endpoint": settings.browser_ws_endpoint,
         "mcp_server_url": settings.mcp_server_url,
         "dependencies": {
-            "browser": probe_browser(settings.browser_ws_endpoint),
-            "mcp": probe_mcp(settings.mcp_server_url),
+            "browser": browser_status,
+            "mcp": mcp_status,
         },
         "tracing": get_tracing_status(settings).model_dump(),
     }

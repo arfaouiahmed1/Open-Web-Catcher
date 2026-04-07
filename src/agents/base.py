@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from typing import Annotated, Any, TypedDict
+from typing import TYPE_CHECKING, Annotated, Any, Callable, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
@@ -25,6 +25,9 @@ from src.utils.phoenix import (
 )
 
 logger = get_logger(__name__)
+
+if TYPE_CHECKING:
+    from src.memory.short_term import ShortTermMemory
 
 
 class RunCancelledError(Exception):
@@ -160,6 +163,9 @@ async def run_agent_loop(
     budget_exhausted_message: str = "Budget exhausted. Output your final JSON now.",
     observer: RunObserver | None = None,
     run_name: str = "agent_loop",
+    working_memory: "ShortTermMemory | None" = None,
+    prompt_metadata: dict[str, Any] | None = None,
+    turn_context_provider: Callable[[AgentGraphState], str] | None = None,
 ) -> AgentLoopResult:
     """Run an async LangGraph agent loop with structured tool calling."""
     tool_map: dict[str, BaseTool] = {tool.name: tool for tool in tools}
@@ -174,12 +180,22 @@ async def run_agent_loop(
         observer.emit(
             "agent_loop_started",
             f"{run_name} started",
-            details={"max_tool_calls": max_tool_calls, "model_name": model_name},
+            details={
+                "max_tool_calls": max_tool_calls,
+                "model_name": model_name,
+                "prompt": prompt_metadata or {},
+            },
         )
 
     async def llm_node(state: AgentGraphState) -> dict[str, Any]:
         _assert_not_cancelled(observer, "agent loop")
-        message_count = len(state["messages"])
+        invocation_messages = list(state["messages"])
+        turn_context = ""
+        if turn_context_provider is not None:
+            turn_context = str(turn_context_provider(state) or "").strip()
+            if turn_context:
+                invocation_messages.append(HumanMessage(content=turn_context))
+        message_count = len(invocation_messages)
         with phoenix_span(
             f"{run_name}.llm_turn",
             kind="chain",
@@ -194,7 +210,7 @@ async def run_agent_loop(
             },
         ) as llm_span:
             response: AIMessage = await llm_with_tools.ainvoke(
-                state["messages"],
+                invocation_messages,
                 config={"run_name": run_name},
             )
             usage = getattr(response, "usage_metadata", None)
@@ -243,7 +259,14 @@ async def run_agent_loop(
                     "additional_kwargs": _json_ready(getattr(response, "additional_kwargs", None)),
                     "response_class": type(response).__name__,
                     "content_preview": (response.content or "")[:1200],
+                    "prompt": prompt_metadata or {},
+                    "turn_context_preview": turn_context[:600],
                 },
+            )
+        if working_memory is not None and response.content:
+            working_memory.record_observation(
+                str(response.content)[:500],
+                source=f"{run_name}.llm",
             )
 
         return {"messages": [response], "budget_exhausted": False}
@@ -286,6 +309,18 @@ async def run_agent_loop(
                         "tool_call_budget": state["max_tool_calls"],
                     },
                 )
+            if working_memory is not None:
+                working_memory.record_tool(
+                    tool_name,
+                    tool_args,
+                    status="started",
+                )
+                for key in ("url", "mainUrl", "player_iframe_url", "base_url"):
+                    if tool_args.get(key):
+                        working_memory.record_navigation(
+                            str(tool_args[key]),
+                            via=tool_name,
+                        )
 
             with phoenix_span(
                 tool_name,
@@ -341,6 +376,13 @@ async def run_agent_loop(
                         "result_preview": result_content[:800],
                         "message_count": len(state["messages"]) + len(tool_messages),
                     },
+                )
+            if working_memory is not None:
+                working_memory.record_tool(
+                    tool_name,
+                    tool_args,
+                    status=tool_status,
+                    result_preview=result_content[:400],
                 )
 
         return {
@@ -446,6 +488,7 @@ async def run_agent_loop(
         "provider": provider,
         "tool_names": list(tool_map.keys()),
         "max_tool_calls": max_tool_calls,
+        "prompt": prompt_metadata or {},
     }
     context_tags = ["open-web-catcher", run_name, "agent-loop", "langgraph"]
 

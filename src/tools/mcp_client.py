@@ -1,10 +1,10 @@
 """MCP client — loads tools for a specific agent profile from the MCP server.
 
 Each agent profile maps to an SSE endpoint on the MCP server:
-    classification → /mcp/classification/sse  (inspect, navigate)
-    landing        → /mcp/landing/sse         (inspect, navigate, interact, screenshot)
-    hosting        → /mcp/hosting/sse         (inspect, interact, harvest, screenshot, navigate)
-    embedded       → /mcp/embedded/sse        (inspect, interact, harvest, screenshot, navigate)
+    classification → /mcp/classification/sse
+    landing        → /mcp/landing/sse
+    hosting        → /mcp/hosting/sse
+    embedded       → /mcp/embedded/sse
 
 When the MCP server runs with MCP_BROWSER_MODE=isolated, each SSE session also
 gets its own temporary browser instance. That browser is reused across tool
@@ -33,10 +33,86 @@ logger = get_logger(__name__)
 
 VALID_PROFILES = {"classification", "landing", "hosting", "embedded"}
 REQUIRED_TOOLS_BY_PROFILE = {
-    "classification": {"inspect", "navigate"},
-    "landing": {"inspect", "navigate", "interact", "screenshot"},
-    "hosting": {"inspect", "navigate", "interact", "harvest", "screenshot"},
-    "embedded": {"inspect", "navigate", "interact", "harvest", "screenshot"},
+    "classification": {
+        "open_url",
+        "get_page_context",
+        "get_frame_tree",
+        "query_elements",
+        "get_element_detail",
+        "scroll_page",
+        "go_back",
+        "wait_for_page_state",
+    },
+    "landing": {
+        "get_page_context",
+        "query_elements",
+        "get_element_detail",
+        "get_frame_tree",
+        "open_url",
+        "go_back",
+        "scroll_page",
+        "scroll_to_element",
+        "wait_for_page_state",
+        "click_element",
+        "click_css",
+        "click_text",
+        "click_xpath",
+        "click_checkbox",
+        "click_radio",
+        "type_into",
+        "select_option",
+        "play_media",
+        "swipe_region",
+        "click_coordinates",
+    },
+    "hosting": {
+        "get_page_context",
+        "query_elements",
+        "get_element_detail",
+        "get_frame_tree",
+        "open_url",
+        "go_back",
+        "scroll_page",
+        "scroll_to_element",
+        "wait_for_page_state",
+        "click_element",
+        "click_css",
+        "click_text",
+        "click_xpath",
+        "click_checkbox",
+        "click_radio",
+        "type_into",
+        "select_option",
+        "play_media",
+        "swipe_region",
+        "click_coordinates",
+        "get_media_state",
+        "capture_streams",
+    },
+    "embedded": {
+        "get_page_context",
+        "query_elements",
+        "get_element_detail",
+        "get_frame_tree",
+        "open_url",
+        "go_back",
+        "scroll_page",
+        "scroll_to_element",
+        "wait_for_page_state",
+        "click_element",
+        "click_css",
+        "click_text",
+        "click_xpath",
+        "click_checkbox",
+        "click_radio",
+        "type_into",
+        "select_option",
+        "play_media",
+        "swipe_region",
+        "click_coordinates",
+        "get_media_state",
+        "capture_streams",
+    },
 }
 
 

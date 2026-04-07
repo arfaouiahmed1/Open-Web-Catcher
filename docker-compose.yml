@@ -1,4 +1,4 @@
-# Open Web Catcher app container plus a lightweight Phoenix sidecar for tracing.
+# Open Web Catcher app stack with separate Puppeteer/MCP tooling.
 
 services:
   phoenix:
@@ -29,6 +29,38 @@ services:
       timeout: 5s
       retries: 10
 
+  owc-tools:
+    image: ${OWC_TOOLS_IMAGE:-open-web-catcher-tools}:${OWC_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.tools
+      cache_to:
+        - type=inline
+      cache_from:
+        - ${OWC_TOOLS_IMAGE:-open-web-catcher-tools}:${OWC_TAG:-latest}
+    container_name: ${OWC_TOOLS_CONTAINER:-owc-tools}
+    restart: unless-stopped
+    shm_size: "2gb"
+    ports:
+      - "3000:3000"
+      - "9222:9222"
+    env_file:
+      - .env
+    environment:
+      PORT: 3000
+      MCP_BROWSER_MODE: ${MCP_BROWSER_MODE:-isolated}
+      BROWSER_WS_ENDPOINT: ws://127.0.0.1:9222
+      PUPPETEER_EXECUTABLE_PATH: /usr/local/bin/google-chrome-stable
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
   owc:
     image: ${OWC_IMAGE:-open-web-catcher}:${OWC_TAG:-latest}
     build:
@@ -40,15 +72,14 @@ services:
         - ${OWC_IMAGE:-open-web-catcher}:${OWC_TAG:-latest}
     container_name: ${OWC_CONTAINER:-owc}
     restart: unless-stopped
-    shm_size: "2gb"
     ports:
       - "8000:8000"
       - "7860:7860"
     env_file:
       - .env
     environment:
-      BROWSER_WS_ENDPOINT: ws://localhost:9222
-      MCP_SERVER_URL: http://localhost:3000
+      BROWSER_WS_ENDPOINT: ws://owc-tools:9222
+      MCP_SERVER_URL: http://owc-tools:3000
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-owc}:${POSTGRES_PASSWORD:-owc}@postgres:5432/${POSTGRES_DB:-owc}
       PHOENIX_TRACING: ${PHOENIX_TRACING:-true}
       PHOENIX_PROJECT_NAME: ${PHOENIX_PROJECT_NAME:-open-web-catcher}
@@ -60,6 +91,8 @@ services:
       phoenix:
         condition: service_started
       postgres:
+        condition: service_healthy
+      owc-tools:
         condition: service_healthy
     volumes:
       - ./data:/app/data

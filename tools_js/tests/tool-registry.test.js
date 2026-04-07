@@ -1,31 +1,36 @@
 import assert from 'node:assert/strict';
 
-import { getToolDefinitions } from '../tool-registry.js';
+import { z } from 'zod';
 
-const calls = [];
-const fakeTools = {
-  inspect: async (args) => { calls.push(['inspect', args]); return { ok: true }; },
-  navigate: async (args) => { calls.push(['navigate', args]); return { ok: true }; },
-  interact: async (args) => { calls.push(['interact', args]); return { ok: true }; },
-  harvest: async (args) => { calls.push(['harvest', args]); return { ok: true }; },
-  screenshot: async (args) => { calls.push(['screenshot', args]); return { ok: true }; },
-};
+import { PROFILES } from '../profiles.js';
+import { getToolCatalog, getToolDefinitions } from '../tool-registry.js';
 
 const endpoint = 'ws://127.0.0.1:9333/devtools/browser/session-123';
+const catalog = getToolCatalog();
+const calls = [];
+const fakeTools = Object.fromEntries(
+  Object.keys(catalog).map((toolName) => [
+    toolName,
+    async (args) => {
+      calls.push([toolName, args]);
+      return { ok: true, toolName };
+    },
+  ]),
+);
+
 const defs = getToolDefinitions(endpoint, fakeTools);
 
-await defs.inspect.handler({});
-await defs.navigate.handler({ url: 'https://example.com' });
-await defs.interact.handler({ mode: 'click', selector: '.play' });
-await defs.harvest.handler({ duration_ms: 5000 });
-await defs.screenshot.handler({ mode: 'viewport' });
+for (const [toolName, def] of Object.entries(defs)) {
+  const parsedArgs = z.object(def.schema).parse(catalog[toolName].input_example ?? {});
+  await def.handler(parsedArgs);
+  assert.deepEqual(calls.at(-1), [toolName, { ...parsedArgs, browserWsEndpoint: endpoint }]);
+}
 
-assert.deepEqual(calls, [
-  ['inspect', { browserWsEndpoint: endpoint }],
-  ['navigate', { url: 'https://example.com', browserWsEndpoint: endpoint }],
-  ['interact', { mode: 'click', selector: '.play', browserWsEndpoint: endpoint }],
-  ['harvest', { duration_ms: 5000, browserWsEndpoint: endpoint }],
-  ['screenshot', { mode: 'viewport', browserWsEndpoint: endpoint }],
-]);
+for (const [profileName, toolNames] of Object.entries(PROFILES)) {
+  assert.ok(toolNames.length > 0, `${profileName} should expose at least one tool`);
+  for (const toolName of toolNames) {
+    assert.ok(catalog[toolName], `${profileName} references unknown tool ${toolName}`);
+  }
+}
 
-console.log('tool-registry endpoint injection check passed');
+console.log(`Validated ${Object.keys(catalog).length} tools across ${Object.keys(PROFILES).length} profiles.`);

@@ -7,6 +7,10 @@ import re
 from pathlib import Path
 
 from src.agents.base import build_llm, run_agent_loop
+from src.agents.memory import build_memory_context, remember_agent_run
+from src.agents.prompting import build_runtime_context, build_task_brief, compile_agent_prompt
+from src.memory.long_term import LongTermMemory
+from src.memory.short_term import ShortTermMemory
 from src.models.enums import AgentType, Confidence, PageType
 from src.models.schemas import ClassificationResult
 from src.tools.mcp_client import agent_tools
@@ -18,12 +22,19 @@ from src.utils.phoenix import phoenix_span, set_span_output, using_phoenix_attri
 logger = get_logger(__name__)
 
 PROMPT_PATH = Path("configs/prompts/classification_v1.md")
+_AGENT_CONTRACT = """\
+- classify the page as exactly one of: `landing_page`, `host_page`, `embed_video_page`, or `other`
+- use live page evidence and tool results before deciding
+- respect the output format defined in the base policy
+- do not attempt downstream extraction in this step
+"""
 
 
 class ClassificationAgent:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.llm = build_llm(settings)
+        self.memory = LongTermMemory(settings.memory_db_path) if settings.memory_enabled else None
         self._system_prompt = (
             PROMPT_PATH.read_text(encoding="utf-8")
             if PROMPT_PATH.exists()
@@ -47,19 +58,70 @@ class ClassificationAgent:
                 input_value={"url": url},
                 attributes={"owc.agent_type": AgentType.CLASSIFICATION.value},
             ) as span:
+                short_memory = ShortTermMemory(k=self.settings.memory_short_window)
+                memory_context = build_memory_context(
+                    self.memory,
+                    url=url,
+                    page_type=AgentType.CLASSIFICATION.value,
+                    prompt_limit=self.settings.memory_prompt_limit,
+                    observer=observer,
+                )
+                compiled_prompt = compile_agent_prompt(
+                    settings=self.settings,
+                    agent_id=AgentType.CLASSIFICATION.value,
+                    base_policy=self._system_prompt,
+                    agent_contract=_AGENT_CONTRACT,
+                    task_brief=build_task_brief(
+                        url=url,
+                        page_type=AgentType.CLASSIFICATION.value,
+                        run_goal="Classify the page type from live evidence before any extraction agents are chosen.",
+                    ),
+                    memory_context=memory_context,
+                    working_state=short_memory.working_state(
+                        objective="Classify the current page using live evidence.",
+                        page_url=url,
+                        page_type=AgentType.CLASSIFICATION.value,
+                    ),
+                    runtime_context=build_runtime_context(
+                        tool_profile="classification",
+                        max_tool_calls=self.settings.classification_max_tool_calls,
+                    ),
+                )
+                if observer is not None:
+                    observer.emit(
+                        "prompt_compiled",
+                        "Compiled layered prompt for classification agent",
+                        details=compiled_prompt.model_dump(exclude={"content"}),
+                    )
                 async with agent_tools("classification", self.settings) as tools:
                     result = await run_agent_loop(
                         settings=self.settings,
                         llm=self.llm,
                         tools=tools,
-                        system_prompt=self._system_prompt,
+                        system_prompt=compiled_prompt.content,
                         initial_message=f"Classify this page: {url}",
                         max_tool_calls=self.settings.classification_max_tool_calls,
                         budget_exhausted_message="Output your classification now using the exact Output Format.",
                         observer=observer,
                         run_name="classification_agent",
+                        working_memory=short_memory,
+                        prompt_metadata=compiled_prompt.model_dump(exclude={"content"}),
+                        turn_context_provider=lambda _state: short_memory.working_state(
+                            objective="Classify the current page using live evidence.",
+                            page_url=url,
+                            page_type=AgentType.CLASSIFICATION.value,
+                        ),
                     )
                 parsed = _parse_output(result.final_text, url)
+                remember_agent_run(
+                    self.memory,
+                    url=url,
+                    page_type=AgentType.CLASSIFICATION.value,
+                    status="success",
+                    payload=parsed.model_dump(mode="json"),
+                    observer=observer,
+                    short_memory=short_memory,
+                )
                 set_span_output(
                     span,
                     {
@@ -139,7 +201,7 @@ def _parse_output(text: str, url: str) -> ClassificationResult:
 
 _DEFAULT_PROMPT = """\
 You are a web page classifier for illegal streaming sites.
-Call inspect first to gather page signals. You may navigate once if ambiguous.
+Call get_page_context first to gather page signals. Use query_elements or get_element_detail only if needed.
 
 Output format:
 CLASSIFICATION: [landing_page/host_page/embed_video_page/other]

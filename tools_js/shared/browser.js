@@ -9,7 +9,7 @@ import path from 'node:path';
 import puppeteer from 'puppeteer-core';
 import { enableBlocking } from './adblocker.js';
 
-const WS_ENDPOINT = process.env.BROWSER_WS_ENDPOINT || 'ws://chrome:3000';
+const WS_ENDPOINT = process.env.BROWSER_WS_ENDPOINT || 'ws://127.0.0.1:9222';
 const EXECUTABLE_PATH =
   process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/local/bin/google-chrome-stable';
 const DEFAULT_LAUNCH_ARGS = [

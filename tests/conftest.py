@@ -18,6 +18,7 @@ def settings() -> Settings:
         google_api_key="test-key",
         browser_ws_endpoint="ws://localhost:9222",
         database_url="sqlite:///:memory:",
+        memory_enabled=False,
         langchain_tracing_v2=False,
         gemini_model="gemini-1.5-flash",
     )

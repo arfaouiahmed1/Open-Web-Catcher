@@ -7,6 +7,7 @@ from src.evaluation.datasets import (
     pipeline_result_to_dataset_example,
     publish_dataset_to_phoenix,
 )
+from src.evaluation.tool_benchmarks import TOOL_BENCHMARKS, get_all_benchmark_cases
 
 __all__ = [
     "MetricsCollector",
@@ -16,4 +17,6 @@ __all__ = [
     "build_dataset_examples",
     "export_dataset_examples",
     "publish_dataset_to_phoenix",
+    "TOOL_BENCHMARKS",
+    "get_all_benchmark_cases",
 ]

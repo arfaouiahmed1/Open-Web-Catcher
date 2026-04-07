@@ -10,18 +10,24 @@ function Get-OwcContext {
     $rootDir = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
 
     $image = if ($env:OWC_IMAGE) { $env:OWC_IMAGE } else { "open-web-catcher" }
+    $toolsImage = if ($env:OWC_TOOLS_IMAGE) { $env:OWC_TOOLS_IMAGE } else { "open-web-catcher-tools" }
     $tag = if ($env:OWC_TAG) { $env:OWC_TAG } else { "latest" }
     $container = if ($env:OWC_CONTAINER) { $env:OWC_CONTAINER } else { "owc" }
+    $toolsContainer = if ($env:OWC_TOOLS_CONTAINER) { $env:OWC_TOOLS_CONTAINER } else { "owc-tools" }
 
     [pscustomobject]@{
         ScriptDir = $scriptDir
         RootDir = $rootDir
         ComposeFile = Join-Path $rootDir "docker-compose.yml"
         Image = $image
+        ToolImage = $toolsImage
         Tag = $tag
         ImageRef = "$image`:$tag"
+        ToolImageRef = "$toolsImage`:$tag"
         Container = $container
+        ToolContainer = $toolsContainer
         Service = "owc"
+        ToolService = "owc-tools"
         EnvFile = Join-Path $rootDir ".env"
         ExampleEnvFile = Join-Path $rootDir ".env.example"
         DataDir = Join-Path $rootDir "data"
@@ -30,6 +36,7 @@ function Get-OwcContext {
         HealthUrl = "http://localhost:8000/health"
         ApiUrl = "http://localhost:8000"
         GradioUrl = "http://localhost:7860"
+        McpUrl = "http://localhost:3000"
         PhoenixUrl = "http://localhost:6006"
     }
 }
@@ -424,11 +431,11 @@ function Invoke-OwcBuild {
         $buildArgs += "--no-cache"
     }
 
-    $buildArgs += $Context.Service
+    $buildArgs += @($Context.ToolService, $Context.Service)
     Invoke-OwcComposeChecked -Context $Context -Arguments $buildArgs | Out-Null
 
     $modeLabel = if ($NoCache) { "without cache" } else { "with cache" }
-    Write-OwcSuccess "Built service '$($Context.Service)' ($modeLabel)."
+    Write-OwcSuccess "Built services '$($Context.ToolService)' and '$($Context.Service)' ($modeLabel)."
 }
 
 function Show-OwcEndpoints {
@@ -439,6 +446,7 @@ function Show-OwcEndpoints {
     Write-Host "  App health -> $($Context.HealthUrl)"
     Write-Host "  FastAPI    -> $($Context.ApiUrl)"
     Write-Host "  Gradio     -> $($Context.GradioUrl)"
+    Write-Host "  MCP tools  -> $($Context.McpUrl)"
     Write-Host "  Phoenix    -> $($Context.PhoenixUrl)"
 }
 

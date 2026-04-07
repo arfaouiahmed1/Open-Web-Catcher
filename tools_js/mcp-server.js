@@ -15,7 +15,7 @@ import { closeEphemeralBrowser, launchEphemeralBrowser } from './shared/browser.
 import { getToolCatalog, getToolDefinitions, getToolSpec } from './tool-registry.js';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
-const BROWSER_WS = process.env.BROWSER_WS_ENDPOINT || 'ws://chrome:3000';
+const BROWSER_WS = process.env.BROWSER_WS_ENDPOINT || 'ws://127.0.0.1:9222';
 const BROWSER_MODE = process.env.MCP_BROWSER_MODE || 'isolated';
 
 function buildServer(profileName, browserWsEndpoint) {

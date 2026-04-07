@@ -1,31 +1,16 @@
-"""Prompt regression tests — local golden test cases (no LangSmith required)."""
+"""Prompt and local dataset regression tests."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
 
 from src.evaluation.datasets import load_test_cases
-from src.models.enums import Confidence, PageType
-from src.utils.config import Settings
 
 CASES_PATH = Path("data/test_cases/sites.json")
 
 
-@pytest.fixture
-def settings():
-    return Settings(
-        google_api_key="test-key",
-        browser_ws_endpoint="ws://localhost:9222",
-        database_url="sqlite:///:memory:",
-    )
-
-
 def test_load_test_cases_missing_file():
-    """load_test_cases should return empty list when file does not exist."""
     cases = load_test_cases("data/test_cases/nonexistent.json")
     assert cases == []
 
@@ -40,29 +25,38 @@ def test_load_test_cases_valid(tmp_path):
     assert cases[0]["expected_type"] == "landing_page"
 
 
-@pytest.mark.skipif(not CASES_PATH.exists(), reason="No golden test cases file found")
-@patch("src.agents.classification.ChatGoogleGenerativeAI")
-def test_classification_golden_cases(mock_llm_cls, settings):
-    """Run classification on each golden case and check page_type matches expected."""
-    from src.agents.classification import ClassificationAgent
+def test_landing_prompt_covers_navigation_and_match_extraction_flow():
+    prompt = Path("configs/prompts/landing_page_v1.md").read_text(encoding="utf-8")
 
-    cases = load_test_cases(CASES_PATH)
-    if not cases:
-        pytest.skip("No test cases to run")
+    assert "Discover every URL that leads to a watchable hosting page." in prompt
+    assert "query_elements" in prompt
+    assert "When pagination is detected" in prompt
+    assert "Verify Hosting Patterns" in prompt
+    assert '"participants": "Team A vs Team B"' in prompt
+    assert '"channel": "Channel name"' in prompt
+    assert "challenge_cleared" in prompt
+    assert "access_state.challenge_detected" in prompt
 
-    for case in cases:
-        expected = case.get("expected_type", "unknown")
-        mock_response = MagicMock()
-        mock_response.content = json.dumps({
-            "url": case["url"],
-            "page_type": expected,
-            "confidence": "high",
-            "reasoning": "mocked",
-        })
-        mock_llm = MagicMock()
-        mock_llm.bind_tools.return_value.invoke.return_value = mock_response
-        mock_llm_cls.return_value = mock_llm
 
-        agent = ClassificationAgent(settings)
-        result = agent.run(url=case["url"])
-        assert result.page_type == expected, f"Failed for {case['url']}: got {result.page_type}"
+def test_hosting_prompt_covers_server_switching_activation_and_network_extraction():
+    prompt = Path("configs/prompts/hosting_page_v1.md").read_text(encoding="utf-8")
+
+    assert "Try every detected server/source path you can find." in prompt
+    assert "Activate playback" in prompt
+    assert "Always call `capture_streams` before final output." in prompt
+    assert "If the page navigates away unintentionally, recover with `open_url(mainUrl)`." in prompt
+    assert "access_state.challenge_detected" in prompt
+    assert "early_stop_reason" in prompt
+    assert '"decision": "safe_exit|needs_embed_agent|partial_success_needs_embed|no_stream_found"' in prompt
+
+
+def test_embedded_prompt_covers_frame_mapping_activation_and_capture():
+    prompt = Path("configs/prompts/embedded_page_v1.md").read_text(encoding="utf-8")
+
+    assert "Map frames and player" in prompt
+    assert "click_coordinates" in prompt
+    assert "Try all source/server options" in prompt
+    assert '"all_stream_urls"' in prompt
+    assert "Never end on context alone." in prompt
+    assert "access_state.challenge_detected" in prompt
+    assert "challenge_cleared" in prompt

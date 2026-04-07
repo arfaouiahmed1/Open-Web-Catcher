@@ -115,6 +115,15 @@ class Settings(BaseSettings):
     tool_timeout_seconds: int = 30
     agent_timeout_seconds: int = 300
 
+    # Memory tuned for website extraction rather than general chat recall.
+    memory_enabled: bool = True
+    memory_db_path: str = "data/site_memory.db"
+    memory_prompt_limit: int = 6
+    memory_short_window: int = 40
+    prompt_cache_enabled: bool = True
+    prompt_cache_mode: str = "provider_hook"
+    prompt_cache_min_chars: int = 2000
+
     @classmethod
     def from_yaml(cls, yaml_path: str | Path = "configs/settings.yaml") -> "Settings":
         """Load settings, merging YAML overrides on top of env vars."""

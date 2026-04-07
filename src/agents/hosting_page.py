@@ -5,6 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from src.agents.base import build_llm, run_agent_loop
+from src.agents.memory import build_memory_context, remember_agent_run
+from src.agents.prompting import build_runtime_context, build_task_brief, compile_agent_prompt
+from src.memory.long_term import LongTermMemory
+from src.memory.short_term import ShortTermMemory
 from src.models.enums import AgentType, ExtractionStatus, PageType
 from src.models.schemas import ExtractionResult, StreamURL
 from src.tools.mcp_client import agent_tools
@@ -16,12 +20,19 @@ from src.utils.phoenix import phoenix_span, set_span_output, using_phoenix_attri
 logger = get_logger(__name__)
 
 PROMPT_PATH = Path("configs/prompts/hosting_page_v1.md")
+_AGENT_CONTRACT = """\
+- extract verified stream URLs from the hosting page when possible
+- if the host page clearly hands off to an embedded player, return that embedded URL instead of guessing streams
+- respect the base policy's final JSON/output contract
+- use site memory only as hints and re-check everything on the live page
+"""
 
 
 class HostingPageAgent:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.llm = build_llm(settings)
+        self.memory = LongTermMemory(settings.memory_db_path) if settings.memory_enabled else None
         self._system_prompt = (
             PROMPT_PATH.read_text(encoding="utf-8")
             if PROMPT_PATH.exists()
@@ -45,17 +56,59 @@ class HostingPageAgent:
                 input_value={"url": url},
                 attributes={"owc.agent_type": AgentType.HOSTING_PAGE.value},
             ) as span:
+                short_memory = ShortTermMemory(k=self.settings.memory_short_window)
+                memory_context = build_memory_context(
+                    self.memory,
+                    url=url,
+                    page_type=AgentType.HOSTING_PAGE.value,
+                    prompt_limit=self.settings.memory_prompt_limit,
+                    observer=observer,
+                )
+                compiled_prompt = compile_agent_prompt(
+                    settings=self.settings,
+                    agent_id=AgentType.HOSTING_PAGE.value,
+                    base_policy=self._system_prompt,
+                    agent_contract=_AGENT_CONTRACT,
+                    task_brief=build_task_brief(
+                        url=url,
+                        page_type=AgentType.HOSTING_PAGE.value,
+                        run_goal="Extract streams directly from the hosting page or identify the embedded player handoff.",
+                    ),
+                    memory_context=memory_context,
+                    working_state=short_memory.working_state(
+                        objective="Extract streams from the hosting page or find the embedded handoff.",
+                        page_url=url,
+                        page_type=AgentType.HOSTING_PAGE.value,
+                    ),
+                    runtime_context=build_runtime_context(
+                        tool_profile="hosting",
+                        max_tool_calls=self.settings.hosting_page_max_tool_calls,
+                    ),
+                )
+                if observer is not None:
+                    observer.emit(
+                        "prompt_compiled",
+                        "Compiled layered prompt for hosting page agent",
+                        details=compiled_prompt.model_dump(exclude={"content"}),
+                    )
                 async with agent_tools("hosting", self.settings) as tools:
                     result = await run_agent_loop(
                         settings=self.settings,
                         llm=self.llm,
                         tools=tools,
-                        system_prompt=self._system_prompt,
+                        system_prompt=compiled_prompt.content,
                         initial_message=f"Extract all stream URLs from this hosting page.\n\nmainUrl: {url}",
                         max_tool_calls=self.settings.hosting_page_max_tool_calls,
                         budget_exhausted_message="Budget exhausted. Output your final JSON now.",
                         observer=observer,
                         run_name="hosting_page_agent",
+                        working_memory=short_memory,
+                        prompt_metadata=compiled_prompt.model_dump(exclude={"content"}),
+                        turn_context_provider=lambda _state: short_memory.working_state(
+                            objective="Extract streams from the hosting page or find the embedded handoff.",
+                            page_url=url,
+                            page_type=AgentType.HOSTING_PAGE.value,
+                        ),
                     )
 
                 output = result.parse_json()
@@ -89,6 +142,15 @@ class HostingPageAgent:
                         "status": extraction.status.value,
                         "decision": decision,
                     },
+                )
+                remember_agent_run(
+                    self.memory,
+                    url=url,
+                    page_type=AgentType.HOSTING_PAGE.value,
+                    status=extraction.status.value,
+                    payload=output,
+                    observer=observer,
+                    short_memory=short_memory,
                 )
 
         if observer is not None:

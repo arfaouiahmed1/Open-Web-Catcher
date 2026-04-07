@@ -1,4 +1,4 @@
-"""JSToolBridge: runs Node.js tools as subprocesses and parses their JSON output."""
+"""JSToolBridge: runs JS tools through a generic Node CLI and parses JSON output."""
 
 from __future__ import annotations
 
@@ -13,17 +13,11 @@ from src.utils.logging import get_logger
 logger = get_logger(__name__)
 
 TOOLS_ROOT = Path(__file__).parent.parent.parent / "tools_js"
-TOOLS_DIR = TOOLS_ROOT / "tools"
+RUNNER_SCRIPT = TOOLS_ROOT / "run-tool.js"
 
 
 class JSToolBridge:
-    """Calls a Node.js tool script, passing params as a JSON CLI argument.
-
-    Each JS tool expects:
-        node <tool>.js '<json_payload>'
-
-    And writes a JSON object to stdout.
-    """
+    """Calls the generic Node tool runner with a public tool name and JSON payload."""
 
     def __init__(self, browser_ws_endpoint: str, timeout: int = 30) -> None:
         self.browser_ws_endpoint = browser_ws_endpoint
@@ -33,7 +27,7 @@ class JSToolBridge:
         """Execute a JS tool and return its parsed JSON output.
 
         Args:
-            tool_name: Script name without extension (e.g. "inspect").
+            tool_name: Public tool name exposed by the JS registry / MCP server.
             params: Tool-specific parameters merged with browserWSEndpoint.
 
         Returns:
@@ -42,11 +36,8 @@ class JSToolBridge:
         Raises:
             RuntimeError: If the subprocess fails or output is not valid JSON.
         """
-        script = TOOLS_DIR / f"{tool_name}.js"
-        if not script.exists():
-            script = TOOLS_ROOT / f"{tool_name}.js"
-        if not script.exists():
-            raise FileNotFoundError(f"JS tool not found: {script}")
+        if not RUNNER_SCRIPT.exists():
+            raise FileNotFoundError(f"JS tool runner not found: {RUNNER_SCRIPT}")
 
         payload = {"browserWSEndpoint": self.browser_ws_endpoint, **params}
         payload_json = json.dumps(payload)
@@ -54,7 +45,7 @@ class JSToolBridge:
         start = time.perf_counter()
         try:
             result = subprocess.run(
-                ["node", str(script), payload_json],
+                ["node", str(RUNNER_SCRIPT), tool_name, payload_json],
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,

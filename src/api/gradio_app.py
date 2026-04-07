@@ -6,6 +6,7 @@ import asyncio
 from collections import Counter
 import html
 import json
+import os
 import threading
 import time
 import uuid
@@ -13,6 +14,27 @@ from typing import Any
 
 import gradio as gr
 
+from src.api.gradio.layout import (
+    build_agent_test_lab_tab,
+    build_dataset_studio_tab,
+    build_live_pipeline_tab,
+    build_observability_tab,
+    build_quality_lab_tab,
+)
+from src.api.gradio.quality import (
+    default_pytest_targets,
+    discover_pytest_targets,
+    load_tool_catalog,
+    quality_mode_updates,
+    run_quality_task,
+)
+from src.api.gradio.shared import (
+    AGENT_LABELS,
+    APP_CSS,
+    DEFAULT_QUEUE_CONCURRENCY_LIMIT,
+    PAGE_TYPE_OPTIONS,
+    STATUS_OPTIONS,
+)
 from src.agents.base import RunCancelledError
 from src.agents.classification import ClassificationAgent
 from src.agents.embedded_page import EmbeddedPageAgent
@@ -35,74 +57,6 @@ from src.utils.observability import RunObserver, RunTrace, RuntimeEvent, get_tra
 
 settings = Settings.from_yaml()
 logger = get_logger(__name__)
-
-APP_CSS = """
-.app-shell {max-width: 1520px; margin: 0 auto; padding-bottom: 2rem;}
-.hero {padding: 1.35rem 1.5rem; border-radius: 24px; background:
-linear-gradient(135deg, #13293d 0%, #1b4965 45%, #5fa8d3 100%);
-color: #f6fbff; box-shadow: 0 16px 40px rgba(19, 41, 61, 0.22);}
-.hero h1 {margin: 0; font-size: 2rem;}
-.hero p {margin: 0.55rem 0 0 0; max-width: 960px;}
-.panel-note {padding: 0.9rem 1rem; border-radius: 16px; background: #f4efe6; border: 1px solid #e3d4bc;}
-.status-card {padding: 1rem 1.1rem; border-radius: 18px; background: #fffaf3; border: 1px solid #eadbc8;}
-.run-card {padding: 1rem 1.1rem; border-radius: 18px; background: #f8fbfd; border: 1px solid #d6e2ea;}
-.flow-shell {padding: 0.85rem; border-radius: 18px; background: linear-gradient(180deg, #fbfdff 0%, #f2f6f8 100%); border: 1px solid #d9e4ea;}
-.flow-root {display: inline-block; padding: 0.7rem 1rem; border-radius: 999px; background: #13293d; color: #fff; font-weight: 700; margin: 0 auto;}
-.flow-divider {font-size: 1.2rem; text-align: center; color: #5f7d8f; margin: 0.25rem 0 0.55rem;}
-.flow-row {display: flex; flex-wrap: wrap; gap: 0.85rem; justify-content: center; align-items: flex-start;}
-.flow-branch {min-width: 240px; max-width: 330px; border: 1px solid #d8e5ea; border-radius: 16px; background: #fff; padding: 0.85rem;}
-.flow-branch.active {border-color: #1b4965; box-shadow: 0 0 0 2px rgba(27, 73, 101, 0.1);}
-.flow-actor {display: inline-block; padding: 0.45rem 0.75rem; border-radius: 999px; background: #e9f3f8; color: #163247; font-weight: 700;}
-.flow-tools {display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.65rem;}
-.flow-tool {display: inline-block; padding: 0.35rem 0.6rem; border-radius: 999px; background: #f4efe6; color: #5b4332; font-size: 0.9rem;}
-.flow-empty {padding: 1rem; text-align: center; color: #5e7280;}
-.flow-grid {display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; margin-top: 0.7rem;}
-.flow-stat {padding: 0.55rem 0.65rem; border-radius: 12px; background: #f7fafb; border: 1px solid #e1ebf0;}
-.flow-meta {margin-top: 0.65rem; color: #486171; font-size: 0.92rem;}
-.mini-label {font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.08em; color: #6f8594;}
-"""
-
-EVENT_HEADERS = [
-    "Seq",
-    "Time",
-    "Actor",
-    "Kind",
-    "Status",
-    "Tool",
-    "Model",
-    "Provider",
-    "Tokens",
-    "Message",
-]
-
-DATASET_HEADERS = [
-    "URL",
-    "Status",
-    "Streams",
-    "Providers",
-    "Success",
-    "LLM Calls",
-    "Tool Calls",
-    "Cost USD",
-]
-
-AGENT_OPTIONS = [
-    ("Classification", "classification"),
-    ("Landing Page", "landing"),
-    ("Hosting Page", "hosting"),
-    ("Embedded Page", "embedded"),
-]
-
-AGENT_LABELS = {
-    "classification": "Classification",
-    "landing": "Landing Page",
-    "hosting": "Hosting Page",
-    "embedded": "Embedded Page",
-    "orchestrator": "Orchestrator",
-}
-
-PAGE_TYPE_OPTIONS = ["any", "landing_page", "hosting_page", "embedded_page", "unknown"]
-STATUS_OPTIONS = ["any", "success", "partial", "failed"]
 
 
 def _normalize_agent_key(agent_key: str) -> str:
@@ -216,6 +170,70 @@ def _latest_provider_event(events: list[RuntimeEvent]) -> RuntimeEvent | None:
     return None
 
 
+def _latest_tool_event(events: list[RuntimeEvent]) -> RuntimeEvent | None:
+    for event in reversed(events):
+        if event.kind in {"tool_call_started", "tool_call_finished"}:
+            return event
+    return None
+
+
+def _trim_preview(value: Any, limit: int = 220) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _tool_target_summary(tool_name: str, tool_args: dict[str, Any] | None) -> str:
+    args = tool_args or {}
+    if not args:
+        return "no explicit target"
+
+    named_keys = [
+        "url",
+        "mainUrl",
+        "player_iframe_url",
+        "player_iframe_hint",
+        "selector",
+        "kind",
+        "action",
+        "value",
+        "text",
+        "query",
+        "server",
+        "base_url",
+    ]
+    parts: list[str] = []
+    for key in named_keys:
+        if key in args and args.get(key) not in (None, "", [], {}):
+            parts.append(f"{key}={_trim_preview(args.get(key), 90)}")
+
+    if "stream_urls" in args and isinstance(args["stream_urls"], list):
+        parts.append(f"stream_urls={len(args['stream_urls'])}")
+    if "x" in args or "y" in args:
+        x = args.get("x", "?")
+        y = args.get("y", "?")
+        parts.append(f"coords=({x}, {y})")
+
+    if not parts:
+        fallback_items = list(args.items())[:3]
+        parts = [f"{key}={_trim_preview(value, 80)}" for key, value in fallback_items]
+
+    return "; ".join(parts) if parts else f"{tool_name} with structured args"
+
+
+def _tool_call_request_lines(tool_calls_payload: Any, limit: int = 4) -> list[str]:
+    if not isinstance(tool_calls_payload, list):
+        return []
+
+    lines: list[str] = []
+    for call in tool_calls_payload[:limit]:
+        tool_name = str(call.get("name", "unknown") or "unknown")
+        target = _tool_target_summary(tool_name, call.get("args", {}))
+        lines.append(f"- `{tool_name}` on `{target}`")
+    return lines
+
+
 def _actor_stats(trace: RunTrace | None, events: list[RuntimeEvent]) -> dict[str, dict[str, Any]]:
     stats: dict[str, dict[str, Any]] = {}
     if trace is not None:
@@ -307,6 +325,7 @@ def _provider_markdown(events: list[RuntimeEvent]) -> str:
         details = event.details or {}
         preview = str(details.get("content_preview") or "_No text content returned._")[:900]
         requested_tools = ", ".join(details.get("tool_call_names", [])) or "none"
+        tool_request_lines = _tool_call_request_lines(details.get("tool_calls_payload"))
         blocks.extend(
             [
                 f"#### Turn #{event.seq} | {event.actor}",
@@ -314,6 +333,14 @@ def _provider_markdown(events: list[RuntimeEvent]) -> str:
                 f"- Model: `{details.get('provider', 'unknown')}` / `{details.get('model_name', 'unknown')}`",
                 f"- Tokens in/out: `{details.get('input_tokens', 0)}` / `{details.get('output_tokens', 0)}`",
                 f"- Requested tools: `{requested_tools}`",
+            ]
+        )
+        if tool_request_lines:
+            blocks.extend(["- Requested tool targets:"])
+            blocks.extend(tool_request_lines)
+        blocks.extend(
+            [
+                "- Visible model output:",
                 "```text",
                 preview,
                 "```",
@@ -407,12 +434,12 @@ def _render_trace_panels(
     full_latest = trace.events[-1] if trace.events else None
     visible_latest = events[-1] if events else full_latest
     latest_provider = _latest_provider_event(events) or _latest_provider_event(trace.events)
+    latest_tool_event = _latest_tool_event(events) or _latest_tool_event(trace.events)
     latest_tool = "none"
-    for event in reversed(events or trace.events):
-        tool_name = str((event.details or {}).get("tool_name", "") or "").strip()
-        if tool_name:
-            latest_tool = tool_name
-            break
+    latest_tool_target = "none"
+    if latest_tool_event is not None:
+        latest_tool = str((latest_tool_event.details or {}).get("tool_name", "") or "").strip() or "none"
+        latest_tool_target = _tool_target_summary(latest_tool, (latest_tool_event.details or {}).get("tool_args", {}))
 
     current_actor = visible_latest.actor if visible_latest else trace.root_actor
     latest_kind = visible_latest.kind if visible_latest else "none"
@@ -425,6 +452,10 @@ def _render_trace_panels(
         ]
         if bit
     ) or "none"
+    latest_visible_output = _trim_preview(
+        (latest_provider.details or {}).get("content_preview", "") if latest_provider else "",
+        limit=280,
+    ) or "none"
     metrics = trace.metrics
     summary_lines = [
         "### Live Activity",
@@ -433,7 +464,9 @@ def _render_trace_panels(
         f"- Current actor: `{current_actor}`",
         f"- Latest event: `{latest_kind}` / `{latest_status}`",
         f"- Latest tool: `{latest_tool}`",
+        f"- Latest tool target: `{latest_tool_target}`",
         f"- Active model: `{latest_model}`",
+        f"- Latest visible model output: `{latest_visible_output}`",
         f"- Events in view: `{len(events)}` / total `{len(trace.events)}`",
         f"- Filters: `actor={actor}` `kind={kind}` `status={status}`",
     ]
@@ -581,6 +614,8 @@ def _event_to_chat_message(event: RuntimeEvent) -> dict[str, str]:
         chips.append(f"{details.get('provider', 'unknown')} / {details.get('model_name', 'unknown')}")
     if details.get("tool_name"):
         chips.append(f"tool `{details['tool_name']}`")
+        target_summary = _tool_target_summary(str(details["tool_name"]), details.get("tool_args", {}))
+        chips.append(f"target `{target_summary}`")
     if details.get("tool_call_names"):
         chips.append("requested " + ", ".join(f"`{name}`" for name in details["tool_call_names"]))
     if details.get("input_tokens") is not None or details.get("output_tokens") is not None:
@@ -589,8 +624,15 @@ def _event_to_chat_message(event: RuntimeEvent) -> dict[str, str]:
     content = f"**{prefix} | {event.actor}**\n\n{event.message}"
     if chips:
         content += "\n\n_" + " | ".join(chips) + "_"
+    if event.kind == "tool_call_started" and details.get("tool_args"):
+        content += f"\n\n**Tool input**\n```json\n{_json_dump(details.get('tool_args'))[:900]}\n```"
+    if event.kind == "tool_call_finished" and details.get("result_preview"):
+        content += f"\n\n**Tool output preview**\n```text\n{str(details['result_preview'])[:700]}\n```"
     if event.kind == "llm_response" and details.get("content_preview"):
-        content += f"\n\n```text\n{str(details['content_preview'])[:600]}\n```"
+        content += f"\n\n**Visible model output**\n```text\n{str(details['content_preview'])[:700]}\n```"
+    request_lines = _tool_call_request_lines(details.get("tool_calls_payload"))
+    if event.kind == "llm_response" and request_lines:
+        content += "\n\n**Planned tool use**\n" + "\n".join(request_lines)
     return _chat_message("assistant", content)
 
 
@@ -1152,548 +1194,31 @@ def build_ui() -> gr.Blocks:
                 </div>
                 """
             )
+            handlers = {
+                "agent_choice_updates": _agent_choice_updates,
+                "default_pytest_targets": default_pytest_targets,
+                "discover_pytest_targets": discover_pytest_targets,
+                "export_dataset_ui": _export_dataset_ui,
+                "load_dataset_examples": _load_dataset_examples,
+                "load_observability_trace": _load_observability_trace,
+                "load_tool_catalog": lambda: load_tool_catalog(settings),
+                "quality_mode_updates": quality_mode_updates,
+                "refresh_observability": _refresh_observability,
+                "render_trace_panels": _render_trace_panels,
+                "request_stop": _request_stop,
+                "run_agent_test_stream": _run_agent_test_stream,
+                "run_pipeline_stream": _run_pipeline_stream,
+                "run_quality_task": run_quality_task,
+                "sync_agent_trace_filters": _sync_agent_trace_filters,
+                "sync_trace_filters": _sync_trace_filters,
+                "tracing_markdown": _tracing_markdown,
+            }
 
-            with gr.Tab("Live Pipeline"):
-                pipeline_trace_state = gr.State({})
-                gr.Markdown(
-                    "<div class='panel-note'>The orchestrator tab keeps the whole run visible: current actor, live graph, tool ledger, provider payload, final streams, and takedown outputs.</div>"
-                )
-                with gr.Row():
-                    url_in = gr.Textbox(
-                        label="Target URL",
-                        placeholder="https://example-streaming-site.com/watch/123",
-                        scale=4,
-                    )
-                    pipeline_run_id = gr.Textbox(label="Run ID", interactive=False, scale=2)
-                    run_btn = gr.Button("Run Orchestrator", variant="primary", scale=1)
-                    stop_btn = gr.Button("Stop Run", variant="stop", scale=1)
-                with gr.Row():
-                    with gr.Column(scale=7):
-                        pipeline_chat = gr.Chatbot(label="Live Console", height=460, type="messages")
-                    with gr.Column(scale=5):
-                        pipeline_control = gr.Markdown("### Run Control\n_No active run._", elem_classes=["run-card"])
-                        pipeline_status = gr.Markdown("### Run Summary\n_Waiting for a run._", elem_classes=["run-card"])
-                        pipeline_metrics = gr.Markdown("### Metrics\n_No metrics recorded yet._", elem_classes=["run-card"])
-                        pipeline_tracing = gr.Markdown(_tracing_markdown(), elem_classes=["status-card"])
-                with gr.Row():
-                    pipeline_live_summary = gr.Markdown("### Live Activity\n_No trace yet._", elem_classes=["run-card"])
-                    pipeline_live_inventory = gr.Markdown(
-                        "### Agent and Tool Inventory\n_No trace yet._",
-                        elem_classes=["run-card"],
-                    )
-                pipeline_live_graph = gr.HTML(_render_trace_panels(None)[1])
-                with gr.Row():
-                    pipeline_live_events = gr.Dataframe(
-                        headers=EVENT_HEADERS,
-                        label="Live Event Table",
-                        row_count=10,
-                        col_count=(10, "fixed"),
-                        scale=7,
-                    )
-                    with gr.Column(scale=5):
-                        pipeline_live_provider = gr.Markdown("### Provider Feed\n_No provider responses yet._")
-                        pipeline_live_provider_json = gr.Code(label="Provider Payload", language="json", value="{}")
-                        pipeline_live_snapshot = gr.Code(label="Trace Snapshot", language="json", value="{}")
-                with gr.Accordion("Filtered Trace View", open=False):
-                    with gr.Row():
-                        pipeline_actor_filter = gr.Dropdown(label="Actor Filter", choices=["all"], value="all")
-                        pipeline_kind_filter = gr.Dropdown(label="Event Kind Filter", choices=["all"], value="all")
-                        pipeline_status_filter = gr.Dropdown(label="Status Filter", choices=["all"], value="all")
-                    with gr.Row():
-                        pipeline_sync_filters = gr.Button("Load Filters From Current Trace")
-                        pipeline_apply_filters = gr.Button("Apply Filters", variant="secondary")
-                    with gr.Row():
-                        pipeline_filtered_summary = gr.Markdown(
-                            "### Live Activity\n_No filtered view yet._",
-                            elem_classes=["run-card"],
-                        )
-                        pipeline_filtered_inventory = gr.Markdown(
-                            "### Agent and Tool Inventory\n_No filtered view yet._",
-                            elem_classes=["run-card"],
-                        )
-                    pipeline_filtered_graph = gr.HTML(_render_trace_panels(None)[1])
-                    with gr.Row():
-                        pipeline_filtered_events = gr.Dataframe(
-                            headers=EVENT_HEADERS,
-                            label="Filtered Event Table",
-                            row_count=10,
-                            col_count=(10, "fixed"),
-                            scale=7,
-                        )
-                        with gr.Column(scale=5):
-                            pipeline_filtered_provider = gr.Markdown("### Provider Feed\n_No provider responses yet._")
-                            pipeline_filtered_provider_json = gr.Code(
-                                label="Filtered Provider Payload",
-                                language="json",
-                                value="{}",
-                            )
-                            pipeline_filtered_snapshot = gr.Code(
-                                label="Filtered Snapshot",
-                                language="json",
-                                value="{}",
-                            )
-                with gr.Accordion("Outputs", open=False):
-                    pipeline_streams = gr.Dataframe(
-                        headers=["URL", "Protocol", "Quality", "Source"],
-                        label="Streams",
-                        row_count=6,
-                        col_count=(4, "fixed"),
-                    )
-                    pipeline_result = gr.Code(label="Pipeline Result (JSON)", language="json", value="{}")
-                    pipeline_emails = gr.Markdown("### Takedown Emails\n_No run yet._")
-
-                run_btn.click(
-                    _run_pipeline_stream,
-                    inputs=[url_in],
-                    outputs=[
-                        pipeline_chat,
-                        pipeline_status,
-                        pipeline_result,
-                        pipeline_streams,
-                        pipeline_emails,
-                        pipeline_metrics,
-                        pipeline_tracing,
-                        pipeline_run_id,
-                        pipeline_control,
-                        pipeline_live_summary,
-                        pipeline_live_graph,
-                        pipeline_live_events,
-                        pipeline_live_provider,
-                        pipeline_live_provider_json,
-                        pipeline_live_inventory,
-                        pipeline_live_snapshot,
-                        pipeline_trace_state,
-                    ],
-                )
-                stop_btn.click(_request_stop, inputs=[pipeline_run_id], outputs=[pipeline_control], queue=False)
-                pipeline_trace_state.change(
-                    _sync_trace_filters,
-                    inputs=[pipeline_trace_state, pipeline_actor_filter, pipeline_kind_filter, pipeline_status_filter],
-                    outputs=[
-                        pipeline_actor_filter,
-                        pipeline_kind_filter,
-                        pipeline_status_filter,
-                        pipeline_filtered_summary,
-                        pipeline_filtered_graph,
-                        pipeline_filtered_events,
-                        pipeline_filtered_provider,
-                        pipeline_filtered_provider_json,
-                        pipeline_filtered_inventory,
-                        pipeline_filtered_snapshot,
-                    ],
-                    queue=False,
-                )
-                pipeline_sync_filters.click(
-                    _sync_trace_filters,
-                    inputs=[pipeline_trace_state, pipeline_actor_filter, pipeline_kind_filter, pipeline_status_filter],
-                    outputs=[
-                        pipeline_actor_filter,
-                        pipeline_kind_filter,
-                        pipeline_status_filter,
-                        pipeline_filtered_summary,
-                        pipeline_filtered_graph,
-                        pipeline_filtered_events,
-                        pipeline_filtered_provider,
-                        pipeline_filtered_provider_json,
-                        pipeline_filtered_inventory,
-                        pipeline_filtered_snapshot,
-                    ],
-                    queue=False,
-                )
-                pipeline_apply_filters.click(
-                    _render_trace_panels,
-                    inputs=[pipeline_trace_state, pipeline_actor_filter, pipeline_kind_filter, pipeline_status_filter],
-                    outputs=[
-                        pipeline_filtered_summary,
-                        pipeline_filtered_graph,
-                        pipeline_filtered_events,
-                        pipeline_filtered_provider,
-                        pipeline_filtered_provider_json,
-                        pipeline_filtered_inventory,
-                        pipeline_filtered_snapshot,
-                    ],
-                    queue=False,
-                )
-
-            with gr.Tab("Agent Test Lab"):
-                agent_trace_state = gr.State({})
-                gr.Markdown(
-                    "<div class='panel-note'>Run one specialist agent at a time, keep the trace focused on that actor, compare expectations against the result, and inspect the raw provider payloads that drove the decision.</div>"
-                )
-                agent_focus = gr.Markdown(
-                    "\n".join(
-                        [
-                            "### Agent Focus",
-                            "- Selected agent: `Classification`",
-                            "- Recommended actor filter: `classification`",
-                            "- Assertions enabled: `page type`",
-                            "- The filtered trace view will stay centered on this actor unless you change it.",
-                        ]
-                    ),
-                    elem_classes=["run-card"],
-                )
-                with gr.Row():
-                    agent_choice = gr.Dropdown(label="Agent", choices=AGENT_OPTIONS, value="classification", scale=2)
-                    agent_url = gr.Textbox(label="URL Under Test", placeholder="https://example.com", scale=4)
-                    agent_run_id = gr.Textbox(label="Run ID", interactive=False, scale=2)
-                    agent_run_btn = gr.Button("Run Agent Test", variant="primary", scale=1)
-                    agent_stop_btn = gr.Button("Stop Run", variant="stop", scale=1)
-                with gr.Row():
-                    expected_page_type = gr.Dropdown(
-                        label="Expected Page Type",
-                        choices=PAGE_TYPE_OPTIONS,
-                        value="any",
-                        interactive=True,
-                    )
-                    expected_status = gr.Dropdown(
-                        label="Expected Extraction Status",
-                        choices=STATUS_OPTIONS,
-                        value="any",
-                        interactive=False,
-                    )
-                    min_streams = gr.Slider(
-                        label="Minimum Streams",
-                        minimum=0,
-                        maximum=10,
-                        step=1,
-                        value=0,
-                        interactive=False,
-                    )
-                with gr.Row():
-                    with gr.Column(scale=7):
-                        agent_chat = gr.Chatbot(label="Agent Console", height=440, type="messages")
-                    with gr.Column(scale=5):
-                        agent_control = gr.Markdown("### Run Control\n_No active run._", elem_classes=["run-card"])
-                        verdict_md = gr.Markdown("### Test Verdict\n_No test yet._", elem_classes=["run-card"])
-                        agent_metrics = gr.Markdown("### Metrics\n_No metrics recorded yet._", elem_classes=["run-card"])
-                        agent_tracing = gr.Markdown(_tracing_markdown(), elem_classes=["status-card"])
-                with gr.Row():
-                    agent_live_summary = gr.Markdown("### Live Activity\n_No trace yet._", elem_classes=["run-card"])
-                    agent_live_inventory = gr.Markdown(
-                        "### Agent and Tool Inventory\n_No trace yet._",
-                        elem_classes=["run-card"],
-                    )
-                agent_live_graph = gr.HTML(_render_trace_panels(None)[1])
-                with gr.Row():
-                    agent_live_events = gr.Dataframe(
-                        headers=EVENT_HEADERS,
-                        label="Live Event Table",
-                        row_count=10,
-                        col_count=(10, "fixed"),
-                        scale=7,
-                    )
-                    with gr.Column(scale=5):
-                        agent_live_provider = gr.Markdown("### Provider Feed\n_No provider responses yet._")
-                        agent_live_provider_json = gr.Code(label="Provider Payload", language="json", value="{}")
-                        agent_live_snapshot = gr.Code(label="Trace Snapshot", language="json", value="{}")
-                with gr.Accordion("Filtered Trace View", open=False):
-                    with gr.Row():
-                        agent_actor_filter = gr.Dropdown(
-                            label="Actor Filter",
-                            choices=["all", "classification"],
-                            value="classification",
-                        )
-                        agent_kind_filter = gr.Dropdown(label="Event Kind Filter", choices=["all"], value="all")
-                        agent_status_filter = gr.Dropdown(label="Status Filter", choices=["all"], value="all")
-                    with gr.Row():
-                        agent_sync_filters = gr.Button("Load Filters From Current Trace")
-                        agent_apply_filters = gr.Button("Apply Filters", variant="secondary")
-                    with gr.Row():
-                        agent_filtered_summary = gr.Markdown(
-                            "### Live Activity\n_No filtered view yet._",
-                            elem_classes=["run-card"],
-                        )
-                        agent_filtered_inventory = gr.Markdown(
-                            "### Agent and Tool Inventory\n_No filtered view yet._",
-                            elem_classes=["run-card"],
-                        )
-                    agent_filtered_graph = gr.HTML(_render_trace_panels(None)[1])
-                    with gr.Row():
-                        agent_filtered_events = gr.Dataframe(
-                            headers=EVENT_HEADERS,
-                            label="Filtered Event Table",
-                            row_count=10,
-                            col_count=(10, "fixed"),
-                            scale=7,
-                        )
-                        with gr.Column(scale=5):
-                            agent_filtered_provider = gr.Markdown("### Provider Feed\n_No provider responses yet._")
-                            agent_filtered_provider_json = gr.Code(
-                                label="Filtered Provider Payload",
-                                language="json",
-                                value="{}",
-                            )
-                            agent_filtered_snapshot = gr.Code(
-                                label="Filtered Snapshot",
-                                language="json",
-                                value="{}",
-                            )
-                agent_result = gr.Code(label="Agent Result (JSON)", language="json", value="{}")
-
-                agent_choice.change(
-                    _agent_choice_updates,
-                    inputs=[agent_choice],
-                    outputs=[expected_page_type, expected_status, min_streams, agent_actor_filter, agent_focus],
-                    queue=False,
-                )
-                agent_run_btn.click(
-                    _run_agent_test_stream,
-                    inputs=[agent_choice, agent_url, expected_page_type, expected_status, min_streams],
-                    outputs=[
-                        agent_chat,
-                        verdict_md,
-                        agent_result,
-                        agent_metrics,
-                        agent_tracing,
-                        agent_run_id,
-                        agent_control,
-                        agent_live_summary,
-                        agent_live_graph,
-                        agent_live_events,
-                        agent_live_provider,
-                        agent_live_provider_json,
-                        agent_live_inventory,
-                        agent_live_snapshot,
-                        agent_trace_state,
-                    ],
-                )
-                agent_stop_btn.click(_request_stop, inputs=[agent_run_id], outputs=[agent_control], queue=False)
-                agent_trace_state.change(
-                    _sync_agent_trace_filters,
-                    inputs=[agent_trace_state, agent_choice, agent_actor_filter, agent_kind_filter, agent_status_filter],
-                    outputs=[
-                        agent_actor_filter,
-                        agent_kind_filter,
-                        agent_status_filter,
-                        agent_filtered_summary,
-                        agent_filtered_graph,
-                        agent_filtered_events,
-                        agent_filtered_provider,
-                        agent_filtered_provider_json,
-                        agent_filtered_inventory,
-                        agent_filtered_snapshot,
-                    ],
-                    queue=False,
-                )
-                agent_sync_filters.click(
-                    _sync_agent_trace_filters,
-                    inputs=[agent_trace_state, agent_choice, agent_actor_filter, agent_kind_filter, agent_status_filter],
-                    outputs=[
-                        agent_actor_filter,
-                        agent_kind_filter,
-                        agent_status_filter,
-                        agent_filtered_summary,
-                        agent_filtered_graph,
-                        agent_filtered_events,
-                        agent_filtered_provider,
-                        agent_filtered_provider_json,
-                        agent_filtered_inventory,
-                        agent_filtered_snapshot,
-                    ],
-                    queue=False,
-                )
-                agent_apply_filters.click(
-                    _render_trace_panels,
-                    inputs=[agent_trace_state, agent_actor_filter, agent_kind_filter, agent_status_filter],
-                    outputs=[
-                        agent_filtered_summary,
-                        agent_filtered_graph,
-                        agent_filtered_events,
-                        agent_filtered_provider,
-                        agent_filtered_provider_json,
-                        agent_filtered_inventory,
-                        agent_filtered_snapshot,
-                    ],
-                    queue=False,
-                )
-
-            with gr.Tab("Observability"):
-                obs_trace_state = gr.State({})
-                gr.Markdown(
-                    "<div class='status-card'>Review recent persisted runs, inspect active traces, filter events by actor or kind, and stop a live run directly from the observability workspace.</div>"
-                )
-                with gr.Row():
-                    refresh_btn = gr.Button("Refresh Observability", variant="secondary")
-                    obs_trace_selector = gr.Dropdown(label="Inspect Active Trace", choices=[("Select a run", "")], value="")
-                    obs_stop_btn = gr.Button("Stop Selected Trace", variant="stop")
-                with gr.Row():
-                    with gr.Column(scale=4):
-                        obs_tracing = gr.Markdown(_tracing_markdown())
-                    with gr.Column(scale=8):
-                        obs_summary = gr.Code(label="Observability Snapshot", language="json", value="{}")
-                recent_runs = gr.Dataframe(
-                    headers=[
-                        "Run ID",
-                        "Status",
-                        "Streams",
-                        "Tool Calls",
-                        "Tokens In",
-                        "Tokens Out",
-                        "LLM Calls",
-                        "Cost",
-                        "Seconds",
-                        "Created At",
-                    ],
-                    label="Recent Persisted Runs",
-                    row_count=12,
-                    col_count=(10, "fixed"),
-                )
-                active_traces = gr.Dataframe(
-                    headers=[
-                        "Run ID",
-                        "Actor",
-                        "Events",
-                        "Tool Calls",
-                        "LLM Calls",
-                        "Cancelling",
-                        "Completed",
-                        "Started At",
-                    ],
-                    label="Active / In-Memory Traces",
-                    row_count=12,
-                    col_count=(8, "fixed"),
-                )
-                obs_control = gr.Markdown(
-                    "### Run Control\n_Select an active trace to inspect or stop it._",
-                    elem_classes=["run-card"],
-                )
-                with gr.Row():
-                    obs_actor_filter = gr.Dropdown(label="Actor Filter", choices=["all"], value="all")
-                    obs_kind_filter = gr.Dropdown(label="Event Kind Filter", choices=["all"], value="all")
-                    obs_status_filter = gr.Dropdown(label="Status Filter", choices=["all"], value="all")
-                with gr.Row():
-                    obs_sync_filters = gr.Button("Load Filters From Selected Trace")
-                    obs_apply_filters = gr.Button("Apply Filters", variant="secondary")
-                with gr.Row():
-                    obs_trace_summary = gr.Markdown("### Live Activity\n_No trace selected._", elem_classes=["run-card"])
-                    obs_trace_inventory = gr.Markdown(
-                        "### Agent and Tool Inventory\n_No trace selected._",
-                        elem_classes=["run-card"],
-                    )
-                obs_trace_graph = gr.HTML(_render_trace_panels(None)[1])
-                with gr.Row():
-                    obs_trace_events = gr.Dataframe(
-                        headers=EVENT_HEADERS,
-                        label="Trace Event Table",
-                        row_count=12,
-                        col_count=(10, "fixed"),
-                        scale=7,
-                    )
-                    with gr.Column(scale=5):
-                        obs_trace_provider = gr.Markdown("### Provider Feed\n_No provider responses yet._")
-                        obs_trace_provider_json = gr.Code(label="Provider Payload", language="json", value="{}")
-                        obs_trace_snapshot = gr.Code(label="Trace Snapshot", language="json", value="{}")
-
-                refresh_btn.click(
-                    _refresh_observability,
-                    outputs=[obs_tracing, recent_runs, active_traces, obs_summary, obs_trace_selector],
-                    queue=False,
-                )
-                obs_trace_selector.change(
-                    _load_observability_trace,
-                    inputs=[obs_trace_selector],
-                    outputs=[
-                        obs_trace_state,
-                        obs_control,
-                        obs_actor_filter,
-                        obs_kind_filter,
-                        obs_status_filter,
-                        obs_trace_summary,
-                        obs_trace_graph,
-                        obs_trace_events,
-                        obs_trace_provider,
-                        obs_trace_provider_json,
-                        obs_trace_inventory,
-                        obs_trace_snapshot,
-                    ],
-                    queue=False,
-                )
-                obs_stop_btn.click(_request_stop, inputs=[obs_trace_selector], outputs=[obs_control], queue=False)
-                obs_sync_filters.click(
-                    _sync_trace_filters,
-                    inputs=[obs_trace_state, obs_actor_filter, obs_kind_filter, obs_status_filter],
-                    outputs=[
-                        obs_actor_filter,
-                        obs_kind_filter,
-                        obs_status_filter,
-                        obs_trace_summary,
-                        obs_trace_graph,
-                        obs_trace_events,
-                        obs_trace_provider,
-                        obs_trace_provider_json,
-                        obs_trace_inventory,
-                        obs_trace_snapshot,
-                    ],
-                    queue=False,
-                )
-                obs_apply_filters.click(
-                    _render_trace_panels,
-                    inputs=[obs_trace_state, obs_actor_filter, obs_kind_filter, obs_status_filter],
-                    outputs=[
-                        obs_trace_summary,
-                        obs_trace_graph,
-                        obs_trace_events,
-                        obs_trace_provider,
-                        obs_trace_provider_json,
-                        obs_trace_inventory,
-                        obs_trace_snapshot,
-                    ],
-                    queue=False,
-                )
-
-            with gr.Tab("Dataset Studio"):
-                gr.Markdown(
-                    "<div class='panel-note'>Preview recent successful and failed runs as Phoenix-friendly examples, export them to JSONL, and optionally publish them into your Phoenix instance when the client is configured.</div>"
-                )
-                with gr.Row():
-                    dataset_limit = gr.Slider(label="Recent Runs To Scan", minimum=1, maximum=50, step=1, value=10)
-                    dataset_name = gr.Textbox(label="Dataset Name", placeholder="leave blank to use the Phoenix default")
-                    upload_to_phoenix = gr.Checkbox(label="Upload To Phoenix", value=False)
-                dataset_path = gr.Textbox(label="Export Path (optional)", placeholder="data/datasets/my-dataset.jsonl")
-                dataset_description = gr.Textbox(
-                    label="Dataset Description",
-                    lines=3,
-                    placeholder="Optional description for Phoenix dataset uploads.",
-                )
-                with gr.Row():
-                    preview_dataset_btn = gr.Button("Preview Examples", variant="secondary")
-                    export_dataset_btn = gr.Button("Export Dataset", variant="primary")
-                with gr.Row():
-                    dataset_status = gr.Markdown("### Dataset Preview\n_No dataset preview yet._", elem_classes=["run-card"])
-                    dataset_tracing = gr.Markdown(_tracing_markdown(), elem_classes=["status-card"])
-                dataset_rows = gr.Dataframe(
-                    headers=DATASET_HEADERS,
-                    label="Dataset Example Table",
-                    row_count=10,
-                    col_count=(8, "fixed"),
-                )
-                with gr.Row():
-                    dataset_preview = gr.Code(label="Dataset Preview (JSON)", language="json", value="{}")
-                    dataset_export_result = gr.Code(label="Export Result", language="json", value="{}")
-
-                preview_dataset_btn.click(
-                    _load_dataset_examples,
-                    inputs=[dataset_limit, dataset_name],
-                    outputs=[dataset_status, dataset_rows, dataset_preview],
-                    queue=False,
-                )
-                export_dataset_btn.click(
-                    _export_dataset_ui,
-                    inputs=[dataset_limit, dataset_name, dataset_path, upload_to_phoenix, dataset_description],
-                    outputs=[dataset_status, dataset_export_result, dataset_rows, dataset_preview],
-                )
-
-            demo.load(
-                _refresh_observability,
-                outputs=[obs_tracing, recent_runs, active_traces, obs_summary, obs_trace_selector],
-                queue=False,
-            )
-            demo.load(
-                _load_dataset_examples,
-                inputs=[dataset_limit, dataset_name],
-                outputs=[dataset_status, dataset_rows, dataset_preview],
-                queue=False,
-            )
+            build_live_pipeline_tab(demo, handlers)
+            build_agent_test_lab_tab(demo, handlers)
+            build_observability_tab(demo, handlers)
+            build_dataset_studio_tab(demo, handlers)
+            build_quality_lab_tab(demo, handlers)
     return demo
 
 
@@ -1701,7 +1226,8 @@ def launch(server_name: str = "0.0.0.0", server_port: int = 7860) -> None:
     setup_logging(level=settings.log_level, log_file=settings.log_file)
     setup_tracing_from_settings(settings)
     logger.info("Starting Gradio dashboard on %s:%s", server_name, server_port)
-    build_ui().queue(default_concurrency_limit=4).launch(
+    queue_limit = max(int(os.getenv("GRADIO_QUEUE_CONCURRENCY_LIMIT", str(DEFAULT_QUEUE_CONCURRENCY_LIMIT))), 1)
+    build_ui().queue(default_concurrency_limit=queue_limit).launch(
         server_name=server_name,
         server_port=server_port,
         css=APP_CSS,

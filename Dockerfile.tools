@@ -1,0 +1,78 @@
+# syntax=docker/dockerfile:1.7
+
+# =============================================================================
+#  Open Web Catcher - Puppeteer tools container
+#  Processes: Chrome (shared fallback) + Node MCP server
+# =============================================================================
+
+FROM node:20-bookworm-slim
+
+WORKDIR /app
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PUPPETEER_CACHE_DIR=/opt/puppeteer \
+    PUPPETEER_EXECUTABLE_PATH=/usr/local/bin/google-chrome-stable \
+    PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    MCP_BROWSER_MODE=isolated \
+    BROWSER_WS_ENDPOINT=ws://127.0.0.1:9222
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    curl \
+    ca-certificates \
+    supervisor \
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libcairo2 \
+    libcups2 \
+    libdbus-1-3 \
+    libexpat1 \
+    libfontconfig1 \
+    libgbm1 \
+    libglib2.0-0 \
+    libgtk-3-0 \
+    libnspr4 \
+    libnss3 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libvulkan1 \
+    libx11-6 \
+    libx11-xcb1 \
+    libxcb1 \
+    libxcomposite1 \
+    libxcursor1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxi6 \
+    libxrandr2 \
+    libxrender1 \
+    libxss1 \
+    libxtst6 \
+    xdg-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY tools_js/package*.json tools_js/
+RUN --mount=type=cache,target=/root/.npm \
+    cd tools_js \
+    && npm install --omit=dev --prefer-offline --no-audit --no-fund \
+    && npx --yes @puppeteer/browsers install chrome@stable --path /opt/puppeteer \
+    && CHROME_BIN="$(find /opt/puppeteer/chrome -type f -path '*/chrome-linux64/chrome' | head -n 1)" \
+    && test -n "${CHROME_BIN}" \
+    && ln -sf "${CHROME_BIN}" /usr/local/bin/google-chrome-stable \
+    && ln -sf /usr/local/bin/google-chrome-stable /usr/local/bin/google-chrome
+
+COPY tools_js/ tools_js/
+COPY configs/supervisord.tools.conf /etc/supervisor/conf.d/owc.conf
+COPY scripts/ scripts/
+
+RUN mkdir -p data/logs \
+    && chmod +x scripts/docker/entrypoint.sh
+
+EXPOSE 3000 9222
+
+ENTRYPOINT ["scripts/docker/entrypoint.sh"]

@@ -19,6 +19,7 @@ Write-OwcHeader "Open Web Catcher - Build"
 Write-OwcInfo "Compose file: $($context.ComposeFile)"
 Write-OwcInfo "Service: $($context.Service)"
 Write-OwcInfo "Image: $($context.ImageRef)"
+Write-OwcInfo "Tools image: $($context.ToolImageRef)"
 
 $useCache = Resolve-OwcBuildUsesCache -NoCache:$NoCache -Yes:$Yes
 Write-OwcInfo "Mode: $(if ($useCache) { 'with cache' } else { 'without cache' })"

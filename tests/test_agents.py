@@ -1,4 +1,4 @@
-"""Agent tests focused on the LangGraph runtime integration points."""
+"""Agent tests focused on MCP profile usage and LangGraph runtime contracts."""
 
 from __future__ import annotations
 
@@ -31,6 +31,32 @@ class LoopResultStub:
         return self._payload
 
 
+def _assert_agent_loop_contract(
+    mock_agent_tools,
+    mock_run_agent_loop,
+    *,
+    profile: str,
+    run_name: str,
+    initial_message_contains: str,
+    max_tool_calls: int,
+) -> None:
+    assert mock_agent_tools.call_args.args[0] == profile
+
+    kwargs = mock_run_agent_loop.await_args.kwargs
+    assert kwargs["run_name"] == run_name
+    assert initial_message_contains in kwargs["initial_message"]
+    assert "BASE POLICY" in kwargs["system_prompt"]
+    assert "AGENT CONTRACT" in kwargs["system_prompt"]
+    assert "TASK BRIEF" in kwargs["system_prompt"]
+    assert "WORKING STATE" in kwargs["system_prompt"]
+    assert kwargs["max_tool_calls"] == max_tool_calls
+    assert kwargs["budget_exhausted_message"]
+    assert kwargs["tools"] == []
+    assert kwargs["prompt_metadata"]["agent_id"]
+    assert kwargs["prompt_metadata"]["prompt_hash"]
+    assert callable(kwargs["turn_context_provider"])
+
+
 @pytest.mark.asyncio
 @patch("src.agents.classification.run_agent_loop", new_callable=AsyncMock)
 @patch("src.agents.classification.agent_tools")
@@ -50,6 +76,14 @@ async def test_classification_agent_returns_result(mock_build_llm, mock_agent_to
 
     assert result.url == "https://x.com"
     assert result.page_type == PageType.HOSTING
+    _assert_agent_loop_contract(
+        mock_agent_tools,
+        mock_run_agent_loop,
+        profile="classification",
+        run_name="classification_agent",
+        initial_message_contains="Classify this page: https://x.com",
+        max_tool_calls=settings.classification_max_tool_calls,
+    )
 
 
 @pytest.mark.asyncio
@@ -72,6 +106,14 @@ async def test_landing_page_agent_success(mock_build_llm, mock_agent_tools, mock
     assert result.page_type == PageType.LANDING
     assert result.status == ExtractionStatus.SUCCESS
     assert result.metadata["hosting_pages"][0]["url"] == "https://hosting.example.com/video/1"
+    _assert_agent_loop_contract(
+        mock_agent_tools,
+        mock_run_agent_loop,
+        profile="landing",
+        run_name="landing_page_agent",
+        initial_message_contains="mainUrl: https://example-streaming.com",
+        max_tool_calls=settings.landing_page_max_tool_calls,
+    )
 
 
 @pytest.mark.asyncio
@@ -98,6 +140,55 @@ async def test_hosting_page_agent_success(mock_build_llm, mock_agent_tools, mock
     assert result.page_type == PageType.HOSTING
     assert result.status == ExtractionStatus.SUCCESS
     assert len(result.streams) == 1
+    _assert_agent_loop_contract(
+        mock_agent_tools,
+        mock_run_agent_loop,
+        profile="hosting",
+        run_name="hosting_page_agent",
+        initial_message_contains="mainUrl: https://hosting.example.com/video/1",
+        max_tool_calls=settings.hosting_page_max_tool_calls,
+    )
+
+
+@pytest.mark.asyncio
+@patch("src.agents.hosting_page.remember_agent_run")
+@patch("src.agents.hosting_page.build_memory_context", return_value="SITE MEMORY HINTS\n- repeated server labels: `Server 2`")
+@patch("src.agents.hosting_page.run_agent_loop", new_callable=AsyncMock)
+@patch("src.agents.hosting_page.agent_tools")
+@patch("src.agents.hosting_page.build_llm")
+async def test_hosting_page_agent_injects_site_memory_hints(
+    mock_build_llm,
+    mock_agent_tools,
+    mock_run_agent_loop,
+    mock_build_memory_context,
+    mock_remember_agent_run,
+    tmp_path,
+):
+    from src.agents.hosting_page import HostingPageAgent
+    from src.utils.config import Settings
+
+    settings = Settings(
+        google_api_key="test-key",
+        browser_ws_endpoint="ws://localhost:9222",
+        database_url="sqlite:///:memory:",
+        memory_enabled=True,
+        memory_db_path=str(tmp_path / "site_memory.db"),
+    )
+    mock_build_llm.return_value = MagicMock()
+    mock_agent_tools.return_value = DummyAsyncContext([])
+    mock_run_agent_loop.return_value = LoopResultStub(
+        tool_calls_made=1,
+        payload={"streaming_urls": [], "servers": [], "decision": "no_stream_found"},
+    )
+
+    agent = HostingPageAgent(settings)
+    await agent.run(url="https://hosting.example.com/video/1")
+
+    system_prompt = mock_run_agent_loop.await_args.kwargs["system_prompt"]
+    assert "SITE MEMORY HINTS" in system_prompt
+    assert "Server 2" in system_prompt
+    mock_build_memory_context.assert_called_once()
+    mock_remember_agent_run.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -149,3 +240,11 @@ async def test_embedded_page_agent_success(mock_build_llm, mock_agent_tools, moc
     assert result.page_type == PageType.EMBEDDED
     assert result.status == ExtractionStatus.SUCCESS
     assert len(result.streams) == 1
+    _assert_agent_loop_contract(
+        mock_agent_tools,
+        mock_run_agent_loop,
+        profile="embedded",
+        run_name="embedded_page_agent",
+        initial_message_contains="Embedded_url: https://embed.example.com/player",
+        max_tool_calls=settings.embedded_page_max_tool_calls,
+    )

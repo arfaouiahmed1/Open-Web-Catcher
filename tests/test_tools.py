@@ -1,4 +1,4 @@
-"""Unit tests for the tool wrappers and async fallbacks."""
+"""Unit tests for tool wrappers, JS bridge invocation, and async fallbacks."""
 
 from __future__ import annotations
 
@@ -8,75 +8,107 @@ import pytest
 
 from src.tools.bridge import JSToolBridge
 from src.tools.email_tool import EmailTool
+from src.tools.ipinfo_tool import IPInfoTool
 from src.tools.harvest_tool import HarvestTool
 from src.tools.inspect_tool import InspectTool
 from src.tools.interact_tool import InteractTool
-from src.tools.ipinfo_tool import IPInfoTool
 from src.tools.navigate_tool import NavigateTool
 from src.tools.screenshot_tool import ScreenshotTool
 
 
-@pytest.fixture
-def bridge():
-    b = MagicMock(spec=JSToolBridge)
-    b.call.return_value = {"success": True}
-    return b
+def _bridge_stub() -> JSToolBridge:
+    return JSToolBridge(browser_ws_endpoint="ws://browser.example/devtools/browser/test", timeout=5)
 
 
 def test_bridge_injects_browser_endpoint():
     bridge = JSToolBridge(browser_ws_endpoint="ws://browser.example/devtools/browser/test", timeout=5)
     with patch("src.tools.bridge.subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=0, stdout='{"ok": true}', stderr="")
-        result = bridge.call("inspect", {})
+        result = bridge.call("open_url", {"url": "https://example.com"})
 
     assert result == {"ok": True}
-    payload_json = mock_run.call_args.args[0][2]
+    command = mock_run.call_args.args[0]
+    assert command[0] == "node"
+    assert command[1].endswith("tools_js\\run-tool.js") or command[1].endswith("tools_js/run-tool.js")
+    assert command[2] == "open_url"
+    payload_json = command[3]
     assert '"browserWSEndpoint": "ws://browser.example/devtools/browser/test"' in payload_json
 
 
-def test_inspect_tool_calls_bridge(bridge):
+def test_bridge_surfaces_tool_failure():
+    bridge = JSToolBridge(browser_ws_endpoint="ws://browser.example/devtools/browser/test", timeout=5)
+    with patch("src.tools.bridge.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="boom")
+        with pytest.raises(RuntimeError, match="open_url"):
+            bridge.call("open_url", {"url": "https://example.com"})
+
+
+def test_bridge_rejects_invalid_json():
+    bridge = JSToolBridge(browser_ws_endpoint="ws://browser.example/devtools/browser/test", timeout=5)
+    with patch("src.tools.bridge.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="not-json", stderr="")
+        with pytest.raises(RuntimeError, match="non-JSON"):
+            bridge.call("query_elements", {"kind": "link"})
+
+
+def test_navigate_tool_passes_expected_payload():
+    bridge = _bridge_stub()
+    bridge.call = MagicMock(return_value={"ok": True})
+
+    tool = NavigateTool(bridge=bridge)
+    result = tool._run(url="https://example.com/watch", wait_until="domcontentloaded", timeout_ms=1234)
+
+    assert result == {"ok": True}
+    bridge.call.assert_called_once_with(
+        "navigate",
+        {"url": "https://example.com/watch", "wait_until": "domcontentloaded", "timeout_ms": 1234},
+    )
+
+
+def test_inspect_tool_uses_empty_payload_for_full_scan():
+    bridge = _bridge_stub()
+    bridge.call = MagicMock(return_value={"ok": True})
+
     tool = InspectTool(bridge=bridge)
-    tool._run()
+    tool._run(selector=".ignored", include_screenshot=False)
+
     bridge.call.assert_called_once_with("inspect", {})
 
 
-def test_interact_tool_click(bridge):
+def test_interact_tool_builds_mode_specific_payload():
+    bridge = _bridge_stub()
+    bridge.call = MagicMock(return_value={"ok": True})
+
     tool = InteractTool(bridge=bridge)
-    tool._run(action="click", selector=".play-btn")
+    tool._run(action="type", selector="#search", value="Team A", wait_ms=750)
+
     bridge.call.assert_called_once_with(
         "interact",
-        {"mode": "click", "wait_ms": 3000, "selector": ".play-btn"},
+        {"mode": "type", "wait_ms": 750, "selector": "#search", "value": "Team A"},
     )
 
 
-def test_harvest_tool_maps_duration_ms(bridge):
-    bridge.call.return_value = {"streams": [], "total": 0}
+def test_harvest_tool_converts_wait_seconds_to_duration_ms():
+    bridge = _bridge_stub()
+    bridge.call = MagicMock(return_value={"ok": True})
+
     tool = HarvestTool(bridge=bridge)
-    result = tool._run(wait_seconds=3)
+    tool._run(wait_seconds=7, player_iframe_url="https://embed.example.com/player")
+
     bridge.call.assert_called_once_with(
         "harvest",
-        {"duration_ms": 3000, "player_iframe_url": ""},
+        {"duration_ms": 7000, "player_iframe_url": "https://embed.example.com/player"},
     )
-    assert result["total"] == 0
 
 
-def test_navigate_tool_uses_snake_case_params(bridge):
-    bridge.call.return_value = {"success": True, "finalUrl": "https://example.com", "title": "Test"}
-    tool = NavigateTool(bridge=bridge)
-    result = tool._run(url="https://example.com")
-    bridge.call.assert_called_once_with(
-        "navigate",
-        {"url": "https://example.com", "wait_until": "networkidle2", "timeout_ms": 30000},
-    )
-    assert result["finalUrl"] == "https://example.com"
+def test_screenshot_tool_maps_player_mode_to_element():
+    bridge = _bridge_stub()
+    bridge.call = MagicMock(return_value={"ok": True})
 
-
-def test_screenshot_tool_maps_player_mode_to_element(bridge):
-    bridge.call.return_value = {"screenshot_url": "https://cloudinary.com/img.png", "mode": "element"}
     tool = ScreenshotTool(bridge=bridge)
-    result = tool._run(mode="player")
-    bridge.call.assert_called_once_with("screenshot", {"mode": "element"})
-    assert "screenshot_url" in result
+    tool._run(mode="player", selector="video")
+
+    bridge.call.assert_called_once_with("screenshot", {"mode": "element", "selector": "video"})
 
 
 @pytest.mark.asyncio

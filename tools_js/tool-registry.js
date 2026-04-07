@@ -1,28 +1,61 @@
 /**
  * tool-registry.js - Central MCP tool definitions.
- *
- * Keep this file as the single source of truth for:
- * - MCP-facing tool descriptions
- * - example input/output JSON payloads
- * - a lightweight serializable input schema
- * - runtime Zod validation
- * - the actual tool handler wiring
  */
 
 import { z } from 'zod';
 
-import { inspect as inspectTool } from './tools/inspect.js';
-import { interact as interactTool } from './tools/interact.js';
-import { harvest as harvestTool } from './tools/harvest.js';
-import { navigate as navigateTool } from './tools/navigate.js';
-import { screenshot as screenshotTool } from './tools/screenshot.js';
+import {
+  getPageContext as getPageContextTool,
+  queryElements as queryElementsTool,
+  getElementDetail as getElementDetailTool,
+  getMediaState as getMediaStateTool,
+  getFrameTree as getFrameTreeTool,
+} from './tools/context-tools.js';
+import {
+  openUrl as openUrlTool,
+  goBack as goBackTool,
+  scrollPage as scrollPageTool,
+  scrollToElement as scrollToElementTool,
+  waitForPageState as waitForPageStateTool,
+} from './tools/navigation-tools.js';
+import {
+  clickElement as clickElementTool,
+  clickCss as clickCssTool,
+  clickText as clickTextTool,
+  clickXpath as clickXpathTool,
+  clickCheckbox as clickCheckboxTool,
+  clickRadio as clickRadioTool,
+  typeInto as typeIntoTool,
+  selectOption as selectOptionTool,
+  playMedia as playMediaTool,
+  swipeRegion as swipeRegionTool,
+  clickCoordinates as clickCoordinatesTool,
+} from './tools/action-tools.js';
+import { captureStreams as captureStreamsTool } from './tools/extraction-tools.js';
 
 const DEFAULT_TOOL_IMPLS = {
-  inspect: inspectTool,
-  interact: interactTool,
-  harvest: harvestTool,
-  navigate: navigateTool,
-  screenshot: screenshotTool,
+  get_page_context: getPageContextTool,
+  query_elements: queryElementsTool,
+  get_element_detail: getElementDetailTool,
+  get_media_state: getMediaStateTool,
+  get_frame_tree: getFrameTreeTool,
+  open_url: openUrlTool,
+  go_back: goBackTool,
+  scroll_page: scrollPageTool,
+  scroll_to_element: scrollToElementTool,
+  wait_for_page_state: waitForPageStateTool,
+  click_element: clickElementTool,
+  click_css: clickCssTool,
+  click_text: clickTextTool,
+  click_xpath: clickXpathTool,
+  click_checkbox: clickCheckboxTool,
+  click_radio: clickRadioTool,
+  type_into: typeIntoTool,
+  select_option: selectOptionTool,
+  play_media: playMediaTool,
+  swipe_region: swipeRegionTool,
+  click_coordinates: clickCoordinatesTool,
+  capture_streams: captureStreamsTool,
 };
 
 function formatJsonBlock(label, value) {
@@ -37,287 +70,317 @@ function buildDescription(summary, inputExample, outputExample) {
   ].join('\n\n');
 }
 
+const framePathSchema = z.string().optional().default('root').describe('Frame path like root, root.0, root.0.2');
+const elementRefSchema = z.string().optional().default('').describe('Element reference returned by query_elements');
+const selectorSchema = z.string().optional().default('').describe('CSS selector');
+const xpathSchema = z.string().optional().default('').describe('XPath locator');
+const textSchema = z.string().optional().default('').describe('Visible text fragment');
+const waitMsSchema = z.number().optional().default(1500).describe('Wait after action in milliseconds');
+
+function spec(summary, inputExample, outputExample, zodSchema, handlerFactory) {
+  return {
+    summary,
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    inputExample,
+    outputExample,
+    zodSchema,
+    handlerFactory,
+  };
+}
+
 const TOOL_SPECS = {
-  inspect: {
-    summary:
-      'Full DOM scan of the current page. Use this first to understand links, buttons, iframes, videos, popups, and hosting signals.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      additionalProperties: false,
+  get_page_context: spec(
+    'Compact full-page context with frame tree, media/player signals, forms, overlays, pagination hints, top candidates, and screenshot.',
+    { frame_path: 'root' },
+    { ok: true, frame_path: 'root', screenshot_url: 'https://res.cloudinary.com/...', page_summary: { links: 8 } },
+    { frame_path: framePathSchema },
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.get_page_context({ ...args, browserWsEndpoint }),
+  ),
+  query_elements: spec(
+    'Query a compact set of elements in a target frame and return element_ref values for follow-up actions.',
+    { frame_path: 'root', kind: 'link', text_contains: 'watch', visible_only: true, limit: 10 },
+    { ok: true, total_matches: 3, matches: [{ kind: 'link', text: 'Watch now', element_ref: '...' }], screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      frame_path: framePathSchema,
+      kind: z.enum(['link', 'button', 'input', 'checkbox', 'radio', 'select', 'video', 'iframe', 'form', 'tab', 'overlay']).optional(),
+      text_contains: z.string().optional().default(''),
+      href_contains: z.string().optional().default(''),
+      attr: z.object({ name: z.string(), value_contains: z.string().optional().default('') }).optional().nullable(),
+      visible_only: z.boolean().optional().default(true),
+      limit: z.number().optional().default(20),
     },
-    inputExample: {},
-    outputExample: {
-      url: 'https://example.com/watch',
-      title: 'Example Stream',
-      screenshot_url: 'https://res.cloudinary.com/.../inspect.png',
-      hosting_signals: {
-        has_video: true,
-        has_player_iframe: true,
-        player_iframe_src: 'https://embed.example.com/player',
-        player_libraries: true,
-        server_tabs: true,
-      },
-      stats: {
-        content_links: 10,
-        nav_links: 5,
-        buttons: 8,
-        iframes: 2,
-        videos: 1,
-        popups: 1,
-      },
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.query_elements({ ...args, browserWsEndpoint }),
+  ),
+  get_element_detail: spec(
+    'Return rich detail for one element, including geometry, attrs, nearby context, and screenshot.',
+    { frame_path: 'root', element_ref: '...' },
+    { ok: true, detail: { tag: 'a', text: 'Watch now' }, screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      frame_path: framePathSchema,
+      element_ref: elementRefSchema,
+      selector: selectorSchema,
+      xpath: xpathSchema,
+      text: textSchema,
     },
-    zodSchema: {},
-    handlerFactory: (browserWsEndpoint, toolImpls) => () => toolImpls.inspect({ browserWsEndpoint }),
-  },
-
-  navigate: {
-    summary:
-      'Navigate the browser to a URL, wait for load completion, and report redirects, title, domain warnings, and screenshot.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        url: {
-          type: 'string',
-          description: 'Full URL to navigate to',
-        },
-        wait_until: {
-          type: 'string',
-          enum: ['networkidle0', 'networkidle2', 'domcontentloaded', 'load'],
-          default: 'networkidle2',
-          description: 'Navigation wait strategy',
-        },
-        timeout_ms: {
-          type: 'number',
-          default: 30000,
-          description: 'Navigation timeout in milliseconds',
-        },
-      },
-      required: ['url'],
-      additionalProperties: false,
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.get_element_detail({ ...args, browserWsEndpoint }),
+  ),
+  get_media_state: spec(
+    'Return video/player state for a frame without dumping the full page context.',
+    { frame_path: 'root.0' },
+    { ok: true, media_state: { video_count: 1 }, screenshot_url: 'https://res.cloudinary.com/...' },
+    { frame_path: framePathSchema },
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.get_media_state({ ...args, browserWsEndpoint }),
+  ),
+  get_frame_tree: spec(
+    'Return the full frame tree with deterministic frame_path values and purpose hints.',
+    {},
+    { ok: true, frame_tree: [{ frame_path: 'root.0', candidate_purpose: 'player' }], screenshot_url: 'https://res.cloudinary.com/...' },
+    {},
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.get_frame_tree({ ...args, browserWsEndpoint }),
+  ),
+  open_url: spec(
+    'Navigate to a URL and return redirect/HTTP details with a screenshot.',
+    { url: 'https://example.com/watch', wait_until: 'networkidle2', timeout_ms: 30000 },
+    { ok: true, final_url: 'https://example.com/watch', screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      url: z.string().describe('Full URL to open'),
+      wait_until: z.enum(['networkidle0', 'networkidle2', 'domcontentloaded', 'load']).optional().default('networkidle2'),
+      timeout_ms: z.number().optional().default(30000),
     },
-    inputExample: {
-      url: 'https://example.com/watch/123',
-      wait_until: 'networkidle2',
-      timeout_ms: 30000,
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.open_url({ ...args, browserWsEndpoint }),
+  ),
+  go_back: spec(
+    'Navigate browser history backward and return the resulting state with a screenshot.',
+    { timeout_ms: 30000 },
+    { ok: true, final_url: 'https://example.com/list', screenshot_url: 'https://res.cloudinary.com/...' },
+    { timeout_ms: z.number().optional().default(30000) },
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.go_back({ ...args, browserWsEndpoint }),
+  ),
+  scroll_page: spec(
+    'Scroll within the target frame and return the updated page state with a screenshot.',
+    { frame_path: 'root', direction: 'down', amount: 800, behavior: 'auto' },
+    { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      frame_path: framePathSchema,
+      direction: z.enum(['up', 'down']).optional().default('down'),
+      amount: z.number().optional().default(600),
+      behavior: z.enum(['auto', 'smooth']).optional().default('auto'),
     },
-    outputExample: {
-      success: true,
-      finalUrl: 'https://example.com/watch/123',
-      title: 'Example Stream',
-      httpStatus: 200,
-      redirectChain: [],
-      domain_warning: null,
-      screenshot_url: 'https://res.cloudinary.com/.../navigate.png',
-      error: null,
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.scroll_page({ ...args, browserWsEndpoint }),
+  ),
+  scroll_to_element: spec(
+    'Scroll a target element into view using element_ref or locator fields.',
+    { frame_path: 'root', element_ref: '...' },
+    { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      frame_path: framePathSchema,
+      element_ref: elementRefSchema,
+      selector: selectorSchema,
+      xpath: xpathSchema,
+      text: textSchema,
     },
-    zodSchema: {
-      url: z.string().describe('Full URL to navigate to'),
-      wait_until: z.enum(['networkidle0', 'networkidle2', 'domcontentloaded', 'load'])
-        .optional()
-        .default('networkidle2'),
-      timeout_ms: z.number().optional().default(30_000),
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.scroll_to_element({ ...args, browserWsEndpoint }),
+  ),
+  wait_for_page_state: spec(
+    'Wait for a specific page condition such as network idle, selector present, text present, video ready, or a challenge page clearing.',
+    { frame_path: 'root', mode: 'network_idle', timeout_ms: 10000 },
+    { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      frame_path: framePathSchema,
+      mode: z.enum(['network_idle', 'navigation_complete', 'selector', 'text', 'video_ready', 'challenge_cleared']).optional().default('network_idle'),
+      selector: selectorSchema,
+      text: textSchema,
+      timeout_ms: z.number().optional().default(10000),
     },
-    handlerFactory: (browserWsEndpoint, toolImpls) => (args) => toolImpls.navigate({ ...args, browserWsEndpoint }),
-  },
-
-  interact: {
-    summary:
-      'Interact with the current page using selectors, text, xpath, or coordinates. Use for clicking, playing, typing, selecting, or checking controls.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        mode: {
-          type: 'string',
-          enum: ['click', 'play', 'type', 'select', 'coordinates', 'check'],
-          description: 'Interaction mode',
-        },
-        selector: {
-          type: 'string',
-          description: 'CSS selector of target element',
-        },
-        xpath: {
-          type: 'string',
-          description: 'XPath of target element',
-        },
-        text: {
-          type: 'string',
-          description: 'Visible text to find the element',
-        },
-        value: {
-          type: 'string',
-          description: 'Text to type for type mode',
-        },
-        option_text: {
-          type: 'string',
-          description: 'Option text for select mode',
-        },
-        x: {
-          type: 'number',
-          description: 'Viewport X coordinate for coordinates mode',
-        },
-        y: {
-          type: 'number',
-          description: 'Viewport Y coordinate for coordinates mode',
-        },
-        wait_ms: {
-          type: 'number',
-          default: 3000,
-          description: 'How long to wait after interaction',
-        },
-      },
-      required: ['mode'],
-      additionalProperties: false,
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.wait_for_page_state({ ...args, browserWsEndpoint }),
+  ),
+  click_element: spec(
+    'Click an element by element_ref.',
+    { frame_path: 'root', element_ref: '...', wait_ms: 1500 },
+    { ok: true, observed_change: { navigated: false }, screenshot_url: 'https://res.cloudinary.com/...' },
+    { frame_path: framePathSchema, element_ref: elementRefSchema, wait_ms: waitMsSchema },
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.click_element({ ...args, browserWsEndpoint }),
+  ),
+  click_css: spec(
+    'Click an element by CSS selector.',
+    { frame_path: 'root', selector: '.server-button', wait_ms: 1500 },
+    { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
+    { frame_path: framePathSchema, selector: z.string(), wait_ms: waitMsSchema },
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.click_css({ ...args, browserWsEndpoint }),
+  ),
+  click_text: spec(
+    'Click the first matching element by visible text.',
+    { frame_path: 'root', text: 'Watch now', wait_ms: 1500 },
+    { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
+    { frame_path: framePathSchema, text: z.string(), wait_ms: waitMsSchema },
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.click_text({ ...args, browserWsEndpoint }),
+  ),
+  click_xpath: spec(
+    'Click the first matching element by XPath.',
+    { frame_path: 'root', xpath: '//button[1]', wait_ms: 1500 },
+    { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
+    { frame_path: framePathSchema, xpath: z.string(), wait_ms: waitMsSchema },
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.click_xpath({ ...args, browserWsEndpoint }),
+  ),
+  click_checkbox: spec(
+    'Toggle a checkbox to the desired checked state.',
+    { frame_path: 'root', selector: 'input[type=checkbox]', checked: true, wait_ms: 1000 },
+    { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      frame_path: framePathSchema,
+      element_ref: elementRefSchema,
+      selector: selectorSchema,
+      xpath: xpathSchema,
+      text: textSchema,
+      checked: z.boolean().optional().default(true),
+      wait_ms: waitMsSchema,
     },
-    inputExample: {
-      mode: 'click',
-      selector: '.server-button',
-      xpath: '',
-      text: '',
-      value: '',
-      option_text: '',
-      x: null,
-      y: null,
-      wait_ms: 3000,
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.click_checkbox({ ...args, browserWsEndpoint }),
+  ),
+  click_radio: spec(
+    'Select a radio button by ref or locator.',
+    { frame_path: 'root', selector: 'input[type=radio]', wait_ms: 1000 },
+    { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      frame_path: framePathSchema,
+      element_ref: elementRefSchema,
+      selector: selectorSchema,
+      xpath: xpathSchema,
+      text: textSchema,
+      wait_ms: waitMsSchema,
     },
-    outputExample: {
-      success: true,
-      mode: 'click',
-      navigated: false,
-      new_tab_urls: [],
-      url: 'https://example.com/watch/123',
-      error: null,
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.click_radio({ ...args, browserWsEndpoint }),
+  ),
+  type_into: spec(
+    'Type into an input/textarea by ref or locator.',
+    { frame_path: 'root', selector: 'input[name=q]', value: 'team name', wait_ms: 500 },
+    { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      frame_path: framePathSchema,
+      element_ref: elementRefSchema,
+      selector: selectorSchema,
+      xpath: xpathSchema,
+      text: textSchema,
+      value: z.string(),
+      wait_ms: z.number().optional().default(500),
     },
-    zodSchema: {
-      mode: z.enum(['click', 'play', 'type', 'select', 'coordinates', 'check'])
-        .describe('Interaction mode'),
-      selector: z.string().optional().describe('CSS selector of target element'),
-      xpath: z.string().optional().describe('XPath of target element'),
-      text: z.string().optional().describe('Visible text to find the element'),
-      value: z.string().optional().describe('Text to type for type mode'),
-      option_text: z.string().optional().describe('Option text for select mode'),
-      x: z.number().optional().describe('Viewport X coordinate for coordinates mode'),
-      y: z.number().optional().describe('Viewport Y coordinate for coordinates mode'),
-      wait_ms: z.number().optional().default(3000).describe('How long to wait after interaction'),
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.type_into({ ...args, browserWsEndpoint }),
+  ),
+  select_option: spec(
+    'Select an option in a dropdown by text or value.',
+    { frame_path: 'root', selector: 'select', option_text: 'Server 2', wait_ms: 1000 },
+    { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      frame_path: framePathSchema,
+      element_ref: elementRefSchema,
+      selector: selectorSchema,
+      xpath: xpathSchema,
+      text: textSchema,
+      option_text: z.string().optional().default(''),
+      option_value: z.string().optional().default(''),
+      wait_ms: waitMsSchema,
     },
-    handlerFactory: (browserWsEndpoint, toolImpls) => (args) => toolImpls.interact({ ...args, browserWsEndpoint }),
-  },
-
-  harvest: {
-    summary:
-      'Capture streaming URLs from the active player using CDP requests, responses, DOM scans, iframe scans, JS player objects, and performance entries.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        duration_ms: {
-          type: 'number',
-          default: 12000,
-          description: 'How long to monitor network activity in milliseconds',
-        },
-        player_iframe_url: {
-          type: 'string',
-          default: '',
-          description: 'Iframe URL from inspect output when the player lives in an iframe',
-        },
-      },
-      additionalProperties: false,
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.select_option({ ...args, browserWsEndpoint }),
+  ),
+  play_media: spec(
+    'Start playback by targeting a control or a video element.',
+    { frame_path: 'root.0', selector: 'video', wait_ms: 1500 },
+    { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      frame_path: framePathSchema,
+      element_ref: elementRefSchema,
+      selector: selectorSchema,
+      xpath: xpathSchema,
+      text: textSchema,
+      wait_ms: waitMsSchema,
     },
-    inputExample: {
-      duration_ms: 12000,
-      player_iframe_url: '',
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.play_media({ ...args, browserWsEndpoint }),
+  ),
+  swipe_region: spec(
+    'Swipe or drag inside the viewport using start coordinates and deltas.',
+    { frame_path: 'root', x: 960, y: 540, delta_x: -400, delta_y: 0, steps: 12, wait_ms: 500 },
+    { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      frame_path: framePathSchema,
+      x: z.number(),
+      y: z.number(),
+      delta_x: z.number().optional().default(0),
+      delta_y: z.number().optional().default(0),
+      steps: z.number().optional().default(10),
+      wait_ms: z.number().optional().default(500),
     },
-    outputExample: {
-      streams: [
-        {
-          url: 'https://cdn.example.com/master.m3u8',
-          protocol: 'hls',
-          source_layer: 'cdp-request',
-        },
-      ],
-      m3u8_urls: ['https://cdn.example.com/master.m3u8'],
-      mpd_urls: [],
-      mp4_urls: [],
-      total: 1,
-      video_state: 'playing',
-      screenshot_url: 'https://res.cloudinary.com/.../harvest.png',
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.swipe_region({ ...args, browserWsEndpoint }),
+  ),
+  click_coordinates: spec(
+    'Click a viewport coordinate directly, useful for player overlays and cross-origin iframe controls.',
+    { frame_path: 'root', x: 960, y: 540, wait_ms: 1500 },
+    { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      frame_path: framePathSchema,
+      x: z.number(),
+      y: z.number(),
+      wait_ms: waitMsSchema,
     },
-    zodSchema: {
-      duration_ms: z.number().optional().default(12_000)
-        .describe('How long to monitor network activity in milliseconds'),
-      player_iframe_url: z.string().optional().default('')
-        .describe('Iframe URL from inspect output when the player lives in an iframe'),
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.click_coordinates({ ...args, browserWsEndpoint }),
+  ),
+  capture_streams: spec(
+    'Capture streaming URLs with CDP, DOM, player-object, iframe, and performance evidence.',
+    { frame_path: 'root.0', duration_ms: 12000, player_iframe_hint: 'embed.example.com' },
+    { ok: true, total_streams: 1, streams: [{ url: 'https://cdn.example.com/master.m3u8', protocol: 'hls' }], screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      frame_path: framePathSchema,
+      duration_ms: z.number().optional().default(12000),
+      player_iframe_hint: z.string().optional().default(''),
     },
-    handlerFactory: (browserWsEndpoint, toolImpls) => (args) => toolImpls.harvest({ ...args, browserWsEndpoint }),
-  },
-
-  screenshot: {
-    summary:
-      'Capture a quick screenshot of the current page or element and report basic video state without running a full inspect pass.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        mode: {
-          type: 'string',
-          enum: ['viewport', 'full', 'element'],
-          default: 'viewport',
-          description: 'Screenshot mode',
-        },
-        selector: {
-          type: 'string',
-          default: 'video',
-          description: 'CSS selector for element mode',
-        },
-      },
-      additionalProperties: false,
-    },
-    inputExample: {
-      mode: 'viewport',
-      selector: 'video',
-    },
-    outputExample: {
-      screenshot_url: 'https://res.cloudinary.com/.../shot.png',
-      video_state: 'playing',
-      url: 'https://example.com/watch/123',
-    },
-    zodSchema: {
-      mode: z.enum(['viewport', 'full', 'element']).optional().default('viewport'),
-      selector: z.string().optional().default('video')
-        .describe('CSS selector for element mode'),
-    },
-    handlerFactory: (browserWsEndpoint, toolImpls) => (args) => toolImpls.screenshot({ ...args, browserWsEndpoint }),
-  },
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.capture_streams({ ...args, browserWsEndpoint }),
+  ),
 };
 
-function toPublicToolSpec(name, spec) {
+for (const [name, specValue] of Object.entries(TOOL_SPECS)) {
+  specValue.inputSchema = {
+    type: 'object',
+    properties: {},
+    additionalProperties: false,
+  };
+  for (const [key, schema] of Object.entries(specValue.zodSchema)) {
+    const property = {};
+    if (schema.description) {
+      property.description = schema.description;
+    }
+    specValue.inputSchema.properties[key] = property;
+  }
+}
+
+function toPublicToolSpec(name, specValue) {
   return {
     name,
-    summary: spec.summary,
-    description: buildDescription(spec.summary, spec.inputExample, spec.outputExample),
-    input_schema: spec.inputSchema,
-    input_example: spec.inputExample,
-    output_example: spec.outputExample,
+    summary: specValue.summary,
+    description: buildDescription(specValue.summary, specValue.inputExample, specValue.outputExample),
+    input_schema: specValue.inputSchema,
+    input_example: specValue.inputExample,
+    output_example: specValue.outputExample,
   };
 }
 
 export function getToolCatalog() {
   return Object.fromEntries(
-    Object.entries(TOOL_SPECS).map(([name, spec]) => [name, toPublicToolSpec(name, spec)]),
+    Object.entries(TOOL_SPECS).map(([name, specValue]) => [name, toPublicToolSpec(name, specValue)]),
   );
 }
 
 export function getToolSpec(toolName) {
-  const spec = TOOL_SPECS[toolName];
-  return spec ? toPublicToolSpec(toolName, spec) : null;
+  const specValue = TOOL_SPECS[toolName];
+  return specValue ? toPublicToolSpec(toolName, specValue) : null;
 }
 
 export function getToolDefinitions(browserWsEndpoint, toolImpls = DEFAULT_TOOL_IMPLS) {
   return Object.fromEntries(
-    Object.entries(TOOL_SPECS).map(([name, spec]) => [
+    Object.entries(TOOL_SPECS).map(([name, specValue]) => [
       name,
       {
-        ...toPublicToolSpec(name, spec),
-        schema: spec.zodSchema,
-        handler: spec.handlerFactory(browserWsEndpoint, toolImpls),
+        ...toPublicToolSpec(name, specValue),
+        schema: specValue.zodSchema,
+        handler: specValue.handlerFactory(browserWsEndpoint, toolImpls),
       },
     ]),
   );

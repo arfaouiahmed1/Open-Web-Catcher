@@ -19,6 +19,7 @@ def api_settings() -> Settings:
         browser_ws_endpoint="ws://browser.local:9222/devtools/browser/shared",
         mcp_server_url="http://mcp.local:3000",
         database_url="sqlite:///:memory:",
+        memory_enabled=False,
     )
 
 

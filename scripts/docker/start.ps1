@@ -23,8 +23,11 @@ Write-OwcHeader "Open Web Catcher - Start"
 Write-OwcInfo "Compose file: $($context.ComposeFile)"
 Write-OwcInfo "Service: $($context.Service)"
 Write-OwcInfo "Container: $($context.Container)"
+Write-OwcInfo "Tools container: $($context.ToolContainer)"
 
-$needsBuild = $Build -or -not (Test-OwcImageExists -ImageRef $context.ImageRef)
+$needsBuild = $Build -or `
+    -not (Test-OwcImageExists -ImageRef $context.ImageRef) -or `
+    -not (Test-OwcImageExists -ImageRef $context.ToolImageRef)
 if ($needsBuild) {
     $useCache = Resolve-OwcBuildUsesCache -NoCache:$NoCache -Yes:$Yes
     Write-OwcStep "Building application image $(if ($useCache) { 'with cache' } else { 'without cache' })..."
