@@ -7,6 +7,7 @@ Output: list of TakedownEmail objects (JSON) — one per unique provider
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -60,5 +61,15 @@ class EmailTool(BaseTool):
         )
         return json.dumps([em.model_dump(mode="json") for em in emails])
 
-    async def _arun(self) -> Any:
-        raise NotImplementedError
+    async def _arun(
+        self,
+        infringing_url: str,
+        provider_analysis: list[dict],
+        extraction_results: list[dict],
+    ) -> Any:
+        return await asyncio.to_thread(
+            self._run,
+            infringing_url,
+            provider_analysis,
+            extraction_results,
+        )

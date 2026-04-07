@@ -1,23 +1,13 @@
-"""Pipeline routing tests."""
+"""Pipeline routing tests for the LangGraph orchestrator."""
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from src.models.enums import Confidence, ExtractionStatus, PageType
 from src.models.schemas import ClassificationResult, ExtractionResult
-from src.utils.config import Settings
-
-
-@pytest.fixture
-def settings():
-    return Settings(
-        google_api_key="test-key",
-        browser_ws_endpoint="ws://localhost:9222",
-        database_url="sqlite:///:memory:",
-    )
 
 
 def _make_classification(page_type: PageType) -> ClassificationResult:
@@ -29,8 +19,9 @@ def _make_classification(page_type: PageType) -> ClassificationResult:
     )
 
 
-def _make_extraction(page_type: PageType, status: ExtractionStatus = ExtractionStatus.SUCCESS):
+def _make_extraction(page_type: PageType, status: ExtractionStatus = ExtractionStatus.SUCCESS) -> ExtractionResult:
     from src.models.enums import AgentType
+
     mapping = {
         PageType.LANDING: AgentType.LANDING_PAGE,
         PageType.HOSTING: AgentType.HOSTING_PAGE,
@@ -44,64 +35,83 @@ def _make_extraction(page_type: PageType, status: ExtractionStatus = ExtractionS
     )
 
 
-@patch("src.agents.orchestrator.classify_node")
-@patch("src.agents.orchestrator.hosting_page_node")
-def test_routing_to_hosting_page(mock_hosting, mock_classify, settings):
-    """ClassificationResult with HOSTING type should route to hosting_page_node."""
+@pytest.mark.asyncio
+@patch("src.agents.orchestrator.generate_takedown_emails_node", new_callable=AsyncMock)
+@patch("src.agents.orchestrator.analyze_providers_node", new_callable=AsyncMock)
+@patch("src.agents.orchestrator.hosting_page_node", new_callable=AsyncMock)
+@patch("src.agents.orchestrator.classify_node", new_callable=AsyncMock)
+async def test_routing_to_hosting_page(mock_classify, mock_hosting, mock_analyze, mock_email, settings):
     from src.agents.orchestrator import build_graph
 
     mock_classify.return_value = {
-        "url": "https://example.com",
-        "run_id": "test-run",
         "classification": _make_classification(PageType.HOSTING),
-        "extraction": None,
         "error": "",
     }
     mock_hosting.return_value = {
-        "url": "https://example.com",
-        "run_id": "test-run",
-        "classification": _make_classification(PageType.HOSTING),
-        "extraction": _make_extraction(PageType.HOSTING),
-        "error": "",
+        "pending_hosting_urls": [],
+        "pending_embedded_urls": [],
+        "extraction_results": [_make_extraction(PageType.HOSTING)],
     }
+    mock_analyze.return_value = {"provider_analysis": []}
+    mock_email.return_value = {"takedown_emails": []}
 
     graph = build_graph(settings)
-    result = graph.invoke({
+    result = await graph.ainvoke({
         "url": "https://example.com",
         "run_id": "test-run",
         "classification": None,
-        "extraction": None,
+        "matches": [],
+        "extraction_results": [],
+        "pending_hosting_urls": [],
+        "pending_embedded_urls": [],
+        "provider_analysis": [],
+        "takedown_emails": [],
         "error": "",
     })
 
-    assert mock_hosting.called
+    assert mock_hosting.await_count == 1
+    assert result["classification"].page_type == PageType.HOSTING
 
 
-@patch("src.agents.orchestrator.classify_node")
-@patch("src.agents.orchestrator.landing_page_node")
-def test_routing_to_landing_page(mock_landing, mock_classify, settings):
+@pytest.mark.asyncio
+@patch("src.agents.orchestrator.generate_takedown_emails_node", new_callable=AsyncMock)
+@patch("src.agents.orchestrator.analyze_providers_node", new_callable=AsyncMock)
+@patch("src.agents.orchestrator.hosting_page_node", new_callable=AsyncMock)
+@patch("src.agents.orchestrator.landing_page_node", new_callable=AsyncMock)
+@patch("src.agents.orchestrator.classify_node", new_callable=AsyncMock)
+async def test_routing_to_landing_page(mock_classify, mock_landing, mock_hosting, mock_analyze, mock_email, settings):
+    from src.agents.orchestrator import build_graph
+
     mock_classify.return_value = {
-        "url": "https://example.com",
-        "run_id": "test-run",
         "classification": _make_classification(PageType.LANDING),
-        "extraction": None,
         "error": "",
     }
     mock_landing.return_value = {
-        "url": "https://example.com",
-        "run_id": "test-run",
-        "classification": _make_classification(PageType.LANDING),
-        "extraction": _make_extraction(PageType.LANDING),
-        "error": "",
+        "matches": [],
+        "pending_hosting_urls": [],
+        "extraction_results": [_make_extraction(PageType.LANDING)],
     }
+    mock_hosting.return_value = {
+        "pending_hosting_urls": [],
+        "pending_embedded_urls": [],
+        "extraction_results": [_make_extraction(PageType.HOSTING)],
+    }
+    mock_analyze.return_value = {"provider_analysis": []}
+    mock_email.return_value = {"takedown_emails": []}
 
     graph = build_graph(settings)
-    graph.invoke({
+    await graph.ainvoke({
         "url": "https://example.com",
         "run_id": "test-run",
         "classification": None,
-        "extraction": None,
+        "matches": [],
+        "extraction_results": [],
+        "pending_hosting_urls": [],
+        "pending_embedded_urls": [],
+        "provider_analysis": [],
+        "takedown_emails": [],
         "error": "",
     })
 
-    assert mock_landing.called
+    assert mock_landing.await_count == 1
+    assert mock_hosting.await_count == 0

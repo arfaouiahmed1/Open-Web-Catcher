@@ -1,35 +1,14 @@
-"""Orchestrator Agent — LLM-driven pipeline coordinator.
-
-Model: gemini-2.5-flash-lite (cheap, fast — only routes and coordinates)
-Sub-agents use: gemini-2.5-flash (strong reasoning + vision)
-
-The orchestrator treats every sub-agent AND analysis step as a tool.
-It decides the order of calls, handles failures, and produces the final result.
-
-Full tool set:
-    classify_page           → ClassificationAgent
-    run_landing_agent       → LandingPageAgent
-    run_hosting_agent       → HostingPageAgent     (called N times, once per match URL)
-    run_embedded_agent      → EmbeddedPageAgent    (called when hosting fails)
-    analyze_providers       → IPInfoTool           (called once, after all extractions)
-    generate_takedown_emails → EmailTool           (called once, after analyze_providers)
-
-Always follows this order:
-    classify → [landing →] hosting(s) → [embedded(s)] → analyze → emails
-"""
+"""LangGraph orchestrator for the full extraction pipeline."""
 
 from __future__ import annotations
 
 import json
 import uuid
-from pathlib import Path
-from typing import Any
+from functools import partial
+from typing import Any, TypedDict
 
-from langchain_core.messages import ToolMessage
-from langchain_core.tools import BaseTool
-from pydantic import Field
+from langgraph.graph import END, START, StateGraph
 
-from src.agents.base import build_llm, run_agent_loop
 from src.models.enums import AgentType, ExtractionStatus, PageType
 from src.models.schemas import (
     ClassificationResult,
@@ -49,132 +28,246 @@ from src.utils.phoenix import phoenix_span, set_span_output, using_phoenix_attri
 
 logger = get_logger(__name__)
 
-PROMPT_PATH = Path("configs/prompts/orchestrator_v1.md")
+
+class PipelineState(TypedDict):
+    url: str
+    run_id: str
+    classification: ClassificationResult | None
+    matches: list[MatchInfo]
+    extraction_results: list[ExtractionResult]
+    pending_hosting_urls: list[str]
+    pending_embedded_urls: list[str]
+    provider_analysis: list[ProviderInfo]
+    takedown_emails: list[TakedownEmail]
+    error: str
 
 
-# ── Agent-as-tool wrappers ────────────────────────────────────────────────────
+def _dedupe_urls(urls: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for url in urls:
+        if url and url not in seen:
+            seen.add(url)
+            result.append(url)
+    return result
 
-class _ClassifyTool(BaseTool):
-    name: str = "classify_page"
-    description: str = (
-        "Classify the page type of a URL. "
-        "Returns page_type (landing_page / host_page / embed_video_page / other), "
-        "confidence, and reasoning. Call this FIRST."
+
+def _collect_embedded_urls(extraction: ExtractionResult) -> list[str]:
+    urls = list(extraction.embedded_urls)
+    for server in extraction.metadata.get("servers", []):
+        embedded_url = server.get("embedded_url")
+        if embedded_url:
+            urls.append(embedded_url)
+    return _dedupe_urls(urls)
+
+
+async def classify_node(
+    state: PipelineState,
+    *,
+    settings: Settings,
+    observer: RunObserver | None = None,
+) -> dict[str, Any]:
+    from src.agents.classification import ClassificationAgent
+
+    child = observer.child("classification", AgentType.CLASSIFICATION) if observer else None
+    result = await ClassificationAgent(settings).run(url=state["url"], observer=child)
+    return {"classification": result, "error": ""}
+
+
+async def queue_root_hosting_node(state: PipelineState) -> dict[str, Any]:
+    return {"pending_hosting_urls": _dedupe_urls([*state["pending_hosting_urls"], state["url"]])}
+
+
+async def queue_root_embedded_node(state: PipelineState) -> dict[str, Any]:
+    return {"pending_embedded_urls": _dedupe_urls([*state["pending_embedded_urls"], state["url"]])}
+
+
+async def landing_page_node(
+    state: PipelineState,
+    *,
+    settings: Settings,
+    observer: RunObserver | None = None,
+) -> dict[str, Any]:
+    from src.agents.landing_page import LandingPageAgent
+
+    child = observer.child("landing", AgentType.LANDING_PAGE) if observer else None
+    extraction = await LandingPageAgent(settings).run(url=state["url"], observer=child)
+    hosting_pages = extraction.metadata.get("hosting_pages", [])
+    matches: list[MatchInfo] = []
+    for page in hosting_pages:
+        if not isinstance(page, dict) or not page.get("url"):
+            continue
+        try:
+            matches.append(MatchInfo(**page))
+        except Exception:
+            logger.warning("Skipping malformed landing-page match payload: %s", page)
+    pending_hosting_urls = _dedupe_urls([match.url for match in matches])
+    return {
+        "matches": matches,
+        "pending_hosting_urls": pending_hosting_urls,
+    }
+
+
+async def hosting_page_node(
+    state: PipelineState,
+    *,
+    settings: Settings,
+    observer: RunObserver | None = None,
+) -> dict[str, Any]:
+    from src.agents.hosting_page import HostingPageAgent
+
+    if not state["pending_hosting_urls"]:
+        return {}
+
+    target_url = state["pending_hosting_urls"][0]
+    remaining_hosting_urls = state["pending_hosting_urls"][1:]
+    child = observer.child("hosting", AgentType.HOSTING_PAGE) if observer else None
+    extraction = await HostingPageAgent(settings).run(url=target_url, observer=child)
+    pending_embedded_urls = _dedupe_urls(
+        [*state["pending_embedded_urls"], *_collect_embedded_urls(extraction)]
     )
-    settings: Settings = Field(exclude=True)
-    observer: RunObserver | None = Field(default=None, exclude=True)
-
-    class Config:
-        arbitrary_types_allowed = True
-
-    def _run(self, url: str) -> str:
-        raise NotImplementedError("Use async")
-
-    async def _arun(self, url: str) -> str:
-        from src.agents.classification import ClassificationAgent
-        child = self.observer.child("classification", AgentType.CLASSIFICATION) if self.observer else None
-        result = await ClassificationAgent(self.settings).run(url=url, observer=child)
-        return result.model_dump_json()
+    return {
+        "pending_hosting_urls": remaining_hosting_urls,
+        "pending_embedded_urls": pending_embedded_urls,
+        "extraction_results": [*state["extraction_results"], extraction],
+    }
 
 
-class _LandingTool(BaseTool):
-    name: str = "run_landing_agent"
-    description: str = (
-        "Run the Landing Page Agent on a landing/catalog page. "
-        "Discovers all hosting page URLs (match/channel pages with players). "
-        "Returns hosting_pages[] with url, title, participants, iframes, route. "
-        "Call when classify_page returns 'landing_page'."
+async def embedded_page_node(
+    state: PipelineState,
+    *,
+    settings: Settings,
+    observer: RunObserver | None = None,
+) -> dict[str, Any]:
+    from src.agents.embedded_page import EmbeddedPageAgent
+
+    if not state["pending_embedded_urls"]:
+        return {}
+
+    target_url = state["pending_embedded_urls"][0]
+    remaining_embedded_urls = state["pending_embedded_urls"][1:]
+    child = observer.child("embedded", AgentType.EMBEDDED_PAGE) if observer else None
+    extraction = await EmbeddedPageAgent(settings).run(url=target_url, observer=child)
+    return {
+        "pending_embedded_urls": remaining_embedded_urls,
+        "extraction_results": [*state["extraction_results"], extraction],
+    }
+
+
+async def analyze_providers_node(
+    state: PipelineState,
+    *,
+    settings: Settings,
+) -> dict[str, Any]:
+    stream_urls = [stream.url for stream in _collect_all_streams(state["extraction_results"])]
+    payload = await IPInfoTool(ipinfo_token=settings.ipinfo_token)._arun(stream_urls=stream_urls)
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError:
+        parsed = []
+    providers = [ProviderInfo(**item) for item in parsed if isinstance(item, dict)]
+    return {"provider_analysis": providers}
+
+
+async def generate_takedown_emails_node(state: PipelineState) -> dict[str, Any]:
+    payload = await EmailTool()._arun(
+        infringing_url=state["url"],
+        provider_analysis=[provider.model_dump(mode="json") for provider in state["provider_analysis"]],
+        extraction_results=[result.model_dump(mode="json") for result in state["extraction_results"]],
     )
-    settings: Settings = Field(exclude=True)
-    observer: RunObserver | None = Field(default=None, exclude=True)
-
-    class Config:
-        arbitrary_types_allowed = True
-
-    def _run(self, url: str) -> str:
-        raise NotImplementedError("Use async")
-
-    async def _arun(self, url: str) -> str:
-        from src.agents.landing_page import LandingPageAgent
-        child = self.observer.child("landing", AgentType.LANDING_PAGE) if self.observer else None
-        result = await LandingPageAgent(self.settings).run(url=url, observer=child)
-        return result.model_dump_json()
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError:
+        parsed = []
+    emails = [TakedownEmail(**item) for item in parsed if isinstance(item, dict)]
+    return {"takedown_emails": emails}
 
 
-class _HostingTool(BaseTool):
-    name: str = "run_hosting_agent"
-    description: str = (
-        "Run the Hosting Page Agent on a single hosting page URL. "
-        "Extracts m3u8/mpd/mp4 streams and screenshots per server. "
-        "Call once per hosting URL. If a server fails, the result contains "
-        "embedded_url — pass that to run_embedded_agent."
+def route_after_classification(state: PipelineState) -> str:
+    classification = state["classification"]
+    if classification is None:
+        return "analyze_providers"
+    if classification.page_type == PageType.LANDING:
+        return "landing_page"
+    if classification.page_type == PageType.HOSTING:
+        return "queue_root_hosting"
+    if classification.page_type == PageType.EMBEDDED:
+        return "queue_root_embedded"
+    return "analyze_providers"
+
+
+def route_after_landing(state: PipelineState) -> str:
+    return "hosting_page" if state["pending_hosting_urls"] else "analyze_providers"
+
+
+def route_after_hosting(state: PipelineState) -> str:
+    if state["pending_hosting_urls"]:
+        return "hosting_page"
+    if state["pending_embedded_urls"]:
+        return "embedded_page"
+    return "analyze_providers"
+
+
+def route_after_embedded(state: PipelineState) -> str:
+    return "embedded_page" if state["pending_embedded_urls"] else "analyze_providers"
+
+
+def build_graph(settings: Settings, observer: RunObserver | None = None):
+    """Build the deterministic LangGraph orchestration graph."""
+    graph = StateGraph(PipelineState)
+    graph.add_node("classify", partial(classify_node, settings=settings, observer=observer))
+    graph.add_node("queue_root_hosting", queue_root_hosting_node)
+    graph.add_node("queue_root_embedded", queue_root_embedded_node)
+    graph.add_node("landing_page", partial(landing_page_node, settings=settings, observer=observer))
+    graph.add_node("hosting_page", partial(hosting_page_node, settings=settings, observer=observer))
+    graph.add_node("embedded_page", partial(embedded_page_node, settings=settings, observer=observer))
+    graph.add_node("analyze_providers", partial(analyze_providers_node, settings=settings))
+    graph.add_node("generate_takedown_emails", generate_takedown_emails_node)
+
+    graph.add_edge(START, "classify")
+    graph.add_conditional_edges(
+        "classify",
+        route_after_classification,
+        {
+            "landing_page": "landing_page",
+            "queue_root_hosting": "queue_root_hosting",
+            "queue_root_embedded": "queue_root_embedded",
+            "analyze_providers": "analyze_providers",
+        },
     )
-    settings: Settings = Field(exclude=True)
-    observer: RunObserver | None = Field(default=None, exclude=True)
-
-    class Config:
-        arbitrary_types_allowed = True
-
-    def _run(self, url: str) -> str:
-        raise NotImplementedError("Use async")
-
-    async def _arun(self, url: str) -> str:
-        from src.agents.hosting_page import HostingPageAgent
-        child = self.observer.child("hosting", AgentType.HOSTING_PAGE) if self.observer else None
-        result = await HostingPageAgent(self.settings).run(url=url, observer=child)
-        return result.model_dump_json()
-
-
-class _EmbeddedTool(BaseTool):
-    name: str = "run_embedded_agent"
-    description: str = (
-        "Run the Embedded Page Agent on an embedded player URL (iframe src). "
-        "Use when: (a) run_hosting_agent returns needs_embed_agent for a server, "
-        "or (b) classify_page returns 'embed_video_page'. "
-        "Returns m3u8/mpd/mp4 streams and screenshots."
+    graph.add_conditional_edges(
+        "landing_page",
+        route_after_landing,
+        {"hosting_page": "hosting_page", "analyze_providers": "analyze_providers"},
     )
-    settings: Settings = Field(exclude=True)
-    observer: RunObserver | None = Field(default=None, exclude=True)
+    graph.add_edge("queue_root_hosting", "hosting_page")
+    graph.add_conditional_edges(
+        "hosting_page",
+        route_after_hosting,
+        {
+            "hosting_page": "hosting_page",
+            "embedded_page": "embedded_page",
+            "analyze_providers": "analyze_providers",
+        },
+    )
+    graph.add_edge("queue_root_embedded", "embedded_page")
+    graph.add_conditional_edges(
+        "embedded_page",
+        route_after_embedded,
+        {"embedded_page": "embedded_page", "analyze_providers": "analyze_providers"},
+    )
+    graph.add_edge("analyze_providers", "generate_takedown_emails")
+    graph.add_edge("generate_takedown_emails", END)
+    return graph.compile()
 
-    class Config:
-        arbitrary_types_allowed = True
-
-    def _run(self, url: str) -> str:
-        raise NotImplementedError("Use async")
-
-    async def _arun(self, url: str) -> str:
-        from src.agents.embedded_page import EmbeddedPageAgent
-        child = self.observer.child("embedded", AgentType.EMBEDDED_PAGE) if self.observer else None
-        result = await EmbeddedPageAgent(self.settings).run(url=url, observer=child)
-        return result.model_dump_json()
-
-
-# ── Orchestrator ──────────────────────────────────────────────────────────────
 
 class OrchestratorAgent:
-    """LLM orchestrator that coordinates the full extraction pipeline.
-
-    Uses gemini-2.5-flash-lite for routing/coordination decisions.
-    Sub-agents use gemini-2.5-flash for tool-calling loops + vision.
-    """
+    """LangGraph orchestrator wrapper."""
 
     def __init__(self, settings: Settings, observer: RunObserver | None = None) -> None:
         self.settings = settings
         self.observer = observer
-        self.llm = build_llm(settings, model_override=settings.orchestrator_model)
-        self.tools: list[BaseTool] = [
-            _ClassifyTool(settings=settings, observer=observer),
-            _LandingTool(settings=settings, observer=observer),
-            _HostingTool(settings=settings, observer=observer),
-            _EmbeddedTool(settings=settings, observer=observer),
-            IPInfoTool(ipinfo_token=settings.ipinfo_token),
-            EmailTool(),
-        ]
-        self._system_prompt = (
-            PROMPT_PATH.read_text(encoding="utf-8")
-            if PROMPT_PATH.exists()
-            else _DEFAULT_SYSTEM_PROMPT
-        )
+        self.graph = build_graph(settings, observer=observer)
 
     async def run(self, url: str) -> PipelineResult:
         run_id = self.observer.run_id if self.observer is not None else str(uuid.uuid4())
@@ -183,39 +276,37 @@ class OrchestratorAgent:
             self.observer.set_url(url)
             self.observer.mark_agent(AgentType.ORCHESTRATOR)
             self.observer.emit("pipeline_started", f"Pipeline started for {url}")
+
+        initial_state: PipelineState = {
+            "url": url,
+            "run_id": run_id,
+            "classification": None,
+            "matches": [],
+            "extraction_results": [],
+            "pending_hosting_urls": [],
+            "pending_embedded_urls": [],
+            "provider_analysis": [],
+            "takedown_emails": [],
+            "error": "",
+        }
+
         try:
             with using_phoenix_attributes(
                 session_id=self.observer.run_id if self.observer is not None else "",
                 metadata={"agent_type": AgentType.ORCHESTRATOR.value, "url": url},
-                tags=["orchestrator", "pipeline"],
+                tags=["orchestrator", "pipeline", "langgraph"],
             ):
                 with phoenix_span(
                     "orchestrator_agent.run",
                     kind="agent",
                     input_value={"url": url},
-                    attributes={"owc.agent_type": AgentType.ORCHESTRATOR.value},
+                    attributes={
+                        "owc.agent_type": AgentType.ORCHESTRATOR.value,
+                        "owc.runtime": "langgraph",
+                    },
                 ) as span:
-                    loop_result = await run_agent_loop(
-                        settings=self.settings,
-                        llm=self.llm,
-                        tools=self.tools,
-                        system_prompt=self._system_prompt,
-                        initial_message=f"Process this URL through the full extraction pipeline:\n\n{url}",
-                        max_tool_calls=self.settings.orchestrator_max_tool_calls,
-                        budget_exhausted_message=(
-                            "Budget exhausted. If you haven't already, call analyze_providers "
-                            "and generate_takedown_emails with what you have, then stop."
-                        ),
-                        observer=self.observer,
-                        run_name="orchestrator_agent",
-                    )
-
-                    result = _build_pipeline_result(
-                        run_id,
-                        url,
-                        loop_result.messages,
-                        metrics=self.observer.trace().metrics if self.observer else None,
-                    )
+                    final_state = await self.graph.ainvoke(initial_state)
+                    result = _build_pipeline_result(final_state, self.observer.trace().metrics if self.observer else None)
                     set_span_output(
                         span,
                         {
@@ -225,6 +316,7 @@ class OrchestratorAgent:
                             "provider_analyses": len(result.provider_analysis),
                         },
                     )
+
             if self.observer is not None:
                 failure_mode = "" if result.final_status == ExtractionStatus.SUCCESS else result.final_status.value
                 self.observer.emit(
@@ -241,9 +333,13 @@ class OrchestratorAgent:
                     failure_mode=failure_mode,
                 )
                 result.metrics = self.observer.trace().metrics
+
             logger.info(
                 "Pipeline finished: run_id=%s status=%s streams=%d emails=%d",
-                run_id, result.final_status, len(result.all_streams), len(result.takedown_emails),
+                run_id,
+                result.final_status,
+                len(result.all_streams),
+                len(result.takedown_emails),
             )
             return result
         except Exception as exc:
@@ -252,8 +348,6 @@ class OrchestratorAgent:
                 self.observer.finish(success=False, failure_mode=type(exc).__name__)
             raise
 
-
-# ── Public entry point ────────────────────────────────────────────────────────
 
 async def run_pipeline(
     url: str,
@@ -269,170 +363,53 @@ async def run_pipeline(
     return await OrchestratorAgent(settings, observer=observer).run(url)
 
 
-# ── Result builder ────────────────────────────────────────────────────────────
+def _collect_all_streams(extraction_results: list[ExtractionResult]) -> list[StreamURL]:
+    seen: set[str] = set()
+    streams: list[StreamURL] = []
+    for extraction in extraction_results:
+        for stream in extraction.streams:
+            if stream.url and stream.url not in seen:
+                seen.add(stream.url)
+                streams.append(stream)
+        for server in extraction.metadata.get("servers", []):
+            for url in server.get("m3u8_urls", []) + server.get("mpd_urls", []) + server.get("mp4_urls", []):
+                if url and url not in seen:
+                    seen.add(url)
+                    streams.append(StreamURL(url=url, source_layer=server.get("label", "")))
+    return streams
 
-def _build_pipeline_result(
-    run_id: str,
-    url: str,
-    messages: list,
-    metrics: Any | None = None,
-) -> PipelineResult:
-    """Reconstruct a PipelineResult by replaying all ToolMessage outputs."""
-    classification: ClassificationResult | None = None
-    matches: list[MatchInfo] = []
-    extraction_results: list[ExtractionResult] = []
-    provider_analysis: list[ProviderInfo] = []
-    takedown_emails: list[TakedownEmail] = []
-    all_streams: list[StreamURL] = []
-    all_screenshots: list[str] = []
-    seen_stream_urls: set[str] = set()
 
-    for msg in messages:
-        if not isinstance(msg, ToolMessage):
-            continue
-        try:
-            payload = json.loads(msg.content)
-        except (json.JSONDecodeError, TypeError):
-            continue
+def _collect_all_screenshots(extraction_results: list[ExtractionResult]) -> list[str]:
+    screenshots: list[str] = []
+    for extraction in extraction_results:
+        screenshots.extend(extraction.screenshots)
+        for server in extraction.metadata.get("servers", []):
+            screenshot_url = server.get("screenshot_url")
+            if screenshot_url:
+                screenshots.append(screenshot_url)
+    return _dedupe_urls(screenshots)
 
-        if isinstance(payload, list):
-            if payload and "stream_url" in payload[0]:
-                for p in payload:
-                    try:
-                        provider_analysis.append(ProviderInfo(**p))
-                    except Exception:
-                        pass
-            elif payload and "subject" in payload[0]:
-                for e in payload:
-                    try:
-                        takedown_emails.append(TakedownEmail(**e))
-                    except Exception:
-                        pass
-            continue
 
-        if not isinstance(payload, dict):
-            continue
-
-        if "page_type" in payload and "confidence" in payload and "reasoning" in payload:
-            try:
-                classification = ClassificationResult(**payload)
-            except Exception:
-                pass
-
-        elif "hosting_pages" in payload.get("metadata", {}):
-            for hp in payload["metadata"].get("hosting_pages", []):
-                try:
-                    matches.append(MatchInfo(**{
-                        k: hp[k] for k in MatchInfo.model_fields if k in hp
-                    }))
-                except Exception:
-                    pass
-
-        elif "servers" in payload.get("metadata", {}):
-            _collect_extraction(
-                payload=payload,
-                extraction_results=extraction_results,
-                all_streams=all_streams,
-                all_screenshots=all_screenshots,
-                seen_stream_urls=seen_stream_urls,
-                fallback_url=url,
-            )
-
+def _build_pipeline_result(state: PipelineState, metrics: Any | None = None) -> PipelineResult:
+    all_streams = _collect_all_streams(state["extraction_results"])
     final_status = (
-        ExtractionStatus.SUCCESS if all_streams
-        else ExtractionStatus.PARTIAL if extraction_results
+        ExtractionStatus.SUCCESS
+        if all_streams
+        else ExtractionStatus.PARTIAL
+        if state["extraction_results"]
         else ExtractionStatus.FAILED
     )
 
     return PipelineResult(
-        run_id=run_id,
-        url=url,
-        classification=classification,
-        matches=matches,
-        extraction_results=extraction_results,
+        run_id=state["run_id"],
+        url=state["url"],
+        classification=state["classification"],
+        matches=state["matches"],
+        extraction_results=state["extraction_results"],
         final_status=final_status,
         all_streams=all_streams,
-        all_screenshots=list(dict.fromkeys(all_screenshots)),
-        provider_analysis=provider_analysis,
-        takedown_emails=takedown_emails,
+        all_screenshots=_collect_all_screenshots(state["extraction_results"]),
+        provider_analysis=state["provider_analysis"],
+        takedown_emails=state["takedown_emails"],
         metrics=metrics,
     )
-
-
-def _collect_extraction(
-    payload: dict,
-    extraction_results: list[ExtractionResult],
-    all_streams: list[StreamURL],
-    all_screenshots: list[str],
-    seen_stream_urls: set[str],
-    fallback_url: str,
-) -> None:
-    source_url = payload.get("url", fallback_url)
-    page_type_str = payload.get("page_type", "hosting_page")
-    page_type = PageType(page_type_str) if page_type_str in PageType._value2member_map_ else PageType.HOSTING
-    agent_type = AgentType(payload.get("agent_type", AgentType.HOSTING_PAGE))
-
-    streams: list[StreamURL] = []
-    screenshots: list[str] = []
-
-    for server in payload.get("metadata", {}).get("servers", []):
-        for su in server.get("m3u8_urls", []) + server.get("mpd_urls", []) + server.get("mp4_urls", []):
-            if su and su not in seen_stream_urls:
-                seen_stream_urls.add(su)
-                s = StreamURL(url=su, source_layer=server.get("label", ""))
-                streams.append(s)
-                all_streams.append(s)
-        shot = server.get("screenshot_url")
-        if shot:
-            screenshots.append(shot)
-            all_screenshots.append(shot)
-
-    status_str = payload.get("status", "failed")
-    status = ExtractionStatus(status_str) if status_str in ExtractionStatus._value2member_map_ else ExtractionStatus.FAILED
-
-    extraction_results.append(ExtractionResult(
-        url=source_url,
-        page_type=page_type,
-        status=status,
-        streams=streams,
-        screenshots=screenshots,
-        agent_type=agent_type,
-        tool_calls_used=payload.get("tool_calls_used", 0),
-        metadata=payload.get("metadata", {}),
-    ))
-
-
-# ── Default prompt ────────────────────────────────────────────────────────────
-
-_DEFAULT_SYSTEM_PROMPT = """\
-You are the Orchestrator. Use gemini-2.5-flash-lite to coordinate the full
-illegal streaming site extraction pipeline. You have 6 tools:
-
-  classify_page           — always call this FIRST
-  run_landing_agent       — call if classify_page returns landing_page
-  run_hosting_agent       — call for each hosting URL (once per match/channel)
-  run_embedded_agent      — call if hosting agent fails or page is embed_video_page
-  analyze_providers       — call AFTER all extractions, pass all stream URLs found
-  generate_takedown_emails — call AFTER analyze_providers
-
-WORKFLOW:
-1. classify_page(url)
-2. If landing_page → run_landing_agent(url) → get hosting_pages list
-3. For each hosting URL in the list → run_hosting_agent(url)
-4. For any server with embedded_url → run_embedded_agent(embedded_url)
-5. If host_page → run_hosting_agent(url) directly
-6. If embed_video_page → run_embedded_agent(url) directly
-7. Collect ALL stream URLs from steps 3-6
-8. analyze_providers(stream_urls=[...all streams...])
-9. generate_takedown_emails(
-       infringing_url=<original url>,
-       provider_analysis=<output from analyze_providers>,
-       extraction_results=[<all server+stream+screenshot data>]
-   )
-
-RULES:
-- Process ALL hosting URLs from the landing agent, not just the first one.
-- If a hosting page fails entirely, move to the next — don't stop.
-- Always call analyze_providers and generate_takedown_emails at the end.
-- Do not skip steps even if earlier steps had partial failures.
-"""

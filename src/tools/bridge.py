@@ -12,7 +12,8 @@ from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-TOOLS_DIR = Path(__file__).parent.parent.parent / "tools_js"
+TOOLS_ROOT = Path(__file__).parent.parent.parent / "tools_js"
+TOOLS_DIR = TOOLS_ROOT / "tools"
 
 
 class JSToolBridge:
@@ -43,6 +44,8 @@ class JSToolBridge:
         """
         script = TOOLS_DIR / f"{tool_name}.js"
         if not script.exists():
+            script = TOOLS_ROOT / f"{tool_name}.js"
+        if not script.exists():
             raise FileNotFoundError(f"JS tool not found: {script}")
 
         payload = {"browserWSEndpoint": self.browser_ws_endpoint, **params}
@@ -55,6 +58,7 @@ class JSToolBridge:
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
+                cwd=str(TOOLS_ROOT),
             )
         except subprocess.TimeoutExpired as e:
             raise RuntimeError(f"JS tool '{tool_name}' timed out after {self.timeout}s") from e

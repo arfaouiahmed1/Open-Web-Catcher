@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Literal
 
 from langchain_core.tools import BaseTool
@@ -23,14 +24,15 @@ class ScreenshotTool(BaseTool):
 
     def _run(
         self,
-        mode: Literal["full", "viewport", "player"] = "viewport",
+        mode: Literal["full", "viewport", "player", "element"] = "viewport",
         selector: str = "",
         **kwargs: Any,
     ) -> dict[str, Any]:
-        params: dict[str, Any] = {"mode": mode}
+        resolved_mode = "element" if mode == "player" else mode
+        params: dict[str, Any] = {"mode": resolved_mode}
         if selector:
             params["selector"] = selector
         return self.bridge.call("screenshot", params)
 
     async def _arun(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError("Use sync _run")
+        return await asyncio.to_thread(self._run, *args, **kwargs)

@@ -32,6 +32,12 @@ from src.utils.logging import get_logger
 logger = get_logger(__name__)
 
 VALID_PROFILES = {"classification", "landing", "hosting", "embedded"}
+REQUIRED_TOOLS_BY_PROFILE = {
+    "classification": {"inspect", "navigate"},
+    "landing": {"inspect", "navigate", "interact", "screenshot"},
+    "hosting": {"inspect", "navigate", "interact", "harvest", "screenshot"},
+    "embedded": {"inspect", "navigate", "interact", "harvest", "screenshot"},
+}
 
 
 @asynccontextmanager
@@ -67,5 +73,10 @@ async def agent_tools(
     ) as client:
         tools = client.get_tools()
         tool_names = [t.name for t in tools]
+        missing_tools = sorted(REQUIRED_TOOLS_BY_PROFILE[profile] - set(tool_names))
+        if missing_tools:
+            raise RuntimeError(
+                f"MCP profile '{profile}' is missing required tools: {', '.join(missing_tools)}"
+            )
         logger.info("MCP profile '%s' loaded %d tools: %s", profile, len(tools), tool_names)
         yield tools

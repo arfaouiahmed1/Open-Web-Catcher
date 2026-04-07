@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from langchain_core.tools import BaseTool
@@ -28,10 +29,7 @@ class InspectTool(BaseTool):
         include_screenshot: bool = True,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        return self.bridge.call("inspect", {
-            "selector": selector,
-            "includeScreenshot": include_screenshot,
-        })
+        return self.bridge.call("inspect", {})
 
     async def _arun(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError("Use sync _run")
+        return await asyncio.to_thread(self._run, *args, **kwargs)

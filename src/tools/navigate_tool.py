@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from langchain_core.tools import BaseTool
@@ -30,9 +31,9 @@ class NavigateTool(BaseTool):
     ) -> dict[str, Any]:
         return self.bridge.call("navigate", {
             "url": url,
-            "waitUntil": wait_until,
-            "timeoutMs": timeout_ms,
+            "wait_until": wait_until,
+            "timeout_ms": timeout_ms,
         })
 
     async def _arun(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError("Use sync _run")
+        return await asyncio.to_thread(self._run, *args, **kwargs)

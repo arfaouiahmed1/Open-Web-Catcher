@@ -11,7 +11,7 @@ dependencies = [
     # LLM client + tracing
     "langchain-core>=0.3",          # BaseMessage, BaseTool, ToolMessage
     "langchain-google-genai>=2.0",  # ChatGoogleGenerativeAI + bind_tools
-    "langgraph>=0.2",               # StateGraph for the orchestrator only
+    "langgraph>=0.2",               # LangGraph runtime for all agents + orchestrator
     "langchain-mcp-adapters>=0.1",   # MCP → LangChain BaseTool bridge
     "langsmith>=0.1",               # legacy optional fallback tracing
     "arize-phoenix-otel>=0.8",

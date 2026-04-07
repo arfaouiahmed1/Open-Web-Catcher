@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -17,7 +18,6 @@ from src.utils.phoenix import phoenix_span, set_span_output, using_phoenix_attri
 logger = get_logger(__name__)
 
 PROMPT_PATH = Path("configs/prompts/classification_v1.md")
-MAX_TOOL_CALLS = 5
 
 
 class ClassificationAgent:
@@ -54,7 +54,7 @@ class ClassificationAgent:
                         tools=tools,
                         system_prompt=self._system_prompt,
                         initial_message=f"Classify this page: {url}",
-                        max_tool_calls=MAX_TOOL_CALLS,
+                        max_tool_calls=self.settings.classification_max_tool_calls,
                         budget_exhausted_message="Output your classification now using the exact Output Format.",
                         observer=observer,
                         run_name="classification_agent",
@@ -97,6 +97,18 @@ _CONF_MAP = {"high": Confidence.HIGH, "medium": Confidence.MEDIUM, "low": Confid
 
 
 def _parse_output(text: str, url: str) -> ClassificationResult:
+    try:
+        payload = json.loads(text)
+        if isinstance(payload, dict):
+            return ClassificationResult(
+                url=url,
+                page_type=_PAGE_TYPE_MAP.get(str(payload.get("page_type", "")).lower(), PageType.UNKNOWN),
+                confidence=_CONF_MAP.get(str(payload.get("confidence", "")).lower(), Confidence.LOW),
+                reasoning=str(payload.get("reasoning", "") or text[:500]),
+            )
+    except json.JSONDecodeError:
+        pass
+
     page_type = PageType.UNKNOWN
     confidence = Confidence.LOW
     reasoning = ""

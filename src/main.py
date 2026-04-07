@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import typer
 from rich.console import Console
 
@@ -24,7 +26,7 @@ def run(
     setup_logging(level=settings.log_level, log_file=settings.log_file)
 
     console.print(f"[bold green]Processing:[/bold green] {url}")
-    result = run_pipeline(url=url, settings=settings)
+    result = asyncio.run(run_pipeline(url=url, settings=settings))
     console.print_json(result.model_dump_json(indent=2))
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from langchain_core.tools import BaseTool
@@ -27,12 +28,14 @@ class HarvestTool(BaseTool):
         self,
         wait_seconds: int = 5,
         include_iframes: bool = True,
+        duration_ms: int | None = None,
+        player_iframe_url: str = "",
         **kwargs: Any,
     ) -> dict[str, Any]:
         return self.bridge.call("harvest", {
-            "waitSeconds": wait_seconds,
-            "includeIframes": include_iframes,
+            "duration_ms": duration_ms if duration_ms is not None else wait_seconds * 1000,
+            "player_iframe_url": player_iframe_url,
         })
 
     async def _arun(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError("Use sync _run")
+        return await asyncio.to_thread(self._run, *args, **kwargs)

@@ -43,12 +43,12 @@ Multi-agent AI pipeline for extracting streaming URLs from illegal streaming web
 
 | Component | Framework | Why |
 |-----------|-----------|-----|
-| **Orchestrator** | LangGraph | State machine with conditional routing (page_type → correct agent). Manages pipeline state across agents. |
-| **Classification Agent** | LangChain chain + `bind_tools` | Mostly single-shot LLM classification. Optional tool calls for low-confidence pages. Not a full agent loop. |
-| **Landing Page Agent** | LangChain `create_react_agent` | ReAct tool-calling loop. LLM decides inspect/interact/navigate per turn. 50-call budget. |
-| **Hosting Page Agent** | LangChain `create_react_agent` | ReAct loop. OBSERVE→STATE→PLAN reasoning. Server cycling. 20-call budget. |
-| **Embedded Page Agent** | LangChain `create_react_agent` | ReAct loop. Coordinates clicking, iframe traversal. 20-call budget. |
-| **Tools** | Node.js subprocess via Python bridge | JS tools (inspect, interact, harvest, navigate, screenshot) run as standalone scripts called via `subprocess.run()`. |
+| **Orchestrator** | LangGraph | Deterministic state machine for classify → route → extract → analyze → email. |
+| **Classification Agent** | LangGraph + Gemini tools | Structured tool-calling graph with a 5-call budget and MCP tool isolation. |
+| **Landing Page Agent** | LangGraph + Gemini tools | Tool-calling graph for catalog exploration and hosting-page discovery. |
+| **Hosting Page Agent** | LangGraph + Gemini tools | Tool-calling graph for per-server extraction, harvest, and embed fallback detection. |
+| **Embedded Page Agent** | LangGraph + Gemini tools | Tool-calling graph for iframe/player activation and embedded stream extraction. |
+| **Tools** | MCP + Node.js browser tools | JS browser tools are exposed per-agent profile through the MCP server, with Python fallbacks for local wrappers. |
 | **Evaluation** | LangSmith + pytest + local metrics | Prompt regression testing, agent tracing, token/cost/success metrics. |
 | **Demo UI** | Gradio | Test individual agents, run full pipeline, view results + screenshots. |
 
@@ -101,10 +101,10 @@ open-web-catcher/
 │   │   ├── __init__.py
 │   │   ├── base.py               # Shared agent config (LLM, callbacks, budget)
 │   │   ├── classification.py     # LangChain chain + bind_tools
-│   │   ├── landing_page.py       # ReAct agent (create_react_agent)
-│   │   ├── hosting_page.py       # ReAct agent with server cycling
-│   │   ├── embedded_page.py      # ReAct agent with coordinates mode
-│   │   └── orchestrator.py       # LangGraph state machine (routes between agents)
+│   │   ├── landing_page.py       # LangGraph landing-page agent
+│   │   ├── hosting_page.py       # LangGraph hosting-page agent
+│   │   ├── embedded_page.py      # LangGraph embedded-page agent
+│   │   └── orchestrator.py       # LangGraph orchestration graph
 │   │
 │   ├── tools/                    # LangChain tool wrappers → JS bridge
 │   │   ├── __init__.py
@@ -231,14 +231,11 @@ The Landing Page Agent explores and discovers (50 calls, no harvest). The Hostin
 Agent extracts streams from a known page (20 calls, uses harvest). Mixing them into one
 agent would bloat the prompt and confuse tool selection.
 
-### Why LangGraph for orchestration but not for individual agents?
+### Why LangGraph for every agent?
 
-The orchestrator is a state machine: classify → route → extract → enrich. Each transition
-is conditional on the previous result. LangGraph's `StateGraph` with conditional edges
-models this naturally.
-
-Individual agents are simpler: they run a ReAct loop until done. `create_react_agent`
-handles this with less boilerplate than a full LangGraph graph.
+The orchestrator is a state machine, and the sub-agents are structured tool-calling loops.
+Using LangGraph for both layers keeps routing, budget enforcement, and tool execution in one
+runtime model while still letting Gemini emit native structured tool calls.
 
 ### Why Gradio?
 

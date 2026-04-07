@@ -6,6 +6,7 @@ Output: list of ProviderInfo objects (JSON) — IP, org, country, abuse email pe
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -37,5 +38,5 @@ class IPInfoTool(BaseTool):
         results = lookup_multiple(stream_urls=stream_urls, ipinfo_token=self.ipinfo_token)
         return json.dumps([r.model_dump() for r in results])
 
-    async def _arun(self) -> Any:
-        raise NotImplementedError
+    async def _arun(self, stream_urls: list[str]) -> Any:
+        return await asyncio.to_thread(self._run, stream_urls)
