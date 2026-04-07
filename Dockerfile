@@ -45,6 +45,8 @@ COPY tools_js/ tools_js/
 COPY configs/ configs/
 COPY tests/ tests/
 COPY scripts/ scripts/
+COPY alembic/ alembic/
+COPY alembic.ini ./
 
 RUN mkdir -p data/logs data/raw data/processed data/reports \
     && chmod +x scripts/docker/entrypoint.sh

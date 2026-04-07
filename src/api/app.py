@@ -173,7 +173,7 @@ async def run_pipeline(req: RunRequest):
 
     try:
         session = get_session()
-        RunRepository(session).save(result)
+        RunRepository(session).save(result, trace=run_registry.get(result.run_id))
         session.close()
     except Exception as e:
         logger.warning("DB persist failed: %s", e)
@@ -216,10 +216,10 @@ def get_run(run_id: str):
     """Get the full PipelineResult for a specific run."""
     session = get_session()
     try:
-        record = RunRepository(session).get_by_run_id(run_id)
-        if record is None:
+        snapshot = RunRepository(session).get_run_snapshot(run_id)
+        if snapshot is None:
             raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
-        return record.result_json
+        return snapshot
     finally:
         session.close()
 
@@ -229,14 +229,79 @@ def get_run_emails(run_id: str):
     """Get only the takedown emails for a specific run."""
     session = get_session()
     try:
-        record = RunRepository(session).get_by_run_id(run_id)
-        if record is None:
+        payload = RunRepository(session).get_run_emails(run_id)
+        if payload is None:
             raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
-        result_json = record.result_json or {}
+        return payload
+    finally:
+        session.close()
+
+
+@app.get("/runs/{run_id}/agents")
+def get_run_agents(run_id: str):
+    session = get_session()
+    try:
+        repo = RunRepository(session)
+        rows = repo.list_agent_runs(run_id)
+        if not rows:
+            raise HTTPException(status_code=404, detail=f"No agent runs found for '{run_id}'")
+        return {"run_id": run_id, "agent_runs": rows}
+    finally:
+        session.close()
+
+
+@app.get("/runs/{run_id}/llm-calls")
+def get_run_llm_calls(run_id: str):
+    session = get_session()
+    try:
+        repo = RunRepository(session)
+        rows = repo.list_llm_calls(run_id)
+        if not rows:
+            raise HTTPException(status_code=404, detail=f"No llm calls found for '{run_id}'")
+        return {"run_id": run_id, "llm_calls": rows}
+    finally:
+        session.close()
+
+
+@app.get("/runs/{run_id}/tool-calls")
+def get_run_tool_calls(run_id: str):
+    session = get_session()
+    try:
+        repo = RunRepository(session)
+        rows = repo.list_tool_calls(run_id)
+        if not rows:
+            raise HTTPException(status_code=404, detail=f"No tool calls found for '{run_id}'")
+        return {"run_id": run_id, "tool_calls": rows}
+    finally:
+        session.close()
+
+
+@app.get("/runs/{run_id}/prompts")
+def get_run_prompt_compilations(run_id: str):
+    session = get_session()
+    try:
+        repo = RunRepository(session)
+        rows = repo.list_prompt_compilations(run_id)
+        if not rows:
+            raise HTTPException(status_code=404, detail=f"No prompt compilations found for '{run_id}'")
+        return {"run_id": run_id, "prompts": rows}
+    finally:
+        session.close()
+
+
+@app.get("/memory")
+def get_memory_entries(domain: str = "", page_type: str = "", limit: int = 50):
+    session = get_session()
+    try:
+        repo = RunRepository(session)
         return {
-            "run_id": run_id,
-            "url": result_json.get("url", ""),
-            "emails": result_json.get("takedown_emails", []),
+            "domain": domain or None,
+            "page_type": page_type or None,
+            "entries": repo.list_memory_entries(
+                domain=domain or None,
+                page_type=page_type or None,
+                limit=limit,
+            ),
         }
     finally:
         session.close()
@@ -324,31 +389,14 @@ def observability(limit: int = 10):
     session = get_session()
     try:
         repo = RunRepository(session)
-        recent = repo.list_recent(limit=limit)
+        summary = repo.get_observability_summary(limit=limit)
         return {
             "tracing": get_tracing_status(settings).model_dump(),
             "database_metrics": {
-                "success_rate": repo.success_rate(),
-                "run_count": len(recent),
+                "success_rate": summary["success_rate"],
+                "run_count": summary["run_count"],
             },
-            "recent_runs": [
-                {
-                    "run_id": record.run_id,
-                    "url": record.url,
-                    "status": record.status,
-                    "success": record.success,
-                    "streams_found": record.streams_found,
-                    "tool_calls": record.tool_calls,
-                    "tokens_in": record.tokens_in,
-                    "tokens_out": record.tokens_out,
-                    "estimated_total_cost_usd": ((record.result_json or {}).get("metrics") or {}).get("estimated_total_cost_usd", 0.0),
-                    "llm_calls": ((record.result_json or {}).get("metrics") or {}).get("total_llm_calls", 0),
-                    "message_count": ((record.result_json or {}).get("metrics") or {}).get("total_messages", 0),
-                    "duration_seconds": record.duration_seconds,
-                    "created_at": record.created_at.isoformat(),
-                }
-                for record in recent
-            ],
+            "recent_runs": summary["recent_runs"],
             "active_traces": [
                 trace.model_dump(mode="json")
                 for trace in run_registry.list_recent(limit=limit)

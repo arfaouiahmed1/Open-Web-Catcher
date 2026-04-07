@@ -92,7 +92,7 @@ class LongTermMemory:
         short_memory_summary: str = "",
     ) -> dict[str, Any]:
         domain = _normalize_domain(url)
-        data = self._build_entry(
+        data = build_site_memory_entry(
             url=url,
             page_type=page_type,
             status=status,
@@ -219,90 +219,6 @@ class LongTermMemory:
             for row in rows
         ]
 
-    def _build_entry(
-        self,
-        *,
-        url: str,
-        page_type: str,
-        status: str,
-        payload: dict[str, Any],
-        trace: RunTrace | None,
-        actor: str,
-        short_memory_summary: str,
-    ) -> dict[str, Any]:
-        tool_sequence: list[str] = []
-        navigation_targets: list[str] = []
-        selectors: list[str] = []
-        llm_notes: list[str] = []
-
-        if trace is not None:
-            scoped_events = [
-                event for event in trace.events
-                if not actor or event.actor == actor
-            ]
-            for event in scoped_events:
-                details = event.details or {}
-                if event.kind == "tool_call_started":
-                    tool_name = str(details.get("tool_name", "") or "").strip()
-                    if tool_name:
-                        tool_sequence.append(tool_name)
-                    args = details.get("tool_args", {}) or {}
-                    for key in ("url", "mainUrl", "player_iframe_url", "base_url"):
-                        if args.get(key):
-                            navigation_targets.append(f"{key}={args[key]}")
-                    for key in ("selector", "xpath", "text", "element_ref", "kind", "action", "player_iframe_hint"):
-                        if args.get(key):
-                            selectors.append(f"{key}={args[key]}")
-                elif event.kind == "llm_response" and details.get("content_preview"):
-                    llm_notes.append(str(details["content_preview"])[:240])
-
-        servers = payload.get("servers", []) if isinstance(payload, dict) else []
-        stream_urls: list[str] = []
-        for entry in payload.get("streaming_urls", []) if isinstance(payload, dict) else []:
-            if isinstance(entry, dict) and entry.get("url"):
-                stream_urls.append(str(entry["url"]))
-        for entry in payload.get("all_stream_urls", []) if isinstance(payload, dict) else []:
-            if isinstance(entry, dict) and entry.get("url"):
-                stream_urls.append(str(entry["url"]))
-        for server in servers:
-            if not isinstance(server, dict):
-                continue
-            stream_urls.extend(server.get("m3u8_urls", []) or [])
-            stream_urls.extend(server.get("mpd_urls", []) or [])
-            stream_urls.extend(server.get("mp4_urls", []) or [])
-            if server.get("embedded_url"):
-                navigation_targets.append(f"embedded_url={server['embedded_url']}")
-
-        stream_hosts = _dedupe_keep_order([_normalize_domain(item) for item in stream_urls if item])
-        server_labels = _dedupe_keep_order(
-            [str(server.get("label", "")).strip() for server in servers if isinstance(server, dict)]
-        )
-        hosting_pages = payload.get("hosting_pages", []) if isinstance(payload, dict) else []
-        for page in hosting_pages:
-            if isinstance(page, dict) and page.get("url"):
-                navigation_targets.append(f"hosting_url={page['url']}")
-            if isinstance(page, dict):
-                for field in ("title", "participants", "channel"):
-                    if page.get(field):
-                        selectors.append(f"{field}={page[field]}")
-
-        result_summary = self._result_summary(page_type, status, payload)
-        return {
-            "domain": _normalize_domain(url),
-            "url": url,
-            "page_type": page_type,
-            "status": status,
-            "success": status in {"success", "partial"},
-            "tool_sequence": _dedupe_keep_order(tool_sequence)[:16],
-            "navigation_targets": _dedupe_keep_order(navigation_targets)[:12],
-            "selectors": _dedupe_keep_order(selectors)[:12],
-            "server_labels": server_labels[:8],
-            "stream_hosts": stream_hosts[:8],
-            "llm_notes": _dedupe_keep_order(llm_notes)[:4],
-            "short_memory_summary": short_memory_summary[:1200],
-            "result_summary": result_summary,
-        }
-
     def _result_summary(self, page_type: str, status: str, payload: dict[str, Any]) -> str:
         if page_type == "classification":
             return f"classified as {payload.get('page_type', 'unknown')} with confidence {payload.get('confidence', 'unknown')}"
@@ -317,3 +233,100 @@ class LongTermMemory:
                 f"streams={stream_count}; successful_servers={successful_servers}"
             )
         return f"{page_type} run {status}"
+
+
+def build_site_memory_entry(
+    *,
+    url: str,
+    page_type: str,
+    status: str,
+    payload: dict[str, Any],
+    trace: RunTrace | None,
+    actor: str,
+    short_memory_summary: str,
+) -> dict[str, Any]:
+    tool_sequence: list[str] = []
+    navigation_targets: list[str] = []
+    selectors: list[str] = []
+    llm_notes: list[str] = []
+
+    if trace is not None:
+        scoped_events = [event for event in trace.events if not actor or event.actor == actor]
+        for event in scoped_events:
+            details = event.details or {}
+            if event.kind == "tool_call_started":
+                tool_name = str(details.get("tool_name", "") or "").strip()
+                if tool_name:
+                    tool_sequence.append(tool_name)
+                args = details.get("tool_args", {}) or {}
+                for key in ("url", "mainUrl", "player_iframe_url", "base_url"):
+                    if args.get(key):
+                        navigation_targets.append(f"{key}={args[key]}")
+                for key in ("selector", "xpath", "text", "element_ref", "kind", "action", "player_iframe_hint"):
+                    if args.get(key):
+                        selectors.append(f"{key}={args[key]}")
+            elif event.kind == "llm_response" and details.get("content_preview"):
+                llm_notes.append(str(details["content_preview"])[:240])
+
+    servers = payload.get("servers", []) if isinstance(payload, dict) else []
+    stream_urls: list[str] = []
+    for entry in payload.get("streaming_urls", []) if isinstance(payload, dict) else []:
+        if isinstance(entry, dict) and entry.get("url"):
+            stream_urls.append(str(entry["url"]))
+    for entry in payload.get("all_stream_urls", []) if isinstance(payload, dict) else []:
+        if isinstance(entry, dict) and entry.get("url"):
+            stream_urls.append(str(entry["url"]))
+    for server in servers:
+        if not isinstance(server, dict):
+            continue
+        stream_urls.extend(server.get("m3u8_urls", []) or [])
+        stream_urls.extend(server.get("mpd_urls", []) or [])
+        stream_urls.extend(server.get("mp4_urls", []) or [])
+        if server.get("embedded_url"):
+            navigation_targets.append(f"embedded_url={server['embedded_url']}")
+
+    stream_hosts = _dedupe_keep_order([_normalize_domain(item) for item in stream_urls if item])
+    server_labels = _dedupe_keep_order(
+        [str(server.get("label", "")).strip() for server in servers if isinstance(server, dict)]
+    )
+    hosting_pages = payload.get("hosting_pages", []) if isinstance(payload, dict) else []
+    for page in hosting_pages:
+        if isinstance(page, dict) and page.get("url"):
+            navigation_targets.append(f"hosting_url={page['url']}")
+        if isinstance(page, dict):
+            for field in ("title", "participants", "channel"):
+                if page.get(field):
+                    selectors.append(f"{field}={page[field]}")
+
+    result_summary = _result_summary(page_type, status, payload)
+    return {
+        "domain": _normalize_domain(url),
+        "url": url,
+        "page_type": page_type,
+        "status": status,
+        "success": status in {"success", "partial"},
+        "tool_sequence": _dedupe_keep_order(tool_sequence)[:16],
+        "navigation_targets": _dedupe_keep_order(navigation_targets)[:12],
+        "selectors": _dedupe_keep_order(selectors)[:12],
+        "server_labels": server_labels[:8],
+        "stream_hosts": stream_hosts[:8],
+        "llm_notes": _dedupe_keep_order(llm_notes)[:4],
+        "short_memory_summary": short_memory_summary[:1200],
+        "result_summary": result_summary,
+    }
+
+
+def _result_summary(page_type: str, status: str, payload: dict[str, Any]) -> str:
+    if page_type == "classification":
+        return f"classified as {payload.get('page_type', 'unknown')} with confidence {payload.get('confidence', 'unknown')}"
+    if page_type == "landing_page":
+        return f"landing run {status}; hosting pages found={len(payload.get('hosting_pages', []) or [])}"
+    if page_type in {"hosting_page", "embedded_page"}:
+        decision = payload.get("decision", "")
+        stream_count = len(payload.get("streaming_urls", []) or []) + len(payload.get("all_stream_urls", []) or [])
+        successful_servers = payload.get("successful_servers", 0)
+        return (
+            f"{page_type} run {status}; decision={decision or 'n/a'}; "
+            f"streams={stream_count}; successful_servers={successful_servers}"
+        )
+    return f"{page_type} run {status}"
