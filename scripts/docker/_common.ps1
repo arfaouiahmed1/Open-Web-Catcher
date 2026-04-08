@@ -11,9 +11,11 @@ function Get-OwcContext {
 
     $image = if ($env:OWC_IMAGE) { $env:OWC_IMAGE } else { "open-web-catcher" }
     $toolsImage = if ($env:OWC_TOOLS_IMAGE) { $env:OWC_TOOLS_IMAGE } else { "open-web-catcher-tools" }
+    $webImage = if ($env:OWC_WEB_IMAGE) { $env:OWC_WEB_IMAGE } else { "open-web-catcher-web" }
     $tag = if ($env:OWC_TAG) { $env:OWC_TAG } else { "latest" }
     $container = if ($env:OWC_CONTAINER) { $env:OWC_CONTAINER } else { "owc" }
     $toolsContainer = if ($env:OWC_TOOLS_CONTAINER) { $env:OWC_TOOLS_CONTAINER } else { "owc-tools" }
+    $webContainer = if ($env:OWC_WEB_CONTAINER) { $env:OWC_WEB_CONTAINER } else { "owc-web" }
 
     [pscustomobject]@{
         ScriptDir = $scriptDir
@@ -21,13 +23,17 @@ function Get-OwcContext {
         ComposeFile = Join-Path $rootDir "docker-compose.yml"
         Image = $image
         ToolImage = $toolsImage
+        WebImage = $webImage
         Tag = $tag
         ImageRef = "$image`:$tag"
         ToolImageRef = "$toolsImage`:$tag"
+        WebImageRef = "$webImage`:$tag"
         Container = $container
         ToolContainer = $toolsContainer
+        WebContainer = $webContainer
         Service = "owc"
         ToolService = "owc-tools"
+        WebService = "owc-web"
         EnvFile = Join-Path $rootDir ".env"
         ExampleEnvFile = Join-Path $rootDir ".env.example"
         DataDir = Join-Path $rootDir "data"
@@ -35,9 +41,8 @@ function Get-OwcContext {
         Dockerfile = Join-Path $rootDir "Dockerfile"
         HealthUrl = "http://localhost:8000/health"
         ApiUrl = "http://localhost:8000"
-        GradioUrl = "http://localhost:7860"
+        ConsoleUrl = "http://localhost:3001"
         McpUrl = "http://localhost:3000"
-        PhoenixUrl = "http://localhost:6006"
     }
 }
 
@@ -431,11 +436,11 @@ function Invoke-OwcBuild {
         $buildArgs += "--no-cache"
     }
 
-    $buildArgs += @($Context.ToolService, $Context.Service)
+    $buildArgs += @($Context.ToolService, $Context.Service, $Context.WebService)
     Invoke-OwcComposeChecked -Context $Context -Arguments $buildArgs | Out-Null
 
     $modeLabel = if ($NoCache) { "without cache" } else { "with cache" }
-    Write-OwcSuccess "Built services '$($Context.ToolService)' and '$($Context.Service)' ($modeLabel)."
+    Write-OwcSuccess "Built services '$($Context.ToolService)', '$($Context.Service)', and '$($Context.WebService)' ($modeLabel)."
 }
 
 function Show-OwcEndpoints {
@@ -445,9 +450,8 @@ function Show-OwcEndpoints {
     Write-Host "Services:"
     Write-Host "  App health -> $($Context.HealthUrl)"
     Write-Host "  FastAPI    -> $($Context.ApiUrl)"
-    Write-Host "  Gradio     -> $($Context.GradioUrl)"
+    Write-Host "  Console    -> $($Context.ConsoleUrl)"
     Write-Host "  MCP tools  -> $($Context.McpUrl)"
-    Write-Host "  Phoenix    -> $($Context.PhoenixUrl)"
 }
 
 function Show-OwcComposeStatus {

@@ -2,7 +2,7 @@
 
 # =============================================================================
 #  Open Web Catcher - application container
-#  Processes: FastAPI (uvicorn) + Gradio
+#  Processes: FastAPI (uvicorn)
 #  Puppeteer/Chrome MCP tooling runs in a dedicated sidecar container.
 # =============================================================================
 
@@ -57,13 +57,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     MCP_SERVER_URL=http://localhost:3000 \
     DATABASE_URL=postgresql+psycopg2://owc:owc@postgres:5432/owc \
-    LANGSMITH_TRACING=false \
-    LANGSMITH_PROJECT=open-web-catcher \
-    LANGSMITH_ENDPOINT=http://langchain-frontend:1980 \
-    LANGSMITH_UI_URL=http://localhost:1980 \
-    LANGCHAIN_TRACING_V2=false \
-    LANGCHAIN_PROJECT=open-web-catcher
+    OBSERVABILITY_ENABLED=true \
+    OBSERVABILITY_PROJECT_NAME=open-web-catcher
 
-EXPOSE 8000 7860
+EXPOSE 8000
 
 ENTRYPOINT ["scripts/docker/entrypoint.sh"]

@@ -1,78 +1,49 @@
-"""FastAPI application for Open Web Catcher.
-
-Endpoints:
-    GET  /health                    — liveness check
-    POST /classify                  — classification agent only
-    POST /extract                   — single extraction agent for a known page_type
-    POST /run                       — full pipeline: classify → extract → analyze → emails
-    GET  /runs                      — list recent runs from the database
-    GET  /runs/{run_id}             — get a specific run result
-    GET  /runs/{run_id}/emails      — get takedown emails for a run
-"""
+"""FastAPI application for Open Web Catcher."""
 
 from __future__ import annotations
 
+import asyncio
+import json
+import uuid
 from contextlib import asynccontextmanager
-from typing import Literal
+from time import perf_counter
+from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from src.evaluation.datasets import (
-    build_dataset_examples,
-    export_dataset_examples,
-    publish_dataset_to_phoenix,
-)
-from src.models.schemas import ClassificationResult, ExtractionResult, PipelineResult
+from src.evaluation.datasets import build_dataset_examples, export_dataset_examples
+from src.evaluation.scoring import evaluate_case_artifact
 from src.evaluation.tracing import setup_tracing_from_settings
+from src.models.schemas import (
+    AgentTestRequest,
+    ClassificationResult,
+    DatabaseTableResponse,
+    EvaluationRunRequest,
+    ExtractionResult,
+    OperatorOverview,
+    PipelineResult,
+    PricingConfig,
+    ProviderLookupRequest,
+    ToolPlaygroundRequest,
+    WorkflowRunRequest,
+)
 from src.storage.database import create_tables, get_session
 from src.storage.repositories import RunRepository
-from src.utils.service_health import probe_browser, probe_mcp
+from src.storage.ui_repository import OperatorConsoleRepository
+from src.tools.mcp_client import agent_tools
 from src.utils.config import Settings
+from src.utils.ipinfo import lookup_multiple
 from src.utils.logging import get_logger, setup_logging
-from src.utils.observability import get_tracing_status, run_registry
+from src.utils.observability import get_observability_status, run_registry
+from src.utils.service_health import probe_browser, probe_mcp
 
 logger = get_logger(__name__)
 
 _settings: Settings | None = None
 
-
-def get_settings() -> Settings:
-    global _settings
-    if _settings is None:
-        _settings = Settings.from_yaml()
-    return _settings
-
-
-# ── Lifespan ──────────────────────────────────────────────────────────────────
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    settings = get_settings()
-    setup_logging(level=settings.log_level, log_file=settings.log_file)
-    setup_tracing_from_settings(settings)
-    create_tables()
-    logger.info(
-        "Open Web Catcher API started | orchestrator=%s | agents=%s",
-        settings.orchestrator_model,
-        settings.agent_model,
-    )
-    yield
-    logger.info("Open Web Catcher API shutting down")
-
-
-app = FastAPI(
-    title="Open Web Catcher",
-    description=(
-        "Multi-agent anti-piracy pipeline: classify → extract streams → "
-        "provider analysis → DMCA takedown emails."
-    ),
-    version="0.1.0",
-    lifespan=lifespan,
-)
-
-
-# ── Request models ────────────────────────────────────────────────────────────
 
 class ClassifyRequest(BaseModel):
     url: str
@@ -91,99 +62,399 @@ class DatasetExportRequest(BaseModel):
     dataset_name: str = ""
     limit: int = 25
     path: str = ""
-    upload_to_phoenix: bool = False
-    dataset_description: str = ""
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
+def get_settings() -> Settings:
+    global _settings
+    if _settings is None:
+        _settings = Settings.from_yaml()
+    return _settings
+
+
+def _cors_origins(settings: Settings) -> list[str]:
+    return [item.strip() for item in settings.ui_cors_origins.split(",") if item.strip()]
+
+
+def _merged_pricing_config(settings: Settings, config: PricingConfig) -> dict[str, dict[str, Any]]:
+    try:
+        merged = json.loads(settings.model_pricing_json or "{}")
+    except json.JSONDecodeError:
+        merged = {}
+    if not isinstance(merged, dict):
+        merged = {}
+    merged[config.model_name] = {
+        "provider": config.provider,
+        "input_per_million": config.input_per_million,
+        "output_per_million": config.output_per_million,
+    }
+    return merged
+
+
+def _refresh_pricing_from_db(settings: Settings) -> None:
+    session = get_session()
+    try:
+        repo = OperatorConsoleRepository(session)
+        merged: dict[str, dict[str, Any]]
+        try:
+            merged = json.loads(settings.model_pricing_json or "{}")
+        except json.JSONDecodeError:
+            merged = {}
+        if not isinstance(merged, dict):
+            merged = {}
+        try:
+            configs = repo.list_pricing_configs()
+        except Exception as exc:
+            logger.warning("Skipping pricing refresh from database: %s", exc)
+            return
+        for config in configs:
+            merged[config.model_name] = {
+                "provider": config.provider,
+                "input_per_million": config.input_per_million,
+                "output_per_million": config.output_per_million,
+            }
+        settings.model_pricing_json = json.dumps(merged)
+    finally:
+        session.close()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    settings = get_settings()
+    setup_logging(level=settings.log_level, log_file=settings.log_file)
+    setup_tracing_from_settings(settings)
+    create_tables()
+    _refresh_pricing_from_db(settings)
+    logger.info(
+        "Open Web Catcher API started | orchestrator=%s | agents=%s",
+        settings.orchestrator_model,
+        settings.agent_model,
+    )
+    yield
+    logger.info("Open Web Catcher API shutting down")
+
+
+app = FastAPI(
+    title="Open Web Catcher",
+    description=(
+        "Multi-agent anti-piracy pipeline with a Next.js operator console: "
+        "classify -> extract streams -> provider analysis -> takedown emails."
+    ),
+    version="0.2.0",
+    lifespan=lifespan,
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins(get_settings()),
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+def _active_trace_row(trace: Any) -> dict[str, Any]:
+    metrics = trace.metrics
+    return {
+        "run_id": trace.run_id,
+        "root_actor": trace.root_actor,
+        "event_count": len(trace.events),
+        "completed": trace.completed,
+        "cancel_requested": trace.cancel_requested,
+        "started_at": trace.started_at.isoformat(),
+        "total_tool_calls": metrics.total_tool_calls if metrics else 0,
+        "total_llm_calls": metrics.total_llm_calls if metrics else 0,
+        "estimated_total_cost_usd": metrics.estimated_total_cost_usd if metrics else 0.0,
+    }
+
+
+async def _run_selected_agent(agent_key: str, url: str, observer):
+    normalized = (agent_key or "").strip().lower()
+    settings = get_settings()
+    if normalized == "classification":
+        from src.agents.classification import ClassificationAgent
+
+        return await ClassificationAgent(settings).run(url=url, observer=observer)
+    if normalized == "landing":
+        from src.agents.landing_page import LandingPageAgent
+
+        return await LandingPageAgent(settings).run(url=url, observer=observer)
+    if normalized == "hosting":
+        from src.agents.hosting_page import HostingPageAgent
+
+        return await HostingPageAgent(settings).run(url=url, observer=observer)
+    if normalized == "embedded":
+        from src.agents.embedded_page import EmbeddedPageAgent
+
+        return await EmbeddedPageAgent(settings).run(url=url, observer=observer)
+    raise ValueError(f"Unknown agent '{agent_key}'")
+
+
+async def _persist_pipeline_result(result: PipelineResult) -> None:
+    session = get_session()
+    try:
+        RunRepository(session).save(result, trace=run_registry.get(result.run_id))
+    finally:
+        session.close()
+
+
+async def _background_workflow(run_id: str, url: str) -> None:
+    from src.agents.orchestrator import run_pipeline as _run_pipeline
+
+    settings = get_settings()
+    observer = run_registry.create(
+        run_id=run_id,
+        root_actor="orchestrator",
+        observability=get_observability_status(settings),
+    )
+    try:
+        result = await _run_pipeline(url=url, settings=settings, observer=observer)
+        await _persist_pipeline_result(result)
+    except Exception as exc:
+        observer.emit("pipeline_failed", str(exc), status="error")
+        observer.finish(success=False, failure_mode=type(exc).__name__)
+        logger.exception("Background workflow failed: %s", exc)
+
+
+async def _background_agent(run_id: str, agent: str, url: str) -> None:
+    settings = get_settings()
+    observer = run_registry.create(
+        run_id=run_id,
+        root_actor=agent,
+        observability=get_observability_status(settings),
+    )
+    observer.set_url(url)
+    try:
+        result = await _run_selected_agent(agent, url, observer)
+        success = True
+        failure_mode = ""
+        if isinstance(result, ExtractionResult):
+            success = result.status.value in {"success", "partial"}
+            failure_mode = "" if success else result.status.value
+        observer.finish(success=success, failure_mode=failure_mode)
+    except Exception as exc:
+        observer.emit("agent_failed", str(exc), status="error")
+        observer.finish(success=False, failure_mode=type(exc).__name__)
+        logger.exception("Background agent run failed: %s", exc)
+
+
+async def _call_mcp_tool(profile: str, tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+    settings = get_settings()
+    async with agent_tools(profile, settings) as tools:
+        tool = next((item for item in tools if item.name == tool_name), None)
+        if tool is None:
+            raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found for profile '{profile}'")
+        result = await tool.ainvoke(args)
+        if isinstance(result, str):
+            try:
+                parsed = json.loads(result)
+            except json.JSONDecodeError:
+                parsed = {"raw": result}
+        else:
+            parsed = result
+        return parsed if isinstance(parsed, dict) else {"result": parsed}
+
+
+def _persist_tool_playground_call(
+    *,
+    call_id: str,
+    profile: str,
+    tool_name: str,
+    args: dict[str, Any],
+    status: str,
+    duration_seconds: float,
+    result: dict[str, Any] | None = None,
+    error_text: str = "",
+    origin: str = "playground",
+    related_run_id: str = "",
+) -> dict[str, Any]:
+    session = get_session()
+    try:
+        repo = OperatorConsoleRepository(session)
+        return repo.record_tool_playground_call(
+            call_id=call_id,
+            profile=profile,
+            tool_name=tool_name,
+            args=args,
+            status=status,
+            duration_seconds=duration_seconds,
+            result=result,
+            error_text=error_text,
+            origin=origin,
+            related_run_id=related_run_id,
+        )
+    finally:
+        session.close()
+
+
+async def _execute_tool_call_with_telemetry(
+    profile: str,
+    tool_name: str,
+    args: dict[str, Any],
+    *,
+    origin: str = "playground",
+    related_run_id: str = "",
+) -> dict[str, Any]:
+    call_id = str(uuid.uuid4())
+    started = perf_counter()
+    try:
+        result = await _call_mcp_tool(profile, tool_name, args)
+    except HTTPException as exc:
+        _persist_tool_playground_call(
+            call_id=call_id,
+            profile=profile,
+            tool_name=tool_name,
+            args=args,
+            status="error",
+            duration_seconds=perf_counter() - started,
+            error_text=str(exc.detail),
+            origin=origin,
+            related_run_id=related_run_id,
+        )
+        raise
+    except Exception as exc:
+        _persist_tool_playground_call(
+            call_id=call_id,
+            profile=profile,
+            tool_name=tool_name,
+            args=args,
+            status="error",
+            duration_seconds=perf_counter() - started,
+            error_text=str(exc),
+            origin=origin,
+            related_run_id=related_run_id,
+        )
+        raise
+
+    record = _persist_tool_playground_call(
+        call_id=call_id,
+        profile=profile,
+        tool_name=tool_name,
+        args=args,
+        status="success",
+        duration_seconds=perf_counter() - started,
+        result=result,
+        origin=origin,
+        related_run_id=related_run_id,
+    )
+    return {
+        "call_id": call_id,
+        "result": result,
+        "record": record,
+    }
+
+
+def _provider_lookup_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    providers = {row.get("provider", "") for row in rows if row.get("provider")}
+    hosts = {row.get("hostname", "") for row in rows if row.get("hostname")}
+    countries = {row.get("country", "") for row in rows if row.get("country")}
+    return {
+        "total_urls": len(rows),
+        "resolved_ips": sum(1 for row in rows if row.get("ip")),
+        "provider_matches": sum(1 for row in rows if row.get("provider")),
+        "abuse_contacts_found": sum(1 for row in rows if row.get("abuse_email")),
+        "unique_providers": len(providers),
+        "unique_hosts": len(hosts),
+        "unique_countries": len(countries),
+        "unresolved_urls": sum(1 for row in rows if not row.get("ip")),
+    }
+
+
+def _provider_lookup_urls(stream_urls: list[str], settings: Settings) -> list[dict[str, Any]]:
+    cleaned = [item.strip() for item in stream_urls if item and item.strip()]
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="At least one stream URL is required")
+    results = lookup_multiple(cleaned, ipinfo_token=settings.ipinfo_token, deduplicate_by_provider=False)
+    session = get_session()
+    try:
+        repo = OperatorConsoleRepository(session)
+        return repo.record_provider_lookup_batch(str(uuid.uuid4()), results)
+    finally:
+        session.close()
+
+
+async def _stream_trace(run_id: str):
+    last_seq = 0
+    first_tick = True
+    while True:
+        trace = run_registry.get(run_id)
+        if trace is None:
+            payload = {"run_id": run_id, "events": [], "completed": True, "error": "run_not_found"}
+            yield f"data: {json.dumps(payload, default=str)}\n\n"
+            break
+
+        new_events = [event.model_dump(mode="json") for event in trace.events if event.seq > last_seq]
+        if first_tick or new_events or trace.completed:
+            if new_events:
+                last_seq = new_events[-1]["seq"]
+            payload = {
+                "run_id": run_id,
+                "root_actor": trace.root_actor,
+                "events": new_events,
+                "metrics": trace.metrics.model_dump(mode="json") if trace.metrics else None,
+                "completed": trace.completed,
+                "cancel_requested": trace.cancel_requested,
+                "cancel_reason": trace.cancel_reason,
+            }
+            yield f"data: {json.dumps(payload, default=str)}\n\n"
+            first_tick = False
+
+        if trace.completed:
+            break
+        await asyncio.sleep(0.8)
+
 
 @app.get("/health")
 def health():
-    """Liveness check."""
     settings = get_settings()
     mcp_status = probe_mcp(settings.mcp_server_url)
     browser_status = probe_browser(settings.browser_ws_endpoint)
-
-    if (
-        not browser_status.get("healthy", False)
-        and mcp_status.get("healthy", False)
-        and mcp_status.get("browser_mode") == "isolated"
-    ):
-        browser_status = {
-            **browser_status,
-            "healthy": True,
-            "managed_by": "mcp_isolated_sidecar",
-            "note": (
-                "Browser lifecycle is owned by the MCP tools container in isolated mode; "
-                "direct CDP probing from the app container is optional."
-            ),
-            "direct_probe_healthy": False,
-        }
-
     return {
         "status": "ok",
         "orchestrator_model": settings.orchestrator_model,
         "agent_model": settings.agent_model,
         "browser_ws_endpoint": settings.browser_ws_endpoint,
         "mcp_server_url": settings.mcp_server_url,
-        "dependencies": {
-            "browser": browser_status,
-            "mcp": mcp_status,
-        },
-        "tracing": get_tracing_status(settings).model_dump(),
+        "dependencies": {"browser": browser_status, "mcp": mcp_status},
+        "observability": get_observability_status(settings).model_dump(),
     }
 
 
 @app.post("/classify", response_model=ClassificationResult)
 async def classify(req: ClassifyRequest):
-    """Run only the classification agent on a URL."""
     from src.agents.classification import ClassificationAgent
+
     return await ClassificationAgent(get_settings()).run(url=req.url)
 
 
 @app.post("/extract", response_model=ExtractionResult)
 async def extract(req: ExtractRequest):
-    """Run a single extraction agent when you already know the page type."""
     settings = get_settings()
     if req.page_type == "landing_page":
         from src.agents.landing_page import LandingPageAgent
+
         return await LandingPageAgent(settings).run(req.url)
     if req.page_type == "hosting_page":
         from src.agents.hosting_page import HostingPageAgent
+
         return await HostingPageAgent(settings).run(req.url)
     if req.page_type == "embedded_page":
         from src.agents.embedded_page import EmbeddedPageAgent
+
         return await EmbeddedPageAgent(settings).run(req.url)
     raise HTTPException(status_code=400, detail=f"Unknown page_type: {req.page_type}")
 
 
 @app.post("/run", response_model=PipelineResult)
 async def run_pipeline(req: RunRequest):
-    """Run the full pipeline on a URL.
-
-    Orchestrator coordinates:
-      classify → [landing →] hosting(s) → [embedded fallbacks]
-      → analyze_providers (IPInfo/Whois)
-      → generate_takedown_emails (one per provider)
-    """
     from src.agents.orchestrator import run_pipeline as _run_pipeline
 
     settings = get_settings()
     result = await _run_pipeline(url=req.url, settings=settings)
-
-    try:
-        session = get_session()
-        RunRepository(session).save(result, trace=run_registry.get(result.run_id))
-        session.close()
-    except Exception as e:
-        logger.warning("DB persist failed: %s", e)
-
+    await _persist_pipeline_result(result)
     return result
 
 
 @app.get("/runs")
 def list_runs(limit: int = 50):
-    """List the most recent pipeline runs."""
     session = get_session()
     try:
         records = RunRepository(session).list_recent(limit=limit)
@@ -213,7 +484,6 @@ def list_runs(limit: int = 50):
 
 @app.get("/runs/{run_id}", response_model=PipelineResult)
 def get_run(run_id: str):
-    """Get the full PipelineResult for a specific run."""
     session = get_session()
     try:
         snapshot = RunRepository(session).get_run_snapshot(run_id)
@@ -226,7 +496,6 @@ def get_run(run_id: str):
 
 @app.get("/runs/{run_id}/emails")
 def get_run_emails(run_id: str):
-    """Get only the takedown emails for a specific run."""
     session = get_session()
     try:
         payload = RunRepository(session).get_run_emails(run_id)
@@ -309,7 +578,6 @@ def get_memory_entries(domain: str = "", page_type: str = "", limit: int = 50):
 
 @app.get("/runs/{run_id}/events")
 def get_run_events(run_id: str):
-    """Get the in-memory runtime event trace for a run if available."""
     trace = run_registry.get(run_id)
     if trace is None:
         raise HTTPException(status_code=404, detail=f"Run trace '{run_id}' not found")
@@ -318,7 +586,6 @@ def get_run_events(run_id: str):
 
 @app.get("/datasets/examples")
 def dataset_examples(limit: int = 25):
-    """Build dataset examples from recent persisted runs."""
     settings = get_settings()
     session = get_session()
     try:
@@ -333,7 +600,7 @@ def dataset_examples(limit: int = 25):
                 logger.warning("Skipping run '%s' during dataset build: %s", record.run_id, exc)
         examples = build_dataset_examples(results)
         return {
-            "dataset_name": get_tracing_status(settings).default_dataset_name,
+            "dataset_name": settings.default_dataset_name,
             "example_count": len(examples),
             "examples": [example.model_dump(mode="json") for example in examples],
         }
@@ -343,7 +610,6 @@ def dataset_examples(limit: int = 25):
 
 @app.post("/datasets/export")
 def export_dataset(req: DatasetExportRequest):
-    """Export recent runs to JSONL and optionally publish them to Phoenix."""
     settings = get_settings()
     session = get_session()
     try:
@@ -357,50 +623,326 @@ def export_dataset(req: DatasetExportRequest):
             except Exception as exc:
                 logger.warning("Skipping run '%s' during dataset export: %s", record.run_id, exc)
         examples = build_dataset_examples(results)
-        export_path = export_dataset_examples(
-            examples,
-            settings=settings,
-            dataset_name=req.dataset_name,
-            path=req.path or None,
-        )
-        response = {
-            "dataset_name": req.dataset_name or get_tracing_status(settings).default_dataset_name,
+        export_path = export_dataset_examples(examples, settings=settings, dataset_name=req.dataset_name, path=req.path or None)
+        return {
+            "dataset_name": req.dataset_name or settings.default_dataset_name,
             "example_count": len(examples),
             "path": str(export_path),
-            "uploaded": False,
         }
-        if req.upload_to_phoenix and examples:
-            response["phoenix"] = publish_dataset_to_phoenix(
-                examples,
-                settings=settings,
-                dataset_name=req.dataset_name,
-                dataset_description=req.dataset_description,
-            )
-            response["uploaded"] = True
-        return response
     finally:
         session.close()
 
 
 @app.get("/observability")
 def observability(limit: int = 10):
-    """Return tracing status, recent runtime traces, and DB-level metrics."""
-    settings = get_settings()
     session = get_session()
     try:
-        repo = RunRepository(session)
-        summary = repo.get_observability_summary(limit=limit)
+        repo = OperatorConsoleRepository(session)
+        active = [_active_trace_row(trace) for trace in run_registry.list_recent(limit=limit)]
         return {
-            "tracing": get_tracing_status(settings).model_dump(),
-            "database_metrics": {
-                "success_rate": summary["success_rate"],
-                "run_count": summary["run_count"],
-            },
-            "recent_runs": summary["recent_runs"],
-            "active_traces": [
-                trace.model_dump(mode="json")
-                for trace in run_registry.list_recent(limit=limit)
-            ],
+            "observability": get_observability_status(get_settings()).model_dump(),
+            "overview": repo.get_overview(active_traces=active, limit=limit),
         }
+    finally:
+        session.close()
+
+
+@app.get("/ui/overview", response_model=OperatorOverview)
+def ui_overview(limit: int = 8):
+    session = get_session()
+    try:
+        repo = OperatorConsoleRepository(session)
+        active = [_active_trace_row(trace) for trace in run_registry.list_recent(limit=limit)]
+        return repo.get_overview(active_traces=active, limit=limit)
+    finally:
+        session.close()
+
+
+@app.get("/ui/runs")
+def ui_runs(
+    limit: int = Query(25, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    status: str = "",
+    page_type: str = "",
+):
+    session = get_session()
+    try:
+        return OperatorConsoleRepository(session).list_runs(limit=limit, offset=offset, status=status, page_type=page_type)
+    finally:
+        session.close()
+
+
+@app.get("/ui/runs/{run_id}")
+def ui_run_detail(run_id: str):
+    active = run_registry.get(run_id)
+    if active is not None and not active.completed:
+        return {"active_trace": active.model_dump(mode="json")}
+
+    session = get_session()
+    try:
+        payload = OperatorConsoleRepository(session).get_run_detail(run_id)
+        if payload is None:
+            raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+        return payload
+    finally:
+        session.close()
+
+
+@app.get("/ui/runs/{run_id}/stream")
+async def ui_run_stream(run_id: str):
+    return StreamingResponse(_stream_trace(run_id), media_type="text/event-stream")
+
+
+@app.post("/ui/runs/{run_id}/cancel")
+def ui_cancel_run(run_id: str):
+    success = run_registry.request_cancel(run_id, reason="Cancelled from the Next.js operator console.")
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found or already completed")
+    return {"ok": True, "run_id": run_id}
+
+
+@app.post("/ui/workflows/run")
+async def ui_workflow_run(req: WorkflowRunRequest):
+    run_id = str(uuid.uuid4())
+    asyncio.create_task(_background_workflow(run_id, req.url))
+    return {"run_id": run_id, "root_actor": "orchestrator"}
+
+
+@app.post("/ui/agents/test")
+async def ui_agent_test(req: AgentTestRequest):
+    run_id = str(uuid.uuid4())
+    asyncio.create_task(_background_agent(run_id, req.agent, req.url))
+    return {"run_id": run_id, "root_actor": req.agent}
+
+
+@app.post("/ui/tools/call")
+async def ui_tool_call(req: ToolPlaygroundRequest):
+    execution = await _execute_tool_call_with_telemetry(req.profile, req.tool_name, req.args)
+    return {
+        "call_id": execution["call_id"],
+        "profile": req.profile,
+        "tool_name": req.tool_name,
+        "args": req.args,
+        "result": execution["result"],
+        "record": execution["record"],
+    }
+
+
+@app.get("/ui/tools/history")
+def ui_tool_history(
+    limit: int = Query(20, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    profile: str = "",
+    origin: str = "",
+):
+    session = get_session()
+    try:
+        repo = OperatorConsoleRepository(session)
+        payload = repo.list_tool_playground_calls(limit=limit, offset=offset, profile=profile, origin=origin)
+        payload["limit"] = limit
+        payload["offset"] = offset
+        return payload
+    finally:
+        session.close()
+
+
+@app.post("/ui/providers/lookup")
+def ui_provider_lookup(req: ProviderLookupRequest):
+    rows = _provider_lookup_urls(req.stream_urls, get_settings())
+    return {
+        "rows": rows,
+        "stats": _provider_lookup_stats(rows),
+    }
+
+
+@app.get("/ui/providers/history")
+def ui_provider_history(
+    limit: int = Query(25, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    session = get_session()
+    try:
+        payload = OperatorConsoleRepository(session).get_provider_lookup_history(limit=limit, offset=offset)
+        payload["limit"] = limit
+        payload["offset"] = offset
+        return payload
+    finally:
+        session.close()
+
+
+@app.get("/ui/pricing")
+def ui_pricing():
+    session = get_session()
+    try:
+        repo = OperatorConsoleRepository(session)
+        stored = [item.model_dump(mode="json") for item in repo.list_pricing_configs()]
+        try:
+            env_defaults = json.loads(get_settings().model_pricing_json or "{}")
+        except json.JSONDecodeError:
+            env_defaults = {}
+        return {
+            "stored": stored,
+            "env_defaults": env_defaults,
+            "effective_models": get_observability_status(get_settings()).pricing_models,
+        }
+    finally:
+        session.close()
+
+
+@app.put("/ui/pricing")
+def ui_update_pricing(config: PricingConfig):
+    session = get_session()
+    try:
+        repo = OperatorConsoleRepository(session)
+        saved = repo.upsert_pricing_config(config)
+        settings = get_settings()
+        settings.model_pricing_json = json.dumps(_merged_pricing_config(settings, saved))
+        return saved.model_dump(mode="json")
+    finally:
+        session.close()
+
+
+@app.get("/ui/evaluations/suites")
+def ui_evaluation_suites():
+    session = get_session()
+    try:
+        repo = OperatorConsoleRepository(session)
+        repo.ensure_default_evaluation_suites()
+        return {"suites": [suite.model_dump(mode="json") for suite in repo.list_evaluation_suites()]}
+    finally:
+        session.close()
+
+
+@app.get("/ui/evaluations/runs")
+def ui_evaluation_runs(limit: int = 20):
+    session = get_session()
+    try:
+        return {"runs": OperatorConsoleRepository(session).list_evaluation_runs(limit=limit)}
+    finally:
+        session.close()
+
+
+@app.get("/ui/evaluations/runs/{run_id}")
+def ui_evaluation_run_detail(run_id: str):
+    session = get_session()
+    try:
+        repo = OperatorConsoleRepository(session)
+        try:
+            return repo.get_evaluation_run(run_id).model_dump(mode="json")
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    finally:
+        session.close()
+
+
+@app.post("/ui/evaluations/run")
+async def ui_evaluation_run(req: EvaluationRunRequest):
+    settings = get_settings()
+    session = get_session()
+    repo = OperatorConsoleRepository(session)
+    try:
+        suites = repo.ensure_default_evaluation_suites()
+        suite = next((item for item in suites if item.id == req.suite_id), suites[0] if suites else None)
+        if suite is None:
+            raise HTTPException(status_code=404, detail="No evaluation suites available")
+
+        run_id = str(uuid.uuid4())
+        repo.create_evaluation_run(suite.id, suite.name, req.mode or suite.mode, run_id)
+
+        case_results = []
+        for case in [item for item in suite.cases if item.active]:
+            artifact: dict[str, Any] = {}
+            trace_payload: dict[str, Any] = {}
+            latency_ms = 0.0
+            total_cost = 0.0
+            mode = case.mode if req.mode == "hybrid" else req.mode
+
+            if mode in {"synthetic", "mocked"}:
+                artifact = case.input.get("artifact", {})
+                trace_payload = case.input.get("trace", {})
+            elif case.target_type == "workflow":
+                observer = run_registry.create(
+                    run_id=str(uuid.uuid4()),
+                    root_actor="orchestrator",
+                    observability=get_observability_status(settings),
+                )
+                from src.agents.orchestrator import run_pipeline as _run_pipeline
+
+                result = await _run_pipeline(url=case.input.get("url", ""), settings=settings, observer=observer)
+                await _persist_pipeline_result(result)
+                artifact = result.model_dump(mode="json")
+                trace_model = observer.trace()
+                trace_payload = trace_model.model_dump(mode="json")
+                latency_ms = (trace_model.metrics.total_duration_seconds if trace_model.metrics else 0.0) * 1000.0
+                total_cost = trace_model.metrics.estimated_total_cost_usd if trace_model.metrics else 0.0
+            elif case.target_type == "agent":
+                agent_name = case.input.get("agent", "classification")
+                observer = run_registry.create(
+                    run_id=str(uuid.uuid4()),
+                    root_actor=agent_name,
+                    observability=get_observability_status(settings),
+                )
+                observer.set_url(case.input.get("url", ""))
+                result = await _run_selected_agent(agent_name, case.input.get("url", ""), observer)
+                observer.finish(success=True, failure_mode="")
+                artifact = result.model_dump(mode="json") if hasattr(result, "model_dump") else {}
+                trace_model = observer.trace()
+                trace_payload = trace_model.model_dump(mode="json")
+                latency_ms = (trace_model.metrics.total_duration_seconds if trace_model.metrics else 0.0) * 1000.0
+                total_cost = trace_model.metrics.estimated_total_cost_usd if trace_model.metrics else 0.0
+            elif case.target_type == "tool":
+                artifact = {
+                    "result": (
+                        await _execute_tool_call_with_telemetry(
+                            case.input.get("profile", "hosting"),
+                            case.input.get("tool_name", ""),
+                            case.input.get("args", {}),
+                            origin="evaluation",
+                            related_run_id=run_id,
+                        )
+                    )["result"]
+                }
+                trace_payload = {"events": []}
+
+            case_results.append(
+                evaluate_case_artifact(
+                    case,
+                    artifact=artifact,
+                    trace=trace_payload,
+                    latency_ms=latency_ms,
+                    total_cost_usd=total_cost,
+                )
+            )
+
+        summary = {
+            "suite_name": suite.name,
+            "mode": req.mode,
+            "case_count": len(case_results),
+            "pass_count": sum(1 for item in case_results if item.status == "passed"),
+        }
+        finalized = repo.finalize_evaluation_run(run_id, case_results=case_results, summary=summary)
+        return finalized.model_dump(mode="json")
+    finally:
+        session.close()
+
+
+@app.get("/ui/database/tables")
+def ui_database_tables():
+    return {"tables": sorted(OperatorConsoleRepository.TABLE_MAP.keys())}
+
+
+@app.get("/ui/database/{table}", response_model=DatabaseTableResponse)
+def ui_database_table(
+    table: str,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    session = get_session()
+    try:
+        repo = OperatorConsoleRepository(session)
+        try:
+            return repo.list_database_table(table, limit=limit, offset=offset)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
     finally:
         session.close()

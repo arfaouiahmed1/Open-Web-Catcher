@@ -16,12 +16,12 @@ from langgraph.graph.message import add_messages
 from src.utils.config import Settings
 from src.utils.logging import get_logger
 from src.utils.observability import RunObserver
-from src.utils.phoenix import (
-    phoenix_span,
+from src.utils.instrumentation import (
+    observability_span,
     resolve_model_pricing,
     set_span_attributes,
     set_span_output,
-    using_phoenix_attributes,
+    using_observability_context,
 )
 
 logger = get_logger(__name__)
@@ -196,7 +196,7 @@ async def run_agent_loop(
             if turn_context:
                 invocation_messages.append(HumanMessage(content=turn_context))
         message_count = len(invocation_messages)
-        with phoenix_span(
+        with observability_span(
             f"{run_name}.llm_turn",
             kind="chain",
             input_value={
@@ -322,7 +322,7 @@ async def run_agent_loop(
                             via=tool_name,
                         )
 
-            with phoenix_span(
+            with observability_span(
                 tool_name,
                 kind="tool",
                 input_value=tool_args,
@@ -407,7 +407,7 @@ async def run_agent_loop(
 
         budget_message = HumanMessage(content=budget_exhausted_message)
         _assert_not_cancelled(observer, "final answer preparation")
-        with phoenix_span(
+        with observability_span(
             f"{run_name}.final_answer",
             kind="chain",
             input_value={
@@ -492,12 +492,12 @@ async def run_agent_loop(
     }
     context_tags = ["open-web-catcher", run_name, "agent-loop", "langgraph"]
 
-    with using_phoenix_attributes(
+    with using_observability_context(
         session_id=observer.run_id if observer is not None else "",
         metadata=context_metadata,
         tags=context_tags,
     ):
-        with phoenix_span(
+        with observability_span(
             run_name,
             kind="agent",
             input_value={"initial_message": initial_message},

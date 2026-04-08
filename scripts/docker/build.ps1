@@ -18,8 +18,10 @@ Ensure-OwcDataDir -Context $context
 Write-OwcHeader "Open Web Catcher - Build"
 Write-OwcInfo "Compose file: $($context.ComposeFile)"
 Write-OwcInfo "Service: $($context.Service)"
+Write-OwcInfo "Web service: $($context.WebService)"
 Write-OwcInfo "Image: $($context.ImageRef)"
 Write-OwcInfo "Tools image: $($context.ToolImageRef)"
+Write-OwcInfo "Web image: $($context.WebImageRef)"
 
 $useCache = Resolve-OwcBuildUsesCache -NoCache:$NoCache -Yes:$Yes
 Write-OwcInfo "Mode: $(if ($useCache) { 'with cache' } else { 'without cache' })"

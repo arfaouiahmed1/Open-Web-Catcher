@@ -185,6 +185,41 @@ class ToolCallRecord(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class ToolPlaygroundCallRecord(Base):
+    __tablename__ = "tool_playground_calls"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    call_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    origin: Mapped[str] = mapped_column(String(32), default="playground", index=True)
+    related_run_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    profile: Mapped[str] = mapped_column(String(64), default="", index=True)
+    tool_name: Mapped[str] = mapped_column(String(128), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="success", index=True)
+    duration_seconds: Mapped[float] = mapped_column(Float, default=0.0)
+    args_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    result_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    error_text: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ProviderLookupCheckRecord(Base):
+    __tablename__ = "provider_lookup_checks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    lookup_id: Mapped[str] = mapped_column(String(64), index=True)
+    stream_url: Mapped[str] = mapped_column(Text)
+    hostname: Mapped[str] = mapped_column(String(255), default="", index=True)
+    ip: Mapped[str] = mapped_column(String(128), default="", index=True)
+    org: Mapped[str] = mapped_column(Text, default="")
+    provider: Mapped[str] = mapped_column(Text, default="", index=True)
+    country: Mapped[str] = mapped_column(String(64), default="", index=True)
+    region: Mapped[str] = mapped_column(String(128), default="")
+    city: Mapped[str] = mapped_column(String(128), default="")
+    abuse_email: Mapped[str] = mapped_column(String(255), default="", index=True)
+    whois_raw: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class RuntimeEventRecord(Base):
     __tablename__ = "runtime_events"
 
@@ -312,3 +347,92 @@ class MemoryHintUsedRecord(Base):
     __table_args__ = (
         UniqueConstraint("agent_run_id", "memory_entry_id", name="uq_memory_hint_used"),
     )
+
+
+class PricingConfigRecord(Base):
+    __tablename__ = "pricing_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(64), default="", index=True)
+    model_name: Mapped[str] = mapped_column(String(128), index=True)
+    input_per_million: Mapped[float] = mapped_column(Float, default=0.0)
+    output_per_million: Mapped[float] = mapped_column(Float, default=0.0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("provider", "model_name", name="uq_pricing_configs_provider_model"),
+    )
+
+
+class EvaluationSuiteRecord(Base):
+    __tablename__ = "evaluation_suites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    mode: Mapped[str] = mapped_column(String(32), default="hybrid", index=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    config_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class EvaluationCaseRecord(Base):
+    __tablename__ = "evaluation_cases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    suite_id: Mapped[int] = mapped_column(ForeignKey("evaluation_suites.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(128), index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    mode: Mapped[str] = mapped_column(String(32), default="synthetic", index=True)
+    target_type: Mapped[str] = mapped_column(String(32), default="workflow", index=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    input_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    assertions_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class EvaluationRunRecord(Base):
+    __tablename__ = "evaluation_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    suite_id: Mapped[int | None] = mapped_column(ForeignKey("evaluation_suites.id", ondelete="SET NULL"), nullable=True, index=True)
+    run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), default="", index=True)
+    mode: Mapped[str] = mapped_column(String(32), default="hybrid", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    success_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    hallucination_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    tool_accuracy_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    reliability_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    avg_latency_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    avg_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    case_count: Mapped[int] = mapped_column(Integer, default=0)
+    pass_count: Mapped[int] = mapped_column(Integer, default=0)
+    summary_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class EvaluationCaseResultRecord(Base):
+    __tablename__ = "evaluation_case_results"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    evaluation_run_id: Mapped[int] = mapped_column(ForeignKey("evaluation_runs.id", ondelete="CASCADE"), index=True)
+    case_id: Mapped[int | None] = mapped_column(ForeignKey("evaluation_cases.id", ondelete="SET NULL"), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    target_type: Mapped[str] = mapped_column(String(32), default="workflow", index=True)
+    latency_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    hallucination_score: Mapped[float] = mapped_column(Float, default=0.0)
+    tool_accuracy_score: Mapped[float] = mapped_column(Float, default=0.0)
+    reliability_score: Mapped[float] = mapped_column(Float, default=0.0)
+    assertion_results_json: Mapped[list] = mapped_column(JSON, default=list)
+    output_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    trace_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

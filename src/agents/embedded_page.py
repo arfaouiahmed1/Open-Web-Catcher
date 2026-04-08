@@ -14,8 +14,8 @@ from src.models.schemas import ExtractionResult, StreamURL
 from src.tools.mcp_client import agent_tools
 from src.utils.config import Settings
 from src.utils.logging import get_logger
+from src.utils.instrumentation import observability_span, set_span_output, using_observability_context
 from src.utils.observability import RunObserver
-from src.utils.phoenix import phoenix_span, set_span_output, using_phoenix_attributes
 
 logger = get_logger(__name__)
 
@@ -45,12 +45,12 @@ class EmbeddedPageAgent:
             observer.mark_agent(AgentType.EMBEDDED_PAGE)
             observer.emit("agent_started", f"Embedded page agent started for {url}")
 
-        with using_phoenix_attributes(
+        with using_observability_context(
             session_id=observer.run_id if observer is not None else "",
             metadata={"agent_type": AgentType.EMBEDDED_PAGE.value, "url": url},
             tags=["embedded", "agent"],
         ):
-            with phoenix_span(
+            with observability_span(
                 "embedded_page_agent.run",
                 kind="agent",
                 input_value={"url": url},

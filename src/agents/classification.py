@@ -16,8 +16,8 @@ from src.models.schemas import ClassificationResult
 from src.tools.mcp_client import agent_tools
 from src.utils.config import Settings
 from src.utils.logging import get_logger
+from src.utils.instrumentation import observability_span, set_span_output, using_observability_context
 from src.utils.observability import RunObserver
-from src.utils.phoenix import phoenix_span, set_span_output, using_phoenix_attributes
 
 logger = get_logger(__name__)
 
@@ -47,12 +47,12 @@ class ClassificationAgent:
             observer.mark_agent(AgentType.CLASSIFICATION)
             observer.emit("agent_started", f"Classification agent started for {url}")
 
-        with using_phoenix_attributes(
+        with using_observability_context(
             session_id=observer.run_id if observer is not None else "",
             metadata={"agent_type": AgentType.CLASSIFICATION.value, "url": url},
             tags=["classification", "agent"],
         ):
-            with phoenix_span(
+            with observability_span(
                 "classification_agent.run",
                 kind="agent",
                 input_value={"url": url},

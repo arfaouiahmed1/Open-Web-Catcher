@@ -23,8 +23,8 @@ from src.tools.email_tool import EmailTool
 from src.tools.ipinfo_tool import IPInfoTool
 from src.utils.config import Settings
 from src.utils.logging import get_logger
-from src.utils.observability import RunObserver, get_tracing_status, run_registry
-from src.utils.phoenix import phoenix_span, set_span_output, using_phoenix_attributes
+from src.utils.instrumentation import observability_span, set_span_output, using_observability_context
+from src.utils.observability import RunObserver, get_observability_status, run_registry
 
 logger = get_logger(__name__)
 
@@ -291,12 +291,12 @@ class OrchestratorAgent:
         }
 
         try:
-            with using_phoenix_attributes(
+            with using_observability_context(
                 session_id=self.observer.run_id if self.observer is not None else "",
                 metadata={"agent_type": AgentType.ORCHESTRATOR.value, "url": url},
                 tags=["orchestrator", "pipeline", "langgraph"],
             ):
-                with phoenix_span(
+                with observability_span(
                     "orchestrator_agent.run",
                     kind="agent",
                     input_value={"url": url},
@@ -358,7 +358,7 @@ async def run_pipeline(
         observer = run_registry.create(
             run_id=str(uuid.uuid4()),
             root_actor="orchestrator",
-            tracing=get_tracing_status(settings),
+            observability=get_observability_status(settings),
         )
     return await OrchestratorAgent(settings, observer=observer).run(url)
 

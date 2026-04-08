@@ -20,6 +20,7 @@ env/
 # Node
 node_modules/
 tools_js/node_modules/
+.next/
 
 # Data (keep structure, ignore content)
 data/raw/*

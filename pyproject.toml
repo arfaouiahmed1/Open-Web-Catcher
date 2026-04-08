@@ -8,41 +8,20 @@ version = "0.1.0"
 description = "Multi-agent AI pipeline for extracting streaming URLs from illegal streaming websites"
 requires-python = ">=3.11"
 dependencies = [
-    # LLM client + tracing
-    "langchain-core>=0.3",          # BaseMessage, BaseTool, ToolMessage
-    "langchain-google-genai>=2.0",  # ChatGoogleGenerativeAI + bind_tools
-    "langgraph>=0.2",               # LangGraph runtime for all agents + orchestrator
-    "langchain-mcp-adapters>=0.1",   # MCP → LangChain BaseTool bridge
-    "langsmith>=0.1",               # legacy optional fallback tracing
-    "arize-phoenix-otel>=0.8",
-    "arize-phoenix-client>=1.0",
-    "openinference-instrumentation>=0.1",
-    "openinference-instrumentation-langchain>=0.1",
-
-    # Pydantic / settings
+    "langchain-core>=0.3",
+    "langchain-google-genai>=2.0",
+    "langgraph>=0.2",
+    "langchain-mcp-adapters>=0.1",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
-
-    # Storage
     "sqlalchemy>=2.0",
     "alembic>=1.13",
-
-    # Cloudinary (image upload for vision)
     "cloudinary>=1.40",
-
-    # Database driver (PostgreSQL)
     "psycopg2-binary>=2.9",
-
-    # API + UI
     "fastapi>=0.111",
     "uvicorn[standard]>=0.30",
-    "gradio>=4.36",
-
-    # CLI
     "typer>=0.12",
     "rich>=13.7",
-
-    # Utilities
     "httpx>=0.27",
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
@@ -59,6 +38,9 @@ dev = [
     "mypy>=1.10",
     "ipykernel>=6.29",
     "jupyter>=1.0",
+    "pandas>=2.2",
+    "matplotlib>=3.9",
+    "seaborn>=0.13",
 ]
 
 [project.scripts]

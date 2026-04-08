@@ -15,8 +15,8 @@
 | [OrchestratorAgent](#orchestratoragent) | flash-lite | none (sub-agents as tools) | 60 | `PipelineResult` |
 
 Models:
-- `flash` = `gemini-2.5-flash-preview-05-20`
-- `flash-lite` = `gemini-2.5-flash-lite-preview-05-20`
+- `flash` = `gemini-2.5-flash`
+- `flash-lite` = `gemini-2.5-flash-lite`
 
 ---
 

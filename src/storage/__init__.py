@@ -1,4 +1,5 @@
 from src.storage.database import Base, engine, get_session
 from src.storage.repositories import RunRepository
+from src.storage.ui_repository import OperatorConsoleRepository
 
-__all__ = ["Base", "engine", "get_session", "RunRepository"]
+__all__ = ["Base", "engine", "get_session", "RunRepository", "OperatorConsoleRepository"]

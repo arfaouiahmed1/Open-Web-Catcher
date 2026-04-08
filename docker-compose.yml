@@ -1,18 +1,6 @@
-# Open Web Catcher app stack with separate Puppeteer/MCP tooling.
+# Open Web Catcher app stack with separate Puppeteer/MCP tooling and Next.js operator console.
 
 services:
-  phoenix:
-    image: arizephoenix/phoenix:latest
-    container_name: phoenix
-    restart: unless-stopped
-    ports:
-      - "6006:6006"
-      - "4317:4317"
-    environment:
-      PHOENIX_WORKING_DIR: /mnt/data
-    volumes:
-      - phoenix_data:/mnt/data
-
   postgres:
     image: postgres:16-alpine
     container_name: postgres
@@ -74,22 +62,19 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
-      - "7860:7860"
     env_file:
       - .env
     environment:
       BROWSER_WS_ENDPOINT: ws://owc-tools:9222
       MCP_SERVER_URL: http://owc-tools:3000
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-owc}:${POSTGRES_PASSWORD:-owc}@postgres:5432/${POSTGRES_DB:-owc}
-      PHOENIX_TRACING: ${PHOENIX_TRACING:-true}
-      PHOENIX_PROJECT_NAME: ${PHOENIX_PROJECT_NAME:-open-web-catcher}
-      PHOENIX_COLLECTOR_ENDPOINT: ${PHOENIX_COLLECTOR_ENDPOINT_DOCKER:-http://phoenix:6006}
-      PHOENIX_UI_URL: ${PHOENIX_UI_URL:-http://localhost:6006}
-      PHOENIX_BASE_URL: ${PHOENIX_BASE_URL_DOCKER:-http://phoenix:6006}
-      PHOENIX_API_KEY: ${PHOENIX_API_KEY:-}
+      OBSERVABILITY_ENABLED: ${OBSERVABILITY_ENABLED:-true}
+      OBSERVABILITY_PROJECT_NAME: ${OBSERVABILITY_PROJECT_NAME:-open-web-catcher}
+      OBSERVABILITY_DEFAULT_DATASET_NAME: ${OBSERVABILITY_DEFAULT_DATASET_NAME:-open-web-catcher-runs}
+      OBSERVABILITY_DATASET_DIR: ${OBSERVABILITY_DATASET_DIR:-data/datasets}
+      MODEL_PRICING_JSON: ${MODEL_PRICING_JSON:-{}}
+      UI_CORS_ORIGINS: ${UI_CORS_ORIGINS:-http://localhost:3001,http://127.0.0.1:3001}
     depends_on:
-      phoenix:
-        condition: service_started
       postgres:
         condition: service_healthy
       owc-tools:
@@ -104,6 +89,25 @@ services:
       retries: 5
       start_period: 30s
 
+  owc-web:
+    image: ${OWC_WEB_IMAGE:-open-web-catcher-web}:${OWC_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      cache_to:
+        - type=inline
+      cache_from:
+        - ${OWC_WEB_IMAGE:-open-web-catcher-web}:${OWC_TAG:-latest}
+    container_name: ${OWC_WEB_CONTAINER:-owc-web}
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      API_BASE_URL: http://owc:8000
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    depends_on:
+      owc:
+        condition: service_healthy
+
 volumes:
-  phoenix_data:
   postgres_data:

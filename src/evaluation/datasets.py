@@ -1,4 +1,4 @@
-"""Dataset helpers for local run curation and Phoenix dataset publishing."""
+"""Dataset helpers for local run curation and JSONL export."""
 
 from __future__ import annotations
 
@@ -11,24 +11,18 @@ from pydantic import BaseModel, Field
 
 from src.models.schemas import PipelineResult
 from src.utils.config import Settings
-from src.utils.phoenix import (
-    resolve_phoenix_api_key,
-    resolve_phoenix_base_url,
-    resolve_phoenix_dataset_dir,
-    resolve_phoenix_default_dataset_name,
-)
+from src.utils.instrumentation import resolve_dataset_dir, resolve_default_dataset_name
 
 DEFAULT_CASES_PATH = Path("data/test_cases/sites.json")
 
 
-class PhoenixDatasetExample(BaseModel):
+class DatasetExample(BaseModel):
     input: dict[str, Any]
     output: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 def load_test_cases(path: str | Path = DEFAULT_CASES_PATH) -> list[dict[str, Any]]:
-    """Load golden test cases from a JSON file."""
     p = Path(path)
     if not p.exists():
         return []
@@ -43,12 +37,10 @@ def save_test_cases(cases: list[dict[str, Any]], path: str | Path = DEFAULT_CASE
         json.dump(cases, f, indent=2, ensure_ascii=False)
 
 
-def pipeline_result_to_dataset_example(result: PipelineResult) -> PhoenixDatasetExample:
+def pipeline_result_to_dataset_example(result: PipelineResult) -> DatasetExample:
     metrics = result.metrics
-    return PhoenixDatasetExample(
-        input={
-            "url": result.url,
-        },
+    return DatasetExample(
+        input={"url": result.url},
         output={
             "run_id": result.run_id,
             "page_type": result.classification.page_type.value if result.classification else "unknown",
@@ -72,29 +64,26 @@ def pipeline_result_to_dataset_example(result: PipelineResult) -> PhoenixDataset
             "provider_count": len(result.provider_analysis),
             "email_count": len(result.takedown_emails),
             "agents_invoked": [agent.value for agent in (metrics.agents_invoked if metrics else [])],
-            "model_usage": [
-                entry.model_dump(mode="json")
-                for entry in (metrics.model_usage if metrics else [])
-            ],
+            "model_usage": [entry.model_dump(mode="json") for entry in (metrics.model_usage if metrics else [])],
             "collected_at": datetime.utcnow().isoformat(),
         },
     )
 
 
-def build_dataset_examples(results: list[PipelineResult]) -> list[PhoenixDatasetExample]:
+def build_dataset_examples(results: list[PipelineResult]) -> list[DatasetExample]:
     return [pipeline_result_to_dataset_example(result) for result in results]
 
 
 def export_dataset_examples(
-    examples: list[PhoenixDatasetExample],
+    examples: list[DatasetExample],
     *,
     settings: Settings,
     dataset_name: str = "",
     path: str | Path | None = None,
 ) -> Path:
-    resolved_dataset_name = dataset_name or resolve_phoenix_default_dataset_name(settings)
+    resolved_dataset_name = dataset_name or resolve_default_dataset_name(settings)
     if path is None:
-        export_dir = resolve_phoenix_dataset_dir(settings)
+        export_dir = resolve_dataset_dir(settings)
         timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
         path = export_dir / f"{resolved_dataset_name}-{timestamp}.jsonl"
 
@@ -105,50 +94,3 @@ def export_dataset_examples(
             f.write(example.model_dump_json())
             f.write("\n")
     return export_path
-
-
-def publish_dataset_to_phoenix(
-    examples: list[PhoenixDatasetExample],
-    *,
-    settings: Settings,
-    dataset_name: str = "",
-    dataset_description: str = "",
-) -> dict[str, Any]:
-    try:
-        from phoenix.client import Client
-    except Exception as exc:  # pragma: no cover - import guard
-        raise RuntimeError(
-            "Phoenix client is not installed. Add 'arize-phoenix-client' to your environment first."
-        ) from exc
-
-    resolved_dataset_name = dataset_name or resolve_phoenix_default_dataset_name(settings)
-    base_url = resolve_phoenix_base_url(settings)
-    api_key = resolve_phoenix_api_key(settings) or None
-
-    client_kwargs: dict[str, Any] = {"base_url": base_url}
-    if api_key:
-        client_kwargs["api_key"] = api_key
-    client = Client(**client_kwargs)
-    resolved_name = resolved_dataset_name
-
-    try:
-        client.datasets.get_dataset(dataset=resolved_dataset_name)
-    except Exception:
-        pass
-    else:
-        suffix = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-        resolved_name = f"{resolved_dataset_name}-{suffix}"
-
-    dataset = client.datasets.create_dataset(
-        name=resolved_name,
-        dataset_description=dataset_description or f"Collected from Open Web Catcher runs for {resolved_name}",
-        inputs=[example.input for example in examples],
-        outputs=[example.output for example in examples],
-        metadata=[example.metadata for example in examples],
-    )
-    return {
-        "name": resolved_name,
-        "example_count": len(examples),
-        "base_url": base_url,
-        "dataset": str(getattr(dataset, "name", resolved_name)),
-    }

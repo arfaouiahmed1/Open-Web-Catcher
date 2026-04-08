@@ -1,4 +1,4 @@
-"""Helpers for Phoenix tracing, pricing, datasets, and manual span enrichment."""
+"""Internal observability and pricing helpers."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import os
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
-from urllib.parse import urlparse
 
 from src.utils.config import Settings
 
@@ -16,9 +15,6 @@ _PLACEHOLDER_VALUES = {
     "your_api_key_here",
     "changeme",
     "replace-me",
-}
-_CLOUD_HOSTS = {
-    "app.phoenix.arize.com",
 }
 
 
@@ -54,64 +50,30 @@ def _coerce_span_value(value: Any) -> bool | int | float | str:
     return _safe_json(value)
 
 
-def resolve_phoenix_tracing(settings: Settings) -> bool:
-    parsed = _parse_bool(os.getenv("PHOENIX_TRACING"))
+def resolve_observability_enabled(settings: Settings) -> bool:
+    parsed = _parse_bool(os.getenv("OBSERVABILITY_ENABLED"))
     if parsed is not None:
         return parsed
-    return bool(settings.phoenix_tracing)
+    return bool(settings.observability_enabled)
 
 
-def resolve_phoenix_api_key(settings: Settings) -> str:
-    return _clean_value(os.getenv("PHOENIX_API_KEY")) or _clean_value(settings.phoenix_api_key)
-
-
-def resolve_phoenix_project_name(settings: Settings) -> str:
-    value = (os.getenv("PHOENIX_PROJECT_NAME") or settings.phoenix_project_name or "").strip()
+def resolve_observability_project_name(settings: Settings) -> str:
+    value = (os.getenv("OBSERVABILITY_PROJECT_NAME") or settings.observability_project_name or "").strip()
     return value or "open-web-catcher"
 
 
-def resolve_phoenix_collector_endpoint(settings: Settings) -> str:
-    endpoint = _clean_value(os.getenv("PHOENIX_COLLECTOR_ENDPOINT")) or settings.phoenix_collector_endpoint
-    return endpoint.rstrip("/")
-
-
-def resolve_phoenix_ui_url(settings: Settings) -> str:
-    ui_url = _clean_value(os.getenv("PHOENIX_UI_URL")) or settings.phoenix_ui_url
-    if ui_url:
-        return ui_url.rstrip("/")
-
-    endpoint = resolve_phoenix_collector_endpoint(settings)
-    parsed = urlparse(endpoint)
-    if not parsed.scheme or not parsed.netloc:
-        return ""
-
-    return f"{parsed.scheme}://{parsed.netloc}"
-
-
-def resolve_phoenix_base_url(settings: Settings) -> str:
-    base_url = _clean_value(os.getenv("PHOENIX_BASE_URL")) or _clean_value(settings.phoenix_base_url)
-    if base_url:
-        return base_url.rstrip("/")
-
-    ui_url = resolve_phoenix_ui_url(settings)
-    if ui_url:
-        return ui_url
-
-    return resolve_phoenix_collector_endpoint(settings)
-
-
-def resolve_phoenix_default_dataset_name(settings: Settings) -> str:
-    value = _clean_value(os.getenv("PHOENIX_DEFAULT_DATASET_NAME")) or settings.phoenix_default_dataset_name
+def resolve_default_dataset_name(settings: Settings) -> str:
+    value = _clean_value(os.getenv("OBSERVABILITY_DEFAULT_DATASET_NAME")) or settings.default_dataset_name
     return value or "open-web-catcher-runs"
 
 
-def resolve_phoenix_dataset_dir(settings: Settings) -> Path:
-    value = _clean_value(os.getenv("PHOENIX_DATASET_DIR")) or settings.phoenix_dataset_dir
+def resolve_dataset_dir(settings: Settings) -> Path:
+    value = _clean_value(os.getenv("OBSERVABILITY_DATASET_DIR")) or settings.dataset_dir
     return Path(value or "data/datasets")
 
 
-def resolve_phoenix_model_pricing(settings: Settings) -> dict[str, dict[str, Any]]:
-    raw = _clean_value(os.getenv("PHOENIX_MODEL_PRICING_JSON")) or settings.phoenix_model_pricing_json
+def resolve_model_pricing_config(settings: Settings) -> dict[str, dict[str, Any]]:
+    raw = _clean_value(os.getenv("MODEL_PRICING_JSON")) or settings.model_pricing_json
     if not raw:
         return {}
 
@@ -133,16 +95,11 @@ def resolve_phoenix_model_pricing(settings: Settings) -> dict[str, dict[str, Any
             "input_per_million": float(config.get("input_per_million", 0.0) or 0.0),
             "output_per_million": float(config.get("output_per_million", 0.0) or 0.0),
         }
-
     return normalized
 
 
-def resolve_model_pricing(
-    settings: Settings,
-    model_name: str,
-    provider: str = "",
-) -> dict[str, Any]:
-    pricing = resolve_phoenix_model_pricing(settings)
+def resolve_model_pricing(settings: Settings, model_name: str, provider: str = "") -> dict[str, Any]:
+    pricing = resolve_model_pricing_config(settings)
     match = pricing.get((model_name or "").strip().lower(), {})
     return {
         "provider": str(match.get("provider") or provider or "").strip(),
@@ -167,44 +124,16 @@ def estimate_usage_cost(
     }
 
 
-def is_self_hosted_phoenix(settings: Settings) -> bool:
-    endpoint = resolve_phoenix_collector_endpoint(settings)
-    hostname = (urlparse(endpoint).hostname or "").lower()
-    if not hostname:
-        return False
-    return hostname not in _CLOUD_HOSTS
-
-
 @contextmanager
-def using_phoenix_attributes(
+def using_observability_context(
     *,
     session_id: str = "",
     user_id: str = "",
     metadata: dict[str, Any] | None = None,
     tags: list[str] | None = None,
 ) -> Iterator[None]:
-    try:
-        from openinference.instrumentation import using_attributes
-    except Exception:
-        yield
-        return
-
-    kwargs: dict[str, Any] = {}
-    if session_id:
-        kwargs["session_id"] = session_id
-    if user_id:
-        kwargs["user_id"] = user_id
-    if metadata:
-        kwargs["metadata"] = metadata
-    if tags:
-        kwargs["tags"] = tags
-
-    if not kwargs:
-        yield
-        return
-
-    with using_attributes(**kwargs):
-        yield
+    _ = (session_id, user_id, metadata, tags)
+    yield
 
 
 class _NoopSpan:
@@ -229,7 +158,6 @@ def set_span_output(span: Any, value: Any) -> None:
 def set_span_attributes(span: Any, attributes: dict[str, Any] | None = None) -> None:
     if not attributes:
         return
-
     for key, value in attributes.items():
         if value is None:
             continue
@@ -240,31 +168,16 @@ def set_span_attributes(span: Any, attributes: dict[str, Any] | None = None) -> 
 
 
 @contextmanager
-def phoenix_span(
+def observability_span(
     name: str,
     *,
     kind: str = "CHAIN",
     input_value: Any | None = None,
     attributes: dict[str, Any] | None = None,
 ) -> Iterator[Any]:
-    try:
-        from opentelemetry import trace as otel_trace
-        from opentelemetry.trace import Status, StatusCode
-    except Exception:
-        yield _NoopSpan()
-        return
-
-    tracer = otel_trace.get_tracer("open-web-catcher.phoenix")
-    with tracer.start_as_current_span(name) as span:
-        try:
-            span.set_attribute("openinference.span.kind", kind.upper())
-            if input_value is not None:
-                set_span_input(span, input_value)
-            set_span_attributes(span, attributes)
-            yield span
-            span.set_status(Status(StatusCode.OK))
-        except Exception as exc:
-            span.set_attribute("error.type", type(exc).__name__)
-            span.set_attribute("error.message", str(exc))
-            span.set_status(Status(StatusCode.ERROR, str(exc)))
-            raise
+    _ = (name, kind)
+    span = _NoopSpan()
+    if input_value is not None:
+        set_span_input(span, input_value)
+    set_span_attributes(span, attributes)
+    yield span

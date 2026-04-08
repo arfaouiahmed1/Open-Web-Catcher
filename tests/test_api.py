@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from src.models.enums import AgentType, Confidence, ExtractionStatus, PageType
-from src.models.schemas import ClassificationResult, ExtractionResult, PipelineResult
+from src.models.schemas import ClassificationResult, ExtractionResult, PipelineResult, PricingConfig
 from src.utils.config import Settings
+from src.utils.observability import ObservabilityStatus, run_registry
 
 
 @pytest.fixture
@@ -20,6 +22,7 @@ def api_settings() -> Settings:
         mcp_server_url="http://mcp.local:3000",
         database_url="sqlite:///:memory:",
         memory_enabled=False,
+        model_pricing_json="{}",
     )
 
 
@@ -31,9 +34,7 @@ def client(api_settings: Settings):
          patch.object(api_app, "setup_tracing_from_settings"), \
          patch.object(api_app, "create_tables"), \
          patch.object(api_app, "probe_browser", return_value={"healthy": True}), \
-         patch.object(api_app, "probe_mcp", return_value={"healthy": True}), \
-         patch.object(api_app, "get_session"), \
-         patch.object(api_app, "RunRepository"):
+         patch.object(api_app, "probe_mcp", return_value={"healthy": True}):
         with TestClient(api_app.app) as test_client:
             yield test_client
 
@@ -96,3 +97,188 @@ def test_run_route_calls_orchestrator_and_persists_result(client: TestClient):
     assert response.status_code == 200
     mock_repo_cls.return_value.save.assert_called_once()
     session.close.assert_called_once()
+
+
+def test_ui_overview_returns_operator_console_payload(client: TestClient):
+    payload = {
+        "summary": {"total_runs": 3, "success_rate": 0.67, "total_tokens": 1234, "total_cost_usd": 0.12},
+        "trend": [],
+        "model_breakdown": [],
+        "provider_breakdown": [],
+        "top_tools": [],
+        "recent_runs": [],
+        "evaluation_summary": {},
+        "active_runs": [],
+    }
+    with patch("src.api.app.OperatorConsoleRepository") as mock_repo_cls, \
+         patch("src.api.app.get_session") as mock_get_session:
+        session = MagicMock()
+        mock_get_session.return_value = session
+        mock_repo_cls.return_value.get_overview.return_value = payload
+        response = client.get("/ui/overview")
+
+    assert response.status_code == 200
+    assert response.json()["summary"]["total_runs"] == 3
+
+
+def test_ui_pricing_update_persists_and_updates_runtime_settings(client: TestClient, api_settings: Settings):
+    config = PricingConfig(
+        provider="google",
+        model_name="gemini-2.5-flash",
+        input_per_million=1.25,
+        output_per_million=2.5,
+        notes="test",
+    )
+
+    with patch("src.api.app.OperatorConsoleRepository") as mock_repo_cls, \
+         patch("src.api.app.get_session") as mock_get_session:
+        session = MagicMock()
+        mock_get_session.return_value = session
+        mock_repo_cls.return_value.upsert_pricing_config.return_value = config
+        response = client.put("/ui/pricing", json=config.model_dump(mode="json"))
+
+    assert response.status_code == 200
+    stored = json.loads(api_settings.model_pricing_json)
+    assert stored["gemini-2.5-flash"]["provider"] == "google"
+
+
+def test_ui_database_tables_returns_allowlist(client: TestClient):
+    response = client.get("/ui/database/tables")
+
+    assert response.status_code == 200
+    assert "pipeline_runs" in response.json()["tables"]
+    assert "evaluation_runs" in response.json()["tables"]
+    assert "tool_playground_calls" in response.json()["tables"]
+
+
+def test_ui_workflow_run_returns_generated_run_id(client: TestClient):
+    with patch("src.api.app.asyncio.create_task") as mock_create_task:
+        mock_create_task.side_effect = lambda coro: (coro.close(), MagicMock())[1]
+        response = client.post("/ui/workflows/run", json={"url": "https://example.com/watch"})
+
+    assert response.status_code == 200
+    assert response.json()["root_actor"] == "orchestrator"
+    assert response.json()["run_id"]
+    mock_create_task.assert_called_once()
+
+
+def test_ui_run_detail_returns_active_trace(client: TestClient):
+    run_id = "ui-active-run"
+    observer = run_registry.create(
+        run_id=run_id,
+        root_actor="orchestrator",
+        observability=ObservabilityStatus(
+            enabled=False,
+            project="test",
+            pricing_models=[],
+            default_dataset_name="open-web-catcher-runs",
+        ),
+    )
+    observer.emit("pipeline_started", "Pipeline started")
+
+    response = client.get(f"/ui/runs/{run_id}")
+
+    assert response.status_code == 200
+    assert response.json()["active_trace"]["run_id"] == run_id
+
+
+def test_ui_run_stream_emits_sse_payload(client: TestClient):
+    run_id = "ui-stream-run"
+    observer = run_registry.create(
+        run_id=run_id,
+        root_actor="orchestrator",
+        observability=ObservabilityStatus(
+            enabled=False,
+            project="test",
+            pricing_models=[],
+            default_dataset_name="open-web-catcher-runs",
+        ),
+    )
+    observer.emit("pipeline_started", "Pipeline started")
+    observer.finish(success=True)
+
+    with client.stream("GET", f"/ui/runs/{run_id}/stream") as response:
+        body = "".join(chunk.decode("utf-8") for chunk in response.iter_raw())
+
+    assert response.status_code == 200
+    assert "\"run_id\": \"" + run_id + "\"" in body
+    assert "\"completed\": true" in body.lower()
+
+
+def test_ui_tool_call_returns_result_and_persisted_record(client: TestClient):
+    with patch("src.api.app._execute_tool_call_with_telemetry", new=AsyncMock(return_value={
+        "call_id": "tool-call-1",
+        "result": {"ok": True},
+        "record": {"call_id": "tool-call-1", "status": "success"},
+    })):
+        response = client.post(
+            "/ui/tools/call",
+            json={"profile": "hosting", "tool_name": "capture_streams", "args": {"frame_path": "root"}},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["call_id"] == "tool-call-1"
+    assert response.json()["record"]["status"] == "success"
+
+
+def test_ui_tool_history_returns_repository_payload(client: TestClient):
+    payload = {
+        "total": 2,
+        "rows": [
+            {"call_id": "call-2", "profile": "hosting", "tool_name": "capture_streams", "status": "error"},
+            {"call_id": "call-1", "profile": "hosting", "tool_name": "capture_streams", "status": "success"},
+        ],
+    }
+    with patch("src.api.app.OperatorConsoleRepository") as mock_repo_cls, \
+         patch("src.api.app.get_session") as mock_get_session:
+        session = MagicMock()
+        mock_get_session.return_value = session
+        mock_repo_cls.return_value.list_tool_playground_calls.return_value = payload
+        response = client.get("/ui/tools/history?profile=hosting")
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 2
+    assert response.json()["rows"][0]["call_id"] == "call-2"
+
+
+def test_ui_provider_lookup_returns_rows_and_stats(client: TestClient):
+    payload = [
+        {
+            "lookup_id": "lookup-1",
+            "stream_url": "https://cdn.example.com/live/master.m3u8",
+            "hostname": "cdn.example.com",
+            "ip": "1.2.3.4",
+            "provider": "Cloudflare, Inc.",
+            "country": "US",
+            "abuse_email": "abuse@cloudflare.com",
+        }
+    ]
+    with patch("src.api.app._provider_lookup_urls", return_value=payload):
+        response = client.post(
+            "/ui/providers/lookup",
+            json={"stream_urls": ["https://cdn.example.com/live/master.m3u8"]},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["rows"][0]["provider"] == "Cloudflare, Inc."
+    assert response.json()["stats"]["resolved_ips"] == 1
+
+
+def test_ui_provider_history_returns_repository_payload(client: TestClient):
+    payload = {
+        "total": 2,
+        "rows": [{"lookup_id": "lookup-1", "provider": "Cloudflare, Inc."}],
+        "summary": {"total_checks": 2},
+        "top_providers": [{"provider": "Cloudflare, Inc.", "count": 1}],
+        "top_countries": [{"country": "US", "count": 1}],
+    }
+    with patch("src.api.app.OperatorConsoleRepository") as mock_repo_cls, \
+         patch("src.api.app.get_session") as mock_get_session:
+        session = MagicMock()
+        mock_get_session.return_value = session
+        mock_repo_cls.return_value.get_provider_lookup_history.return_value = payload
+        response = client.get("/ui/providers/history")
+
+    assert response.status_code == 200
+    assert response.json()["summary"]["total_checks"] == 2
+    assert response.json()["top_providers"][0]["provider"] == "Cloudflare, Inc."

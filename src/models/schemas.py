@@ -167,3 +167,120 @@ class PipelineResult(BaseModel):
     takedown_emails: list[TakedownEmail] = Field(default_factory=list)
 
     metrics: RunMetrics | None = None
+
+
+class PricingConfig(BaseModel):
+    provider: str = ""
+    model_name: str
+    input_per_million: float = 0.0
+    output_per_million: float = 0.0
+    active: bool = True
+    notes: str = ""
+
+
+class OperatorOverview(BaseModel):
+    summary: dict[str, Any] = Field(default_factory=dict)
+    trend: list[dict[str, Any]] = Field(default_factory=list)
+    model_breakdown: list[dict[str, Any]] = Field(default_factory=list)
+    provider_breakdown: list[dict[str, Any]] = Field(default_factory=list)
+    top_tools: list[dict[str, Any]] = Field(default_factory=list)
+    recent_runs: list[dict[str, Any]] = Field(default_factory=list)
+    evaluation_summary: dict[str, Any] = Field(default_factory=dict)
+    active_runs: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AgentTestRequest(BaseModel):
+    agent: str
+    url: str
+
+
+class WorkflowRunRequest(BaseModel):
+    url: str
+
+
+class ToolPlaygroundRequest(BaseModel):
+    profile: str
+    tool_name: str
+    args: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProviderLookupRequest(BaseModel):
+    stream_urls: list[str] = Field(default_factory=list)
+
+
+class EvaluationAssertionResult(BaseModel):
+    name: str
+    passed: bool
+    expected: Any = None
+    actual: Any = None
+    message: str = ""
+
+
+class EvaluationCase(BaseModel):
+    id: int | None = None
+    suite_id: int | None = None
+    name: str
+    description: str = ""
+    mode: str = "synthetic"
+    target_type: str = "workflow"
+    active: bool = True
+    input: dict[str, Any] = Field(default_factory=dict)
+    assertions: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class EvaluationSuite(BaseModel):
+    id: int | None = None
+    name: str
+    description: str = ""
+    mode: str = "hybrid"
+    active: bool = True
+    config: dict[str, Any] = Field(default_factory=dict)
+    cases: list[EvaluationCase] = Field(default_factory=list)
+
+
+class EvaluationCaseResult(BaseModel):
+    case_id: int | None = None
+    case_name: str = ""
+    status: str = "pending"
+    target_type: str = "workflow"
+    latency_ms: float = 0.0
+    total_cost_usd: float = 0.0
+    hallucination_score: float = 0.0
+    tool_accuracy_score: float = 0.0
+    reliability_score: float = 0.0
+    assertion_results: list[EvaluationAssertionResult] = Field(default_factory=list)
+    output: dict[str, Any] = Field(default_factory=dict)
+    trace: dict[str, Any] = Field(default_factory=dict)
+
+
+class EvaluationRun(BaseModel):
+    run_id: str
+    suite_id: int | None = None
+    name: str = ""
+    mode: str = "hybrid"
+    status: str = "pending"
+    success_rate: float = 0.0
+    hallucination_rate: float = 0.0
+    tool_accuracy_rate: float = 0.0
+    reliability_rate: float = 0.0
+    avg_latency_ms: float = 0.0
+    avg_cost_usd: float = 0.0
+    case_count: int = 0
+    pass_count: int = 0
+    summary: dict[str, Any] = Field(default_factory=dict)
+    case_results: list[EvaluationCaseResult] = Field(default_factory=list)
+
+
+class EvaluationRunRequest(BaseModel):
+    suite_id: int | None = None
+    mode: str = "hybrid"
+
+
+class DatabaseTableResponse(BaseModel):
+    table: str
+    columns: list[str] = Field(default_factory=list)
+    rows: list[dict[str, Any]] = Field(default_factory=list)
+    limit: int = 50
+    offset: int = 0
+    total: int = 0
