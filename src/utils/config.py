@@ -97,22 +97,47 @@ class Settings(BaseSettings):
     tool_result_cache_min_identical_observations: int = 2
 
     @classmethod
-    def from_yaml(cls, yaml_path: str | Path = "configs/settings.yaml") -> "Settings":
-        """Load settings, merging YAML overrides on top of env vars."""
-        path = Path(yaml_path)
-        overrides: dict = {}
-        if path.exists():
-            with open(path, encoding="utf-8") as f:
-                overrides = yaml.safe_load(f) or {}
-        return cls(**overrides)
+    def from_yaml(
+        cls,
+        yaml_path: str | Path = "configs/settings.yaml",
+        runtime_yaml_path: str | Path = "data/settings.runtime.yaml",
+    ) -> "Settings":
+        """Load settings from base YAML and runtime overrides.
 
-    def save_yaml(self, yaml_path: str | Path = "configs/settings.yaml") -> None:
-        """Persist non-secret runtime fields back to settings.yaml."""
-        path = Path(yaml_path)
+        Runtime overrides in ``data/settings.runtime.yaml`` take precedence.
+        This keeps UI edits persistent when ``configs`` is mounted read-only.
+        """
+        merged: dict = {}
+        for candidate in (Path(yaml_path), Path(runtime_yaml_path)):
+            if not candidate.exists():
+                continue
+            with open(candidate, encoding="utf-8") as f:
+                loaded = yaml.safe_load(f) or {}
+            if isinstance(loaded, dict):
+                merged.update(loaded)
+        return cls(**merged)
+
+    def save_yaml(
+        self,
+        yaml_path: str | Path = "configs/settings.yaml",
+        runtime_yaml_path: str | Path = "data/settings.runtime.yaml",
+    ) -> Path:
+        """Persist non-secret runtime fields.
+
+        Preferred target is ``configs/settings.yaml``. If that path is not
+        writable (for example, read-only volume mount), settings are written to
+        ``data/settings.runtime.yaml`` instead.
+        """
+        primary_path = Path(yaml_path)
+        fallback_path = Path(runtime_yaml_path)
+
         existing: dict = {}
-        if path.exists():
-            with open(path, encoding="utf-8") as f:
-                existing = yaml.safe_load(f) or {}
+        if primary_path.exists():
+            with open(primary_path, encoding="utf-8") as f:
+                loaded = yaml.safe_load(f) or {}
+            if isinstance(loaded, dict):
+                existing = loaded
+
         existing["llm_provider"] = self.llm_provider
         existing["agent_model"] = self.agent_model
         existing["orchestrator_model"] = self.orchestrator_model
@@ -120,5 +145,21 @@ class Settings(BaseSettings):
         existing["provider_cache_enabled"] = self.provider_cache_enabled
         existing["tool_result_cache_enabled"] = self.tool_result_cache_enabled
         existing["tool_result_cache_min_identical_observations"] = self.tool_result_cache_min_identical_observations
-        with open(path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(existing, f, default_flow_style=False, allow_unicode=True)
+
+        try:
+            primary_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(primary_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(existing, f, default_flow_style=False, allow_unicode=True)
+            return primary_path
+        except OSError:
+            fallback_existing: dict = {}
+            if fallback_path.exists():
+                with open(fallback_path, encoding="utf-8") as f:
+                    loaded = yaml.safe_load(f) or {}
+                if isinstance(loaded, dict):
+                    fallback_existing = loaded
+            fallback_existing.update(existing)
+            fallback_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(fallback_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(fallback_existing, f, default_flow_style=False, allow_unicode=True)
+            return fallback_path

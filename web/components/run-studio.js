@@ -58,6 +58,145 @@ const EVENT_META = {
   run_cancelled:       { color: "text-amber-400", label: "Cancelled" },
 };
 
+function tryParseJsonString(value) {
+  if (typeof value !== "string") return value;
+  const text = value.trim();
+  if (!text) return value;
+
+  const looksJson =
+    (text.startsWith("{") && text.endsWith("}")) ||
+    (text.startsWith("[") && text.endsWith("]"));
+  if (!looksJson) return value;
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Some payloads are escaped JSON strings (e.g. from nested MCP wrappers).
+    try {
+      const unescaped = text.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+      return JSON.parse(unescaped);
+    } catch {
+      return value;
+    }
+  }
+}
+
+function toCellPreview(value) {
+  if (value === null || value === undefined) return "-";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") return String(value);
+  if (typeof value === "string") return value;
+
+  const oneLine = safeJson(value).replace(/\s+/g, " ").trim();
+  return oneLine.length > 120 ? `${oneLine.slice(0, 120)}...` : oneLine;
+}
+
+function ToolPayloadTable({ value }) {
+  const normalized = tryParseJsonString(value);
+
+  if (normalized == null || normalized === "") {
+    return <div className="rounded bg-black/30 p-2 text-xs text-slate-600">No data</div>;
+  }
+
+  const isPlainObject =
+    normalized && typeof normalized === "object" && !Array.isArray(normalized);
+
+  const isObjectArray =
+    Array.isArray(normalized) &&
+    normalized.length > 0 &&
+    normalized.every((item) => item && typeof item === "object" && !Array.isArray(item));
+
+  if (isObjectArray) {
+    const columns = Array.from(
+      new Set(normalized.flatMap((row) => Object.keys(row || {})))
+    ).slice(0, 8);
+
+    return (
+      <div className="overflow-x-auto rounded border border-white/10 bg-black/20">
+        <table className="min-w-full text-left text-xs text-slate-300">
+          <thead>
+            <tr className="border-b border-white/10 bg-white/[0.02]">
+              {columns.map((col) => (
+                <th key={col} className="px-2 py-1.5 font-medium uppercase tracking-wide text-slate-500">
+                  {col.replace(/_/g, " ")}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {normalized.map((row, idx) => (
+              <tr key={idx} className="border-b border-white/6 last:border-b-0">
+                {columns.map((col) => (
+                  <td key={`${idx}-${col}`} className="max-w-[320px] truncate px-2 py-1.5 align-top" title={toCellPreview(row[col])}>
+                    {toCellPreview(row[col])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  if (isPlainObject) {
+    const entries = Object.entries(normalized);
+    return (
+      <div className="overflow-x-auto rounded border border-white/10 bg-black/20">
+        <table className="min-w-full text-left text-xs text-slate-300">
+          <thead>
+            <tr className="border-b border-white/10 bg-white/[0.02]">
+              <th className="w-40 px-2 py-1.5 font-medium uppercase tracking-wide text-slate-500">Field</th>
+              <th className="px-2 py-1.5 font-medium uppercase tracking-wide text-slate-500">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map(([key, item]) => (
+              <tr key={key} className="border-b border-white/6 last:border-b-0">
+                <td className="px-2 py-1.5 align-top font-mono text-slate-400">{key}</td>
+                <td className="max-w-[460px] truncate px-2 py-1.5 align-top" title={toCellPreview(item)}>
+                  {toCellPreview(item)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  if (Array.isArray(normalized)) {
+    return (
+      <div className="overflow-x-auto rounded border border-white/10 bg-black/20">
+        <table className="min-w-full text-left text-xs text-slate-300">
+          <thead>
+            <tr className="border-b border-white/10 bg-white/[0.02]">
+              <th className="w-16 px-2 py-1.5 font-medium uppercase tracking-wide text-slate-500">#</th>
+              <th className="px-2 py-1.5 font-medium uppercase tracking-wide text-slate-500">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {normalized.map((item, idx) => (
+              <tr key={idx} className="border-b border-white/6 last:border-b-0">
+                <td className="px-2 py-1.5 align-top font-mono text-slate-500">{idx}</td>
+                <td className="max-w-[460px] truncate px-2 py-1.5 align-top" title={toCellPreview(item)}>
+                  {toCellPreview(item)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded border border-white/10 bg-black/20 px-2 py-1.5 text-xs text-slate-300">
+      {String(normalized)}
+    </div>
+  );
+}
+
 /* ─── agent selector ────────────────────────────────────────────────────── */
 
 function AgentSelector({ value, onChange }) {
@@ -304,17 +443,13 @@ function ToolBlock({ event }) {
           {args && (
             <div>
               <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-600">Args</div>
-              <pre className="max-h-36 overflow-auto rounded bg-black/30 p-2 text-xs text-slate-300">
-                {safeJson(args)}
-              </pre>
+              <ToolPayloadTable value={args} />
             </div>
           )}
           {resultPreview && (
             <div>
               <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-600">Result</div>
-              <pre className="max-h-36 overflow-auto rounded bg-black/30 p-2 text-xs text-slate-300">
-                {typeof resultPreview === "string" ? resultPreview : safeJson(resultPreview)}
-              </pre>
+              <ToolPayloadTable value={resultPreview} />
             </div>
           )}
           {screenshotUrls.length > 1 && (

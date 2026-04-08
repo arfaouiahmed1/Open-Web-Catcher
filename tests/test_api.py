@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -142,6 +144,43 @@ def test_ui_pricing_update_persists_and_updates_runtime_settings(client: TestCli
     assert stored["gemini-2.5-flash"]["provider"] == "google"
 
 
+def test_ui_config_update_reports_persist_path(client: TestClient, api_settings: Settings):
+    with patch.object(api_settings.__class__, "save_yaml", return_value=Path("data/settings.runtime.yaml")):
+        response = client.put(
+            "/ui/config",
+            json={
+                "llm_provider": "openai",
+                "agent_model": "gpt-4o-mini",
+                "orchestrator_model": "gpt-4o-mini",
+                "gemini_temperature": 0.4,
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["llm_provider"] == "openai"
+    assert payload["agent_model"] == "gpt-4o-mini"
+    assert payload["config_persisted"] is True
+    assert payload["config_persist_path"].replace("\\", "/").endswith("data/settings.runtime.yaml")
+
+
+def test_ui_config_update_reports_persist_error(client: TestClient, api_settings: Settings):
+    with patch.object(api_settings.__class__, "save_yaml", side_effect=OSError("read-only file system")):
+        response = client.put(
+            "/ui/config",
+            json={
+                "llm_provider": "openrouter",
+                "agent_model": "openai/gpt-4o-mini",
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["llm_provider"] == "openrouter"
+    assert payload["config_persisted"] is False
+    assert "read-only" in payload["config_persist_error"].lower()
+
+
 def test_ui_database_tables_returns_allowlist(client: TestClient):
     response = client.get("/ui/database/tables")
 
@@ -219,6 +258,31 @@ def test_ui_tool_call_returns_result_and_persisted_record(client: TestClient):
     assert response.status_code == 200
     assert response.json()["call_id"] == "tool-call-1"
     assert response.json()["record"]["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_playground_tool_calls_reuse_mcp_session(api_settings: Settings):
+    from src.api import app as api_app
+
+    open_count = 0
+    tool = MagicMock()
+    tool.name = "open_url"
+    tool.ainvoke = AsyncMock(return_value={"ok": True})
+
+    @asynccontextmanager
+    async def fake_agent_tools(profile: str, settings: Settings, observer=None):
+        nonlocal open_count
+        open_count += 1
+        yield [tool]
+
+    with patch.object(api_app, "_settings", api_settings), patch("src.api.app.agent_tools", side_effect=fake_agent_tools):
+        await api_app._close_all_playground_tool_sessions()
+        await api_app._call_mcp_tool("hosting", "open_url", {"url": "https://example.com"}, reuse_playground_session=True)
+        await api_app._call_mcp_tool("hosting", "open_url", {"url": "https://example.com"}, reuse_playground_session=True)
+        await api_app._close_all_playground_tool_sessions()
+
+    assert open_count == 1
+    assert tool.ainvoke.await_count == 2
 
 
 def test_ui_tool_history_returns_repository_payload(client: TestClient):

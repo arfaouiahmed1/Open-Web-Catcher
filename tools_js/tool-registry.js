@@ -90,14 +90,14 @@ function spec(summary, inputExample, outputExample, zodSchema, handlerFactory) {
 
 const TOOL_SPECS = {
   get_page_context: spec(
-    'Compact full-page context with frame tree, media/player signals, forms, overlays, pagination hints, top candidates, and screenshot.',
+    'Use when you need a fast, broad page scan before taking actions. Returns compact context: frame tree, media/player signals, forms, overlays, pagination hints, top candidates, and screenshot.',
     { frame_path: 'root' },
     { ok: true, frame_path: 'root', screenshot_url: 'https://res.cloudinary.com/...', page_summary: { links: 8 } },
     { frame_path: framePathSchema },
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.get_page_context({ ...args, browserWsEndpoint }),
   ),
   query_elements: spec(
-    'Query a compact set of elements in a target frame and return element_ref values for follow-up actions.',
+    'Use when you already know what to target (kind/text/attrs) and need element_ref handles for follow-up actions. Prefer this over full context when narrowing to specific controls.',
     { frame_path: 'root', kind: 'link', text_contains: 'watch', attr_name: 'data-server', visible_only: true, limit: 10 },
     { ok: true, total_matches: 3, matches: [{ kind: 'link', text: 'Watch now', element_ref: '...' }], screenshot_url: 'https://res.cloudinary.com/...' },
     {
@@ -113,7 +113,7 @@ const TOOL_SPECS = {
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.query_elements({ ...args, browserWsEndpoint }),
   ),
   get_element_detail: spec(
-    'Return rich detail for one element, including geometry, attrs, nearby context, and screenshot.',
+    'Use when you need to verify one candidate element before clicking/typing. Returns rich detail including geometry, attrs, nearby context, and screenshot.',
     { frame_path: 'root', element_ref: '...' },
     { ok: true, detail: { tag: 'a', text: 'Watch now' }, screenshot_url: 'https://res.cloudinary.com/...' },
     {
@@ -126,39 +126,52 @@ const TOOL_SPECS = {
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.get_element_detail({ ...args, browserWsEndpoint }),
   ),
   get_media_state: spec(
-    'Return video/player state for a frame without dumping the full page context.',
+    'Use when debugging playback readiness or player libraries in one frame. Returns video/player state without full page context.',
     { frame_path: 'root.0' },
     { ok: true, media_state: { video_count: 1 }, screenshot_url: 'https://res.cloudinary.com/...' },
     { frame_path: framePathSchema },
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.get_media_state({ ...args, browserWsEndpoint }),
   ),
   get_frame_tree: spec(
-    'Return the full frame tree with deterministic frame_path values and purpose hints.',
+    'Use when iframe routing is unclear and you need deterministic frame_path values. Returns full frame tree with purpose hints.',
     {},
     { ok: true, frame_tree: [{ frame_path: 'root.0', candidate_purpose: 'player' }], screenshot_url: 'https://res.cloudinary.com/...' },
     {},
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.get_frame_tree({ ...args, browserWsEndpoint }),
   ),
   open_url: spec(
-    'Navigate to a URL and return redirect/HTTP details with a screenshot.',
-    { url: 'https://example.com/watch', wait_until: 'networkidle2', timeout_ms: 30000 },
+    'Use for first navigation to a destination URL. Includes challenge-page detection and optional retry/wait handling (Cloudflare/captcha-like pages) plus redirect/HTTP details and screenshot.',
+    {
+      url: 'https://example.com/watch',
+      wait_until: 'networkidle2',
+      timeout_ms: 30000,
+      challenge_wait_ms: 6000,
+      retry_on_challenge: true,
+      max_challenge_retries: 1,
+    },
     { ok: true, final_url: 'https://example.com/watch', screenshot_url: 'https://res.cloudinary.com/...' },
     {
       url: z.string().describe('Full URL to open'),
       wait_until: z.enum(['networkidle0', 'networkidle2', 'domcontentloaded', 'load']).optional().default('networkidle2'),
       timeout_ms: z.number().optional().default(30000),
+      challenge_wait_ms: z.number().optional().default(6000)
+        .describe('How long to wait for challenge pages (Cloudflare/captcha-like) to clear before retrying'),
+      retry_on_challenge: z.boolean().optional().default(true)
+        .describe('If true, waits for challenge clearance and retries navigation when challenge markers are detected'),
+      max_challenge_retries: z.number().optional().default(1)
+        .describe('Maximum retry count when challenge markers persist'),
     },
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.open_url({ ...args, browserWsEndpoint }),
   ),
   go_back: spec(
-    'Navigate browser history backward and return the resulting state with a screenshot.',
+    'Use when a prior click/navigation overshot and you need browser-history back navigation with resulting state and screenshot.',
     { timeout_ms: 30000 },
     { ok: true, final_url: 'https://example.com/list', screenshot_url: 'https://res.cloudinary.com/...' },
     { timeout_ms: z.number().optional().default(30000) },
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.go_back({ ...args, browserWsEndpoint }),
   ),
   scroll_page: spec(
-    'Scroll within the target frame and return the updated page state with a screenshot.',
+    'Use when revealing lazy-loaded content in a frame. Scrolls by amount/direction and returns updated state with screenshot.',
     { frame_path: 'root', direction: 'down', amount: 800, behavior: 'auto' },
     { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
     {
@@ -170,7 +183,7 @@ const TOOL_SPECS = {
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.scroll_page({ ...args, browserWsEndpoint }),
   ),
   scroll_to_element: spec(
-    'Scroll a target element into view using element_ref or locator fields.',
+    'Use when target exists but is off-screen. Scrolls the chosen element into view using element_ref or locator fields.',
     { frame_path: 'root', element_ref: '...' },
     { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
     {
@@ -183,7 +196,7 @@ const TOOL_SPECS = {
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.scroll_to_element({ ...args, browserWsEndpoint }),
   ),
   wait_for_page_state: spec(
-    'Wait for a specific page condition such as network idle, selector present, text present, video ready, or a challenge page clearing.',
+    'Use to synchronize timing before the next step. Waits for network idle, selector/text presence, video readiness, or challenge-page clearing.',
     { frame_path: 'root', mode: 'network_idle', timeout_ms: 10000 },
     { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
     {
@@ -196,35 +209,35 @@ const TOOL_SPECS = {
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.wait_for_page_state({ ...args, browserWsEndpoint }),
   ),
   click_element: spec(
-    'Click an element by element_ref.',
+    'Use for safest click flow after query_elements/get_page_context, because element_ref includes frame and DOM snapshot context.',
     { frame_path: 'root', element_ref: '...', wait_ms: 1500 },
     { ok: true, observed_change: { navigated: false }, screenshot_url: 'https://res.cloudinary.com/...' },
     { frame_path: framePathSchema, element_ref: elementRefSchema, wait_ms: waitMsSchema },
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.click_element({ ...args, browserWsEndpoint }),
   ),
   click_css: spec(
-    'Click an element by CSS selector.',
+    'Use when you have a stable CSS selector and do not need element_ref-based stale-check behavior.',
     { frame_path: 'root', selector: '.server-button', wait_ms: 1500 },
     { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
     { frame_path: framePathSchema, selector: z.string(), wait_ms: waitMsSchema },
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.click_css({ ...args, browserWsEndpoint }),
   ),
   click_text: spec(
-    'Click the first matching element by visible text.',
+    'Use when button/link text is stable but selectors are noisy. Clicks the first visible-text match.',
     { frame_path: 'root', text: 'Watch now', wait_ms: 1500 },
     { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
     { frame_path: framePathSchema, text: z.string(), wait_ms: waitMsSchema },
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.click_text({ ...args, browserWsEndpoint }),
   ),
   click_xpath: spec(
-    'Click the first matching element by XPath.',
+    'Use only when XPath is the most reliable locator (dynamic classes/selectors). Clicks the first XPath match.',
     { frame_path: 'root', xpath: '//button[1]', wait_ms: 1500 },
     { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
     { frame_path: framePathSchema, xpath: z.string(), wait_ms: waitMsSchema },
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.click_xpath({ ...args, browserWsEndpoint }),
   ),
   click_checkbox: spec(
-    'Toggle a checkbox to the desired checked state.',
+    'Use for idempotent checkbox state changes. Ensures checked=true/false instead of blindly toggling.',
     { frame_path: 'root', selector: 'input[type=checkbox]', checked: true, wait_ms: 1000 },
     { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
     {
@@ -239,7 +252,7 @@ const TOOL_SPECS = {
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.click_checkbox({ ...args, browserWsEndpoint }),
   ),
   click_radio: spec(
-    'Select a radio button by ref or locator.',
+    'Use to set a radio choice by element_ref or locator.',
     { frame_path: 'root', selector: 'input[type=radio]', wait_ms: 1000 },
     { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
     {
@@ -253,7 +266,7 @@ const TOOL_SPECS = {
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.click_radio({ ...args, browserWsEndpoint }),
   ),
   type_into: spec(
-    'Type into an input/textarea by ref or locator.',
+    'Use to fill text inputs or textareas. Clears existing value, types with small delay, then returns updated state.',
     { frame_path: 'root', selector: 'input[name=q]', value: 'team name', wait_ms: 500 },
     { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
     {
@@ -268,7 +281,7 @@ const TOOL_SPECS = {
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.type_into({ ...args, browserWsEndpoint }),
   ),
   select_option: spec(
-    'Select an option in a dropdown by text or value.',
+    'Use for <select> dropdowns when option value/text is known. Supports selection by value or fuzzy text.',
     { frame_path: 'root', selector: 'select', option_text: 'Server 2', wait_ms: 1000 },
     { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
     {
@@ -284,7 +297,7 @@ const TOOL_SPECS = {
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.select_option({ ...args, browserWsEndpoint }),
   ),
   play_media: spec(
-    'Start playback by targeting a control or a video element.',
+    'Use when media is visible but not playing. Attempts click-then-play fallback on controls/video elements.',
     { frame_path: 'root.0', selector: 'video', wait_ms: 1500 },
     { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
     {
@@ -298,7 +311,7 @@ const TOOL_SPECS = {
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.play_media({ ...args, browserWsEndpoint }),
   ),
   swipe_region: spec(
-    'Swipe or drag inside the viewport using start coordinates and deltas.',
+    'Use for drag/swipe gestures (carousels, timelines, sliders) with explicit coordinates and deltas.',
     { frame_path: 'root', x: 960, y: 540, delta_x: -400, delta_y: 0, steps: 12, wait_ms: 500 },
     { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
     {
@@ -313,7 +326,7 @@ const TOOL_SPECS = {
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.swipe_region({ ...args, browserWsEndpoint }),
   ),
   click_coordinates: spec(
-    'Click a viewport coordinate directly, useful for player overlays and cross-origin iframe controls.',
+    'Use as a fallback when element locators fail (player overlays, canvas, cross-origin iframe hit-targets). Clicks raw viewport coordinates.',
     { frame_path: 'root', x: 960, y: 540, wait_ms: 1500 },
     { ok: true, screenshot_url: 'https://res.cloudinary.com/...' },
     {
@@ -325,7 +338,7 @@ const TOOL_SPECS = {
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.click_coordinates({ ...args, browserWsEndpoint }),
   ),
   capture_streams: spec(
-    'Capture streaming URLs with CDP, DOM, player-object, iframe, and performance evidence.',
+    'Use after playback starts to discover stream URLs. Captures HLS/DASH/MP4 evidence from CDP, DOM, player objects, iframe src, and performance entries.',
     { frame_path: 'root.0', duration_ms: 12000, player_iframe_hint: 'embed.example.com' },
     { ok: true, total_streams: 1, streams: [{ url: 'https://cdn.example.com/master.m3u8', protocol: 'hls' }], screenshot_url: 'https://res.cloudinary.com/...' },
     {

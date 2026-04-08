@@ -6,6 +6,7 @@ import asyncio
 import json
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Literal
 
@@ -46,6 +47,20 @@ logger = get_logger(__name__)
 _settings: Settings | None = None
 
 
+@dataclass
+class _PlaygroundToolSession:
+    profile: str
+    manager: Any
+    tools: list[Any]
+    opened_at: float
+    last_used_at: float
+
+
+_PLAYGROUND_SESSION_TTL_SECONDS = 15 * 60
+_playground_tool_sessions: dict[str, _PlaygroundToolSession] = {}
+_playground_tool_session_lock = asyncio.Lock()
+
+
 class ClassifyRequest(BaseModel):
     url: str
 
@@ -70,6 +85,90 @@ def get_settings() -> Settings:
     if _settings is None:
         _settings = Settings.from_yaml()
     return _settings
+
+
+async def _close_playground_tool_session(profile: str) -> None:
+    session: _PlaygroundToolSession | None = None
+    async with _playground_tool_session_lock:
+        session = _playground_tool_sessions.pop(profile, None)
+
+    if session is None:
+        return
+
+    try:
+        await session.manager.__aexit__(None, None, None)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Failed to close playground MCP session for '%s': %s", profile, exc)
+
+
+async def _close_all_playground_tool_sessions() -> None:
+    profiles: list[str]
+    async with _playground_tool_session_lock:
+        profiles = list(_playground_tool_sessions.keys())
+
+    for profile in profiles:
+        await _close_playground_tool_session(profile)
+
+
+async def _cleanup_expired_playground_tool_sessions() -> None:
+    now = perf_counter()
+    profiles_to_close: list[str] = []
+    async with _playground_tool_session_lock:
+        for profile, session in list(_playground_tool_sessions.items()):
+            if (now - session.last_used_at) >= _PLAYGROUND_SESSION_TTL_SECONDS:
+                profiles_to_close.append(profile)
+
+    for profile in profiles_to_close:
+        await _close_playground_tool_session(profile)
+
+
+async def _get_playground_tools(profile: str, settings: Settings) -> list[Any]:
+    await _cleanup_expired_playground_tool_sessions()
+    now = perf_counter()
+
+    async with _playground_tool_session_lock:
+        existing = _playground_tool_sessions.get(profile)
+        if existing is not None:
+            existing.last_used_at = now
+            return existing.tools
+
+    manager = agent_tools(profile, settings)
+    tools = await manager.__aenter__()
+
+    async with _playground_tool_session_lock:
+        existing = _playground_tool_sessions.get(profile)
+        if existing is None:
+            _playground_tool_sessions[profile] = _PlaygroundToolSession(
+                profile=profile,
+                manager=manager,
+                tools=tools,
+                opened_at=now,
+                last_used_at=now,
+            )
+            return tools
+
+    # Another request initialized this profile first; close this duplicate.
+    await manager.__aexit__(None, None, None)
+    async with _playground_tool_session_lock:
+        surviving = _playground_tool_sessions[profile]
+        surviving.last_used_at = now
+        return surviving.tools
+
+
+async def _invoke_named_tool(tools: list[Any], profile: str, tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+    tool = next((item for item in tools if item.name == tool_name), None)
+    if tool is None:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found for profile '{profile}'")
+
+    result = await tool.ainvoke(args)
+    if isinstance(result, str):
+        try:
+            parsed = json.loads(result)
+        except json.JSONDecodeError:
+            parsed = {"raw": result}
+    else:
+        parsed = result
+    return parsed if isinstance(parsed, dict) else {"result": parsed}
 
 
 def _cors_origins(settings: Settings) -> list[str]:
@@ -182,6 +281,7 @@ async def lifespan(app: FastAPI):
         settings.agent_model,
     )
     yield
+    await _close_all_playground_tool_sessions()
     logger.info("Open Web Catcher API shutting down")
 
 
@@ -318,21 +418,33 @@ async def _background_agent(run_id: str, agent: str, url: str) -> None:
         logger.exception("Background agent run failed: %s", exc)
 
 
-async def _call_mcp_tool(profile: str, tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+async def _call_mcp_tool(
+    profile: str,
+    tool_name: str,
+    args: dict[str, Any],
+    *,
+    reuse_playground_session: bool = False,
+) -> dict[str, Any]:
     settings = get_settings()
+
+    if reuse_playground_session:
+        try:
+            tools = await _get_playground_tools(profile, settings)
+            return await _invoke_named_tool(tools, profile, tool_name, args)
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Playground MCP call failed for profile '%s', reopening session once: %s",
+                profile,
+                exc,
+            )
+            await _close_playground_tool_session(profile)
+            tools = await _get_playground_tools(profile, settings)
+            return await _invoke_named_tool(tools, profile, tool_name, args)
+
     async with agent_tools(profile, settings) as tools:
-        tool = next((item for item in tools if item.name == tool_name), None)
-        if tool is None:
-            raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found for profile '{profile}'")
-        result = await tool.ainvoke(args)
-        if isinstance(result, str):
-            try:
-                parsed = json.loads(result)
-            except json.JSONDecodeError:
-                parsed = {"raw": result}
-        else:
-            parsed = result
-        return parsed if isinstance(parsed, dict) else {"result": parsed}
+        return await _invoke_named_tool(tools, profile, tool_name, args)
 
 
 def _persist_tool_playground_call(
@@ -378,7 +490,12 @@ async def _execute_tool_call_with_telemetry(
     call_id = str(uuid.uuid4())
     started = perf_counter()
     try:
-        result = await _call_mcp_tool(profile, tool_name, args)
+        result = await _call_mcp_tool(
+            profile,
+            tool_name,
+            args,
+            reuse_playground_session=(origin == "playground"),
+        )
     except HTTPException as exc:
         _persist_tool_playground_call(
             call_id=call_id,
@@ -867,25 +984,39 @@ class PricingSyncRequest(BaseModel):
     max_models: int | None = None
 
 
+def _ui_config_payload(
+    settings: Settings,
+    *,
+    config_persisted: bool | None = None,
+    config_persist_path: str = "",
+    config_persist_error: str = "",
+) -> dict[str, Any]:
+    payload = {
+        "llm_provider": settings.llm_provider,
+        "agent_model": settings.agent_model,
+        "orchestrator_model": settings.orchestrator_model,
+        "gemini_temperature": settings.gemini_temperature,
+        "provider_cache_enabled": settings.provider_cache_enabled,
+        "tool_result_cache_enabled": settings.tool_result_cache_enabled,
+        "tool_result_cache_min_identical_observations": settings.tool_result_cache_min_identical_observations,
+        "api_keys": {
+            "google": bool(settings.google_api_key),
+            "openai": bool(settings.openai_api_key),
+            "anthropic": bool(settings.anthropic_api_key),
+            "openrouter": bool(settings.openrouter_api_key),
+        },
+    }
+    if config_persisted is not None:
+        payload["config_persisted"] = config_persisted
+        payload["config_persist_path"] = config_persist_path
+        payload["config_persist_error"] = config_persist_error
+    return payload
+
+
 @app.get("/ui/config")
 def ui_get_config():
     """Return current LLM provider/model config and API key status."""
-    s = get_settings()
-    return {
-        "llm_provider": s.llm_provider,
-        "agent_model": s.agent_model,
-        "orchestrator_model": s.orchestrator_model,
-        "gemini_temperature": s.gemini_temperature,
-        "provider_cache_enabled": s.provider_cache_enabled,
-        "tool_result_cache_enabled": s.tool_result_cache_enabled,
-        "tool_result_cache_min_identical_observations": s.tool_result_cache_min_identical_observations,
-        "api_keys": {
-            "google":      bool(s.google_api_key),
-            "openai":      bool(s.openai_api_key),
-            "anthropic":   bool(s.anthropic_api_key),
-            "openrouter":  bool(s.openrouter_api_key),
-        },
-    }
+    return _ui_config_payload(get_settings())
 
 
 @app.put("/ui/config")
@@ -909,11 +1040,22 @@ def ui_update_config(body: ModelConfigRequest):
             1,
             int(body.tool_result_cache_min_identical_observations),
         )
+    persist_path = ""
+    persist_error = ""
+    config_persisted = True
     try:
-        s.save_yaml()
+        persist_path = str(s.save_yaml())
     except Exception as exc:
-        logger.warning("Could not persist settings.yaml: %s", exc)
-    return ui_get_config()
+        config_persisted = False
+        persist_error = str(exc)
+        logger.warning("Could not persist runtime settings: %s", exc)
+
+    return _ui_config_payload(
+        s,
+        config_persisted=config_persisted,
+        config_persist_path=persist_path,
+        config_persist_error=persist_error,
+    )
 
 
 @app.get("/ui/pricing")

@@ -11,18 +11,82 @@ import {
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const CHALLENGE_TEXT_MARKERS = [
+  'cloudflare',
+  'cf-challenge',
+  'challenge-platform',
+  'just a moment',
+  'checking your browser',
+  'verify you are human',
+  'security check',
+  'captcha',
+  'attention required',
+];
+
+async function readAccessState(page, frame) {
+  return detectAccessStateFromSignals({
+    title: await page.title().catch(() => ''),
+    textSample: await frame.evaluate(() => (document.body?.innerText || '').slice(0, 1600)).catch(() => ''),
+    htmlSample: await frame.evaluate(() => (document.documentElement?.outerHTML || '').slice(0, 2000)).catch(() => ''),
+    url: page.url(),
+  });
+}
+
+async function waitForChallengeClear(frame, timeoutMs) {
+  if (!(timeoutMs > 0)) {
+    return { waited: false, cleared: false, timeout_ms: timeoutMs, error: null };
+  }
+
+  try {
+    await frame.waitForFunction(
+      (patterns) => {
+        const bodyText = (document.body?.innerText || '').toLowerCase();
+        const html = (document.documentElement?.outerHTML || '').toLowerCase();
+        const title = (document.title || '').toLowerCase();
+        const haystack = `${title}\n${bodyText}\n${html}`;
+        return !patterns.some((pattern) => haystack.includes(pattern));
+      },
+      { timeout: timeoutMs },
+      CHALLENGE_TEXT_MARKERS,
+    );
+
+    return { waited: true, cleared: true, timeout_ms: timeoutMs, error: null };
+  } catch (error) {
+    return {
+      waited: true,
+      cleared: false,
+      timeout_ms: timeoutMs,
+      error: error.message,
+    };
+  }
+}
+
 export async function openUrl({
   url,
   wait_until = 'networkidle2',
   timeout_ms = 30000,
+  challenge_wait_ms = 6000,
+  retry_on_challenge = true,
+  max_challenge_retries = 1,
   browserWsEndpoint,
 } = {}) {
   return withBrowserSession(browserWsEndpoint, async ({ browser, page }) => {
     const tabs = trackNewTabs(browser);
     const before = await capturePageSnapshot(page, 'root');
     const redirect_chain = [];
+    const navigation_attempts = [];
+    const retriesAllowed = Math.max(0, Number.parseInt(String(max_challenge_retries || 0), 10) || 0);
+    const shouldRetryOnChallenge = Boolean(retry_on_challenge);
     let http_status = null;
     let final_error = null;
+    let challengeHandling = {
+      challenge_detected: false,
+      waited: false,
+      cleared: false,
+      retries_used: 0,
+      retries_allowed: retriesAllowed,
+      timeout_ms: challenge_wait_ms,
+    };
 
     const responseListener = (response) => {
       const status = response.status();
@@ -32,7 +96,61 @@ export async function openUrl({
 
     page.on('response', responseListener);
     try {
-      await page.goto(url, { waitUntil: wait_until, timeout: timeout_ms });
+      for (let attempt = 0; attempt <= retriesAllowed; attempt += 1) {
+        if (attempt > 0) {
+          challengeHandling.retries_used = Math.max(challengeHandling.retries_used, attempt);
+        }
+
+        const attemptInfo = {
+          attempt: attempt + 1,
+          wait_until,
+          timeout_ms,
+          phase: attempt === 0 ? 'initial' : 'retry',
+        };
+
+        try {
+          const response = await page.goto(url, { waitUntil: wait_until, timeout: timeout_ms });
+          attemptInfo.http_status = response?.status?.() || null;
+          attemptInfo.error = null;
+          final_error = null;
+          if (!http_status && response?.status) {
+            http_status = response.status();
+          }
+        } catch (error) {
+          final_error = error.message;
+          attemptInfo.http_status = null;
+          attemptInfo.error = error.message;
+        }
+
+        const accessState = await readAccessState(page, page.mainFrame());
+        attemptInfo.access_state = accessState;
+        navigation_attempts.push(attemptInfo);
+
+        if (!accessState.challenge_detected) {
+          challengeHandling.challenge_detected = challengeHandling.challenge_detected || accessState.challenge_detected;
+          break;
+        }
+
+        challengeHandling.challenge_detected = true;
+        if (!shouldRetryOnChallenge) {
+          break;
+        }
+
+        const waitResult = await waitForChallengeClear(page.mainFrame(), challenge_wait_ms);
+        challengeHandling.waited = challengeHandling.waited || waitResult.waited;
+        challengeHandling.cleared = waitResult.cleared;
+        challengeHandling.wait_error = waitResult.error;
+        challengeHandling.retries_used = attempt;
+
+        if (waitResult.cleared) {
+          final_error = null;
+          break;
+        }
+
+        if (attempt >= retriesAllowed) {
+          break;
+        }
+      }
     } catch (error) {
       final_error = error.message;
     } finally {
@@ -51,6 +169,11 @@ export async function openUrl({
         final_url: page.url(),
         wait_until,
         timeout_ms,
+        challenge_wait_ms,
+        retry_on_challenge: shouldRetryOnChallenge,
+        max_challenge_retries: retriesAllowed,
+        challenge_handling: challengeHandling,
+        navigation_attempts,
         http_status,
         redirect_chain,
       },
@@ -194,27 +317,11 @@ export async function waitForPageState({
           );
           break;
         case 'challenge_cleared':
-          await resolvedFrame.frame.waitForFunction(
-            (patterns) => {
-              const bodyText = (document.body?.innerText || '').toLowerCase();
-              const html = (document.documentElement?.outerHTML || '').toLowerCase();
-              const title = (document.title || '').toLowerCase();
-              const haystack = `${title}\n${bodyText}\n${html}`;
-              return !patterns.some((pattern) => haystack.includes(pattern));
-            },
-            { timeout: timeout_ms },
-            [
-              'cloudflare',
-              'cf-challenge',
-              'challenge-platform',
-              'just a moment',
-              'checking your browser',
-              'verify you are human',
-              'security check',
-              'captcha',
-              'attention required',
-            ],
-          );
+          await waitForChallengeClear(resolvedFrame.frame, timeout_ms).then((result) => {
+            if (!result.cleared) {
+              throw new Error(result.error || `Challenge markers still present after ${timeout_ms}ms`);
+            }
+          });
           break;
         default:
           throw new Error(`Unknown wait mode '${mode}'`);

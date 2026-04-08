@@ -156,37 +156,44 @@ async def agent_tools(
             details={"profile": profile, "url": url},
         )
 
-    # langchain-mcp-adapters >= 0.1.0 removed context-manager support.
-    # Initialize the client directly and call get_tools() instead.
+    # NOTE:
+    # MultiServerMCPClient.get_tools() intentionally creates a new MCP session
+    # for every tool invocation, which breaks browser continuity (e.g.
+    # open_url -> get_page_context resetting to about:blank in isolated mode).
+    # We instead pin one session for the whole agent_tools() context.
     client = MultiServerMCPClient(
         {profile: {"url": url, "transport": "sse"}}
     )
+    session_manager = None
+    session = None
     try:
         tool_load_timeout = max(1, int(settings.tool_timeout_seconds))
         try:
-            tools = await asyncio.wait_for(client.get_tools(), timeout=tool_load_timeout)
+            if hasattr(client, "session"):
+                session_manager = client.session(profile)
+                session = await asyncio.wait_for(
+                    session_manager.__aenter__(),
+                    timeout=tool_load_timeout,
+                )
+                await asyncio.wait_for(session.initialize(), timeout=tool_load_timeout)
+                tools = await asyncio.wait_for(
+                    load_mcp_tools(session, server_name=profile),
+                    timeout=tool_load_timeout,
+                )
+            else:
+                # Compatibility path for tests or adapter shims that only expose
+                # get_tools(). Real runtime should use the session path above.
+                tools = await asyncio.wait_for(client.get_tools(), timeout=tool_load_timeout)
         except asyncio.TimeoutError:
-            logger.warning(
-                "get_tools() timed out for profile '%s' after %ss; trying session fallback",
-                profile,
-                tool_load_timeout,
-            )
-            try:
-                async with client.session(profile) as session:
-                    tools = await asyncio.wait_for(
-                        asyncio.to_thread(load_mcp_tools, session, server_name=profile),
-                        timeout=tool_load_timeout,
-                    )
-            except Exception as exc:
-                message = f"Timed out loading MCP tools for profile '{profile}' after {tool_load_timeout}s"
-                if observer is not None:
-                    observer.emit(
-                        "tool_session_failed",
-                        message,
-                        status="error",
-                        details={"profile": profile, "timeout_seconds": tool_load_timeout},
-                    )
-                raise RuntimeError(message) from exc
+            message = f"Timed out loading MCP tools for profile '{profile}' after {tool_load_timeout}s"
+            if observer is not None:
+                observer.emit(
+                    "tool_session_failed",
+                    message,
+                    status="error",
+                    details={"profile": profile, "timeout_seconds": tool_load_timeout},
+                )
+            raise RuntimeError(message) from None
 
         tool_names = [t.name for t in tools]
         missing_tools = sorted(REQUIRED_TOOLS_BY_PROFILE[profile] - set(tool_names))
@@ -210,15 +217,22 @@ async def agent_tools(
             )
         yield tools
     finally:
-        # Best-effort cleanup: close all SSE sessions to prevent connection leaks.
-        try:
-            for session in getattr(client, "_sessions", {}).values():
-                try:
-                    await session.__aexit__(None, None, None)
-                except Exception:  # noqa: BLE001
-                    pass
-        except Exception:  # noqa: BLE001
-            pass
+        if session_manager is not None:
+            try:
+                await session_manager.__aexit__(None, None, None)
+            except Exception:  # noqa: BLE001
+                pass
+        else:
+            # Best-effort cleanup for compatibility path that may have created
+            # internal sessions.
+            try:
+                for session in getattr(client, "_sessions", {}).values():
+                    try:
+                        await session.__aexit__(None, None, None)
+                    except Exception:  # noqa: BLE001
+                        pass
+            except Exception:  # noqa: BLE001
+                pass
         if observer is not None:
             observer.emit(
                 "tool_session_closed",

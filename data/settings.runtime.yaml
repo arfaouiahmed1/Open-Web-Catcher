@@ -1,0 +1,16 @@
+agent_model: z-ai/glm-4.5-air:free
+agent_timeout_seconds: 300
+classification_max_tool_calls: 5
+embedded_page_max_tool_calls: 20
+gemini_temperature: 1.0
+hosting_page_max_tool_calls: 20
+ipinfo_token: ''
+landing_page_max_tool_calls: 50
+llm_provider: openrouter
+log_file: data/logs/app.log
+log_level: INFO
+orchestrator_model: z-ai/glm-4.5-air:free
+provider_cache_enabled: true
+tool_result_cache_enabled: true
+tool_result_cache_min_identical_observations: 2
+tool_timeout_seconds: 30

@@ -193,6 +193,9 @@ export default function SettingsPage() {
       const updated = await res.json();
       if (!res.ok) throw new Error(updated.detail || `Status ${res.status}`);
       setConfig(updated);
+      if (updated.config_persisted === false) {
+        setConfigErr(updated.config_persist_error || "Config updated in memory, but could not be persisted to disk.");
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e) {
@@ -430,7 +433,7 @@ export default function SettingsPage() {
                   : <><Save className="mr-1.5 h-3.5 w-3.5" />Apply config</>}
             </Button>
             <p className="text-xs text-slate-600">
-              Changes apply immediately in memory and are persisted to <code className="font-mono">configs/settings.yaml</code>.
+              Changes apply immediately in memory and persist to <code className="font-mono">configs/settings.yaml</code> (or <code className="font-mono">data/settings.runtime.yaml</code> when configs are read-only).
             </p>
           </div>
         </div>
