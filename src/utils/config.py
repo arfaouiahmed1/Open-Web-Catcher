@@ -12,11 +12,19 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    # LLM provider selection: google | openai | anthropic | openrouter
+    llm_provider: str = "google"
+
     orchestrator_model: str = "gemini-2.5-flash-lite"
     agent_model: str = "gemini-2.5-flash"
     gemini_model: str = "gemini-2.5-flash"
     gemini_temperature: float = 0.0
+
     google_api_key: str = ""
+    openai_api_key: str = ""
+    anthropic_api_key: str = ""
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
     observability_enabled: bool = Field(
         default=True,
@@ -82,3 +90,17 @@ class Settings(BaseSettings):
             with open(path, encoding="utf-8") as f:
                 overrides = yaml.safe_load(f) or {}
         return cls(**overrides)
+
+    def save_yaml(self, yaml_path: str | Path = "configs/settings.yaml") -> None:
+        """Persist non-secret runtime fields back to settings.yaml."""
+        path = Path(yaml_path)
+        existing: dict = {}
+        if path.exists():
+            with open(path, encoding="utf-8") as f:
+                existing = yaml.safe_load(f) or {}
+        existing["llm_provider"] = self.llm_provider
+        existing["agent_model"] = self.agent_model
+        existing["orchestrator_model"] = self.orchestrator_model
+        existing["gemini_temperature"] = self.gemini_temperature
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(existing, f, default_flow_style=False, allow_unicode=True)

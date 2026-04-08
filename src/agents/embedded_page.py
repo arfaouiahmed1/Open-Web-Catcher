@@ -91,7 +91,7 @@ class EmbeddedPageAgent:
                         "Compiled layered prompt for embedded page agent",
                         details=compiled_prompt.model_dump(exclude={"content"}),
                     )
-                async with agent_tools("embedded", self.settings) as tools:
+                async with agent_tools("embedded", self.settings, observer=observer) as tools:
                     result = await run_agent_loop(
                         settings=self.settings,
                         llm=self.llm,

@@ -91,7 +91,7 @@ class HostingPageAgent:
                         "Compiled layered prompt for hosting page agent",
                         details=compiled_prompt.model_dump(exclude={"content"}),
                     )
-                async with agent_tools("hosting", self.settings) as tools:
+                async with agent_tools("hosting", self.settings, observer=observer) as tools:
                     result = await run_agent_loop(
                         settings=self.settings,
                         llm=self.llm,

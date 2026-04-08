@@ -15,3 +15,8 @@ This repository now uses:
 - Added persisted evaluation suites and scoring
 - Added first-party token and cost reporting
 - Updated Docker topology to run the web console separately
+
+## 2026-04-08 Debugging Report
+
+- Added full incident report for agent/runtime debugging, MCP fixes, schema compatibility, and quota handling:
+	- [Agent Debugging and Fixes](./2026-04-08-agent-debugging-and-fixes.md)

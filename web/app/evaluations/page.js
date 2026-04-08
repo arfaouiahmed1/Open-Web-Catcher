@@ -1,55 +1,56 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { FlaskConical, Play } from "lucide-react";
 
 import { apiFetch, apiUrl } from "@/lib/api";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/utils";
 import { JsonViewer } from "@/components/json-viewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select } from "@/components/ui/select";
+import { KpiCard } from "@/components/kpi-card";
 
 const MODES = ["hybrid", "synthetic", "mocked", "live"];
 
-export default function EvaluationsPage() {
-  const [suites, setSuites] = useState([]);
-  const [runs, setRuns] = useState([]);
-  const [selectedSuiteId, setSelectedSuiteId] = useState("");
-  const [mode, setMode] = useState("hybrid");
-  const [selectedRun, setSelectedRun] = useState(null);
-  const [isRunning, setIsRunning] = useState(false);
+function statusTone(s) {
+  if (s === "completed" || s === "passed") return "success";
+  if (s === "running")  return "warning";
+  return "danger";
+}
 
-  useEffect(() => {
-    async function load() {
-      const [suitePayload, runPayload] = await Promise.all([
-        apiFetch("/ui/evaluations/suites"),
-        apiFetch("/ui/evaluations/runs?limit=20")
-      ]);
-      setSuites(suitePayload.suites || []);
-      setRuns(runPayload.runs || []);
-      if (!selectedSuiteId && suitePayload.suites?.length) {
-        setSelectedSuiteId(String(suitePayload.suites[0].id));
-      }
-    }
-    load();
-  }, [selectedSuiteId]);
+export default function EvaluationsPage() {
+  const [suites, setSuites]             = useState([]);
+  const [runs, setRuns]                 = useState([]);
+  const [selectedSuiteId, setSuiteId]   = useState("");
+  const [mode, setMode]                 = useState("hybrid");
+  const [selectedRun, setSelectedRun]   = useState(null);
+  const [isRunning, setIsRunning]       = useState(false);
+
+  async function loadAll() {
+    const [sp, rp] = await Promise.all([
+      apiFetch("/ui/evaluations/suites"),
+      apiFetch("/ui/evaluations/runs?limit=20"),
+    ]);
+    const s = sp.suites || [];
+    setSuites(s);
+    setRuns(rp.runs || []);
+    if (!selectedSuiteId && s.length) setSuiteId(String(s[0].id));
+  }
+
+  useEffect(() => { loadAll(); }, []); // eslint-disable-line
 
   async function runSuite() {
     setIsRunning(true);
     try {
-      const response = await fetch(apiUrl("/ui/evaluations/run"), {
+      const res = await fetch(apiUrl("/ui/evaluations/run"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          suite_id: selectedSuiteId ? Number(selectedSuiteId) : null,
-          mode
-        })
+        body: JSON.stringify({ suite_id: selectedSuiteId ? Number(selectedSuiteId) : null, mode }),
       });
-      const payload = await response.json();
+      const payload = await res.json();
       setSelectedRun(payload);
-      const refreshed = await apiFetch("/ui/evaluations/runs?limit=20");
-      setRuns(refreshed.runs || []);
+      const rp = await apiFetch("/ui/evaluations/runs?limit=20");
+      setRuns(rp.runs || []);
     } finally {
       setIsRunning(false);
     }
@@ -59,169 +60,147 @@ export default function EvaluationsPage() {
     setSelectedRun(await apiFetch(`/ui/evaluations/runs/${runId}`));
   }
 
-  const activeSuite = suites.find((suite) => String(suite.id) === String(selectedSuiteId)) || suites[0];
+  const activeSuite = suites.find((s) => String(s.id) === String(selectedSuiteId)) || suites[0];
+  const cases = activeSuite?.cases || [];
 
   return (
     <div className="space-y-6">
-      <section className="max-w-4xl">
-        <div className="text-xs uppercase tracking-[0.4em] text-spark">Evaluations</div>
-        <h1 className="mt-3 text-4xl font-semibold">Reliability and hallucination lab</h1>
-        <p className="mt-4 text-base leading-7 text-slate-300">
-          Run synthetic, mocked, hybrid, or live evaluation suites to score evidence discipline, tool usage accuracy, and operational reliability.
+
+      {/* header */}
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-spark">Evaluations</p>
+        <h1 className="mt-1 text-2xl font-semibold text-white">Reliability & hallucination lab</h1>
+        <p className="mt-0.5 text-sm text-slate-500">
+          Run benchmark suites to score evidence discipline, tool accuracy, and operational reliability using DeepEval + OpenRouter.
         </p>
-      </section>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>Launch Suite</CardTitle>
-            <CardDescription>Start a benchmark run and persist the result set into Postgres.</CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px_180px]">
-          <Select value={selectedSuiteId} onChange={(event) => setSelectedSuiteId(event.target.value)}>
-            {suites.map((suite) => (
-              <option key={suite.id} value={suite.id}>
-                {suite.name}
-              </option>
-            ))}
-          </Select>
-          <Select value={mode} onChange={(event) => setMode(event.target.value)}>
-            {MODES.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </Select>
+      {/* launch card */}
+      <div className="rounded-xl border border-white/8 bg-white/[0.03] p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <FlaskConical className="h-4 w-4 text-spark" />
+          <span className="text-sm font-semibold text-white">Launch suite</span>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <select
+            value={selectedSuiteId}
+            onChange={(e) => setSuiteId(e.target.value)}
+            className="flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-300 focus:border-signal/50 focus:outline-none"
+          >
+            {suites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {!suites.length && <option>No suites available</option>}
+          </select>
+          <select
+            value={mode}
+            onChange={(e) => setMode(e.target.value)}
+            className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-300 focus:border-signal/50 focus:outline-none"
+          >
+            {MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
           <Button variant="accent" onClick={runSuite} disabled={isRunning || !activeSuite}>
-            {isRunning ? "Running..." : "Run evaluation"}
+            <Play className="mr-1.5 h-3.5 w-3.5" />
+            {isRunning ? "Running…" : "Run evaluation"}
           </Button>
-        </CardContent>
-      </Card>
+        </div>
 
-      {activeSuite ? (
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle>{activeSuite.name}</CardTitle>
-              <CardDescription>{activeSuite.description}</CardDescription>
+        {activeSuite && (
+          <div className="border-t border-white/6 pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium text-white">{activeSuite.name}</span>
+              {activeSuite.description && (
+                <span className="text-xs text-slate-500">{activeSuite.description}</span>
+              )}
+              <Badge tone="signal" className="ml-auto">{activeSuite.mode || mode}</Badge>
             </div>
-            <Badge tone="signal">{activeSuite.mode}</Badge>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Cases" value={formatNumber((activeSuite.cases || []).length)} />
-            <MetricCard
-              label="Synthetic"
-              value={formatNumber((activeSuite.cases || []).filter((item) => item.mode === "synthetic").length)}
-            />
-            <MetricCard
-              label="Mocked"
-              value={formatNumber((activeSuite.cases || []).filter((item) => item.mode === "mocked").length)}
-            />
-            <MetricCard
-              label="Live Targets"
-              value={formatNumber((activeSuite.cases || []).filter((item) => item.mode === "live").length)}
-            />
-          </CardContent>
-        </Card>
-      ) : null}
+            <div className="mt-3 grid gap-3 sm:grid-cols-4">
+              <KpiCard label="Total cases"  value={formatNumber(cases.length)} />
+              <KpiCard label="Synthetic"    value={formatNumber(cases.filter((c) => c.mode === "synthetic").length)} />
+              <KpiCard label="Mocked"       value={formatNumber(cases.filter((c) => c.mode === "mocked").length)} />
+              <KpiCard label="Live targets" value={formatNumber(cases.filter((c) => c.mode === "live").length)} />
+            </div>
+          </div>
+        )}
+      </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle>Recent Benchmark Runs</CardTitle>
-              <CardDescription>Persisted suite results with success, hallucination, and reliability scores.</CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {runs.length ? (
-              runs.map((run) => (
-                <button
-                  key={run.run_id}
-                  type="button"
-                  onClick={() => inspectRun(run.run_id)}
-                  className="w-full rounded-[24px] border border-white/10 bg-black/20 p-4 text-left transition hover:border-signal/50 hover:bg-black/30"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="font-medium text-white">{run.name || run.run_id}</div>
-                      <div className="mt-1 text-xs text-slate-500">{run.run_id}</div>
-                    </div>
-                    <Badge tone={run.status === "completed" ? "success" : run.status === "running" ? "warning" : "danger"}>
-                      {run.status}
-                    </Badge>
-                  </div>
-                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-slate-300">
-                    <div>Success {formatPercent(run.success_rate || 0)}</div>
-                    <div>Hallucination {formatPercent(run.hallucination_rate || 0)}</div>
-                    <div>Tool Accuracy {formatPercent(run.tool_accuracy_rate || 0)}</div>
-                    <div>Reliability {formatPercent(run.reliability_rate || 0)}</div>
-                  </div>
-                </button>
-              ))
-            ) : (
-              <div className="rounded-[24px] border border-dashed border-white/10 p-8 text-sm text-slate-500">
-                No evaluation runs yet.
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      {/* runs + results */}
+      <div className="grid gap-5 xl:grid-cols-[320px_1fr]">
 
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle>Selected Result</CardTitle>
-              <CardDescription>Case-level assertion outcomes, latency, and cost breakdowns.</CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {selectedRun ? (
-              <>
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <MetricCard label="Success" value={formatPercent(selectedRun.success_rate || 0)} />
-                  <MetricCard label="Hallucination" value={formatPercent(selectedRun.hallucination_rate || 0)} />
-                  <MetricCard label="Tool Accuracy" value={formatPercent(selectedRun.tool_accuracy_rate || 0)} />
-                  <MetricCard label="Reliability" value={formatPercent(selectedRun.reliability_rate || 0)} />
+        {/* run list */}
+        <div className="rounded-xl border border-white/8 bg-white/[0.03] overflow-hidden">
+          <div className="border-b border-white/6 px-4 py-3">
+            <span className="text-xs font-semibold text-white">Recent runs</span>
+          </div>
+          <div className="divide-y divide-white/4">
+            {runs.length ? runs.map((run) => (
+              <button
+                key={run.run_id}
+                onClick={() => inspectRun(run.run_id)}
+                className="w-full px-4 py-3 text-left transition-colors hover:bg-white/[0.04]"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-white truncate">{run.name || run.run_id?.slice(0, 12) + "…"}</span>
+                  <Badge tone={statusTone(run.status)}>{run.status}</Badge>
                 </div>
-                <div className="grid gap-3">
-                  {(selectedRun.case_results || []).map((caseResult, index) => (
-                    <div key={`${caseResult.case_name}-${index}`} className="rounded-[24px] border border-white/10 bg-black/20 p-4">
-                      <div className="flex items-center justify-between gap-3">
+                <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500">
+                  <span>Pass {formatPercent(run.success_rate || 0)}</span>
+                  <span>Halluc. {formatPercent(run.hallucination_rate || 0)}</span>
+                  <span>Tools {formatPercent(run.tool_accuracy_rate || 0)}</span>
+                  <span>Reliability {formatPercent(run.reliability_rate || 0)}</span>
+                </div>
+              </button>
+            )) : (
+              <div className="px-4 py-8 text-center text-sm text-slate-600">No evaluation runs yet</div>
+            )}
+          </div>
+        </div>
+
+        {/* selected result */}
+        <div className="space-y-4">
+          {selectedRun ? (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <KpiCard label="Pass rate"     value={formatPercent(selectedRun.success_rate || 0)}       accent="text-surge" />
+                <KpiCard label="Hallucination" value={formatPercent(selectedRun.hallucination_rate || 0)} accent={(selectedRun.hallucination_rate || 0) > 0.2 ? "text-ember" : undefined} />
+                <KpiCard label="Tool accuracy" value={formatPercent(selectedRun.tool_accuracy_rate || 0)} />
+                <KpiCard label="Reliability"   value={formatPercent(selectedRun.reliability_rate || 0)} />
+              </div>
+
+              <div className="rounded-xl border border-white/8 bg-white/[0.03] overflow-hidden">
+                <div className="border-b border-white/6 px-4 py-3 text-xs font-semibold text-white">Case results</div>
+                <div className="divide-y divide-white/4">
+                  {(selectedRun.case_results || []).map((c, i) => (
+                    <div key={`${c.case_name}-${i}`} className="px-4 py-3">
+                      <div className="flex items-center justify-between gap-2">
                         <div>
-                          <div className="font-medium text-white">{caseResult.case_name || `Case ${index + 1}`}</div>
-                          <div className="mt-1 text-xs text-slate-500">{caseResult.target_type}</div>
+                          <div className="text-sm font-medium text-white">{c.case_name || `Case ${i + 1}`}</div>
+                          <div className="mt-0.5 text-xs text-slate-600">{c.target_type}</div>
                         </div>
-                        <Badge tone={caseResult.status === "passed" ? "success" : "danger"}>{caseResult.status}</Badge>
+                        <Badge tone={statusTone(c.status)}>{c.status}</Badge>
                       </div>
-                      <div className="mt-4 grid gap-3 text-sm text-slate-300 md:grid-cols-2">
-                        <div>Latency {Number(caseResult.latency_ms || 0).toFixed(1)}ms</div>
-                        <div>Cost {formatCurrency(caseResult.total_cost_usd || 0)}</div>
-                        <div>Hallucination score {formatPercent(caseResult.hallucination_score || 0)}</div>
-                        <div>Tool accuracy {formatPercent(caseResult.tool_accuracy_score || 0)}</div>
+                      <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-slate-500 sm:grid-cols-4">
+                        <span>Latency {Number(c.latency_ms || 0).toFixed(0)}ms</span>
+                        <span>Cost {formatCurrency(c.total_cost_usd || 0)}</span>
+                        <span>Halluc. {formatPercent(c.hallucination_score || 0)}</span>
+                        <span>Tools {formatPercent(c.tool_accuracy_score || 0)}</span>
                       </div>
                     </div>
                   ))}
+                  {!(selectedRun.case_results || []).length && (
+                    <div className="px-4 py-6 text-center text-sm text-slate-600">No case results</div>
+                  )}
                 </div>
-                <JsonViewer label="Evaluation Run" value={selectedRun} />
-              </>
-            ) : (
-              <div className="rounded-[24px] border border-dashed border-white/10 p-8 text-sm text-slate-500">
-                Select a run or start a new benchmark to inspect its case results.
               </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
 
-function MetricCard({ label, value }) {
-  return (
-    <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
-      <div className="text-xs uppercase tracking-[0.3em] text-slate-500">{label}</div>
-      <div className="mt-3 text-2xl font-semibold text-white">{value}</div>
+              <JsonViewer label="Raw result" value={selectedRun} />
+            </>
+          ) : (
+            <div className="flex h-48 items-center justify-center rounded-xl border border-dashed border-white/8 text-sm text-slate-600">
+              Select a run to inspect its case-level results
+            </div>
+          )}
+        </div>
+      </div>
+
     </div>
   );
 }

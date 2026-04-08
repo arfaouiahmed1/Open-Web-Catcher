@@ -1,7 +1,10 @@
 # Open Web Catcher — runtime configuration
 # These values override .env defaults. Keep secrets in .env.
 
-# LLM models
+# LLM provider: google | openai | anthropic | openrouter
+llm_provider: "google"
+
+# Models (override per provider in the operator console or here)
 orchestrator_model: "gemini-2.5-flash-lite"
 agent_model: "gemini-2.5-flash"
 gemini_temperature: 1.0

@@ -98,14 +98,15 @@ const TOOL_SPECS = {
   ),
   query_elements: spec(
     'Query a compact set of elements in a target frame and return element_ref values for follow-up actions.',
-    { frame_path: 'root', kind: 'link', text_contains: 'watch', visible_only: true, limit: 10 },
+    { frame_path: 'root', kind: 'link', text_contains: 'watch', attr_name: 'data-server', visible_only: true, limit: 10 },
     { ok: true, total_matches: 3, matches: [{ kind: 'link', text: 'Watch now', element_ref: '...' }], screenshot_url: 'https://res.cloudinary.com/...' },
     {
       frame_path: framePathSchema,
       kind: z.enum(['link', 'button', 'input', 'checkbox', 'radio', 'select', 'video', 'iframe', 'form', 'tab', 'overlay']).optional(),
       text_contains: z.string().optional().default(''),
       href_contains: z.string().optional().default(''),
-      attr: z.object({ name: z.string(), value_contains: z.string().optional().default('') }).optional().nullable(),
+      attr_name: z.string().optional().default(''),
+      attr_value_contains: z.string().optional().default(''),
       visible_only: z.boolean().optional().default(true),
       limit: z.number().optional().default(20),
     },

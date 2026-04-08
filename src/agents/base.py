@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from typing import TYPE_CHECKING, Annotated, Any, Callable, TypedDict
 
@@ -95,6 +96,25 @@ def _extract_usage(usage: Any) -> tuple[int, int]:
     return input_tokens, output_tokens
 
 
+def _extract_retry_seconds(error_text: str) -> int | None:
+    """Best-effort parsing of retry delay hints from provider error text."""
+    if not error_text:
+        return None
+    match = re.search(r"retry in\s+([0-9]+(?:\.[0-9]+)?)s", error_text, flags=re.IGNORECASE)
+    if match:
+        try:
+            return int(float(match.group(1)))
+        except ValueError:
+            return None
+    match = re.search(r"'retryDelay'\s*:\s*'([0-9]+)s'", error_text)
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+    return None
+
+
 def _assert_not_cancelled(observer: RunObserver | None, phase: str) -> None:
     if observer is None or not observer.is_cancel_requested():
         return
@@ -132,30 +152,65 @@ async def _invoke_tool(tool: BaseTool, tool_args: dict[str, Any]) -> Any:
         return await asyncio.to_thread(tool.invoke, tool_args)
 
 
+_PROVIDER_CANONICAL = {
+    "google": "google_genai",
+    "openai": "openai",
+    "anthropic": "anthropic",
+    "openrouter": "openrouter",
+}
+
+
 def build_llm(
     settings: Settings,
     temperature: float | None = None,
     model_override: str | None = None,
-) -> ChatGoogleGenerativeAI:
-    """Build a Gemini LLM instance."""
+):
+    """Build an LLM instance for the configured provider.
+
+    Imports for non-default providers are deferred so that the container
+    works with only langchain-google-genai installed (the default).
+    """
     model_name = model_override or settings.agent_model
+    temp = temperature if temperature is not None else settings.gemini_temperature
+    provider = (settings.llm_provider or "google").lower()
+
+    if provider == "openai":
+        from langchain_openai import ChatOpenAI  # noqa: PLC0415
+        return ChatOpenAI(
+            model=model_name,
+            api_key=settings.openai_api_key or None,
+            temperature=temp,
+        )
+
+    if provider == "anthropic":
+        from langchain_anthropic import ChatAnthropic  # noqa: PLC0415
+        return ChatAnthropic(
+            model=model_name,
+            api_key=settings.anthropic_api_key or None,
+            temperature=temp,
+        )
+
+    if provider == "openrouter":
+        from langchain_openai import ChatOpenAI  # noqa: PLC0415
+        return ChatOpenAI(
+            model=model_name,
+            api_key=settings.openrouter_api_key or None,
+            base_url=settings.openrouter_base_url,
+            temperature=temp,
+        )
+
+    # default: google / gemini
     return ChatGoogleGenerativeAI(
         model=model_name,
         google_api_key=settings.google_api_key,
-        temperature=temperature if temperature is not None else settings.gemini_temperature,
+        temperature=temp,
         convert_system_message_to_human=True,
-        metadata={
-            "provider": "google_genai",
-            "model": model_name,
-            "ls_provider": "google_genai",
-            "ls_model_name": model_name,
-        },
     )
 
 
 async def run_agent_loop(
     settings: Settings,
-    llm: ChatGoogleGenerativeAI,
+    llm: Any,
     tools: list[BaseTool],
     system_prompt: str,
     initial_message: str,
@@ -170,9 +225,18 @@ async def run_agent_loop(
     """Run an async LangGraph agent loop with structured tool calling."""
     tool_map: dict[str, BaseTool] = {tool.name: tool for tool in tools}
     llm_with_tools = llm.bind_tools(tools)
-    model_name = getattr(llm, "model", "") or ""
-    provider = "google_genai"
+    # Support model name attribute differences across providers
+    model_name = (
+        getattr(llm, "model", None)
+        or getattr(llm, "model_name", None)
+        or ""
+    )
+    provider = _PROVIDER_CANONICAL.get(
+        (settings.llm_provider or "google").lower(), "google_genai"
+    )
     pricing = resolve_model_pricing(settings, model_name=model_name, provider=provider)
+    tool_timeout_seconds = max(1, int(settings.tool_timeout_seconds))
+    llm_timeout_seconds = max(5, tool_timeout_seconds * 3)
 
     if observer is not None:
         observer.record_message("system")
@@ -209,10 +273,69 @@ async def run_agent_loop(
                 "owc.tool_calls_made_before_call": state["tool_calls_made"],
             },
         ) as llm_span:
-            response: AIMessage = await llm_with_tools.ainvoke(
-                invocation_messages,
-                config={"run_name": run_name},
-            )
+            if observer is not None:
+                observer.emit(
+                    "llm_turn_started",
+                    "Calling model",
+                    details={
+                        "provider": provider,
+                        "model_name": model_name,
+                        "message_count": message_count,
+                        "timeout_seconds": llm_timeout_seconds,
+                    },
+                )
+            try:
+                response: AIMessage = await asyncio.wait_for(
+                    llm_with_tools.ainvoke(
+                        invocation_messages,
+                        config={"run_name": run_name},
+                    ),
+                    timeout=llm_timeout_seconds,
+                )
+            except asyncio.TimeoutError as exc:
+                if observer is not None:
+                    observer.emit(
+                        "llm_timeout",
+                        f"Model call timed out after {llm_timeout_seconds}s",
+                        status="error",
+                        details={
+                            "provider": provider,
+                            "model_name": model_name,
+                            "message_count": message_count,
+                            "timeout_seconds": llm_timeout_seconds,
+                        },
+                    )
+                raise RuntimeError(f"LLM turn timed out after {llm_timeout_seconds}s") from exc
+            except Exception as exc:
+                error_text = str(exc)
+                is_rate_limited = "RESOURCE_EXHAUSTED" in error_text or "429" in error_text
+                if observer is not None:
+                    if is_rate_limited:
+                        observer.emit(
+                            "llm_rate_limited",
+                            "Provider quota exceeded for model call",
+                            status="error",
+                            details={
+                                "provider": provider,
+                                "model_name": model_name,
+                                "retry_after_seconds": _extract_retry_seconds(error_text),
+                                "error_type": type(exc).__name__,
+                                "error_preview": error_text[:1200],
+                            },
+                        )
+                    else:
+                        observer.emit(
+                            "llm_error",
+                            f"Model call failed: {type(exc).__name__}",
+                            status="error",
+                            details={
+                                "provider": provider,
+                                "model_name": model_name,
+                                "error_type": type(exc).__name__,
+                                "error_preview": error_text[:1200],
+                            },
+                        )
+                raise
             usage = getattr(response, "usage_metadata", None)
             input_tokens, output_tokens = _extract_usage(usage)
             set_span_attributes(
@@ -338,9 +461,22 @@ async def run_agent_loop(
                     tool_status = "error"
                 else:
                     try:
-                        raw = await _invoke_tool(tool, tool_args)
-                        result_content = _serialize_tool_output(raw)
-                        tool_status = "success"
+                        try:
+                            raw = await asyncio.wait_for(
+                                _invoke_tool(tool, tool_args),
+                                timeout=tool_timeout_seconds,
+                            )
+                            result_content = _serialize_tool_output(raw)
+                            tool_status = "success"
+                        except asyncio.TimeoutError:
+                            result_content = json.dumps(
+                                {
+                                    "error": (
+                                        f"Tool '{tool_name}' timed out after {tool_timeout_seconds}s"
+                                    )
+                                }
+                            )
+                            tool_status = "error"
                     except Exception as exc:
                         logger.warning("Tool %s raised: %s", tool_name, exc)
                         result_content = json.dumps({"error": str(exc)})
@@ -420,10 +556,60 @@ async def run_agent_loop(
                 "owc.reason": "budget_exhausted",
             },
         ) as final_span:
-            final: AIMessage = await llm.ainvoke(
-                [*state["messages"], budget_message],
-                config={"run_name": f"{run_name}_final"},
-            )
+            try:
+                final: AIMessage = await asyncio.wait_for(
+                    llm.ainvoke(
+                        [*state["messages"], budget_message],
+                        config={"run_name": f"{run_name}_final"},
+                    ),
+                    timeout=llm_timeout_seconds,
+                )
+            except asyncio.TimeoutError as exc:
+                if observer is not None:
+                    observer.emit(
+                        "llm_timeout",
+                        f"Final model call timed out after {llm_timeout_seconds}s",
+                        status="error",
+                        details={
+                            "provider": provider,
+                            "model_name": model_name,
+                            "timeout_seconds": llm_timeout_seconds,
+                            "phase": "budget_exhausted_final_answer",
+                        },
+                    )
+                raise RuntimeError(f"Final LLM call timed out after {llm_timeout_seconds}s") from exc
+            except Exception as exc:
+                error_text = str(exc)
+                is_rate_limited = "RESOURCE_EXHAUSTED" in error_text or "429" in error_text
+                if observer is not None:
+                    if is_rate_limited:
+                        observer.emit(
+                            "llm_rate_limited",
+                            "Provider quota exceeded for final model call",
+                            status="error",
+                            details={
+                                "provider": provider,
+                                "model_name": model_name,
+                                "retry_after_seconds": _extract_retry_seconds(error_text),
+                                "phase": "budget_exhausted_final_answer",
+                                "error_type": type(exc).__name__,
+                                "error_preview": error_text[:1200],
+                            },
+                        )
+                    else:
+                        observer.emit(
+                            "llm_error",
+                            f"Final model call failed: {type(exc).__name__}",
+                            status="error",
+                            details={
+                                "provider": provider,
+                                "model_name": model_name,
+                                "phase": "budget_exhausted_final_answer",
+                                "error_type": type(exc).__name__,
+                                "error_preview": error_text[:1200],
+                            },
+                        )
+                raise
             final_usage = getattr(final, "usage_metadata", None)
             input_tokens, output_tokens = _extract_usage(final_usage)
             set_span_attributes(

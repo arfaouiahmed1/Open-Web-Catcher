@@ -166,6 +166,16 @@ def _active_trace_row(trace: Any) -> dict[str, Any]:
     }
 
 
+def _emit_failure_once(observer, kind: str, message: str) -> None:
+    """Emit a terminal failure event only when it is not already present at the tail."""
+    trace = run_registry.get(observer.run_id)
+    if trace is not None and trace.events:
+        last = trace.events[-1]
+        if last.kind == kind and last.message == message:
+            return
+    observer.emit(kind, message, status="error")
+
+
 async def _run_selected_agent(agent_key: str, url: str, observer):
     normalized = (agent_key or "").strip().lower()
     settings = get_settings()
@@ -206,10 +216,19 @@ async def _background_workflow(run_id: str, url: str) -> None:
         observability=get_observability_status(settings),
     )
     try:
-        result = await _run_pipeline(url=url, settings=settings, observer=observer)
+        timeout_seconds = max(1, int(settings.agent_timeout_seconds))
+        result = await asyncio.wait_for(
+            _run_pipeline(url=url, settings=settings, observer=observer),
+            timeout=timeout_seconds,
+        )
         await _persist_pipeline_result(result)
+    except asyncio.TimeoutError:
+        message = f"Workflow timed out after {max(1, int(settings.agent_timeout_seconds))}s"
+        _emit_failure_once(observer, "pipeline_failed", message)
+        observer.finish(success=False, failure_mode="TimeoutError")
+        logger.error("Background workflow timed out: run_id=%s timeout=%ss", run_id, max(1, int(settings.agent_timeout_seconds)))
     except Exception as exc:
-        observer.emit("pipeline_failed", str(exc), status="error")
+        _emit_failure_once(observer, "pipeline_failed", str(exc))
         observer.finish(success=False, failure_mode=type(exc).__name__)
         logger.exception("Background workflow failed: %s", exc)
 
@@ -223,15 +242,26 @@ async def _background_agent(run_id: str, agent: str, url: str) -> None:
     )
     observer.set_url(url)
     try:
-        result = await _run_selected_agent(agent, url, observer)
+        timeout_seconds = max(1, int(settings.agent_timeout_seconds))
+        result = await asyncio.wait_for(_run_selected_agent(agent, url, observer), timeout=timeout_seconds)
         success = True
         failure_mode = ""
         if isinstance(result, ExtractionResult):
             success = result.status.value in {"success", "partial"}
             failure_mode = "" if success else result.status.value
         observer.finish(success=success, failure_mode=failure_mode)
+    except asyncio.TimeoutError:
+        message = f"Agent timed out after {max(1, int(settings.agent_timeout_seconds))}s"
+        _emit_failure_once(observer, "agent_failed", message)
+        observer.finish(success=False, failure_mode="TimeoutError")
+        logger.error(
+            "Background agent run timed out: run_id=%s agent=%s timeout=%ss",
+            run_id,
+            agent,
+            max(1, int(settings.agent_timeout_seconds)),
+        )
     except Exception as exc:
-        observer.emit("agent_failed", str(exc), status="error")
+        _emit_failure_once(observer, "agent_failed", str(exc))
         observer.finish(success=False, failure_mode=type(exc).__name__)
         logger.exception("Background agent run failed: %s", exc)
 
@@ -768,6 +798,50 @@ def ui_provider_history(
         return payload
     finally:
         session.close()
+
+
+class ModelConfigRequest(BaseModel):
+    llm_provider: str = "google"
+    agent_model: str = ""
+    orchestrator_model: str = ""
+    gemini_temperature: float | None = None
+
+
+@app.get("/ui/config")
+def ui_get_config():
+    """Return current LLM provider/model config and API key status."""
+    s = get_settings()
+    return {
+        "llm_provider": s.llm_provider,
+        "agent_model": s.agent_model,
+        "orchestrator_model": s.orchestrator_model,
+        "gemini_temperature": s.gemini_temperature,
+        "api_keys": {
+            "google":      bool(s.google_api_key),
+            "openai":      bool(s.openai_api_key),
+            "anthropic":   bool(s.anthropic_api_key),
+            "openrouter":  bool(s.openrouter_api_key),
+        },
+    }
+
+
+@app.put("/ui/config")
+def ui_update_config(body: ModelConfigRequest):
+    """Update active LLM provider/model at runtime and persist to settings.yaml."""
+    s = get_settings()
+    if body.llm_provider:
+        s.llm_provider = body.llm_provider
+    if body.agent_model:
+        s.agent_model = body.agent_model
+    if body.orchestrator_model:
+        s.orchestrator_model = body.orchestrator_model
+    if body.gemini_temperature is not None:
+        s.gemini_temperature = body.gemini_temperature
+    try:
+        s.save_yaml()
+    except Exception as exc:
+        logger.warning("Could not persist settings.yaml: %s", exc)
+    return ui_get_config()
 
 
 @app.get("/ui/pricing")

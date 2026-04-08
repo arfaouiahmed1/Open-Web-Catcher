@@ -1,13 +1,16 @@
 import { cn } from "@/lib/utils";
 
-export function Textarea({ className, ...props }) {
+export function Textarea({ className, label, ...props }) {
   return (
-    <textarea
-      className={cn(
-        "min-h-[140px] w-full rounded-2xl border border-white/10 bg-ink/40 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-signal",
-        className
-      )}
-      {...props}
-    />
+    <div className={label ? "space-y-1.5" : undefined}>
+      {label && <label className="text-xs font-medium text-slate-400">{label}</label>}
+      <textarea
+        className={cn(
+          "min-h-[120px] w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-signal/60 focus:outline-none transition-colors resize-none font-mono",
+          className
+        )}
+        {...props}
+      />
+    </div>
   );
 }

@@ -24,6 +24,7 @@ This documentation matches the current product state:
 - [Quickstart](./setup/quickstart.md)
 - [Configuration](./setup/configuration.md)
 - [Docker](./setup/docker.md)
+- [Troubleshooting](./setup/troubleshooting.md)
 
 ## Tools
 
@@ -39,3 +40,4 @@ This documentation matches the current product state:
 
 - [Migration Notes](./changelog/progress.md)
 - [Known Cleanup Notes](./changelog/issues.md)
+- [2026-04-08 Agent Debugging and Fixes](./changelog/2026-04-08-agent-debugging-and-fixes.md)

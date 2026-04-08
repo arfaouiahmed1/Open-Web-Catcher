@@ -145,3 +145,5 @@ npm run build
 - [Configuration](C:/Users/ahmed/Desktop/PFE%20New%20Test/docs/setup/configuration.md)
 - [Docker Setup](C:/Users/ahmed/Desktop/PFE%20New%20Test/docs/setup/docker.md)
 - [Quickstart](C:/Users/ahmed/Desktop/PFE%20New%20Test/docs/setup/quickstart.md)
+- [Troubleshooting](C:/Users/ahmed/Desktop/PFE%20New%20Test/docs/setup/troubleshooting.md)
+- [2026-04-08 Agent Debugging and Fixes](C:/Users/ahmed/Desktop/PFE%20New%20Test/docs/changelog/2026-04-08-agent-debugging-and-fixes.md)

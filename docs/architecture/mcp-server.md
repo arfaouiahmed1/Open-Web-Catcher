@@ -40,7 +40,7 @@ Python Agent (async context manager)
         │  │                                                          │  │
         │  │  app.post('/mcp/message', async (req, res) => {         │  │
         │  │    const transport = sessions.get(req.query.sessionId); │  │
-        │  │    await transport.handlePostMessage(req, res);          │  │
+        │  │    await transport.handlePostMessage(req, res, req.body);│  │
         │  │  });                                                     │  │
         │  └──────────────────────────────────────────────────────────┘  │
         │                                                                 │
@@ -80,10 +80,11 @@ agent returns "unknown tool" — not a permission error, the tool simply doesn't
 
 ```python
 @asynccontextmanager
-async def agent_tools(profile: str, settings: Settings):
-    url = f"{settings.mcp_server_url}/mcp/{profile}/sse"
-    async with MultiServerMCPClient({profile: {"url": url, "transport": "sse"}}) as client:
-        yield client.get_tools()  # list[BaseTool]
+async def agent_tools(profile: str, settings: Settings, observer: RunObserver | None = None):
+  url = f"{settings.mcp_server_url}/mcp/{profile}/sse"
+  client = MultiServerMCPClient({profile: {"url": url, "transport": "sse"}})
+  tools = await asyncio.wait_for(client.get_tools(), timeout=settings.tool_timeout_seconds)
+  yield tools  # list[BaseTool]
 ```
 
 Usage in an agent:
@@ -94,8 +95,9 @@ async with agent_tools("hosting", self.settings) as tools:
 ```
 
 `langchain-mcp-adapters` (`MultiServerMCPClient`) handles the SSE handshake, converts
-MCP tool schemas to LangChain `BaseTool` objects, and routes `tool.arun()` calls back
-to the MCP server via HTTP POST.
+MCP tool schemas to LangChain `BaseTool` objects, and routes tool calls back
+to the MCP server via HTTP POST. The runtime adds timeout guards and session lifecycle
+events so failures surface explicitly in operator traces.
 
 ---
 

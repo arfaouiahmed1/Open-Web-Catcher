@@ -429,13 +429,17 @@ export function filterElements(elements, {
   text_contains = '',
   href_contains = '',
   attr = null,
+  attr_name = '',
+  attr_value_contains = '',
   visible_only = true,
   limit = 20,
 } = {}) {
   const normalizedText = String(text_contains || '').toLowerCase();
   const normalizedHref = String(href_contains || '').toLowerCase();
-  const attrName = attr?.name ? String(attr.name) : '';
-  const attrValue = attr?.value_contains ? String(attr.value_contains).toLowerCase() : '';
+  const attrName = attr?.name ? String(attr.name) : String(attr_name || '');
+  const attrValue = attr?.value_contains
+    ? String(attr.value_contains).toLowerCase()
+    : String(attr_value_contains || '').toLowerCase();
 
   return elements
     .filter((element) => !kind || element.kind === kind)

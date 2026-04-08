@@ -91,7 +91,7 @@ class LandingPageAgent:
                         "Compiled layered prompt for landing page agent",
                         details=compiled_prompt.model_dump(exclude={"content"}),
                     )
-                async with agent_tools("landing", self.settings) as tools:
+                async with agent_tools("landing", self.settings, observer=observer) as tools:
                     result = await run_agent_loop(
                         settings=self.settings,
                         llm=self.llm,

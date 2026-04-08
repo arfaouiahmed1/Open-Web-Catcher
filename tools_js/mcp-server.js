@@ -136,7 +136,9 @@ app.post('/mcp/message', async (req, res) => {
     return res.status(404).json({ error: `Session not found: ${sessionId}` });
   }
 
-  await session.transport.handlePostMessage(req, res);
+  // SDK >= 1.10 expects parsedBody as the 3rd arg when middleware already
+  // consumed the request stream (e.g., express.json()).
+  await session.transport.handlePostMessage(req, res, req.body);
 });
 
 app.listen(PORT, () => {

@@ -93,7 +93,7 @@ class ClassificationAgent:
                         "Compiled layered prompt for classification agent",
                         details=compiled_prompt.model_dump(exclude={"content"}),
                     )
-                async with agent_tools("classification", self.settings) as tools:
+                async with agent_tools("classification", self.settings, observer=observer) as tools:
                     result = await run_agent_loop(
                         settings=self.settings,
                         llm=self.llm,

@@ -30,6 +30,8 @@ The backend entrypoint is [`src/api/app.py`](../../src/api/app.py). It serves th
 - `POST /ui/runs/{run_id}/cancel`
 - `POST /ui/workflows/run`
 - `POST /ui/agents/test`
+- `GET /ui/config`
+- `PUT /ui/config`
 - `POST /ui/tools/call`
 - `GET /ui/pricing`
 - `PUT /ui/pricing`
@@ -53,6 +55,35 @@ The backend entrypoint is [`src/api/app.py`](../../src/api/app.py). It serves th
 - `cancel_reason`
 
 This is the feed used by the live workflow and agent labs.
+
+Common event kinds include:
+
+- `agent_started`
+- `prompt_compiled`
+- `tool_session_connecting`
+- `tool_session_ready`
+- `tool_session_failed`
+- `tool_session_closed`
+- `llm_turn_started`
+- `llm_response`
+- `llm_timeout`
+- `llm_rate_limited`
+- `llm_error`
+- `tool_call_started`
+- `tool_call_finished`
+- `agent_finished`
+- `agent_failed`
+- `pipeline_started`
+- `pipeline_failed`
+
+## Runtime Model Config
+
+The operator console can read and update active provider/model settings:
+
+- `GET /ui/config`
+- `PUT /ui/config`
+
+`PUT /ui/config` updates in-memory runtime settings and attempts to persist non-secret fields to `configs/settings.yaml`.
 
 ## Cost and Token Accounting
 

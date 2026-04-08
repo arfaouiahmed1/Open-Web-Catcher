@@ -1,13 +1,16 @@
 import { cn } from "@/lib/utils";
 
-export function Input({ className, ...props }) {
+export function Input({ className, label, ...props }) {
   return (
-    <input
-      className={cn(
-        "h-11 w-full rounded-2xl border border-white/10 bg-ink/40 px-4 text-sm text-white outline-none placeholder:text-slate-500 focus:border-signal",
-        className
-      )}
-      {...props}
-    />
+    <div className={label ? "space-y-1.5" : undefined}>
+      {label && <label className="text-xs font-medium text-slate-400">{label}</label>}
+      <input
+        className={cn(
+          "h-9 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm text-white placeholder:text-slate-600 focus:border-signal/60 focus:outline-none transition-colors",
+          className
+        )}
+        {...props}
+      />
+    </div>
   );
 }

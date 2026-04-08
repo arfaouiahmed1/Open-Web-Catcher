@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AlertCircle, Search } from "lucide-react";
 
 import { apiFetch, apiUrl } from "@/lib/api";
 import { formatNumber } from "@/lib/utils";
@@ -8,163 +9,136 @@ import { DataTable } from "@/components/data-table";
 import { JsonViewer } from "@/components/json-viewer";
 import { KpiCard } from "@/components/kpi-card";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 
-const SAMPLE_URLS = `https://cdn.example.com/live/master.m3u8
-https://edge.example.net/channel/index.m3u8`;
+const SAMPLE = `https://cdn.example.com/live/master.m3u8\nhttps://edge.example.net/channel/index.m3u8`;
 
 export default function ProvidersPage() {
-  const [urlsValue, setUrlsValue] = useState(SAMPLE_URLS);
-  const [resultRows, setResultRows] = useState([]);
-  const [resultStats, setResultStats] = useState({});
-  const [history, setHistory] = useState({ rows: [], summary: {}, top_providers: [], top_countries: [] });
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [urlsText, setUrlsText]     = useState(SAMPLE);
+  const [result, setResult]         = useState(null);
+  const [history, setHistory]       = useState({ rows: [], summary: {}, top_providers: [], top_countries: [] });
+  const [error, setError]           = useState("");
+  const [isLoading, setIsLoading]   = useState(false);
 
   async function loadHistory() {
     const payload = await apiFetch("/ui/providers/history?limit=25&offset=0");
     setHistory(payload);
   }
 
-  useEffect(() => {
-    loadHistory().catch((loadError) => {
-      setError(loadError.message || "Failed to load provider lookup history.");
-    });
-  }, []);
+  useEffect(() => { loadHistory().catch((e) => setError(e.message)); }, []);
 
   async function runLookup() {
     setIsLoading(true);
     setError("");
     try {
-      const streamUrls = urlsValue
-        .split(/\r?\n/)
-        .map((item) => item.trim())
-        .filter(Boolean);
-      const response = await fetch(apiUrl("/ui/providers/lookup"), {
+      const streamUrls = urlsText.split(/\r?\n/).map((u) => u.trim()).filter(Boolean);
+      const res = await fetch(apiUrl("/ui/providers/lookup"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stream_urls: streamUrls })
+        body: JSON.stringify({ stream_urls: streamUrls }),
       });
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.detail || `Lookup failed with ${response.status}`);
-      }
-      setResultRows(payload.rows || []);
-      setResultStats(payload.stats || {});
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.detail || `Status ${res.status}`);
+      setResult(payload);
       await loadHistory();
-    } catch (lookupError) {
-      setError(lookupError.message || "Provider lookup failed.");
-      setResultRows([]);
-      setResultStats({});
+    } catch (e) {
+      setError(e.message || "Provider lookup failed");
+      setResult(null);
     } finally {
       setIsLoading(false);
     }
   }
 
-  const stats = resultRows.length ? resultStats : history.summary || {};
-  const statCards = [
-    {
-      label: "Checked URLs",
-      value: formatNumber(stats.total_urls || stats.total_checks || 0),
-      description: "Stream URLs inspected through the provider-intel surface.",
-      accent: "from-signal/20 to-transparent"
-    },
-    {
-      label: "Resolved IPs",
-      value: formatNumber(stats.resolved_ips || 0),
-      description: "URLs that resolved to a routable IP address.",
-      accent: "from-surge/20 to-transparent"
-    },
-    {
-      label: "Provider Matches",
-      value: formatNumber(stats.provider_matches || 0),
-      description: "Rows with an identified org/provider mapping.",
-      accent: "from-spark/20 to-transparent"
-    },
-    {
-      label: "Abuse Contacts",
-      value: formatNumber(stats.abuse_contacts_found || 0),
-      description: "Rows where an abuse contact email was found.",
-      accent: "from-orange-500/20 to-transparent"
-    }
+  const stats = result?.stats || history.summary || {};
+  const kpis = [
+    { label: "Checked URLs",      value: formatNumber(stats.total_urls || stats.total_checks || 0),   description: "Stream URLs inspected" },
+    { label: "Resolved IPs",      value: formatNumber(stats.resolved_ips || 0),                        description: "URLs with a routable IP" },
+    { label: "Provider matches",  value: formatNumber(stats.provider_matches || 0),                    description: "Identified org/provider" },
+    { label: "Abuse contacts",    value: formatNumber(stats.abuse_contacts_found || 0),                description: "Abuse email found" },
   ];
 
   return (
     <div className="space-y-6">
-      <section className="max-w-4xl">
-        <div className="text-xs uppercase tracking-[0.4em] text-spark">Provider Intel</div>
-        <h1 className="mt-3 text-4xl font-semibold">Test m3u8s against IP and provider intelligence</h1>
-        <p className="mt-4 text-base leading-7 text-slate-300">
-          Paste stream URLs, resolve their IP and host facts, inspect provider and abuse-contact data, and compare the latest lookup batch against persisted lookup history.
+
+      {/* header */}
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-spark">Provider Intel</p>
+        <h1 className="mt-1 text-2xl font-semibold text-white">Stream URL intelligence</h1>
+        <p className="mt-0.5 text-sm text-slate-500">
+          Resolve m3u8 / mpd stream URLs to their IP, hosting provider, geo, and abuse contacts.
         </p>
-      </section>
+      </div>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {statCards.map((item) => (
-          <KpiCard key={item.label} {...item} />
-        ))}
-      </section>
+      {/* kpis */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {kpis.map((k) => <KpiCard key={k.label} {...k} />)}
+      </div>
 
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>Lookup Batch</CardTitle>
-            <CardDescription>One URL per line. Best for `m3u8`, `mpd`, and direct media URLs.</CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Textarea
-            value={urlsValue}
-            onChange={(event) => setUrlsValue(event.target.value)}
-            className="min-h-[180px]"
-          />
-          {error ? <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">{error}</div> : null}
-          <div className="flex flex-wrap gap-3">
-            <Button variant="accent" onClick={runLookup} disabled={isLoading}>
-              {isLoading ? "Inspecting..." : "Run Provider Lookup"}
-            </Button>
-            <Button variant="secondary" onClick={loadHistory}>
-              Refresh History
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-        <DataTable
-          title="Lookup Results"
-          description="Latest checked URLs with resolved host, provider, and abuse-contact details."
-          columns={["stream_url", "hostname", "ip", "provider", "org", "country", "region", "city", "abuse_email", "lookup_id", "created_at"]}
-          rows={resultRows}
+      {/* lookup card */}
+      <div className="rounded-xl border border-white/8 bg-white/[0.03] p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Search className="h-4 w-4 text-spark" />
+          <span className="text-sm font-semibold text-white">Lookup batch</span>
+          <span className="ml-2 text-xs text-slate-600">One URL per line</span>
+        </div>
+        <Textarea
+          value={urlsText}
+          onChange={(e) => setUrlsText(e.target.value)}
+          className="min-h-[120px]"
+          placeholder="https://cdn.example.com/live/master.m3u8"
         />
-        <JsonViewer label="Latest Batch JSON" value={{ rows: resultRows, stats: resultStats }} />
-      </section>
+        {error && (
+          <div className="flex items-start gap-2 rounded-lg border border-ember/30 bg-ember/10 px-3 py-2.5 text-sm text-ember">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            {error}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <Button variant="accent" onClick={runLookup} disabled={isLoading}>
+            {isLoading ? "Resolving…" : "Run lookup"}
+          </Button>
+          <Button variant="ghost" onClick={loadHistory} className="border border-white/10">
+            Refresh history
+          </Button>
+        </div>
+      </div>
 
-      <section className="grid gap-6 xl:grid-cols-2">
+      {/* results */}
+      {result && (
+        <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
+          <DataTable
+            title="Lookup results"
+            description="Resolved URLs from the last batch"
+            columns={["stream_url","hostname","ip","provider","org","country","region","abuse_email"]}
+            rows={result.rows || []}
+          />
+          <JsonViewer label="Batch JSON" value={result} />
+        </div>
+      )}
+
+      {/* history */}
+      <div className="grid gap-5 xl:grid-cols-2">
         <DataTable
-          title="Top Providers"
-          description="Persisted provider frequency across all console lookups."
-          columns={["provider", "count"]}
+          title="Top providers"
+          description="Provider frequency across all lookups"
+          columns={["provider","count"]}
           rows={history.top_providers || []}
         />
         <DataTable
-          title="Top Countries"
-          description="Persisted geo distribution across all console lookups."
-          columns={["country", "count"]}
+          title="Top countries"
+          description="Geo distribution across all lookups"
+          columns={["country","count"]}
           rows={history.top_countries || []}
         />
-      </section>
+      </div>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <DataTable
-          title="Lookup History"
-          description="DB-backed lookup history with one row per checked stream URL."
-          columns={["created_at", "lookup_id", "stream_url", "provider", "country", "abuse_email", "ip"]}
-          rows={history.rows || []}
-        />
-        <JsonViewer label="Historical Summary" value={history.summary || {}} />
-      </section>
+      <DataTable
+        title="Lookup history"
+        description="All checked stream URLs from the console"
+        columns={["created_at","lookup_id","stream_url","provider","country","abuse_email","ip"]}
+        rows={history.rows || []}
+      />
+
     </div>
   );
 }

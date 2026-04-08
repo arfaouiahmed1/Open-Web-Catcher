@@ -54,4 +54,17 @@ $duration = Format-OwcDuration -Duration ((Get-Date) - $startedAt)
 Write-OwcDivider
 Write-OwcSuccess "Stack is up after $duration."
 Show-OwcEndpoints -Context $context
+
+Write-Host ""
+Write-Host "  Next.js Operator Console  ->  $($context.ConsoleUrl)" -ForegroundColor Magenta
+Write-Host "    /              Dashboard        KPIs, cost trends, provider analytics" -ForegroundColor DarkGray
+Write-Host "    /live          Live studio      SSE workflow graph + event stream"     -ForegroundColor DarkGray
+Write-Host "    /agents        Agent lab        Run a single agent and inspect trace"  -ForegroundColor DarkGray
+Write-Host "    /tools         Tool playground  Call MCP tools directly"               -ForegroundColor DarkGray
+Write-Host "    /runs          Run explorer     Drill-downs and history"               -ForegroundColor DarkGray
+Write-Host "    /providers     Provider intel   m3u8 / IP / whois lookup"             -ForegroundColor DarkGray
+Write-Host "    /evaluations   Eval lab         Synthetic, mocked and live suites"    -ForegroundColor DarkGray
+Write-Host "    /settings      Pricing config   Model cost configuration"             -ForegroundColor DarkGray
+Write-Host ""
+
 Show-OwcComposeStatus -Context $context

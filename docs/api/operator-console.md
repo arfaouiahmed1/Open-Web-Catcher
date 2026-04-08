@@ -37,6 +37,20 @@ The UI shows:
 - token totals
 - estimated cost totals
 
+Live event stream now also includes explicit lifecycle and failure markers:
+
+- MCP tool session lifecycle:
+	- `tool_session_connecting`
+	- `tool_session_ready`
+	- `tool_session_failed`
+	- `tool_session_closed`
+- LLM lifecycle and failure classes:
+	- `llm_turn_started`
+	- `llm_response`
+	- `llm_timeout`
+	- `llm_rate_limited` (provider quota/capacity)
+	- `llm_error` (non-timeout provider/model failures)
+
 It intentionally does not claim to show private hidden reasoning.
 
 ## Overview Metrics
@@ -91,6 +105,11 @@ Pricing rows can be edited from the console. They are:
 - persisted to Postgres
 - merged into runtime pricing defaults
 - used for future cost estimates
+
+Model provider/model runtime config can also be managed from the console via:
+
+- `GET /ui/config`
+- `PUT /ui/config`
 
 ## Evaluations
 

@@ -126,6 +126,8 @@ export async function queryElements({
   text_contains = '',
   href_contains = '',
   attr = null,
+  attr_name = '',
+  attr_value_contains = '',
   visible_only = true,
   limit = 20,
   browserWsEndpoint,
@@ -142,11 +144,14 @@ export async function queryElements({
 
     const rawElements = await collectElements(frameState.frame, frame_path);
     const elements = augmentElements(rawElements, frameState);
+    const normalizedAttr = attr || (attr_name ? { name: attr_name, value_contains: attr_value_contains } : null);
     const matches = filterElements(elements, {
       kind,
       text_contains,
       href_contains,
-      attr,
+      attr: normalizedAttr,
+      attr_name,
+      attr_value_contains,
       visible_only,
       limit,
     });
@@ -154,7 +159,7 @@ export async function queryElements({
     return buildEnvelope(page, {
       frame_path,
       data: {
-        query: { kind, text_contains, href_contains, attr, visible_only, limit },
+        query: { kind, text_contains, href_contains, attr: normalizedAttr, visible_only, limit },
         total_matches: matches.length,
         matches: compactElements(matches, limit),
       },

@@ -1,19 +1,20 @@
-import { ArrowUpRight } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-
-export function KpiCard({ label, value, description, accent = "from-signal/20 to-transparent" }) {
+export function KpiCard({ label, value, description, delta, accent }) {
   return (
-    <Card className="relative overflow-hidden">
-      <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${accent}`} />
-      <CardHeader className="relative">
-        <div>
-          <CardDescription>{label}</CardDescription>
-          <CardTitle className="mt-2 text-3xl">{value}</CardTitle>
+    <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-4 shadow-card">
+      <div className="text-xs font-medium text-slate-500 uppercase tracking-wider">{label}</div>
+      <div className={cn("mt-2 text-2xl font-semibold tabular-nums", accent || "text-white")}>
+        {value}
+      </div>
+      {description && (
+        <div className="mt-1 text-xs text-slate-600 leading-relaxed">{description}</div>
+      )}
+      {delta !== undefined && (
+        <div className={cn("mt-2 text-xs font-medium", delta >= 0 ? "text-surge" : "text-ember")}>
+          {delta >= 0 ? "+" : ""}{delta}%
         </div>
-        <ArrowUpRight className="h-5 w-5 text-slate-400" />
-      </CardHeader>
-      <CardContent className="relative pt-0 text-sm text-slate-300">{description}</CardContent>
-    </Card>
+      )}
+    </div>
   );
 }

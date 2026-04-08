@@ -17,7 +17,7 @@ class DummyMCPClient:
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
-    def get_tools(self):
+    async def get_tools(self):
         return self._tools
 
 

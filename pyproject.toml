@@ -10,6 +10,8 @@ requires-python = ">=3.11"
 dependencies = [
     "langchain-core>=0.3",
     "langchain-google-genai>=2.0",
+    "langchain-openai>=0.2",
+    "langchain-anthropic>=0.3",
     "langgraph>=0.2",
     "langchain-mcp-adapters>=0.1",
     "pydantic>=2.7",
@@ -41,6 +43,8 @@ dev = [
     "pandas>=2.2",
     "matplotlib>=3.9",
     "seaborn>=0.13",
+    "deepeval>=1.0",
+    "openai>=1.0",
 ]
 
 [project.scripts]

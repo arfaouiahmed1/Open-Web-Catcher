@@ -13,177 +13,113 @@ export default async function OverviewPage() {
     provider_breakdown: [],
     recent_runs: [],
     evaluation_summary: {},
-    active_runs: []
+    active_runs: [],
+    top_tools: [],
   };
 
   try {
     overview = await apiFetch("/ui/overview");
-  } catch (error) {
-    console.error(error);
+  } catch {
+    /* backend may not be ready */
   }
 
-  const summary = overview.summary || {};
-  const evaluationSummary = overview.evaluation_summary || {};
-  const kpis = [
-    {
-      label: "Total Runs",
-      value: formatNumber(summary.total_runs || 0),
-      description: "Persisted workflow runs across the full Postgres corpus.",
-      accent: "from-signal/20 to-transparent"
-    },
-    {
-      label: "Success Rate",
-      value: formatPercent(summary.success_rate || 0),
-      description: "Completed workflow runs with final success status.",
-      accent: "from-surge/20 to-transparent"
-    },
-    {
-      label: "Total Tokens",
-      value: formatNumber(summary.total_tokens || 0),
-      description: "Combined prompt and completion tokens from all persisted runs.",
-      accent: "from-spark/20 to-transparent"
-    },
-    {
-      label: "Total Cost",
-      value: formatCurrency(summary.total_cost_usd || 0),
-      description: "First-party model cost accounting.",
-      accent: "from-white/10 to-transparent"
-    },
-    {
-      label: "Tool Success",
-      value: formatPercent(summary.tool_success_rate || 0),
-      description: "Observed success rate across persisted tool call records.",
-      accent: "from-emerald-500/20 to-transparent"
-    },
-    {
-      label: "Avg Latency",
-      value: `${formatNumber(summary.avg_latency_seconds || 0)}s`,
-      description: "Average end-to-end runtime per workflow run.",
-      accent: "from-cyan-500/20 to-transparent"
-    },
-    {
-      label: "Stream Yield",
-      value: formatPercent(summary.stream_yield_rate || 0),
-      description: "Runs that produced at least one captured stream.",
-      accent: "from-orange-500/20 to-transparent"
-    },
-    {
-      label: "Email Yield",
-      value: formatPercent(summary.email_yield_rate || 0),
-      description: "Runs that produced at least one takedown draft.",
-      accent: "from-pink-500/20 to-transparent"
-    }
+  const s = overview.summary || {};
+  const e = overview.evaluation_summary || {};
+
+  const runKpis = [
+    { label: "Total Runs",    value: formatNumber(s.total_runs || 0),    description: "All persisted orchestrator runs" },
+    { label: "Success Rate",  value: formatPercent(s.success_rate || 0), description: "Runs with final success status", accent: "text-surge" },
+    { label: "Avg Latency",   value: `${(s.avg_latency_seconds || 0).toFixed(1)}s`, description: "End-to-end runtime per run" },
+    { label: "Total Cost",    value: formatCurrency(s.total_cost_usd || 0), description: "First-party model spend" },
+    { label: "Total Tokens",  value: formatNumber(s.total_tokens || 0),  description: "Prompt + completion tokens" },
+    { label: "Tool Success",  value: formatPercent(s.tool_success_rate || 0), description: "Observed tool call success", accent: "text-surge" },
+    { label: "Stream Yield",  value: formatPercent(s.stream_yield_rate || 0),description: "Runs that extracted a stream" },
+    { label: "Email Yield",   value: formatPercent(s.email_yield_rate || 0), description: "Runs that drafted a takedown" },
   ];
-  const evaluationKpis = [
-    {
-      label: "Eval Success",
-      value: formatPercent(evaluationSummary.latest_success_rate || 0),
-      description: "Latest persisted benchmark pass rate.",
-      accent: "from-emerald-500/20 to-transparent"
-    },
-    {
-      label: "Hallucination",
-      value: formatPercent(evaluationSummary.latest_hallucination_rate || 0),
-      description: "Unsupported-claim rate from the latest suite.",
-      accent: "from-amber-500/20 to-transparent"
-    },
-    {
-      label: "Tool Accuracy",
-      value: formatPercent(evaluationSummary.latest_tool_accuracy_rate || 0),
-      description: "Required versus forbidden tool discipline.",
-      accent: "from-spark/20 to-transparent"
-    },
-    {
-      label: "Reliability",
-      value: formatPercent(evaluationSummary.latest_reliability_rate || 0),
-      description: "Observed tool stability during evaluation.",
-      accent: "from-signal/20 to-transparent"
-    }
+
+  const evalKpis = [
+    { label: "Eval Pass Rate",   value: formatPercent(e.latest_success_rate || 0),       description: "Latest benchmark pass rate", accent: "text-surge" },
+    { label: "Hallucination",    value: formatPercent(e.latest_hallucination_rate || 0),  description: "Unsupported-claim rate", accent: (e.latest_hallucination_rate || 0) > 0.2 ? "text-ember" : undefined },
+    { label: "Tool Accuracy",    value: formatPercent(e.latest_tool_accuracy_rate || 0),  description: "Required tool discipline" },
+    { label: "Reliability",      value: formatPercent(e.latest_reliability_rate || 0),    description: "Tool stability during eval" },
   ];
 
   return (
     <div className="space-y-8">
+
+      {/* header */}
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-spark">Overview</p>
+        <h1 className="mt-1 text-2xl font-semibold text-white">Operator Dashboard</h1>
+        <p className="mt-1 text-sm text-slate-500">
+          Live KPIs, model mix, provider breakdown, and evaluation health from the internal Postgres store.
+        </p>
+      </div>
+
+      {/* run KPIs */}
       <section>
-        <div className="max-w-4xl">
-          <div className="text-xs uppercase tracking-[0.4em] text-spark">Overview</div>
-          <h1 className="mt-3 text-4xl font-semibold">The operator cockpit</h1>
-          <p className="mt-4 text-base leading-7 text-slate-300">
-            High-signal KPIs, live activity, model mix, provider mix, and evaluation health, all powered from the internal Postgres observability store.
-          </p>
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-600">Pipeline</h2>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {runKpis.map((k) => <KpiCard key={k.label} {...k} />)}
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {kpis.map((item) => (
-          <KpiCard key={item.label} {...item} />
-        ))}
+      {/* eval KPIs */}
+      <section>
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-600">Evaluation</h2>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {evalKpis.map((k) => <KpiCard key={k.label} {...k} />)}
+        </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {evaluationKpis.map((item) => (
-          <KpiCard key={item.label} {...item} />
-        ))}
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-2">
+      {/* tables row 1 */}
+      <section className="grid gap-5 xl:grid-cols-2">
         <DataTable
           title="Recent Runs"
-          description="Latest persisted orchestrator runs."
-          columns={["run_id", "url", "final_status", "stream_count", "estimated_total_cost_usd", "duration_seconds", "created_at"]}
+          description="Latest persisted orchestrator runs"
+          columns={["run_id","url","final_status","stream_count","estimated_total_cost_usd","duration_seconds","created_at"]}
           rows={overview.recent_runs || []}
         />
         <DataTable
-          title="Model Breakdown"
-          description="Model usage and cost by provider/model."
-          columns={["label", "calls", "tokens", "cost_usd"]}
-          rows={overview.model_breakdown || []}
-        />
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-2">
-        <DataTable
-          title="Run Trend"
-          description="Daily run, cost, token, and latency trend for the recent seven-day window."
-          columns={["date", "runs", "successes", "partials", "failures", "tokens", "cost_usd", "avg_latency_seconds"]}
-          rows={overview.trend || []}
-        />
-        <DataTable
-          title="Provider Breakdown"
-          description="Top downstream providers observed across persisted analyses."
-          columns={["provider", "analysis_count", "affected_runs"]}
-          rows={overview.provider_breakdown || []}
-        />
-        <DataTable
           title="Active Runs"
-          description="In-memory activity still streaming from the backend."
-          columns={["run_id", "root_actor", "event_count", "completed", "total_tool_calls", "estimated_total_cost_usd"]}
+          description="In-memory runs still streaming"
+          columns={["run_id","root_actor","event_count","completed","total_tool_calls","estimated_total_cost_usd"]}
           rows={overview.active_runs || []}
         />
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-2">
+      {/* tables row 2 */}
+      <section className="grid gap-5 xl:grid-cols-2">
         <DataTable
-          title="Top Tools"
-          description="Most frequently executed persisted tool calls with reliability signals."
-          columns={["tool_name", "calls", "successes", "errors", "success_rate", "avg_duration_seconds"]}
-          rows={overview.top_tools || []}
+          title="Model Breakdown"
+          description="Usage and cost by model"
+          columns={["label","calls","tokens","cost_usd"]}
+          rows={overview.model_breakdown || []}
         />
         <DataTable
-          title="Yield Metrics"
-          description="DB-backed productivity indicators computed from normalized workflow rows."
-          columns={["metric", "value"]}
-          rows={[
-            { metric: "Total LLM Calls", value: formatNumber(summary.total_llm_calls || 0) },
-            { metric: "Total Tool Calls", value: formatNumber(summary.total_tool_calls || 0) },
-            { metric: "Observed Tool Calls", value: formatNumber(summary.observed_tool_calls || 0) },
-            { metric: "Avg Cost / Run", value: formatCurrency(summary.avg_cost_usd || 0) },
-            { metric: "Avg Streams / Run", value: formatNumber(summary.avg_streams_per_run || 0) },
-            { metric: "Avg Emails / Run", value: formatNumber(summary.avg_emails_per_run || 0) },
-            { metric: "Total Provider Analyses", value: formatNumber(summary.total_provider_analyses || 0) },
-            { metric: "Active In-Memory Runs", value: formatNumber(summary.active_runs || 0) }
-          ]}
+          title="Provider Breakdown"
+          description="Top downstream CDN / hosting providers"
+          columns={["provider","analysis_count","affected_runs"]}
+          rows={overview.provider_breakdown || []}
         />
       </section>
+
+      {/* tables row 3 */}
+      <section className="grid gap-5 xl:grid-cols-2">
+        <DataTable
+          title="Run Trend (7d)"
+          description="Daily run, cost, token, and latency"
+          columns={["date","runs","successes","partials","failures","tokens","cost_usd","avg_latency_seconds"]}
+          rows={overview.trend || []}
+        />
+        <DataTable
+          title="Top Tools"
+          description="Most-used tools with reliability signals"
+          columns={["tool_name","calls","successes","errors","success_rate","avg_duration_seconds"]}
+          rows={overview.top_tools || []}
+        />
+      </section>
+
     </div>
   );
 }
