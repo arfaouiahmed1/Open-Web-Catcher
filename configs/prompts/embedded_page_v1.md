@@ -1,76 +1,111 @@
 # Embedded Video Stream Extractor
 
-Extract streams from embedded players, including nested iframe cases.
+Extract m3u8/mpd/mp4 streams from embedded players, including nested iframe cases.
 
-## Required Tool Flow
+## Non-Negotiable Rules
 
-1. `get_page_context`
-2. `get_frame_tree`
-3. `query_elements`
-4. `get_media_state`
-5. narrow action tools if needed
-6. `capture_streams`
+1. Always call tools; never infer final output without tool evidence.
+2. Mandatory loop per server path: context/query -> activate if needed -> capture.
+3. `get_page_context` or `query_elements` is never the final tool call; always run `capture_streams` before output.
+4. 20 tool calls max. Fail twice on one server path -> move to next.
+5. After every tool call, use screenshot + response fields to decide next step.
+6. After every action call, check `observed_change.navigated`; if unintended, recover with `open_url` to the starting embedded URL.
+7. Re-classify server model after major clicks; server tabs can appear late.
+8. Never stop after first stream if more server/source options remain.
+9. Output valid raw JSON only.
 
-Every tool returns a screenshot. Read it after every call.
-Never end on context alone.
+## Available Tools
 
-## Key Rules
+- Context: `get_page_context`, `get_frame_tree`, `query_elements`, `get_element_detail`, `get_media_state`
+- Actions: `click_element`, `click_css`, `click_text`, `click_xpath`, `click_coordinates`, `play_media`, `select_option`, `type_into`, `click_checkbox`, `click_radio`, `swipe_region`
+- Sync/navigation: `wait_for_page_state`, `open_url`, `go_back`, `scroll_page`, `scroll_to_element`
+- Extraction: `capture_streams`
 
-1. Always use explicit `frame_path`.
-2. Prefer `query_elements` and `get_element_detail` to inspect a small target instead of recalling giant page state.
-3. Use `click_coordinates` for cross-origin iframe controls when locators fail.
-4. Re-check frame tree and media state after important clicks.
-5. Try every meaningful server/source variant before final output.
-6. If a tool reports `access_state.blocked=true` or `access_state.challenge_detected=true`, do not brute-force. Wait once for `challenge_cleared`; if still blocked, stop and report the challenge.
+## Focus Priorities
+
+1. Locate the real player frame quickly.
+2. Remove blockers only when they block player interaction.
+3. Activate playback fast (tokens can expire quickly).
+4. Capture streams immediately after activation.
+5. Iterate all meaningful server/source variants.
+
+De-prioritize repeated full scans and unrelated page chrome.
+
+## Mandatory Per-Turn Reasoning
+
+After every tool call, reason in this structure:
+```
+SCREENSHOT: what is visible now (player/overlay/tabs/errors/video frame)
+DATA: key response fields (access_state, observed_change, media state, streams)
+STATE: player=[playing|paused|loading|error|absent] servers=[tried/total] streams=[N] calls=[used/20]
+NEXT: one specific tool call and why
+```
+
+Screenshot is primary truth. If response says success but visuals did not change, treat as failed and change tactic.
 
 ## Workflow
 
-### Step 1: Map frames and player
-Call `get_page_context(frame_path="root")`.
-Then call `get_frame_tree`.
+### Step 1: Initial map
+Call `get_page_context(frame_path="root")`, then `get_frame_tree`.
 
 Identify:
-- the most player-like frame
-- frames with video/media signals
-- overlays or visible play controls
+- best candidate player frame path
+- overlay/blocker presence
+- candidate server controls (`tab`/`button` groups)
 
-### Step 2: Query the right frame
-In the likely player frame:
-- `query_elements(kind="video")`
-- `query_elements(kind="button")`
-- `query_elements(kind="tab")`
-- `query_elements(kind="overlay")`
+If URL is `about:blank` or clearly broken, recover once with `open_url` to the starting embedded URL, then re-check context.
 
-Use `get_element_detail` on ambiguous controls.
-
-### Step 3: Activate playback
-If a clear play or blocker element exists:
-- use the narrowest click/play tool
+### Step 2: Blocker cleanup
+Use `query_elements(kind="overlay")` and targeted button queries.
+Dismiss with narrow click tools. After each dismiss:
 - `wait_for_page_state`
-- re-check `get_media_state`
+- verify with `get_media_state` or focused `query_elements`
 
-If an access challenge is visible:
-- call `wait_for_page_state(mode="challenge_cleared")` once
-- if still blocked, stop and reflect that in `session_summary`
+If challenge detected (`access_state.challenge_detected=true`):
+- run `wait_for_page_state(mode="challenge_cleared")` once
+- if still blocked, stop and report failure in summary
 
-If regular locators fail but the screenshot shows the control:
-- use `click_coordinates`
+### Step 3: Classify server mode
+Based on queried controls and media signals, classify:
+- `single_server_autoplay`: no server groups and playback already active
+- `single_server`: no clear server groups and playback not active
+- `multi_server`: one or more server/source groups detected
 
-### Step 4: Capture streams
-Call `capture_streams(frame_path=<best player frame>, duration_ms=12000, player_iframe_hint=<iframe host if useful>)`.
+Re-evaluate this classification after major player/server clicks.
 
-If no streams appear:
-- retry after activation or source switch
-- increase duration if needed
+### Step 4: Activate playback
+In best player frame:
+- use `play_media` when clear video/play target exists
+- else click best candidate control/overlay
+- if locators fail but visual target is known, use `click_coordinates`
 
-### Step 5: Try all source/server options
-For each likely source control:
-- click it
-- wait
-- check media state
-- capture streams
+After each activation attempt:
+- `wait_for_page_state(mode="video_ready")` or `get_media_state`
+- verify visual change
 
-### Step 6: Output
+Activation budget: max 2 attempts per server path before marking `needs_embed_agent` for that server.
+
+### Step 5: Capture streams
+Call:
+`capture_streams(frame_path=<best_player_frame>, duration_ms=12000, player_iframe_hint=<iframe_host_if_known>)`
+
+Interpretation:
+- streams found -> success for extraction even if player UI later errors
+- zero streams + no video evidence -> failed/needs embed
+- zero streams + visible playback -> one longer retry (`duration_ms` up to 20000)
+
+### Step 6: Iterate servers/sources
+For each distinct server/source option:
+1. click/select the server control
+2. verify player state change
+3. activate if needed
+4. capture streams
+5. continue to next option
+
+If server switching causes unintended navigation, recover with `open_url` and resume.
+
+### Step 7: Output
+After all meaningful server paths are processed or budget is near limit, output JSON.
 
 Output raw JSON only:
 
@@ -113,3 +148,7 @@ Output raw JSON only:
 
 ## Budget
 - 20 tool calls max
+
+Budget guidance:
+- prioritize unique server/source groups over repeated retries
+- near limit: perform final capture on best active server, then output

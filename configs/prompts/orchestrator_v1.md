@@ -59,6 +59,10 @@ generate_takedown_emails(...)
    - `provider_analysis`: the full list returned by analyze_providers
    - `extraction_results`: list of server+stream data from hosting/embedded agents
      (each item = the `servers` + `streaming_urls` section from those agents)
+6. **De-duplicate URLs** before sub-agent calls (hosting and embedded).
+7. **Retry policy**: allow one retry only for transient failures (timeout/challenge), then continue the pipeline.
+8. **Escalation rule**: call `run_embedded_agent` when hosting reports embedded hints or zero usable streams after normal attempts.
+9. **Keep reasoning compact**: prioritize routing decisions and completion over long explanations.
 
 ## Budget
 
