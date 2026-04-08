@@ -46,6 +46,18 @@ class Settings(BaseSettings):
         default="{}",
         validation_alias=AliasChoices("MODEL_PRICING_JSON"),
     )
+    provider_pricing_sync_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("PROVIDER_PRICING_SYNC_ENABLED"),
+    )
+    provider_pricing_timeout_seconds: int = Field(
+        default=15,
+        validation_alias=AliasChoices("PROVIDER_PRICING_TIMEOUT_SECONDS"),
+    )
+    provider_pricing_max_models: int = Field(
+        default=300,
+        validation_alias=AliasChoices("PROVIDER_PRICING_MAX_MODELS"),
+    )
     ui_cors_origins: str = Field(
         default="http://localhost:3001,http://127.0.0.1:3001",
         validation_alias=AliasChoices("UI_CORS_ORIGINS"),
@@ -80,6 +92,9 @@ class Settings(BaseSettings):
     prompt_cache_enabled: bool = True
     prompt_cache_mode: str = "provider_hook"
     prompt_cache_min_chars: int = 2000
+    provider_cache_enabled: bool = True
+    tool_result_cache_enabled: bool = True
+    tool_result_cache_min_identical_observations: int = 2
 
     @classmethod
     def from_yaml(cls, yaml_path: str | Path = "configs/settings.yaml") -> "Settings":
@@ -102,5 +117,8 @@ class Settings(BaseSettings):
         existing["agent_model"] = self.agent_model
         existing["orchestrator_model"] = self.orchestrator_model
         existing["gemini_temperature"] = self.gemini_temperature
+        existing["provider_cache_enabled"] = self.provider_cache_enabled
+        existing["tool_result_cache_enabled"] = self.tool_result_cache_enabled
+        existing["tool_result_cache_min_identical_observations"] = self.tool_result_cache_min_identical_observations
         with open(path, "w", encoding="utf-8") as f:
             yaml.safe_dump(existing, f, default_flow_style=False, allow_unicode=True)

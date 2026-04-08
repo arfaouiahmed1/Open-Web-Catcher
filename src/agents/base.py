@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import time
@@ -94,6 +95,121 @@ def _extract_usage(usage: Any) -> tuple[int, int]:
         or 0
     )
     return input_tokens, output_tokens
+
+
+def _to_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _extract_cache_metrics(usage: Any, response: AIMessage | None = None) -> dict[str, Any]:
+    usage_dict = usage if isinstance(usage, dict) else getattr(usage, "__dict__", {})
+    response_metadata = getattr(response, "response_metadata", None) if response is not None else None
+    additional_kwargs = getattr(response, "additional_kwargs", None) if response is not None else None
+    response_dict = response_metadata if isinstance(response_metadata, dict) else getattr(response_metadata, "__dict__", {})
+    kwargs_dict = additional_kwargs if isinstance(additional_kwargs, dict) else getattr(additional_kwargs, "__dict__", {})
+
+    input_tokens = _to_int(
+        usage_dict.get("input_tokens")
+        or usage_dict.get("prompt_tokens")
+        or usage_dict.get("input_token_count")
+        or usage_dict.get("prompt_token_count")
+    )
+    output_tokens = _to_int(
+        usage_dict.get("output_tokens")
+        or usage_dict.get("completion_tokens")
+        or usage_dict.get("candidates_token_count")
+        or usage_dict.get("output_token_count")
+    )
+
+    openai_details = usage_dict.get("input_token_details") or usage_dict.get("prompt_tokens_details") or {}
+    if not isinstance(openai_details, dict):
+        openai_details = {}
+    cached_tokens = _to_int(openai_details.get("cached_tokens"))
+
+    cache_read_input_tokens = _to_int(usage_dict.get("cache_read_input_tokens"))
+    cache_creation_input_tokens = _to_int(usage_dict.get("cache_creation_input_tokens"))
+    if cache_read_input_tokens:
+        cached_tokens = max(cached_tokens, cache_read_input_tokens)
+
+    if not cached_tokens:
+        response_usage = response_dict.get("token_usage") if isinstance(response_dict, dict) else {}
+        if not isinstance(response_usage, dict):
+            response_usage = {}
+        response_details = response_usage.get("input_token_details") or response_usage.get("prompt_tokens_details") or {}
+        if isinstance(response_details, dict):
+            cached_tokens = _to_int(response_details.get("cached_tokens"))
+
+    if not cached_tokens and isinstance(kwargs_dict, dict):
+        kwargs_usage = kwargs_dict.get("usage") or kwargs_dict.get("token_usage") or {}
+        if not isinstance(kwargs_usage, dict):
+            kwargs_usage = {}
+        kwargs_details = kwargs_usage.get("input_token_details") or kwargs_usage.get("prompt_tokens_details") or {}
+        if isinstance(kwargs_details, dict):
+            cached_tokens = _to_int(kwargs_details.get("cached_tokens"))
+
+    cached_tokens = max(0, min(cached_tokens, input_tokens))
+    new_input_tokens = max(input_tokens - cached_tokens, 0)
+
+    return {
+        "cache_hit": cached_tokens > 0 or cache_read_input_tokens > 0,
+        "cached_input_tokens": cached_tokens,
+        "new_input_tokens": new_input_tokens,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cache_read_input_tokens": cache_read_input_tokens,
+        "cache_creation_input_tokens": cache_creation_input_tokens,
+    }
+
+
+def _build_provider_cache_invoke_kwargs(
+    settings: Settings,
+    *,
+    provider: str,
+    prompt_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    if not settings.provider_cache_enabled or not settings.prompt_cache_enabled:
+        return {}
+
+    if not bool(prompt_metadata.get("provider_cache_eligible", False)):
+        return {}
+
+    cache_mode = str(prompt_metadata.get("cache_mode", "") or "").strip().lower()
+    if cache_mode not in {"provider_hook", "provider_active"}:
+        return {}
+
+    cache_key = str(prompt_metadata.get("provider_cache_key", "") or "").strip()
+    if not cache_key:
+        return {}
+
+    if provider == "openrouter":
+        return {
+            "extra_headers": {
+                "x-openrouter-prompt-cache-key": cache_key,
+            }
+        }
+
+    # OpenAI prompt caching is automatic where supported and does not require
+    # explicit runtime headers via this stack.
+    return {}
+
+
+def _tool_cache_key(tool_name: str, tool_args: dict[str, Any]) -> str:
+    payload = json.dumps(tool_args or {}, sort_keys=True, default=str)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return f"{tool_name}:{digest}"
+
+
+def _is_tool_cache_eligible(tool_name: str) -> bool:
+    return tool_name in {
+        "get_page_context",
+        "query_elements",
+        "get_element_detail",
+        "get_frame_tree",
+        "get_media_state",
+    }
 
 
 def _extract_retry_seconds(error_text: str) -> int | None:
@@ -221,8 +337,11 @@ async def run_agent_loop(
     working_memory: "ShortTermMemory | None" = None,
     prompt_metadata: dict[str, Any] | None = None,
     turn_context_provider: Callable[[AgentGraphState], str] | None = None,
+    bootstrap_url: str = "",
+    bootstrap_context_first: bool = False,
 ) -> AgentLoopResult:
     """Run an async LangGraph agent loop with structured tool calling."""
+    prompt_meta = prompt_metadata or {}
     tool_map: dict[str, BaseTool] = {tool.name: tool for tool in tools}
     llm_with_tools = llm.bind_tools(tools)
     # Support model name attribute differences across providers
@@ -235,8 +354,23 @@ async def run_agent_loop(
         (settings.llm_provider or "google").lower(), "google_genai"
     )
     pricing = resolve_model_pricing(settings, model_name=model_name, provider=provider)
+    provider_cache_invoke_kwargs = _build_provider_cache_invoke_kwargs(
+        settings,
+        provider=provider,
+        prompt_metadata=prompt_meta,
+    )
+    provider_cache_active = bool(provider_cache_invoke_kwargs)
     tool_timeout_seconds = max(1, int(settings.tool_timeout_seconds))
     llm_timeout_seconds = max(5, tool_timeout_seconds * 3)
+    tool_result_cache: dict[str, dict[str, Any]] = {}
+    required_identical_observations = max(int(settings.tool_result_cache_min_identical_observations or 2), 2)
+    tool_cache_hits = 0
+    tool_cache_writes = 0
+    llm_cache_hit_calls = 0
+    llm_cached_input_tokens = 0
+    llm_new_input_tokens = 0
+    bootstrap_tool_calls = 0
+    bootstrap_messages: list[BaseMessage] = []
 
     if observer is not None:
         observer.record_message("system")
@@ -247,9 +381,103 @@ async def run_agent_loop(
             details={
                 "max_tool_calls": max_tool_calls,
                 "model_name": model_name,
-                "prompt": prompt_metadata or {},
+                "prompt": prompt_meta,
+                "provider_cache_active": provider_cache_active,
+                "tool_result_cache_enabled": bool(settings.tool_result_cache_enabled),
+                "tool_result_cache_min_identical_observations": required_identical_observations,
+                "bootstrap_url": bootstrap_url,
+                "bootstrap_context_first": bootstrap_context_first,
             },
         )
+
+    async def _run_bootstrap_tool(tool_name: str, tool_args: dict[str, Any]) -> tuple[str, str]:
+        nonlocal bootstrap_tool_calls
+        tool = tool_map.get(tool_name)
+        if tool is None:
+            return "error", json.dumps({"error": f"Bootstrap tool not available: {tool_name}"})
+
+        started_at = time.perf_counter()
+        if observer is not None:
+            observer.increment_tool_calls()
+            observer.emit(
+                "tool_call_started",
+                f"Bootstrap calling {tool_name}",
+                details={
+                    "tool_name": tool_name,
+                    "tool_args": tool_args,
+                    "bootstrap": True,
+                    "tool_call_number": bootstrap_tool_calls + 1,
+                },
+            )
+            observer.record_message("tool")
+        if working_memory is not None:
+            working_memory.record_tool(tool_name, tool_args, status="started")
+
+        try:
+            raw = await asyncio.wait_for(
+                _invoke_tool(tool, tool_args),
+                timeout=tool_timeout_seconds,
+            )
+            result_content = _serialize_tool_output(raw)
+            status = "success"
+        except asyncio.TimeoutError:
+            result_content = json.dumps(
+                {
+                    "error": f"Bootstrap tool '{tool_name}' timed out after {tool_timeout_seconds}s",
+                }
+            )
+            status = "error"
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Bootstrap tool %s raised: %s", tool_name, exc)
+            result_content = json.dumps({"error": str(exc)})
+            status = "error"
+
+        bootstrap_tool_calls += 1
+        duration = round(time.perf_counter() - started_at, 3)
+        if observer is not None:
+            observer.emit(
+                "tool_call_finished",
+                f"Bootstrap {tool_name} completed",
+                status=status,
+                details={
+                    "tool_name": tool_name,
+                    "duration_seconds": duration,
+                    "result_preview": result_content[:800],
+                    "bootstrap": True,
+                },
+            )
+        if working_memory is not None:
+            working_memory.record_tool(
+                tool_name,
+                tool_args,
+                status=status,
+                result_preview=result_content[:400],
+            )
+
+        return status, result_content
+
+    if bootstrap_url:
+        status, result = await _run_bootstrap_tool("open_url", {"url": bootstrap_url})
+        bootstrap_messages.append(
+            HumanMessage(
+                content=(
+                    "BOOTSTRAP RESULT (open_url):\n"
+                    f"status={status}\n"
+                    f"payload={result[:4000]}"
+                )
+            )
+        )
+        if bootstrap_context_first:
+            status_ctx, result_ctx = await _run_bootstrap_tool("get_page_context", {"frame_path": "root"})
+            bootstrap_messages.append(
+                HumanMessage(
+                    content=(
+                        "BOOTSTRAP RESULT (get_page_context):\n"
+                        f"status={status_ctx}\n"
+                        f"payload={result_ctx[:6000]}"
+                    )
+                )
+            )
 
     async def llm_node(state: AgentGraphState) -> dict[str, Any]:
         _assert_not_cancelled(observer, "agent loop")
@@ -282,6 +510,7 @@ async def run_agent_loop(
                         "model_name": model_name,
                         "message_count": message_count,
                         "timeout_seconds": llm_timeout_seconds,
+                        "provider_cache_active": provider_cache_active,
                     },
                 )
             try:
@@ -289,6 +518,7 @@ async def run_agent_loop(
                     llm_with_tools.ainvoke(
                         invocation_messages,
                         config={"run_name": run_name},
+                        **provider_cache_invoke_kwargs,
                     ),
                     timeout=llm_timeout_seconds,
                 )
@@ -338,6 +568,12 @@ async def run_agent_loop(
                 raise
             usage = getattr(response, "usage_metadata", None)
             input_tokens, output_tokens = _extract_usage(usage)
+            cache_metrics = _extract_cache_metrics(usage, response=response)
+            nonlocal llm_cache_hit_calls, llm_cached_input_tokens, llm_new_input_tokens
+            if cache_metrics["cache_hit"]:
+                llm_cache_hit_calls += 1
+            llm_cached_input_tokens += _to_int(cache_metrics.get("cached_input_tokens"))
+            llm_new_input_tokens += _to_int(cache_metrics.get("new_input_tokens"))
             set_span_attributes(
                 llm_span,
                 {
@@ -345,6 +581,9 @@ async def run_agent_loop(
                     "owc.provider": provider,
                     "owc.input_tokens": input_tokens,
                     "owc.output_tokens": output_tokens,
+                    "owc.cache_hit": bool(cache_metrics.get("cache_hit", False)),
+                    "owc.cached_input_tokens": _to_int(cache_metrics.get("cached_input_tokens")),
+                    "owc.new_input_tokens": _to_int(cache_metrics.get("new_input_tokens")),
                     "owc.tool_calls_requested": len(response.tool_calls or []),
                 },
             )
@@ -363,6 +602,9 @@ async def run_agent_loop(
                 model_name=model_name,
                 provider=provider,
                 pricing=pricing,
+                response_metadata=getattr(response, "response_metadata", None),
+                additional_kwargs=getattr(response, "additional_kwargs", None),
+                cache_metrics=cache_metrics,
             )
             observer.emit(
                 "llm_response",
@@ -382,8 +624,12 @@ async def run_agent_loop(
                     "additional_kwargs": _json_ready(getattr(response, "additional_kwargs", None)),
                     "response_class": type(response).__name__,
                     "content_preview": (response.content or "")[:1200],
-                    "prompt": prompt_metadata or {},
+                    "prompt": prompt_meta,
                     "turn_context_preview": turn_context[:600],
+                    "cache_hit": bool(cache_metrics.get("cache_hit", False)),
+                    "cached_input_tokens": _to_int(cache_metrics.get("cached_input_tokens")),
+                    "new_input_tokens": _to_int(cache_metrics.get("new_input_tokens")),
+                    "provider_cache_active": provider_cache_active,
                 },
             )
         if working_memory is not None and response.content:
@@ -395,6 +641,7 @@ async def run_agent_loop(
         return {"messages": [response], "budget_exhausted": False}
 
     async def tool_node(state: AgentGraphState) -> dict[str, Any]:
+        nonlocal tool_cache_hits, tool_cache_writes
         _assert_not_cancelled(observer, "tool dispatch")
         response = _last_ai_message(state["messages"])
         if response is None or not response.tool_calls:
@@ -456,38 +703,74 @@ async def run_agent_loop(
                 },
             ) as tool_span:
                 tool = tool_map.get(tool_name)
+                cache_key = _tool_cache_key(tool_name, tool_args)
+                cache_entry = tool_result_cache.get(cache_key)
+                cache_hit = False
+                cache_eligible = bool(settings.tool_result_cache_enabled) and _is_tool_cache_eligible(tool_name)
                 if tool is None:
                     result_content = json.dumps({"error": f"Unknown tool: {tool_name}"})
                     tool_status = "error"
                 else:
-                    try:
+                    if (
+                        cache_eligible
+                        and cache_entry is not None
+                        and cache_entry.get("cached_result")
+                        and int(cache_entry.get("stable_observations", 0)) >= required_identical_observations
+                    ):
+                        result_content = str(cache_entry.get("cached_result"))
+                        tool_status = "success"
+                        cache_hit = True
+                        tool_cache_hits += 1
+                    else:
                         try:
-                            raw = await asyncio.wait_for(
-                                _invoke_tool(tool, tool_args),
-                                timeout=tool_timeout_seconds,
-                            )
-                            result_content = _serialize_tool_output(raw)
-                            tool_status = "success"
-                        except asyncio.TimeoutError:
-                            result_content = json.dumps(
-                                {
-                                    "error": (
-                                        f"Tool '{tool_name}' timed out after {tool_timeout_seconds}s"
-                                    )
-                                }
-                            )
+                            try:
+                                raw = await asyncio.wait_for(
+                                    _invoke_tool(tool, tool_args),
+                                    timeout=tool_timeout_seconds,
+                                )
+                                result_content = _serialize_tool_output(raw)
+                                tool_status = "success"
+                            except asyncio.TimeoutError:
+                                result_content = json.dumps(
+                                    {
+                                        "error": (
+                                            f"Tool '{tool_name}' timed out after {tool_timeout_seconds}s"
+                                        )
+                                    }
+                                )
+                                tool_status = "error"
+                        except Exception as exc:
+                            logger.warning("Tool %s raised: %s", tool_name, exc)
+                            result_content = json.dumps({"error": str(exc)})
                             tool_status = "error"
-                    except Exception as exc:
-                        logger.warning("Tool %s raised: %s", tool_name, exc)
-                        result_content = json.dumps({"error": str(exc)})
-                        tool_status = "error"
-                        set_span_attributes(
-                            tool_span,
-                            {
-                                "error.type": type(exc).__name__,
-                                "error.message": str(exc),
-                            },
-                        )
+                            set_span_attributes(
+                                tool_span,
+                                {
+                                    "error.type": type(exc).__name__,
+                                    "error.message": str(exc),
+                                },
+                            )
+
+                        if cache_eligible and tool_status == "success":
+                            if cache_entry is None:
+                                cache_entry = {
+                                    "last_output": result_content,
+                                    "stable_observations": 1,
+                                    "cached_result": "",
+                                }
+                                tool_result_cache[cache_key] = cache_entry
+                            else:
+                                if result_content == cache_entry.get("last_output"):
+                                    cache_entry["stable_observations"] = int(cache_entry.get("stable_observations", 0)) + 1
+                                else:
+                                    cache_entry["last_output"] = result_content
+                                    cache_entry["stable_observations"] = 1
+                                    cache_entry["cached_result"] = ""
+                            if int(cache_entry.get("stable_observations", 0)) >= required_identical_observations:
+                                if cache_entry.get("cached_result") != result_content:
+                                    tool_cache_writes += 1
+                                cache_entry["cached_result"] = result_content
+                                cache_entry["last_output"] = result_content
 
                 tool_duration = round(time.perf_counter() - started_at, 3)
                 set_span_attributes(
@@ -495,6 +778,7 @@ async def run_agent_loop(
                     {
                         "owc.tool_status": tool_status,
                         "owc.tool_duration_seconds": tool_duration,
+                        "owc.tool_cache_hit": cache_hit,
                     },
                 )
                 set_span_output(tool_span, result_content[:4000])
@@ -511,6 +795,8 @@ async def run_agent_loop(
                         "duration_seconds": tool_duration,
                         "result_preview": result_content[:800],
                         "message_count": len(state["messages"]) + len(tool_messages),
+                        "cache_hit": cache_hit,
+                        "cache_eligible": cache_eligible,
                     },
                 )
             if working_memory is not None:
@@ -561,6 +847,7 @@ async def run_agent_loop(
                     llm.ainvoke(
                         [*state["messages"], budget_message],
                         config={"run_name": f"{run_name}_final"},
+                        **provider_cache_invoke_kwargs,
                     ),
                     timeout=llm_timeout_seconds,
                 )
@@ -625,11 +912,20 @@ async def run_agent_loop(
 
         if observer is not None:
             observer.record_message("ai")
+            nonlocal llm_cache_hit_calls, llm_cached_input_tokens, llm_new_input_tokens
+            final_cache_metrics = _extract_cache_metrics(getattr(final, "usage_metadata", None), response=final)
+            if final_cache_metrics["cache_hit"]:
+                llm_cache_hit_calls += 1
+            llm_cached_input_tokens += _to_int(final_cache_metrics.get("cached_input_tokens"))
+            llm_new_input_tokens += _to_int(final_cache_metrics.get("new_input_tokens"))
             observer.add_llm_usage(
                 getattr(final, "usage_metadata", None),
                 model_name=model_name,
                 provider=provider,
                 pricing=pricing,
+                response_metadata=getattr(final, "response_metadata", None),
+                additional_kwargs=getattr(final, "additional_kwargs", None),
+                cache_metrics=final_cache_metrics,
             )
 
         return {"messages": [budget_message, final], "budget_exhausted": False}
@@ -661,8 +957,9 @@ async def run_agent_loop(
         "messages": [
             SystemMessage(content=system_prompt),
             HumanMessage(content=initial_message),
+            *bootstrap_messages,
         ],
-        "tool_calls_made": 0,
+        "tool_calls_made": bootstrap_tool_calls,
         "max_tool_calls": max_tool_calls,
         "budget_exhausted": False,
     }
@@ -674,7 +971,8 @@ async def run_agent_loop(
         "provider": provider,
         "tool_names": list(tool_map.keys()),
         "max_tool_calls": max_tool_calls,
-        "prompt": prompt_metadata or {},
+        "prompt": prompt_meta,
+        "provider_cache_active": provider_cache_active,
     }
     context_tags = ["open-web-catcher", run_name, "agent-loop", "langgraph"]
 
@@ -716,6 +1014,12 @@ async def run_agent_loop(
                     details={
                         "tool_calls_made": final_state["tool_calls_made"],
                         "message_count": len(messages),
+                        "bootstrap_tool_calls": bootstrap_tool_calls,
+                        "llm_cache_hit_calls": llm_cache_hit_calls,
+                        "llm_cached_input_tokens": llm_cached_input_tokens,
+                        "llm_new_input_tokens": llm_new_input_tokens,
+                        "tool_cache_hits": tool_cache_hits,
+                        "tool_cache_writes": tool_cache_writes,
                     },
                     status="warning" if budget_was_exhausted else "success",
                 )
@@ -725,7 +1029,13 @@ async def run_agent_loop(
                 {
                     "tool_calls_made": final_state["tool_calls_made"],
                     "message_count": len(messages),
+                    "bootstrap_tool_calls": bootstrap_tool_calls,
                     "final_text_preview": (final_text or "")[:2000],
+                    "llm_cache_hit_calls": llm_cache_hit_calls,
+                    "llm_cached_input_tokens": llm_cached_input_tokens,
+                    "llm_new_input_tokens": llm_new_input_tokens,
+                    "tool_cache_hits": tool_cache_hits,
+                    "tool_cache_writes": tool_cache_writes,
                     "runtime": "langgraph",
                 },
             )

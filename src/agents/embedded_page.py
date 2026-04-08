@@ -113,6 +113,8 @@ class EmbeddedPageAgent:
                             page_url=url,
                             page_type=AgentType.EMBEDDED_PAGE.value,
                         ),
+                        bootstrap_url=url,
+                        bootstrap_context_first=True,
                     )
 
                 output = result.parse_json()

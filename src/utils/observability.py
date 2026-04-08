@@ -22,6 +22,82 @@ from src.utils.instrumentation import (
 )
 
 
+def _coerce_mapping(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if hasattr(value, "model_dump"):
+        dumped = value.model_dump(mode="json")
+        return dumped if isinstance(dumped, dict) else {}
+    return getattr(value, "__dict__", {}) if hasattr(value, "__dict__") else {}
+
+
+def _to_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _extract_cache_metrics(
+    usage: Any,
+    *,
+    response_metadata: Any = None,
+    additional_kwargs: Any = None,
+) -> dict[str, Any]:
+    usage_dict = _coerce_mapping(usage)
+    response_dict = _coerce_mapping(response_metadata)
+    kwargs_dict = _coerce_mapping(additional_kwargs)
+
+    input_tokens = _to_int(
+        usage_dict.get("input_tokens")
+        or usage_dict.get("prompt_tokens")
+        or usage_dict.get("input_token_count")
+        or usage_dict.get("prompt_token_count")
+    )
+    output_tokens = _to_int(
+        usage_dict.get("output_tokens")
+        or usage_dict.get("completion_tokens")
+        or usage_dict.get("candidates_token_count")
+        or usage_dict.get("output_token_count")
+    )
+
+    openai_details = _coerce_mapping(usage_dict.get("input_token_details") or usage_dict.get("prompt_tokens_details"))
+    cached_tokens = _to_int(openai_details.get("cached_tokens"))
+
+    # Anthropic-style prompt caching fields.
+    cache_read_input_tokens = _to_int(usage_dict.get("cache_read_input_tokens"))
+    cache_creation_input_tokens = _to_int(usage_dict.get("cache_creation_input_tokens"))
+    if cache_read_input_tokens:
+        cached_tokens = max(cached_tokens, cache_read_input_tokens)
+
+    if not cached_tokens:
+        # Fallback for providers that surface cache details in nested metadata.
+        response_usage = _coerce_mapping(response_dict.get("token_usage") or response_dict.get("usage"))
+        response_details = _coerce_mapping(response_usage.get("input_token_details") or response_usage.get("prompt_tokens_details"))
+        cached_tokens = _to_int(response_details.get("cached_tokens"))
+
+    if not cached_tokens:
+        kwargs_usage = _coerce_mapping(kwargs_dict.get("usage") or kwargs_dict.get("token_usage"))
+        kwargs_details = _coerce_mapping(kwargs_usage.get("input_token_details") or kwargs_usage.get("prompt_tokens_details"))
+        cached_tokens = _to_int(kwargs_details.get("cached_tokens"))
+
+    cached_tokens = max(0, min(cached_tokens, input_tokens))
+    new_input_tokens = max(input_tokens - cached_tokens, 0)
+    cache_hit = cached_tokens > 0 or cache_read_input_tokens > 0
+
+    return {
+        "cache_hit": cache_hit,
+        "input_tokens": input_tokens,
+        "cached_input_tokens": cached_tokens,
+        "new_input_tokens": new_input_tokens,
+        "output_tokens": output_tokens,
+        "cache_read_input_tokens": cache_read_input_tokens,
+        "cache_creation_input_tokens": cache_creation_input_tokens,
+    }
+
+
 class RuntimeEvent(BaseModel):
     seq: int
     timestamp: datetime = Field(default_factory=datetime.utcnow)
@@ -161,6 +237,9 @@ class RunObserver:
         model_name: str = "",
         provider: str = "",
         pricing: dict[str, Any] | None = None,
+        response_metadata: Any = None,
+        additional_kwargs: Any = None,
+        cache_metrics: dict[str, Any] | None = None,
     ) -> None:
         usage_dict = usage if isinstance(usage, dict) else getattr(usage, "__dict__", {})
         input_tokens = int(
@@ -185,19 +264,35 @@ class RunObserver:
             input_per_million=float(pricing.get("input_per_million", 0.0) or 0.0),
             output_per_million=float(pricing.get("output_per_million", 0.0) or 0.0),
         )
+        resolved_cache = cache_metrics or _extract_cache_metrics(
+            usage,
+            response_metadata=response_metadata,
+            additional_kwargs=additional_kwargs,
+        )
+        cache_hit = bool(resolved_cache.get("cache_hit", False))
+        cached_input_tokens = _to_int(resolved_cache.get("cached_input_tokens"))
+        new_input_tokens = _to_int(resolved_cache.get("new_input_tokens"))
 
         with self._state._lock:
             metrics = self._state.metrics
             metrics.total_llm_calls += 1
             metrics.total_tokens_in += input_tokens
+            metrics.total_cached_input_tokens += cached_input_tokens
+            metrics.total_new_input_tokens += new_input_tokens
             metrics.total_tokens_out += output_tokens
+            if cache_hit:
+                metrics.total_cache_hit_calls += 1
             metrics.estimated_input_cost_usd = round(metrics.estimated_input_cost_usd + costs["estimated_input_cost_usd"], 8)
             metrics.estimated_output_cost_usd = round(metrics.estimated_output_cost_usd + costs["estimated_output_cost_usd"], 8)
             metrics.estimated_total_cost_usd = round(metrics.estimated_total_cost_usd + costs["estimated_total_cost_usd"], 8)
 
             model_usage = self._state._get_model_usage(model_name or "unknown", resolved_provider)
             model_usage.llm_calls += 1
+            if cache_hit:
+                model_usage.cache_hit_calls += 1
             model_usage.input_tokens += input_tokens
+            model_usage.cached_input_tokens += cached_input_tokens
+            model_usage.new_input_tokens += new_input_tokens
             model_usage.output_tokens += output_tokens
             model_usage.estimated_input_cost_usd = round(model_usage.estimated_input_cost_usd + costs["estimated_input_cost_usd"], 8)
             model_usage.estimated_output_cost_usd = round(model_usage.estimated_output_cost_usd + costs["estimated_output_cost_usd"], 8)

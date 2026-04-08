@@ -424,6 +424,45 @@ class TestUiWorkflowRunEndpoint:
         mock_task.assert_called_once()
 
 
+class TestPricingSyncEndpoint:
+    def test_sync_pricing_endpoint_unsupported_provider(self, client: TestClient):
+        response = client.post("/ui/pricing/sync", json={"provider": "google"})
+        assert response.status_code == 400
+        assert "openrouter" in response.json()["detail"].lower()
+
+    def test_sync_pricing_endpoint_persists_rows(self, client: TestClient):
+        from src.models.schemas import PricingConfig
+
+        rows = [
+            PricingConfig(
+                provider="openrouter",
+                model_name="openai/gpt-4o-mini",
+                input_per_million=0.15,
+                output_per_million=0.6,
+                active=True,
+                notes="synced",
+            )
+        ]
+
+        with (
+            patch("src.api.app.fetch_provider_pricing", return_value=rows),
+            patch("src.api.app._refresh_pricing_from_db"),
+            patch("src.api.app.OperatorConsoleRepository") as mock_repo_cls,
+            patch("src.api.app.get_session") as mock_get_session,
+        ):
+            session = MagicMock()
+            mock_get_session.return_value = session
+            mock_repo_cls.return_value.upsert_pricing_configs.return_value = 1
+
+            response = client.post("/ui/pricing/sync", json={"provider": "openrouter"})
+
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["provider"] == "openrouter"
+
+            mock_repo_cls.return_value.upsert_pricing_configs.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # Background agent runner: _background_agent internal logic
 # ---------------------------------------------------------------------------

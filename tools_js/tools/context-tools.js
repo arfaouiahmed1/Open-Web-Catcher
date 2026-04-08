@@ -32,6 +32,43 @@ function compactElements(elements, limit = 8) {
   }));
 }
 
+function summarizeDedupedLinks(elements, limit = 60) {
+  const buckets = new Map();
+  for (const element of elements) {
+    if (element.kind !== 'link' || !element.href) continue;
+    const href = String(element.href).trim();
+    if (!href) continue;
+    const key = href;
+    if (!buckets.has(key)) {
+      buckets.set(key, {
+        href,
+        occurrences: 0,
+        visible_occurrences: 0,
+        sample_texts: [],
+      });
+    }
+    const row = buckets.get(key);
+    row.occurrences += 1;
+    if (element.visible) row.visible_occurrences += 1;
+    if (element.text && row.sample_texts.length < 3 && !row.sample_texts.includes(element.text)) {
+      row.sample_texts.push(element.text);
+    }
+  }
+
+  return Array.from(buckets.values())
+    .sort((a, b) => b.occurrences - a.occurrences)
+    .slice(0, limit);
+}
+
+function suggestRevealActions(elements) {
+  const revealPatterns = /(show more|load more|see more|more servers|next|older|expand|view all|watch now|play)/i;
+  const candidates = elements.filter((element) =>
+    ['button', 'tab', 'link'].includes(element.kind)
+    && revealPatterns.test(String(element.text || '')));
+
+  return compactElements(candidates, 12);
+}
+
 function summarizePagination(elements) {
   const paginationMatches = elements.filter((element) =>
     element.kind === 'link'
@@ -79,6 +116,7 @@ export async function getPageContext({
 
     const links = elements.filter((element) => element.kind === 'link');
     const buttons = elements.filter((element) => ['button', 'tab'].includes(element.kind));
+    const hiddenInteractive = elements.filter((element) => !element.visible && ['link', 'button', 'tab'].includes(element.kind));
     const overlays = elements.filter((element) => element.kind === 'overlay');
     const videos = elements.filter((element) => element.kind === 'video');
     const iframes = frameTree.filter((frame) =>
@@ -110,10 +148,13 @@ export async function getPageContext({
         },
         top_links: compactElements(links, 8),
         top_buttons: compactElements(buttons, 8),
+        hidden_interactive_candidates: compactElements(hiddenInteractive, 10),
+        deduped_links: summarizeDedupedLinks(elements, 80),
+        reveal_actions: suggestRevealActions(elements),
         top_overlays: compactElements(overlays, 5),
         top_candidates: compactElements(
           elements.filter((element) => ['link', 'button', 'tab', 'video', 'overlay', 'iframe'].includes(element.kind)),
-          12,
+          30,
         ),
       },
     });

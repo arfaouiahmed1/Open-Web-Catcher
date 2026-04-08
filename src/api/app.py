@@ -38,6 +38,7 @@ from src.utils.config import Settings
 from src.utils.ipinfo import lookup_multiple
 from src.utils.logging import get_logger, setup_logging
 from src.utils.observability import get_observability_status, run_registry
+from src.utils.provider_pricing import ProviderPricingSyncError, fetch_provider_pricing
 from src.utils.service_health import probe_browser, probe_mcp
 
 logger = get_logger(__name__)
@@ -117,6 +118,56 @@ def _refresh_pricing_from_db(settings: Settings) -> None:
         session.close()
 
 
+def _sync_provider_pricing_to_db(
+    settings: Settings,
+    *,
+    provider: str,
+    max_models: int | None = None,
+) -> dict[str, Any]:
+    effective_provider = (provider or settings.llm_provider or "").strip().lower()
+    rows = fetch_provider_pricing(
+        settings,
+        provider=effective_provider,
+        timeout_seconds=max(1, int(settings.provider_pricing_timeout_seconds)),
+        max_models=max_models if max_models is not None else max(1, int(settings.provider_pricing_max_models)),
+    )
+
+    session = get_session()
+    try:
+        stored = OperatorConsoleRepository(session).upsert_pricing_configs(rows)
+    finally:
+        session.close()
+
+    _refresh_pricing_from_db(settings)
+    return {
+        "provider": effective_provider,
+        "synced": len(rows),
+        "stored": stored,
+        "models": [item.model_name for item in rows],
+    }
+
+
+def _auto_sync_provider_pricing(settings: Settings) -> None:
+    if not settings.provider_pricing_sync_enabled:
+        return
+
+    provider = (settings.llm_provider or "").strip().lower()
+    try:
+        payload = _sync_provider_pricing_to_db(settings, provider=provider)
+    except NotImplementedError:
+        logger.info("Provider pricing sync skipped: provider '%s' is not API-sync supported.", provider)
+    except ProviderPricingSyncError as exc:
+        logger.warning("Provider pricing sync failed: %s", exc)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Unexpected provider pricing sync failure: %s", exc)
+    else:
+        logger.info(
+            "Provider pricing sync complete: provider=%s models=%d",
+            payload["provider"],
+            payload["stored"],
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -124,6 +175,7 @@ async def lifespan(app: FastAPI):
     setup_tracing_from_settings(settings)
     create_tables()
     _refresh_pricing_from_db(settings)
+    _auto_sync_provider_pricing(settings)
     logger.info(
         "Open Web Catcher API started | orchestrator=%s | agents=%s",
         settings.orchestrator_model,
@@ -805,6 +857,14 @@ class ModelConfigRequest(BaseModel):
     agent_model: str = ""
     orchestrator_model: str = ""
     gemini_temperature: float | None = None
+    provider_cache_enabled: bool | None = None
+    tool_result_cache_enabled: bool | None = None
+    tool_result_cache_min_identical_observations: int | None = None
+
+
+class PricingSyncRequest(BaseModel):
+    provider: str = ""
+    max_models: int | None = None
 
 
 @app.get("/ui/config")
@@ -816,6 +876,9 @@ def ui_get_config():
         "agent_model": s.agent_model,
         "orchestrator_model": s.orchestrator_model,
         "gemini_temperature": s.gemini_temperature,
+        "provider_cache_enabled": s.provider_cache_enabled,
+        "tool_result_cache_enabled": s.tool_result_cache_enabled,
+        "tool_result_cache_min_identical_observations": s.tool_result_cache_min_identical_observations,
         "api_keys": {
             "google":      bool(s.google_api_key),
             "openai":      bool(s.openai_api_key),
@@ -837,6 +900,15 @@ def ui_update_config(body: ModelConfigRequest):
         s.orchestrator_model = body.orchestrator_model
     if body.gemini_temperature is not None:
         s.gemini_temperature = body.gemini_temperature
+    if body.provider_cache_enabled is not None:
+        s.provider_cache_enabled = body.provider_cache_enabled
+    if body.tool_result_cache_enabled is not None:
+        s.tool_result_cache_enabled = body.tool_result_cache_enabled
+    if body.tool_result_cache_min_identical_observations is not None:
+        s.tool_result_cache_min_identical_observations = max(
+            1,
+            int(body.tool_result_cache_min_identical_observations),
+        )
     try:
         s.save_yaml()
     except Exception as exc:
@@ -874,6 +946,20 @@ def ui_update_pricing(config: PricingConfig):
         return saved.model_dump(mode="json")
     finally:
         session.close()
+
+
+@app.post("/ui/pricing/sync")
+def ui_sync_pricing(req: PricingSyncRequest):
+    settings = get_settings()
+    provider = (req.provider or settings.llm_provider or "").strip().lower()
+    max_models = req.max_models
+
+    try:
+        return _sync_provider_pricing_to_db(settings, provider=provider, max_models=max_models)
+    except NotImplementedError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ProviderPricingSyncError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.get("/ui/evaluations/suites")

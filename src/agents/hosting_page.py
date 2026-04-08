@@ -109,6 +109,8 @@ class HostingPageAgent:
                             page_url=url,
                             page_type=AgentType.HOSTING_PAGE.value,
                         ),
+                        bootstrap_url=url,
+                        bootstrap_context_first=True,
                     )
 
                 output = result.parse_json()

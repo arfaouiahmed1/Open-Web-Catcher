@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   Brain,
+  Camera,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -11,6 +12,7 @@ import {
   Clock,
   Cpu,
   DollarSign,
+  ExternalLink,
   Loader2,
   Play,
   Square,
@@ -100,7 +102,22 @@ function Pill({ icon: Icon, label, value, danger }) {
 /* ─── reasoning feed blocks ─────────────────────────────────────────────── */
 
 function ThinkingBlock({ event }) {
-  const preview = event.details?.content_preview;
+  const rawPreview = event.details?.content_preview;
+  const preview = (() => {
+    if (typeof rawPreview === "string") return rawPreview;
+    if (Array.isArray(rawPreview)) {
+      const textParts = rawPreview
+        .map((item) => {
+          if (typeof item === "string") return item;
+          if (item && typeof item === "object" && typeof item.text === "string") return item.text;
+          return "";
+        })
+        .filter(Boolean);
+      if (textParts.length) return textParts.join("\n\n");
+    }
+    if (rawPreview && typeof rawPreview === "object") return safeJson(rawPreview);
+    return "";
+  })();
   const toolCount = event.details?.tool_calls || 0;
   const tokens = (event.details?.input_tokens || 0) + (event.details?.output_tokens || 0);
   const actor = event.actor ? event.actor.replace(/_/g, " ") : "agent";
@@ -132,31 +149,156 @@ function ThinkingBlock({ event }) {
 
 function ToolBlock({ event }) {
   const [expanded, setExpanded] = useState(false);
+  const [loadedScreenshot, setLoadedScreenshot] = useState("");
   const toolName = event.details?.tool_name;
   const args = event.details?.args;
   const resultPreview = event.details?.result_preview;
   const isStart = event.kind === "tool_call_started";
   const isError = event.status === "error";
 
+  function isScreenshotValue(v) {
+    return typeof v === "string" && v.trim().length > 0 && (v.startsWith("http") || v.startsWith("data:image/"));
+  }
+
+  function collectScreenshotUrls(value, out) {
+    if (value == null) return;
+
+    if (typeof value === "string") {
+      // Try direct JSON parse first.
+      try {
+        collectScreenshotUrls(JSON.parse(value), out);
+        return;
+      } catch { /* fall through */ }
+
+      // result_preview arrives as an escaped JSON string like:
+      //   {\"screenshot_url\":\"https://...\"}
+      // Unescape the backslash-quotes and try again.
+      try {
+        const unescaped = value.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+        collectScreenshotUrls(JSON.parse(unescaped), out);
+        return;
+      } catch { /* fall through */ }
+
+      // Last resort: regex scan for screenshot_url in any form.
+      // Matches both: "screenshot_url":"https://..." and \"screenshot_url\":\"https://...\"
+      const pattern = /(?:\\?"screenshot_url\\?"\s*:\s*\\?")(https?:\/\/[^"\\]+|data:image\/[^"\\]+)(?:\\?")/g;
+      for (const match of value.matchAll(pattern)) {
+        const url = String(match[1] || "").trim();
+        if (isScreenshotValue(url)) out.add(url);
+      }
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) collectScreenshotUrls(item, out);
+      return;
+    }
+
+    if (typeof value === "object") {
+      const screenshotUrl = value.screenshot_url;
+      if (isScreenshotValue(screenshotUrl)) out.add(screenshotUrl.trim());
+      const screenshotUrls = value.screenshot_urls;
+      if (Array.isArray(screenshotUrls)) {
+        for (const item of screenshotUrls) {
+          if (isScreenshotValue(item)) out.add(item.trim());
+        }
+      }
+      for (const nested of Object.values(value)) {
+        collectScreenshotUrls(nested, out);
+      }
+    }
+  }
+
+  const screenshotUrls = (() => {
+    const urls = new Set();
+    collectScreenshotUrls(resultPreview, urls);
+    return Array.from(urls).slice(0, 3);
+  })();
+
   const color = isError ? "text-ember" : isStart ? "text-spark" : "text-surge";
   const border = isError ? "border-ember/20 bg-ember/5" : isStart ? "border-spark/20 bg-spark/5" : "border-surge/20 bg-surge/5";
   const verb = isStart ? "calling" : isError ? "failed" : "returned";
+  const primaryScreenshot = screenshotUrls[0] || "";
+  const isCloudinaryUrl = primaryScreenshot.startsWith("http");
 
   return (
     <div className={cn("rounded-lg border p-2.5", border)}>
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-2 text-left"
-      >
-        <Terminal className={cn("h-3.5 w-3.5 shrink-0", color)} />
-        <span className={cn("text-xs font-semibold uppercase tracking-wide", color)}>{verb}</span>
-        <span className="ml-1 rounded bg-black/30 px-1.5 py-0.5 font-mono text-xs text-slate-200">
-          {toolName}
-        </span>
-        {(args || resultPreview) && (
-          <ChevronDown className={cn("ml-auto h-3 w-3 shrink-0 text-slate-600 transition-transform", expanded && "rotate-180")} />
+      {/* ── header row ── */}
+      <div className="flex w-full items-center gap-2">
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          <Terminal className={cn("h-3.5 w-3.5 shrink-0", color)} />
+          <span className={cn("text-xs font-semibold uppercase tracking-wide", color)}>{verb}</span>
+          <span className="ml-1 rounded bg-black/30 px-1.5 py-0.5 font-mono text-xs text-slate-200 truncate">
+            {toolName}
+          </span>
+          {(args || resultPreview) && (
+            <ChevronDown className={cn("ml-auto h-3 w-3 shrink-0 text-slate-600 transition-transform", expanded && "rotate-180")} />
+          )}
+        </button>
+
+        {/* screenshot quick-access buttons — always visible when a screenshot exists */}
+        {primaryScreenshot && (
+          <div className="flex shrink-0 items-center gap-1 ml-2">
+            <button
+              onClick={() => setLoadedScreenshot(loadedScreenshot === primaryScreenshot ? "" : primaryScreenshot)}
+              title={loadedScreenshot === primaryScreenshot ? "Hide screenshot" : "Show screenshot"}
+              className={cn(
+                "flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium transition-colors",
+                loadedScreenshot === primaryScreenshot
+                  ? "border-surge/50 bg-surge/20 text-surge"
+                  : "border-surge/30 bg-surge/10 text-surge hover:bg-surge/20"
+              )}
+            >
+              <Camera className="h-3 w-3" />
+            </button>
+            {isCloudinaryUrl && (
+              <a
+                href={primaryScreenshot}
+                target="_blank"
+                rel="noreferrer"
+                title="Open screenshot in new tab"
+                className="flex items-center gap-1 rounded border border-white/15 bg-white/[0.04] px-1.5 py-0.5 text-[11px] font-medium text-slate-300 hover:bg-white/[0.08] transition-colors"
+              >
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+          </div>
         )}
-      </button>
+      </div>
+
+      {/* ── inline 16:9 screenshot preview ── */}
+      {loadedScreenshot && (
+        <div className="mt-2 overflow-hidden rounded border border-white/10 bg-black/30">
+          <div className="relative w-full" style={{ aspectRatio: "16/9" }}>
+            <img
+              src={loadedScreenshot}
+              alt="Tool screenshot"
+              className="absolute inset-0 h-full w-full rounded object-cover"
+              loading="lazy"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          {/* URL bar below if it's a real hosted URL */}
+          {isScreenshotValue(loadedScreenshot) && loadedScreenshot.startsWith("http") && (
+            <div className="flex items-center gap-2 border-t border-white/6 px-2 py-1">
+              <span className="flex-1 truncate font-mono text-[10px] text-slate-500">{loadedScreenshot}</span>
+              <a
+                href={loadedScreenshot}
+                target="_blank"
+                rel="noreferrer"
+                className="flex shrink-0 items-center gap-1 text-[10px] text-slate-400 hover:text-white transition-colors"
+              >
+                <ExternalLink className="h-3 w-3" />open
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── expanded details ── */}
       {expanded && (args || resultPreview) && (
         <div className="mt-2 space-y-1.5">
           {args && (
@@ -175,6 +317,19 @@ function ToolBlock({ event }) {
               </pre>
             </div>
           )}
+          {screenshotUrls.length > 1 && (
+            <div className="flex flex-wrap gap-1.5">
+              {screenshotUrls.slice(1).map((url, idx) => (
+                <button
+                  key={`${url}-${idx}`}
+                  onClick={() => setLoadedScreenshot(loadedScreenshot === url ? "" : url)}
+                  className="rounded border border-surge/30 bg-surge/10 px-2 py-1 text-[11px] font-medium text-surge hover:bg-surge/20"
+                >
+                  {loadedScreenshot === url ? `Hide #${idx + 2}` : `Screenshot ${idx + 2}`}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -184,14 +339,15 @@ function ToolBlock({ event }) {
 function StatusChip({ event }) {
   const meta = EVENT_META[event.kind] || { color: "text-slate-500", label: event.kind };
   const isError = event.status === "error";
+  const message = typeof event.message === "string" ? event.message : safeJson(event.message);
   return (
     <div className={cn(
       "flex items-center gap-2 rounded-md border border-white/6 px-2.5 py-1.5 text-xs",
       isError && "border-ember/30 bg-ember/5"
     )}>
       <span className={cn("font-semibold", isError ? "text-ember" : meta.color)}>{meta.label}</span>
-      {event.message && (
-        <span className="truncate text-slate-500">{event.message}</span>
+      {message && (
+        <span className="truncate text-slate-500">{message}</span>
       )}
     </div>
   );
@@ -251,6 +407,7 @@ function EventRow({ event }) {
   const meta = EVENT_META[event.kind] || { color: "text-slate-400", label: event.kind };
   const hasDetails = event.details && Object.keys(event.details).length > 0;
   const isError = event.status === "error";
+  const message = typeof event.message === "string" ? event.message : safeJson(event.message);
 
   return (
     <div className={cn(
@@ -273,7 +430,7 @@ function EventRow({ event }) {
         <span className={cn("shrink-0 font-medium", isError ? "text-ember" : meta.color)}>
           {meta.label}
         </span>
-        <span className="flex-1 truncate text-slate-600">{event.message}</span>
+        <span className="flex-1 truncate text-slate-600">{message}</span>
         <span className="shrink-0 font-mono text-slate-700">#{event.seq}</span>
         {hasDetails && (
           <ChevronRight className={cn("h-3 w-3 shrink-0 text-slate-700 transition-transform", expanded && "rotate-90")} />
@@ -321,28 +478,61 @@ export function RunStudio({ mode = "workflow" }) {
   const [events, setEvents]         = useState([]);
   const [metrics, setMetrics]       = useState(null);
   const [tracePayload, setTrace]    = useState(null);
+  const [streamError, setStreamError] = useState("");
   const [isStarting, setIsStarting] = useState(false);
   const [isRunning, setIsRunning]   = useState(false);
 
   useEffect(() => {
     if (!runId) return;
     setIsRunning(true);
+    setStreamError("");
     const source = new EventSource(apiUrl(`/ui/runs/${runId}/stream`));
     source.onmessage = (e) => {
-      const payload = JSON.parse(e.data);
-      setTrace(payload);
-      setEvents((cur) => [...cur, ...(payload.events || [])]);
-      if (payload.metrics) setMetrics(payload.metrics);
-      if (payload.completed) { source.close(); setIsRunning(false); }
+      try {
+        const payload = JSON.parse(e.data || "{}");
+        if (!payload || typeof payload !== "object") {
+          return;
+        }
+
+        setTrace(payload);
+
+        const incomingEvents = Array.isArray(payload.events)
+          ? payload.events.filter((item) => item && typeof item === "object")
+          : [];
+
+        if (incomingEvents.length) {
+          setEvents((cur) => [...cur, ...incomingEvents]);
+        }
+
+        if (payload.metrics && typeof payload.metrics === "object") {
+          setMetrics(payload.metrics);
+        }
+
+        if (payload.completed) {
+          source.close();
+          setIsRunning(false);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err || "Unknown stream parse error");
+        setStreamError(`Stream payload parse failed: ${message}`);
+      }
     };
-    source.onerror = () => { source.close(); setIsRunning(false); };
+    source.onerror = () => {
+      source.close();
+      setIsRunning(false);
+      setStreamError((prev) => prev || "Live stream disconnected unexpectedly.");
+    };
     return () => source.close();
   }, [runId]);
 
-  const toolCalls   = events.filter((e) => e.kind === "tool_call_started").length;
-  const llmCalls    = events.filter((e) => e.kind === "llm_response").length;
-  const errorCount  = events.filter((e) => e.status === "error").length;
+  const toolCalls   = events.filter((e) => e && e.kind === "tool_call_started").length;
+  const llmCalls    = events.filter((e) => e && e.kind === "llm_response").length;
+  const errorCount  = events.filter((e) => e && e.status === "error").length;
   const totalTokens = (metrics?.total_tokens_in || 0) + (metrics?.total_tokens_out || 0);
+  const cachedInputTokens = metrics?.total_cached_input_tokens || 0;
+  const newInputTokens = metrics?.total_new_input_tokens || 0;
+  const cacheHitCalls = metrics?.total_cache_hit_calls || 0;
+  const cacheHitRate = llmCalls > 0 ? (cacheHitCalls / llmCalls) * 100 : 0;
   const duration    = metrics?.total_duration_seconds;
   const completed   = tracePayload?.completed;
   const succeeded   = completed && metrics?.success;
@@ -353,6 +543,7 @@ export function RunStudio({ mode = "workflow" }) {
     setEvents([]);
     setMetrics(null);
     setTrace(null);
+    setStreamError("");
     setRunId("");
     try {
       const endpoint = mode === "workflow" ? "/ui/workflows/run" : "/ui/agents/test";
@@ -363,7 +554,13 @@ export function RunStudio({ mode = "workflow" }) {
         body: JSON.stringify(body),
       });
       const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload?.detail || `Run start failed (status ${res.status})`);
+      }
       setRunId(payload.run_id || "");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err || "Run start failed");
+      setStreamError(message);
     } finally {
       setIsStarting(false);
     }
@@ -456,11 +653,21 @@ export function RunStudio({ mode = "workflow" }) {
             <div className="ml-auto flex flex-wrap gap-1.5">
               <Pill icon={Wrench}     label="tools"  value={toolCalls} />
               <Pill icon={Cpu}        label="llm"    value={llmCalls} />
+              <Pill icon={CircleDot}  label="cache"  value={`${cacheHitCalls}/${llmCalls || 0}`} />
+              <Pill icon={CircleDot}  label="hit %"  value={`${cacheHitRate.toFixed(0)}%`} />
+              <Pill icon={CircleDot}  label="cached tok" value={formatNumber(cachedInputTokens)} />
+              <Pill icon={CircleDot}  label="new tok" value={formatNumber(newInputTokens)} />
               <Pill icon={Zap}        label="tokens" value={formatNumber(totalTokens)} />
               <Pill icon={DollarSign} label="cost"   value={formatCurrency(metrics?.estimated_total_cost_usd || 0)} />
               {duration != null && <Pill icon={Clock} label="time" value={`${duration.toFixed(1)}s`} />}
               {errorCount > 0 && <Pill icon={AlertCircle} label="errors" value={errorCount} danger />}
             </div>
+          </div>
+        )}
+
+        {streamError && (
+          <div className="rounded-lg border border-ember/30 bg-ember/10 px-3 py-2 text-xs text-ember">
+            {streamError}
           </div>
         )}
       </div>

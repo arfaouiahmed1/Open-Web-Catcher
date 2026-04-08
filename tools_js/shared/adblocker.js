@@ -1,18 +1,20 @@
 /**
  * shared/adblocker.js - Ghostery-backed adblocker with cached filterlists.
  *
+ * Behaves like uBlock Origin: filter lists drive both network request blocking
+ * AND cosmetic filtering (element hiding). No separate toggles — the lists
+ * contain both types of rules and PuppeteerBlocker applies them all.
+ *
  * Filter sources:
- *   - Curated remote lists from ./filterlists/sources.json
- *   - Optional local *.txt lists dropped into ./filterlists/
+ *   - Remote lists defined in ./filterlists/sources.json  (enabled: true)
+ *   - Optional local *.txt files dropped into ./filterlists/
  *
  * Cache:
- *   - Raw lists in data/cache/adblocker/lists/
- *   - Serialized Ghostery engine in data/cache/adblocker/ghostery-engine.bin
- *
- * Modes:
- *   - networkFiltering toggles the actual Ghostery page integration
- *   - cosmeticFiltering is kept as an explicit placeholder until we split
- *     Ghostery's cosmetic pipeline from request blocking in this project
+ *   - Raw list text in data/cache/adblocker/lists/
+ *   - Serialised engine snapshot in data/cache/adblocker/ghostery-engine.bin
+ *   - Engine is rebuilt only when the combined list content changes (sha256 sig)
+ *   - Individual lists are re-fetched after OWC_ADBLOCK_CACHE_TTL_MS (default 24 h)
+ *     using ETag / If-Modified-Since for bandwidth efficiency
  */
 
 import crypto from 'node:crypto';
@@ -32,7 +34,8 @@ const ENGINE_CACHE_PATH = path.join(CACHE_ROOT, 'ghostery-engine.bin');
 const ENGINE_META_PATH = path.join(CACHE_ROOT, 'ghostery-engine.json');
 const DEFAULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
-const pageModes = new WeakMap();
+// Tracks which pages already have blocking enabled so we don't attach twice.
+const enabledPages = new WeakSet();
 
 let blockerSnapshotPromise = null;
 
@@ -43,23 +46,6 @@ function resolveCacheRoot() {
   }
 
   return path.resolve(PROJECT_ROOT, configuredPath);
-}
-
-function parseBoolean(value, fallback) {
-  if (value == null || value === '') {
-    return fallback;
-  }
-
-  const normalized = String(value).trim().toLowerCase();
-  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
-    return true;
-  }
-
-  if (['0', 'false', 'no', 'off'].includes(normalized)) {
-    return false;
-  }
-
-  return fallback;
 }
 
 function parseInteger(value, fallback) {
@@ -77,30 +63,6 @@ function sha256(value) {
 
 function sanitizeId(value) {
   return String(value).trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-');
-}
-
-function getDefaultMode() {
-  return {
-    networkFiltering: parseBoolean(process.env.OWC_GHOSTERY_NETWORK_FILTERING, true),
-    cosmeticFiltering: parseBoolean(process.env.OWC_GHOSTERY_COSMETIC_FILTERING, true),
-  };
-}
-
-function resolveBlockingMode(overrides = {}) {
-  const defaults = getDefaultMode();
-
-  return {
-    networkFiltering: overrides.networkFiltering ?? defaults.networkFiltering,
-    cosmeticFiltering: overrides.cosmeticFiltering ?? defaults.cosmeticFiltering,
-  };
-}
-
-function buildModeState(mode) {
-  return {
-    ...mode,
-    cosmeticFilteringApplied: mode.networkFiltering && mode.cosmeticFiltering,
-    cosmeticFilteringPlaceholder: !mode.networkFiltering && mode.cosmeticFiltering,
-  };
 }
 
 function getCacheTtlMs() {
@@ -471,13 +433,11 @@ async function getBlockerSnapshot() {
   return blockerSnapshotPromise;
 }
 
-export function getBlockingMode(overrides = {}) {
-  return buildModeState(resolveBlockingMode(overrides));
-}
-
+/**
+ * Returns metadata for all active filter lists (for diagnostics / UI display).
+ */
 export async function getFilterLists() {
   const snapshot = await getBlockerSnapshot();
-
   return snapshot.filterLists.map((entry) => ({
     id: entry.id,
     name: entry.name,
@@ -490,33 +450,15 @@ export async function getFilterLists() {
   }));
 }
 
-export async function getCosmeticFilterRules() {
-  return getFilterLists();
-}
-
-export async function getCosmeticFilterSelectors() {
-  return [];
-}
-
-export async function enableBlocking(page, modeOverrides = {}) {
-  const mode = buildModeState(resolveBlockingMode(modeOverrides));
-  const previousMode = pageModes.get(page);
-
-  if (!mode.networkFiltering) {
-    if (previousMode?.networkFiltering) {
-      const { blocker } = await getBlockerSnapshot();
-      await blocker.disableBlockingInPage(page);
-    }
-
-    pageModes.set(page, mode);
-    return mode;
-  }
-
+/**
+ * Attach the blocker to a Puppeteer page.
+ * Applies both network blocking and cosmetic filtering (element hiding)
+ * from the filter lists — same behaviour as uBlock Origin.
+ * Safe to call multiple times on the same page; attaches only once.
+ */
+export async function enableBlocking(page) {
+  if (enabledPages.has(page)) return;
   const { blocker } = await getBlockerSnapshot();
-  if (!previousMode?.networkFiltering) {
-    await blocker.enableBlockingInPage(page);
-  }
-
-  pageModes.set(page, mode);
-  return mode;
+  await blocker.enableBlockingInPage(page);
+  enabledPages.add(page);
 }

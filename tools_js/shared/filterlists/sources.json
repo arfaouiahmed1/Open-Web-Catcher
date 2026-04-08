@@ -2,67 +2,130 @@
   {
     "id": "easylist",
     "name": "EasyList",
+    "category": "ads",
     "url": "https://easylist.to/easylist/easylist.txt",
     "enabled": true
   },
   {
     "id": "easyprivacy",
     "name": "EasyPrivacy",
+    "category": "tracking",
     "url": "https://easylist.to/easylist/easyprivacy.txt",
     "enabled": true
   },
   {
-    "id": "hagezi-pro",
-    "name": "HaGeZi Pro",
-    "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt",
+    "id": "adguard-base",
+    "name": "AdGuard Base",
+    "category": "ads",
+    "url": "https://filters.adtidy.org/extension/chromium/filters/2.txt",
     "enabled": true
   },
   {
-    "id": "oisd-small",
-    "name": "OISD Small",
-    "url": "https://small.oisd.nl/",
+    "id": "adguard-tracking",
+    "name": "AdGuard Tracking Protection",
+    "category": "tracking",
+    "url": "https://filters.adtidy.org/extension/chromium/filters/3.txt",
     "enabled": true
   },
   {
-    "id": "ublock-filters",
-    "name": "uBlock Origin Filters",
-    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/filters.txt",
+    "id": "adguard-social",
+    "name": "AdGuard Social Media",
+    "category": "annoyances",
+    "url": "https://filters.adtidy.org/extension/chromium/filters/4.txt",
     "enabled": true
   },
   {
-    "id": "ublock-privacy",
-    "name": "uBlock Origin Privacy",
-    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/privacy.txt",
+    "id": "adguard-mobile",
+    "name": "AdGuard Mobile Ads",
+    "category": "ads",
+    "url": "https://filters.adtidy.org/extension/chromium/filters/11.txt",
     "enabled": true
   },
   {
-    "id": "ublock-badware",
-    "name": "uBlock Origin Badware",
-    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/badware.txt",
+    "id": "adguard-annoyances",
+    "name": "AdGuard Annoyances",
+    "category": "annoyances",
+    "url": "https://filters.adtidy.org/extension/chromium/filters/14.txt",
     "enabled": true
   },
-  {
-    "id": "ublock-resource-abuse",
-    "name": "uBlock Origin Resource Abuse",
-    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/resource-abuse.txt",
-    "enabled": true
-  },
-  {
-    "id": "ublock-unbreak",
-    "name": "uBlock Origin Unbreak",
-    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/unbreak.txt",
-    "enabled": true
-  },
-  {
-    "id": "ublock-quick-fixes",
-    "name": "uBlock Origin Quick Fixes",
-    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/quick-fixes.txt",
-    "enabled": true
-  },
-  {
-    "id": "ublock-annoyances",
-    "name": "uBlock Origin Annoyances",
-    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/annoyances.txt",
-    "enabled": true
-  }
+
+  { "id": "ublock-filters", "name": "uBlock Origin Filters", "category": "ads",
+    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/filters.txt", "enabled": true },
+  { "id": "ublock-privacy", "name": "uBlock Origin Privacy", "category": "tracking",
+    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/privacy.txt", "enabled": true },
+  { "id": "ublock-badware", "name": "uBlock Origin Badware", "category": "malware",
+    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/badware.txt", "enabled": true },
+  { "id": "ublock-resource-abuse", "name": "uBlock Origin Resource Abuse (cryptominers)", "category": "cryptomining",
+    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/resource-abuse.txt", "enabled": true },
+
+  { "id": "ublock-unbreak", "name": "uBlock Origin Unbreak", "category": "unbreak",
+    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/unbreak.txt", "enabled": true },
+  { "id": "ublock-quick-fixes", "name": "uBlock Origin Quick Fixes", "category": "unbreak",
+    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/quick-fixes.txt", "enabled": true },
+  { "id": "adguard-quick-fixes", "name": "AdGuard Quick Fixes", "category": "unbreak",
+    "url": "https://filters.adtidy.org/extension/chromium/filters/17.txt", "enabled": true },
+
+  { "id": "ublock-annoyances", "name": "uBlock Origin Annoyances", "category": "annoyances",
+    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/annoyances.txt", "enabled": true },
+  { "id": "fanboy-cookiemonster", "name": "Fanboy Cookie Monster (cookie banners)", "category": "annoyances",
+    "url": "https://secure.fanboy.co.nz/fanboy-cookiemonster.txt", "enabled": true },
+  { "id": "fanboy-annoyance", "name": "Fanboy Annoyances", "category": "annoyances",
+    "url": "https://secure.fanboy.co.nz/fanboy-annoyance.txt", "enabled": true },
+
+  { "id": "hagezi-pro", "name": "HaGeZi Pro (ads + tracking + malware)", "category": "ads",
+    "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt", "enabled": true },
+  { "id": "hagezi-tif", "name": "HaGeZi Threat Intelligence Feeds (malware, phishing, scam)", "category": "malware",
+    "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.txt", "enabled": true },
+  { "id": "oisd-small", "name": "OISD Small", "category": "ads",
+    "url": "https://small.oisd.nl/", "enabled": true },
+
+  { "id": "hagezi-nsfw", "name": "HaGeZi NSFW / Porn", "category": "nsfw",
+    "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/nsfw.txt", "enabled": true },
+  { "id": "oisd-nsfw", "name": "OISD NSFW", "category": "nsfw",
+    "url": "https://nsfw.oisd.nl/", "enabled": false },
+  { "id": "stevenblack-porn", "name": "Steven Black — Porn", "category": "nsfw",
+    "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts", "enabled": false },
+
+  { "id": "hagezi-gambling", "name": "HaGeZi Gambling", "category": "gambling",
+    "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/gambling.txt", "enabled": true },
+  { "id": "stevenblack-gambling", "name": "Steven Black — Gambling", "category": "gambling",
+    "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/gambling-only/hosts", "enabled": false },
+
+  { "id": "ublock-lan-block", "name": "uBlock Origin — LAN Block (SSRF/local leak)", "category": "malware",
+    "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/lan-block.txt", "enabled": true },
+  { "id": "nocoin", "name": "NoCoin Filter List (cryptominers)", "category": "cryptomining",
+    "url": "https://raw.githubusercontent.com/hoshsadiq/adblock-nocoin-list/master/nocoin.txt", "enabled": true },
+
+  { "id": "easylist-cs", "name": "EasyList Czech and Slovak", "category": "lang-cs",
+    "url": "https://raw.githubusercontent.com/tomasko126/easylistczechandslovak/master/filters.txt", "enabled": false },
+  { "id": "easylist-de", "name": "EasyList Germany", "category": "lang-de",
+    "url": "https://easylist.to/easylistgermany/easylistgermany.txt", "enabled": false },
+  { "id": "easylist-es", "name": "EasyList Spanish", "category": "lang-es",
+    "url": "https://easylist-downloads.adblockplus.org/easylistspanish.txt", "enabled": false },
+  { "id": "easylist-fr", "name": "EasyList French (Liste FR)", "category": "lang-fr",
+    "url": "https://easylist-downloads.adblockplus.org/liste_fr.txt", "enabled": false },
+  { "id": "easylist-it", "name": "EasyList Italy", "category": "lang-it",
+    "url": "https://easylist-downloads.adblockplus.org/easylistitaly.txt", "enabled": false },
+  { "id": "easylist-nl", "name": "EasyList Dutch", "category": "lang-nl",
+    "url": "https://easylist-downloads.adblockplus.org/easylistdutch.txt", "enabled": false },
+  { "id": "easylist-pl", "name": "EasyList Polish (oispl)", "category": "lang-pl",
+    "url": "https://raw.githubusercontent.com/MajkiIT/polish-ads-filter/master/polish-adblock-filters/adblock.txt", "enabled": false },
+  { "id": "easylist-pt", "name": "EasyList Portuguese", "category": "lang-pt",
+    "url": "https://easylist-downloads.adblockplus.org/easylistportuguese.txt", "enabled": false },
+  { "id": "ruadlist", "name": "RuAdList", "category": "lang-ru",
+    "url": "https://easylist-downloads.adblockplus.org/ruadlist+easylist.txt", "enabled": false },
+  { "id": "easylist-china", "name": "EasyList China", "category": "lang-zh",
+    "url": "https://easylist-downloads.adblockplus.org/easylistchina.txt", "enabled": false },
+  { "id": "easylist-ar", "name": "Liste AR (Arabic)", "category": "lang-ar",
+    "url": "https://easylist-downloads.adblockplus.org/Liste_AR.txt", "enabled": true },
+  { "id": "abpindo", "name": "ABPindo (Indonesian)", "category": "lang-id",
+    "url": "https://raw.githubusercontent.com/heradhis/indonesianadblockrules/master/subscriptions/abpindo.txt", "enabled": false },
+  { "id": "japanese-filters", "name": "Japanese Filters", "category": "lang-ja",
+    "url": "https://raw.githubusercontent.com/k2jp/abp-japanese-filters/master/abp-japanese-filters.txt", "enabled": false },
+  { "id": "koreanlist", "name": "KoreanList (YousList)", "category": "lang-ko",
+    "url": "https://raw.githubusercontent.com/yous/YousList/master/youslist.txt", "enabled": false },
+  { "id": "easylist-hebrew", "name": "EasyList Hebrew", "category": "lang-he",
+    "url": "https://raw.githubusercontent.com/easylist/EasyListHebrew/master/EasyListHebrew.txt", "enabled": false },
+  { "id": "turkish-adblock", "name": "AdGuard Turkish", "category": "lang-tr",
+    "url": "https://filters.adtidy.org/extension/chromium/filters/13.txt", "enabled": false }
 ]

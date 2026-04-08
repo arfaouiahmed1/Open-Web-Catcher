@@ -26,6 +26,9 @@ The main settings model is [`src/utils/config.py`](../../src/utils/config.py).
 - `OBSERVABILITY_DEFAULT_DATASET_NAME`
 - `OBSERVABILITY_DATASET_DIR`
 - `MODEL_PRICING_JSON`
+- `PROVIDER_PRICING_SYNC_ENABLED`
+- `PROVIDER_PRICING_TIMEOUT_SECONDS`
+- `PROVIDER_PRICING_MAX_MODELS`
 - `UI_CORS_ORIGINS`
 
 ### Integrations
@@ -41,8 +44,11 @@ Costs come from either:
 
 - `MODEL_PRICING_JSON`
 - pricing rows stored through the operator console
+- provider API sync (`POST /ui/pricing/sync`) where supported
 
 Stored pricing rows are loaded at startup and merged into runtime pricing defaults.
+
+Provider API sync support is currently implemented for `openrouter`.
 
 ## YAML Overrides
 

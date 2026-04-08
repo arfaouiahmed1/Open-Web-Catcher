@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertCircle, Check, CheckCircle2, Key, Loader2, Save, Settings2 } from "lucide-react";
+import { AlertCircle, Check, CheckCircle2, Key, Loader2, RefreshCw, Save, Settings2 } from "lucide-react";
 
 import { apiFetch, apiUrl } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
@@ -117,6 +117,9 @@ export default function SettingsPage() {
   const [agentModel, setAgent]    = useState("");
   const [orchModel, setOrch]      = useState("");
   const [temp, setTemp]           = useState("1.0");
+  const [providerCacheEnabled, setProviderCacheEnabled] = useState(true);
+  const [toolCacheEnabled, setToolCacheEnabled] = useState(true);
+  const [toolCacheStable, setToolCacheStable] = useState("2");
   const [saving, setSaving]       = useState(false);
   const [saved, setSaved]         = useState(false);
   const [configErr, setConfigErr] = useState("");
@@ -129,6 +132,9 @@ export default function SettingsPage() {
   const [pOutput, setPOutput]     = useState("0");
   const [pNotes, setPNotes]       = useState("");
   const [priceSaved, setPriceSaved] = useState(false);
+  const [priceSyncing, setPriceSyncing] = useState(false);
+  const [priceSyncMsg, setPriceSyncMsg] = useState("");
+  const [priceSyncErr, setPriceSyncErr] = useState("");
 
   /* load config */
   async function loadConfig() {
@@ -136,9 +142,13 @@ export default function SettingsPage() {
       const c = await apiFetch("/ui/config");
       setConfig(c);
       setProvider(c.llm_provider || "google");
+      setPProvider(c.llm_provider || "google");
       setAgent(c.agent_model || "");
       setOrch(c.orchestrator_model || "");
       setTemp(String(c.gemini_temperature ?? "1.0"));
+      setProviderCacheEnabled(Boolean(c.provider_cache_enabled ?? true));
+      setToolCacheEnabled(Boolean(c.tool_result_cache_enabled ?? true));
+      setToolCacheStable(String(c.tool_result_cache_min_identical_observations ?? 2));
     } catch (e) {
       setConfigErr(e.message);
     }
@@ -175,6 +185,9 @@ export default function SettingsPage() {
           agent_model: agentModel,
           orchestrator_model: orchModel,
           gemini_temperature: parseFloat(temp) || 1.0,
+          provider_cache_enabled: providerCacheEnabled,
+          tool_result_cache_enabled: toolCacheEnabled,
+          tool_result_cache_min_identical_observations: Number(toolCacheStable || 2),
         }),
       });
       const updated = await res.json();
@@ -205,6 +218,27 @@ export default function SettingsPage() {
     setPriceSaved(true);
     setTimeout(() => setPriceSaved(false), 2500);
     await loadPricing();
+  }
+
+  async function syncPricingFromProvider() {
+    setPriceSyncing(true);
+    setPriceSyncErr("");
+    setPriceSyncMsg("");
+    try {
+      const res = await fetch(apiUrl("/ui/pricing/sync"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: pProvider }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.detail || `Status ${res.status}`);
+      setPriceSyncMsg(`Synced ${payload.stored || 0} model pricing row(s) from ${payload.provider}.`);
+      await loadPricing();
+    } catch (e) {
+      setPriceSyncErr(e.message || "Provider pricing sync failed.");
+    } finally {
+      setPriceSyncing(false);
+    }
   }
 
   const activeProvider = PROVIDERS.find((p) => p.id === provider) || PROVIDERS[0];
@@ -343,6 +377,41 @@ export default function SettingsPage() {
                 className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white focus:border-signal/50 focus:outline-none"
               />
             </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                Tool cache stabilization threshold
+              </label>
+              <input
+                value={toolCacheStable}
+                onChange={(e) => setToolCacheStable(e.target.value)}
+                type="number"
+                min="1"
+                step="1"
+                className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white focus:border-signal/50 focus:outline-none"
+              />
+              <p className="text-xs text-slate-600">Cache serves only after this many identical outputs for same tool+args</p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2 text-sm text-slate-300">
+              <input
+                type="checkbox"
+                checked={providerCacheEnabled}
+                onChange={(e) => setProviderCacheEnabled(e.target.checked)}
+                className="h-4 w-4"
+              />
+              Enable provider prompt caching
+            </label>
+            <label className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2 text-sm text-slate-300">
+              <input
+                type="checkbox"
+                checked={toolCacheEnabled}
+                onChange={(e) => setToolCacheEnabled(e.target.checked)}
+                className="h-4 w-4"
+              />
+              Enable deterministic tool result cache
+            </label>
           </div>
 
           {configErr && (
@@ -410,9 +479,29 @@ export default function SettingsPage() {
               <Input label="Output / 1M tokens ($)" type="number" value={pOutput} onChange={(e) => setPOutput(e.target.value)} placeholder="0.00" />
             </div>
             <Textarea label="Notes (optional)" value={pNotes} onChange={(e) => setPNotes(e.target.value)} className="min-h-[60px]" />
-            <Button variant="accent" onClick={savePricing}>
-              {priceSaved ? <><Check className="mr-1.5 h-3.5 w-3.5" />Saved</> : <><Save className="mr-1.5 h-3.5 w-3.5" />Save pricing row</>}
-            </Button>
+            {priceSyncErr && (
+              <div className="rounded-lg border border-ember/30 bg-ember/10 px-3 py-2 text-xs text-ember">
+                {priceSyncErr}
+              </div>
+            )}
+            {priceSyncMsg && (
+              <div className="rounded-lg border border-surge/30 bg-surge/10 px-3 py-2 text-xs text-surge">
+                {priceSyncMsg}
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button variant="accent" onClick={savePricing}>
+                {priceSaved ? <><Check className="mr-1.5 h-3.5 w-3.5" />Saved</> : <><Save className="mr-1.5 h-3.5 w-3.5" />Save pricing row</>}
+              </Button>
+              <Button variant="secondary" onClick={syncPricingFromProvider} disabled={priceSyncing}>
+                {priceSyncing
+                  ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Syncing</>
+                  : <><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Sync from provider</>}
+              </Button>
+            </div>
+            <p className="text-xs text-slate-600">
+              Direct pricing API sync is currently supported for openrouter.
+            </p>
           </div>
 
           {/* stored rows */}

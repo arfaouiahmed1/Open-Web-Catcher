@@ -117,7 +117,10 @@ class ModelUsage(BaseModel):
     model_name: str
     provider: str = ""
     llm_calls: int = 0
+    cache_hit_calls: int = 0
     input_tokens: int = 0
+    cached_input_tokens: int = 0
+    new_input_tokens: int = 0
     output_tokens: int = 0
     estimated_input_cost_usd: float = 0.0
     estimated_output_cost_usd: float = 0.0
@@ -130,8 +133,11 @@ class RunMetrics(BaseModel):
     started_at: datetime = Field(default_factory=datetime.utcnow)
     finished_at: datetime | None = None
     total_tokens_in: int = 0
+    total_cached_input_tokens: int = 0
+    total_new_input_tokens: int = 0
     total_tokens_out: int = 0
     total_llm_calls: int = 0
+    total_cache_hit_calls: int = 0
     total_tool_calls: int = 0
     total_messages: int = 0
     system_messages: int = 0

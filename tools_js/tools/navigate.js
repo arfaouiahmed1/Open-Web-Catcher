@@ -23,6 +23,7 @@ export async function navigate({
 
   const browser = await connectBrowser(browserWsEndpoint);
   const page    = await getPage(browser);
+  const beforeUrl = page.url();
 
   const redirectChain = [];
   let httpStatus = null;
@@ -44,6 +45,7 @@ export async function navigate({
   }
 
   const finalUrl = page.url();
+  const navigated = beforeUrl !== finalUrl;
   const title    = await page.title().catch(() => '');
 
   let screenshot_url = null;
@@ -56,5 +58,5 @@ export async function navigate({
 
   await browser.disconnect();
 
-  return { success, finalUrl, title, httpStatus, redirectChain, domain_warning, screenshot_url, error };
+  return { success, finalUrl, navigated, title, httpStatus, redirectChain, domain_warning, screenshot_url, error };
 }

@@ -109,6 +109,27 @@ class OperatorConsoleRepository:
         self._session.commit()
         return config
 
+    def upsert_pricing_configs(self, configs: list[PricingConfig]) -> int:
+        if not configs:
+            return 0
+
+        for config in configs:
+            row = (
+                self._session.query(PricingConfigRecord)
+                .filter_by(provider=config.provider, model_name=config.model_name)
+                .first()
+            )
+            if row is None:
+                row = PricingConfigRecord(provider=config.provider, model_name=config.model_name)
+                self._session.add(row)
+            row.input_per_million = config.input_per_million
+            row.output_per_million = config.output_per_million
+            row.active = config.active
+            row.notes = config.notes
+
+        self._session.commit()
+        return len(configs)
+
     def get_overview(self, active_traces: list[dict[str, Any]] | None = None, limit: int = 8) -> dict[str, Any]:
         recent_runs = (
             self._session.query(PipelineRunRecord)

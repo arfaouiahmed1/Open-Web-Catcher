@@ -109,6 +109,8 @@ class LandingPageAgent:
                             page_url=url,
                             page_type=AgentType.LANDING_PAGE.value,
                         ),
+                        bootstrap_url=url,
+                        bootstrap_context_first=True,
                     )
 
                 output_json = result.parse_json()

@@ -4,6 +4,7 @@
  */
 
 import { connectBrowser, getPage } from '../shared/browser.js';
+import { screenshotViewport } from '../shared/screenshot.js';
 
 const delay = (min = 80, max = 300) =>
   new Promise(r => setTimeout(r, min + Math.random() * (max - min)));
@@ -36,6 +37,7 @@ export async function interact({
 } = {}) {
   const browser = await connectBrowser(browserWsEndpoint);
   const page    = await getPage(browser);
+  const beforeUrl = page.url();
 
   let success = false;
   let error   = null;
@@ -122,7 +124,14 @@ export async function interact({
     error = e.message;
   }
 
-  const navigated = !page.url().startsWith('about') && page.url() !== (await getPage(browser).catch(() => page)).url();
+  const finalUrl = page.url();
+  const navigated = beforeUrl !== finalUrl;
+  let screenshot_url = null;
+  try {
+    screenshot_url = await screenshotViewport(page);
+  } catch (_) {
+    screenshot_url = null;
+  }
 
   await browser.disconnect();
   return {
@@ -130,7 +139,8 @@ export async function interact({
     mode,
     navigated,
     new_tab_urls,
-    url:   page.url(),
+    url: finalUrl,
+    screenshot_url,
     error,
   };
 }

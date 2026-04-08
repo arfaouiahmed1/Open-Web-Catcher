@@ -111,6 +111,8 @@ class ClassificationAgent:
                             page_url=url,
                             page_type=AgentType.CLASSIFICATION.value,
                         ),
+                        bootstrap_url=url,
+                        bootstrap_context_first=True,
                     )
                 parsed = _parse_output(result.final_text, url)
                 remember_agent_run(

@@ -645,9 +645,8 @@ export async function buildEnvelope(page, {
   let finalError = error;
 
   if (!screenshotResult.ok) {
-    mergedWarnings.push(`screenshot_upload_failed: ${screenshotResult.screenshot_error}`);
-    finalOk = false;
-    finalError = finalError || `screenshot_upload_failed: ${screenshotResult.screenshot_error}`;
+    // Screenshot upload issues should not invalidate functional tool outcomes.
+    // We keep the result usable and simply omit screenshot_url when capture fails.
   }
 
   return {

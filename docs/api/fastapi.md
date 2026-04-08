@@ -35,6 +35,7 @@ The backend entrypoint is [`src/api/app.py`](../../src/api/app.py). It serves th
 - `POST /ui/tools/call`
 - `GET /ui/pricing`
 - `PUT /ui/pricing`
+- `POST /ui/pricing/sync`
 - `GET /ui/evaluations/suites`
 - `GET /ui/evaluations/runs`
 - `GET /ui/evaluations/runs/{run_id}`
@@ -84,6 +85,14 @@ The operator console can read and update active provider/model settings:
 - `PUT /ui/config`
 
 `PUT /ui/config` updates in-memory runtime settings and attempts to persist non-secret fields to `configs/settings.yaml`.
+
+## Provider Pricing Sync
+
+`POST /ui/pricing/sync` fetches model pricing from provider APIs where supported, stores rows in Postgres, and refreshes runtime pricing config.
+
+Current direct API sync support:
+
+- `openrouter`
 
 ## Cost and Token Accounting
 
