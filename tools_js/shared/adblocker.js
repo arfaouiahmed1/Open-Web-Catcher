@@ -34,6 +34,7 @@ const ENGINE_CACHE_PATH = path.join(CACHE_ROOT, 'ghostery-engine.bin');
 const ENGINE_META_PATH = path.join(CACHE_ROOT, 'ghostery-engine.json');
 const DEFAULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
+const DEFAULT_EXCLUDED_CATEGORIES = ['nsfw', 'gambling'];
 // Tracks which pages already have blocking enabled so we don't attach twice.
 const enabledPages = new WeakSet();
 
@@ -51,6 +52,37 @@ function resolveCacheRoot() {
 function parseInteger(value, fallback) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseBoolean(value, fallback = true) {
+  if (value == null) return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return fallback;
+}
+
+function parseCsvSet(value) {
+  return new Set(
+    String(value || '')
+      .split(',')
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+function getExcludedCategories() {
+  const configured = process.env.OWC_ADBLOCK_EXCLUDED_CATEGORIES;
+  if (!configured) {
+    return new Set(DEFAULT_EXCLUDED_CATEGORIES);
+  }
+
+  const parsed = parseCsvSet(configured);
+  return parsed.size > 0 ? parsed : new Set(DEFAULT_EXCLUDED_CATEGORIES);
+}
+
+function isAdblockEnabled() {
+  return parseBoolean(process.env.OWC_ADBLOCK_ENABLED, true);
 }
 
 function nowIso() {
@@ -141,6 +173,7 @@ function normalizeRemoteSource(entry) {
   return {
     id: sanitizeId(entry.id),
     name: String(entry.name || entry.id),
+    category: String(entry.category || '').trim().toLowerCase(),
     kind: 'remote',
     url: String(entry.url),
   };
@@ -152,9 +185,12 @@ async function loadRemoteSources() {
     throw new Error(`Expected an array in ${FILTERLIST_SOURCES_PATH}`);
   }
 
+  const excludedCategories = getExcludedCategories();
+
   return parsed
     .filter((entry) => entry && entry.enabled !== false)
-    .map(normalizeRemoteSource);
+    .map(normalizeRemoteSource)
+    .filter((entry) => !excludedCategories.has(entry.category));
 }
 
 async function loadLocalSources() {
@@ -457,6 +493,7 @@ export async function getFilterLists() {
  * Safe to call multiple times on the same page; attaches only once.
  */
 export async function enableBlocking(page) {
+  if (!isAdblockEnabled()) return;
   if (enabledPages.has(page)) return;
   const { blocker } = await getBlockerSnapshot();
   await blocker.enableBlockingInPage(page);

@@ -710,6 +710,13 @@ export async function getPage(browser) {
 
   await page.setCacheEnabled(true);
   await page.setBypassCSP(true);
-  await enableBlocking(page);
+  try {
+    await enableBlocking(page);
+  } catch (error) {
+    const debugAdblock = String(process.env.OWC_DEBUG_ADBLOCK || '').trim().toLowerCase();
+    if (debugAdblock === '1' || debugAdblock === 'true' || debugAdblock === 'yes') {
+      console.warn('[owc] adblocker attach skipped:', error?.message || error);
+    }
+  }
   return page;
 }

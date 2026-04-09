@@ -40,6 +40,8 @@ services:
       BROWSER_WS_ENDPOINT: ws://127.0.0.1:9222
       PUPPETEER_EXECUTABLE_PATH: /usr/local/bin/google-chrome-stable
       PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+      OWC_ADBLOCK_ENABLED: ${OWC_ADBLOCK_ENABLED:-true}
+      OWC_ADBLOCK_EXCLUDED_CATEGORIES: ${OWC_ADBLOCK_EXCLUDED_CATEGORIES:-nsfw,gambling}
     volumes:
       - ./data:/app/data
     healthcheck:
