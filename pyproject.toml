@@ -69,3 +69,6 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "deepeval: integration-style metric tests that can be skipped in fast CI",
+]

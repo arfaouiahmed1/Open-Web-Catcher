@@ -38,6 +38,8 @@ const FORCED_VIEWPORT = { width: 1920, height: 1080 };
 const FORCED_WINDOWS_PLATFORM = 'Win32';
 const FORCED_WINDOWS_PLATFORM_VERSION = '10.0.0';
 const FORCED_LANGUAGE = 'en-US,en;q=0.9';
+const UBOL_ENABLED = parseBoolean(process.env.OWC_UBOL_ENABLED, true);
+const UBOL_EXTENSION_DIR = String(process.env.OWC_UBOL_EXTENSION_DIR || '/app/tools_js/extensions/ubol').trim();
 const FINGERPRINT_ROTATION_MODE = String(process.env.OWC_FINGERPRINT_ROTATION_MODE || 'origin')
   .trim()
   .toLowerCase();
@@ -1255,6 +1257,18 @@ export async function launchEphemeralBrowser(sessionId) {
   const safeSessionId = String(sessionId || 'session').replace(/[^a-zA-Z0-9_-]/g, '_');
   const userDataDir = path.join(os.tmpdir(), `owc-browser-${safeSessionId}-${Date.now()}`);
   const launchTimeout = Number.isFinite(BROWSER_LAUNCH_TIMEOUT_MS) ? Math.max(0, BROWSER_LAUNCH_TIMEOUT_MS) : 45000;
+  const launchArgs = [...DEFAULT_LAUNCH_ARGS];
+
+  if (UBOL_ENABLED && UBOL_EXTENSION_DIR) {
+    try {
+      await fs.access(path.join(UBOL_EXTENSION_DIR, 'manifest.json'));
+      launchArgs.push(`--disable-extensions-except=${UBOL_EXTENSION_DIR}`);
+      launchArgs.push(`--load-extension=${UBOL_EXTENSION_DIR}`);
+    } catch {
+      console.warn(`[owc] uBOL extension not found at ${UBOL_EXTENSION_DIR}; continuing without extension.`);
+    }
+  }
+
   const browser = await puppeteer.launch({
     executablePath: EXECUTABLE_PATH,
     headless: true,
@@ -1262,7 +1276,7 @@ export async function launchEphemeralBrowser(sessionId) {
     timeout: launchTimeout,
     waitForInitialPage: true,
     userDataDir,
-    args: DEFAULT_LAUNCH_ARGS,
+    args: launchArgs,
   });
 
   return {

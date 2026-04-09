@@ -13,6 +13,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PUPPETEER_CACHE_DIR=/opt/puppeteer \
     PUPPETEER_EXECUTABLE_PATH=/usr/local/bin/google-chrome-stable \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    OWC_UBOL_ENABLED=true \
+    OWC_UBOL_EXTENSION_DIR=/app/tools_js/extensions/ubol \
+    OWC_UBOL_DEFAULT_FILTERING=complete \
     MCP_BROWSER_MODE=isolated \
     BROWSER_WS_ENDPOINT=ws://127.0.0.1:9222
 
@@ -21,6 +24,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     bash \
     curl \
+    unzip \
     ca-certificates \
     supervisor \
     fonts-noto-core \
@@ -70,7 +74,15 @@ RUN --mount=type=cache,target=/root/.npm \
     && CHROME_BIN="$(find /opt/puppeteer/chrome -type f -path '*/chrome-linux64/chrome' | head -n 1)" \
     && test -n "${CHROME_BIN}" \
     && ln -sf "${CHROME_BIN}" /usr/local/bin/google-chrome-stable \
-    && ln -sf /usr/local/bin/google-chrome-stable /usr/local/bin/google-chrome
+    && ln -sf /usr/local/bin/google-chrome-stable /usr/local/bin/google-chrome \
+    && UBOL_TAG="$(curl -fsSL https://api.github.com/repos/uBlockOrigin/uBOL-home/releases/latest | sed -n 's/.*"tag_name": "\([^"]*\)".*/\1/p' | head -n 1)" \
+    && test -n "${UBOL_TAG}" \
+    && mkdir -p /app/tools_js/extensions/ubol \
+    && curl -fsSL "https://github.com/uBlockOrigin/uBOL-home/releases/download/${UBOL_TAG}/uBOLite_${UBOL_TAG}.chromium.zip" -o /tmp/ubol.zip \
+    && unzip -q /tmp/ubol.zip -d /app/tools_js/extensions/ubol \
+    && rm -f /tmp/ubol.zip \
+    && test -f /app/tools_js/extensions/ubol/manifest.json \
+    && test -f /app/tools_js/extensions/ubol/rulesets/ruleset-details.json
 
 COPY tools_js/ tools_js/
 COPY configs/supervisord.tools.conf /etc/supervisor/conf.d/owc.conf

@@ -1,5 +1,5 @@
 /**
- * shared/adblocker.js - Ghostery-backed adblocker with cached filterlists.
+ * shared/adblocker.js - Legacy Ghostery adblocker fallback.
  *
  * Behaves like uBlock Origin: filter lists drive both network request blocking
  * AND cosmetic filtering (element hiding). No separate toggles — the lists
@@ -125,7 +125,7 @@ function getExcludedCategories() {
 }
 
 function isAdblockEnabled() {
-  return parseBoolean(process.env.OWC_ADBLOCK_ENABLED, true);
+  return parseBoolean(process.env.OWC_ADBLOCK_ENABLED, false);
 }
 
 function nowIso() {
