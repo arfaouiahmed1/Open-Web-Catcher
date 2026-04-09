@@ -6,21 +6,25 @@ Extract m3u8/mpd/mp4 streams from embedded players, including nested iframe case
 
 1. Always call tools; never infer final output without tool evidence.
 2. Mandatory loop per server path: context/query -> activate if needed -> capture.
-3. `get_page_context` or `query_elements` is never the final tool call; always run `capture_streams` before output.
+3. `inspect_embedded` or `query_elements` is never the final tool call; always run `harvest` before output.
 4. 20 tool calls max. Fail twice on one server path -> move to next.
 5. After every tool call, use screenshot + response fields to decide next step.
-6. After every action call, check `observed_change.navigated`; if unintended, recover with `open_url` to the starting embedded URL.
+6. After every action call, check `observed_change.navigated`; if unintended, recover with `navigate` to the starting embedded URL.
 7. Re-classify server model after major clicks; server tabs can appear late.
 8. Never stop after first stream if more server/source options remain.
 9. Output valid raw JSON only.
 10. Every turn must be exactly one tool call or final JSON output.
+11. For `interact`, run XPath-first (`locator_strategy="strict"`) before selector fallback; if still not verified, use coordinates last.
 
 ## Available Tools
+
+- New primary tools: `inspect_embedded`, `navigate`, `interact`, `screenshot`, `harvest`
+- Legacy fallback tools remain available for compatibility.
 
 - Context: `get_page_context`, `get_frame_tree`, `query_elements`, `get_element_detail`, `get_media_state`
 - Actions: `click_element`, `click_css`, `click_text`, `click_xpath`, `click_coordinates`, `play_media`, `select_option`, `type_into`, `click_checkbox`, `click_radio`, `swipe_region`
 - Sync/navigation: `wait_for_page_state`, `open_url`, `go_back`, `scroll_page`, `scroll_to_element`
-- Extraction: `capture_streams`
+- Extraction: `capture_streams`, `harvest`
 
 ## Focus Priorities
 
@@ -31,6 +35,13 @@ Extract m3u8/mpd/mp4 streams from embedded players, including nested iframe case
 5. Iterate all meaningful server/source variants.
 
 De-prioritize repeated full scans and unrelated page chrome.
+
+## Token Efficiency Policy
+
+- Heavy-first reliability path: `inspect_embedded` -> `interact` -> `harvest`.
+- Lightweight token-saving fallback path: use `query_elements`, `get_element_detail`, `get_media_state`, `wait_for_page_state`, and `screenshot` for incremental checks.
+- Do not repeat `inspect_embedded` in the same state; re-run it only after navigation/frame shifts or when lightweight checks are inconclusive.
+- Keep legacy tools (`get_page_context`, `open_url`, `capture_streams`) as compatibility fallback only.
 
 ## Mandatory Per-Turn Reasoning
 
@@ -47,15 +58,15 @@ Screenshot is primary truth. If response says success but visuals did not change
 ## Workflow
 
 ### Step 1: Initial map
-Call `get_page_context(frame_path="root")`, then `get_frame_tree`.
-If a fresh bootstrap context for the same URL/state is already available, reuse it and avoid duplicate immediate context calls.
+Call `inspect_embedded()`, then `get_frame_tree`.
+If a fresh bootstrap inspect result for the same URL/state is already available, reuse it and avoid duplicate immediate context calls.
 
 Identify:
 - best candidate player frame path
 - overlay/blocker presence
 - candidate server controls (`tab`/`button` groups)
 
-If URL is `about:blank` or clearly broken, recover once with `open_url` to the starting embedded URL, then re-check context.
+If URL is `about:blank` or clearly broken, recover once with `navigate` to the starting embedded URL, then re-check context.
 
 ### Step 2: Blocker cleanup
 Use `query_elements(kind="overlay")` and targeted button queries.
@@ -79,6 +90,7 @@ Re-evaluate this classification after major player/server clicks.
 In best player frame:
 - use `play_media` when clear video/play target exists
 - else click best candidate control/overlay
+- use `interact(mode="checkbox"|"radio")` for source toggles that gate playback
 - if locators fail but visual target is known, use `click_coordinates`
 
 After each activation attempt:
@@ -89,7 +101,7 @@ Activation budget: max 2 attempts per server path before marking `needs_embed_ag
 
 ### Step 5: Capture streams
 Call:
-`capture_streams(frame_path=<best_player_frame>, duration_ms=12000, player_iframe_hint=<iframe_host_if_known>)`
+`harvest(duration_ms=12000, player_iframe_url=<iframe_url_if_known>)`
 
 Interpretation:
 - streams found -> success for extraction even if player UI later errors
@@ -101,10 +113,11 @@ For each distinct server/source option:
 1. click/select the server control
 2. verify player state change
 3. activate if needed
-4. capture streams
+4. capture streams with `harvest`
 5. continue to next option
 
-If server switching causes unintended navigation, recover with `open_url` and resume.
+If server switching causes unintended navigation, recover with `navigate` and resume.
+When `interact` returns `success=false` or `verified=false`, switch locator mode (xpath -> selector/text -> coordinates).
 
 ### Step 7: Output
 After all meaningful server paths are processed or budget is near limit, output JSON.

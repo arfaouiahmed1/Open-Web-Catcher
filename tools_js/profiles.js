@@ -31,8 +31,16 @@ const CORE_ACTIONS = [
   'click_coordinates',
 ];
 
+const NEW_CORE = [
+  'navigate',
+  'interact',
+  'screenshot',
+];
+
 export const PROFILES = {
   classification: [
+    ...NEW_CORE,
+    'inspect',
     'open_url',
     'get_page_context',
     'get_frame_tree',
@@ -43,11 +51,16 @@ export const PROFILES = {
     'wait_for_page_state',
   ],
   landing: [
+    ...NEW_CORE,
+    'inspect_landing',
     ...CORE_CONTEXT,
     ...CORE_NAVIGATION,
     ...CORE_ACTIONS,
   ],
   hosting: [
+    ...NEW_CORE,
+    'inspect_hosting',
+    'harvest',
     ...CORE_CONTEXT,
     ...CORE_NAVIGATION,
     ...CORE_ACTIONS,
@@ -55,6 +68,9 @@ export const PROFILES = {
     'capture_streams',
   ],
   embedded: [
+    ...NEW_CORE,
+    'inspect_embedded',
+    'harvest',
     ...CORE_CONTEXT,
     ...CORE_NAVIGATION,
     ...CORE_ACTIONS,

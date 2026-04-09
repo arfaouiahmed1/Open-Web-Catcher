@@ -39,6 +39,10 @@ logger = get_logger(__name__)
 VALID_PROFILES = {"classification", "landing", "hosting", "embedded"}
 REQUIRED_TOOLS_BY_PROFILE = {
     "classification": {
+        "navigate",
+        "inspect",
+        "interact",
+        "screenshot",
         "open_url",
         "get_page_context",
         "get_frame_tree",
@@ -49,6 +53,10 @@ REQUIRED_TOOLS_BY_PROFILE = {
         "wait_for_page_state",
     },
     "landing": {
+        "navigate",
+        "inspect_landing",
+        "interact",
+        "screenshot",
         "get_page_context",
         "query_elements",
         "get_element_detail",
@@ -71,6 +79,11 @@ REQUIRED_TOOLS_BY_PROFILE = {
         "click_coordinates",
     },
     "hosting": {
+        "navigate",
+        "inspect_hosting",
+        "interact",
+        "screenshot",
+        "harvest",
         "get_page_context",
         "query_elements",
         "get_element_detail",
@@ -95,6 +108,11 @@ REQUIRED_TOOLS_BY_PROFILE = {
         "capture_streams",
     },
     "embedded": {
+        "navigate",
+        "inspect_embedded",
+        "interact",
+        "screenshot",
+        "harvest",
         "get_page_context",
         "query_elements",
         "get_element_detail",

@@ -32,6 +32,14 @@ import {
   clickCoordinates as clickCoordinatesTool,
 } from './tools/action-tools.js';
 import { captureStreams as captureStreamsTool } from './tools/extraction-tools.js';
+import { navigate as navigateTool } from './tools/navigate.js';
+import { inspect as inspectTool } from './tools/inspect.js';
+import { inspectLanding as inspectLandingTool } from './tools/inspect_landing.js';
+import { inspectHosting as inspectHostingTool } from './tools/inspect_hosting.js';
+import { inspectEmbedded as inspectEmbeddedTool } from './tools/inspect_embedded.js';
+import { interact as interactTool } from './tools/interact.js';
+import { screenshot as screenshotTool } from './tools/screenshot.js';
+import { harvest as harvestTool } from './tools/harvest.js';
 
 const DEFAULT_TOOL_IMPLS = {
   get_page_context: getPageContextTool,
@@ -56,6 +64,14 @@ const DEFAULT_TOOL_IMPLS = {
   swipe_region: swipeRegionTool,
   click_coordinates: clickCoordinatesTool,
   capture_streams: captureStreamsTool,
+  navigate: navigateTool,
+  inspect: inspectTool,
+  inspect_landing: inspectLandingTool,
+  inspect_hosting: inspectHostingTool,
+  inspect_embedded: inspectEmbeddedTool,
+  interact: interactTool,
+  screenshot: screenshotTool,
+  harvest: harvestTool,
 };
 
 function formatJsonBlock(label, value) {
@@ -76,6 +92,8 @@ const selectorSchema = z.string().optional().default('').describe('CSS selector'
 const xpathSchema = z.string().optional().default('').describe('XPath locator');
 const textSchema = z.string().optional().default('').describe('Visible text fragment');
 const waitMsSchema = z.number().optional().default(1500).describe('Wait after action in milliseconds');
+const interactModeSchema = z.enum(['click', 'play', 'type', 'select', 'coordinates', 'check', 'checkbox', 'radio']).optional().default('click');
+const locatorStrategySchema = z.enum(['strict', 'xpath_first', 'selector_first', 'text_first']).optional().default('strict');
 
 function spec(summary, inputExample, outputExample, zodSchema, handlerFactory) {
   return {
@@ -347,6 +365,87 @@ const TOOL_SPECS = {
       player_iframe_hint: z.string().optional().default(''),
     },
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.capture_streams({ ...args, browserWsEndpoint }),
+  ),
+  navigate: spec(
+    'Navigate to a URL and report final URL, redirects, status, and a screenshot. Use for direct page navigation in the current browser session.',
+    { url: 'https://example.com/watch', wait_until: 'networkidle2', timeout_ms: 30000 },
+    { success: true, finalUrl: 'https://example.com/watch', httpStatus: 200, screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      url: z.string().describe('Full URL to navigate to'),
+      wait_until: z.enum(['networkidle0', 'networkidle2', 'domcontentloaded', 'load']).optional().default('networkidle2'),
+      timeout_ms: z.number().optional().default(30000),
+    },
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.navigate({ ...args, browserWsEndpoint }),
+  ),
+  inspect: spec(
+    'Run a rich DOM + player inspection on the current page and return actionable signals, elements, iframes, and screenshot evidence.',
+    {},
+    { url: 'https://example.com/watch', title: 'Watch', stats: { buttons: 5 }, screenshot_url: 'https://res.cloudinary.com/...' },
+    {},
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.inspect({ ...args, browserWsEndpoint }),
+  ),
+  inspect_landing: spec(
+    'Landing-page context optimized for match URL extraction. Includes lean match candidates with metadata hints, iframe overview, and coordinate-rich locator fields.',
+    {},
+    { context_type: 'landing', match_candidates: [{ url: 'https://example.com/match/123', selector: '.match-card a', xpath: '//main//a[1]', x: 640, y: 360 }], screenshot_url: 'https://res.cloudinary.com/...' },
+    {},
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.inspect_landing({ ...args, browserWsEndpoint }),
+  ),
+  inspect_hosting: spec(
+    'Hosting-page context optimized for stream extraction. Includes deep iframe context, server controls, and playback targets with locators and coordinates.',
+    {},
+    { context_type: 'hosting', server_controls: [{ text: 'Server 1', selector: '.server-btn', xpath: '//button[1]', x: 580, y: 710 }], screenshot_url: 'https://res.cloudinary.com/...' },
+    {},
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.inspect_hosting({ ...args, browserWsEndpoint }),
+  ),
+  inspect_embedded: spec(
+    'Embedded-page context optimized for nested iframe players. Returns frame focus order, source controls, and player targets with minimal payload bloat.',
+    {},
+    { context_type: 'embedded', frame_focus_order: [{ frame_path: 'root.0', score: 21, video_count: 1 }], screenshot_url: 'https://res.cloudinary.com/...' },
+    {},
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.inspect_embedded({ ...args, browserWsEndpoint }),
+  ),
+  interact: spec(
+    'Perform reliable interactions with strict locator strategy support, frame targeting, and explicit verification signals for fallback decisions.',
+    { mode: 'click', xpath: '//button[contains(.,"Play")]', locator_strategy: 'strict', wait_ms: 3000 },
+    { success: true, verified: true, mode: 'click', locator: { used: { kind: 'xpath' } }, screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      mode: interactModeSchema,
+      selector: z.string().optional().default(''),
+      xpath: z.string().optional().default(''),
+      text: z.string().optional().default(''),
+      value: z.string().optional().default(''),
+      option_text: z.string().optional().default(''),
+      option_value: z.string().optional().default(''),
+      checked: z.boolean().optional(),
+      frame_path: z.string().optional().default('root'),
+      frame_url_contains: z.string().optional().default(''),
+      locator_strategy: locatorStrategySchema,
+      x: z.number().optional(),
+      y: z.number().optional(),
+      wait_ms: z.number().optional().default(3000),
+    },
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.interact({ ...args, browserWsEndpoint }),
+  ),
+  screenshot: spec(
+    'Take a quick viewport/full/element screenshot and report lightweight video playback state.',
+    { mode: 'viewport', selector: 'video' },
+    { screenshot_url: 'https://res.cloudinary.com/...', video_state: 'playing', url: 'https://example.com/watch' },
+    {
+      mode: z.enum(['viewport', 'full', 'element']).optional().default('viewport'),
+      selector: z.string().optional().default('video'),
+    },
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.screenshot({ ...args, browserWsEndpoint }),
+  ),
+  harvest: spec(
+    'Capture streaming URLs (m3u8/mpd/mp4/webm) using six detection layers and return protocol-split URL lists plus video state.',
+    { duration_ms: 12000, player_iframe_url: 'https://embed.example.com/player/abc' },
+    { total: 1, m3u8_urls: ['https://cdn.example.com/master.m3u8'], video_state: 'playing', screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      duration_ms: z.number().optional().default(12000),
+      player_iframe_url: z.string().optional().default(''),
+    },
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.harvest({ ...args, browserWsEndpoint }),
   ),
 };
 

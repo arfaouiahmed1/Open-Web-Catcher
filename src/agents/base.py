@@ -209,6 +209,10 @@ def _is_tool_cache_eligible(tool_name: str) -> bool:
         "get_element_detail",
         "get_frame_tree",
         "get_media_state",
+        "inspect",
+        "inspect_landing",
+        "inspect_hosting",
+        "inspect_embedded",
     }
 
 
@@ -457,22 +461,31 @@ async def run_agent_loop(
         return status, result_content
 
     if bootstrap_url:
-        status, result = await _run_bootstrap_tool("open_url", {"url": bootstrap_url})
+        nav_tool_name = "navigate" if "navigate" in tool_map else "open_url"
+        status, result = await _run_bootstrap_tool(nav_tool_name, {"url": bootstrap_url})
         bootstrap_messages.append(
             HumanMessage(
                 content=(
-                    "BOOTSTRAP RESULT (open_url):\n"
+                    f"BOOTSTRAP RESULT ({nav_tool_name}):\n"
                     f"status={status}\n"
                     f"payload={result[:4000]}"
                 )
             )
         )
         if bootstrap_context_first:
-            status_ctx, result_ctx = await _run_bootstrap_tool("get_page_context", {"frame_path": "root"})
+            context_tool_name = "get_page_context"
+            context_args: dict[str, Any] = {"frame_path": "root"}
+            for candidate in ("inspect", "inspect_landing", "inspect_hosting", "inspect_embedded"):
+                if candidate in tool_map:
+                    context_tool_name = candidate
+                    context_args = {}
+                    break
+
+            status_ctx, result_ctx = await _run_bootstrap_tool(context_tool_name, context_args)
             bootstrap_messages.append(
                 HumanMessage(
                     content=(
-                        "BOOTSTRAP RESULT (get_page_context):\n"
+                        f"BOOTSTRAP RESULT ({context_tool_name}):\n"
                         f"status={status_ctx}\n"
                         f"payload={result_ctx[:6000]}"
                     )

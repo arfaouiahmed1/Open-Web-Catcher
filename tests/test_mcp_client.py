@@ -41,6 +41,11 @@ async def test_agent_tools_yields_when_required_tools_exist(settings):
     from src.tools.mcp_client import agent_tools
 
     tools = [
+        DummyTool("navigate"),
+        DummyTool("inspect_hosting"),
+        DummyTool("interact"),
+        DummyTool("screenshot"),
+        DummyTool("harvest"),
         DummyTool("get_page_context"),
         DummyTool("query_elements"),
         DummyTool("get_element_detail"),
@@ -75,6 +80,10 @@ async def test_agent_tools_uses_profile_specific_mcp_url(settings):
 
     settings.mcp_server_url = "http://mcp.local:3000"
     tools = [DummyTool(name) for name in [
+        "navigate",
+        "inspect",
+        "interact",
+        "screenshot",
         "open_url",
         "get_page_context",
         "get_frame_tree",

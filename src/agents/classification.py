@@ -203,7 +203,7 @@ def _parse_output(text: str, url: str) -> ClassificationResult:
 
 _DEFAULT_PROMPT = """\
 You are a web page classifier for illegal streaming sites.
-Call get_page_context first to gather page signals. Use query_elements or get_element_detail only if needed.
+Call inspect first to gather page signals. Use interact when needed to reveal hidden evidence.
 
 Output format:
 CLASSIFICATION: [landing_page/host_page/embed_video_page/other]

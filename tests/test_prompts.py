@@ -28,10 +28,11 @@ def test_load_test_cases_valid(tmp_path):
 def test_landing_prompt_covers_navigation_and_match_extraction_flow():
     prompt = Path("configs/prompts/landing_page_v1.md").read_text(encoding="utf-8")
 
-    assert "Discover every URL that leads to a watchable hosting page." in prompt
+    assert "hosting page" in prompt
+    assert "inspect_landing" in prompt
     assert "query_elements" in prompt
-    assert "When pagination is detected" in prompt
-    assert "Verify Hosting Patterns" in prompt
+    assert "pagination" in prompt
+    assert "STEP 3" in prompt or "Step 3" in prompt
     assert '"participants": "Team A vs Team B"' in prompt
     assert '"channel": "Channel name"' in prompt
     assert "challenge_cleared" in prompt
@@ -43,8 +44,9 @@ def test_hosting_prompt_covers_server_switching_activation_and_network_extractio
 
     assert "Try every detected server/source path you can find." in prompt
     assert "Activate playback" in prompt
-    assert "Always call `capture_streams` before final output." in prompt
-    assert "If the page navigates away unintentionally, recover with `open_url(mainUrl)`." in prompt
+    assert "Always call `harvest` before final output." in prompt
+    assert "inspect_hosting" in prompt
+    assert "If the page navigates away unintentionally, recover with `navigate`" in prompt
     assert "access_state.challenge_detected" in prompt
     assert "early_stop_reason" in prompt
     assert '"decision": "safe_exit|needs_embed_agent|partial_success_needs_embed|no_stream_found"' in prompt
@@ -53,10 +55,10 @@ def test_hosting_prompt_covers_server_switching_activation_and_network_extractio
 def test_embedded_prompt_covers_frame_mapping_activation_and_capture():
     prompt = Path("configs/prompts/embedded_page_v1.md").read_text(encoding="utf-8")
 
-    assert "Map frames and player" in prompt
+    assert "inspect_embedded" in prompt
     assert "click_coordinates" in prompt
-    assert "Try all source/server options" in prompt
+    assert "For each distinct server/source option" in prompt
     assert '"all_stream_urls"' in prompt
-    assert "Never end on context alone." in prompt
+    assert "always run `harvest` before output" in prompt
     assert "access_state.challenge_detected" in prompt
     assert "challenge_cleared" in prompt
