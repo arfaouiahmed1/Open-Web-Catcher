@@ -14,6 +14,13 @@ Call FIRST on every new page/frame. Returns rich DOM + player/page state includi
 - `hosting_signals`, `pagination`, `dom_skeleton`, `stats`
 - `videos[]` and `screenshot_url`
 
+### Memory tools
+- `memory_lookup(url, page_type)`
+  - Use before expensive repeated scans to load remembered selectors, pagination URL patterns, route patterns, and critical links for this domain and agent.
+- `memory_update(...)`
+  - Use when you confirm better selectors/navigation playbooks or detect UI structure changes (new tabs, selector drift, pagination pattern changes).
+  - Include `refresh_reason` and any new selectors/patterns/critical links discovered.
+
 ### Legacy fallback: `get_page_context(frame_path="root")`
 Use only when needed for compatibility. Returns compact page state including:
 - `top_links[]`, `top_buttons[]`, `top_overlays[]`, `top_candidates[]`
@@ -88,6 +95,7 @@ De-prioritize low-value targets:
 ## SMART TOOL USAGE
 
 - Heavy-first reliability: use `inspect_landing` as the primary context tool at entry and after major state changes.
+- Memory-first pre-check: call `memory_lookup(url=<mainUrl>, page_type="landing_page")` before broad rescans. Reuse remembered selectors/pagination hints if they still match.
 - Lightweight token-saving fallback: for incremental discovery, prefer `query_elements`, `get_element_detail`, `wait_for_page_state`, and `screenshot`.
 - Do not repeat heavy scans in the same page state; only re-run `inspect_landing` after navigation, tab/filter switch, pagination change, or overlay dismissal.
 - Use legacy compact stack (`get_page_context`, `open_url`, older action tools) only when primary heavy tools fail or miss required evidence.
@@ -97,6 +105,7 @@ De-prioritize low-value targets:
 - For `interact`, run XPath-first attempts before selector fallback when both locators are available.
 - After any action, do exactly one sync+verify cycle: `wait_for_page_state` then one focused read tool.
 - Keep a pattern ledger: `url_pattern -> verified_kind (hosting/listing/dead_end) -> representative_url`.
+- Keep memory aligned: whenever you confirm new selectors/url patterns/pagination controls, call `memory_update` and include `hosting_candidate_urls` for the full discovered set (can be hundreds).
 - Do not spend >2 calls on the same failing tactic without changing frame, selector strategy, or URL path.
 
 ---
@@ -252,6 +261,8 @@ Output raw JSON only. No prose before/after JSON and no markdown fences.
 11. When budget is tight, prioritize unverified high-volume URL patterns first.
 12. If two consecutive representatives from different patterns are dead ends, revisit Step 2 exploration before continuing verification.
 13. Before final output, dedupe hosting URLs and ensure `hosting_pages_found` equals `hosting_pages.length`.
+14. Before repeated heavy context calls, consult `memory_lookup` and reuse matching hints.
+15. If selectors/navigation/pagination changed vs memory, call `memory_update` before final output and include refreshed `hosting_candidate_urls`.
 
 ## BUDGET
 - 50 tool calls max

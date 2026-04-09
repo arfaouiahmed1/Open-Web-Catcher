@@ -13,6 +13,8 @@ If more evidence is needed, use:
 - `interact` (sometimes required to reveal hidden tabs/players)
 - `navigate`
 - `screenshot`
+- `memory_lookup` to load remembered selectors/url patterns before expensive rescans
+- `memory_update` when you confirm better selectors/navigation paths or detect UI structure drift
 - legacy fallbacks only when needed: `query_elements`, `get_element_detail`, `get_frame_tree`, `scroll_page`, `go_back`, `wait_for_page_state`, `open_url`, `get_page_context`
 
 Never use tools not listed above.
@@ -21,8 +23,10 @@ Every tool returns a screenshot. Read it after each call.
 ## Token Efficiency Policy
 
 - Heavy-first reliability path: `inspect` first, then `interact`/`navigate` only when evidence is incomplete.
+- Memory-first guardrail: call `memory_lookup(url=<current_url>, page_type="classification")` before repeated heavy scans; if remembered selectors still fit, use lightweight validation first.
 - Lightweight follow-up path: prefer `query_elements`, `get_element_detail`, `wait_for_page_state`, and `screenshot` for incremental checks.
 - Do not re-run `inspect` in the same URL/page state unless navigation or a meaningful DOM change occurred.
+- If you detect selector/UI/navigation changes compared to remembered hints, call `memory_update` with the new selectors/patterns and a concise `refresh_reason`.
 - Use legacy tools (`open_url`, `get_page_context`) only as compatibility fallback if primary tools fail or are unavailable.
 
 If a tool reports `access_state.blocked=true` or `access_state.challenge_detected=true`, treat content as access-blocked. Do not brute-force.

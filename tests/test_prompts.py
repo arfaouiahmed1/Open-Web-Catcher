@@ -37,6 +37,8 @@ def test_landing_prompt_covers_navigation_and_match_extraction_flow():
     assert '"channel": "Channel name"' in prompt
     assert "challenge_cleared" in prompt
     assert "access_state.challenge_detected" in prompt
+    assert "memory_lookup" in prompt
+    assert "memory_update" in prompt
 
 
 def test_hosting_prompt_covers_server_switching_activation_and_network_extraction():
@@ -50,6 +52,8 @@ def test_hosting_prompt_covers_server_switching_activation_and_network_extractio
     assert "access_state.challenge_detected" in prompt
     assert "early_stop_reason" in prompt
     assert '"decision": "safe_exit|needs_embed_agent|partial_success_needs_embed|no_stream_found"' in prompt
+    assert "memory_lookup" in prompt
+    assert "memory_update" in prompt
 
 
 def test_embedded_prompt_covers_frame_mapping_activation_and_capture():
@@ -62,3 +66,5 @@ def test_embedded_prompt_covers_frame_mapping_activation_and_capture():
     assert "always run `harvest` before output" in prompt
     assert "access_state.challenge_detected" in prompt
     assert "challenge_cleared" in prompt
+    assert "memory_lookup" in prompt
+    assert "memory_update" in prompt

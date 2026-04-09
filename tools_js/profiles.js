@@ -37,9 +37,15 @@ const NEW_CORE = [
   'screenshot',
 ];
 
+const MEMORY_TOOLS = [
+  'memory_lookup',
+  'memory_update',
+];
+
 export const PROFILES = {
   classification: [
     ...NEW_CORE,
+    ...MEMORY_TOOLS,
     'inspect',
     'open_url',
     'get_page_context',
@@ -52,6 +58,7 @@ export const PROFILES = {
   ],
   landing: [
     ...NEW_CORE,
+    ...MEMORY_TOOLS,
     'inspect_landing',
     ...CORE_CONTEXT,
     ...CORE_NAVIGATION,
@@ -59,6 +66,7 @@ export const PROFILES = {
   ],
   hosting: [
     ...NEW_CORE,
+    ...MEMORY_TOOLS,
     'inspect_hosting',
     'harvest',
     ...CORE_CONTEXT,
@@ -69,6 +77,7 @@ export const PROFILES = {
   ],
   embedded: [
     ...NEW_CORE,
+    ...MEMORY_TOOLS,
     'inspect_embedded',
     'harvest',
     ...CORE_CONTEXT,

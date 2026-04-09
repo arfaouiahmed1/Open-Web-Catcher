@@ -19,6 +19,7 @@ If a fresh bootstrap inspect result for the same URL/state is already available,
 ## Available Tools
 
 - New primary tools: `inspect_hosting`, `navigate`, `interact`, `screenshot`, `harvest`
+- Memory tools: `memory_lookup`, `memory_update`
 - Legacy fallback tools remain available for compatibility.
 
 - Context: `get_page_context`, `query_elements`, `get_element_detail`, `get_frame_tree`, `get_media_state`
@@ -43,6 +44,7 @@ De-prioritize:
 ## Smart Tool Usage
 
 - Heavy-first reliability path: `inspect_hosting` -> `interact` -> `harvest`.
+- Memory-first pre-check: call `memory_lookup(url=<mainUrl>, page_type="hosting_page")` before repeating heavy scans. Reuse remembered selectors/server labels/url patterns when still valid.
 - Lightweight token-saving fallback path: use `query_elements`, `get_element_detail`, `get_media_state`, `wait_for_page_state`, and `screenshot` for incremental checks between heavy calls.
 - Do not repeat `inspect_hosting` in the same page state; re-run it only after navigation/frame change or when repeated lightweight checks are inconclusive.
 - Keep legacy tools (`get_page_context`, `open_url`, `capture_streams`) as compatibility fallback only.
@@ -53,6 +55,7 @@ De-prioritize:
 - If `observed_change.navigated=true` and navigation was unintended, recover with `navigate` to the original target URL.
 - If no visual change after 2 attempts on one server, move to next server.
 - Always run `harvest` before final output, even if the player looks paused or errored.
+- When you discover better selectors/server-switch patterns or detect UI drift, call `memory_update` with updated selectors/url patterns/critical links plus hosting-specific fields: `server_records`, `server_stream_urls`, `server_screenshots`, and `activated_servers`.
 
 ## Mandatory Per-Turn Reasoning
 
@@ -82,6 +85,8 @@ Screenshot is primary truth. If response claims success but screenshot shows no 
 12. Prefer keeping work in one validated player frame; only switch frames when signals degrade.
 13. Two failed activation attempts on one server -> mark `needs_embed_agent` for that server and move on.
 14. Ignore ad pop new tabs/windows as primary targets; continue on the main page.
+15. Use `memory_lookup` before repeated heavy context calls.
+16. Use `memory_update` when server controls/selectors/navigation behavior changed, and include per-server snapshots (`server_records`) and stream artifacts.
 
 ## Workflow
 

@@ -40,6 +40,7 @@ import { inspectEmbedded as inspectEmbeddedTool } from './tools/inspect_embedded
 import { interact as interactTool } from './tools/interact.js';
 import { screenshot as screenshotTool } from './tools/screenshot.js';
 import { harvest as harvestTool } from './tools/harvest.js';
+import { memoryLookup as memoryLookupTool, memoryUpdate as memoryUpdateTool } from './tools/memory-tools.js';
 
 const DEFAULT_TOOL_IMPLS = {
   get_page_context: getPageContextTool,
@@ -72,6 +73,8 @@ const DEFAULT_TOOL_IMPLS = {
   interact: interactTool,
   screenshot: screenshotTool,
   harvest: harvestTool,
+  memory_lookup: memoryLookupTool,
+  memory_update: memoryUpdateTool,
 };
 
 function formatJsonBlock(label, value) {
@@ -115,16 +118,28 @@ const TOOL_SPECS = {
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.get_page_context({ ...args, browserWsEndpoint }),
   ),
   query_elements: spec(
-    'Use when you already know what to target (kind/text/attrs) and need element_ref handles for follow-up actions. Prefer this over full context when narrowing to specific controls.',
-    { frame_path: 'root', kind: 'link', text_contains: 'watch', attr_name: 'data-server', visible_only: true, limit: 10 },
+    'Use when you already know what to target (kind/text/attrs) and need element_ref handles for follow-up actions. Supports regex matching for noisy pages.',
+    {
+      frame_path: 'root',
+      kind: 'link',
+      text_contains: 'watch',
+      text_regex: '(watch|play|live)',
+      attr_name: 'data-server',
+      attr_value_regex: 'server\\s*[0-9]+',
+      visible_only: true,
+      limit: 10,
+    },
     { ok: true, total_matches: 3, matches: [{ kind: 'link', text: 'Watch now', element_ref: '...' }], screenshot_url: 'https://res.cloudinary.com/...' },
     {
       frame_path: framePathSchema,
       kind: z.enum(['link', 'button', 'input', 'checkbox', 'radio', 'select', 'video', 'iframe', 'form', 'tab', 'overlay']).optional(),
       text_contains: z.string().optional().default(''),
+      text_regex: z.string().optional().default(''),
       href_contains: z.string().optional().default(''),
+      href_regex: z.string().optional().default(''),
       attr_name: z.string().optional().default(''),
       attr_value_contains: z.string().optional().default(''),
+      attr_value_regex: z.string().optional().default(''),
       visible_only: z.boolean().optional().default(true),
       limit: z.number().optional().default(20),
     },
@@ -407,10 +422,24 @@ const TOOL_SPECS = {
   ),
   interact: spec(
     'Perform reliable interactions with strict locator strategy support, frame targeting, and explicit verification signals for fallback decisions.',
-    { mode: 'click', xpath: '//button[contains(.,"Play")]', locator_strategy: 'strict', wait_ms: 3000 },
-    { success: true, verified: true, mode: 'click', locator: { used: { kind: 'xpath' } }, screenshot_url: 'https://res.cloudinary.com/...' },
+    {
+      mode: 'click',
+      element_ref: 'optional-ref-from-query-elements',
+      xpath: '//button[contains(.,"Play")]',
+      locator_strategy: 'xpath_first',
+      fallback_to_coordinates: true,
+      wait_ms: 3000,
+    },
+    {
+      success: true,
+      verified: true,
+      mode: 'click',
+      locator: { used: { kind: 'element_ref' }, fallback_used: '' },
+      screenshot_url: 'https://res.cloudinary.com/...',
+    },
     {
       mode: interactModeSchema,
+      element_ref: elementRefSchema,
       selector: z.string().optional().default(''),
       xpath: z.string().optional().default(''),
       text: z.string().optional().default(''),
@@ -423,6 +452,7 @@ const TOOL_SPECS = {
       locator_strategy: locatorStrategySchema,
       x: z.number().optional(),
       y: z.number().optional(),
+      fallback_to_coordinates: z.boolean().optional().default(true),
       wait_ms: z.number().optional().default(3000),
     },
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.interact({ ...args, browserWsEndpoint }),
@@ -446,6 +476,74 @@ const TOOL_SPECS = {
       player_iframe_url: z.string().optional().default(''),
     },
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.harvest({ ...args, browserWsEndpoint }),
+  ),
+  memory_lookup: spec(
+    'Read long-memory profile hints for the current domain/page_type before expensive exploration. Returns remembered selectors, pagination/url patterns, critical links, and related profiles.',
+    { url: 'https://example.com/watch/123', page_type: 'hosting_page', include_related: true, limit: 3 },
+    {
+      ok: true,
+      domain: 'example.com',
+      page_type: 'hosting_page',
+      profile_found: true,
+      profile: { selectors: ['selector=.server-btn'] },
+      related_profiles: [],
+      memory_first_recommendation: 'Use remembered selectors/url patterns first.',
+    },
+    {
+      url: z.string().describe('Target URL or domain for memory lookup'),
+      page_type: z.string().optional().default(''),
+      include_related: z.boolean().optional().default(true),
+      limit: z.number().optional().default(3),
+    },
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.memory_lookup({ ...args, browserWsEndpoint }),
+  ),
+  memory_update: spec(
+    'Update long-memory profile hints when you discover better selectors, pagination patterns, navigation playbooks, or UI structure changes.',
+    {
+      url: 'https://example.com/watch/123',
+      page_type: 'hosting_page',
+      selectors: ['selector=.server-btn', 'xpath=//button[contains(.,"Server 2")]'],
+      pagination_url_patterns: ['https://example.com/live?page={n}'],
+      url_patterns: ['https://example.com/watch/{n}'],
+      navigation_hints: ['url=https://example.com/watch/123'],
+      critical_links: ['https://example.com/watch/123', 'https://cdn.example.com/master.m3u8'],
+      hosting_candidate_urls: ['https://example.com/watch/123', 'https://example.com/watch/124'],
+      server_records: ['{"label":"Server 2","status":"success","stream_count":2}'],
+      server_screenshots: ['https://res.cloudinary.com/.../server2.png'],
+      server_stream_urls: ['https://cdn.example.com/master.m3u8'],
+      activated_servers: ['Server 2'],
+      refresh_reason: 'Detected new server switch UI and updated selector strategy',
+      replace: false,
+    },
+    {
+      ok: true,
+      updated: true,
+      domain: 'example.com',
+      page_type: 'hosting_page',
+      profile: { revision: 4, selectors: ['selector=.server-btn'] },
+    },
+    {
+      url: z.string().describe('Target URL or domain for memory update'),
+      page_type: z.string().describe('Agent page type (classification|landing_page|hosting_page|embedded_page)'),
+      selectors: z.array(z.string()).optional().default([]),
+      pagination_url_patterns: z.array(z.string()).optional().default([]),
+      url_patterns: z.array(z.string()).optional().default([]),
+      navigation_hints: z.array(z.string()).optional().default([]),
+      critical_links: z.array(z.string()).optional().default([]),
+      server_labels: z.array(z.string()).optional().default([]),
+      stream_hosts: z.array(z.string()).optional().default([]),
+      ui_signals: z.array(z.string()).optional().default([]),
+      hosting_candidate_urls: z.array(z.string()).optional().default([]),
+      server_records: z.array(z.string()).optional().default([]),
+      server_screenshots: z.array(z.string()).optional().default([]),
+      server_stream_urls: z.array(z.string()).optional().default([]),
+      activated_servers: z.array(z.string()).optional().default([]),
+      ui_change_notes: z.array(z.string()).optional().default([]),
+      ui_change_detected: z.boolean().optional().default(false),
+      refresh_reason: z.string().optional().default(''),
+      replace: z.boolean().optional().default(false),
+    },
+    (browserWsEndpoint, toolImpls) => (args) => toolImpls.memory_update({ ...args, browserWsEndpoint }),
   ),
 };
 

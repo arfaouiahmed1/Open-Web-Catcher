@@ -248,3 +248,109 @@ async def test_embedded_page_agent_success(mock_build_llm, mock_agent_tools, moc
         initial_message_contains="Embedded_url: https://embed.example.com/player",
         max_tool_calls=settings.embedded_page_max_tool_calls,
     )
+
+
+@pytest.mark.asyncio
+@patch("src.agents.hosting_page.run_agent_loop", new_callable=AsyncMock)
+@patch("src.agents.hosting_page.agent_tools")
+@patch("src.agents.hosting_page.build_llm")
+async def test_hosting_page_agent_normalizes_servers_and_handoff(
+    mock_build_llm,
+    mock_agent_tools,
+    mock_run_agent_loop,
+    settings,
+):
+    from src.agents.hosting_page import HostingPageAgent
+
+    mock_build_llm.return_value = MagicMock()
+    mock_agent_tools.return_value = DummyAsyncContext([])
+    mock_run_agent_loop.return_value = LoopResultStub(
+        tool_calls_made=3,
+        payload={
+            "servers": [
+                {
+                    "label": "Server 1",
+                    "m3u8_urls": [
+                        "https://cdn.example.com/live/master.m3u8",
+                        "https://cdn.example.com/live/master.m3u8",
+                    ],
+                    "mp4_urls": ["https://cdn.example.com/live/fallback.mp4"],
+                    "screenshot_url": "https://res.cloudinary.com/demo/image/upload/v1/host-server-1.png",
+                    "embedded_url": "https://embed.example.com/player/abc",
+                    "status": "needs_embed_agent",
+                }
+            ],
+            "decision": "needs_embed_agent",
+        },
+    )
+
+    agent = HostingPageAgent(settings)
+    result = await agent.run(
+        url="https://hosting.example.com/video/1",
+        orchestrator_handoff="focus on iframe handoff and keep server labels clean",
+    )
+
+    assert result.status == ExtractionStatus.SUCCESS
+    assert result.embedded_urls == ["https://embed.example.com/player/abc"]
+    assert result.screenshots == ["https://res.cloudinary.com/demo/image/upload/v1/host-server-1.png"]
+    assert len(result.servers) == 1
+    assert result.servers[0].label == "Server 1"
+    assert result.servers[0].m3u8_urls == ["https://cdn.example.com/live/master.m3u8"]
+    assert result.servers[0].mp4_urls == ["https://cdn.example.com/live/fallback.mp4"]
+    assert sorted(stream.url for stream in result.streams) == sorted(
+        [
+            "https://cdn.example.com/live/master.m3u8",
+            "https://cdn.example.com/live/fallback.mp4",
+        ]
+    )
+
+    initial_message = mock_run_agent_loop.await_args.kwargs["initial_message"]
+    assert "ORCHESTRATOR HANDOFF" in initial_message
+
+
+@pytest.mark.asyncio
+@patch("src.agents.embedded_page.run_agent_loop", new_callable=AsyncMock)
+@patch("src.agents.embedded_page.agent_tools")
+@patch("src.agents.embedded_page.build_llm")
+async def test_embedded_page_agent_normalizes_server_artifacts(
+    mock_build_llm,
+    mock_agent_tools,
+    mock_run_agent_loop,
+    settings,
+):
+    from src.agents.embedded_page import EmbeddedPageAgent
+
+    mock_build_llm.return_value = MagicMock()
+    mock_agent_tools.return_value = DummyAsyncContext([])
+    mock_run_agent_loop.return_value = LoopResultStub(
+        tool_calls_made=2,
+        payload={
+            "servers": [
+                {
+                    "label": "Embed Server A",
+                    "m3u8_urls": ["https://embed-cdn.example.com/live/master.m3u8"],
+                    "mpd_urls": ["https://embed-cdn.example.com/live/master.mpd"],
+                    "mp4_urls": ["https://embed-cdn.example.com/live/fallback.mp4"],
+                    "screenshot_url": "https://res.cloudinary.com/demo/image/upload/v1/embed-server-a.png",
+                    "status": "success",
+                }
+            ],
+            "successful_servers": 1,
+        },
+    )
+
+    agent = EmbeddedPageAgent(settings)
+    result = await agent.run(url="https://embed.example.com/player")
+
+    assert result.status == ExtractionStatus.SUCCESS
+    assert len(result.servers) == 1
+    assert result.servers[0].label == "Embed Server A"
+    assert result.screenshots == ["https://res.cloudinary.com/demo/image/upload/v1/embed-server-a.png"]
+    assert sorted(stream.url for stream in result.streams) == sorted(
+        [
+            "https://embed-cdn.example.com/live/master.m3u8",
+            "https://embed-cdn.example.com/live/master.mpd",
+            "https://embed-cdn.example.com/live/fallback.mp4",
+        ]
+    )
+    assert result.metadata["total_unique_streams"] == 3

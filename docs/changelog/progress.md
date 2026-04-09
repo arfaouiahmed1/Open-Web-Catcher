@@ -20,3 +20,10 @@ This repository now uses:
 
 - Added full incident report for agent/runtime debugging, MCP fixes, schema compatibility, and quota handling:
 	- [Agent Debugging and Fixes](./2026-04-08-agent-debugging-and-fixes.md)
+
+## 2026-04-09 Architecture and Follow-up Report
+
+- Added full architecture deep dive with diagrams for orchestrator routing, handoff context, extraction normalization, provider/email stages, and Gemini cache lifecycle:
+	- [Implementation Deep Dive (2026-04-09)](../architecture/implementation-deep-dive-2026-04-09.md)
+- Added issue-by-issue postmortem and future roadmap:
+	- [Issues, Fixes, and Future Improvements (2026-04-09)](./2026-04-09-issues-fixes-future-improvements.md)

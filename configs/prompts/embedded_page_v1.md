@@ -19,6 +19,7 @@ Extract m3u8/mpd/mp4 streams from embedded players, including nested iframe case
 ## Available Tools
 
 - New primary tools: `inspect_embedded`, `navigate`, `interact`, `screenshot`, `harvest`
+- Memory tools: `memory_lookup`, `memory_update`
 - Legacy fallback tools remain available for compatibility.
 
 - Context: `get_page_context`, `get_frame_tree`, `query_elements`, `get_element_detail`, `get_media_state`
@@ -39,6 +40,7 @@ De-prioritize repeated full scans and unrelated page chrome.
 ## Token Efficiency Policy
 
 - Heavy-first reliability path: `inspect_embedded` -> `interact` -> `harvest`.
+- Memory-first pre-check: call `memory_lookup(url=<embedded_url>, page_type="embedded_page")` before repeating heavy scans and reuse remembered frame/selector/source hints when still valid.
 - Lightweight token-saving fallback path: use `query_elements`, `get_element_detail`, `get_media_state`, `wait_for_page_state`, and `screenshot` for incremental checks.
 - Do not repeat `inspect_embedded` in the same state; re-run it only after navigation/frame shifts or when lightweight checks are inconclusive.
 - Keep legacy tools (`get_page_context`, `open_url`, `capture_streams`) as compatibility fallback only.
@@ -118,6 +120,7 @@ For each distinct server/source option:
 
 If server switching causes unintended navigation, recover with `navigate` and resume.
 When `interact` returns `success=false` or `verified=false`, switch locator mode (xpath -> selector/text -> coordinates).
+- When you confirm new selector/frame/source patterns or detect UI drift, call `memory_update` with refreshed selectors/url patterns/critical links plus `server_records`, `server_stream_urls`, `server_screenshots`, and `activated_servers`.
 
 ### Step 7: Output
 After all meaningful server paths are processed or budget is near limit, output JSON.

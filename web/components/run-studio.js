@@ -81,14 +81,71 @@ function tryParseJsonString(value) {
   }
 }
 
-function toCellPreview(value) {
-  if (value === null || value === undefined) return "-";
-  if (typeof value === "boolean") return value ? "true" : "false";
-  if (typeof value === "number") return String(value);
-  if (typeof value === "string") return value;
+function inferValueType(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
 
-  const oneLine = safeJson(value).replace(/\s+/g, " ").trim();
-  return oneLine.length > 120 ? `${oneLine.slice(0, 120)}...` : oneLine;
+function toDisplayValue(value) {
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
+  if (typeof value === "string") return value;
+  if (typeof value === "symbol") return String(value);
+  if (typeof value === "function") return `[Function ${value.name || "anonymous"}]`;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  return safeJson(value);
+}
+
+function collectPayloadRows(value, path, rows, seen) {
+  if (value === undefined) {
+    rows.push({ path, type: "undefined", value: "undefined" });
+    return;
+  }
+
+  if (value === null || typeof value !== "object") {
+    rows.push({
+      path,
+      type: inferValueType(value),
+      value: toDisplayValue(value),
+    });
+    return;
+  }
+
+  if (seen.has(value)) {
+    rows.push({ path, type: "circular", value: "[Circular]" });
+    return;
+  }
+
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      rows.push({ path, type: "array", value: "[]" });
+    } else {
+      value.forEach((entry, idx) => {
+        collectPayloadRows(entry, `${path}[${idx}]`, rows, seen);
+      });
+    }
+    seen.delete(value);
+    return;
+  }
+
+  const entries = Object.entries(value);
+  if (entries.length === 0) {
+    rows.push({ path, type: "object", value: "{}" });
+    seen.delete(value);
+    return;
+  }
+
+  for (const [key, nested] of entries) {
+    const childPath = path === "$" ? key : `${path}.${key}`;
+    collectPayloadRows(nested, childPath, rows, seen);
+  }
+
+  seen.delete(value);
 }
 
 function ToolPayloadTable({ value }) {
@@ -98,101 +155,77 @@ function ToolPayloadTable({ value }) {
     return <div className="rounded bg-black/30 p-2 text-xs text-slate-600">No data</div>;
   }
 
-  const isPlainObject =
-    normalized && typeof normalized === "object" && !Array.isArray(normalized);
-
-  const isObjectArray =
-    Array.isArray(normalized) &&
-    normalized.length > 0 &&
-    normalized.every((item) => item && typeof item === "object" && !Array.isArray(item));
-
-  if (isObjectArray) {
-    const columns = Array.from(
-      new Set(normalized.flatMap((row) => Object.keys(row || {})))
-    ).slice(0, 8);
-
-    return (
-      <div className="overflow-x-auto rounded border border-white/10 bg-black/20">
-        <table className="min-w-full text-left text-xs text-slate-300">
-          <thead>
-            <tr className="border-b border-white/10 bg-white/[0.02]">
-              {columns.map((col) => (
-                <th key={col} className="px-2 py-1.5 font-medium uppercase tracking-wide text-slate-500">
-                  {col.replace(/_/g, " ")}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {normalized.map((row, idx) => (
-              <tr key={idx} className="border-b border-white/6 last:border-b-0">
-                {columns.map((col) => (
-                  <td key={`${idx}-${col}`} className="max-w-[320px] truncate px-2 py-1.5 align-top" title={toCellPreview(row[col])}>
-                    {toCellPreview(row[col])}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
-
-  if (isPlainObject) {
-    const entries = Object.entries(normalized);
-    return (
-      <div className="overflow-x-auto rounded border border-white/10 bg-black/20">
-        <table className="min-w-full text-left text-xs text-slate-300">
-          <thead>
-            <tr className="border-b border-white/10 bg-white/[0.02]">
-              <th className="w-40 px-2 py-1.5 font-medium uppercase tracking-wide text-slate-500">Field</th>
-              <th className="px-2 py-1.5 font-medium uppercase tracking-wide text-slate-500">Value</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map(([key, item]) => (
-              <tr key={key} className="border-b border-white/6 last:border-b-0">
-                <td className="px-2 py-1.5 align-top font-mono text-slate-400">{key}</td>
-                <td className="max-w-[460px] truncate px-2 py-1.5 align-top" title={toCellPreview(item)}>
-                  {toCellPreview(item)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
-
-  if (Array.isArray(normalized)) {
-    return (
-      <div className="overflow-x-auto rounded border border-white/10 bg-black/20">
-        <table className="min-w-full text-left text-xs text-slate-300">
-          <thead>
-            <tr className="border-b border-white/10 bg-white/[0.02]">
-              <th className="w-16 px-2 py-1.5 font-medium uppercase tracking-wide text-slate-500">#</th>
-              <th className="px-2 py-1.5 font-medium uppercase tracking-wide text-slate-500">Value</th>
-            </tr>
-          </thead>
-          <tbody>
-            {normalized.map((item, idx) => (
-              <tr key={idx} className="border-b border-white/6 last:border-b-0">
-                <td className="px-2 py-1.5 align-top font-mono text-slate-500">{idx}</td>
-                <td className="max-w-[460px] truncate px-2 py-1.5 align-top" title={toCellPreview(item)}>
-                  {toCellPreview(item)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
+  const rows = [];
+  collectPayloadRows(normalized, "$", rows, new WeakSet());
 
   return (
-    <div className="rounded border border-white/10 bg-black/20 px-2 py-1.5 text-xs text-slate-300">
-      {String(normalized)}
+    <div className="max-h-[420px] overflow-auto rounded border border-white/10 bg-black/20">
+      <table className="min-w-full text-left text-xs text-slate-300">
+        <thead>
+          <tr className="border-b border-white/10 bg-white/[0.02]">
+            <th className="min-w-[200px] px-2 py-1.5 font-medium uppercase tracking-wide text-slate-500">Path</th>
+            <th className="w-24 px-2 py-1.5 font-medium uppercase tracking-wide text-slate-500">Type</th>
+            <th className="px-2 py-1.5 font-medium uppercase tracking-wide text-slate-500">Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, idx) => (
+            <tr key={`${row.path}-${idx}`} className="border-b border-white/6 last:border-b-0">
+              <td className="px-2 py-1.5 align-top font-mono text-slate-400">{row.path}</td>
+              <td className="px-2 py-1.5 align-top text-slate-500">{row.type}</td>
+              <td className="px-2 py-1.5 align-top">
+                <pre className="whitespace-pre-wrap break-words font-mono text-[11px] text-slate-200">{row.value}</pre>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PayloadView({ title, value }) {
+  const [viewMode, setViewMode] = useState("table");
+  const normalized = tryParseJsonString(value);
+  const jsonText = typeof normalized === "string" ? normalized : safeJson(normalized);
+
+  return (
+    <div>
+      <div className="mb-1 flex items-center gap-2">
+        <div className="text-[10px] font-medium uppercase tracking-wider text-slate-600">{title}</div>
+        <div className="ml-auto flex items-center rounded border border-white/10 bg-black/20 p-0.5">
+          <button
+            onClick={() => setViewMode("table")}
+            className={cn(
+              "rounded px-2 py-0.5 text-[10px] font-medium transition-colors",
+              viewMode === "table"
+                ? "bg-signal/20 text-signal"
+                : "text-slate-500 hover:text-slate-300"
+            )}
+          >
+            Table
+          </button>
+          <button
+            onClick={() => setViewMode("json")}
+            className={cn(
+              "rounded px-2 py-0.5 text-[10px] font-medium transition-colors",
+              viewMode === "json"
+                ? "bg-signal/20 text-signal"
+                : "text-slate-500 hover:text-slate-300"
+            )}
+          >
+            JSON
+          </button>
+        </div>
+      </div>
+
+      {viewMode === "table" ? (
+        <ToolPayloadTable value={normalized} />
+      ) : (
+        <pre className="max-h-[420px] overflow-auto rounded border border-white/10 bg-black/20 p-2 text-xs text-slate-200 whitespace-pre-wrap break-words">
+          {jsonText}
+        </pre>
+      )}
     </div>
   );
 }
@@ -240,22 +273,50 @@ function Pill({ icon: Icon, label, value, danger }) {
 
 /* ─── reasoning feed blocks ─────────────────────────────────────────────── */
 
-function ThinkingBlock({ event }) {
-  const rawPreview = event.details?.content_preview;
-  const preview = (() => {
-    if (typeof rawPreview === "string") return rawPreview;
-    if (Array.isArray(rawPreview)) {
-      const textParts = rawPreview
-        .map((item) => {
-          if (typeof item === "string") return item;
-          if (item && typeof item === "object" && typeof item.text === "string") return item.text;
-          return "";
-        })
-        .filter(Boolean);
-      if (textParts.length) return textParts.join("\n\n");
+function collectTextSegments(value, out, seen = new WeakSet()) {
+  if (value == null) return;
+  if (typeof value === "string") {
+    if (value.trim()) out.push(value);
+    return;
+  }
+
+  if (typeof value !== "object") {
+    out.push(String(value));
+    return;
+  }
+
+  if (seen.has(value)) return;
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectTextSegments(item, out, seen);
     }
+    return;
+  }
+
+  if (typeof value.text === "string" && value.text.trim()) {
+    out.push(value.text);
+  }
+
+  if (typeof value.content === "string" && value.content.trim()) {
+    out.push(value.content);
+  }
+
+  for (const nested of Object.values(value)) {
+    collectTextSegments(nested, out, seen);
+  }
+}
+
+function ThinkingBlock({ event }) {
+  const rawPreview = event.details?.content ?? event.details?.content_preview ?? event.message;
+  const preview = (() => {
+    const textParts = [];
+    collectTextSegments(rawPreview, textParts);
+    if (textParts.length) return textParts.join("\n\n");
     if (rawPreview && typeof rawPreview === "object") return safeJson(rawPreview);
-    return "";
+    if (typeof rawPreview === "string") return rawPreview;
+    return String(rawPreview || "");
   })();
   const toolCount = event.details?.tool_calls || 0;
   const tokens = (event.details?.input_tokens || 0) + (event.details?.output_tokens || 0);
@@ -287,7 +348,7 @@ function ThinkingBlock({ event }) {
 }
 
 function ToolBlock({ event }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [loadedScreenshot, setLoadedScreenshot] = useState("");
   const toolName = event.details?.tool_name;
   const args = event.details?.args;
@@ -359,6 +420,11 @@ function ToolBlock({ event }) {
   const verb = isStart ? "calling" : isError ? "failed" : "returned";
   const primaryScreenshot = screenshotUrls[0] || "";
   const isCloudinaryUrl = primaryScreenshot.startsWith("http");
+
+  useEffect(() => {
+    if (!primaryScreenshot) return;
+    setLoadedScreenshot((current) => current || primaryScreenshot);
+  }, [primaryScreenshot]);
 
   return (
     <div className={cn("rounded-lg border p-2.5", border)}>
@@ -441,16 +507,10 @@ function ToolBlock({ event }) {
       {expanded && (args || resultPreview) && (
         <div className="mt-2 space-y-1.5">
           {args && (
-            <div>
-              <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-600">Args</div>
-              <ToolPayloadTable value={args} />
-            </div>
+            <PayloadView title="Input JSON" value={args} />
           )}
           {resultPreview && (
-            <div>
-              <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-slate-600">Result</div>
-              <ToolPayloadTable value={resultPreview} />
-            </div>
+            <PayloadView title="Output JSON" value={resultPreview} />
           )}
           {screenshotUrls.length > 1 && (
             <div className="flex flex-wrap gap-1.5">
@@ -482,7 +542,7 @@ function StatusChip({ event }) {
     )}>
       <span className={cn("font-semibold", isError ? "text-ember" : meta.color)}>{meta.label}</span>
       {message && (
-        <span className="truncate text-slate-500">{message}</span>
+        <span className="whitespace-pre-wrap break-words text-slate-500">{message}</span>
       )}
     </div>
   );
@@ -552,7 +612,7 @@ function EventRow({ event }) {
       <button
         onClick={() => hasDetails && setExpanded((v) => !v)}
         disabled={!hasDetails}
-        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left"
+        className="flex w-full items-start gap-2 px-2.5 py-1.5 text-left"
       >
         <div className={cn("h-1.5 w-1.5 shrink-0 rounded-full",
           isError ? "bg-ember" :
@@ -565,7 +625,7 @@ function EventRow({ event }) {
         <span className={cn("shrink-0 font-medium", isError ? "text-ember" : meta.color)}>
           {meta.label}
         </span>
-        <span className="flex-1 truncate text-slate-600">{message}</span>
+        <span className="flex-1 whitespace-pre-wrap break-words text-slate-600">{message}</span>
         <span className="shrink-0 font-mono text-slate-700">#{event.seq}</span>
         {hasDetails && (
           <ChevronRight className={cn("h-3 w-3 shrink-0 text-slate-700 transition-transform", expanded && "rotate-90")} />
@@ -573,7 +633,7 @@ function EventRow({ event }) {
       </button>
       {expanded && hasDetails && (
         <div className="border-t border-white/6 px-2.5 pb-2 pt-1.5">
-          <pre className="max-h-40 overflow-auto rounded bg-black/40 p-2 text-xs text-slate-300">
+          <pre className="overflow-auto rounded bg-black/40 p-2 text-xs text-slate-300 whitespace-pre-wrap break-words">
             {safeJson(event.details)}
           </pre>
         </div>

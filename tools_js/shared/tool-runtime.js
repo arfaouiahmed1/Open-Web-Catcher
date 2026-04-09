@@ -440,29 +440,50 @@ export function augmentElements(elements, pageState) {
 export function filterElements(elements, {
   kind,
   text_contains = '',
+  text_regex = '',
   href_contains = '',
+  href_regex = '',
   attr = null,
   attr_name = '',
   attr_value_contains = '',
+  attr_value_regex = '',
   visible_only = true,
   limit = 20,
 } = {}) {
+  const toRegex = (value) => {
+    if (!value) return null;
+    if (value instanceof RegExp) return value;
+    try {
+      return new RegExp(String(value), 'i');
+    } catch {
+      return null;
+    }
+  };
+
   const normalizedText = String(text_contains || '').toLowerCase();
+  const textRegex = toRegex(text_regex);
   const normalizedHref = String(href_contains || '').toLowerCase();
+  const hrefRegex = toRegex(href_regex);
   const attrName = attr?.name ? String(attr.name) : String(attr_name || '');
   const attrValue = attr?.value_contains
     ? String(attr.value_contains).toLowerCase()
     : String(attr_value_contains || '').toLowerCase();
+  const attrValueRegex = toRegex(attr?.value_regex || attr_value_regex);
 
   return elements
     .filter((element) => !kind || element.kind === kind)
     .filter((element) => !visible_only || element.visible)
     .filter((element) => !normalizedText || element.text.toLowerCase().includes(normalizedText))
+    .filter((element) => !textRegex || textRegex.test(String(element.text || '')))
     .filter((element) => !normalizedHref || element.href.toLowerCase().includes(normalizedHref))
+    .filter((element) => !hrefRegex || hrefRegex.test(String(element.href || '')))
     .filter((element) => {
       if (!attrName) return true;
       const value = element.attrs?.[attrName] || '';
-      return !attrValue || String(value).toLowerCase().includes(attrValue);
+      const valueStr = String(value);
+      const containsOk = !attrValue || valueStr.toLowerCase().includes(attrValue);
+      const regexOk = !attrValueRegex || attrValueRegex.test(valueStr);
+      return containsOk && regexOk;
     })
     .slice(0, limit);
 }
@@ -481,7 +502,90 @@ async function resolveByText(frame, text) {
     }
     return null;
   }, text);
-  return handle.asElement();
+  const elementHandle = handle.asElement();
+  if (!elementHandle) {
+    await handle.dispose().catch(() => {});
+  }
+  return elementHandle;
+}
+
+function deriveFramePath(frame) {
+  if (!frame.parentFrame()) return 'root';
+
+  const segments = [];
+  let current = frame;
+  while (current.parentFrame()) {
+    const parent = current.parentFrame();
+    const index = parent.childFrames().indexOf(current);
+    segments.unshift(String(Math.max(index, 0)));
+    current = parent;
+  }
+
+  return segments.length ? `root.${segments.join('.')}` : 'root';
+}
+
+async function tryResolveLocatorInFrame(frame, locator, timeoutMs = 8000) {
+  const attempts = [];
+
+  if (locator.selector) {
+    try {
+      const handle = await frame.waitForSelector(locator.selector, { timeout: timeoutMs });
+      if (handle) {
+        return {
+          handle,
+          locator_used: { selector: locator.selector },
+          attempts,
+        };
+      }
+    } catch (error) {
+      attempts.push({ strategy: 'selector', locator: locator.selector, error: error.message });
+    }
+  }
+
+  if (locator.xpath) {
+    try {
+      const playwrightXpathSelector = `::-p-xpath(${locator.xpath})`;
+      await frame.waitForSelector(playwrightXpathSelector, { timeout: timeoutMs });
+      const matches = await frame.$$(playwrightXpathSelector);
+      const handle = matches[0] || null;
+      if (handle) {
+        return {
+          handle,
+          locator_used: { xpath: locator.xpath },
+          attempts,
+        };
+      }
+    } catch (error) {
+      attempts.push({ strategy: 'xpath', locator: locator.xpath, error: error.message });
+    }
+  }
+
+  if (locator.text) {
+    try {
+      await frame.waitForFunction(
+        (needle) => (document.body?.innerText || '').toLowerCase().includes(String(needle).toLowerCase()),
+        { timeout: Math.min(timeoutMs, 2500) },
+        locator.text,
+      ).catch(() => {});
+
+      const handle = await resolveByText(frame, locator.text);
+      if (handle) {
+        return {
+          handle,
+          locator_used: { text: locator.text },
+          attempts,
+        };
+      }
+    } catch (error) {
+      attempts.push({ strategy: 'text', locator: locator.text, error: error.message });
+    }
+  }
+
+  return {
+    handle: null,
+    locator_used: {},
+    attempts,
+  };
 }
 
 export async function resolveElementTarget(page, {
@@ -493,6 +597,10 @@ export async function resolveElementTarget(page, {
 } = {}) {
   let effectiveFramePath = frame_path || 'root';
   let locator = { selector, xpath, text };
+  let staleRefDetected = false;
+  let frameFallbackApplied = false;
+  let frameRelocated = false;
+  let resolutionAttempts = [];
 
   if (element_ref) {
     let decoded;
@@ -510,66 +618,95 @@ export async function resolveElementTarget(page, {
     };
 
     const currentState = await buildFrameState(page, effectiveFramePath);
-    if (!currentState.ok) {
-      return { ok: false, code: 'frame_not_found', error: currentState.error };
-    }
-    if (decoded.dom_epoch && decoded.dom_epoch !== currentState.dom_epoch) {
-      return {
-        ok: false,
-        code: 'stale_ref',
-        error: 'element_ref is stale for the current DOM snapshot',
-        frame_path: effectiveFramePath,
-        page_state_id: currentState.page_state_id,
-        dom_epoch: currentState.dom_epoch,
-      };
+    if (currentState.ok && decoded.dom_epoch && decoded.dom_epoch !== currentState.dom_epoch) {
+      staleRefDetected = true;
     }
   }
 
-  const frameState = await buildFrameState(page, effectiveFramePath);
+  if (!locator.selector && !locator.xpath && !locator.text) {
+    return {
+      ok: false,
+      code: 'missing_locator',
+      error: 'No locator was provided (element_ref, selector, xpath, or text is required).',
+      frame_path: effectiveFramePath,
+    };
+  }
+
+  let frameState = await buildFrameState(page, effectiveFramePath);
+  if (!frameState.ok && effectiveFramePath !== 'root') {
+    const rootState = await buildFrameState(page, 'root');
+    if (rootState.ok) {
+      frameState = rootState;
+      effectiveFramePath = 'root';
+      frameFallbackApplied = true;
+    }
+  }
+
   if (!frameState.ok) {
     return { ok: false, code: 'frame_not_found', error: frameState.error };
   }
 
-  const frame = frameState.frame;
-  let handle = null;
+  let resolvedFrame = frameState.frame;
+  let resolvedFramePath = effectiveFramePath;
   let locatorUsed = {};
 
-  try {
-    if (locator.selector) {
-      handle = await frame.waitForSelector(locator.selector, { timeout: 8000 });
-      locatorUsed = { selector: locator.selector };
-    } else if (locator.xpath) {
-      await frame.waitForSelector(`::-p-xpath(${locator.xpath})`, { timeout: 8000 });
-      const matches = await frame.$$(`::-p-xpath(${locator.xpath})`);
-      handle = matches[0] || null;
-      locatorUsed = { xpath: locator.xpath };
-    } else if (locator.text) {
-      handle = await resolveByText(frame, locator.text);
-      locatorUsed = { text: locator.text };
+  const primaryResolution = await tryResolveLocatorInFrame(frameState.frame, locator, 8000);
+  resolutionAttempts = resolutionAttempts.concat(
+    (primaryResolution.attempts || []).map((attempt) => ({ frame_path: effectiveFramePath, ...attempt })),
+  );
+
+  let handle = primaryResolution.handle;
+  locatorUsed = primaryResolution.locator_used || {};
+
+  if (!handle) {
+    const fallbackFrames = page
+      .frames()
+      .filter((candidate) => candidate !== frameState.frame)
+      .slice(0, 20);
+
+    for (const fallbackFrame of fallbackFrames) {
+      const fallbackFramePath = deriveFramePath(fallbackFrame);
+      const attempt = await tryResolveLocatorInFrame(fallbackFrame, locator, 2000);
+      resolutionAttempts = resolutionAttempts.concat(
+        (attempt.attempts || []).map((item) => ({ frame_path: fallbackFramePath, ...item })),
+      );
+      if (attempt.handle) {
+        handle = attempt.handle;
+        locatorUsed = attempt.locator_used || {};
+        resolvedFrame = fallbackFrame;
+        resolvedFramePath = fallbackFramePath;
+        frameRelocated = fallbackFramePath !== effectiveFramePath;
+        break;
+      }
     }
-  } catch {
-    handle = null;
   }
 
   if (!handle) {
     return {
       ok: false,
-      code: 'element_not_found',
+      code: staleRefDetected ? 'stale_ref_not_found' : 'element_not_found',
       error: 'Could not resolve an element from the provided locator',
       frame_path: effectiveFramePath,
       page_state_id: frameState.page_state_id,
       dom_epoch: frameState.dom_epoch,
+      stale_ref_detected: staleRefDetected,
+      frame_fallback_applied: frameFallbackApplied,
+      resolution_attempts: resolutionAttempts.slice(0, 20),
     };
   }
 
   return {
     ok: true,
-    frame,
-    frame_path: effectiveFramePath,
+    frame: resolvedFrame,
+    frame_path: resolvedFramePath,
     handle,
     locator_used: locatorUsed,
     page_state_id: frameState.page_state_id,
     dom_epoch: frameState.dom_epoch,
+    stale_ref_detected: staleRefDetected,
+    frame_fallback_applied: frameFallbackApplied,
+    frame_relocated: frameRelocated,
+    resolution_attempts: resolutionAttempts.slice(0, 20),
   };
 }
 
@@ -753,6 +890,11 @@ export async function readElementDetail(page, params = {}) {
     frame_path: resolved.frame_path,
     page_state_id: resolved.page_state_id,
     dom_epoch: resolved.dom_epoch,
+    locator_used: resolved.locator_used,
+    stale_ref_detected: Boolean(resolved.stale_ref_detected),
+    frame_fallback_applied: Boolean(resolved.frame_fallback_applied),
+    frame_relocated: Boolean(resolved.frame_relocated),
+    resolution_attempts: resolved.resolution_attempts || [],
     detail,
     screenshot,
   };

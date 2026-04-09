@@ -9,6 +9,7 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from src.memory.long_term import LongTermMemory
 from src.models.enums import AgentType, ExtractionStatus, PageType
 from src.models.schemas import (
     ClassificationResult,
@@ -54,11 +55,149 @@ def _dedupe_urls(urls: list[str]) -> list[str]:
 
 def _collect_embedded_urls(extraction: ExtractionResult) -> list[str]:
     urls = list(extraction.embedded_urls)
+    for server in extraction.servers:
+        if server.embedded_url:
+            urls.append(server.embedded_url)
     for server in extraction.metadata.get("servers", []):
         embedded_url = server.get("embedded_url")
         if embedded_url:
             urls.append(embedded_url)
     return _dedupe_urls(urls)
+
+
+def _truncate(value: Any, *, max_chars: int = 700) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return text if len(text) <= max_chars else f"{text[: max_chars - 3]}..."
+
+
+def _memory_hint(memory: LongTermMemory | None, *, url: str, page_type: str, limit: int = 3) -> str:
+    if memory is None:
+        return ""
+    try:
+        return memory.build_prompt_context(url=url, page_type=page_type, limit=limit)
+    except Exception:
+        return ""
+
+
+def _match_for_url(matches: list[MatchInfo], target_url: str) -> MatchInfo | None:
+    target = str(target_url or "").strip()
+    if not target:
+        return None
+    for item in matches:
+        if item.url == target:
+            return item
+    return None
+
+
+def _latest_hosting_context_for_embedded(
+    extraction_results: list[ExtractionResult],
+    *,
+    embedded_url: str,
+) -> ExtractionResult | None:
+    target = str(embedded_url or "").strip()
+    if not target:
+        return None
+    for extraction in reversed(extraction_results):
+        if extraction.page_type != PageType.HOSTING:
+            continue
+        if target in _collect_embedded_urls(extraction):
+            return extraction
+    return None
+
+
+def _requires_embedded_followup(extraction: ExtractionResult) -> bool:
+    decision = str(extraction.metadata.get("decision", "") or "").strip().lower()
+    if decision in {"needs_embed_agent", "partial_success_needs_embed"}:
+        return True
+    if extraction.status != ExtractionStatus.SUCCESS:
+        return True
+    return not extraction.streams and bool(_collect_embedded_urls(extraction))
+
+
+def _build_landing_handoff(
+    state: PipelineState,
+    *,
+    memory_hint_text: str,
+) -> str:
+    classification = state.get("classification")
+    page_type = classification.page_type.value if classification is not None else "unknown"
+    reasoning = _truncate(classification.reasoning if classification is not None else "")
+    lines = [
+        "ORCHESTRATOR HANDOFF",
+        f"- root url: {state['url']}",
+        f"- upstream classification: {page_type}",
+    ]
+    if reasoning:
+        lines.append(f"- classification reasoning: {reasoning}")
+    lines.append("- focus: return clean hosting candidates (with route + iframe hints) and avoid duplicates")
+    if memory_hint_text:
+        lines.append("- memory check: previous landing-page hints exist for this domain; use as soft guidance")
+        lines.append(_truncate(memory_hint_text, max_chars=1200))
+    return "\n".join(lines)
+
+
+def _build_hosting_handoff(
+    state: PipelineState,
+    *,
+    target_url: str,
+    memory_hint_text: str,
+) -> str:
+    classification = state.get("classification")
+    classification_reason = _truncate(classification.reasoning if classification is not None else "")
+    match = _match_for_url(state.get("matches", []), target_url)
+
+    lines = [
+        "ORCHESTRATOR HANDOFF",
+        f"- root url: {state['url']}",
+        f"- target hosting candidate: {target_url}",
+    ]
+    if classification is not None:
+        lines.append(f"- upstream classification: {classification.page_type.value}")
+    if classification_reason:
+        lines.append(f"- classification reasoning: {classification_reason}")
+    if match is not None:
+        lines.append(f"- candidate title: {_truncate(match.title, max_chars=180) or 'n/a'}")
+        if match.participants:
+            lines.append(f"- participants: {_truncate(match.participants, max_chars=180)}")
+        lines.append(f"- landing suggested route: {match.route}")
+        if match.iframes:
+            lines.append(f"- landing iframes to watch: {', '.join(_dedupe_urls(match.iframes)[:4])}")
+    lines.append("- focus: verify direct m3u8/mpd/mp4 first, then return embedded handoff only when needed")
+    lines.append("- look out for: server switch tabs, player iframe URLs, cloudinary screenshots, and clean server labels")
+    if memory_hint_text:
+        lines.append("- memory check: prior hosting-page hints found for this domain; validate before reuse")
+        lines.append(_truncate(memory_hint_text, max_chars=1200))
+    return "\n".join(lines)
+
+
+def _build_embedded_handoff(
+    state: PipelineState,
+    *,
+    target_url: str,
+    memory_hint_text: str,
+) -> str:
+    source_hosting = _latest_hosting_context_for_embedded(state.get("extraction_results", []), embedded_url=target_url)
+    lines = [
+        "ORCHESTRATOR HANDOFF",
+        f"- root url: {state['url']}",
+        f"- embedded target url: {target_url}",
+    ]
+    if source_hosting is not None:
+        lines.append(f"- source hosting page: {source_hosting.url}")
+        lines.append(f"- source hosting status: {source_hosting.status.value}")
+        decision = str(source_hosting.metadata.get("decision", "") or "").strip()
+        if decision:
+            lines.append(f"- source hosting decision: {decision}")
+        if source_hosting.streams:
+            lines.append(f"- source hosting already found streams: {len(source_hosting.streams)}")
+    lines.append("- focus: recover stream URLs from the embedded player and keep server artifacts clean")
+    lines.append("- look out for: iframe-local controls, activated server tabs, and screenshot evidence")
+    if memory_hint_text:
+        lines.append("- memory check: prior embedded-page hints found for this domain; use as soft hints")
+        lines.append(_truncate(memory_hint_text, max_chars=1200))
+    return "\n".join(lines)
 
 
 async def classify_node(
@@ -87,11 +226,22 @@ async def landing_page_node(
     *,
     settings: Settings,
     observer: RunObserver | None = None,
+    memory: LongTermMemory | None = None,
 ) -> dict[str, Any]:
     from src.agents.landing_page import LandingPageAgent
 
     child = observer.child("landing", AgentType.LANDING_PAGE) if observer else None
-    extraction = await LandingPageAgent(settings).run(url=state["url"], observer=child)
+    landing_memory_hint = _memory_hint(
+        memory,
+        url=state["url"],
+        page_type=AgentType.LANDING_PAGE.value,
+    )
+    handoff = _build_landing_handoff(state, memory_hint_text=landing_memory_hint)
+    extraction = await LandingPageAgent(settings).run(
+        url=state["url"],
+        observer=child,
+        orchestrator_handoff=handoff,
+    )
     hosting_pages = extraction.metadata.get("hosting_pages", [])
     matches: list[MatchInfo] = []
     for page in hosting_pages:
@@ -102,6 +252,9 @@ async def landing_page_node(
         except Exception:
             logger.warning("Skipping malformed landing-page match payload: %s", page)
     pending_hosting_urls = _dedupe_urls([match.url for match in matches])
+    if not pending_hosting_urls:
+        # Fallback discovery path: if landing returns no candidates, probe the root once as hosting.
+        pending_hosting_urls = _dedupe_urls([state["url"]])
     return {
         "matches": matches,
         "pending_hosting_urls": pending_hosting_urls,
@@ -113,6 +266,7 @@ async def hosting_page_node(
     *,
     settings: Settings,
     observer: RunObserver | None = None,
+    memory: LongTermMemory | None = None,
 ) -> dict[str, Any]:
     from src.agents.hosting_page import HostingPageAgent
 
@@ -122,10 +276,31 @@ async def hosting_page_node(
     target_url = state["pending_hosting_urls"][0]
     remaining_hosting_urls = state["pending_hosting_urls"][1:]
     child = observer.child("hosting", AgentType.HOSTING_PAGE) if observer else None
-    extraction = await HostingPageAgent(settings).run(url=target_url, observer=child)
-    pending_embedded_urls = _dedupe_urls(
-        [*state["pending_embedded_urls"], *_collect_embedded_urls(extraction)]
+    hosting_memory_hint = _memory_hint(
+        memory,
+        url=target_url,
+        page_type=AgentType.HOSTING_PAGE.value,
     )
+    handoff = _build_hosting_handoff(
+        state,
+        target_url=target_url,
+        memory_hint_text=hosting_memory_hint,
+    )
+    extraction = await HostingPageAgent(settings).run(
+        url=target_url,
+        observer=child,
+        orchestrator_handoff=handoff,
+    )
+
+    embedded_candidates = _collect_embedded_urls(extraction)
+    needs_embed_followup = _requires_embedded_followup(extraction)
+    if needs_embed_followup and not embedded_candidates:
+        embedded_candidates = [target_url]
+
+    pending_embedded_urls = list(state["pending_embedded_urls"])
+    if needs_embed_followup:
+        pending_embedded_urls = _dedupe_urls([*pending_embedded_urls, *embedded_candidates])
+
     return {
         "pending_hosting_urls": remaining_hosting_urls,
         "pending_embedded_urls": pending_embedded_urls,
@@ -138,6 +313,7 @@ async def embedded_page_node(
     *,
     settings: Settings,
     observer: RunObserver | None = None,
+    memory: LongTermMemory | None = None,
 ) -> dict[str, Any]:
     from src.agents.embedded_page import EmbeddedPageAgent
 
@@ -147,7 +323,21 @@ async def embedded_page_node(
     target_url = state["pending_embedded_urls"][0]
     remaining_embedded_urls = state["pending_embedded_urls"][1:]
     child = observer.child("embedded", AgentType.EMBEDDED_PAGE) if observer else None
-    extraction = await EmbeddedPageAgent(settings).run(url=target_url, observer=child)
+    embedded_memory_hint = _memory_hint(
+        memory,
+        url=target_url,
+        page_type=AgentType.EMBEDDED_PAGE.value,
+    )
+    handoff = _build_embedded_handoff(
+        state,
+        target_url=target_url,
+        memory_hint_text=embedded_memory_hint,
+    )
+    extraction = await EmbeddedPageAgent(settings).run(
+        url=target_url,
+        observer=child,
+        orchestrator_handoff=handoff,
+    )
     return {
         "pending_embedded_urls": remaining_embedded_urls,
         "extraction_results": [*state["extraction_results"], extraction],
@@ -186,14 +376,14 @@ async def generate_takedown_emails_node(state: PipelineState) -> dict[str, Any]:
 def route_after_classification(state: PipelineState) -> str:
     classification = state["classification"]
     if classification is None:
-        return "analyze_providers"
+        return "landing_page"
     if classification.page_type == PageType.LANDING:
         return "landing_page"
     if classification.page_type == PageType.HOSTING:
         return "queue_root_hosting"
     if classification.page_type == PageType.EMBEDDED:
         return "queue_root_embedded"
-    return "analyze_providers"
+    return "landing_page"
 
 
 def route_after_landing(state: PipelineState) -> str:
@@ -201,6 +391,10 @@ def route_after_landing(state: PipelineState) -> str:
 
 
 def route_after_hosting(state: PipelineState) -> str:
+    if state["pending_embedded_urls"] and state["extraction_results"]:
+        latest = state["extraction_results"][-1]
+        if latest.page_type == PageType.HOSTING and _requires_embedded_followup(latest):
+            return "embedded_page"
     if state["pending_hosting_urls"]:
         return "hosting_page"
     if state["pending_embedded_urls"]:
@@ -214,13 +408,23 @@ def route_after_embedded(state: PipelineState) -> str:
 
 def build_graph(settings: Settings, observer: RunObserver | None = None):
     """Build the deterministic LangGraph orchestration graph."""
+    memory = LongTermMemory(settings.memory_db_path) if settings.memory_enabled else None
     graph = StateGraph(PipelineState)
     graph.add_node("classify", partial(classify_node, settings=settings, observer=observer))
     graph.add_node("queue_root_hosting", queue_root_hosting_node)
     graph.add_node("queue_root_embedded", queue_root_embedded_node)
-    graph.add_node("landing_page", partial(landing_page_node, settings=settings, observer=observer))
-    graph.add_node("hosting_page", partial(hosting_page_node, settings=settings, observer=observer))
-    graph.add_node("embedded_page", partial(embedded_page_node, settings=settings, observer=observer))
+    graph.add_node(
+        "landing_page",
+        partial(landing_page_node, settings=settings, observer=observer, memory=memory),
+    )
+    graph.add_node(
+        "hosting_page",
+        partial(hosting_page_node, settings=settings, observer=observer, memory=memory),
+    )
+    graph.add_node(
+        "embedded_page",
+        partial(embedded_page_node, settings=settings, observer=observer, memory=memory),
+    )
     graph.add_node("analyze_providers", partial(analyze_providers_node, settings=settings))
     graph.add_node("generate_takedown_emails", generate_takedown_emails_node)
 
@@ -371,6 +575,12 @@ def _collect_all_streams(extraction_results: list[ExtractionResult]) -> list[Str
             if stream.url and stream.url not in seen:
                 seen.add(stream.url)
                 streams.append(stream)
+        for server in extraction.servers:
+            for url in server.m3u8_urls + server.mpd_urls + server.mp4_urls:
+                if url and url not in seen:
+                    seen.add(url)
+                    streams.append(StreamURL(url=url, source_layer=server.label))
+        # Backward-compatible fallback for legacy payloads that only kept servers in metadata.
         for server in extraction.metadata.get("servers", []):
             for url in server.get("m3u8_urls", []) + server.get("mpd_urls", []) + server.get("mp4_urls", []):
                 if url and url not in seen:
@@ -383,6 +593,9 @@ def _collect_all_screenshots(extraction_results: list[ExtractionResult]) -> list
     screenshots: list[str] = []
     for extraction in extraction_results:
         screenshots.extend(extraction.screenshots)
+        for server in extraction.servers:
+            if server.screenshot_url:
+                screenshots.append(server.screenshot_url)
         for server in extraction.metadata.get("servers", []):
             screenshot_url = server.get("screenshot_url")
             if screenshot_url:

@@ -58,7 +58,10 @@ class ClassificationAgent:
                 input_value={"url": url},
                 attributes={"owc.agent_type": AgentType.CLASSIFICATION.value},
             ) as span:
-                short_memory = ShortTermMemory(k=self.settings.memory_short_window)
+                short_memory = ShortTermMemory(
+                    k=self.settings.memory_short_window,
+                    page_type=AgentType.CLASSIFICATION.value,
+                )
                 memory_context = build_memory_context(
                     self.memory,
                     url=url,

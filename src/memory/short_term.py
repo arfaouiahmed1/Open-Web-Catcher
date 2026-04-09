@@ -2,8 +2,107 @@
 
 from __future__ import annotations
 
+import json
+import re
 from collections import deque
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+
+def _normalize_domain(url: str) -> str:
+    host = (urlparse(url).netloc or "").lower().strip()
+    return host[4:] if host.startswith("www.") else host
+
+
+def _generalize_url_pattern(url: str) -> str:
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    if not parsed.scheme and not parsed.netloc:
+        normalized = re.sub(r"\d+", "{n}", raw)
+        normalized = re.sub(r"[0-9a-fA-F]{8,}", "{id}", normalized)
+        return normalized
+
+    path = parsed.path or "/"
+    path = re.sub(r"/\d+(?=/|$)", "/{n}", path)
+    path = re.sub(r"/[0-9a-fA-F]{8,}(?=/|$)", "/{id}", path)
+    path = re.sub(r"/[A-Za-z0-9_-]{24,}(?=/|$)", "/{token}", path)
+
+    query_pairs: list[tuple[str, str]] = []
+    for key, value in parse_qsl(parsed.query or "", keep_blank_values=True):
+        normalized = str(value)
+        if re.fullmatch(r"\d+", normalized or ""):
+            normalized = "{n}"
+        elif re.fullmatch(r"[0-9a-fA-F]{8,}", normalized or ""):
+            normalized = "{id}"
+        elif len(normalized) >= 24 and re.fullmatch(r"[A-Za-z0-9_-]+", normalized):
+            normalized = "{token}"
+        query_pairs.append((key, normalized))
+
+    query = urlencode(sorted(query_pairs), doseq=True)
+    query = query.replace("%7B", "{").replace("%7D", "}")
+    return urlunparse((parsed.scheme, _normalize_domain(raw), path, "", query, ""))
+
+
+def _looks_like_pagination_url(url: str) -> bool:
+    candidate = str(url or "").lower()
+    return bool(
+        candidate
+        and re.search(r"([?&](page|p|offset|start|cursor)=)|(/page/\d+)|(/p/\d+)|(-page-\d+)", candidate)
+    )
+
+
+def _looks_like_stream_url(url: str) -> bool:
+    candidate = str(url or "").lower()
+    return bool(
+        candidate
+        and (
+            ".m3u8" in candidate
+            or ".mpd" in candidate
+            or ".mp4" in candidate
+            or "manifest" in candidate
+            or "playlist" in candidate
+        )
+    )
+
+
+def _dedupe_keep_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        normalized = str(value or "").strip()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            result.append(normalized)
+    return result
+
+
+def _extract_nested_strings(payload: Any, keys: set[str], *, limit: int = 150) -> list[str]:
+    found: list[str] = []
+
+    def _walk(node: Any) -> None:
+        if len(found) >= limit:
+            return
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if len(found) >= limit:
+                    break
+                lowered = str(key or "").lower()
+                if lowered in keys and isinstance(value, str):
+                    found.append(value)
+                elif lowered.endswith("_url") and isinstance(value, str):
+                    found.append(value)
+                elif isinstance(value, (dict, list, tuple)):
+                    _walk(value)
+        elif isinstance(node, (list, tuple)):
+            for item in node:
+                if len(found) >= limit:
+                    break
+                _walk(item)
+
+    _walk(payload)
+    return _dedupe_keep_order(found)
 
 
 class ShortTermMemory:
@@ -14,9 +113,24 @@ class ShortTermMemory:
     and short observations that can be summarized or persisted later.
     """
 
-    def __init__(self, k: int = 40) -> None:
+    def __init__(self, k: int = 40, page_type: str = "") -> None:
         self.k = max(int(k or 1), 1)
+        self.page_type = str(page_type or "").strip().lower()
         self._entries: deque[dict[str, Any]] = deque(maxlen=self.k)
+        self._signals: dict[str, list[str]] = {
+            "url_patterns": [],
+            "pagination_patterns": [],
+            "selectors": [],
+            "critical_links": [],
+            "stream_urls": [],
+            "stream_hosts": [],
+            "server_labels": [],
+            "hosting_candidate_urls": [],
+            "server_records": [],
+            "server_screenshots": [],
+            "server_stream_urls": [],
+            "activated_servers": [],
+        }
 
     def save(self, human: str, ai: str) -> None:
         """Backward-compatible helper for old call sites."""
@@ -28,6 +142,8 @@ class ShortTermMemory:
 
     def clear(self) -> None:
         self._entries.clear()
+        for key in self._signals:
+            self._signals[key] = []
 
     def record_navigation(self, url: str, *, via: str = "", note: str = "") -> None:
         if not (url or via or note):
@@ -59,6 +175,71 @@ class ShortTermMemory:
             }
         )
 
+    def ingest_tool_result(
+        self,
+        tool_name: str,
+        tool_args: dict[str, Any] | None,
+        result_payload: str | dict[str, Any] | None,
+    ) -> None:
+        args = tool_args or {}
+        for key in ("url", "mainUrl", "base_url", "player_iframe_url", "embedded_url"):
+            value = args.get(key)
+            if value:
+                self._capture_url(str(value))
+
+        for key in ("selector", "xpath", "text", "element_ref", "kind", "action"):
+            value = args.get(key)
+            if value:
+                self._remember_signal("selectors", f"{key}={value}", max_items=40)
+
+        payload: Any = result_payload
+        if isinstance(result_payload, str):
+            text = result_payload.strip()
+            if not text:
+                payload = {}
+            else:
+                try:
+                    payload = json.loads(text)
+                except json.JSONDecodeError:
+                    payload = {}
+
+        if not isinstance(payload, (dict, list, tuple)):
+            return
+
+        urls = _extract_nested_strings(
+            payload,
+            {
+                "url",
+                "href",
+                "src",
+                "final_url",
+                "embedded_url",
+                "player_iframe_url",
+                "source_url",
+            },
+        )
+        for candidate in urls:
+            if candidate.startswith(("http://", "https://")):
+                self._capture_url(candidate)
+
+        for selector in _extract_nested_strings(payload, {"selector", "xpath", "element_ref", "text"}):
+            self._remember_signal("selectors", selector, max_items=40)
+
+        for label in _extract_nested_strings(payload, {"label", "server_label", "server"}):
+            cleaned = str(label or "").strip()
+            if cleaned and len(cleaned) <= 120:
+                self._remember_signal("server_labels", cleaned, max_items=120)
+
+        if isinstance(payload, dict):
+            self._capture_hosting_candidates(payload)
+            self._capture_server_artifacts(payload)
+
+        if tool_name in {"memory_update", "memory_lookup"}:
+            self.record_observation(
+                f"memory tool used: {tool_name}",
+                source="memory",
+            )
+
     def record_observation(self, note: str, *, source: str = "") -> None:
         text = str(note or "").strip()
         if not text:
@@ -74,7 +255,26 @@ class ShortTermMemory:
     def summary(self, limit: int = 8) -> str:
         recent = list(self._entries)[-max(int(limit or 1), 1) :]
         if not recent:
-            return ""
+            run_memory = self.export_run_memory()
+            common = run_memory.get("common", {}) if isinstance(run_memory, dict) else {}
+            if not any(common.values()) and not run_memory.get("agent_specific"):
+                return ""
+            lines = ["- run memory: structured signals captured"]
+            if common.get("url_patterns"):
+                lines.append("- run url patterns: " + ", ".join(common["url_patterns"][:4]))
+            if common.get("critical_links"):
+                lines.append("- run critical links: " + ", ".join(common["critical_links"][:4]))
+            if common.get("stream_urls"):
+                lines.append("- run stream urls: " + ", ".join(common["stream_urls"][:3]))
+            if run_memory.get("page_type") == "landing_page":
+                candidates = run_memory.get("hosting_candidate_urls", [])
+                if candidates:
+                    lines.append(f"- landing candidates remembered: {len(candidates)}")
+            if run_memory.get("page_type") in {"hosting_page", "embedded_page"}:
+                server_records = run_memory.get("server_records", [])
+                if server_records:
+                    lines.append(f"- server records remembered: {len(server_records)}")
+            return "\n".join(lines)
 
         lines: list[str] = []
         for entry in recent:
@@ -104,6 +304,21 @@ class ShortTermMemory:
             elif kind == "observation":
                 prefix = f"{entry.get('source')}: " if entry.get("source") else ""
                 lines.append(f"- note: {prefix}{entry.get('note', '')}")
+
+        run_memory = self.export_run_memory()
+        common = run_memory.get("common", {}) if isinstance(run_memory, dict) else {}
+        if common.get("url_patterns"):
+            lines.append("- run url patterns: " + ", ".join(common["url_patterns"][:4]))
+        if common.get("pagination_patterns"):
+            lines.append("- run pagination patterns: " + ", ".join(common["pagination_patterns"][:3]))
+        if common.get("critical_links"):
+            lines.append("- run critical links: " + ", ".join(common["critical_links"][:4]))
+        if common.get("stream_urls"):
+            lines.append("- run stream urls: " + ", ".join(common["stream_urls"][:3]))
+        if run_memory.get("page_type") == "landing_page" and run_memory.get("hosting_candidate_urls"):
+            lines.append(f"- landing candidates remembered: {len(run_memory['hosting_candidate_urls'])}")
+        if run_memory.get("page_type") in {"hosting_page", "embedded_page"} and run_memory.get("server_records"):
+            lines.append(f"- server records remembered: {len(run_memory['server_records'])}")
         return "\n".join(lines)
 
     def working_state(
@@ -120,6 +335,8 @@ class ShortTermMemory:
         blockers = self._blockers_seen(recent)
         last_success = self._last_successful_action(recent)
         next_best_move = self._next_best_move(recent, blockers)
+        run_memory = self.export_run_memory()
+        common = run_memory.get("common", {}) if isinstance(run_memory, dict) else {}
 
         lines = [
             f"- current objective: {str(objective or '').strip()}",
@@ -130,9 +347,259 @@ class ShortTermMemory:
             "- blockers seen: "
             + (", ".join(f"`{blocker}`" for blocker in blockers[:3]) if blockers else "`none yet`"),
             f"- last successful action: `{last_success or 'none yet'}`",
-            f"- next best move: {next_best_move}",
+            "- detected run url patterns: "
+            + (", ".join(f"`{item}`" for item in common.get("url_patterns", [])[:4]) if common.get("url_patterns") else "`none yet`"),
+            "- detected pagination patterns: "
+            + (
+                ", ".join(f"`{item}`" for item in common.get("pagination_patterns", [])[:3])
+                if common.get("pagination_patterns")
+                else "`none yet`"
+            ),
+            "- critical links discovered this run: "
+            + (
+                ", ".join(f"`{item}`" for item in common.get("critical_links", [])[:5])
+                if common.get("critical_links")
+                else "`none yet`"
+            ),
+            "- stream links discovered this run: "
+            + (
+                ", ".join(f"`{item}`" for item in common.get("stream_urls", [])[:3])
+                if common.get("stream_urls")
+                else "`none yet`"
+            ),
         ]
+
+        if (page_type or self.page_type) == "landing_page":
+            candidates = run_memory.get("hosting_candidate_urls", [])
+            lines.append(
+                "- landing hosting candidates remembered: "
+                + (f"`{len(candidates)}`" if candidates else "`none yet`")
+            )
+        if (page_type or self.page_type) in {"hosting_page", "embedded_page"}:
+            server_records = run_memory.get("server_records", [])
+            lines.append(
+                "- server snapshots remembered: "
+                + (f"`{len(server_records)}`" if server_records else "`none yet`")
+            )
+            activated = run_memory.get("activated_servers", [])
+            lines.append(
+                "- activated servers in this run: "
+                + (", ".join(f"`{item}`" for item in activated[:8]) if activated else "`none yet`")
+            )
+
+        lines.append(f"- next best move: {next_best_move}")
         return "\n".join(lines)
+
+    def export_run_memory(self, *, page_type: str = "") -> dict[str, Any]:
+        resolved_page_type = str(page_type or self.page_type or "").strip().lower()
+        common = {
+            "url_patterns": list(self._signals["url_patterns"]),
+            "pagination_patterns": list(self._signals["pagination_patterns"]),
+            "selectors": list(self._signals["selectors"]),
+            "critical_links": list(self._signals["critical_links"]),
+            "stream_urls": list(self._signals["stream_urls"]),
+            "stream_hosts": list(self._signals["stream_hosts"]),
+            "server_labels": list(self._signals["server_labels"]),
+        }
+
+        landing_specific = {
+            "hosting_candidate_urls": list(self._signals["hosting_candidate_urls"]),
+        }
+        hosting_specific = {
+            "server_records": list(self._signals["server_records"]),
+            "server_screenshots": list(self._signals["server_screenshots"]),
+            "server_stream_urls": list(self._signals["server_stream_urls"]),
+            "activated_servers": list(self._signals["activated_servers"]),
+        }
+
+        agent_specific: dict[str, dict[str, list[str]]] = {}
+        if resolved_page_type == "landing_page":
+            agent_specific = {resolved_page_type: landing_specific}
+        elif resolved_page_type in {"hosting_page", "embedded_page"}:
+            agent_specific = {resolved_page_type: hosting_specific}
+        elif resolved_page_type:
+            agent_specific = {resolved_page_type: {}}
+
+        return {
+            **common,
+            "hosting_candidate_urls": landing_specific["hosting_candidate_urls"],
+            "server_records": hosting_specific["server_records"],
+            "server_screenshots": hosting_specific["server_screenshots"],
+            "server_stream_urls": hosting_specific["server_stream_urls"],
+            "activated_servers": hosting_specific["activated_servers"],
+            "page_type": resolved_page_type,
+            "common": common,
+            "agent_specific": agent_specific,
+        }
+
+    def _remember_signal(self, key: str, value: str, *, max_items: int) -> None:
+        bucket = self._signals.get(key)
+        if bucket is None:
+            return
+        merged = _dedupe_keep_order([*bucket, str(value or "")])
+        self._signals[key] = merged[:max_items]
+
+    def _signal_limit(self, key: str) -> int:
+        page_type = self.page_type
+        base_limits = {
+            "url_patterns": 260,
+            "pagination_patterns": 140,
+            "selectors": 160,
+            "critical_links": 220,
+            "stream_urls": 260,
+            "stream_hosts": 120,
+            "server_labels": 120,
+            "hosting_candidate_urls": 260,
+            "server_records": 220,
+            "server_screenshots": 220,
+            "server_stream_urls": 320,
+            "activated_servers": 140,
+        }
+        if page_type == "landing_page":
+            base_limits.update(
+                {
+                    "critical_links": 900,
+                    "url_patterns": 360,
+                    "hosting_candidate_urls": 900,
+                }
+            )
+        if page_type in {"hosting_page", "embedded_page"}:
+            base_limits.update(
+                {
+                    "critical_links": 420,
+                    "stream_urls": 700,
+                    "server_labels": 220,
+                    "server_records": 320,
+                    "server_screenshots": 320,
+                    "server_stream_urls": 900,
+                    "activated_servers": 220,
+                }
+            )
+        return base_limits.get(key, 120)
+
+    def _capture_url(self, url: str) -> None:
+        candidate = str(url or "").strip()
+        if not candidate:
+            return
+        self._remember_signal("critical_links", candidate, max_items=self._signal_limit("critical_links"))
+
+        pattern = _generalize_url_pattern(candidate)
+        if pattern:
+            self._remember_signal("url_patterns", pattern, max_items=self._signal_limit("url_patterns"))
+            if _looks_like_pagination_url(candidate):
+                self._remember_signal("pagination_patterns", pattern, max_items=self._signal_limit("pagination_patterns"))
+
+        if _looks_like_stream_url(candidate):
+            self._remember_signal("stream_urls", candidate, max_items=self._signal_limit("stream_urls"))
+            host = _normalize_domain(candidate)
+            if host:
+                self._remember_signal("stream_hosts", host, max_items=self._signal_limit("stream_hosts"))
+
+    def _capture_hosting_candidates(self, payload: dict[str, Any]) -> None:
+        discovered: list[str] = []
+        for key in ("hosting_pages", "match_candidates"):
+            entries = payload.get(key, [])
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if isinstance(entry, dict):
+                    candidate = str(entry.get("url") or entry.get("href") or "").strip()
+                elif isinstance(entry, str):
+                    candidate = str(entry).strip()
+                else:
+                    continue
+                if candidate.startswith(("http://", "https://")):
+                    discovered.append(candidate)
+
+        for candidate in _dedupe_keep_order(discovered):
+            self._remember_signal(
+                "hosting_candidate_urls",
+                candidate,
+                max_items=self._signal_limit("hosting_candidate_urls"),
+            )
+            self._capture_url(candidate)
+
+    def _capture_server_artifacts(self, payload: dict[str, Any]) -> None:
+        for label in payload.get("all_detected_servers", []) if isinstance(payload.get("all_detected_servers"), list) else []:
+            cleaned = str(label or "").strip()
+            if cleaned:
+                self._remember_signal("server_labels", cleaned, max_items=self._signal_limit("server_labels"))
+
+        servers = payload.get("servers", [])
+        if not isinstance(servers, list):
+            return
+
+        for index, server in enumerate(servers):
+            if not isinstance(server, dict):
+                continue
+            label = str(server.get("label") or server.get("name") or server.get("server") or f"server_{index + 1}").strip()
+            status = str(server.get("status") or "").strip().lower()
+            player_state = str(server.get("player_state") or "").strip().lower()
+            server_up = bool(server.get("server_up"))
+            screenshot_url = str(server.get("screenshot_url") or "").strip()
+            embedded_url = str(server.get("embedded_url") or "").strip()
+            primary_stream = str(server.get("primary_stream") or "").strip()
+
+            if label:
+                self._remember_signal("server_labels", label, max_items=self._signal_limit("server_labels"))
+            if screenshot_url:
+                self._remember_signal(
+                    "server_screenshots",
+                    screenshot_url,
+                    max_items=self._signal_limit("server_screenshots"),
+                )
+            if embedded_url.startswith(("http://", "https://")):
+                self._capture_url(embedded_url)
+
+            stream_urls: list[str] = []
+            for field in ("m3u8_urls", "mpd_urls", "mp4_urls"):
+                values = server.get(field, [])
+                if not isinstance(values, list):
+                    continue
+                for value in values:
+                    candidate = str(value or "").strip()
+                    if candidate:
+                        stream_urls.append(candidate)
+            if primary_stream:
+                stream_urls.append(primary_stream)
+
+            unique_streams = _dedupe_keep_order(stream_urls)
+            for stream_url in unique_streams:
+                if stream_url.startswith(("http://", "https://")):
+                    self._remember_signal(
+                        "server_stream_urls",
+                        stream_url,
+                        max_items=self._signal_limit("server_stream_urls"),
+                    )
+                    self._capture_url(stream_url)
+
+            is_activated = server_up or status in {"success", "partial", "active"} or player_state in {
+                "playing",
+                "loading",
+                "ready",
+            }
+            if is_activated and label:
+                self._remember_signal(
+                    "activated_servers",
+                    label,
+                    max_items=self._signal_limit("activated_servers"),
+                )
+
+            server_record = {
+                "label": label,
+                "status": status or ("success" if server_up else "unknown"),
+                "player_state": player_state or "unknown",
+                "server_up": server_up,
+                "stream_count": len(unique_streams),
+                "primary_stream": primary_stream,
+                "embedded_url": embedded_url,
+                "screenshot_url": screenshot_url,
+            }
+            self._remember_signal(
+                "server_records",
+                json.dumps(server_record, ensure_ascii=False, sort_keys=True),
+                max_items=self._signal_limit("server_records"),
+            )
 
     def _last_navigation_url(self, entries: list[dict[str, Any]]) -> str:
         for entry in reversed(entries):
@@ -194,12 +661,18 @@ class ShortTermMemory:
         if blockers:
             return "wait, verify access state, and avoid repeating the blocked step"
         if not entries:
+            if self._signals["critical_links"]:
+                return "prioritize remembered critical links before broad page scans"
             return "start with a page context or navigation tool to gather fresh evidence"
         last = entries[-1]
         if last.get("kind") == "navigation":
             return "inspect the loaded page and identify the next actionable element"
         if last.get("kind") == "tool" and last.get("status") == "success":
+            if self._signals["stream_urls"]:
+                return "verify stream stability and continue with the next distinct server/source"
             return "build on the last successful action and verify whether new streams or targets appeared"
         if last.get("kind") == "tool":
+            if self._signals["selectors"]:
+                return "try a different remembered selector/xpath before another full-page scan"
             return "try a different locator or inspect the page before retrying the same action"
         return "continue from the freshest live-page evidence"

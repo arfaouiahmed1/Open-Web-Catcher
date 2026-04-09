@@ -67,6 +67,14 @@ def remember_agent_run(
                 details={"page_type": page_type, "status": normalized_status or status},
             )
         return
+
+    payload_for_memory = dict(payload or {})
+    if short_memory is not None:
+        payload_for_memory.setdefault(
+            "run_memory",
+            short_memory.export_run_memory(page_type=page_type),
+        )
+
     try:
         trace = observer.trace() if observer is not None else None
         actor = observer.actor if observer is not None else ""
@@ -74,7 +82,7 @@ def remember_agent_run(
             url=url,
             page_type=page_type,
             status=normalized_status,
-            payload=payload,
+            payload=payload_for_memory,
             trace=trace,
             actor=actor,
             run_id=observer.run_id if observer is not None else "",
@@ -88,6 +96,8 @@ def remember_agent_run(
                     "page_type": page_type,
                     "tool_sequence": stored.get("tool_sequence", []),
                     "server_labels": stored.get("server_labels", []),
+                    "critical_links": stored.get("critical_links", []),
+                    "url_patterns": stored.get("url_patterns", []),
                 },
             )
     except Exception as exc:  # pragma: no cover - runtime safeguard

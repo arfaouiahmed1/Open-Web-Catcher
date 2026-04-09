@@ -5,6 +5,7 @@
 
 import { connectBrowser, getPage } from '../shared/browser.js';
 import { screenshotViewport } from '../shared/screenshot.js';
+import { resolveElementTarget } from '../shared/tool-runtime.js';
 
 const delay = (min = 80, max = 300) =>
   new Promise(r => setTimeout(r, min + Math.random() * (max - min)));
@@ -14,6 +15,7 @@ const RESOLVE_TIMEOUT_MS = 8000;
 /**
  * @param {{
  *   mode: 'click'|'play'|'type'|'select'|'coordinates'|'check'|'checkbox'|'radio',
+ *   element_ref?: string,
  *   selector?: string,
  *   xpath?: string,
  *   text?: string,
@@ -26,12 +28,14 @@ const RESOLVE_TIMEOUT_MS = 8000;
  *   locator_strategy?: 'strict'|'xpath_first'|'selector_first'|'text_first',
  *   x?: number,
  *   y?: number,
+ *   fallback_to_coordinates?: boolean,
  *   wait_ms?: number,
  *   browserWsEndpoint?: string,
  * }} params
  */
 export async function interact({
   mode = 'click',
+  element_ref = '',
   selector = '',
   xpath = '',
   text = '',
@@ -44,6 +48,7 @@ export async function interact({
   locator_strategy = 'strict',
   x,
   y,
+  fallback_to_coordinates = true,
   wait_ms = 3000,
   browserWsEndpoint,
 } = {}) {
@@ -70,6 +75,7 @@ export async function interact({
   const locator_attempt = {
     locator_strategy,
     provided: {
+      element_ref: Boolean(element_ref),
       xpath: Boolean(xpath),
       selector: Boolean(selector),
       text: Boolean(text),
@@ -91,6 +97,8 @@ export async function interact({
   let elementHandle = null;
   let point_before = null;
   let point_after = null;
+  let fallback_used = '';
+  let element_resolution = null;
 
   try {
     const frameResolution = await _resolveFrame(page, frame_path, frame_url_contains);
@@ -105,14 +113,37 @@ export async function interact({
 
     switch (mode) {
       case 'click': {
-        const resolved = await _resolveElement(resolvedFrame, {
-          selector,
-          xpath,
-          text,
-          locator_strategy,
-        });
+        let resolved;
+        try {
+          resolved = await _resolveActionTarget(page, resolvedFrame, resolvedFramePath, {
+            element_ref,
+            selector,
+            xpath,
+            text,
+            locator_strategy,
+          });
+        } catch (resolveError) {
+          if (fallback_to_coordinates && Number.isFinite(x) && Number.isFinite(y)) {
+            point_before = await _elementAtPoint(page, x, y);
+            await _performCoordinateClick(page, x, y);
+            point_after = await _elementAtPoint(page, x, y);
+            locator_used = { kind: 'coordinates_fallback' };
+            fallback_used = 'coordinates';
+            executed = true;
+            break;
+          }
+          throw resolveError;
+        }
         elementHandle = resolved.handle;
         locator_used = resolved.used;
+        element_resolution = resolved.resolution || element_resolution;
+        resolvedFrame = resolved.frame || resolvedFrame;
+        resolvedFramePath = resolved.frame_path || resolvedFramePath;
+        frame_info = {
+          frame_path: resolvedFramePath,
+          frame_url: resolvedFrame.url(),
+        };
+        before_state = await _captureState(page, resolvedFrame);
         target_before = await _snapshotElement(elementHandle);
         await delay();
         await elementHandle.click();
@@ -122,19 +153,41 @@ export async function interact({
 
       case 'play': {
         let playedViaElement = false;
-        if (selector || xpath || text) {
-          const resolved = await _resolveElement(resolvedFrame, {
-            selector,
-            xpath,
-            text,
-            locator_strategy,
-          });
-          elementHandle = resolved.handle;
-          locator_used = resolved.used;
-          target_before = await _snapshotElement(elementHandle);
-          await delay(50, 150);
-          await elementHandle.click();
-          playedViaElement = true;
+        if (element_ref || selector || xpath || text) {
+          try {
+            const resolved = await _resolveActionTarget(page, resolvedFrame, resolvedFramePath, {
+              element_ref,
+              selector,
+              xpath,
+              text,
+              locator_strategy,
+            });
+            elementHandle = resolved.handle;
+            locator_used = resolved.used;
+            element_resolution = resolved.resolution || element_resolution;
+            resolvedFrame = resolved.frame || resolvedFrame;
+            resolvedFramePath = resolved.frame_path || resolvedFramePath;
+            frame_info = {
+              frame_path: resolvedFramePath,
+              frame_url: resolvedFrame.url(),
+            };
+            before_state = await _captureState(page, resolvedFrame);
+            target_before = await _snapshotElement(elementHandle);
+            await delay(50, 150);
+            await elementHandle.click();
+            playedViaElement = true;
+          } catch (resolveError) {
+            if (fallback_to_coordinates && Number.isFinite(x) && Number.isFinite(y)) {
+              point_before = await _elementAtPoint(page, x, y);
+              await _performCoordinateClick(page, x, y);
+              point_after = await _elementAtPoint(page, x, y);
+              locator_used = { kind: 'coordinates_fallback' };
+              fallback_used = 'coordinates';
+              playedViaElement = true;
+            } else {
+              throw resolveError;
+            }
+          }
         }
 
         const playAttempted = await resolvedFrame.evaluate(() => {
@@ -153,7 +206,8 @@ export async function interact({
       }
 
       case 'type': {
-        const resolved = await _resolveElement(resolvedFrame, {
+        const resolved = await _resolveActionTarget(page, resolvedFrame, resolvedFramePath, {
+          element_ref,
           selector,
           xpath,
           text,
@@ -161,6 +215,14 @@ export async function interact({
         });
         elementHandle = resolved.handle;
         locator_used = resolved.used;
+        element_resolution = resolved.resolution || element_resolution;
+        resolvedFrame = resolved.frame || resolvedFrame;
+        resolvedFramePath = resolved.frame_path || resolvedFramePath;
+        frame_info = {
+          frame_path: resolvedFramePath,
+          frame_url: resolvedFrame.url(),
+        };
+        before_state = await _captureState(page, resolvedFrame);
         target_before = await _snapshotElement(elementHandle);
 
         await elementHandle.click({ clickCount: 3 });
@@ -174,7 +236,8 @@ export async function interact({
       }
 
       case 'select': {
-        const resolved = await _resolveElement(resolvedFrame, {
+        const resolved = await _resolveActionTarget(page, resolvedFrame, resolvedFramePath, {
+          element_ref,
           selector,
           xpath,
           text,
@@ -182,6 +245,14 @@ export async function interact({
         });
         elementHandle = resolved.handle;
         locator_used = resolved.used;
+        element_resolution = resolved.resolution || element_resolution;
+        resolvedFrame = resolved.frame || resolvedFrame;
+        resolvedFramePath = resolved.frame_path || resolvedFramePath;
+        frame_info = {
+          frame_path: resolvedFramePath,
+          frame_url: resolvedFrame.url(),
+        };
+        before_state = await _captureState(page, resolvedFrame);
         target_before = await _snapshotElement(elementHandle);
 
         const selected = await elementHandle.evaluate((node, payload) => {
@@ -223,15 +294,7 @@ export async function interact({
       case 'coordinates': {
         if (x == null || y == null) throw new Error('x and y are required for coordinates mode');
         point_before = await _elementAtPoint(page, x, y);
-
-        // Bezier-like movement: move to midpoint first, then target
-        const midX = x * 0.6 + Math.random() * 40;
-        const midY = y * 0.6 + Math.random() * 40;
-        await page.mouse.move(midX, midY, { steps: 8 });
-        await delay(40, 100);
-        await page.mouse.move(x, y, { steps: 6 });
-        await delay(30, 80);
-        await page.mouse.click(x, y);
+        await _performCoordinateClick(page, x, y);
         point_after = await _elementAtPoint(page, x, y);
         executed = true;
         break;
@@ -239,14 +302,38 @@ export async function interact({
 
       case 'checkbox':
       case 'check': {
-        const resolved = await _resolveElement(resolvedFrame, {
-          selector,
-          xpath,
-          text,
-          locator_strategy,
-        });
+        let resolved;
+        try {
+          resolved = await _resolveActionTarget(page, resolvedFrame, resolvedFramePath, {
+            element_ref,
+            selector,
+            xpath,
+            text,
+            locator_strategy,
+          });
+        } catch (resolveError) {
+          if (fallback_to_coordinates && Number.isFinite(x) && Number.isFinite(y)) {
+            point_before = await _elementAtPoint(page, x, y);
+            await _performCoordinateClick(page, x, y);
+            point_after = await _elementAtPoint(page, x, y);
+            locator_used = { kind: 'coordinates_fallback' };
+            fallback_used = 'coordinates';
+            executed = true;
+            break;
+          }
+          throw resolveError;
+        }
+
         elementHandle = resolved.handle;
         locator_used = resolved.used;
+        element_resolution = resolved.resolution || element_resolution;
+        resolvedFrame = resolved.frame || resolvedFrame;
+        resolvedFramePath = resolved.frame_path || resolvedFramePath;
+        frame_info = {
+          frame_path: resolvedFramePath,
+          frame_url: resolvedFrame.url(),
+        };
+        before_state = await _captureState(page, resolvedFrame);
         target_before = await _snapshotElement(elementHandle);
 
         const desired = typeof checked === 'boolean' ? checked : true;
@@ -261,14 +348,38 @@ export async function interact({
       }
 
       case 'radio': {
-        const resolved = await _resolveElement(resolvedFrame, {
-          selector,
-          xpath,
-          text,
-          locator_strategy,
-        });
+        let resolved;
+        try {
+          resolved = await _resolveActionTarget(page, resolvedFrame, resolvedFramePath, {
+            element_ref,
+            selector,
+            xpath,
+            text,
+            locator_strategy,
+          });
+        } catch (resolveError) {
+          if (fallback_to_coordinates && Number.isFinite(x) && Number.isFinite(y)) {
+            point_before = await _elementAtPoint(page, x, y);
+            await _performCoordinateClick(page, x, y);
+            point_after = await _elementAtPoint(page, x, y);
+            locator_used = { kind: 'coordinates_fallback' };
+            fallback_used = 'coordinates';
+            executed = true;
+            break;
+          }
+          throw resolveError;
+        }
+
         elementHandle = resolved.handle;
         locator_used = resolved.used;
+        element_resolution = resolved.resolution || element_resolution;
+        resolvedFrame = resolved.frame || resolvedFrame;
+        resolvedFramePath = resolved.frame_path || resolvedFramePath;
+        frame_info = {
+          frame_path: resolvedFramePath,
+          frame_url: resolvedFrame.url(),
+        };
+        before_state = await _captureState(page, resolvedFrame);
         target_before = await _snapshotElement(elementHandle);
         await elementHandle.click();
         executed = true;
@@ -332,6 +443,7 @@ export async function interact({
     executed,
     verified,
     verification_reason,
+    fallback_used,
     mode,
     navigated,
     new_tab_urls,
@@ -340,6 +452,8 @@ export async function interact({
     locator: {
       ...locator_attempt,
       used: locator_used,
+      fallback_used,
+      element_resolution,
     },
     before_state,
     after_state,
@@ -476,6 +590,133 @@ function _orderedLocators({ selector, xpath, text, locator_strategy }) {
   ];
 }
 
+async function _performCoordinateClick(page, x, y) {
+  const midX = x * 0.6 + Math.random() * 40;
+  const midY = y * 0.6 + Math.random() * 40;
+  await page.mouse.move(midX, midY, { steps: 8 });
+  await delay(40, 100);
+  await page.mouse.move(x, y, { steps: 6 });
+  await delay(30, 80);
+  await page.mouse.click(x, y);
+}
+
+async function _resolveActionTarget(page, frame, framePath, {
+  element_ref,
+  selector,
+  xpath,
+  text,
+  locator_strategy,
+}) {
+  const hasLocatorFallback = Boolean(selector || xpath || text);
+
+  if (element_ref) {
+    const resolvedFromRef = await resolveElementTarget(page, {
+      frame_path: framePath,
+      element_ref,
+      selector,
+      xpath,
+      text,
+    });
+
+    if (resolvedFromRef.ok && resolvedFromRef.handle) {
+      return {
+        handle: resolvedFromRef.handle,
+        used: { kind: 'element_ref' },
+        frame: resolvedFromRef.frame,
+        frame_path: resolvedFromRef.frame_path || framePath,
+        resolution: {
+          stale_ref_detected: Boolean(resolvedFromRef.stale_ref_detected),
+          frame_fallback_applied: Boolean(resolvedFromRef.frame_fallback_applied),
+          frame_relocated: Boolean(resolvedFromRef.frame_relocated),
+          resolution_attempts: resolvedFromRef.resolution_attempts || [],
+        },
+      };
+    }
+
+    if (!hasLocatorFallback) {
+      throw new Error(resolvedFromRef.error || 'Could not resolve element_ref target');
+    }
+
+    const resolvedFromLocator = await _resolveElement(frame, {
+      selector,
+      xpath,
+      text,
+      locator_strategy,
+    });
+    return {
+      handle: resolvedFromLocator.handle,
+      used: resolvedFromLocator.used,
+      frame,
+      frame_path: framePath,
+      resolution: {
+        stale_ref_detected: Boolean(resolvedFromRef.stale_ref_detected),
+        frame_fallback_applied: Boolean(resolvedFromRef.frame_fallback_applied),
+        frame_relocated: false,
+        element_ref_error: resolvedFromRef.error || '',
+        resolution_attempts: resolvedFromRef.resolution_attempts || [],
+      },
+    };
+  }
+
+  const resolved = await _resolveElement(frame, {
+    selector,
+    xpath,
+    text,
+    locator_strategy,
+  });
+  return {
+    handle: resolved.handle,
+    used: resolved.used,
+    frame,
+    frame_path: framePath,
+    resolution: null,
+  };
+}
+
+async function _isHandleInteractable(handle) {
+  try {
+    return await handle.evaluate((element) => {
+      if (!element || !element.isConnected) return false;
+      const rect = element.getBoundingClientRect();
+      if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+      const style = window.getComputedStyle(element);
+      if (!style) return false;
+      if (style.display === 'none' || style.visibility === 'hidden' || style.pointerEvents === 'none') return false;
+      if (Number(style.opacity || '1') === 0) return false;
+      if (typeof element.disabled === 'boolean' && element.disabled) return false;
+      return true;
+    });
+  } catch {
+    return false;
+  }
+}
+
+async function _pickBestHandle(handles = []) {
+  if (!handles.length) return null;
+
+  let fallback = null;
+  for (const handle of handles) {
+    if (!fallback) {
+      fallback = handle;
+    }
+    if (await _isHandleInteractable(handle)) {
+      for (const other of handles) {
+        if (other !== handle) {
+          await other.dispose().catch(() => {});
+        }
+      }
+      return handle;
+    }
+  }
+
+  for (const other of handles) {
+    if (other !== fallback) {
+      await other.dispose().catch(() => {});
+    }
+  }
+  return fallback;
+}
+
 async function _resolveElement(frame, {
   selector,
   xpath,
@@ -493,17 +734,26 @@ async function _resolveElement(frame, {
       let handle = null;
 
       if (locator.kind === 'selector') {
-        handle = await frame.waitForSelector(locator.value, { timeout: RESOLVE_TIMEOUT_MS });
+        handle = await frame.waitForSelector(locator.value, {
+          timeout: RESOLVE_TIMEOUT_MS,
+          visible: true,
+        });
       } else if (locator.kind === 'xpath') {
         const xpathSelector = `::-p-xpath(${locator.value})`;
         await frame.waitForSelector(xpathSelector, { timeout: RESOLVE_TIMEOUT_MS });
         const nodes = await frame.$$(xpathSelector);
-        handle = nodes[0] || null;
+        handle = await _pickBestHandle(nodes);
       } else if (locator.kind === 'text') {
         const textHandle = await frame.evaluateHandle((needle) => {
           const normalizedNeedle = String(needle || '').toLowerCase();
           const candidates = document.querySelectorAll('button, a, [role="button"], input, label, select, [onclick], [data-server], [data-source]');
           for (const element of candidates) {
+            const rect = element.getBoundingClientRect();
+            if (!rect || rect.width <= 0 || rect.height <= 0) continue;
+            const style = window.getComputedStyle(element);
+            if (!style) continue;
+            if (style.display === 'none' || style.visibility === 'hidden' || style.pointerEvents === 'none') continue;
+            if (Number(style.opacity || '1') === 0) continue;
             const textValue = (element.innerText || element.textContent || element.value || '').trim().toLowerCase();
             if (textValue && textValue.includes(normalizedNeedle)) {
               return element;

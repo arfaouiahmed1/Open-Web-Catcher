@@ -39,11 +39,22 @@ class LandingPageAgent:
             else "Explore the landing page and find all hosting page URLs."
         )
 
-    async def run(self, url: str, observer: RunObserver | None = None) -> ExtractionResult:
+    async def run(
+        self,
+        url: str,
+        observer: RunObserver | None = None,
+        orchestrator_handoff: str = "",
+    ) -> ExtractionResult:
         logger.info("LandingPageAgent: %s", url)
         if observer is not None:
             observer.mark_agent(AgentType.LANDING_PAGE)
             observer.emit("agent_started", f"Landing page agent started for {url}")
+            if orchestrator_handoff.strip():
+                observer.emit(
+                    "orchestrator_handoff_received",
+                    "Landing agent received orchestrator guidance",
+                    details={"handoff_preview": orchestrator_handoff[:800]},
+                )
 
         with using_observability_context(
             session_id=observer.run_id if observer is not None else "",
@@ -56,7 +67,10 @@ class LandingPageAgent:
                 input_value={"url": url},
                 attributes={"owc.agent_type": AgentType.LANDING_PAGE.value},
             ) as span:
-                short_memory = ShortTermMemory(k=self.settings.memory_short_window)
+                short_memory = ShortTermMemory(
+                    k=self.settings.memory_short_window,
+                    page_type=AgentType.LANDING_PAGE.value,
+                )
                 memory_context = build_memory_context(
                     self.memory,
                     url=url,
@@ -73,6 +87,9 @@ class LandingPageAgent:
                         url=url,
                         page_type=AgentType.LANDING_PAGE.value,
                         run_goal="Explore the landing page and identify hosting-page URLs that should be passed downstream.",
+                        extras={
+                            "orchestrator_handoff": orchestrator_handoff[:600] if orchestrator_handoff else "",
+                        },
                     ),
                     memory_context=memory_context,
                     working_state=short_memory.working_state(
@@ -91,13 +108,20 @@ class LandingPageAgent:
                         "Compiled layered prompt for landing page agent",
                         details=compiled_prompt.model_dump(exclude={"content"}),
                     )
+                initial_message = f"Explore this landing page and find all hosting page URLs.\n\nmainUrl: {url}"
+                if orchestrator_handoff.strip():
+                    initial_message += (
+                        "\n\nORCHESTRATOR HANDOFF\n"
+                        f"{orchestrator_handoff}\n"
+                        "Use this context as guidance and verify all findings with live tool evidence."
+                    )
                 async with agent_tools("landing", self.settings, observer=observer) as tools:
                     result = await run_agent_loop(
                         settings=self.settings,
                         llm=self.llm,
                         tools=tools,
                         system_prompt=compiled_prompt.content,
-                        initial_message=f"Explore this landing page and find all hosting page URLs.\n\nmainUrl: {url}",
+                        initial_message=initial_message,
                         max_tool_calls=self.settings.landing_page_max_tool_calls,
                         budget_exhausted_message="Budget exhausted. Output your final JSON now.",
                         observer=observer,

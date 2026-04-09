@@ -94,6 +94,156 @@ function summarizeForms(elements) {
   };
 }
 
+function normalizeLimit(limit, fallback = 20, max = 200) {
+  const parsed = Number.parseInt(String(limit), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(parsed, max);
+}
+
+function dedupeByElementRef(elements) {
+  const seen = new Set();
+  const output = [];
+  for (const element of elements) {
+    if (!element?.element_ref || seen.has(element.element_ref)) continue;
+    seen.add(element.element_ref);
+    output.push(element);
+  }
+  return output;
+}
+
+function toSafeRegex(pattern) {
+  if (!pattern) {
+    return null;
+  }
+  if (pattern instanceof RegExp) {
+    return pattern;
+  }
+  try {
+    return new RegExp(String(pattern), 'i');
+  } catch {
+    return null;
+  }
+}
+
+function tokenizeNeedle(value) {
+  return String(value || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2)
+    .slice(0, 12);
+}
+
+function scoreElementForQuery(element, {
+  kind,
+  text_contains,
+  text_regex,
+  href_contains,
+  href_regex,
+  attr_name,
+  attr_value_contains,
+  attr_value_regex,
+}) {
+  let score = 0;
+  const text = String(element.text || '').toLowerCase();
+  const nearby = String(element.nearby_text || '').toLowerCase();
+  const href = String(element.href || '').toLowerCase();
+  const textRegex = toSafeRegex(text_regex);
+  const hrefRegex = toSafeRegex(href_regex);
+  const attrValueRegex = toSafeRegex(attr_value_regex);
+
+  if (kind && element.kind === kind) score += 6;
+
+  if (text_contains) {
+    const needle = String(text_contains).toLowerCase();
+    if (text.includes(needle)) score += 10;
+    else if (nearby.includes(needle)) score += 6;
+
+    const tokens = tokenizeNeedle(needle);
+    for (const token of tokens) {
+      if (text.includes(token)) score += 2;
+      else if (nearby.includes(token)) score += 1;
+    }
+  }
+
+  if (href_contains && href.includes(String(href_contains).toLowerCase())) {
+    score += 8;
+  }
+  if (hrefRegex && hrefRegex.test(String(element.href || ''))) {
+    score += 8;
+  }
+
+  if (textRegex) {
+    const textMatch = textRegex.test(String(element.text || ''));
+    const nearbyMatch = textRegex.test(String(element.nearby_text || ''));
+    if (textMatch) {
+      score += 10;
+    } else if (nearbyMatch) {
+      score += 5;
+    }
+  }
+
+  if (attr_name) {
+    const attrValue = String(element.attrs?.[attr_name] || '').toLowerCase();
+    if (attrValue) score += 3;
+    if (attr_value_contains && attrValue.includes(String(attr_value_contains).toLowerCase())) {
+      score += 5;
+    }
+    if (attrValueRegex && attrValueRegex.test(String(element.attrs?.[attr_name] || ''))) {
+      score += 5;
+    }
+  }
+
+  if (element.visible) score += 3;
+  if (element.kind === 'button' || element.kind === 'link' || element.kind === 'tab') score += 2;
+
+  return score;
+}
+
+function rankMatches(elements, query) {
+  return [...elements]
+    .map((element) => ({
+      element,
+      score: scoreElementForQuery(element, query),
+    }))
+    .sort((a, b) => b.score - a.score)
+    .map((entry) => entry.element);
+}
+
+function tokenFallbackMatches(elements, {
+  kind,
+  text_contains,
+  href_contains,
+  attr_name,
+  attr_value_contains,
+}) {
+  const tokens = tokenizeNeedle(text_contains);
+  if (!tokens.length) return [];
+
+  const normalizedHref = String(href_contains || '').toLowerCase();
+  const normalizedAttrValue = String(attr_value_contains || '').toLowerCase();
+
+  return elements.filter((element) => {
+    if (kind && element.kind !== kind) return false;
+
+    const textHaystack = `${String(element.text || '').toLowerCase()} ${String(element.nearby_text || '').toLowerCase()}`;
+    const tokenHit = tokens.some((token) => textHaystack.includes(token));
+    if (!tokenHit) return false;
+
+    if (normalizedHref && !String(element.href || '').toLowerCase().includes(normalizedHref)) {
+      return false;
+    }
+
+    if (attr_name) {
+      const attrValue = String(element.attrs?.[attr_name] || '').toLowerCase();
+      if (!attrValue) return false;
+      if (normalizedAttrValue && !attrValue.includes(normalizedAttrValue)) return false;
+    }
+
+    return true;
+  });
+}
+
 export async function getPageContext({
   frame_path = 'root',
   browserWsEndpoint,
@@ -165,10 +315,13 @@ export async function queryElements({
   frame_path = 'root',
   kind = '',
   text_contains = '',
+  text_regex = '',
   href_contains = '',
+  href_regex = '',
   attr = null,
   attr_name = '',
   attr_value_contains = '',
+  attr_value_regex = '',
   visible_only = true,
   limit = 20,
   browserWsEndpoint,
@@ -185,24 +338,137 @@ export async function queryElements({
 
     const rawElements = await collectElements(frameState.frame, frame_path);
     const elements = augmentElements(rawElements, frameState);
-    const normalizedAttr = attr || (attr_name ? { name: attr_name, value_contains: attr_value_contains } : null);
-    const matches = filterElements(elements, {
+    const normalizedLimit = normalizeLimit(limit);
+    const normalizedAttr = attr
+      || (attr_name ? { name: attr_name, value_contains: attr_value_contains, value_regex: attr_value_regex } : null);
+    const effectiveAttrName = String(normalizedAttr?.name || attr_name || '');
+    const effectiveAttrValueContains = String(normalizedAttr?.value_contains || attr_value_contains || '');
+    const effectiveAttrValueRegex = String(normalizedAttr?.value_regex || attr_value_regex || '');
+    const allLimit = Math.max(elements.length, 1);
+    const fallback_notes = [];
+
+    const textRegex = toSafeRegex(text_regex);
+    if (text_regex && !textRegex) {
+      fallback_notes.push(`Ignored invalid text_regex pattern: ${text_regex}`);
+    }
+    const hrefRegex = toSafeRegex(href_regex);
+    if (href_regex && !hrefRegex) {
+      fallback_notes.push(`Ignored invalid href_regex pattern: ${href_regex}`);
+    }
+    const attrValueRegex = toSafeRegex(effectiveAttrValueRegex);
+    if (effectiveAttrValueRegex && !attrValueRegex) {
+      fallback_notes.push(`Ignored invalid attr_value_regex pattern: ${effectiveAttrValueRegex}`);
+    }
+
+    const primaryMatches = filterElements(elements, {
       kind,
       text_contains,
+      text_regex: textRegex,
       href_contains,
+      href_regex: hrefRegex,
       attr: normalizedAttr,
-      attr_name,
-      attr_value_contains,
+      attr_name: effectiveAttrName,
+      attr_value_contains: effectiveAttrValueContains,
+      attr_value_regex: attrValueRegex,
       visible_only,
-      limit,
+      limit: allLimit,
     });
+
+    let strategy = 'strict';
+    let matchesAll = primaryMatches;
+
+    if (!matchesAll.length && visible_only) {
+      const relaxedVisibilityMatches = filterElements(elements, {
+        kind,
+        text_contains,
+        text_regex: textRegex,
+        href_contains,
+        href_regex: hrefRegex,
+        attr: normalizedAttr,
+        attr_name: effectiveAttrName,
+        attr_value_contains: effectiveAttrValueContains,
+        attr_value_regex: attrValueRegex,
+        visible_only: false,
+        limit: allLimit,
+      });
+
+      if (relaxedVisibilityMatches.length) {
+        matchesAll = relaxedVisibilityMatches;
+        strategy = 'relaxed_visibility';
+        fallback_notes.push('No visible matches; included hidden candidates.');
+      }
+    }
+
+    if (!matchesAll.length && text_contains) {
+      const tokenMatches = tokenFallbackMatches(elements, {
+        kind,
+        text_contains,
+        href_contains,
+        attr_name: effectiveAttrName,
+        attr_value_contains: effectiveAttrValueContains,
+      });
+      if (tokenMatches.length) {
+        matchesAll = tokenMatches;
+        strategy = 'token_text_fallback';
+        fallback_notes.push('Strict text matching returned no results; token fallback used.');
+      }
+    }
+
+    const rankedMatches = rankMatches(dedupeByElementRef(matchesAll), {
+      kind,
+      text_contains,
+      text_regex: textRegex,
+      href_contains,
+      href_regex: hrefRegex,
+      attr_name: effectiveAttrName,
+      attr_value_contains: effectiveAttrValueContains,
+      attr_value_regex: attrValueRegex,
+    });
+    const returnedMatches = rankedMatches.slice(0, normalizedLimit);
+
+    const suggestions = compactElements(
+      rankMatches(
+        dedupeByElementRef(
+          elements.filter((element) => (!kind || element.kind === kind)),
+        ),
+        {
+          kind,
+          text_contains,
+          text_regex: textRegex,
+          href_contains,
+          href_regex: hrefRegex,
+          attr_name: effectiveAttrName,
+          attr_value_contains: effectiveAttrValueContains,
+          attr_value_regex: attrValueRegex,
+        },
+      ),
+      Math.min(12, normalizedLimit),
+    );
 
     return buildEnvelope(page, {
       frame_path,
       data: {
-        query: { kind, text_contains, href_contains, attr: normalizedAttr, visible_only, limit },
-        total_matches: matches.length,
-        matches: compactElements(matches, limit),
+        query: {
+          kind,
+          text_contains,
+          text_regex,
+          href_contains,
+          href_regex,
+          attr: normalizedAttr,
+          visible_only,
+          limit: normalizedLimit,
+          attr_value_regex: effectiveAttrValueRegex,
+        },
+        search_strategy: strategy,
+        total_matches: rankedMatches.length,
+        returned_matches: returnedMatches.length,
+        fallback_notes,
+        available_counts: {
+          total_elements: elements.length,
+          by_kind: summarizeKinds(elements),
+        },
+        matches: compactElements(returnedMatches, normalizedLimit),
+        suggestions: rankedMatches.length ? [] : suggestions,
       },
     });
   });
@@ -225,6 +491,9 @@ export async function getElementDetail({
         error: detail.error,
         data: {
           error_code: detail.code || 'element_detail_failed',
+          stale_ref_detected: Boolean(detail.stale_ref_detected),
+          frame_fallback_applied: Boolean(detail.frame_fallback_applied),
+          resolution_attempts: detail.resolution_attempts || [],
         },
       });
     }
@@ -235,6 +504,11 @@ export async function getElementDetail({
       screenshotMode: 'element',
       data: {
         detail: detail.detail,
+        locator_used: detail.locator_used || {},
+        stale_ref_detected: Boolean(detail.stale_ref_detected),
+        frame_fallback_applied: Boolean(detail.frame_fallback_applied),
+        frame_relocated: Boolean(detail.frame_relocated),
+        resolution_attempts: detail.resolution_attempts || [],
       },
     });
   });

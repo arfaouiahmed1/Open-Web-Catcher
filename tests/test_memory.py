@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 from src.agents.memory import remember_agent_run
@@ -112,3 +113,165 @@ def test_failed_runs_are_not_persisted_to_long_term_memory(tmp_path):
     )
 
     assert prompt_context == ""
+
+
+def test_short_term_memory_extracts_structured_run_signals_from_tool_payloads():
+    memory = ShortTermMemory(k=8)
+
+    payload = json.dumps(
+        {
+            "matches": [
+                {
+                    "href": "https://example.com/live?page=2",
+                    "selector": ".match-card a",
+                }
+            ],
+            "streaming_urls": [
+                {
+                    "url": "https://cdn.example.com/master.m3u8",
+                    "type": "m3u8",
+                }
+            ],
+            "servers": [
+                {
+                    "label": "Server 2",
+                    "embedded_url": "https://embed.example.com/player/xyz",
+                }
+            ],
+        }
+    )
+
+    memory.ingest_tool_result(
+        "query_elements",
+        {
+            "url": "https://example.com/live?page=2",
+            "selector": ".match-card a",
+        },
+        payload,
+    )
+
+    run_memory = memory.export_run_memory()
+    assert "https://example.com/live?page=2" in run_memory["critical_links"]
+    assert any("page={n}" in pattern for pattern in run_memory["pagination_patterns"])
+    assert "https://cdn.example.com/master.m3u8" in run_memory["stream_urls"]
+    assert "cdn.example.com" in run_memory["stream_hosts"]
+    assert "Server 2" in run_memory["server_labels"]
+
+
+def test_long_term_profile_memory_upsert_and_prompt_context(tmp_path):
+    memory = LongTermMemory(str(tmp_path / "site_memory.db"))
+
+    memory.upsert_profile(
+        url="https://example.com/live/123",
+        page_type="landing_page",
+        patch={
+            "selectors": ["selector=.match-card a", "xpath=//main//a[contains(@href, '/live/')]"],
+            "pagination_url_patterns": ["https://example.com/live?page={n}"],
+            "url_patterns": ["https://example.com/live/{n}"],
+            "critical_links": ["https://example.com/live/123"],
+            "navigation_hints": ["url=https://example.com/live/123"],
+        },
+        source="mcp_tool",
+        reason="initial memory seed",
+    )
+
+    memory.remember(
+        url="https://example.com/live/123",
+        page_type="landing_page",
+        status="success",
+        payload={
+            "hosting_pages": [{"url": "https://example.com/watch/555"}],
+            "run_memory": {
+                "url_patterns": ["https://example.com/watch/{n}"],
+                "critical_links": ["https://example.com/watch/555"],
+            },
+        },
+    )
+
+    context = memory.build_prompt_context(
+        url="https://example.com/live/999",
+        page_type="landing_page",
+        limit=5,
+    )
+
+    profile = memory.get_profile(url="https://example.com/live/999", page_type="landing_page")
+
+    assert profile.get("revision", 0) >= 1
+    assert "selector=.match-card a" in profile.get("selectors", [])
+    assert "https://example.com/live?page={n}" in profile.get("pagination_url_patterns", [])
+    assert "https://example.com/watch/555" in profile.get("critical_links", [])
+
+    assert "remembered selectors/actions" in context
+    assert "remembered pagination url patterns" in context
+    assert "memory-first policy" in context
+
+
+def test_short_term_memory_exports_landing_specific_candidate_memory():
+    memory = ShortTermMemory(k=20, page_type="landing_page")
+    payload = {
+        "hosting_pages": [
+            {"url": f"https://example.com/watch/{index}", "title": f"Match {index}"}
+            for index in range(1, 261)
+        ]
+    }
+
+    memory.ingest_tool_result(
+        "inspect_landing",
+        {"url": "https://example.com/live"},
+        payload,
+    )
+
+    run_memory = memory.export_run_memory(page_type="landing_page")
+    assert run_memory["page_type"] == "landing_page"
+    assert len(run_memory["hosting_candidate_urls"]) >= 250
+    assert "landing_page" in run_memory["agent_specific"]
+    assert len(run_memory["agent_specific"]["landing_page"]["hosting_candidate_urls"]) >= 250
+
+
+def test_long_term_memory_keeps_landing_and_hosting_profiles_separate(tmp_path):
+    memory = LongTermMemory(str(tmp_path / "site_memory.db"))
+
+    landing_payload = {
+        "hosting_pages": [
+            {"url": f"https://example.com/watch/{index}", "title": f"Match {index}"}
+            for index in range(1, 231)
+        ]
+    }
+    memory.remember(
+        url="https://example.com/live/today",
+        page_type="landing_page",
+        status="success",
+        payload=landing_payload,
+    )
+
+    hosting_payload = {
+        "decision": "safe_exit",
+        "servers": [
+            {
+                "label": f"Server {index}",
+                "status": "success",
+                "server_up": True,
+                "player_state": "playing",
+                "screenshot_url": f"https://img.example.com/server-{index}.png",
+                "m3u8_urls": [f"https://cdn.example.com/{index}/master.m3u8"],
+                "primary_stream": f"https://cdn.example.com/{index}/master.m3u8",
+            }
+            for index in range(1, 36)
+        ],
+    }
+    memory.remember(
+        url="https://example.com/watch/999",
+        page_type="hosting_page",
+        status="success",
+        payload=hosting_payload,
+    )
+
+    landing_profile = memory.get_profile(url="https://example.com/live/next", page_type="landing_page")
+    hosting_profile = memory.get_profile(url="https://example.com/watch/1000", page_type="hosting_page")
+
+    assert len(landing_profile.get("hosting_candidate_urls", [])) >= 200
+    assert landing_profile.get("server_records", []) == []
+
+    assert len(hosting_profile.get("server_records", [])) >= 30
+    assert len(hosting_profile.get("activated_servers", [])) >= 30
+    assert hosting_profile.get("hosting_candidate_urls", []) == []

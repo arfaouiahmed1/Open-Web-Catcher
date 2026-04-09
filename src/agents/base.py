@@ -7,8 +7,11 @@ import hashlib
 import json
 import re
 import time
+from datetime import datetime, timezone
+from threading import Lock
 from typing import TYPE_CHECKING, Annotated, Any, Callable, TypedDict
 
+import httpx
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -104,6 +107,45 @@ def _to_int(value: Any) -> int:
         return 0
 
 
+def _extract_cache_counters(payload: Any) -> tuple[int, int, int]:
+    """Extract cache counters from provider usage payloads.
+
+    Returns ``(cached_tokens, cache_read_input_tokens, cache_creation_input_tokens)``.
+    """
+
+    payload_dict = payload if isinstance(payload, dict) else getattr(payload, "__dict__", {})
+    if not isinstance(payload_dict, dict):
+        return 0, 0, 0
+
+    cached_tokens = 0
+    cache_read_tokens = _to_int(payload_dict.get("cache_read_input_tokens"))
+    cache_creation_tokens = _to_int(payload_dict.get("cache_creation_input_tokens"))
+
+    input_details = payload_dict.get("input_token_details") or payload_dict.get("prompt_tokens_details") or {}
+    if isinstance(input_details, dict):
+        cached_tokens = max(cached_tokens, _to_int(input_details.get("cached_tokens")))
+        cache_read_tokens = max(
+            cache_read_tokens,
+            _to_int(input_details.get("cache_read_input_tokens")),
+            _to_int(input_details.get("cache_read")),
+            _to_int(input_details.get("cache_read_tokens")),
+        )
+        cache_creation_tokens = max(
+            cache_creation_tokens,
+            _to_int(input_details.get("cache_creation_input_tokens")),
+            _to_int(input_details.get("cache_creation")),
+            _to_int(input_details.get("cache_creation_tokens")),
+        )
+        # Anthropic may expose TTL-scoped cache writes in separate counters.
+        ttl_scoped_writes = (
+            _to_int(input_details.get("ephemeral_5m_input_tokens"))
+            + _to_int(input_details.get("ephemeral_1h_input_tokens"))
+        )
+        cache_creation_tokens = max(cache_creation_tokens, ttl_scoped_writes)
+
+    return cached_tokens, cache_read_tokens, cache_creation_tokens
+
+
 def _extract_cache_metrics(usage: Any, response: AIMessage | None = None) -> dict[str, Any]:
     usage_dict = usage if isinstance(usage, dict) else getattr(usage, "__dict__", {})
     response_metadata = getattr(response, "response_metadata", None) if response is not None else None
@@ -124,34 +166,30 @@ def _extract_cache_metrics(usage: Any, response: AIMessage | None = None) -> dic
         or usage_dict.get("output_token_count")
     )
 
-    openai_details = usage_dict.get("input_token_details") or usage_dict.get("prompt_tokens_details") or {}
-    if not isinstance(openai_details, dict):
-        openai_details = {}
-    cached_tokens = _to_int(openai_details.get("cached_tokens"))
+    cached_tokens, cache_read_input_tokens, cache_creation_input_tokens = _extract_cache_counters(usage_dict)
 
-    cache_read_input_tokens = _to_int(usage_dict.get("cache_read_input_tokens"))
-    cache_creation_input_tokens = _to_int(usage_dict.get("cache_creation_input_tokens"))
+    response_usage = response_dict.get("token_usage") if isinstance(response_dict, dict) else {}
+    response_cached_tokens, response_cache_read, response_cache_creation = _extract_cache_counters(response_usage)
+    cached_tokens = max(cached_tokens, response_cached_tokens)
+    cache_read_input_tokens = max(cache_read_input_tokens, response_cache_read)
+    cache_creation_input_tokens = max(cache_creation_input_tokens, response_cache_creation)
+
+    kwargs_usage = kwargs_dict.get("usage") or kwargs_dict.get("token_usage") if isinstance(kwargs_dict, dict) else {}
+    kwargs_cached_tokens, kwargs_cache_read, kwargs_cache_creation = _extract_cache_counters(kwargs_usage)
+    cached_tokens = max(cached_tokens, kwargs_cached_tokens)
+    cache_read_input_tokens = max(cache_read_input_tokens, kwargs_cache_read)
+    cache_creation_input_tokens = max(cache_creation_input_tokens, kwargs_cache_creation)
+
     if cache_read_input_tokens:
         cached_tokens = max(cached_tokens, cache_read_input_tokens)
+    cached_tokens = max(cached_tokens, 0)
 
-    if not cached_tokens:
-        response_usage = response_dict.get("token_usage") if isinstance(response_dict, dict) else {}
-        if not isinstance(response_usage, dict):
-            response_usage = {}
-        response_details = response_usage.get("input_token_details") or response_usage.get("prompt_tokens_details") or {}
-        if isinstance(response_details, dict):
-            cached_tokens = _to_int(response_details.get("cached_tokens"))
-
-    if not cached_tokens and isinstance(kwargs_dict, dict):
-        kwargs_usage = kwargs_dict.get("usage") or kwargs_dict.get("token_usage") or {}
-        if not isinstance(kwargs_usage, dict):
-            kwargs_usage = {}
-        kwargs_details = kwargs_usage.get("input_token_details") or kwargs_usage.get("prompt_tokens_details") or {}
-        if isinstance(kwargs_details, dict):
-            cached_tokens = _to_int(kwargs_details.get("cached_tokens"))
-
-    cached_tokens = max(0, min(cached_tokens, input_tokens))
-    new_input_tokens = max(input_tokens - cached_tokens, 0)
+    # Anthropic reports ``input_tokens`` as the uncached tail when cache counters
+    # are present. Keep the reported suffix as new-input tokens in that case.
+    if cache_read_input_tokens > 0 and cached_tokens > input_tokens:
+        new_input_tokens = max(input_tokens, 0)
+    else:
+        new_input_tokens = max(input_tokens - cached_tokens, 0)
 
     return {
         "cache_hit": cached_tokens > 0 or cache_read_input_tokens > 0,
@@ -181,19 +219,69 @@ def _build_provider_cache_invoke_kwargs(
         return {}
 
     cache_key = str(prompt_metadata.get("provider_cache_key", "") or "").strip()
-    if not cache_key:
-        return {}
 
     if provider == "openrouter":
+        if not cache_key:
+            return {}
         return {
             "extra_headers": {
                 "x-openrouter-prompt-cache-key": cache_key,
             }
         }
 
-    # OpenAI prompt caching is automatic where supported and does not require
-    # explicit runtime headers via this stack.
+    if provider == "openai":
+        if not cache_key:
+            return {}
+        return {
+            "prompt_cache_key": cache_key,
+        }
+
+    if provider == "anthropic":
+        ttl = str(prompt_metadata.get("provider_cache_ttl", "") or "").strip().lower()
+        cache_control: dict[str, Any] = {"type": "ephemeral"}
+        if ttl == "1h":
+            cache_control["ttl"] = "1h"
+        return {"cache_control": cache_control}
+
+    if provider == "google_genai":
+        # Gemini implicit caching is automatic; explicit cache references require
+        # a provider-generated cached content resource name.
+        cached_content = str(prompt_metadata.get("gemini_cached_content", "") or "").strip()
+        if not cached_content and cache_key.startswith("cachedContents/"):
+            cached_content = cache_key
+        if cached_content:
+            return {"cached_content": cached_content}
+        return {}
+
     return {}
+
+
+def _provider_cache_active_for_run(
+    settings: Settings,
+    *,
+    provider: str,
+    prompt_metadata: dict[str, Any],
+    provider_cache_invoke_kwargs: dict[str, Any],
+) -> bool:
+    if not settings.provider_cache_enabled or not settings.prompt_cache_enabled:
+        return False
+
+    if not bool(prompt_metadata.get("provider_cache_eligible", False)):
+        return False
+
+    cache_mode = str(prompt_metadata.get("cache_mode", "") or "").strip().lower()
+    if cache_mode not in {"provider_hook", "provider_active"}:
+        return False
+
+    if provider in {"openrouter", "openai", "anthropic"}:
+        return bool(provider_cache_invoke_kwargs)
+
+    if provider == "google_genai":
+        # Gemini 2.5+ implicit caching is provider-managed and active by default
+        # for sufficiently large shared prefixes.
+        return True
+
+    return bool(provider_cache_invoke_kwargs)
 
 
 def _tool_cache_key(tool_name: str, tool_args: dict[str, Any]) -> str:
@@ -279,6 +367,249 @@ _PROVIDER_CANONICAL = {
     "openrouter": "openrouter",
 }
 
+_GEMINI_EXPLICIT_CACHE_REGISTRY: dict[str, dict[str, Any]] = {}
+_GEMINI_EXPLICIT_CACHE_LOCK = Lock()
+_GEMINI_EXPLICIT_CACHE_DEFAULT_TTL_SECONDS = 30 * 60
+_GEMINI_EXPLICIT_CACHE_DEFAULT_REFRESH_LEAD_SECONDS = 2 * 60
+_GEMINI_EXPLICIT_CACHE_MAX_ENTRIES = 256
+
+
+def _parse_duration_seconds(value: Any) -> int:
+    text = str(value or "").strip().lower()
+    if not text:
+        return 0
+    if text.isdigit():
+        return int(text)
+    match = re.fullmatch(r"([0-9]+)\s*([smhd])", text)
+    if not match:
+        return 0
+    amount = int(match.group(1))
+    unit = match.group(2)
+    factor = {"s": 1, "m": 60, "h": 3600, "d": 86400}[unit]
+    return amount * factor
+
+
+def _gemini_explicit_cache_ttl_seconds(settings: Settings, prompt_metadata: dict[str, Any]) -> int:
+    ttl = _parse_duration_seconds(prompt_metadata.get("gemini_cache_ttl"))
+    if ttl <= 0:
+        ttl = _parse_duration_seconds(prompt_metadata.get("provider_cache_ttl"))
+    if ttl <= 0:
+        ttl = _to_int(prompt_metadata.get("gemini_cache_ttl_seconds"))
+    if ttl <= 0:
+        ttl = _to_int(getattr(settings, "gemini_explicit_cache_ttl_seconds", 0))
+    if ttl <= 0:
+        ttl = _GEMINI_EXPLICIT_CACHE_DEFAULT_TTL_SECONDS
+    return max(ttl, 60)
+
+
+def _gemini_explicit_cache_refresh_lead_seconds(settings: Settings, prompt_metadata: dict[str, Any], ttl_seconds: int) -> int:
+    lead = _to_int(prompt_metadata.get("gemini_cache_refresh_lead_seconds"))
+    if lead <= 0:
+        lead = _to_int(getattr(settings, "gemini_explicit_cache_refresh_lead_seconds", 0))
+    if lead <= 0:
+        lead = min(_GEMINI_EXPLICIT_CACHE_DEFAULT_REFRESH_LEAD_SECONDS, max(ttl_seconds // 5, 30))
+    return max(lead, 5)
+
+
+def _is_gemini_explicit_cache_enabled(settings: Settings, prompt_metadata: dict[str, Any]) -> bool:
+    if not settings.provider_cache_enabled or not settings.prompt_cache_enabled:
+        return False
+    if not bool(prompt_metadata.get("provider_cache_eligible", False)):
+        return False
+    cache_mode = str(prompt_metadata.get("cache_mode", "") or "").strip().lower()
+    if cache_mode not in {"provider_hook", "provider_active"}:
+        return False
+    return bool(getattr(settings, "gemini_explicit_cache_enabled", True))
+
+
+def _extract_gemini_cache_seed_text(system_prompt: str) -> str:
+    text = str(system_prompt or "").strip()
+    if not text:
+        return ""
+    marker = "\n\nTASK BRIEF\n"
+    if marker in text:
+        return text.split(marker, 1)[0].strip()
+    return text
+
+
+def _gemini_cache_registry_key(prompt_metadata: dict[str, Any], seed_text: str, model_name: str) -> str:
+    provider_cache_key = str(prompt_metadata.get("provider_cache_key", "") or "").strip()
+    if provider_cache_key:
+        return f"{model_name}:{provider_cache_key}"
+    digest = hashlib.sha256(seed_text.encode("utf-8")).hexdigest()[:24]
+    return f"{model_name}:auto:{digest}"
+
+
+def _normalize_gemini_model_name(model_name: str) -> str:
+    model = str(model_name or "").strip()
+    if not model:
+        return ""
+    if "/" in model and not model.startswith(("models/", "tunedModels/")):
+        model = model.split("/", 1)[-1]
+    if model.startswith(("models/", "tunedModels/")):
+        return model
+    return f"models/{model}"
+
+
+def _parse_expire_epoch(expire_time: str) -> float | None:
+    text = str(expire_time or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        return datetime.fromisoformat(text).astimezone(timezone.utc).timestamp()
+    except ValueError:
+        return None
+
+
+def _gemini_display_name(cache_key: str) -> str:
+    digest = hashlib.sha256(cache_key.encode("utf-8")).hexdigest()[:24]
+    return f"owc-{digest}"
+
+
+def _evict_gemini_cache_registry(now_epoch: float) -> None:
+    stale_keys = [
+        key
+        for key, value in _GEMINI_EXPLICIT_CACHE_REGISTRY.items()
+        if float(value.get("expires_at", 0) or 0) <= now_epoch
+    ]
+    for key in stale_keys:
+        _GEMINI_EXPLICIT_CACHE_REGISTRY.pop(key, None)
+
+    max_entries = max(_GEMINI_EXPLICIT_CACHE_MAX_ENTRIES, 8)
+    if len(_GEMINI_EXPLICIT_CACHE_REGISTRY) <= max_entries:
+        return
+
+    ordered = sorted(
+        _GEMINI_EXPLICIT_CACHE_REGISTRY.items(),
+        key=lambda item: float(item[1].get("created_at", 0) or 0),
+    )
+    while len(ordered) > max_entries:
+        oldest_key, _ = ordered.pop(0)
+        _GEMINI_EXPLICIT_CACHE_REGISTRY.pop(oldest_key, None)
+
+
+def _clear_managed_gemini_cache_registry_for_tests() -> None:
+    with _GEMINI_EXPLICIT_CACHE_LOCK:
+        _GEMINI_EXPLICIT_CACHE_REGISTRY.clear()
+
+
+async def _create_gemini_cached_content_resource(
+    *,
+    api_key: str,
+    model_name: str,
+    cache_key: str,
+    seed_text: str,
+    ttl_seconds: int,
+    timeout_seconds: int,
+) -> tuple[str, float]:
+    if not api_key:
+        return "", 0.0
+
+    model = _normalize_gemini_model_name(model_name)
+    if not model or not seed_text:
+        return "", 0.0
+
+    payload = {
+        "model": model,
+        "displayName": _gemini_display_name(cache_key),
+        "ttl": f"{ttl_seconds}s",
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": seed_text}],
+            }
+        ],
+    }
+
+    url = "https://generativelanguage.googleapis.com/v1beta/cachedContents"
+    async with httpx.AsyncClient(timeout=max(timeout_seconds, 5)) as client:
+        response = await client.post(url, params={"key": api_key}, json=payload)
+        response.raise_for_status()
+        data = response.json() if response.content else {}
+
+    if not isinstance(data, dict):
+        return "", 0.0
+
+    cached_content = str(data.get("name", "") or "").strip()
+    expires_at = _parse_expire_epoch(str(data.get("expireTime", "") or ""))
+    if expires_at is None:
+        expires_at = time.time() + ttl_seconds
+    return cached_content, float(expires_at)
+
+
+async def _resolve_managed_gemini_cached_content(
+    settings: Settings,
+    *,
+    prompt_metadata: dict[str, Any],
+    system_prompt: str,
+    model_name: str,
+    now_epoch: float | None = None,
+) -> tuple[str, str]:
+    cached_content = str(prompt_metadata.get("gemini_cached_content", "") or "").strip()
+    if cached_content:
+        return cached_content, "manual"
+
+    provider_cache_key = str(prompt_metadata.get("provider_cache_key", "") or "").strip()
+    if provider_cache_key.startswith("cachedContents/"):
+        return provider_cache_key, "provider_key"
+
+    if not _is_gemini_explicit_cache_enabled(settings, prompt_metadata):
+        return "", "disabled"
+
+    seed_text = _extract_gemini_cache_seed_text(system_prompt)
+    min_chars = max(int(settings.prompt_cache_min_chars or 0), 0)
+    if len(seed_text) < min_chars:
+        return "", "seed_too_small"
+
+    now = float(now_epoch if now_epoch is not None else time.time())
+    ttl_seconds = _gemini_explicit_cache_ttl_seconds(settings, prompt_metadata)
+    refresh_lead = _gemini_explicit_cache_refresh_lead_seconds(settings, prompt_metadata, ttl_seconds)
+    cache_key = _gemini_cache_registry_key(prompt_metadata, seed_text, model_name)
+
+    with _GEMINI_EXPLICIT_CACHE_LOCK:
+        entry = _GEMINI_EXPLICIT_CACHE_REGISTRY.get(cache_key)
+        if entry is not None:
+            entry_name = str(entry.get("cached_content", "") or "").strip()
+            expires_at = float(entry.get("expires_at", 0) or 0)
+            if entry_name and (expires_at - now) > refresh_lead:
+                return entry_name, "registry_hit"
+
+    try:
+        created_name, expires_at = await _create_gemini_cached_content_resource(
+            api_key=settings.google_api_key,
+            model_name=model_name,
+            cache_key=cache_key,
+            seed_text=seed_text,
+            ttl_seconds=ttl_seconds,
+            timeout_seconds=max(int(settings.tool_timeout_seconds or 30), 5),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Gemini explicit cache create/refresh failed for %s: %s", cache_key, exc)
+        with _GEMINI_EXPLICIT_CACHE_LOCK:
+            fallback = _GEMINI_EXPLICIT_CACHE_REGISTRY.get(cache_key)
+            if fallback is not None:
+                fallback_name = str(fallback.get("cached_content", "") or "").strip()
+                fallback_expires = float(fallback.get("expires_at", 0) or 0)
+                if fallback_name and fallback_expires > now:
+                    return fallback_name, "fallback_after_error"
+        return "", "create_failed"
+
+    if not created_name:
+        return "", "empty_resource"
+
+    with _GEMINI_EXPLICIT_CACHE_LOCK:
+        prior = _GEMINI_EXPLICIT_CACHE_REGISTRY.get(cache_key)
+        _GEMINI_EXPLICIT_CACHE_REGISTRY[cache_key] = {
+            "cached_content": created_name,
+            "expires_at": expires_at,
+            "created_at": now,
+            "ttl_seconds": ttl_seconds,
+        }
+        _evict_gemini_cache_registry(now)
+        return created_name, "created" if prior is None else "refreshed"
+
 
 def build_llm(
     settings: Settings,
@@ -345,7 +676,7 @@ async def run_agent_loop(
     bootstrap_context_first: bool = False,
 ) -> AgentLoopResult:
     """Run an async LangGraph agent loop with structured tool calling."""
-    prompt_meta = prompt_metadata or {}
+    prompt_meta = dict(prompt_metadata or {})
     tool_map: dict[str, BaseTool] = {tool.name: tool for tool in tools}
     llm_with_tools = llm.bind_tools(tools)
     # Support model name attribute differences across providers
@@ -357,13 +688,29 @@ async def run_agent_loop(
     provider = _PROVIDER_CANONICAL.get(
         (settings.llm_provider or "google").lower(), "google_genai"
     )
+    gemini_cached_content_source = "none"
+    if provider == "google_genai":
+        managed_cached_content, gemini_cached_content_source = await _resolve_managed_gemini_cached_content(
+            settings,
+            prompt_metadata=prompt_meta,
+            system_prompt=system_prompt,
+            model_name=model_name,
+        )
+        if managed_cached_content:
+            prompt_meta["gemini_cached_content"] = managed_cached_content
+
     pricing = resolve_model_pricing(settings, model_name=model_name, provider=provider)
     provider_cache_invoke_kwargs = _build_provider_cache_invoke_kwargs(
         settings,
         provider=provider,
         prompt_metadata=prompt_meta,
     )
-    provider_cache_active = bool(provider_cache_invoke_kwargs)
+    provider_cache_active = _provider_cache_active_for_run(
+        settings,
+        provider=provider,
+        prompt_metadata=prompt_meta,
+        provider_cache_invoke_kwargs=provider_cache_invoke_kwargs,
+    )
     tool_timeout_seconds = max(1, int(settings.tool_timeout_seconds))
     llm_timeout_seconds = max(5, tool_timeout_seconds * 3)
     tool_result_cache: dict[str, dict[str, Any]] = {}
@@ -387,6 +734,8 @@ async def run_agent_loop(
                 "model_name": model_name,
                 "prompt": prompt_meta,
                 "provider_cache_active": provider_cache_active,
+                "gemini_cached_content_source": gemini_cached_content_source,
+                "gemini_cached_content": str(prompt_meta.get("gemini_cached_content", "") or "")[:200],
                 "tool_result_cache_enabled": bool(settings.tool_result_cache_enabled),
                 "tool_result_cache_min_identical_observations": required_identical_observations,
                 "bootstrap_url": bootstrap_url,
@@ -457,6 +806,7 @@ async def run_agent_loop(
                 status=status,
                 result_preview=result_content[:400],
             )
+            working_memory.ingest_tool_result(tool_name, tool_args, result_content)
 
         return status, result_content
 
@@ -524,6 +874,7 @@ async def run_agent_loop(
                         "message_count": message_count,
                         "timeout_seconds": llm_timeout_seconds,
                         "provider_cache_active": provider_cache_active,
+                        "gemini_cached_content_source": gemini_cached_content_source,
                     },
                 )
             try:
@@ -643,6 +994,7 @@ async def run_agent_loop(
                     "cached_input_tokens": _to_int(cache_metrics.get("cached_input_tokens")),
                     "new_input_tokens": _to_int(cache_metrics.get("new_input_tokens")),
                     "provider_cache_active": provider_cache_active,
+                    "gemini_cached_content_source": gemini_cached_content_source,
                 },
             )
         if working_memory is not None and response.content:
@@ -819,6 +1171,7 @@ async def run_agent_loop(
                     status=tool_status,
                     result_preview=result_content[:400],
                 )
+                working_memory.ingest_tool_result(tool_name, tool_args, result_content)
 
         return {
             "messages": tool_messages,

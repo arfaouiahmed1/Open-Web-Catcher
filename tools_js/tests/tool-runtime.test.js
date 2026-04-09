@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { detectAccessStateFromSignals, summarizePurpose } from '../shared/tool-runtime.js';
+import { detectAccessStateFromSignals, summarizePurpose, filterElements } from '../shared/tool-runtime.js';
 
 const clearState = detectAccessStateFromSignals({
   title: 'Watch Live Sports',
@@ -41,5 +41,35 @@ assert.equal(
   summarizePurpose('https://example.com/cdn-cgi/challenge-platform', 'challenge frame'),
   'challenge',
 );
+
+const regexMatches = filterElements(
+  [
+    {
+      kind: 'button',
+      text: 'Watch Live Now',
+      href: '',
+      attrs: { 'data-server': 'Server 21' },
+      visible: true,
+    },
+    {
+      kind: 'button',
+      text: 'Read Blog Post',
+      href: '',
+      attrs: { 'data-server': 'Info' },
+      visible: true,
+    },
+  ],
+  {
+    kind: 'button',
+    text_regex: '(watch|live)',
+    attr_name: 'data-server',
+    attr_value_regex: 'server\\s*[0-9]+',
+    visible_only: true,
+    limit: 5,
+  },
+);
+
+assert.equal(regexMatches.length, 1);
+assert.equal(regexMatches[0].text, 'Watch Live Now');
 
 console.log('Validated access-state and challenge detection helpers.');

@@ -18,6 +18,7 @@ This documentation matches the current product state:
 - [Data Flow](./architecture/data-flow.md)
 - [Agents](./architecture/agents.md)
 - [MCP Server](./architecture/mcp-server.md)
+- [Implementation Deep Dive (2026-04-09)](./architecture/implementation-deep-dive-2026-04-09.md)
 
 ## Setup
 
@@ -41,3 +42,4 @@ This documentation matches the current product state:
 - [Migration Notes](./changelog/progress.md)
 - [Known Cleanup Notes](./changelog/issues.md)
 - [2026-04-08 Agent Debugging and Fixes](./changelog/2026-04-08-agent-debugging-and-fixes.md)
+- [2026-04-09 Issues, Fixes, and Future Improvements](./changelog/2026-04-09-issues-fixes-future-improvements.md)

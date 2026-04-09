@@ -93,6 +93,9 @@ class Settings(BaseSettings):
     prompt_cache_mode: str = "provider_hook"
     prompt_cache_min_chars: int = 2000
     provider_cache_enabled: bool = True
+    gemini_explicit_cache_enabled: bool = True
+    gemini_explicit_cache_ttl_seconds: int = 1800
+    gemini_explicit_cache_refresh_lead_seconds: int = 120
     tool_result_cache_enabled: bool = True
     tool_result_cache_min_identical_observations: int = 2
 
@@ -143,6 +146,9 @@ class Settings(BaseSettings):
         existing["orchestrator_model"] = self.orchestrator_model
         existing["gemini_temperature"] = self.gemini_temperature
         existing["provider_cache_enabled"] = self.provider_cache_enabled
+        existing["gemini_explicit_cache_enabled"] = self.gemini_explicit_cache_enabled
+        existing["gemini_explicit_cache_ttl_seconds"] = self.gemini_explicit_cache_ttl_seconds
+        existing["gemini_explicit_cache_refresh_lead_seconds"] = self.gemini_explicit_cache_refresh_lead_seconds
         existing["tool_result_cache_enabled"] = self.tool_result_cache_enabled
         existing["tool_result_cache_min_identical_observations"] = self.tool_result_cache_min_identical_observations
 

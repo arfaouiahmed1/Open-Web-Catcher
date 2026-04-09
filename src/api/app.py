@@ -975,6 +975,9 @@ class ModelConfigRequest(BaseModel):
     orchestrator_model: str = ""
     gemini_temperature: float | None = None
     provider_cache_enabled: bool | None = None
+    gemini_explicit_cache_enabled: bool | None = None
+    gemini_explicit_cache_ttl_seconds: int | None = None
+    gemini_explicit_cache_refresh_lead_seconds: int | None = None
     tool_result_cache_enabled: bool | None = None
     tool_result_cache_min_identical_observations: int | None = None
 
@@ -997,6 +1000,9 @@ def _ui_config_payload(
         "orchestrator_model": settings.orchestrator_model,
         "gemini_temperature": settings.gemini_temperature,
         "provider_cache_enabled": settings.provider_cache_enabled,
+        "gemini_explicit_cache_enabled": settings.gemini_explicit_cache_enabled,
+        "gemini_explicit_cache_ttl_seconds": settings.gemini_explicit_cache_ttl_seconds,
+        "gemini_explicit_cache_refresh_lead_seconds": settings.gemini_explicit_cache_refresh_lead_seconds,
         "tool_result_cache_enabled": settings.tool_result_cache_enabled,
         "tool_result_cache_min_identical_observations": settings.tool_result_cache_min_identical_observations,
         "api_keys": {
@@ -1033,6 +1039,15 @@ def ui_update_config(body: ModelConfigRequest):
         s.gemini_temperature = body.gemini_temperature
     if body.provider_cache_enabled is not None:
         s.provider_cache_enabled = body.provider_cache_enabled
+    if body.gemini_explicit_cache_enabled is not None:
+        s.gemini_explicit_cache_enabled = body.gemini_explicit_cache_enabled
+    if body.gemini_explicit_cache_ttl_seconds is not None:
+        s.gemini_explicit_cache_ttl_seconds = max(60, int(body.gemini_explicit_cache_ttl_seconds))
+    if body.gemini_explicit_cache_refresh_lead_seconds is not None:
+        s.gemini_explicit_cache_refresh_lead_seconds = max(
+            5,
+            int(body.gemini_explicit_cache_refresh_lead_seconds),
+        )
     if body.tool_result_cache_enabled is not None:
         s.tool_result_cache_enabled = body.tool_result_cache_enabled
     if body.tool_result_cache_min_identical_observations is not None:

@@ -30,7 +30,12 @@ async function performAction(browserWsEndpoint, {
         frame_path: resolved.frame_path || frame_path,
         ok: false,
         error: resolved.error,
-        data: { error_code: resolved.code || 'action_target_not_found' },
+        data: {
+          error_code: resolved.code || 'action_target_not_found',
+          stale_ref_detected: Boolean(resolved.stale_ref_detected),
+          frame_fallback_applied: Boolean(resolved.frame_fallback_applied),
+          resolution_attempts: resolved.resolution_attempts || [],
+        },
       });
     }
 
@@ -56,6 +61,10 @@ async function performAction(browserWsEndpoint, {
       screenshotHandle: screenshot_target ? resolved.handle : null,
       data: {
         locator_used: resolved.locator_used,
+        stale_ref_detected: Boolean(resolved.stale_ref_detected),
+        frame_fallback_applied: Boolean(resolved.frame_fallback_applied),
+        frame_relocated: Boolean(resolved.frame_relocated),
+        resolution_attempts: resolved.resolution_attempts || [],
       },
     });
     await resolved.handle.dispose().catch(() => {});
