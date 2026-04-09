@@ -807,6 +807,7 @@ async def run_agent_loop(
                     "tool_name": tool_name,
                     "duration_seconds": duration,
                     "result_preview": result_content[:800],
+                    "result_full": result_content,
                     "bootstrap": True,
                 },
             )
@@ -999,6 +1000,7 @@ async def run_agent_loop(
                     "additional_kwargs": _json_ready(getattr(response, "additional_kwargs", None)),
                     "response_class": type(response).__name__,
                     "content_preview": (response.content or "")[:1200],
+                    "content_full": response.content or "",
                     "prompt": prompt_meta,
                     "turn_context_preview": turn_context[:600],
                     "cache_hit": bool(cache_metrics.get("cache_hit", False)),
@@ -1170,6 +1172,7 @@ async def run_agent_loop(
                         "tool_name": tool_name,
                         "duration_seconds": tool_duration,
                         "result_preview": result_content[:800],
+                        "result_full": result_content,
                         "message_count": len(state["messages"]) + len(tool_messages),
                         "cache_hit": cache_hit,
                         "cache_eligible": cache_eligible,

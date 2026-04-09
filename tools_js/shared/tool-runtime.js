@@ -43,6 +43,43 @@ function safeUrlOrigin(url) {
   }
 }
 
+function decodeUriStringSafe(value) {
+  const text = String(value ?? '');
+  if (!text || text.startsWith('data:')) return text;
+  if (!/%[0-9a-fA-F]{2}/.test(text) && !text.includes('+')) return text;
+
+  const candidates = text.includes('+') ? [text.replace(/\+/g, '%20'), text] : [text];
+  for (const candidate of candidates) {
+    for (const decoder of [decodeURI, decodeURIComponent]) {
+      try {
+        const decoded = decoder(candidate);
+        if (decoded) return decoded;
+      } catch {
+        // keep trying
+      }
+    }
+  }
+  return text;
+}
+
+export function decodeUriEverywhere(value, seen = new WeakSet()) {
+  if (typeof value === 'string') return decodeUriStringSafe(value);
+  if (value == null || typeof value !== 'object') return value;
+  if (seen.has(value)) return value;
+
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.map((item) => decodeUriEverywhere(item, seen));
+  }
+
+  const decoded = {};
+  for (const [key, nested] of Object.entries(value)) {
+    decoded[key] = decodeUriEverywhere(nested, seen);
+  }
+  return decoded;
+}
+
 function encodeElementRef(payload) {
   return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
 }
@@ -799,7 +836,7 @@ export async function buildEnvelope(page, {
     // We keep the result usable and simply omit screenshot_url when capture fails.
   }
 
-  return {
+  return decodeUriEverywhere({
     ok: finalOk && pageState.ok,
     url: page.url(),
     title: title || await page.title().catch(() => ''),
@@ -812,7 +849,7 @@ export async function buildEnvelope(page, {
     observed_change,
     access_state: accessState,
     ...data,
-  };
+  });
 }
 
 export async function withBrowserSession(browserWsEndpoint, run) {

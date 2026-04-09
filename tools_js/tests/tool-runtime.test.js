@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { detectAccessStateFromSignals, summarizePurpose, filterElements } from '../shared/tool-runtime.js';
+import { decodeUriEverywhere, detectAccessStateFromSignals, summarizePurpose, filterElements } from '../shared/tool-runtime.js';
 
 const clearState = detectAccessStateFromSignals({
   title: 'Watch Live Sports',
@@ -41,6 +41,16 @@ assert.equal(
   summarizePurpose('https://example.com/cdn-cgi/challenge-platform', 'challenge frame'),
   'challenge',
 );
+
+const decodedPayload = decodeUriEverywhere({
+  url: 'https://example.com/%D9%83%D9%87%D8%B1%D8%A8%D8%A7%D8%A1-%D8%A7%D9%84%D8%A7%D8%B3%D9%85%D8%A7%D8%B9%D9%8A%D9%84%D9%8A%D8%A9',
+  nested: {
+    text: '%D9%83%D9%87%D8%B1%D8%A8%D8%A7%D8%A1',
+  },
+});
+
+assert.equal(decodedPayload.url, 'https://example.com/كهرباء-الاسماعيلية');
+assert.equal(decodedPayload.nested.text, 'كهرباء');
 
 const regexMatches = filterElements(
   [

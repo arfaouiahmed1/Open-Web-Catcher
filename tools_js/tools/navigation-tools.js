@@ -228,6 +228,7 @@ export async function openUrl({
     const after = await capturePageSnapshot(page, 'root');
     return buildEnvelope(page, {
       frame_path: 'root',
+      screenshotMode: 'full',
       ok: !final_error,
       error: final_error,
       observed_change: makeObservedChange(before, after, tabs.new_tab_urls),

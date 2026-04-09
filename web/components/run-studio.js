@@ -81,6 +81,43 @@ function tryParseJsonString(value) {
   }
 }
 
+function decodeUriStringSafe(value) {
+  const text = String(value ?? "");
+  if (!text || text.startsWith("data:")) return text;
+  if (!/%[0-9a-fA-F]{2}/.test(text) && !text.includes("+")) return text;
+
+  const candidates = text.includes("+") ? [text.replace(/\+/g, "%20"), text] : [text];
+  for (const candidate of candidates) {
+    for (const decoder of [decodeURI, decodeURIComponent]) {
+      try {
+        const decoded = decoder(candidate);
+        if (decoded) return decoded;
+      } catch {
+        // keep trying
+      }
+    }
+  }
+  return text;
+}
+
+function decodeUriDeep(value, seen = new WeakSet()) {
+  if (typeof value === "string") return decodeUriStringSafe(value);
+  if (value == null || typeof value !== "object") return value;
+  if (seen.has(value)) return value;
+
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.map((item) => decodeUriDeep(item, seen));
+  }
+
+  const decoded = {};
+  for (const [key, nested] of Object.entries(value)) {
+    decoded[key] = decodeUriDeep(nested, seen);
+  }
+  return decoded;
+}
+
 function normalizePayloadValue(value, depth = 0) {
   if (depth > 8) return value;
 
@@ -134,7 +171,7 @@ function normalizePayloadValue(value, depth = 0) {
     }
   }
 
-  return parsed;
+  return decodeUriDeep(parsed);
 }
 
 function inferValueType(value) {
@@ -146,7 +183,7 @@ function inferValueType(value) {
 function toDisplayValue(value) {
   if (value === null) return "null";
   if (value === undefined) return "undefined";
-  if (typeof value === "string") return value;
+  if (typeof value === "string") return decodeUriStringSafe(value);
   if (typeof value === "symbol") return String(value);
   if (typeof value === "function") return `[Function ${value.name || "anonymous"}]`;
   if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
@@ -230,7 +267,7 @@ function ToolPayloadTable({ value }) {
               <td className="px-2 py-1.5 align-top font-mono text-slate-400">{row.path}</td>
               <td className="px-2 py-1.5 align-top text-slate-500">{row.type}</td>
               <td className="px-2 py-1.5 align-top">
-                <pre className="whitespace-pre-wrap break-words font-mono text-[11px] text-slate-200">{row.value}</pre>
+                <pre dir="auto" className="whitespace-pre-wrap break-words font-mono text-[11px] text-slate-200">{row.value}</pre>
               </td>
             </tr>
           ))}
@@ -278,7 +315,7 @@ function PayloadView({ title, value }) {
       {viewMode === "table" ? (
         <ToolPayloadTable value={normalized} />
       ) : (
-        <pre className="max-h-[420px] overflow-auto rounded border border-white/10 bg-black/20 p-2 text-xs text-slate-200 whitespace-pre-wrap break-words">
+        <pre dir="auto" className="max-h-[420px] overflow-auto rounded border border-white/10 bg-black/20 p-2 text-xs text-slate-200 whitespace-pre-wrap break-words">
           {jsonText}
         </pre>
       )}
@@ -332,7 +369,8 @@ function Pill({ icon: Icon, label, value, danger }) {
 function collectTextSegments(value, out, seen = new WeakSet()) {
   if (value == null) return;
   if (typeof value === "string") {
-    if (value.trim()) out.push(value);
+    const decoded = decodeUriStringSafe(value);
+    if (decoded.trim()) out.push(decoded);
     return;
   }
 
@@ -365,7 +403,7 @@ function collectTextSegments(value, out, seen = new WeakSet()) {
 }
 
 function ThinkingBlock({ event }) {
-  const rawPreview = event.details?.content ?? event.details?.content_preview ?? event.message;
+  const rawPreview = event.details?.content_full ?? event.details?.content ?? event.details?.content_preview ?? event.message;
   const preview = (() => {
     const textParts = [];
     collectTextSegments(rawPreview, textParts);
@@ -395,7 +433,7 @@ function ThinkingBlock({ event }) {
         </div>
       </div>
       {preview ? (
-        <p className="text-sm leading-relaxed text-slate-200 whitespace-pre-wrap">{preview}</p>
+        <p dir="auto" className="text-sm leading-relaxed text-slate-200 whitespace-pre-wrap">{preview}</p>
       ) : (
         <p className="text-xs italic text-slate-700">No content preview available</p>
       )}
@@ -407,8 +445,8 @@ function ToolBlock({ event }) {
   const [expanded, setExpanded] = useState(true);
   const [loadedScreenshot, setLoadedScreenshot] = useState("");
   const toolName = event.details?.tool_name;
-  const args = event.details?.args;
-  const resultPreview = event.details?.result_preview;
+  const args = event.details?.tool_args ?? event.details?.args;
+  const resultPreview = event.details?.result_full ?? event.details?.result_preview;
   const isStart = event.kind === "tool_call_started";
   const isError = event.status === "error";
 

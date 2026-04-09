@@ -23,6 +23,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     curl \
     ca-certificates \
     supervisor \
+    fonts-noto-core \
+    fonts-noto-extra \
+    fonts-noto-cjk \
+    fonts-noto-color-emoji \
     fonts-liberation \
     libasound2 \
     libatk-bridge2.0-0 \
@@ -54,6 +58,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libxss1 \
     libxtst6 \
     xdg-utils \
+    fontconfig \
+    && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
 COPY tools_js/package*.json tools_js/

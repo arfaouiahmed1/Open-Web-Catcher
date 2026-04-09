@@ -12,6 +12,7 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 
 import { PROFILES } from './profiles.js';
 import { closeEphemeralBrowser, launchEphemeralBrowser } from './shared/browser.js';
+import { decodeUriEverywhere } from './shared/tool-runtime.js';
 import { getToolCatalog, getToolDefinitions, getToolSpec } from './tool-registry.js';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -36,12 +37,14 @@ function buildServer(profileName, browserWsEndpoint) {
     server.tool(toolName, def.description, def.schema, async (args) => {
       try {
         const result = await def.handler(args);
+        const normalized = decodeUriEverywhere(result);
         return {
-          content: [{ type: 'text', text: JSON.stringify(result) }],
+          content: [{ type: 'text', text: JSON.stringify(normalized) }],
         };
       } catch (err) {
+        const errorPayload = decodeUriEverywhere({ error: err.message });
         return {
-          content: [{ type: 'text', text: JSON.stringify({ error: err.message }) }],
+          content: [{ type: 'text', text: JSON.stringify(errorPayload) }],
           isError: true,
         };
       }

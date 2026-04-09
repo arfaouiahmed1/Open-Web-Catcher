@@ -3,7 +3,7 @@
  */
 
 import { connectBrowser, getPage } from '../shared/browser.js';
-import { screenshotViewport } from '../shared/screenshot.js';
+import { screenshotFull } from '../shared/screenshot.js';
 import { detectAccessStateFromSignals } from '../shared/tool-runtime.js';
 
 function buildWaitUntilCandidates(waitUntil) {
@@ -140,7 +140,7 @@ export async function navigate({
 
     let screenshot_url = null;
     try {
-      screenshot_url = await screenshotViewport(page);
+      screenshot_url = await screenshotFull(page);
     } catch (_) {
       screenshot_url = null;
     }
