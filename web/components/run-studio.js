@@ -81,6 +81,62 @@ function tryParseJsonString(value) {
   }
 }
 
+function normalizePayloadValue(value, depth = 0) {
+  if (depth > 8) return value;
+
+  const parsed = tryParseJsonString(value);
+  if (parsed !== value) {
+    return normalizePayloadValue(parsed, depth + 1);
+  }
+
+  if (Array.isArray(parsed)) {
+    const textBlocks =
+      parsed.length > 0 &&
+      parsed.every((item) => item && typeof item === "object" && typeof item.text === "string");
+
+    if (textBlocks) {
+      const joinedText = parsed.map((item) => String(item.text || "").trim()).filter(Boolean).join("\n");
+      if (joinedText) {
+        const normalizedJoined = normalizePayloadValue(joinedText, depth + 1);
+        if (normalizedJoined !== joinedText) {
+          return normalizedJoined;
+        }
+      }
+    }
+
+    if (parsed.length === 1) {
+      const single = normalizePayloadValue(parsed[0], depth + 1);
+      if (single !== parsed[0]) {
+        return single;
+      }
+    }
+
+    return parsed;
+  }
+
+  if (parsed && typeof parsed === "object") {
+    const wrapperKeys = new Set(["type", "text", "id", "index", "role", "name", "mime_type", "annotations"]);
+    const keys = Object.keys(parsed);
+    const wrapperLike = keys.length > 0 && keys.every((key) => wrapperKeys.has(key));
+
+    if (wrapperLike && typeof parsed.text === "string") {
+      const normalizedText = normalizePayloadValue(parsed.text, depth + 1);
+      if (normalizedText !== parsed.text) {
+        return normalizedText;
+      }
+    }
+
+    if (Array.isArray(parsed.content)) {
+      const normalizedContent = normalizePayloadValue(parsed.content, depth + 1);
+      if (normalizedContent !== parsed.content) {
+        return normalizedContent;
+      }
+    }
+  }
+
+  return parsed;
+}
+
 function inferValueType(value) {
   if (value === null) return "null";
   if (Array.isArray(value)) return "array";
@@ -149,7 +205,7 @@ function collectPayloadRows(value, path, rows, seen) {
 }
 
 function ToolPayloadTable({ value }) {
-  const normalized = tryParseJsonString(value);
+  const normalized = normalizePayloadValue(value);
 
   if (normalized == null || normalized === "") {
     return <div className="rounded bg-black/30 p-2 text-xs text-slate-600">No data</div>;
@@ -186,7 +242,7 @@ function ToolPayloadTable({ value }) {
 
 function PayloadView({ title, value }) {
   const [viewMode, setViewMode] = useState("table");
-  const normalized = tryParseJsonString(value);
+  const normalized = normalizePayloadValue(value);
   const jsonText = typeof normalized === "string" ? normalized : safeJson(normalized);
 
   return (

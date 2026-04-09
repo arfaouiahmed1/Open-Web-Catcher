@@ -207,6 +207,7 @@ def _build_provider_cache_invoke_kwargs(
     *,
     provider: str,
     prompt_metadata: dict[str, Any],
+    allow_google_explicit_cache: bool = True,
 ) -> dict[str, Any]:
     if not settings.provider_cache_enabled or not settings.prompt_cache_enabled:
         return {}
@@ -244,6 +245,8 @@ def _build_provider_cache_invoke_kwargs(
         return {"cache_control": cache_control}
 
     if provider == "google_genai":
+        if not allow_google_explicit_cache:
+            return {}
         # Gemini implicit caching is automatic; explicit cache references require
         # a provider-generated cached content resource name.
         cached_content = str(prompt_metadata.get("gemini_cached_content", "") or "").strip()
@@ -688,22 +691,30 @@ async def run_agent_loop(
     provider = _PROVIDER_CANONICAL.get(
         (settings.llm_provider or "google").lower(), "google_genai"
     )
+    google_explicit_cache_compatible = True
     gemini_cached_content_source = "none"
     if provider == "google_genai":
-        managed_cached_content, gemini_cached_content_source = await _resolve_managed_gemini_cached_content(
-            settings,
-            prompt_metadata=prompt_meta,
-            system_prompt=system_prompt,
-            model_name=model_name,
-        )
-        if managed_cached_content:
-            prompt_meta["gemini_cached_content"] = managed_cached_content
+        if tools:
+            # Gemini cached_content cannot be combined with tool-enabled GenerateContent requests.
+            google_explicit_cache_compatible = False
+            gemini_cached_content_source = "disabled_with_tools"
+            prompt_meta.pop("gemini_cached_content", None)
+        else:
+            managed_cached_content, gemini_cached_content_source = await _resolve_managed_gemini_cached_content(
+                settings,
+                prompt_metadata=prompt_meta,
+                system_prompt=system_prompt,
+                model_name=model_name,
+            )
+            if managed_cached_content:
+                prompt_meta["gemini_cached_content"] = managed_cached_content
 
     pricing = resolve_model_pricing(settings, model_name=model_name, provider=provider)
     provider_cache_invoke_kwargs = _build_provider_cache_invoke_kwargs(
         settings,
         provider=provider,
         prompt_metadata=prompt_meta,
+        allow_google_explicit_cache=google_explicit_cache_compatible,
     )
     provider_cache_active = _provider_cache_active_for_run(
         settings,

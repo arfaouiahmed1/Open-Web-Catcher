@@ -277,6 +277,51 @@ async def test_run_agent_loop_provider_cache_google_uses_managed_cached_content(
     assert llm.bound_llm.calls[0]["kwargs"].get("cached_content") == "cachedContents/managed-landing"
 
 
+async def test_run_agent_loop_provider_cache_google_skips_explicit_cache_when_tools_enabled(settings, monkeypatch):
+    settings.llm_provider = "google"
+    settings.provider_cache_enabled = True
+    settings.prompt_cache_enabled = True
+
+    query_tool = DummyTool("query_elements", {"ok": True, "matches": []})
+    llm = LLMStub(
+        bound_responses=[
+            AIMessage(
+                content="",
+                tool_calls=[{"id": "call-1", "name": "query_elements", "args": {"kind": "link", "limit": 1}}],
+            ),
+            AIMessage(content='{"status":"done"}'),
+        ],
+    )
+
+    resolve_calls: list[dict] = []
+
+    async def fake_resolve(*args, **kwargs):
+        resolve_calls.append({"args": args, "kwargs": kwargs})
+        return "cachedContents/should-not-be-used", "created"
+
+    monkeypatch.setattr("src.agents.base._resolve_managed_gemini_cached_content", fake_resolve)
+
+    result = await run_agent_loop(
+        settings=settings,
+        llm=llm,
+        tools=[query_tool],
+        system_prompt="Use tools carefully.",
+        initial_message="Inspect the page.",
+        max_tool_calls=2,
+        run_name="test_provider_cache_google_tools_guard",
+        prompt_metadata={
+            "cache_mode": "provider_hook",
+            "provider_cache_eligible": True,
+            "provider_cache_key": "cachedContents/manual-would-fail",
+            "gemini_cached_content": "cachedContents/manual-would-fail",
+        },
+    )
+
+    assert result.parse_json() == {"status": "done"}
+    assert resolve_calls == []
+    assert llm.bound_llm.calls[0]["kwargs"].get("cached_content") is None
+
+
 def test_extract_cache_metrics_reads_anthropic_cache_counters():
     metrics = _extract_cache_metrics(
         {
