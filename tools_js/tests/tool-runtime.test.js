@@ -25,6 +25,18 @@ assert.equal(challengeState.challenge_detected, true);
 assert.equal(challengeState.suspected_provider, 'cloudflare');
 assert.ok(challengeState.reasons.length > 0);
 
+const providerMentionOnlyState = detectAccessStateFromSignals({
+  title: 'FreeShot - Watch Live Stream Channels for Free',
+  textSample: 'Live channels and fixtures available now.',
+  htmlSample: '<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js"></script>',
+  url: 'https://freeshot.live/',
+});
+
+assert.equal(providerMentionOnlyState.blocked, false);
+assert.equal(providerMentionOnlyState.challenge_detected, false);
+assert.equal(providerMentionOnlyState.suspected_provider, 'none');
+assert.equal(providerMentionOnlyState.reasons.length, 0);
+
 assert.equal(
   summarizePurpose('https://example.com/cdn-cgi/challenge-platform', 'challenge frame'),
   'challenge',

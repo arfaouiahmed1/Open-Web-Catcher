@@ -12,9 +12,9 @@ import {
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const CHALLENGE_TEXT_MARKERS = [
-  'cloudflare',
   'cf-challenge',
   'challenge-platform',
+  'cdn-cgi/challenge',
   'just a moment',
   'checking your browser',
   'verify you are human',

@@ -9,9 +9,9 @@ function hashValue(value) {
 }
 
 const CHALLENGE_PATTERNS = [
-  /cloudflare/,
   /cf-challenge/,
   /challenge-platform/,
+  /cdn-cgi\/challenge/,
   /just a moment/,
   /checking your browser/,
   /verify you are human/,
@@ -19,6 +19,11 @@ const CHALLENGE_PATTERNS = [
   /captcha/,
   /attention required/,
 ];
+
+const PROVIDER_PATTERNS = {
+  cloudflare: [/cloudflare/, /cf-ray/, /cf_chl_/, /cdn-cgi/],
+  generic_challenge: [/captcha/, /verify you are human/, /security check/],
+};
 
 const BLOCK_PATTERNS = [
   /access denied/,
@@ -62,19 +67,22 @@ export function detectAccessStateFromSignals({
   url = '',
 } = {}) {
   const haystack = `${title}\n${textSample}\n${htmlSample}\n${url}`.toLowerCase();
-  const reasons = [];
+  const challengeReasons = [];
   let suspectedProvider = '';
 
   for (const pattern of CHALLENGE_PATTERNS) {
     if (pattern.test(haystack)) {
-      reasons.push(pattern.source);
+      challengeReasons.push(pattern.source);
     }
   }
 
-  const challengeDetected = reasons.length > 0;
-  if (/cloudflare|cf-challenge|challenge-platform/.test(haystack)) {
+  const hasCloudflareMarker = PROVIDER_PATTERNS.cloudflare.some((pattern) => pattern.test(haystack));
+  const hasGenericChallengeMarker = PROVIDER_PATTERNS.generic_challenge.some((pattern) => pattern.test(haystack));
+
+  const challengeDetected = challengeReasons.length > 0;
+  if (hasCloudflareMarker) {
     suspectedProvider = 'cloudflare';
-  } else if (/captcha|verify you are human|security check/.test(haystack)) {
+  } else if (hasGenericChallengeMarker) {
     suspectedProvider = 'generic_challenge';
   }
 
@@ -92,12 +100,17 @@ export function detectAccessStateFromSignals({
       ? 'medium'
       : 'low';
 
+  // Provider markers alone (e.g., analytics/CDN mentions) are not enough to mark a page blocked.
+  const reasons = blocked
+    ? [...new Set([...challengeReasons, ...blockReasons])]
+    : [];
+
   return {
     blocked,
     challenge_detected: challengeDetected,
-    suspected_provider: suspectedProvider || 'none',
+    suspected_provider: blocked ? suspectedProvider || 'none' : 'none',
     confidence,
-    reasons: [...new Set([...reasons, ...blockReasons])],
+    reasons,
   };
 }
 

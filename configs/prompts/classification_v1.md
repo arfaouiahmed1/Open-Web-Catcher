@@ -76,8 +76,12 @@ Stop after 2 exploration actions and choose best-fit class with medium/low confi
 5. Do not repeat identical failing calls more than twice unless `url`, `page_state_id`, or `dom_epoch` changed.
 6. Reuse strongest-evidence frame path; do not bounce frames without signal.
 7. Keep reasoning concise and evidence-first.
+8. One turn = one tool call or final classification output.
+9. If a fresh bootstrap `get_page_context` for the current URL is already present, do not repeat it immediately.
 
 ## Output Format (MUST match exactly)
+
+Use plain values in outputs. Do not keep placeholder brackets in final values.
 
 CLASSIFICATION: [landing_page/host_page/embed_video_page/other]
 CONFIDENCE: [high/medium/low]
@@ -100,5 +104,9 @@ METADATA:
 page_type: [landing_page/host_page/embed_video_page/other]
 confidence: [high/medium/low]
 tools_used: [list of tools called, or "none"]
+
+Metadata consistency rule:
+- `page_type` must match `CLASSIFICATION` exactly.
+- `confidence` must match `CONFIDENCE` exactly.
 
 Begin directly with your classification.

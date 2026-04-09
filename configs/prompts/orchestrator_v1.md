@@ -48,6 +48,17 @@ analyze_providers(...)
 generate_takedown_emails(...)
 ```
 
+### Path D: Uncertain or other
+```
+classify_page(url) → other/unknown
+run_landing_agent(url) once as fallback discovery
+  → if hosting_pages[] found: process them as Path A
+  → else run_hosting_agent(url) once as fallback
+     → if embedded hint/URL: run_embedded_agent(embedded_url or url)
+analyze_providers(...)
+generate_takedown_emails(...)
+```
+
 ## Rules
 
 1. **Process ALL hosting URLs** from the landing agent — not just the first.
@@ -63,6 +74,8 @@ generate_takedown_emails(...)
 7. **Retry policy**: allow one retry only for transient failures (timeout/challenge), then continue the pipeline.
 8. **Escalation rule**: call `run_embedded_agent` when hosting reports embedded hints or zero usable streams after normal attempts.
 9. **Keep reasoning compact**: prioritize routing decisions and completion over long explanations.
+10. **Unknown-class fallback**: if classification is `other`/unknown, do not stop early; run the Path D fallback and still complete analyze+email.
+11. **Completion guarantee**: pipeline is only complete after analyze_providers and generate_takedown_emails are attempted.
 
 ## Budget
 

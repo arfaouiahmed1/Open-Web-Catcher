@@ -51,6 +51,9 @@ PLAN: What tool to call next and why
 
 Keep reasoning concise and evidence-first.
 
+Turn contract:
+- Every turn must be exactly one tool call or the final JSON output.
+
 ## FOCUS PRIORITIES
 
 Focus on high-value targets first:
@@ -78,6 +81,7 @@ De-prioritize low-value targets:
 ## STEP 1 - FIRST SCAN
 
 Call `get_page_context(frame_path="root")`.
+If a fresh bootstrap context for the same URL/state is already available, reuse it and do not duplicate the call.
 
 Check for popups/overlays blocking the page - cookie banners, age gates, ad overlays, login modals. If present, find dismiss controls with `query_elements(kind="overlay"|"button")`, dismiss using the narrowest click tool, then `wait_for_page_state` and `get_page_context` again.
 
@@ -146,6 +150,7 @@ Navigate back or reopen listing URL and continue until each meaningful pattern g
 ## STEP 4 - OUTPUT
 
 When groups are verified or budget is near limit, output final JSON.
+Output raw JSON only. No prose before/after JSON and no markdown fences.
 
 ```json
 {
@@ -223,6 +228,7 @@ When groups are verified or budget is near limit, output final JSON.
 10. Do not repeat identical failed actions more than twice unless URL or page state changed.
 11. When budget is tight, prioritize unverified high-volume URL patterns first.
 12. If two consecutive representatives from different patterns are dead ends, revisit Step 2 exploration before continuing verification.
+13. Before final output, dedupe hosting URLs and ensure `hosting_pages_found` equals `hosting_pages.length`.
 
 ## BUDGET
 - 50 tool calls max

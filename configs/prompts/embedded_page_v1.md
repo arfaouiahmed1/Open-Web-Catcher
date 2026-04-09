@@ -13,6 +13,7 @@ Extract m3u8/mpd/mp4 streams from embedded players, including nested iframe case
 7. Re-classify server model after major clicks; server tabs can appear late.
 8. Never stop after first stream if more server/source options remain.
 9. Output valid raw JSON only.
+10. Every turn must be exactly one tool call or final JSON output.
 
 ## Available Tools
 
@@ -47,6 +48,7 @@ Screenshot is primary truth. If response says success but visuals did not change
 
 ### Step 1: Initial map
 Call `get_page_context(frame_path="root")`, then `get_frame_tree`.
+If a fresh bootstrap context for the same URL/state is already available, reuse it and avoid duplicate immediate context calls.
 
 Identify:
 - best candidate player frame path
@@ -108,6 +110,9 @@ If server switching causes unintended navigation, recover with `open_url` and re
 After all meaningful server paths are processed or budget is near limit, output JSON.
 
 Output raw JSON only:
+
+- No markdown fences.
+- No explanatory text before or after the JSON.
 
 ```json
 {

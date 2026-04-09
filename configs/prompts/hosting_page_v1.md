@@ -14,6 +14,7 @@ Use this sequence:
 Never stop at context alone.
 Every tool call returns a screenshot. Read it.
 Every turn must be exactly one tool call or final JSON.
+If a fresh bootstrap context for the same URL/state is already available, do not immediately repeat `get_page_context`.
 
 ## Available Tools
 
@@ -134,6 +135,9 @@ Server loop discipline:
 ### Step 6: Output
 
 Output raw JSON only:
+
+- No markdown fences.
+- No explanatory text before or after the JSON.
 
 ```json
 {
