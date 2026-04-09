@@ -12,7 +12,6 @@ __pycache__
 .env
 data
 docs
-notebooks
 
 tools_js/node_modules
 web/node_modules

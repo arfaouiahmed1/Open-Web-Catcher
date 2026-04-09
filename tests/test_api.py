@@ -244,6 +244,19 @@ def test_ui_run_stream_emits_sse_payload(client: TestClient):
     assert "\"completed\": true" in body.lower()
 
 
+@pytest.mark.asyncio
+async def test_stream_trace_returns_immediately_when_client_disconnected():
+    from src.api import app as api_app
+
+    class _DisconnectedRequest:
+        async def is_disconnected(self) -> bool:
+            return True
+
+    stream = api_app._stream_trace("missing-run", request=_DisconnectedRequest())
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+
+
 def test_ui_tool_call_returns_result_and_persisted_record(client: TestClient):
     with patch("src.api.app._execute_tool_call_with_telemetry", new=AsyncMock(return_value={
         "call_id": "tool-call-1",

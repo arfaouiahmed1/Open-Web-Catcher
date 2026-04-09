@@ -174,6 +174,11 @@ class PipelineResult(BaseModel):
 
     metrics: RunMetrics | None = None
 
+    @property
+    def streams(self) -> list[StreamURL]:
+        """Backward-compatible alias for legacy callers/tests."""
+        return self.all_streams
+
 
 class PricingConfig(BaseModel):
     provider: str = ""

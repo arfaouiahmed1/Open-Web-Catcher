@@ -71,6 +71,49 @@ function parseCsvSet(value) {
   );
 }
 
+function normalizeHost(candidate) {
+  const input = String(candidate || '').trim().toLowerCase();
+  if (!input) return '';
+
+  try {
+    return new URL(input).hostname.replace(/^www\./, '');
+  } catch {
+    return input
+      .replace(/^https?:\/\//, '')
+      .split('/')[0]
+      .replace(/^www\./, '');
+  }
+}
+
+function getAllowlistHosts() {
+  const configured = process.env.OWC_ADBLOCK_ALLOWLIST_HOSTS;
+  if (!configured) {
+    return new Set();
+  }
+
+  return new Set(
+    Array.from(parseCsvSet(configured))
+      .map((entry) => normalizeHost(entry))
+      .filter(Boolean),
+  );
+}
+
+function isAllowlistedHost(hostname) {
+  const host = normalizeHost(hostname);
+  if (!host) return false;
+
+  const allowlist = getAllowlistHosts();
+  if (allowlist.size === 0) return false;
+
+  for (const allowed of allowlist) {
+    if (host === allowed || host.endsWith(`.${allowed}`)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function getExcludedCategories() {
   const configured = process.env.OWC_ADBLOCK_EXCLUDED_CATEGORIES;
   if (!configured) {
@@ -492,10 +535,39 @@ export async function getFilterLists() {
  * from the filter lists — same behaviour as uBlock Origin.
  * Safe to call multiple times on the same page; attaches only once.
  */
-export async function enableBlocking(page) {
+export async function enableBlocking(page, { targetUrl = '' } = {}) {
   if (!isAdblockEnabled()) return;
   if (enabledPages.has(page)) return;
+
+  const candidateUrl = String(targetUrl || '').trim() || page.url();
+  if (isAllowlistedHost(candidateUrl)) {
+    return;
+  }
+
   const { blocker } = await getBlockerSnapshot();
   await blocker.enableBlockingInPage(page);
   enabledPages.add(page);
+}
+
+/**
+ * Disable blocking for a page when strict network filters break required
+ * iframe/player requests. Safe to call even when blocking is already disabled.
+ */
+export async function disableBlocking(page, { keepRequestInterception = false } = {}) {
+  if (!enabledPages.has(page)) {
+    return false;
+  }
+
+  const { blocker } = await getBlockerSnapshot();
+  if (typeof blocker.isBlockingEnabled === 'function' && !blocker.isBlockingEnabled(page)) {
+    enabledPages.delete(page);
+    return false;
+  }
+
+  try {
+    await blocker.disableBlockingInPage(page, { keepRequestInterception });
+    return true;
+  } finally {
+    enabledPages.delete(page);
+  }
 }

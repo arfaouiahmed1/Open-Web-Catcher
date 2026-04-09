@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -570,35 +570,59 @@ def _provider_lookup_urls(stream_urls: list[str], settings: Settings) -> list[di
         session.close()
 
 
-async def _stream_trace(run_id: str):
+async def _stream_trace(run_id: str, request: Request | None = None):
     last_seq = 0
     first_tick = True
-    while True:
-        trace = run_registry.get(run_id)
-        if trace is None:
-            payload = {"run_id": run_id, "events": [], "completed": True, "error": "run_not_found"}
-            yield f"data: {json.dumps(payload, default=str)}\n\n"
-            break
+    try:
+        while True:
+            if request is not None and await request.is_disconnected():
+                return
 
-        new_events = [event.model_dump(mode="json") for event in trace.events if event.seq > last_seq]
-        if first_tick or new_events or trace.completed:
-            if new_events:
-                last_seq = new_events[-1]["seq"]
-            payload = {
-                "run_id": run_id,
-                "root_actor": trace.root_actor,
-                "events": new_events,
-                "metrics": trace.metrics.model_dump(mode="json") if trace.metrics else None,
-                "completed": trace.completed,
-                "cancel_requested": trace.cancel_requested,
-                "cancel_reason": trace.cancel_reason,
-            }
-            yield f"data: {json.dumps(payload, default=str)}\n\n"
-            first_tick = False
+            trace = run_registry.get(run_id)
+            if trace is None:
+                payload = {"run_id": run_id, "events": [], "completed": True, "error": "run_not_found"}
+                yield f"data: {json.dumps(payload, default=str)}\n\n"
+                break
 
-        if trace.completed:
-            break
-        await asyncio.sleep(0.8)
+            new_events = [event.model_dump(mode="json") for event in trace.events if event.seq > last_seq]
+            if first_tick or new_events or trace.completed:
+                if new_events:
+                    last_seq = new_events[-1]["seq"]
+                payload = {
+                    "run_id": run_id,
+                    "root_actor": trace.root_actor,
+                    "events": new_events,
+                    "metrics": trace.metrics.model_dump(mode="json") if trace.metrics else None,
+                    "completed": trace.completed,
+                    "cancel_requested": trace.cancel_requested,
+                    "cancel_reason": trace.cancel_reason,
+                }
+                yield f"data: {json.dumps(payload, default=str)}\n\n"
+                first_tick = False
+
+            if trace.completed:
+                break
+            await asyncio.sleep(0.8)
+    except (asyncio.CancelledError, GeneratorExit):
+        # Client disconnected; terminate stream silently to avoid noisy
+        # ExceptionGroup/TaskGroup traces from the ASGI response task group.
+        return
+    except Exception as exc:
+        logger.warning("Run stream terminated unexpectedly", extra={"run_id": run_id, "error": str(exc)})
+        if request is not None:
+            with suppress(Exception):
+                if await request.is_disconnected():
+                    return
+        payload = {
+            "run_id": run_id,
+            "events": [],
+            "completed": True,
+            "error": "stream_failed",
+        }
+        try:
+            yield f"data: {json.dumps(payload, default=str)}\n\n"
+        except (asyncio.CancelledError, GeneratorExit, BrokenPipeError, ConnectionError):
+            return
 
 
 @app.get("/health")
@@ -606,6 +630,17 @@ def health():
     settings = get_settings()
     mcp_status = probe_mcp(settings.mcp_server_url)
     browser_status = probe_browser(settings.browser_ws_endpoint)
+
+    # In isolated mode, MCP launches and manages per-session browsers.
+    # The shared CDP endpoint is only a fallback and may be intentionally absent.
+    if mcp_status.get("healthy") and str(mcp_status.get("browser_mode", "")).lower() == "isolated":
+        browser_status = {
+            **browser_status,
+            "healthy": True,
+            "mode": "isolated",
+            "note": "Shared browser probe is informational in isolated mode.",
+        }
+
     return {
         "status": "ok",
         "orchestrator_model": settings.orchestrator_model,
@@ -888,8 +923,16 @@ def ui_run_detail(run_id: str):
 
 
 @app.get("/ui/runs/{run_id}/stream")
-async def ui_run_stream(run_id: str):
-    return StreamingResponse(_stream_trace(run_id), media_type="text/event-stream")
+async def ui_run_stream(run_id: str, request: Request):
+    return StreamingResponse(
+        _stream_trace(run_id, request=request),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/ui/runs/{run_id}/cancel")

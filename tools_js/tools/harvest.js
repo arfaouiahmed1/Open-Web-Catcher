@@ -10,7 +10,12 @@
  *   6. performance.getEntriesByType retroactive scan
  */
 
-import { connectBrowser, getPage } from '../shared/browser.js';
+import {
+  connectBrowser,
+  getIframeDiagnostics,
+  getPage,
+  getPageNetworkDiagnostics,
+} from '../shared/browser.js';
 import { screenshotViewport } from '../shared/screenshot.js';
 
 const STREAM_PATTERNS = [
@@ -24,6 +29,17 @@ const STREAM_PATTERNS = [
 
 const isStream = url => STREAM_PATTERNS.some(({ re }) => re.test(url));
 const getProtocol = url => STREAM_PATTERNS.find(({ re }) => re.test(url))?.protocol || 'unknown';
+
+function normalizeHost(value) {
+  const input = String(value || '').trim();
+  if (!input) return '';
+
+  try {
+    return new URL(input).hostname.replace(/^www\./i, '').toLowerCase();
+  } catch {
+    return input.replace(/^https?:\/\//i, '').split('/')[0].replace(/^www\./i, '').toLowerCase();
+  }
+}
 
 /**
  * @param {{
@@ -39,37 +55,88 @@ export async function harvest({
 } = {}) {
   const browser = await connectBrowser(browserWsEndpoint);
   const page    = await getPage(browser);
+  const targetIframeHost = normalizeHost(player_iframe_url);
+
+  const isTargetIframeUrl = (candidate) => {
+    if (!targetIframeHost) return false;
+    const host = normalizeHost(candidate);
+    return Boolean(host) && (host === targetIframeHost || host.endsWith(`.${targetIframeHost}`));
+  };
 
   const streams = new Map();  // url → stream object
-  const add = (url, layer) => {
-    if (url && isStream(url) && !streams.has(url)) {
-      streams.set(url, { url, protocol: getProtocol(url), source_layer: layer });
+  const add = (url, layer, metadata = {}) => {
+    if (!url || !isStream(url)) return;
+
+    const existing = streams.get(url);
+    if (!existing) {
+      streams.set(url, {
+        url,
+        protocol: getProtocol(url),
+        source_layer: layer,
+        source_layers: [layer],
+        frame_url: metadata.frame_url || '',
+        resource_type: metadata.resource_type || '',
+        status: metadata.status ?? null,
+        error_text: metadata.error_text || '',
+      });
+      return;
+    }
+
+    if (!existing.source_layers.includes(layer)) {
+      existing.source_layers.push(layer);
+    }
+    if (!existing.frame_url && metadata.frame_url) {
+      existing.frame_url = metadata.frame_url;
+    }
+    if (!existing.resource_type && metadata.resource_type) {
+      existing.resource_type = metadata.resource_type;
+    }
+    if (existing.status == null && metadata.status != null) {
+      existing.status = metadata.status;
+    }
+    if (!existing.error_text && metadata.error_text) {
+      existing.error_text = metadata.error_text;
     }
   };
 
   // Layer 1: CDP network interception
   const client = await page.createCDPSession();
   await client.send('Network.enable');
-  client.on('Network.requestWillBeSent', ({ request }) => add(request.url, 'cdp-request'));
-  client.on('Network.responseReceived', ({ response }) => add(response.url, 'cdp-response'));
+  client.on('Network.requestWillBeSent', ({ request, type }) => {
+    const sourceLayer = isTargetIframeUrl(request?.url) ? 'iframe-cdp-request' : 'cdp-request';
+    add(request?.url, sourceLayer, { resource_type: type || '' });
+  });
+  client.on('Network.responseReceived', ({ response, type }) => {
+    const sourceLayer = isTargetIframeUrl(response?.url) ? 'iframe-cdp-response' : 'cdp-response';
+    add(response?.url, sourceLayer, {
+      resource_type: type || '',
+      status: response?.status ?? null,
+    });
+  });
 
   // Layer 2: Puppeteer response events
-  page.on('response', res => add(res.url(), 'response-intercept'));
-
-  // Also attach to player iframe if provided
-  let iframePage = null;
-  if (player_iframe_url) {
-    try {
-      const frames = page.frames();
-      iframePage = frames.find(f => f.url().includes(player_iframe_url.replace(/^https?:\/\//, '').split('/')[0]));
-      if (iframePage) {
-        iframePage.on('response', res => add(res.url(), 'iframe-response'));
-        const iClient = await iframePage.createCDPSession();
-        await iClient.send('Network.enable');
-        iClient.on('Network.requestWillBeSent', ({ request }) => add(request.url, 'iframe-cdp'));
-      }
-    } catch (_) { /* iframe may be cross-origin */ }
-  }
+  page.on('response', (res) => {
+    const frameUrl = res.frame?.()?.url?.() || '';
+    const sourceLayer = isTargetIframeUrl(frameUrl) || isTargetIframeUrl(res.url())
+      ? 'iframe-response'
+      : 'response-intercept';
+    add(res.url(), sourceLayer, {
+      frame_url: frameUrl,
+      status: res.status?.() ?? null,
+      resource_type: res.request?.()?.resourceType?.() || '',
+    });
+  });
+  page.on('requestfailed', (request) => {
+    const frameUrl = request.frame?.()?.url?.() || '';
+    const sourceLayer = isTargetIframeUrl(frameUrl) || isTargetIframeUrl(request.url?.())
+      ? 'iframe-request-failed'
+      : 'request-failed';
+    add(request.url?.(), sourceLayer, {
+      frame_url: frameUrl,
+      resource_type: request.resourceType?.() || '',
+      error_text: request.failure?.()?.errorText || '',
+    });
+  });
 
   // Wait for stream traffic
   await new Promise(r => setTimeout(r, duration_ms));
@@ -119,6 +186,9 @@ export async function harvest({
   let screenshot_url = null;
   try { screenshot_url = await screenshotViewport(page); } catch (_) {}
 
+  const network_diagnostics = getPageNetworkDiagnostics(page, { limit: 40 });
+  const iframe_diagnostics = await getIframeDiagnostics(page, { limit: 24 });
+
   // Video state
   const video_state = await page.evaluate(() => {
     const v = document.querySelector('video');
@@ -144,5 +214,7 @@ export async function harvest({
     total:     result.length,
     video_state,
     screenshot_url,
+    network_diagnostics,
+    iframe_diagnostics,
   };
 }

@@ -8,6 +8,11 @@ import {
   trackNewTabs,
   withBrowserSession,
 } from '../shared/tool-runtime.js';
+import {
+  getIframeDiagnostics,
+  getPageNetworkDiagnostics,
+  retryNavigationAfterAutoRecovery,
+} from '../shared/browser.js';
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -225,6 +230,19 @@ export async function openUrl({
       tabs.dispose();
     }
 
+    const recovery_attempt = await retryNavigationAfterAutoRecovery(page, {
+      url,
+      waitUntil: wait_until,
+      timeoutMs: timeout_ms,
+    });
+    if (recovery_attempt.attempted && recovery_attempt.succeeded) {
+      final_error = null;
+    }
+
+    const network_diagnostics = getPageNetworkDiagnostics(page, { limit: 40 });
+    const iframe_diagnostics = await getIframeDiagnostics(page, { limit: 24 });
+    const final_access_state = await readAccessState(page, page.mainFrame());
+
     const after = await capturePageSnapshot(page, 'root');
     return buildEnvelope(page, {
       frame_path: 'root',
@@ -245,9 +263,13 @@ export async function openUrl({
         http_status,
         redirect_chain,
         wait_fallback_used: navigation_attempts.some((entry) => entry.wait_until_used && entry.wait_until_used !== wait_until),
+        network_diagnostics,
+        iframe_diagnostics,
+        final_access_state,
+        recovery_attempt,
       },
     });
-  });
+  }, { targetUrl: url });
 }
 
 export async function goBack({

@@ -44,6 +44,7 @@ COPY src/ src/
 COPY tools_js/ tools_js/
 COPY configs/ configs/
 COPY tests/ tests/
+COPY notebooks/ notebooks/
 COPY scripts/ scripts/
 COPY alembic/ alembic/
 COPY alembic.ini ./

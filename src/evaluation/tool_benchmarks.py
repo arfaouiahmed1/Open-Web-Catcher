@@ -55,6 +55,120 @@ def _render_args(value: Any, *, base_url: str) -> Any:
 
 
 TOOL_BENCHMARKS: dict[str, ToolBenchmarkCase] = {
+    "navigate": ToolBenchmarkCase(
+        tool_name="navigate",
+        profile="classification",
+        description="Legacy navigate wrapper used by some agents/tools.",
+        scenario="Backward-compatible navigation path.",
+        benchmark_step=ToolInvocation(
+            tool_name="navigate",
+            args={"url": "{base_url}/watch", "wait_until": "networkidle2", "timeout_ms": 30000},
+        ),
+        tags=("navigation", "legacy"),
+    ),
+    "inspect": ToolBenchmarkCase(
+        tool_name="inspect",
+        profile="classification",
+        description="Legacy inspect wrapper for classification profile.",
+        scenario="Backward-compatible page inspection path.",
+        setup_steps=(
+            ToolInvocation("open_url", {"url": "{base_url}/watch", "wait_until": "networkidle2"}),
+        ),
+        benchmark_step=ToolInvocation("inspect", {}),
+        tags=("context", "legacy"),
+    ),
+    "inspect_landing": ToolBenchmarkCase(
+        tool_name="inspect_landing",
+        profile="landing",
+        description="Legacy landing inspect wrapper.",
+        scenario="Backward-compatible landing inspection path.",
+        setup_steps=(
+            ToolInvocation("open_url", {"url": "{base_url}/landing", "wait_until": "networkidle2"}),
+        ),
+        benchmark_step=ToolInvocation("inspect_landing", {}),
+        tags=("context", "legacy"),
+    ),
+    "inspect_hosting": ToolBenchmarkCase(
+        tool_name="inspect_hosting",
+        profile="hosting",
+        description="Legacy hosting inspect wrapper.",
+        scenario="Backward-compatible hosting inspection path.",
+        setup_steps=(
+            ToolInvocation("open_url", {"url": "{base_url}/hosting", "wait_until": "networkidle2"}),
+        ),
+        benchmark_step=ToolInvocation("inspect_hosting", {}),
+        tags=("context", "legacy"),
+    ),
+    "inspect_embedded": ToolBenchmarkCase(
+        tool_name="inspect_embedded",
+        profile="embedded",
+        description="Legacy embedded inspect wrapper.",
+        scenario="Backward-compatible embedded inspection path.",
+        setup_steps=(
+            ToolInvocation("open_url", {"url": "{base_url}/embedded", "wait_until": "networkidle2"}),
+        ),
+        benchmark_step=ToolInvocation("inspect_embedded", {}),
+        tags=("context", "legacy"),
+    ),
+    "interact": ToolBenchmarkCase(
+        tool_name="interact",
+        profile="hosting",
+        description="Legacy interact wrapper for click/play/type actions.",
+        scenario="Backward-compatible generic interaction path.",
+        setup_steps=(
+            ToolInvocation("open_url", {"url": "{base_url}/hosting", "wait_until": "domcontentloaded"}),
+        ),
+        benchmark_step=ToolInvocation(
+            "interact",
+            {"mode": "click", "frame_path": "root", "selector": ".server-button[data-server='2']", "wait_ms": 1200},
+        ),
+        tags=("actions", "legacy"),
+    ),
+    "screenshot": ToolBenchmarkCase(
+        tool_name="screenshot",
+        profile="hosting",
+        description="Legacy screenshot wrapper.",
+        scenario="Backward-compatible screenshot capture path.",
+        setup_steps=(
+            ToolInvocation("open_url", {"url": "{base_url}/hosting", "wait_until": "networkidle2"}),
+        ),
+        benchmark_step=ToolInvocation("screenshot", {}),
+        tags=("media", "legacy"),
+    ),
+    "harvest": ToolBenchmarkCase(
+        tool_name="harvest",
+        profile="hosting",
+        description="Legacy stream harvesting wrapper.",
+        scenario="Backward-compatible stream extraction path.",
+        setup_steps=(
+            ToolInvocation("open_url", {"url": "{base_url}/hosting", "wait_until": "networkidle2"}),
+            ToolInvocation("play_media", {"frame_path": "root.0", "selector": "video", "wait_ms": 1500}),
+        ),
+        benchmark_step=ToolInvocation("harvest", {"duration_ms": 12000, "player_iframe_url": "{base_url}/player"}),
+        tags=("media", "legacy"),
+    ),
+    "memory_lookup": ToolBenchmarkCase(
+        tool_name="memory_lookup",
+        profile="classification",
+        description="Lookup memory context before running classification decisions.",
+        scenario="Memory-aware classification warmup.",
+        benchmark_step=ToolInvocation("memory_lookup", {"query": "sports stream host", "k": 5}),
+        tags=("memory", "context"),
+    ),
+    "memory_update": ToolBenchmarkCase(
+        tool_name="memory_update",
+        profile="classification",
+        description="Persist an outcome signal into memory after run completion.",
+        scenario="Memory write-back path.",
+        benchmark_step=ToolInvocation(
+            "memory_update",
+            {
+                "key": "last_provider",
+                "value": {"provider": "example-cdn", "source": "benchmark"},
+            },
+        ),
+        tags=("memory", "write"),
+    ),
     "open_url": ToolBenchmarkCase(
         tool_name="open_url",
         profile="classification",

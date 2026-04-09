@@ -114,9 +114,18 @@ app.get('/mcp/:profile/sse', async (req, res) => {
   let browserWsEndpoint = BROWSER_WS;
 
   if (BROWSER_MODE === 'isolated') {
-    browserSession = await launchEphemeralBrowser(transport.sessionId);
-    browserWsEndpoint = browserSession.wsEndpoint;
-    console.log(`[MCP] Isolated browser started for ${transport.sessionId}: ${browserWsEndpoint}`);
+    try {
+      browserSession = await launchEphemeralBrowser(transport.sessionId);
+      browserWsEndpoint = browserSession.wsEndpoint;
+      console.log(`[MCP] Isolated browser started for ${transport.sessionId}: ${browserWsEndpoint}`);
+    } catch (error) {
+      console.error(
+        `[MCP] Isolated browser launch failed for ${transport.sessionId}; using shared fallback ${BROWSER_WS}`,
+        error,
+      );
+      browserSession = null;
+      browserWsEndpoint = BROWSER_WS;
+    }
   }
 
   const server = buildServer(profile, browserWsEndpoint);

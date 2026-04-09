@@ -852,10 +852,10 @@ export async function buildEnvelope(page, {
   });
 }
 
-export async function withBrowserSession(browserWsEndpoint, run) {
+export async function withBrowserSession(browserWsEndpoint, run, pageOptions = {}) {
   const browser = await connectBrowser(browserWsEndpoint);
   try {
-    const page = await getPage(browser);
+    const page = await getPage(browser, pageOptions);
     return await run({ browser, page });
   } finally {
     await browser.disconnect();

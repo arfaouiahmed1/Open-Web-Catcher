@@ -2,7 +2,13 @@
  * tools/navigate.js — Navigate to a URL, handle redirects.
  */
 
-import { connectBrowser, getPage } from '../shared/browser.js';
+import {
+  connectBrowser,
+  getPage,
+  getIframeDiagnostics,
+  getPageNetworkDiagnostics,
+  retryNavigationAfterAutoRecovery,
+} from '../shared/browser.js';
 import { screenshotFull } from '../shared/screenshot.js';
 import { detectAccessStateFromSignals } from '../shared/tool-runtime.js';
 
@@ -94,7 +100,7 @@ export async function navigate({
 
   const browser = await connectBrowser(browserWsEndpoint);
   try {
-    const page = await getPage(browser);
+    const page = await getPage(browser, { targetUrl: url });
     const beforeUrl = page.url();
 
     const redirectChain = [];
@@ -133,10 +139,23 @@ export async function navigate({
       page.off('response', responseListener);
     }
 
+    const recovery_attempt = await retryNavigationAfterAutoRecovery(page, {
+      url,
+      waitUntil: wait_until_used || wait_until,
+      timeoutMs: timeout_ms,
+    });
+
+    if (recovery_attempt.attempted && recovery_attempt.succeeded) {
+      success = true;
+      error = null;
+    }
+
     const finalUrl = page.url();
     const navigated = beforeUrl !== finalUrl;
     const title = await page.title().catch(() => '');
     const access_state = await readAccessState(page);
+    const network_diagnostics = getPageNetworkDiagnostics(page, { limit: 40 });
+    const iframe_diagnostics = await getIframeDiagnostics(page, { limit: 24 });
 
     let screenshot_url = null;
     try {
@@ -176,6 +195,9 @@ export async function navigate({
       wait_until_used,
       goto_attempts,
       access_state,
+      network_diagnostics,
+      iframe_diagnostics,
+      recovery_attempt,
     };
   } finally {
     await browser.disconnect();
