@@ -33,6 +33,7 @@ from src.storage.models import (
     TakedownEmailRecord,
     ToolCallRecord,
 )
+from src.utils.instrumentation import estimate_usage_cost
 from src.utils.observability import RunTrace
 
 _PROMPT_PATHS = {
@@ -196,6 +197,8 @@ class RunRepository:
                 "input_tokens": row.input_tokens,
                 "output_tokens": row.output_tokens,
                 "estimated_total_cost_usd": row.estimated_total_cost_usd,
+                "total_cost_usd": row.estimated_total_cost_usd,
+                "cost_source": (row.usage_metadata_json or {}).get("cost_source", ""),
                 "tool_calls_requested": row.tool_calls_requested,
                 "tools_requested": row.tools_requested,
                 "content_preview": row.content_preview,
@@ -479,6 +482,42 @@ class RunRepository:
             llm_seq += 1
             details = event.details or {}
             prompt_details = details.get("prompt", {}) or ctx.get("prompt", {}) or {}
+            input_tokens = int(details.get("input_tokens", 0) or 0)
+            output_tokens = int(details.get("output_tokens", 0) or 0)
+            estimated_input_cost_usd = float(details.get("estimated_input_cost_usd", 0.0) or 0.0)
+            estimated_output_cost_usd = float(details.get("estimated_output_cost_usd", 0.0) or 0.0)
+            estimated_total_cost_usd = float(details.get("estimated_total_cost_usd", 0.0) or 0.0)
+
+            if estimated_total_cost_usd == 0.0:
+                pricing = details.get("pricing", {}) or {}
+                fallback = estimate_usage_cost(
+                    input_tokens,
+                    output_tokens,
+                    input_per_million=float(pricing.get("input_per_million", 0.0) or 0.0),
+                    output_per_million=float(pricing.get("output_per_million", 0.0) or 0.0),
+                )
+                estimated_input_cost_usd = float(fallback["estimated_input_cost_usd"])
+                estimated_output_cost_usd = float(fallback["estimated_output_cost_usd"])
+                estimated_total_cost_usd = float(fallback["estimated_total_cost_usd"])
+
+            usage_metadata = details.get("usage_metadata", {}) or {}
+            if isinstance(usage_metadata, dict):
+                usage_metadata = {
+                    **usage_metadata,
+                    "cost_source": str(details.get("cost_source", "") or ""),
+                    "estimated_input_cost_usd": estimated_input_cost_usd,
+                    "estimated_output_cost_usd": estimated_output_cost_usd,
+                    "estimated_total_cost_usd": estimated_total_cost_usd,
+                }
+            else:
+                usage_metadata = {
+                    "raw": usage_metadata,
+                    "cost_source": str(details.get("cost_source", "") or ""),
+                    "estimated_input_cost_usd": estimated_input_cost_usd,
+                    "estimated_output_cost_usd": estimated_output_cost_usd,
+                    "estimated_total_cost_usd": estimated_total_cost_usd,
+                }
+
             self._session.add(
                 LLMCallRecord(
                     agent_run_id=agent_run_id,
@@ -488,15 +527,15 @@ class RunRepository:
                     prompt_version=str(prompt_details.get("prompt_version", "") or ""),
                     prompt_hash=str(prompt_details.get("prompt_hash", "") or ""),
                     cache_mode=str(prompt_details.get("cache_mode", "") or ""),
-                    input_tokens=int(details.get("input_tokens", 0) or 0),
-                    output_tokens=int(details.get("output_tokens", 0) or 0),
-                    estimated_input_cost_usd=0.0,
-                    estimated_output_cost_usd=0.0,
-                    estimated_total_cost_usd=0.0,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    estimated_input_cost_usd=estimated_input_cost_usd,
+                    estimated_output_cost_usd=estimated_output_cost_usd,
+                    estimated_total_cost_usd=estimated_total_cost_usd,
                     tool_calls_requested=int(details.get("tool_calls", 0) or 0),
                     tools_requested=details.get("tool_call_names", []) or [],
                     content_preview=str(details.get("content_preview", "") or ""),
-                    usage_metadata_json=details.get("usage_metadata", {}) or {},
+                    usage_metadata_json=usage_metadata,
                     response_metadata_json=details.get("response_metadata", {}) or {},
                     created_at=event.timestamp,
                 )

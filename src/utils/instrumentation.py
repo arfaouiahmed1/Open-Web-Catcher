@@ -73,16 +73,23 @@ def resolve_dataset_dir(settings: Settings) -> Path:
 
 
 def resolve_model_pricing_config(settings: Settings) -> dict[str, dict[str, Any]]:
-    raw = _clean_value(os.getenv("MODEL_PRICING_JSON")) or settings.model_pricing_json
-    if not raw:
-        return {}
+    raw_candidates = [
+        _clean_value(os.getenv("MODEL_PRICING_JSON")),
+        settings.model_pricing_json,
+    ]
+    parsed: dict[str, Any] = {}
+    for raw in raw_candidates:
+        if not raw:
+            continue
+        try:
+            candidate = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict):
+            parsed = candidate
+            break
 
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
-
-    if not isinstance(parsed, dict):
+    if not parsed:
         return {}
 
     normalized: dict[str, dict[str, Any]] = {}
@@ -90,19 +97,71 @@ def resolve_model_pricing_config(settings: Settings) -> dict[str, dict[str, Any]
         if not isinstance(model_name, str) or not isinstance(config, dict):
             continue
 
-        normalized[model_name.strip().lower()] = {
-            "provider": str(config.get("provider", "") or "").strip(),
+        provider = str(config.get("provider", "") or "").strip().lower()
+        model_key = model_name.strip().lower()
+        payload = {
+            "provider": provider,
             "input_per_million": float(config.get("input_per_million", 0.0) or 0.0),
             "output_per_million": float(config.get("output_per_million", 0.0) or 0.0),
         }
+        normalized[model_key] = payload
+        if provider:
+            normalized[f"{provider}::{model_key}"] = payload
     return normalized
 
 
 def resolve_model_pricing(settings: Settings, model_name: str, provider: str = "") -> dict[str, Any]:
     pricing = resolve_model_pricing_config(settings)
-    match = pricing.get((model_name or "").strip().lower(), {})
+    model_key = (model_name or "").strip().lower()
+    provider_key = (provider or "").strip().lower()
+    if provider_key in {"google_genai", "gemini"}:
+        provider_key = "google"
+    composite_key = f"{provider_key}::{model_key}" if provider_key else ""
+
+    match = pricing.get(composite_key, {}) if composite_key else {}
+    if not match:
+        match = pricing.get(model_key, {})
+
+    # Fallback: normalize provider/model prefixes and date-like suffixes.
+    if not match and model_key:
+        candidates: list[str] = []
+        if "/" in model_key:
+            candidates.append(model_key.split("/", 1)[1].strip())
+        sanitized = model_key
+        # Normalize Anthropic-style version/date suffixes and dotted version tags.
+        sanitized = sanitized.replace(".", "-")
+        sanitized = sanitized.rstrip("-")
+        candidates.append(sanitized)
+        candidates.append(sanitized.split("-20", 1)[0] if "-20" in sanitized else sanitized)
+
+        seen: set[str] = set()
+        for candidate in candidates:
+            key = (candidate or "").strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            if provider_key:
+                composite_candidate = f"{provider_key}::{key}"
+                match = pricing.get(composite_candidate, {})
+                if match:
+                    break
+            match = pricing.get(key, {})
+            if match:
+                break
+
+        # Final fallback: prefix match by provider then model.
+        if not match:
+            model_candidates = [item for item in seen if item]
+            for key, value in pricing.items():
+                if provider_key and not key.startswith(f"{provider_key}::"):
+                    continue
+                normalized_key = key.split("::", 1)[1] if "::" in key else key
+                if any(model.startswith(normalized_key) or normalized_key.startswith(model) for model in model_candidates):
+                    match = value
+                    break
+
     return {
-        "provider": str(match.get("provider") or provider or "").strip(),
+        "provider": str(match.get("provider") or provider_key or "").strip(),
         "input_per_million": float(match.get("input_per_million", 0.0) or 0.0),
         "output_per_million": float(match.get("output_per_million", 0.0) or 0.0),
     }

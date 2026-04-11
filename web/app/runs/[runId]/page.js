@@ -40,7 +40,7 @@ export default async function RunDetailPage({ params }) {
           <KpiCard label="Events"     value={formatNumber((trace.events || []).length)} />
           <KpiCard label="LLM Calls"  value={formatNumber(metrics.total_llm_calls || 0)} />
           <KpiCard label="Tool Calls" value={formatNumber(metrics.total_tool_calls || 0)} />
-          <KpiCard label="Cost"       value={formatCurrency(metrics.estimated_total_cost_usd || 0)} />
+          <KpiCard label="Cost"       value={formatCurrency(metrics.total_cost_usd ?? metrics.estimated_total_cost_usd ?? 0)} />
         </div>
         <JsonViewer label="Active Trace" value={trace} />
       </div>
@@ -61,7 +61,7 @@ export default async function RunDetailPage({ params }) {
     { label: "Emails",      value: formatNumber(run.email_count || 0) },
     { label: "LLM Calls",   value: formatNumber(run.total_llm_calls || 0) },
     { label: "Tool Calls",  value: formatNumber(run.total_tool_calls || 0) },
-    { label: "Total Cost",  value: formatCurrency(run.estimated_total_cost_usd || 0) },
+    { label: "Total Cost",  value: formatCurrency(run.total_cost_usd ?? run.estimated_total_cost_usd ?? 0) },
   ];
 
   return (
@@ -105,7 +105,7 @@ export default async function RunDetailPage({ params }) {
         <DataTable
           title="LLM Calls"
           description="Prompt, token, and cost telemetry"
-          columns={["seq","provider","model_name","input_tokens","output_tokens","estimated_total_cost_usd"]}
+          columns={["seq","provider","model_name","input_tokens","output_tokens","total_cost_usd","cost_source"]}
           rows={llmCalls}
         />
         <DataTable

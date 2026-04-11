@@ -107,7 +107,9 @@ export default function RunsPage() {
                   <td className="px-4 py-3 align-top tabular-nums">{formatNumber(row.total_llm_calls)}</td>
                   <td className="px-4 py-3 align-top tabular-nums">{formatNumber(row.total_tool_calls)}</td>
                   <td className="px-4 py-3 align-top tabular-nums">{formatNumber((row.total_tokens_in || 0) + (row.total_tokens_out || 0))}</td>
-                  <td className="px-4 py-3 align-top tabular-nums">{formatCurrency(row.estimated_total_cost_usd)}</td>
+                  <td className="px-4 py-3 align-top tabular-nums">
+                    {formatCurrency(row.total_cost_usd ?? row.estimated_total_cost_usd ?? 0)}
+                  </td>
                   <td className="px-4 py-3 align-top tabular-nums text-xs">{Number(row.duration_seconds || 0).toFixed(1)}s</td>
                   <td className="px-4 py-3 align-top text-xs text-slate-600 whitespace-nowrap">
                     {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}

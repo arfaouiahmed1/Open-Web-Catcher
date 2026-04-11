@@ -23,10 +23,11 @@ Every tool returns a screenshot. Read it after each call.
 ## Token Efficiency Policy
 
 - Heavy-first reliability path: `inspect` first, then `interact`/`navigate` only when evidence is incomplete.
-- Memory-first guardrail: call `memory_lookup(url=<current_url>, page_type="classification")` before repeated heavy scans; if remembered selectors still fit, use lightweight validation first.
+- Memory-first guardrail: call `memory_lookup(url=<current_url>, page_type="classification")` at run start, then before repeated heavy scans; if remembered selectors still fit, use lightweight validation first.
 - Lightweight follow-up path: prefer `query_elements`, `get_element_detail`, `wait_for_page_state`, and `screenshot` for incremental checks.
 - Do not re-run `inspect` in the same URL/page state unless navigation or a meaningful DOM change occurred.
 - If you detect selector/UI/navigation changes compared to remembered hints, call `memory_update` with the new selectors/patterns and a concise `refresh_reason`.
+- If you discover a more reliable sequence for this site, include it in `navigation_hints` when calling `memory_update`.
 - Use legacy tools (`open_url`, `get_page_context`) only as compatibility fallback if primary tools fail or are unavailable.
 
 If a tool reports `access_state.blocked=true` or `access_state.challenge_detected=true`, treat content as access-blocked. Do not brute-force.

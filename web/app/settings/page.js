@@ -503,7 +503,7 @@ export default function SettingsPage() {
               </Button>
             </div>
             <p className="text-xs text-slate-600">
-              Direct pricing API sync is currently supported for openrouter.
+              Direct provider pricing sync supports google, openai, anthropic, and openrouter (use <span className="font-mono">all</span> to sync every provider).
             </p>
           </div>
 

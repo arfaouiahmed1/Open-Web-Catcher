@@ -947,7 +947,7 @@ export function RunStudio({ mode = "workflow" }) {
               <Pill icon={CircleDot}  label="cached tok" value={formatNumber(cachedInputTokens)} />
               <Pill icon={CircleDot}  label="new tok" value={formatNumber(newInputTokens)} />
               <Pill icon={Zap}        label="tokens" value={formatNumber(totalTokens)} />
-              <Pill icon={DollarSign} label="cost"   value={formatCurrency(metrics?.estimated_total_cost_usd || 0)} />
+              <Pill icon={DollarSign} label="cost"   value={formatCurrency(metrics?.total_cost_usd ?? metrics?.estimated_total_cost_usd ?? 0)} />
               {duration != null && <Pill icon={Clock} label="time" value={`${duration.toFixed(1)}s`} />}
               {errorCount > 0 && <Pill icon={AlertCircle} label="errors" value={errorCount} danger />}
             </div>

@@ -35,6 +35,7 @@ def client(api_settings: Settings):
     with patch.object(api_app, "_settings", api_settings), \
          patch.object(api_app, "setup_tracing_from_settings"), \
          patch.object(api_app, "create_tables"), \
+         patch.object(api_app, "_auto_sync_provider_pricing"), \
          patch.object(api_app, "probe_browser", return_value={"healthy": True}), \
          patch.object(api_app, "probe_mcp", return_value={"healthy": True}):
         with TestClient(api_app.app) as test_client:
@@ -65,6 +66,7 @@ def test_extract_routes_to_hosting_agent(api_settings: Settings):
     with patch.object(api_app, "_settings", api_settings), \
          patch.object(api_app, "setup_tracing_from_settings"), \
          patch.object(api_app, "create_tables"), \
+         patch.object(api_app, "_auto_sync_provider_pricing"), \
          patch("src.agents.hosting_page.HostingPageAgent.run", new=AsyncMock(return_value=extraction)):
         with TestClient(api_app.app) as test_client:
             response = test_client.post(

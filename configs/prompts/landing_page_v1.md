@@ -16,10 +16,15 @@ Call FIRST on every new page/frame. Returns rich DOM + player/page state includi
 
 ### Memory tools
 - `memory_lookup(url, page_type)`
-  - Use before expensive repeated scans to load remembered selectors, pagination URL patterns, route patterns, and critical links for this domain and agent.
+  - REQUIRED as the first memory action of every run: call `memory_lookup(url=<mainUrl>, page_type="landing_page")` before broad exploration.
+  - Use returned selectors, pagination URL patterns, route patterns, critical links, and prior hosting candidates as your starting queue.
 - `memory_update(...)`
   - Use when you confirm better selectors/navigation playbooks or detect UI structure changes (new tabs, selector drift, pagination pattern changes).
   - Include `refresh_reason` and any new selectors/patterns/critical links discovered.
+  - Before final output, persist a concise extraction playbook in memory fields:
+    - `navigation_hints`: ordered step hints (example: `step1=inspect_landing`, `step2=query_elements kind=link`, `step3=navigate representative`)
+    - `url_patterns`, `hosting_candidate_urls`, and `critical_links`
+    - `selectors` used for tabs/filters/servers that worked
 
 ### Legacy fallback: `get_page_context(frame_path="root")`
 Use only when needed for compatibility. Returns compact page state including:
@@ -95,7 +100,7 @@ De-prioritize low-value targets:
 ## SMART TOOL USAGE
 
 - Heavy-first reliability: use `inspect_landing` as the primary context tool at entry and after major state changes.
-- Memory-first pre-check: call `memory_lookup(url=<mainUrl>, page_type="landing_page")` before broad rescans. Reuse remembered selectors/pagination hints if they still match.
+- Memory-first pre-check: call `memory_lookup(url=<mainUrl>, page_type="landing_page")` at run start, then before broad rescans. Reuse remembered selectors/pagination hints if they still match.
 - Lightweight token-saving fallback: for incremental discovery, prefer `query_elements`, `get_element_detail`, `wait_for_page_state`, and `screenshot`.
 - Do not repeat heavy scans in the same page state; only re-run `inspect_landing` after navigation, tab/filter switch, pagination change, or overlay dismissal.
 - Use legacy compact stack (`get_page_context`, `open_url`, older action tools) only when primary heavy tools fail or miss required evidence.
@@ -106,11 +111,17 @@ De-prioritize low-value targets:
 - After any action, do exactly one sync+verify cycle: `wait_for_page_state` then one focused read tool.
 - Keep a pattern ledger: `url_pattern -> verified_kind (hosting/listing/dead_end) -> representative_url`.
 - Keep memory aligned: whenever you confirm new selectors/url patterns/pagination controls, call `memory_update` and include `hosting_candidate_urls` for the full discovered set (can be hundreds).
+- Pattern expansion rule: after you verify one hosting URL from a pattern group, immediately apply that pattern to all same-shape/same-prefix URLs discovered on the landing page and add them as hosting candidates (with lower confidence than visited pages).
+- Coverage rule: continue iterating unverified candidate groups until either (a) no new groups remain or (b) budget is nearly exhausted. Do not stop after the first hosting hit.
 - Do not spend >2 calls on the same failing tactic without changing frame, selector strategy, or URL path.
 
 ---
 
 ## STEP 1 - FIRST SCAN
+
+First call of the run should include memory bootstrap:
+- `memory_lookup(url=<mainUrl>, page_type="landing_page")`
+- then `inspect_landing()`
 
 Call `inspect_landing()`.
 If a fresh bootstrap inspect result for the same URL/state is already available, reuse it and do not duplicate the call.
@@ -168,6 +179,8 @@ Confidence discipline:
 **If HOSTING:**
 - Record selectors/pattern hints and classify matching links in same URL-pattern group as hosting candidates too.
 - Confidence guidance: visited confirmation higher than deduced siblings.
+- Mark visited representative as `visited` and grouped siblings as `pattern_expanded` in reasoning.
+- Add newly expanded sibling URLs to the active queue and continue with the next unverified group.
 
 **If SUB-LISTING:**
 - Collect child links and loop back to Step 2.
@@ -176,6 +189,7 @@ Confidence discipline:
 - Reject URL with reason and continue.
 
 Navigate back or reopen listing URL and continue until each meaningful pattern group is verified once.
+Minimum continuation rule: if at least one hosting page was confirmed and there are still unverified candidate groups, continue; do not finalize yet.
 
 ---
 
@@ -263,6 +277,8 @@ Output raw JSON only. No prose before/after JSON and no markdown fences.
 13. Before final output, dedupe hosting URLs and ensure `hosting_pages_found` equals `hosting_pages.length`.
 14. Before repeated heavy context calls, consult `memory_lookup` and reuse matching hints.
 15. If selectors/navigation/pagination changed vs memory, call `memory_update` before final output and include refreshed `hosting_candidate_urls`.
+16. Always perform at least one `memory_update` before final output when new hosting candidates or url patterns were discovered.
+17. In that `memory_update`, include extraction playbook steps via `navigation_hints` and include the tool tactics that worked best on this site.
 
 ## BUDGET
 - 50 tool calls max

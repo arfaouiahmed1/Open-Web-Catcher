@@ -677,6 +677,8 @@ async def run_agent_loop(
     turn_context_provider: Callable[[AgentGraphState], str] | None = None,
     bootstrap_url: str = "",
     bootstrap_context_first: bool = False,
+    bootstrap_memory_lookup_first: bool = False,
+    bootstrap_memory_page_type: str = "",
 ) -> AgentLoopResult:
     """Run an async LangGraph agent loop with structured tool calling."""
     prompt_meta = dict(prompt_metadata or {})
@@ -751,6 +753,8 @@ async def run_agent_loop(
                 "tool_result_cache_min_identical_observations": required_identical_observations,
                 "bootstrap_url": bootstrap_url,
                 "bootstrap_context_first": bootstrap_context_first,
+                "bootstrap_memory_lookup_first": bootstrap_memory_lookup_first,
+                "bootstrap_memory_page_type": str(bootstrap_memory_page_type or ""),
             },
         )
 
@@ -821,6 +825,23 @@ async def run_agent_loop(
             working_memory.ingest_tool_result(tool_name, tool_args, result_content)
 
         return status, result_content
+
+    if bootstrap_url and bootstrap_memory_lookup_first and "memory_lookup" in tool_map:
+        memory_lookup_args: dict[str, Any] = {"url": bootstrap_url}
+        resolved_bootstrap_page_type = str(bootstrap_memory_page_type or "").strip()
+        if resolved_bootstrap_page_type:
+            memory_lookup_args["page_type"] = resolved_bootstrap_page_type
+
+        status_mem, result_mem = await _run_bootstrap_tool("memory_lookup", memory_lookup_args)
+        bootstrap_messages.append(
+            HumanMessage(
+                content=(
+                    "BOOTSTRAP RESULT (memory_lookup):\n"
+                    f"status={status_mem}\n"
+                    f"payload={result_mem[:6000]}"
+                )
+            )
+        )
 
     if bootstrap_url:
         nav_tool_name = "navigate" if "navigate" in tool_map else "open_url"
@@ -973,7 +994,7 @@ async def run_agent_loop(
 
         if observer is not None:
             observer.record_message("ai")
-            observer.add_llm_usage(
+            usage_rollup = observer.add_llm_usage(
                 getattr(response, "usage_metadata", None),
                 model_name=model_name,
                 provider=provider,
@@ -1008,6 +1029,11 @@ async def run_agent_loop(
                     "new_input_tokens": _to_int(cache_metrics.get("new_input_tokens")),
                     "provider_cache_active": provider_cache_active,
                     "gemini_cached_content_source": gemini_cached_content_source,
+                    "estimated_input_cost_usd": float(usage_rollup.get("estimated_input_cost_usd", 0.0) or 0.0),
+                    "estimated_output_cost_usd": float(usage_rollup.get("estimated_output_cost_usd", 0.0) or 0.0),
+                    "estimated_total_cost_usd": float(usage_rollup.get("estimated_total_cost_usd", 0.0) or 0.0),
+                    "cost_source": str(usage_rollup.get("cost_source", "") or "provider_pricing_catalog"),
+                    "pricing": usage_rollup.get("pricing", {}),
                 },
             )
         if working_memory is not None and response.content:
@@ -1298,7 +1324,7 @@ async def run_agent_loop(
                 llm_cache_hit_calls += 1
             llm_cached_input_tokens += _to_int(final_cache_metrics.get("cached_input_tokens"))
             llm_new_input_tokens += _to_int(final_cache_metrics.get("new_input_tokens"))
-            observer.add_llm_usage(
+            usage_rollup = observer.add_llm_usage(
                 getattr(final, "usage_metadata", None),
                 model_name=model_name,
                 provider=provider,
@@ -1306,6 +1332,39 @@ async def run_agent_loop(
                 response_metadata=getattr(final, "response_metadata", None),
                 additional_kwargs=getattr(final, "additional_kwargs", None),
                 cache_metrics=final_cache_metrics,
+            )
+            observer.emit(
+                "llm_response",
+                "Model responded",
+                details={
+                    "provider": provider,
+                    "model_name": model_name,
+                    "tool_calls": len(final.tool_calls or []),
+                    "tool_call_names": [call.get("name", "") for call in (final.tool_calls or [])],
+                    "tool_calls_payload": _json_ready(final.tool_calls or []),
+                    "has_text": bool(final.content),
+                    "message_count": len(state["messages"]) + 1,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "usage_metadata": _json_ready(getattr(final, "usage_metadata", None)),
+                    "response_metadata": _json_ready(getattr(final, "response_metadata", None)),
+                    "additional_kwargs": _json_ready(getattr(final, "additional_kwargs", None)),
+                    "response_class": type(final).__name__,
+                    "content_preview": (final.content or "")[:1200],
+                    "content_full": final.content or "",
+                    "prompt": prompt_meta,
+                    "phase": "budget_exhausted_final_answer",
+                    "cache_hit": bool(final_cache_metrics.get("cache_hit", False)),
+                    "cached_input_tokens": _to_int(final_cache_metrics.get("cached_input_tokens")),
+                    "new_input_tokens": _to_int(final_cache_metrics.get("new_input_tokens")),
+                    "provider_cache_active": provider_cache_active,
+                    "gemini_cached_content_source": gemini_cached_content_source,
+                    "estimated_input_cost_usd": float(usage_rollup.get("estimated_input_cost_usd", 0.0) or 0.0),
+                    "estimated_output_cost_usd": float(usage_rollup.get("estimated_output_cost_usd", 0.0) or 0.0),
+                    "estimated_total_cost_usd": float(usage_rollup.get("estimated_total_cost_usd", 0.0) or 0.0),
+                    "cost_source": str(usage_rollup.get("cost_source", "") or "provider_pricing_catalog"),
+                    "pricing": usage_rollup.get("pricing", {}),
+                },
             )
 
         return {"messages": [budget_message, final], "budget_exhausted": False}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from src.models.enums import AgentType
 from src.utils.config import Settings
+from src.utils.instrumentation import resolve_model_pricing
 from src.utils.observability import ObservabilityStatus, RunRegistry, get_observability_status
 
 
@@ -66,3 +67,21 @@ def test_run_registry_tracks_events_metrics_and_costs():
     assert trace.metrics.agents_invoked == [AgentType.ORCHESTRATOR]
     assert trace.completed is True
     assert trace.events[0].message == "Pipeline started"
+
+
+def test_model_pricing_resolution_handles_provider_prefixes_and_suffixes():
+    settings = Settings(
+        **{
+            "MODEL_PRICING_JSON": '{"claude-sonnet-4-6":{"provider":"anthropic","input_per_million":3.0,"output_per_million":15.0}}'
+        }
+    )
+
+    pricing = resolve_model_pricing(
+        settings,
+        model_name="claude-sonnet-4-6-20251001",
+        provider="anthropic",
+    )
+
+    assert pricing["provider"] == "anthropic"
+    assert pricing["input_per_million"] == 3.0
+    assert pricing["output_per_million"] == 15.0

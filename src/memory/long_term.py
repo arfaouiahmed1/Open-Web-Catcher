@@ -430,6 +430,7 @@ class LongTermMemory:
         url_pattern_counts: Counter[str] = Counter()
         pagination_counts: Counter[str] = Counter()
         critical_link_counts: Counter[str] = Counter()
+        latest_step_playbook: list[str] = []
         failure_patterns: list[str] = []
         successes = 0
 
@@ -444,6 +445,8 @@ class LongTermMemory:
             url_pattern_counts.update(data.get("url_patterns", []))
             pagination_counts.update(data.get("pagination_patterns", []))
             critical_link_counts.update(data.get("critical_links", []))
+            if not latest_step_playbook and data.get("success"):
+                latest_step_playbook = _coerce_string_list(data.get("tool_steps", []))
             if not data.get("success") and data.get("result_summary"):
                 failure_patterns.append(str(data["result_summary"]))
 
@@ -460,6 +463,11 @@ class LongTermMemory:
             lines.append(
                 "- often useful tools: "
                 + ", ".join(f"`{tool}` x{count}" for tool, count in tool_counts.most_common(5))
+            )
+        if latest_step_playbook:
+            lines.append(
+                "- latest successful step playbook: "
+                + " -> ".join(f"`{step}`" for step in latest_step_playbook[:8])
             )
         if target_counts:
             lines.append(
@@ -662,6 +670,7 @@ class LongTermMemory:
             "server_stream_urls": _coerce_string_list(entry.get("server_stream_urls", [])),
             "activated_servers": _coerce_string_list(entry.get("activated_servers", [])),
         }
+        patch["navigation_hints"].extend(_coerce_string_list(entry.get("tool_steps", [])))
 
         for target in patch["navigation_hints"]:
             if "=" not in target:
@@ -846,6 +855,7 @@ def build_site_memory_entry(
     short_memory_summary: str,
 ) -> dict[str, Any]:
     tool_sequence: list[str] = []
+    tool_steps: list[str] = []
     navigation_targets: list[str] = []
     selectors: list[str] = []
     url_patterns: list[str] = []
@@ -867,6 +877,25 @@ def build_site_memory_entry(
                 if tool_name:
                     tool_sequence.append(tool_name)
                 args = details.get("tool_args", {}) or {}
+                if tool_name:
+                    step_target = ""
+                    for key in (
+                        "url",
+                        "mainUrl",
+                        "frame_path",
+                        "kind",
+                        "selector",
+                        "xpath",
+                        "text",
+                        "action",
+                        "mode",
+                        "player_iframe_url",
+                    ):
+                        value = args.get(key)
+                        if value:
+                            step_target = f"{key}={value}"
+                            break
+                    tool_steps.append(f"{tool_name}({step_target})" if step_target else tool_name)
                 for key in ("url", "mainUrl", "player_iframe_url", "base_url"):
                     if args.get(key):
                         candidate_url = str(args[key])
@@ -1027,6 +1056,7 @@ def build_site_memory_entry(
     is_stream_page = page_type in {"hosting_page", "embedded_page"}
 
     tool_limit = 24
+    tool_step_limit = 80
     navigation_limit = 80 if is_landing else 36
     selector_limit = 72 if is_landing else 52 if is_stream_page else 24
     url_pattern_limit = 120 if is_landing else 80 if is_stream_page else 28
@@ -1047,6 +1077,7 @@ def build_site_memory_entry(
         "status": status,
         "success": status in {"success", "partial"},
         "tool_sequence": _dedupe_keep_order(tool_sequence)[:tool_limit],
+        "tool_steps": _dedupe_keep_order(tool_steps)[:tool_step_limit],
         "navigation_targets": _dedupe_keep_order(navigation_targets)[:navigation_limit],
         "selectors": _dedupe_keep_order(selectors)[:selector_limit],
         "url_patterns": _dedupe_keep_order(url_patterns)[:url_pattern_limit],

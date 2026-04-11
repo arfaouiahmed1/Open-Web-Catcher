@@ -77,13 +77,13 @@ export default async function OverviewPage() {
         <DataTable
           title="Recent Runs"
           description="Latest persisted orchestrator runs"
-          columns={["run_id","url","final_status","stream_count","estimated_total_cost_usd","duration_seconds","created_at"]}
+          columns={["run_id","url","final_status","stream_count","total_cost_usd","duration_seconds","created_at"]}
           rows={overview.recent_runs || []}
         />
         <DataTable
           title="Active Runs"
           description="In-memory runs still streaming"
-          columns={["run_id","root_actor","event_count","completed","total_tool_calls","estimated_total_cost_usd"]}
+          columns={["run_id","root_actor","event_count","completed","total_tool_calls","total_cost_usd"]}
           rows={overview.active_runs || []}
         />
       </section>

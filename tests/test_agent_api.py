@@ -54,6 +54,7 @@ def client(api_settings: Settings):
         patch.object(api_app, "_settings", api_settings),
         patch.object(api_app, "setup_tracing_from_settings"),
         patch.object(api_app, "create_tables"),
+        patch.object(api_app, "_auto_sync_provider_pricing"),
         patch.object(api_app, "probe_browser", return_value={"healthy": True}),
         patch.object(api_app, "probe_mcp", return_value={"healthy": True}),
     ):
@@ -426,9 +427,9 @@ class TestUiWorkflowRunEndpoint:
 
 class TestPricingSyncEndpoint:
     def test_sync_pricing_endpoint_unsupported_provider(self, client: TestClient):
-        response = client.post("/ui/pricing/sync", json={"provider": "google"})
+        response = client.post("/ui/pricing/sync", json={"provider": "mistral"})
         assert response.status_code == 400
-        assert "openrouter" in response.json()["detail"].lower()
+        assert "supports" in response.json()["detail"].lower()
 
     def test_sync_pricing_endpoint_persists_rows(self, client: TestClient):
         from src.models.schemas import PricingConfig

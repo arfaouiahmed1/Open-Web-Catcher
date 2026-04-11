@@ -116,6 +116,45 @@ async def test_landing_page_agent_success(mock_build_llm, mock_agent_tools, mock
     )
 
 
+def test_landing_output_expands_pattern_matched_candidates_from_run_memory():
+    from src.agents.landing_page import _augment_landing_output
+
+    output_json = {
+        "hosting_pages": [
+            {
+                "url": "https://example.com/watch/team-a-vs-team-b",
+                "title": "Team A vs Team B",
+                "confidence": 92,
+            }
+        ],
+        "site_patterns": {},
+    }
+    run_memory = {
+        "hosting_candidate_urls": [
+            "https://example.com/watch/team-c-vs-team-d",
+        ],
+        "common": {
+            "critical_links": [
+                "https://example.com/watch/team-e-vs-team-f",
+                "https://example.com/privacy",
+            ]
+        },
+    }
+
+    augmented, expanded = _augment_landing_output(
+        output_json,
+        source_url="https://example.com/live",
+        run_memory=run_memory,
+    )
+
+    urls = [entry["url"] for entry in augmented["hosting_pages"]]
+    assert "https://example.com/watch/team-a-vs-team-b" in urls
+    assert "https://example.com/watch/team-c-vs-team-d" in urls
+    assert "https://example.com/watch/team-e-vs-team-f" in urls
+    assert "https://example.com/privacy" not in urls
+    assert expanded >= 2
+
+
 @pytest.mark.asyncio
 @patch("src.agents.hosting_page.run_agent_loop", new_callable=AsyncMock)
 @patch("src.agents.hosting_page.agent_tools")

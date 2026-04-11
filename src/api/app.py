@@ -182,11 +182,17 @@ def _merged_pricing_config(settings: Settings, config: PricingConfig) -> dict[st
         merged = {}
     if not isinstance(merged, dict):
         merged = {}
-    merged[config.model_name] = {
+    payload = {
         "provider": config.provider,
         "input_per_million": config.input_per_million,
         "output_per_million": config.output_per_million,
     }
+    model_key = str(config.model_name or "").strip()
+    provider_key = str(config.provider or "").strip().lower()
+    if model_key:
+        merged[model_key] = payload
+        if provider_key:
+            merged[f"{provider_key}::{model_key}"] = payload
     return merged
 
 
@@ -207,11 +213,17 @@ def _refresh_pricing_from_db(settings: Settings) -> None:
             logger.warning("Skipping pricing refresh from database: %s", exc)
             return
         for config in configs:
-            merged[config.model_name] = {
+            payload = {
                 "provider": config.provider,
                 "input_per_million": config.input_per_million,
                 "output_per_million": config.output_per_million,
             }
+            model_key = str(config.model_name or "").strip()
+            provider_key = str(config.provider or "").strip().lower()
+            if model_key:
+                merged[model_key] = payload
+                if provider_key:
+                    merged[f"{provider_key}::{model_key}"] = payload
         settings.model_pricing_json = json.dumps(merged)
     finally:
         session.close()
@@ -251,14 +263,18 @@ def _auto_sync_provider_pricing(settings: Settings) -> None:
         return
 
     provider = (settings.llm_provider or "").strip().lower()
+    if provider == "openrouter" and not (settings.openrouter_api_key or "").strip():
+        logger.info("Provider pricing sync skipped: OPENROUTER_API_KEY is not set.")
+        return
+
     try:
         payload = _sync_provider_pricing_to_db(settings, provider=provider)
     except NotImplementedError:
-        logger.info("Provider pricing sync skipped: provider '%s' is not API-sync supported.", provider)
+        logger.info("Provider pricing sync skipped: provider '%s' is not supported.", provider)
     except ProviderPricingSyncError as exc:
-        logger.warning("Provider pricing sync failed: %s", exc)
+        logger.warning("Provider pricing sync failed for '%s': %s", provider, exc)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Unexpected provider pricing sync failure: %s", exc)
+        logger.warning("Unexpected provider pricing sync failure for '%s': %s", provider, exc)
     else:
         logger.info(
             "Provider pricing sync complete: provider=%s models=%d",
@@ -305,6 +321,7 @@ app.add_middleware(
 
 def _active_trace_row(trace: Any) -> dict[str, Any]:
     metrics = trace.metrics
+    total_cost = metrics.estimated_total_cost_usd if metrics else 0.0
     return {
         "run_id": trace.run_id,
         "root_actor": trace.root_actor,
@@ -314,7 +331,8 @@ def _active_trace_row(trace: Any) -> dict[str, Any]:
         "started_at": trace.started_at.isoformat(),
         "total_tool_calls": metrics.total_tool_calls if metrics else 0,
         "total_llm_calls": metrics.total_llm_calls if metrics else 0,
-        "estimated_total_cost_usd": metrics.estimated_total_cost_usd if metrics else 0.0,
+        "estimated_total_cost_usd": total_cost,
+        "total_cost_usd": total_cost,
     }
 
 
@@ -706,6 +724,7 @@ def list_runs(limit: int = 50):
                 "tokens_in": r.tokens_in,
                 "tokens_out": r.tokens_out,
                 "estimated_total_cost_usd": ((r.result_json or {}).get("metrics") or {}).get("estimated_total_cost_usd", 0.0),
+                "total_cost_usd": ((r.result_json or {}).get("metrics") or {}).get("estimated_total_cost_usd", 0.0),
                 "llm_calls": ((r.result_json or {}).get("metrics") or {}).get("total_llm_calls", 0),
                 "message_count": ((r.result_json or {}).get("metrics") or {}).get("total_messages", 0),
                 "created_at": r.created_at.isoformat(),
@@ -1108,12 +1127,22 @@ def ui_update_config(body: ModelConfigRequest):
         persist_error = str(exc)
         logger.warning("Could not persist runtime settings: %s", exc)
 
-    return _ui_config_payload(
+    pricing_sync: dict[str, Any] = {}
+    if s.provider_pricing_sync_enabled:
+        try:
+            pricing_sync = _sync_provider_pricing_to_db(s, provider=s.llm_provider)
+        except Exception as exc:  # noqa: BLE001
+            pricing_sync = {"provider": s.llm_provider, "error": str(exc)}
+            logger.warning("Provider pricing sync after config update failed: %s", exc)
+
+    payload = _ui_config_payload(
         s,
         config_persisted=config_persisted,
         config_persist_path=persist_path,
         config_persist_error=persist_error,
     )
+    payload["pricing_sync"] = pricing_sync
+    return payload
 
 
 @app.get("/ui/pricing")
@@ -1155,6 +1184,20 @@ def ui_sync_pricing(req: PricingSyncRequest):
     max_models = req.max_models
 
     try:
+        if provider in {"", "all"}:
+            providers = ["google", "openai", "anthropic", "openrouter"]
+            results: list[dict[str, Any]] = []
+            for item in providers:
+                if item == "openrouter" and not (settings.openrouter_api_key or "").strip():
+                    continue
+                results.append(_sync_provider_pricing_to_db(settings, provider=item, max_models=max_models))
+            return {
+                "provider": "all",
+                "results": results,
+                "stored": sum(int(row.get("stored", 0) or 0) for row in results),
+                "synced": sum(int(row.get("synced", 0) or 0) for row in results),
+                "models": [model for row in results for model in (row.get("models", []) or [])],
+            }
         return _sync_provider_pricing_to_db(settings, provider=provider, max_models=max_models)
     except NotImplementedError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

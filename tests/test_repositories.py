@@ -16,7 +16,14 @@ from src.models.schemas import (
     StreamURL,
     TakedownEmail,
 )
-from src.storage.models import AgentRunRecord, Base, MemoryEntryRecord, PipelineRunRecord, RunSnapshotRecord
+from src.storage.models import (
+    AgentRunRecord,
+    Base,
+    LLMCallRecord,
+    MemoryEntryRecord,
+    PipelineRunRecord,
+    RunSnapshotRecord,
+)
 from src.storage.repositories import RunRepository
 from src.storage.ui_repository import OperatorConsoleRepository
 from src.utils.observability import ObservabilityStatus, RunTrace, RuntimeEvent
@@ -115,7 +122,7 @@ def _build_trace(
             RuntimeEvent(seq=2, actor="classification", kind="agent_started", message="Classification agent started for https://example.com/watch"),
             RuntimeEvent(seq=3, actor="classification", kind="prompt_compiled", message="prompt", details={"agent_id": "classification", "prompt_version": "classification:v1", "prompt_hash": "hash-a", "compiled_prompt_hash": "compiled-a", "cache_mode": "provider_hook", "sections": ["base_policy", "task_brief"]}),
             RuntimeEvent(seq=4, actor="classification", kind="agent_loop_started", message="loop", details={"max_tool_calls": 5}),
-            RuntimeEvent(seq=5, actor="classification", kind="llm_response", message="Model responded", details={"provider": "google", "model_name": model_name, "tool_calls": 1, "tool_call_names": ["get_page_context"], "content_preview": "{\"page_type\":\"hosting_page\"}", "input_tokens": 11, "output_tokens": 7, "prompt": {"prompt_version": "classification:v1", "prompt_hash": "hash-a", "cache_mode": "provider_hook"}}),
+            RuntimeEvent(seq=5, actor="classification", kind="llm_response", message="Model responded", details={"provider": "google", "model_name": model_name, "tool_calls": 1, "tool_call_names": ["get_page_context"], "content_preview": "{\"page_type\":\"hosting_page\"}", "input_tokens": 11, "output_tokens": 7, "estimated_input_cost_usd": 0.000011, "estimated_output_cost_usd": 0.000014, "estimated_total_cost_usd": 0.000025, "cost_source": "provider_pricing_catalog", "pricing": {"provider": "google", "input_per_million": 1.0, "output_per_million": 2.0}, "prompt": {"prompt_version": "classification:v1", "prompt_hash": "hash-a", "cache_mode": "provider_hook"}}),
             RuntimeEvent(seq=6, actor="classification", kind="agent_finished", message="Classification decided hosting_page", status="success"),
             RuntimeEvent(seq=7, actor="hosting", kind="agent_started", message="Hosting page agent started for https://example.com/watch"),
             RuntimeEvent(seq=8, actor="hosting", kind="memory_loaded", message="Loaded site memory hints for hosting_page", details={"page_type": "hosting_page", "url": "https://example.com/watch", "hint_preview": "SITE MEMORY HINTS"}),
@@ -123,7 +130,7 @@ def _build_trace(
             RuntimeEvent(seq=10, actor="hosting", kind="agent_loop_started", message="loop", details={"max_tool_calls": 20}),
             RuntimeEvent(seq=11, actor="hosting", kind="tool_call_started", message="Calling query_elements", details={"tool_name": "query_elements", "tool_args": {"text": "Server 2"}}),
             RuntimeEvent(seq=12, actor="hosting", kind="tool_call_finished", message="query_elements completed", status=tool_finish_status, details={"tool_name": "query_elements", "duration_seconds": 0.3, "result_preview": "{\"ok\":true}"}),
-            RuntimeEvent(seq=13, actor="hosting", kind="llm_response", message="Model responded", details={"provider": "google", "model_name": model_name, "tool_calls": 0, "tool_call_names": [], "content_preview": "{\"status\":\"success\"}", "input_tokens": 13, "output_tokens": 9, "prompt": {"prompt_version": "hosting_page:v1", "prompt_hash": "hash-b", "cache_mode": "provider_hook"}}),
+            RuntimeEvent(seq=13, actor="hosting", kind="llm_response", message="Model responded", details={"provider": "google", "model_name": model_name, "tool_calls": 0, "tool_call_names": [], "content_preview": "{\"status\":\"success\"}", "input_tokens": 13, "output_tokens": 9, "estimated_input_cost_usd": 0.000013, "estimated_output_cost_usd": 0.000018, "estimated_total_cost_usd": 0.000031, "cost_source": "provider_pricing_catalog", "pricing": {"provider": "google", "input_per_million": 1.0, "output_per_million": 2.0}, "prompt": {"prompt_version": "hosting_page:v1", "prompt_hash": "hash-b", "cache_mode": "provider_hook"}}),
             RuntimeEvent(seq=14, actor="hosting", kind="agent_finished", message="Hosting page agent finished", status="success"),
             RuntimeEvent(seq=15, actor="orchestrator", kind="pipeline_finished", message="Pipeline finished with status success", status="success"),
         ],
@@ -149,6 +156,9 @@ def test_run_repository_dual_writes_legacy_and_normalized_rows():
     assert session.query(PipelineRunRecord).count() == 1
     assert session.query(RunSnapshotRecord).count() == 1
     assert session.query(AgentRunRecord).count() >= 2
+    llm_rows = session.query(LLMCallRecord).all()
+    assert llm_rows
+    assert sum(float(row.estimated_total_cost_usd or 0.0) for row in llm_rows) > 0.0
     assert session.query(MemoryEntryRecord).count() >= 1
 
 

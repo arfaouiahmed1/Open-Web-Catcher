@@ -369,7 +369,7 @@ class OperatorConsoleRepository:
             "snapshot": snapshot.snapshot_json if snapshot else {},
             "agent_runs": [self._serialize_model(row) for row in agent_runs],
             "tool_calls": [self._serialize_model(row) for row in tool_calls],
-            "llm_calls": [self._serialize_model(row) for row in llm_calls],
+            "llm_calls": [self._llm_row(row) for row in llm_calls],
             "events": [self._serialize_model(row) for row in events],
         }
 
@@ -757,6 +757,7 @@ class OperatorConsoleRepository:
         }
 
     def _run_row(self, row: PipelineRunRecord) -> dict[str, Any]:
+        total_cost = float(row.estimated_total_cost_usd or 0.0)
         return {
             "run_id": row.run_id,
             "url": row.root_url,
@@ -771,10 +772,18 @@ class OperatorConsoleRepository:
             "total_tokens_out": row.total_tokens_out,
             "total_llm_calls": row.total_llm_calls,
             "total_tool_calls": row.total_tool_calls,
-            "estimated_total_cost_usd": float(row.estimated_total_cost_usd or 0.0),
+            "estimated_total_cost_usd": total_cost,
+            "total_cost_usd": total_cost,
             "duration_seconds": float(row.duration_seconds or 0.0),
             "created_at": row.created_at.isoformat(),
         }
+
+    def _llm_row(self, row: LLMCallRecord) -> dict[str, Any]:
+        payload = self._serialize_model(row)
+        total_cost = float(payload.get("estimated_total_cost_usd", 0.0) or 0.0)
+        payload["total_cost_usd"] = total_cost
+        payload["cost_source"] = str((payload.get("usage_metadata_json", {}) or {}).get("cost_source", "") or "")
+        return payload
 
     def _serialize_model(self, row: Any) -> dict[str, Any]:
         return {

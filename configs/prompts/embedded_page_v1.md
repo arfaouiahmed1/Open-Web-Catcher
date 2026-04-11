@@ -40,7 +40,7 @@ De-prioritize repeated full scans and unrelated page chrome.
 ## Token Efficiency Policy
 
 - Heavy-first reliability path: `inspect_embedded` -> `interact` -> `harvest`.
-- Memory-first pre-check: call `memory_lookup(url=<embedded_url>, page_type="embedded_page")` before repeating heavy scans and reuse remembered frame/selector/source hints when still valid.
+- Memory-first pre-check: call `memory_lookup(url=<embedded_url>, page_type="embedded_page")` at run start, then before repeating heavy scans, and reuse remembered frame/selector/source hints when still valid.
 - Lightweight token-saving fallback path: use `query_elements`, `get_element_detail`, `get_media_state`, `wait_for_page_state`, and `screenshot` for incremental checks.
 - Do not repeat `inspect_embedded` in the same state; re-run it only after navigation/frame shifts or when lightweight checks are inconclusive.
 - Keep legacy tools (`get_page_context`, `open_url`, `capture_streams`) as compatibility fallback only.
@@ -60,6 +60,8 @@ Screenshot is primary truth. If response says success but visuals did not change
 ## Workflow
 
 ### Step 1: Initial map
+First memory action of the run: call `memory_lookup(url=<embedded_url>, page_type="embedded_page")`.
+
 Call `inspect_embedded()`, then `get_frame_tree`.
 If a fresh bootstrap inspect result for the same URL/state is already available, reuse it and avoid duplicate immediate context calls.
 
@@ -121,6 +123,7 @@ For each distinct server/source option:
 If server switching causes unintended navigation, recover with `navigate` and resume.
 When `interact` returns `success=false` or `verified=false`, switch locator mode (xpath -> selector/text -> coordinates).
 - When you confirm new selector/frame/source patterns or detect UI drift, call `memory_update` with refreshed selectors/url patterns/critical links plus `server_records`, `server_stream_urls`, `server_screenshots`, and `activated_servers`.
+- Before final output, if this run found a better extraction path, call `memory_update` including ordered `navigation_hints` playbook steps (what worked first/next).
 
 ### Step 7: Output
 After all meaningful server paths are processed or budget is near limit, output JSON.

@@ -98,6 +98,57 @@ def _extract_cache_metrics(
     }
 
 
+def _extract_provider_reported_costs(
+    usage: Any,
+    *,
+    response_metadata: Any = None,
+    additional_kwargs: Any = None,
+) -> dict[str, float]:
+    payloads = [
+        _coerce_mapping(usage),
+        _coerce_mapping(response_metadata),
+        _coerce_mapping(additional_kwargs),
+    ]
+    for payload in payloads:
+        if not payload:
+            continue
+        # Known cost key variants observed across provider SDK wrappers.
+        total_cost = payload.get("total_cost_usd", payload.get("total_cost", payload.get("cost")))
+        input_cost = payload.get("input_cost_usd", payload.get("prompt_cost", payload.get("input_cost")))
+        output_cost = payload.get("output_cost_usd", payload.get("completion_cost", payload.get("output_cost")))
+
+        nested_usage = _coerce_mapping(payload.get("usage") or payload.get("token_usage"))
+        if nested_usage:
+            total_cost = nested_usage.get("total_cost_usd", nested_usage.get("total_cost", total_cost))
+            input_cost = nested_usage.get("input_cost_usd", nested_usage.get("prompt_cost", input_cost))
+            output_cost = nested_usage.get("output_cost_usd", nested_usage.get("completion_cost", output_cost))
+
+        try:
+            parsed_total = float(total_cost) if total_cost is not None else 0.0
+            parsed_input = float(input_cost) if input_cost is not None else 0.0
+            parsed_output = float(output_cost) if output_cost is not None else 0.0
+        except (TypeError, ValueError):
+            continue
+
+        if parsed_total == 0.0 and parsed_input == 0.0 and parsed_output == 0.0:
+            continue
+
+        if parsed_total == 0.0:
+            parsed_total = parsed_input + parsed_output
+
+        return {
+            "estimated_input_cost_usd": round(max(parsed_input, 0.0), 8),
+            "estimated_output_cost_usd": round(max(parsed_output, 0.0), 8),
+            "estimated_total_cost_usd": round(max(parsed_total, 0.0), 8),
+        }
+
+    return {
+        "estimated_input_cost_usd": 0.0,
+        "estimated_output_cost_usd": 0.0,
+        "estimated_total_cost_usd": 0.0,
+    }
+
+
 class RuntimeEvent(BaseModel):
     seq: int
     timestamp: datetime = Field(default_factory=datetime.utcnow)
@@ -240,7 +291,7 @@ class RunObserver:
         response_metadata: Any = None,
         additional_kwargs: Any = None,
         cache_metrics: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> dict[str, Any]:
         usage_dict = usage if isinstance(usage, dict) else getattr(usage, "__dict__", {})
         input_tokens = int(
             usage_dict.get("input_tokens")
@@ -258,12 +309,36 @@ class RunObserver:
         )
         pricing = pricing or {}
         resolved_provider = str(pricing.get("provider") or provider or "").strip()
-        costs = estimate_usage_cost(
+        fallback_costs = estimate_usage_cost(
             input_tokens,
             output_tokens,
             input_per_million=float(pricing.get("input_per_million", 0.0) or 0.0),
             output_per_million=float(pricing.get("output_per_million", 0.0) or 0.0),
         )
+        reported_costs = _extract_provider_reported_costs(
+            usage,
+            response_metadata=response_metadata,
+            additional_kwargs=additional_kwargs,
+        )
+        has_reported_costs = any(
+            float(reported_costs.get(key, 0.0) or 0.0) > 0.0
+            for key in (
+                "estimated_input_cost_usd",
+                "estimated_output_cost_usd",
+                "estimated_total_cost_usd",
+            )
+        )
+        costs = reported_costs if has_reported_costs else fallback_costs
+        has_pricing_rates = (
+            float(pricing.get("input_per_million", 0.0) or 0.0) > 0.0
+            or float(pricing.get("output_per_million", 0.0) or 0.0) > 0.0
+        )
+        if has_reported_costs:
+            cost_source = "provider_reported"
+        elif has_pricing_rates:
+            cost_source = "provider_pricing_catalog"
+        else:
+            cost_source = "unpriced"
         resolved_cache = cache_metrics or _extract_cache_metrics(
             usage,
             response_metadata=response_metadata,
@@ -297,6 +372,24 @@ class RunObserver:
             model_usage.estimated_input_cost_usd = round(model_usage.estimated_input_cost_usd + costs["estimated_input_cost_usd"], 8)
             model_usage.estimated_output_cost_usd = round(model_usage.estimated_output_cost_usd + costs["estimated_output_cost_usd"], 8)
             model_usage.estimated_total_cost_usd = round(model_usage.estimated_total_cost_usd + costs["estimated_total_cost_usd"], 8)
+
+        return {
+            "provider": resolved_provider,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cached_input_tokens": cached_input_tokens,
+            "new_input_tokens": new_input_tokens,
+            "cache_hit": cache_hit,
+            "estimated_input_cost_usd": float(costs.get("estimated_input_cost_usd", 0.0) or 0.0),
+            "estimated_output_cost_usd": float(costs.get("estimated_output_cost_usd", 0.0) or 0.0),
+            "estimated_total_cost_usd": float(costs.get("estimated_total_cost_usd", 0.0) or 0.0),
+            "cost_source": cost_source,
+            "pricing": {
+                "provider": resolved_provider,
+                "input_per_million": float(pricing.get("input_per_million", 0.0) or 0.0),
+                "output_per_million": float(pricing.get("output_per_million", 0.0) or 0.0),
+            },
+        }
 
     def increment_tool_calls(self, count: int = 1) -> None:
         with self._state._lock:
@@ -381,6 +474,7 @@ class RunRegistry:
 
 def get_observability_status(settings: Settings) -> ObservabilityStatus:
     pricing_config = resolve_model_pricing_config(settings)
+    pricing_models = sorted({key for key in pricing_config.keys() if "::" not in key})
     warnings: list[str] = []
     if resolve_observability_enabled(settings) and not pricing_config:
         warnings.append(
@@ -390,7 +484,7 @@ def get_observability_status(settings: Settings) -> ObservabilityStatus:
         enabled=resolve_observability_enabled(settings),
         project=resolve_observability_project_name(settings),
         default_dataset_name=resolve_default_dataset_name(settings),
-        pricing_models=sorted(pricing_config.keys()),
+        pricing_models=pricing_models,
         warnings=warnings,
     )
 

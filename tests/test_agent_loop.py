@@ -531,3 +531,45 @@ async def test_run_agent_loop_bootstrap_navigates_and_collects_context_first(set
     assert any("BOOTSTRAP RESULT (open_url)" in getattr(message, "content", "") for message in first_call_messages)
     assert any("BOOTSTRAP RESULT (get_page_context)" in getattr(message, "content", "") for message in first_call_messages)
     assert result.parse_json() == {"status": "done"}
+
+
+async def test_run_agent_loop_bootstrap_memory_lookup_runs_before_navigation(settings):
+    memory_tool = DummyTool(
+        "memory_lookup",
+        {
+            "ok": True,
+            "page_type": "landing_page",
+            "profile_found": False,
+        },
+    )
+    open_url_tool = DummyTool(
+        "open_url",
+        {
+            "ok": True,
+            "final_url": "https://example.com/live",
+        },
+    )
+    llm = LLMStub(bound_responses=[AIMessage(content='{"status":"done"}')])
+
+    result = await run_agent_loop(
+        settings=settings,
+        llm=llm,
+        tools=[memory_tool, open_url_tool],
+        system_prompt="Use tools carefully.",
+        initial_message="Inspect the page.",
+        max_tool_calls=5,
+        run_name="test_bootstrap_memory_lookup",
+        bootstrap_url="https://example.com/live",
+        bootstrap_memory_lookup_first=True,
+        bootstrap_memory_page_type="landing_page",
+    )
+
+    assert memory_tool.calls == [{"url": "https://example.com/live", "page_type": "landing_page"}]
+    assert open_url_tool.calls == [{"url": "https://example.com/live"}]
+
+    first_call_messages = llm.bound_llm.calls[0]["messages"]
+    contents = [getattr(message, "content", "") for message in first_call_messages if hasattr(message, "content")]
+    memory_idx = next(index for index, content in enumerate(contents) if "BOOTSTRAP RESULT (memory_lookup)" in content)
+    navigation_idx = next(index for index, content in enumerate(contents) if "BOOTSTRAP RESULT (open_url)" in content)
+    assert memory_idx < navigation_idx
+    assert result.parse_json() == {"status": "done"}
