@@ -182,6 +182,27 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _should_refresh_profile_from_failed_entry(entry: dict[str, Any]) -> bool:
+    page_type = str(entry.get("page_type", "") or "").strip().lower()
+    if page_type != "landing_page":
+        return False
+
+    hosting_candidates = _coerce_string_list(entry.get("hosting_candidate_urls", []))
+    if hosting_candidates:
+        return True
+
+    critical_links = _coerce_string_list(entry.get("critical_links", []))
+    url_patterns = _coerce_string_list(entry.get("url_patterns", []))
+    selectors = _coerce_string_list(entry.get("selectors", []))
+    tool_steps = _coerce_string_list(entry.get("tool_steps", []))
+
+    if len(url_patterns) >= 3 and len(critical_links) >= 5:
+        return True
+    if len(tool_steps) >= 4 and len(selectors) >= 2 and len(critical_links) >= 3:
+        return True
+    return False
+
+
 class LongTermMemory:
     """Stores reusable site-playbook hints across extraction runs.
 
@@ -396,7 +417,11 @@ class LongTermMemory:
             )
             conn.commit()
 
-        if data.get("success"):
+        should_refresh_profile = bool(data.get("success"))
+        if not should_refresh_profile:
+            should_refresh_profile = _should_refresh_profile_from_failed_entry(data)
+
+        if should_refresh_profile:
             profile_patch = self._build_profile_patch(entry=data, payload=payload or {})
             if profile_patch:
                 self.upsert_profile(

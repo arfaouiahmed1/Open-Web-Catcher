@@ -6,7 +6,7 @@ import json
 import re
 from collections import deque
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 
 def _normalize_domain(url: str) -> str:
@@ -105,6 +105,19 @@ def _extract_nested_strings(payload: Any, keys: set[str], *, limit: int = 150) -
     return _dedupe_keep_order(found)
 
 
+def _resolve_url_candidate(candidate: str, *, base_url: str) -> str:
+    raw = str(candidate or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith(("http://", "https://")):
+        return raw
+    if raw.startswith(("//", "/", "./", "../")) and base_url.startswith(("http://", "https://")):
+        resolved = urljoin(base_url, raw)
+        if resolved.startswith(("http://", "https://")):
+            return resolved
+    return ""
+
+
 class ShortTermMemory:
     """Keeps the current run's working state compact and extraction-focused.
 
@@ -187,6 +200,13 @@ class ShortTermMemory:
             if value:
                 self._capture_url(str(value))
 
+        base_url = ""
+        for key in ("url", "mainUrl", "base_url"):
+            value = str(args.get(key) or "").strip()
+            if value.startswith(("http://", "https://")):
+                base_url = value
+                break
+
         for key in ("selector", "xpath", "text", "element_ref", "kind", "action"):
             value = args.get(key)
             if value:
@@ -206,6 +226,11 @@ class ShortTermMemory:
         if not isinstance(payload, (dict, list, tuple)):
             return
 
+        if isinstance(payload, dict) and not base_url:
+            payload_url = str(payload.get("url") or payload.get("final_url") or "").strip()
+            if payload_url.startswith(("http://", "https://")):
+                base_url = payload_url
+
         urls = _extract_nested_strings(
             payload,
             {
@@ -219,8 +244,9 @@ class ShortTermMemory:
             },
         )
         for candidate in urls:
-            if candidate.startswith(("http://", "https://")):
-                self._capture_url(candidate)
+            resolved = _resolve_url_candidate(candidate, base_url=base_url)
+            if resolved:
+                self._capture_url(resolved)
 
         for selector in _extract_nested_strings(payload, {"selector", "xpath", "element_ref", "text"}):
             self._remember_signal("selectors", selector, max_items=40)
@@ -231,7 +257,7 @@ class ShortTermMemory:
                 self._remember_signal("server_labels", cleaned, max_items=120)
 
         if isinstance(payload, dict):
-            self._capture_hosting_candidates(payload)
+            self._capture_hosting_candidates(payload, base_url=base_url)
             self._capture_server_artifacts(payload)
 
         if tool_name in {"memory_update", "memory_lookup"}:
@@ -495,7 +521,7 @@ class ShortTermMemory:
             if host:
                 self._remember_signal("stream_hosts", host, max_items=self._signal_limit("stream_hosts"))
 
-    def _capture_hosting_candidates(self, payload: dict[str, Any]) -> None:
+    def _capture_hosting_candidates(self, payload: dict[str, Any], *, base_url: str = "") -> None:
         discovered: list[str] = []
         for key in ("hosting_pages", "match_candidates"):
             entries = payload.get(key, [])
@@ -508,8 +534,9 @@ class ShortTermMemory:
                     candidate = str(entry).strip()
                 else:
                     continue
-                if candidate.startswith(("http://", "https://")):
-                    discovered.append(candidate)
+                resolved = _resolve_url_candidate(candidate, base_url=base_url)
+                if resolved:
+                    discovered.append(resolved)
 
         for candidate in _dedupe_keep_order(discovered):
             self._remember_signal(

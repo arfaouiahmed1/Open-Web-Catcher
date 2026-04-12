@@ -115,6 +115,47 @@ def test_failed_runs_are_not_persisted_to_long_term_memory(tmp_path):
     assert prompt_context == ""
 
 
+def test_failed_landing_runs_with_reusable_signals_are_persisted(tmp_path):
+    memory = LongTermMemory(str(tmp_path / "site_memory.db"))
+    observer = MagicMock()
+    observer.trace.return_value = None
+    observer.actor = "landing_page_agent"
+    observer.run_id = "run-landing-failed"
+
+    short_memory = ShortTermMemory(k=20, page_type="landing_page")
+    short_memory.ingest_tool_result(
+        "inspect_landing",
+        {"url": "https://example.com/live"},
+        {
+            "hosting_pages": [
+                {"url": "https://example.com/watch/team-a-vs-team-b"},
+                {"url": "https://example.com/watch/team-c-vs-team-d"},
+            ]
+        },
+    )
+
+    remember_agent_run(
+        memory,
+        url="https://example.com/live",
+        page_type="landing_page",
+        status="failed",
+        payload={"hosting_pages": []},
+        observer=observer,
+        short_memory=short_memory,
+    )
+
+    prompt_context = memory.build_prompt_context(
+        url="https://example.com/live",
+        page_type="landing_page",
+        limit=5,
+    )
+    profile = memory.get_profile(url="https://example.com/live", page_type="landing_page")
+
+    assert "SITE MEMORY HINTS" in prompt_context
+    assert len(profile.get("hosting_candidate_urls", [])) >= 2
+    assert any("/watch/" in candidate for candidate in profile.get("hosting_candidate_urls", []))
+
+
 def test_short_term_memory_extracts_structured_run_signals_from_tool_payloads():
     memory = ShortTermMemory(k=8)
 
@@ -156,6 +197,32 @@ def test_short_term_memory_extracts_structured_run_signals_from_tool_payloads():
     assert "https://cdn.example.com/master.m3u8" in run_memory["stream_urls"]
     assert "cdn.example.com" in run_memory["stream_hosts"]
     assert "Server 2" in run_memory["server_labels"]
+
+
+def test_short_term_memory_resolves_relative_landing_candidates_to_absolute_urls():
+    memory = ShortTermMemory(k=16, page_type="landing_page")
+
+    payload = {
+        "url": "https://example-stream.test/",
+        "match_candidates": [
+            {"url": "/watch/abc123", "text": "Watch A"},
+            {"url": "/watch/def456", "text": "Watch B"},
+        ],
+        "navigation_links": [
+            {"url": "/football", "text": "Football"},
+        ],
+    }
+
+    memory.ingest_tool_result(
+        "inspect_landing",
+        {"url": "https://example-stream.test/"},
+        payload,
+    )
+
+    run_memory = memory.export_run_memory(page_type="landing_page")
+    assert "https://example-stream.test/watch/abc123" in run_memory["hosting_candidate_urls"]
+    assert "https://example-stream.test/watch/def456" in run_memory["hosting_candidate_urls"]
+    assert "https://example-stream.test/watch/abc123" in run_memory["critical_links"]
 
 
 def test_long_term_profile_memory_upsert_and_prompt_context(tmp_path):

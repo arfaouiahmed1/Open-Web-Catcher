@@ -97,9 +97,15 @@ def _hosting_prefix(url: str) -> str:
     segments = [segment for segment in parsed.path.split("/") if segment]
     if not segments:
         return ""
-    if len(segments) >= 3:
-        return "/" + "/".join(segments[:2]) + "/"
+    # Use a broad stable bucket (first segment) to avoid overfitting dynamic slugs/tokens.
     return f"/{segments[0]}/"
+
+
+def _normalize_pattern_signature(pattern: str) -> str:
+    raw = str(pattern or "").strip().lower()
+    if not raw:
+        return ""
+    return re.sub(r"\{[^}]+\}", "{}", raw)
 
 
 def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[str, Any]]:
@@ -158,11 +164,16 @@ def _augment_landing_output(
     existing_urls = {str(page.get("url") or "").strip() for page in hosting_pages}
 
     known_patterns: set[str] = set()
+    known_pattern_signatures: set[str] = set()
     known_prefixes: set[str] = set()
     for page in hosting_pages:
         candidate_url = str(page.get("url") or "").strip()
         if candidate_url:
-            known_patterns.add(_generalize_url_pattern(candidate_url))
+            generalized = _generalize_url_pattern(candidate_url)
+            known_patterns.add(generalized)
+            signature = _normalize_pattern_signature(generalized)
+            if signature:
+                known_pattern_signatures.add(signature)
             prefix = _hosting_prefix(candidate_url)
             if prefix:
                 known_prefixes.add(prefix)
@@ -173,12 +184,18 @@ def _augment_landing_output(
                 value = str(patterns.get(key) or "").strip()
                 if value:
                     known_patterns.add(value)
+                    signature = _normalize_pattern_signature(value)
+                    if signature:
+                        known_pattern_signatures.add(signature)
 
     site_patterns = output.get("site_patterns", {})
     if isinstance(site_patterns, dict):
         remembered_hosting_pattern = str(site_patterns.get("hosting_url_pattern") or "").strip()
         if remembered_hosting_pattern:
             known_patterns.add(remembered_hosting_pattern)
+            signature = _normalize_pattern_signature(remembered_hosting_pattern)
+            if signature:
+                known_pattern_signatures.add(signature)
 
     common_memory = run_memory.get("common", run_memory) if isinstance(run_memory, dict) else {}
     candidate_pool = _dedupe_keep_order(
@@ -201,10 +218,12 @@ def _augment_landing_output(
             continue
 
         candidate_pattern = _generalize_url_pattern(candidate_url)
+        candidate_signature = _normalize_pattern_signature(candidate_pattern)
         candidate_prefix = _hosting_prefix(candidate_url)
         pattern_match = bool(candidate_pattern and candidate_pattern in known_patterns)
+        signature_match = bool(candidate_signature and candidate_signature in known_pattern_signatures)
         prefix_match = bool(candidate_prefix and candidate_prefix in known_prefixes)
-        if not (pattern_match or prefix_match):
+        if not (pattern_match or signature_match or (prefix_match and known_pattern_signatures)):
             continue
 
         existing_urls.add(candidate_url)
@@ -255,6 +274,7 @@ def _augment_landing_output(
     output["pattern_expansion"] = {
         "expanded_candidates": expanded_count,
         "known_patterns": len([pattern for pattern in known_patterns if pattern]),
+        "known_pattern_signatures": len([signature for signature in known_pattern_signatures if signature]),
         "candidate_pool_size": len(candidate_pool),
     }
     return output, expanded_count
