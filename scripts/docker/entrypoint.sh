@@ -20,7 +20,7 @@ prepare_ubol_policy() {
                         ;;
         esac
 
-        local extension_dir="${OWC_UBOL_EXTENSION_DIR:-/app/tools_js/extensions/ubol}"
+        local extension_dir="${OWC_UBOL_EXTENSION_DIR:-/app/tools/puppeteer/extensions/ubol}"
         local ruleset_details_path="${OWC_UBOL_RULESET_DETAILS_PATH:-${extension_dir}/rulesets/ruleset-details.json}"
         if [[ ! -f "${ruleset_details_path}" ]]; then
                 log "uBOL ruleset details missing at ${ruleset_details_path}; skipping policy generation."

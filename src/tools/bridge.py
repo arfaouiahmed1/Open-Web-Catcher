@@ -12,7 +12,7 @@ from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-TOOLS_ROOT = Path(__file__).parent.parent.parent / "tools_js"
+TOOLS_ROOT = Path(__file__).parent.parent.parent / "tools" / "puppeteer"
 RUNNER_SCRIPT = TOOLS_ROOT / "run-tool.js"
 
 

@@ -41,7 +41,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --python /app/.venv/bin/python -r /tmp/requirements-dev.txt
 
 COPY src/ src/
-COPY tools_js/ tools_js/
+COPY tools/puppeteer/ tools/puppeteer/
 COPY configs/ configs/
 COPY tests/ tests/
 COPY notebooks/ notebooks/

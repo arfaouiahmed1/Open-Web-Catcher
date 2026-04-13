@@ -29,7 +29,7 @@ def test_bridge_injects_browser_endpoint():
     assert result == {"ok": True}
     command = mock_run.call_args.args[0]
     assert command[0] == "node"
-    assert command[1].endswith("tools_js\\run-tool.js") or command[1].endswith("tools_js/run-tool.js")
+    assert command[1].endswith("tools\\puppeteer\\run-tool.js") or command[1].endswith("tools/puppeteer/run-tool.js")
     assert command[2] == "open_url"
     payload_json = command[3]
     assert '"browserWSEndpoint": "ws://browser.example/devtools/browser/test"' in payload_json

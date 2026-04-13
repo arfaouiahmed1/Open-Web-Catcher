@@ -1,0 +1,28 @@
+{
+  "name": "open-web-catcher-mcp-playwright",
+  "version": "1.0.0",
+  "description": "MCP server exposing Playwright-based browser tools per agent profile",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "mcp-server.js",
+  "scripts": {
+    "start": "node mcp-server.js",
+    "dev": "node --watch mcp-server.js",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest"
+  },
+  "dependencies": {
+    "@ghostery/adblocker-playwright": "^2.13.0",
+    "@modelcontextprotocol/sdk": "^1.10.0",
+    "cloudinary": "^2.0.0",
+    "express": "^4.19.0",
+    "fingerprint-generator": "^2.1.82",
+    "fingerprint-injector": "^2.1.82",
+    "playwright": "^1.50.0",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "zod": "^3.23.0"
+  }
+}

@@ -1042,6 +1042,7 @@ class ModelConfigRequest(BaseModel):
     gemini_explicit_cache_refresh_lead_seconds: int | None = None
     tool_result_cache_enabled: bool | None = None
     tool_result_cache_min_identical_observations: int | None = None
+    browser_engine: str | None = None
 
 
 class PricingSyncRequest(BaseModel):
@@ -1067,6 +1068,9 @@ def _ui_config_payload(
         "gemini_explicit_cache_refresh_lead_seconds": settings.gemini_explicit_cache_refresh_lead_seconds,
         "tool_result_cache_enabled": settings.tool_result_cache_enabled,
         "tool_result_cache_min_identical_observations": settings.tool_result_cache_min_identical_observations,
+        "browser_engine": settings.browser_engine,
+        "mcp_server_url_puppeteer": settings.mcp_server_url_puppeteer,
+        "mcp_server_url_playwright": settings.mcp_server_url_playwright,
         "api_keys": {
             "google": bool(settings.google_api_key),
             "openai": bool(settings.openai_api_key),
@@ -1116,6 +1120,12 @@ def ui_update_config(body: ModelConfigRequest):
         s.tool_result_cache_min_identical_observations = max(
             1,
             int(body.tool_result_cache_min_identical_observations),
+        )
+    if body.browser_engine in ("puppeteer", "playwright"):
+        s.browser_engine = body.browser_engine
+        s.mcp_server_url = (
+            s.mcp_server_url_playwright if body.browser_engine == "playwright"
+            else s.mcp_server_url_puppeteer
         )
     persist_path = ""
     persist_error = ""

@@ -41,8 +41,8 @@ services:
       PUPPETEER_EXECUTABLE_PATH: /usr/local/bin/google-chrome-stable
       PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
       OWC_UBOL_ENABLED: ${OWC_UBOL_ENABLED:-true}
-      OWC_UBOL_EXTENSION_DIR: ${OWC_UBOL_EXTENSION_DIR:-/app/tools_js/extensions/ubol}
-      OWC_UBOL_DEFAULT_FILTERING: ${OWC_UBOL_DEFAULT_FILTERING:-complete}
+      OWC_UBOL_EXTENSION_DIR: ${OWC_UBOL_EXTENSION_DIR:-/app/tools/puppeteer/extensions/ubol}
+      OWC_UBOL_DEFAULT_FILTERING: ${OWC_UBOL_DEFAULT_FILTERING:-optimal}
       OWC_ADBLOCK_ENABLED: ${OWC_ADBLOCK_ENABLED:-false}
       OWC_ADBLOCK_EXCLUDED_CATEGORIES: ${OWC_ADBLOCK_EXCLUDED_CATEGORIES:-nsfw,gambling}
       OWC_ADBLOCK_ALLOWLIST_HOSTS: ${OWC_ADBLOCK_ALLOWLIST_HOSTS:-}
@@ -55,6 +55,39 @@ services:
       - ./data:/app/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  owc-tools-playwright:
+    image: ${OWC_TOOLS_PW_IMAGE:-open-web-catcher-tools-playwright}:${OWC_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.tools.playwright
+      cache_to:
+        - type=inline
+      cache_from:
+        - ${OWC_TOOLS_PW_IMAGE:-open-web-catcher-tools-playwright}:${OWC_TAG:-latest}
+    container_name: ${OWC_TOOLS_PW_CONTAINER:-owc-tools-playwright}
+    restart: unless-stopped
+    shm_size: "2gb"
+    ports:
+      - "3002:3001"
+      - "9223:9223"
+    env_file:
+      - .env
+    environment:
+      PORT: 3001
+      MCP_BROWSER_MODE: ${MCP_BROWSER_MODE:-isolated}
+      BROWSER_WS_ENDPOINT: ws://127.0.0.1:9223
+      OWC_ADBLOCK_ENABLED: ${OWC_ADBLOCK_ENABLED:-true}
+      OWC_ADBLOCK_EXCLUDED_CATEGORIES: ${OWC_ADBLOCK_EXCLUDED_CATEGORIES:-nsfw,gambling}
+      OWC_ADBLOCK_ALLOWLIST_HOSTS: ${OWC_ADBLOCK_ALLOWLIST_HOSTS:-}
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -78,6 +111,8 @@ services:
     environment:
       BROWSER_WS_ENDPOINT: ws://owc-tools:9222
       MCP_SERVER_URL: http://owc-tools:3000
+      MCP_SERVER_URL_PUPPETEER: http://owc-tools:3000
+      MCP_SERVER_URL_PLAYWRIGHT: http://owc-tools-playwright:3001
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-owc}:${POSTGRES_PASSWORD:-owc}@postgres:5432/${POSTGRES_DB:-owc}
       OBSERVABILITY_ENABLED: ${OBSERVABILITY_ENABLED:-true}
       OBSERVABILITY_PROJECT_NAME: ${OBSERVABILITY_PROJECT_NAME:-open-web-catcher}
@@ -89,6 +124,8 @@ services:
       postgres:
         condition: service_healthy
       owc-tools:
+        condition: service_healthy
+      owc-tools-playwright:
         condition: service_healthy
     volumes:
       - ./data:/app/data

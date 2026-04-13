@@ -69,6 +69,18 @@ class Settings(BaseSettings):
 
     browser_ws_endpoint: str = "ws://localhost:9222"
     mcp_server_url: str = "http://localhost:3000"
+    browser_engine: str = Field(
+        default="puppeteer",
+        validation_alias=AliasChoices("BROWSER_ENGINE"),
+    )
+    mcp_server_url_puppeteer: str = Field(
+        default="http://localhost:3000",
+        validation_alias=AliasChoices("MCP_SERVER_URL_PUPPETEER"),
+    )
+    mcp_server_url_playwright: str = Field(
+        default="http://localhost:3001",
+        validation_alias=AliasChoices("MCP_SERVER_URL_PLAYWRIGHT"),
+    )
 
     ipinfo_token: str = ""
     database_url: str = "sqlite:///./data/open_web_catcher.db"
@@ -142,6 +154,7 @@ class Settings(BaseSettings):
                 existing = loaded
 
         existing["llm_provider"] = self.llm_provider
+        existing["browser_engine"] = self.browser_engine
         existing["agent_model"] = self.agent_model
         existing["orchestrator_model"] = self.orchestrator_model
         existing["gemini_temperature"] = self.gemini_temperature

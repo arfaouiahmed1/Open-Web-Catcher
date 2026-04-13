@@ -13,7 +13,8 @@ __pycache__
 data
 docs
 
-tools_js/node_modules
+tools/puppeteer/node_modules
+tools/playwright/node_modules
 web/node_modules
 web/.next
 

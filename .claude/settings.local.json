@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"async \\({ browser, page }\\)\\\\|async \\({ page }\\)\" \"c:/Users/ahmed/Desktop/PFE New Test/tools/playwright/tools/action-tools.js\")",
+      "Bash(sed -i \"s/async \\({ browser, page }\\)/async \\({ browser, context, page }\\)/g\" \"c:/Users/ahmed/Desktop/PFE New Test/tools/playwright/tools/action-tools.js\")",
+      "Bash(sed -i \"s/async \\({ browser, context, page, context }\\)/async \\({ browser, context, page }\\)/g\" \"c:/Users/ahmed/Desktop/PFE New Test/tools/playwright/tools/action-tools.js\")",
+      "Bash(grep -n \"async \\({ browser, context, page }\\)\\\\|async \\({ page }\\)\" \"c:/Users/ahmed/Desktop/PFE New Test/tools/playwright/tools/action-tools.js\")",
+      "Bash(grep -n \"async \\({ browser, page }\\)\\\\|async \\({ page }\\)\" \"c:/Users/ahmed/Desktop/PFE New Test/tools/playwright/tools/navigation-tools.js\")"
+    ]
+  }
+}

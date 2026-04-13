@@ -1,5 +1,6 @@
-agent_model: gemini-3.1-flash-lite-preview
+agent_model: gemini-2.5-flash
 agent_timeout_seconds: 300
+browser_engine: playwright
 classification_max_tool_calls: 5
 embedded_page_max_tool_calls: 20
 gemini_explicit_cache_enabled: true
@@ -12,7 +13,7 @@ landing_page_max_tool_calls: 50
 llm_provider: google
 log_file: data/logs/app.log
 log_level: INFO
-orchestrator_model: gemini-3.1-flash-lite-preview
+orchestrator_model: gemini-2.5-flash
 provider_cache_enabled: true
 tool_result_cache_enabled: true
 tool_result_cache_min_identical_observations: 2

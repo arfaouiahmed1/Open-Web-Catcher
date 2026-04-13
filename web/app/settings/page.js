@@ -120,6 +120,7 @@ export default function SettingsPage() {
   const [providerCacheEnabled, setProviderCacheEnabled] = useState(true);
   const [toolCacheEnabled, setToolCacheEnabled] = useState(true);
   const [toolCacheStable, setToolCacheStable] = useState("2");
+  const [browserEngine, setBrowserEngine] = useState("puppeteer");
   const [saving, setSaving]       = useState(false);
   const [saved, setSaved]         = useState(false);
   const [configErr, setConfigErr] = useState("");
@@ -149,6 +150,7 @@ export default function SettingsPage() {
       setProviderCacheEnabled(Boolean(c.provider_cache_enabled ?? true));
       setToolCacheEnabled(Boolean(c.tool_result_cache_enabled ?? true));
       setToolCacheStable(String(c.tool_result_cache_min_identical_observations ?? 2));
+      setBrowserEngine(c.browser_engine || "puppeteer");
     } catch (e) {
       setConfigErr(e.message);
     }
@@ -188,6 +190,7 @@ export default function SettingsPage() {
           provider_cache_enabled: providerCacheEnabled,
           tool_result_cache_enabled: toolCacheEnabled,
           tool_result_cache_min_identical_observations: Number(toolCacheStable || 2),
+          browser_engine: browserEngine,
         }),
       });
       const updated = await res.json();
@@ -437,6 +440,39 @@ export default function SettingsPage() {
             </p>
           </div>
         </div>
+      </section>
+
+      {/* ── Browser Engine ─────────────────────────────────────────────────── */}
+      <section className="space-y-4">
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-600">Browser Engine</h2>
+        <p className="text-sm text-slate-500">
+          Switch the browser automation backend. Changes apply on next agent run.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {[
+            { id: "puppeteer", name: "Puppeteer", note: "Port 3000 — mature, CDP-based" },
+            { id: "playwright", name: "Playwright", note: "Port 3001 — context isolation, modern" },
+          ].map((eng) => (
+            <button
+              key={eng.id}
+              onClick={() => setBrowserEngine(eng.id)}
+              className={`w-full rounded-xl border p-4 text-left transition-colors ${
+                browserEngine === eng.id
+                  ? "border-signal/50 bg-signal/10"
+                  : "border-white/8 bg-white/[0.03] hover:border-white/20"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-white">{eng.name}</span>
+                {browserEngine === eng.id && <Badge tone="signal">Active</Badge>}
+              </div>
+              <p className="mt-1 text-xs text-slate-600">{eng.note}</p>
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-slate-600">
+          Save with the <strong>Apply config</strong> button in the LLM Provider section above.
+        </p>
       </section>
 
       {/* ── API key status ─────────────────────────────────────────────────── */}

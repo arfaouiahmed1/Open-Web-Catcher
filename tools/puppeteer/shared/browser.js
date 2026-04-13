@@ -17,6 +17,8 @@ const puppeteer = addExtra(puppeteerCore);
 const stealthPlugin = StealthPlugin();
 // Keep UA + client hints fully aligned with our explicit profile rotation.
 stealthPlugin.enabledEvasions.delete('user-agent-override');
+// fingerprint-injector handles navigator.plugins already; stealth's version contradicts it.
+stealthPlugin.enabledEvasions.delete('navigator.plugins');
 puppeteer.use(stealthPlugin);
 
 const WS_ENDPOINT = process.env.BROWSER_WS_ENDPOINT || 'ws://127.0.0.1:9222';
@@ -39,7 +41,7 @@ const FORCED_WINDOWS_PLATFORM = 'Win32';
 const FORCED_WINDOWS_PLATFORM_VERSION = '10.0.0';
 const FORCED_LANGUAGE = 'en-US,en;q=0.9';
 const UBOL_ENABLED = parseBoolean(process.env.OWC_UBOL_ENABLED, true);
-const UBOL_EXTENSION_DIR = String(process.env.OWC_UBOL_EXTENSION_DIR || '/app/tools_js/extensions/ubol').trim();
+const UBOL_EXTENSION_DIR = String(process.env.OWC_UBOL_EXTENSION_DIR || '/app/tools/puppeteer/extensions/ubol').trim();
 const FINGERPRINT_ROTATION_MODE = String(process.env.OWC_FINGERPRINT_ROTATION_MODE || 'origin')
   .trim()
   .toLowerCase();
@@ -103,7 +105,9 @@ const DEFAULT_LAUNCH_ARGS = [
   '--use-fake-ui-for-media-stream',
   '--mute-audio',
   // Keep the software video decoder path; do NOT try hardware on Linux headless.
-  '--disable-features=UseChromeOSDirectVideoDecoder,IsolateOrigins,site-per-process',
+  // NOTE: IsolateOrigins and site-per-process intentionally omitted — disabling them
+  // broke cross-origin iframe auth flows that video player embeds depend on.
+  '--disable-features=UseChromeOSDirectVideoDecoder',
   '--enable-features=NetworkService,NetworkServiceInProcess,OverlayScrollbar',
 
   // ── Stability ────────────────────────────────────────────────────────────────
@@ -443,8 +447,12 @@ function attachNetworkDiagnostics(page) {
       : 'aborted_iframe_or_player_request';
 
     state.autoRecovery.disable_promise = disableBlocking(page)
-      .then((disabled) => {
+      .then(async (disabled) => {
         state.autoRecovery.disabled_blocking = Boolean(disabled);
+        if (disabled) {
+          // Reload so the player can make its requests now that the blocker is off.
+          await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+        }
       })
       .catch((error) => {
         state.autoRecovery.error = error?.message || String(error);
