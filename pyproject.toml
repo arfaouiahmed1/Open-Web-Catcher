@@ -43,7 +43,7 @@ dev = [
     "pandas>=2.2",
     "matplotlib>=3.9",
     "seaborn>=0.13",
-    "deepeval>=1.0",
+    "deepeval>=3.9.6",
     "openai>=1.0",
 ]
 
