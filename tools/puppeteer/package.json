@@ -17,7 +17,7 @@
     "@ghostery/adblocker-puppeteer": "^2.13.0",
     "@modelcontextprotocol/sdk": "^1.10.0",
     "cloudinary": "^2.0.0",
-    "express": "^4.19.0",
+    "express": "^5.2.1",
     "fingerprint-generator": "^2.1.82",
     "fingerprint-injector": "^2.1.82",
     "puppeteer-core": "^24.40.0",
