@@ -52,7 +52,8 @@ export async function interact({
   wait_ms = 3000,
   browserWsEndpoint,
 } = {}) {
-  const session = typeof browserWsEndpoint === 'string'
+  const owned = typeof browserWsEndpoint === 'string';
+  const session = owned
     ? await connectBrowser(browserWsEndpoint)
     : browserWsEndpoint;
   const browser = session.browser;
@@ -438,7 +439,8 @@ export async function interact({
     screenshot_url = null;
   }
 
-  // Playwright: browser stays open (owned by mcp-server session lifecycle)
+  if (owned) await session.disconnect().catch(() => {});
+
   return {
     success,
     executed,

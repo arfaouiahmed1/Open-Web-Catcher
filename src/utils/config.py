@@ -130,7 +130,13 @@ class Settings(BaseSettings):
                 loaded = yaml.safe_load(f) or {}
             if isinstance(loaded, dict):
                 merged.update(loaded)
-        return cls(**merged)
+        s = cls(**merged)
+        # Ensure mcp_server_url tracks browser_engine when loaded from YAML.
+        if s.browser_engine == "playwright":
+            s.mcp_server_url = s.mcp_server_url_playwright
+        elif s.browser_engine == "puppeteer":
+            s.mcp_server_url = s.mcp_server_url_puppeteer
+        return s
 
     def save_yaml(
         self,

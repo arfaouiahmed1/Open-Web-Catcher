@@ -29,13 +29,29 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
 
+      - name: Cache uv virtualenv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('uv.lock') }}
+          restore-keys: venv-${{ runner.os }}-py3.11-
+
       - name: Install dependencies
         run: uv sync --dev
+
+      - name: Lint (ruff)
+        run: uv run ruff check src/ tests/
 
       - name: Run tests
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-        run: uv run pytest -p pytest_asyncio.plugin -m "not deepeval" tests/
+          DATABASE_URL: "sqlite:///:memory:"
+          BROWSER_WS_ENDPOINT: "ws://localhost:9222"
+          GOOGLE_API_KEY: "test-key"
+          MEMORY_ENABLED: "false"
+          OBSERVABILITY_ENABLED: "false"
+          PROVIDER_PRICING_SYNC_ENABLED: "false"
+        run: uv run pytest -p pytest_asyncio.plugin -m "not deepeval" tests/ --tb=short -q
 
   web-build:
     name: Web Build
@@ -50,12 +66,18 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
           cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
 
       - name: Build
         run: npm run build
@@ -65,7 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: tools_js
+        working-directory: tools/puppeteer
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -73,9 +95,9 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
-          cache-dependency-path: tools_js/package-lock.json
+          cache-dependency-path: tools/puppeteer/package-lock.json
 
       - name: Install dependencies
         run: npm ci

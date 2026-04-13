@@ -11,12 +11,11 @@
  */
 
 import {
-  connectBrowser,
   getIframeDiagnostics,
-  getPage,
   getPageNetworkDiagnostics,
 } from '../shared/browser.js';
 import { screenshotViewport } from '../shared/screenshot.js';
+import { withBrowserSession } from '../shared/tool-runtime.js';
 
 const STREAM_PATTERNS = [
   { re: /\.m3u8(\?|$)/i,   protocol: 'hls'      },
@@ -53,8 +52,7 @@ export async function harvest({
   player_iframe_url = '',
   browserWsEndpoint,
 } = {}) {
-  const browser = await connectBrowser(browserWsEndpoint);
-  const page    = await getPage(browser);
+  return withBrowserSession(browserWsEndpoint, async ({ page }) => {
   const targetIframeHost = normalizeHost(player_iframe_url);
 
   const isTargetIframeUrl = (candidate) => {
@@ -114,8 +112,9 @@ export async function harvest({
     });
   });
 
-  // Layer 2: Puppeteer response events
-  page.on('response', (res) => {
+  // Layer 2: Playwright response events (context-level catches cross-origin iframe responses)
+  const context = page.context();
+  const onContextResponse = (res) => {
     const frameUrl = res.frame?.()?.url?.() || '';
     const sourceLayer = isTargetIframeUrl(frameUrl) || isTargetIframeUrl(res.url())
       ? 'iframe-response'
@@ -125,8 +124,8 @@ export async function harvest({
       status: res.status?.() ?? null,
       resource_type: res.request?.()?.resourceType?.() || '',
     });
-  });
-  page.on('requestfailed', (request) => {
+  };
+  const onContextRequestFailed = (request) => {
     const frameUrl = request.frame?.()?.url?.() || '';
     const sourceLayer = isTargetIframeUrl(frameUrl) || isTargetIframeUrl(request.url?.())
       ? 'iframe-request-failed'
@@ -136,7 +135,9 @@ export async function harvest({
       resource_type: request.resourceType?.() || '',
       error_text: request.failure?.()?.errorText || '',
     });
-  });
+  };
+  context.on('response', onContextResponse);
+  context.on('requestfailed', onContextRequestFailed);
 
   // Wait for stream traffic
   await new Promise(r => setTimeout(r, duration_ms));
@@ -198,8 +199,9 @@ export async function harvest({
     return 'playing';
   });
 
+  context.off('response', onContextResponse);
+  context.off('requestfailed', onContextRequestFailed);
   await client.detach();
-  await browser.disconnect();
 
   const result = Array.from(streams.values());
   const m3u8 = result.filter(s => s.protocol === 'hls').map(s => s.url);
@@ -217,4 +219,5 @@ export async function harvest({
     network_diagnostics,
     iframe_diagnostics,
   };
+  });
 }

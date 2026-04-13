@@ -3,14 +3,12 @@
  */
 
 import {
-  connectBrowser,
-  getPage,
   getIframeDiagnostics,
   getPageNetworkDiagnostics,
   retryNavigationAfterAutoRecovery,
 } from '../shared/browser.js';
 import { screenshotFull } from '../shared/screenshot.js';
-import { detectAccessStateFromSignals } from '../shared/tool-runtime.js';
+import { detectAccessStateFromSignals, withBrowserSession } from '../shared/tool-runtime.js';
 
 // Playwright only supports 'load', 'domcontentloaded', 'networkidle', 'commit'.
 // Normalize Puppeteer-style values that the LLM or tool-registry may send.
@@ -105,9 +103,7 @@ export async function navigate({
 } = {}) {
   if (!url) throw new Error('url is required');
 
-  const browser = await connectBrowser(browserWsEndpoint);
-  try {
-    const page = await getPage(browser, { targetUrl: url });
+  return withBrowserSession(browserWsEndpoint, async ({ page }) => {
     const beforeUrl = page.url();
 
     const redirectChain = [];
@@ -206,7 +202,5 @@ export async function navigate({
       iframe_diagnostics,
       recovery_attempt,
     };
-  } finally {
-    await browser.disconnect();
-  }
+  }, { targetUrl: url });
 }

@@ -4,7 +4,7 @@
  * Returns structured, bounded context used by profile-specific inspect tools.
  */
 
-import { connectBrowser, getPage } from '../shared/browser.js';
+import { withBrowserSession } from '../shared/tool-runtime.js';
 import { screenshotViewport } from '../shared/screenshot.js';
 
 const LIMITS = {
@@ -462,93 +462,90 @@ async function collectFrameSummary(frame, framePath, offset) {
 }
 
 /**
- * @param {{ browserWsEndpoint?: string }} params
+ * @param {{ browserWsEndpoint?: string|object }} params
  */
 export async function inspect({ browserWsEndpoint } = {}) {
-  const browser = await connectBrowser(browserWsEndpoint);
-  const page    = await getPage(browser);
+  return withBrowserSession(browserWsEndpoint, async ({ page }) => {
+    const url = page.url();
+    const title = await page.title().catch(() => '');
+    const rootData = await collectRootData(page);
 
-  const url = page.url();
-  const title = await page.title().catch(() => '');
-  const rootData = await collectRootData(page);
+    const framePathMap = buildFramePathMap(page);
+    const frameRecords = [];
+    const frames = page.frames().slice(0, LIMITS.frameTree);
 
-  const framePathMap = buildFramePathMap(page);
-  const frameRecords = [];
-  const frames = page.frames().slice(0, LIMITS.frameTree);
+    for (const frame of frames) {
+      const framePath = framePathMap.get(frame) || 'root';
+      const parentFrame = frame.parentFrame();
+      const parentPath = parentFrame ? (framePathMap.get(parentFrame) || 'root') : null;
+      const offset = await computeFrameOffset(frame);
+      const summary = await collectFrameSummary(frame, framePath, offset);
 
-  for (const frame of frames) {
-    const framePath = framePathMap.get(frame) || 'root';
-    const parentFrame = frame.parentFrame();
-    const parentPath = parentFrame ? (framePathMap.get(parentFrame) || 'root') : null;
-    const offset = await computeFrameOffset(frame);
-    const summary = await collectFrameSummary(frame, framePath, offset);
+      frameRecords.push({
+        frame_path: framePath,
+        parent_frame_path: parentPath,
+        depth: frameDepth(framePath),
+        is_main_frame: frame === page.mainFrame(),
+        name: clean(frame.name?.() || '', 60),
+        url: frame.url() || '',
+        viewport_offset: offset,
+        title: summary.title,
+        text_sample: summary.text_sample,
+        text_hash: textHash(summary.text_sample),
+        total_links: summary.total_links,
+        total_buttons: summary.total_buttons,
+        total_iframes: summary.total_iframes,
+        video_count: summary.video_count,
+        has_server_controls: summary.has_server_controls,
+        has_player_library: summary.has_player_library,
+        player_libraries_detail: summary.player_libraries_detail,
+        purpose_hint: inferFramePurpose(summary, frame.url()),
+        sample_links: summary.sample_links,
+        sample_buttons: summary.sample_buttons,
+        error: summary.error,
+      });
+    }
 
-    frameRecords.push({
-      frame_path: framePath,
-      parent_frame_path: parentPath,
-      depth: frameDepth(framePath),
-      is_main_frame: frame === page.mainFrame(),
-      name: clean(frame.name?.() || '', 60),
-      url: frame.url() || '',
-      viewport_offset: offset,
-      title: summary.title,
-      text_sample: summary.text_sample,
-      text_hash: textHash(summary.text_sample),
-      total_links: summary.total_links,
-      total_buttons: summary.total_buttons,
-      total_iframes: summary.total_iframes,
-      video_count: summary.video_count,
-      has_server_controls: summary.has_server_controls,
-      has_player_library: summary.has_player_library,
-      player_libraries_detail: summary.player_libraries_detail,
-      purpose_hint: inferFramePurpose(summary, frame.url()),
-      sample_links: summary.sample_links,
-      sample_buttons: summary.sample_buttons,
-      error: summary.error,
-    });
-  }
+    // ── Screenshot ────────────────────────────────────────────────────────────
+    let screenshot_url = null;
+    try {
+      screenshot_url = await screenshotViewport(page);
+    } catch (e) {
+      screenshot_url = `error: ${e.message}`;
+    }
 
-  // ── Screenshot ────────────────────────────────────────────────────────────
-  let screenshot_url = null;
-  try {
-    screenshot_url = await screenshotViewport(page);
-  } catch (e) {
-    screenshot_url = `error: ${e.message}`;
-  }
-
-  await browser.disconnect();
-
-  return {
-    url,
-    title,
-    screenshot_url,
-    contentLinks: rootData.contentLinks,
-    navLinks: rootData.navLinks,
-    buttons: rootData.buttons,
-    iframes: rootData.iframes,
-    hosting_signals: rootData.hosting_signals,
-    popups: rootData.popups,
-    dom_skeleton: rootData.dom_skeleton,
-    pagination: rootData.pagination,
-    videos: rootData.videos,
-    elements: rootData.elements,
-    frame_tree: frameRecords,
-    page_digest: {
-      text_sample: rootData.text_sample,
-      text_hash: textHash(rootData.text_sample),
-      html_size: rootData.html_size,
-      node_count: rootData.node_count,
-    },
-    stats: {
-      content_links: rootData.contentLinks.length,
-      nav_links: rootData.navLinks.length,
-      buttons: rootData.buttons.length,
-      iframes: rootData.iframes.length,
-      videos: rootData.videos.length,
-      popups: rootData.popups.length,
-      elements: rootData.elements.length,
-      frames_total: frameRecords.length,
-      frames_with_video: frameRecords.filter((frame) => frame.video_count > 0).length,
-    },
-  };
+    return {
+      url,
+      title,
+      screenshot_url,
+      contentLinks: rootData.contentLinks,
+      navLinks: rootData.navLinks,
+      buttons: rootData.buttons,
+      iframes: rootData.iframes,
+      hosting_signals: rootData.hosting_signals,
+      popups: rootData.popups,
+      dom_skeleton: rootData.dom_skeleton,
+      pagination: rootData.pagination,
+      videos: rootData.videos,
+      elements: rootData.elements,
+      frame_tree: frameRecords,
+      page_digest: {
+        text_sample: rootData.text_sample,
+        text_hash: textHash(rootData.text_sample),
+        html_size: rootData.html_size,
+        node_count: rootData.node_count,
+      },
+      stats: {
+        content_links: rootData.contentLinks.length,
+        nav_links: rootData.navLinks.length,
+        buttons: rootData.buttons.length,
+        iframes: rootData.iframes.length,
+        videos: rootData.videos.length,
+        popups: rootData.popups.length,
+        elements: rootData.elements.length,
+        frames_total: frameRecords.length,
+        frames_with_video: frameRecords.filter((frame) => frame.video_count > 0).length,
+      },
+    };
+  });
 }

@@ -1,0 +1,25 @@
+# CODEOWNERS — every PR must be reviewed by a matching owner before merging.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: all changes require review from the repo owner
+*                          @arfaouiahmed1
+
+# Python backend and tests
+/src/                      @arfaouiahmed1
+/tests/                    @arfaouiahmed1
+pyproject.toml             @arfaouiahmed1
+uv.lock                    @arfaouiahmed1
+
+# Next.js frontend
+/web/                      @arfaouiahmed1
+
+# Puppeteer / MCP tools
+/tools/                    @arfaouiahmed1
+
+# CI/CD and security — changes here need extra care
+/.github/                  @arfaouiahmed1
+Dockerfile*                @arfaouiahmed1
+docker-compose.yml         @arfaouiahmed1
+
+# Secrets template — never commit real values
+.env.example               @arfaouiahmed1

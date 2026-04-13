@@ -827,9 +827,17 @@ async function createFingerprintedContext(browser, profile, synchronizedBundle) 
 
 /**
  * Connect to an existing browser by WebSocket endpoint (CDP).
- * Returns { browser, context } session object.
+ * Returns { browser, context, disconnect } session object.
+ *
+ * If wsEndpoint is already a session object (e.g. passed from isolated MCP mode),
+ * it is returned directly with a no-op disconnect so tool cleanup calls work safely.
  */
 export async function connectBrowser(wsEndpoint = WS_ENDPOINT) {
+  // Pass-through: already a session object from isolated MCP mode.
+  if (wsEndpoint != null && typeof wsEndpoint === 'object' && wsEndpoint.context) {
+    if (typeof wsEndpoint.disconnect === 'function') return wsEndpoint;
+    return { ...wsEndpoint, disconnect: async () => {} };
+  }
   const browser = await chromium.connectOverCDP(wsEndpoint);
   let context = browser.contexts()[0];
   if (!context) {
@@ -840,7 +848,7 @@ export async function connectBrowser(wsEndpoint = WS_ENDPOINT) {
     const profile = buildProfileFromFingerprint(synchronized, suite.chromeVersion, suite.chromeMajorVersion);
     context = await createFingerprintedContext(browser, profile, synchronized);
   }
-  return { browser, context, userDataDir: null };
+  return { browser, context, userDataDir: null, disconnect: () => browser.disconnect() };
 }
 
 /**

@@ -176,7 +176,7 @@ const TOOL_SPECS = {
     'Use for first navigation to a destination URL. Includes challenge-page detection and optional retry/wait handling (Cloudflare/captcha-like pages) plus redirect/HTTP details and screenshot.',
     {
       url: 'https://example.com/watch',
-      wait_until: 'networkidle2',
+      wait_until: 'networkidle',
       timeout_ms: 30000,
       challenge_wait_ms: 6000,
       retry_on_challenge: true,
@@ -185,7 +185,8 @@ const TOOL_SPECS = {
     { ok: true, final_url: 'https://example.com/watch', screenshot_url: 'https://res.cloudinary.com/...' },
     {
       url: z.string().describe('Full URL to open'),
-      wait_until: z.enum(['networkidle0', 'networkidle2', 'domcontentloaded', 'load']).optional().default('networkidle2'),
+      wait_until: z.enum(['networkidle', 'networkidle0', 'networkidle2', 'domcontentloaded', 'load']).optional().default('networkidle')
+        .describe('Playwright wait condition. Use networkidle (recommended), domcontentloaded, or load. networkidle0/networkidle2 are accepted as aliases for networkidle.'),
       timeout_ms: z.number().optional().default(30000),
       challenge_wait_ms: z.number().optional().default(6000)
         .describe('How long to wait for challenge pages (Cloudflare/captcha-like) to clear before retrying'),
@@ -383,11 +384,12 @@ const TOOL_SPECS = {
   ),
   navigate: spec(
     'Navigate to a URL and report final URL, redirects, status, and a screenshot. Use for direct page navigation in the current browser session.',
-    { url: 'https://example.com/watch', wait_until: 'networkidle2', timeout_ms: 30000 },
+    { url: 'https://example.com/watch', wait_until: 'networkidle', timeout_ms: 30000 },
     { success: true, finalUrl: 'https://example.com/watch', httpStatus: 200, screenshot_url: 'https://res.cloudinary.com/...' },
     {
       url: z.string().describe('Full URL to navigate to'),
-      wait_until: z.enum(['networkidle0', 'networkidle2', 'domcontentloaded', 'load']).optional().default('networkidle2'),
+      wait_until: z.enum(['networkidle', 'networkidle0', 'networkidle2', 'domcontentloaded', 'load']).optional().default('networkidle')
+        .describe('Playwright wait condition. Use networkidle (recommended), domcontentloaded, or load. networkidle0/networkidle2 are accepted as aliases for networkidle.'),
       timeout_ms: z.number().optional().default(30000),
     },
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.navigate({ ...args, browserWsEndpoint }),
