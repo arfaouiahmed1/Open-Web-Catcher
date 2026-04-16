@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from src.storage.models import (
     AgentOutputRecord,
     AgentRunRecord,
+    BackgroundJobRecord,
     Base,
     EvaluationCaseRecord,
     EvaluationCaseResultRecord,
@@ -86,6 +87,7 @@ def create_tables() -> None:
 __all__ = [
     "AgentOutputRecord",
     "AgentRunRecord",
+    "BackgroundJobRecord",
     "Base",
     "DATABASE_URL",
     "EvaluationCaseRecord",

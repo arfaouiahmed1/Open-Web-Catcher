@@ -29,6 +29,7 @@ def test_alembic_upgrade_creates_normalized_tables(tmp_path):
     assert "tool_calls" in table_names
     assert "tool_playground_calls" in table_names
     assert "provider_lookup_checks" in table_names
+    assert "background_jobs" in table_names
     assert "memory_entries" in table_names
     assert "prompt_compilations" in table_names
 

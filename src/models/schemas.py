@@ -204,10 +204,12 @@ class AgentTestRequest(BaseModel):
     agent: str
     url: str
     prompt_override: str = ""
+    idempotency_key: str = ""
 
 
 class WorkflowRunRequest(BaseModel):
     url: str
+    idempotency_key: str = ""
 
 
 class ToolPlaygroundRequest(BaseModel):

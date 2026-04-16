@@ -343,48 +343,41 @@ class TestRunEndpoint:
 
 class TestUiAgentTestEndpoint:
     def test_returns_run_id_and_root_actor(self, client: TestClient):
-        with patch("src.api.app.asyncio.create_task") as mock_task:
-            mock_task.side_effect = lambda coro: (coro.close(), MagicMock())[1]
-            response = client.post(
-                "/ui/agents/test",
-                json={"agent": "classification", "url": "https://streaming.example.com"},
-            )
+        response = client.post(
+            "/ui/agents/test",
+            json={"agent": "classification", "url": "https://streaming.example.com"},
+        )
 
         assert response.status_code == 200
         data = response.json()
         assert data["root_actor"] == "classification"
         assert data["run_id"]
+        assert data["job_status"] in {"queued", "running", "retrying"}
 
-    def test_background_task_is_created(self, client: TestClient):
-        with patch("src.api.app.asyncio.create_task") as mock_task:
-            mock_task.side_effect = lambda coro: (coro.close(), MagicMock())[1]
-            client.post(
-                "/ui/agents/test",
-                json={"agent": "hosting", "url": "https://hosting.example.com/video/1"},
-            )
-
-        mock_task.assert_called_once()
+    def test_background_job_is_enqueued(self, client: TestClient):
+        response = client.post(
+            "/ui/agents/test",
+            json={"agent": "hosting", "url": "https://hosting.example.com/video/1"},
+        )
+        assert response.status_code == 200
+        assert response.json()["job_status"] in {"queued", "running", "retrying"}
 
     @pytest.mark.parametrize("agent_name", ["classification", "landing", "hosting", "embedded"])
     def test_all_agent_profiles_are_accepted(self, client: TestClient, agent_name: str):
-        with patch("src.api.app.asyncio.create_task") as mock_task:
-            mock_task.side_effect = lambda coro: (coro.close(), MagicMock())[1]
-            response = client.post(
-                "/ui/agents/test",
-                json={"agent": agent_name, "url": "https://example.com"},
-            )
+        response = client.post(
+            "/ui/agents/test",
+            json={"agent": agent_name, "url": "https://example.com"},
+        )
 
         assert response.status_code == 200
         assert response.json()["root_actor"] == agent_name
 
-    def test_unknown_agent_still_creates_task(self, client: TestClient):
-        """The endpoint fires the background task; agent resolution happens inside it."""
-        with patch("src.api.app.asyncio.create_task") as mock_task:
-            mock_task.side_effect = lambda coro: (coro.close(), MagicMock())[1]
-            response = client.post(
-                "/ui/agents/test",
-                json={"agent": "nonexistent_agent", "url": "https://example.com"},
-            )
+    def test_unknown_agent_still_enqueues_job(self, client: TestClient):
+        """The endpoint persists the job; agent resolution happens when worker executes it."""
+        response = client.post(
+            "/ui/agents/test",
+            json={"agent": "nonexistent_agent", "url": "https://example.com"},
+        )
 
         assert response.status_code == 200
 
@@ -395,34 +388,29 @@ class TestUiAgentTestEndpoint:
 
 class TestUiWorkflowRunEndpoint:
     def test_returns_run_id_and_orchestrator_actor(self, client: TestClient):
-        with patch("src.api.app.asyncio.create_task") as mock_task:
-            mock_task.side_effect = lambda coro: (coro.close(), MagicMock())[1]
-            response = client.post(
-                "/ui/workflows/run",
-                json={"url": "https://streaming.example.com"},
-            )
+        response = client.post(
+            "/ui/workflows/run",
+            json={"url": "https://streaming.example.com"},
+        )
 
         assert response.status_code == 200
         data = response.json()
         assert data["root_actor"] == "orchestrator"
         assert data["run_id"]
+        assert data["job_status"] in {"queued", "running", "retrying"}
 
     def test_each_call_produces_unique_run_id(self, client: TestClient):
         run_ids: list[str] = []
-        with patch("src.api.app.asyncio.create_task") as mock_task:
-            mock_task.side_effect = lambda coro: (coro.close(), MagicMock())[1]
-            for _ in range(3):
-                r = client.post("/ui/workflows/run", json={"url": "https://streaming.example.com"})
-                run_ids.append(r.json()["run_id"])
+        for _ in range(3):
+            r = client.post("/ui/workflows/run", json={"url": "https://streaming.example.com"})
+            run_ids.append(r.json()["run_id"])
 
         assert len(set(run_ids)) == 3
 
-    def test_background_task_is_scheduled(self, client: TestClient):
-        with patch("src.api.app.asyncio.create_task") as mock_task:
-            mock_task.side_effect = lambda coro: (coro.close(), MagicMock())[1]
-            client.post("/ui/workflows/run", json={"url": "https://streaming.example.com"})
-
-        mock_task.assert_called_once()
+    def test_background_job_is_enqueued(self, client: TestClient):
+        response = client.post("/ui/workflows/run", json={"url": "https://streaming.example.com"})
+        assert response.status_code == 200
+        assert response.json()["job_status"] in {"queued", "running", "retrying"}
 
 
 class TestPricingSyncEndpoint:

@@ -34,7 +34,7 @@ from src.models.schemas import (
     WorkflowRunRequest,
 )
 from src.storage.database import create_tables, get_session
-from src.storage.repositories import RunRepository
+from src.storage.repositories import BackgroundJobRepository, RunRepository
 from src.storage.ui_repository import OperatorConsoleRepository
 from src.tools.mcp_client import REQUIRED_TOOLS_BY_PROFILE, agent_tools
 from src.utils.config import Settings
@@ -61,6 +61,7 @@ class _PlaygroundToolSession:
 _PLAYGROUND_SESSION_TTL_SECONDS = 15 * 60
 _playground_tool_sessions: dict[str, _PlaygroundToolSession] = {}
 _playground_tool_session_lock = asyncio.Lock()
+_background_worker_task: asyncio.Task | None = None
 
 
 class ClassifyRequest(BaseModel):
@@ -298,20 +299,105 @@ def _auto_sync_provider_pricing(settings: Settings) -> None:
         )
 
 
+def _recover_background_jobs() -> int:
+    session = get_session()
+    try:
+        return BackgroundJobRepository(session).recover_stale_running(stale_after_seconds=180)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Skipping background job recovery: %s", exc)
+        return 0
+    finally:
+        session.close()
+
+
+async def _process_background_job() -> bool:
+    session = get_session()
+    try:
+        repo = BackgroundJobRepository(session)
+        job = repo.claim_next(lease_seconds=90)
+    finally:
+        session.close()
+
+    if job is None:
+        return False
+
+    if run_registry.get(job.run_id) is None and not _restore_trace_from_db(job.run_id):
+        observer = run_registry.create(
+            run_id=job.run_id,
+            root_actor=job.actor or ("orchestrator" if job.job_type == "workflow" else "agent"),
+            observability=get_observability_status(get_settings()),
+        )
+        observer.set_url(job.url or "")
+
+    if job.job_type == "workflow":
+        execution = await _background_workflow(job.run_id, job.url)
+    elif job.job_type == "agent":
+        payload = job.payload_json or {}
+        execution = await _background_agent(
+            job.run_id,
+            str(payload.get("agent", "") or job.actor or "classification"),
+            job.url,
+            prompt_override=str(payload.get("prompt_override", "") or ""),
+        )
+    else:
+        execution = {"ok": False, "error": f"Unsupported job type '{job.job_type}'"}
+
+    session = get_session()
+    try:
+        repo = BackgroundJobRepository(session)
+        if execution.get("ok"):
+            repo.mark_succeeded(job.run_id, result_json=execution.get("result") or {})
+        else:
+            repo.mark_failed(job.run_id, error_text=str(execution.get("error", "background_job_failed")))
+    finally:
+        session.close()
+    return True
+
+
+async def _background_worker_loop() -> None:
+    while True:
+        try:
+            processed = await _process_background_job()
+            await asyncio.sleep(0.2 if processed else 0.8)
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Background worker iteration failed: %s", exc)
+            await asyncio.sleep(1.0)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _background_worker_task
     settings = get_settings()
     setup_logging(level=settings.log_level, log_file=settings.log_file)
     setup_tracing_from_settings(settings)
     create_tables()
+    recovered_jobs = _recover_background_jobs()
+    cleanup = {"runtime_events_deleted": 0, "run_screenshots_deleted": 0}
+    session = get_session()
+    try:
+        cleanup = RunRepository(session).cleanup_old_artifacts(retention_days=settings.background_job_retention_days)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Skipping startup artifact cleanup: %s", exc)
+    finally:
+        session.close()
     _refresh_pricing_from_db(settings)
     _auto_sync_provider_pricing(settings)
+    _background_worker_task = asyncio.create_task(_background_worker_loop())
     logger.info(
-        "Open Web Catcher API started | orchestrator=%s | agents=%s",
+        "Open Web Catcher API started | orchestrator=%s | agents=%s | recovered_jobs=%d | cleanup=%s",
         settings.orchestrator_model,
         settings.agent_model,
+        recovered_jobs,
+        cleanup,
     )
     yield
+    if _background_worker_task is not None:
+        _background_worker_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _background_worker_task
+        _background_worker_task = None
     await _close_all_playground_tool_sessions()
     logger.info("Open Web Catcher API shutting down")
 
@@ -348,6 +434,30 @@ def _active_trace_row(trace: Any) -> dict[str, Any]:
         "total_llm_calls": metrics.total_llm_calls if metrics else 0,
         "estimated_total_cost_usd": total_cost,
         "total_cost_usd": total_cost,
+    }
+
+
+def _background_job_row(job: Any) -> dict[str, Any]:
+    return {
+        "run_id": job.run_id,
+        "url": job.url,
+        "page_type": "unknown",
+        "status": job.status,
+        "streams_found": 0,
+        "success": job.status == "succeeded",
+        "duration_seconds": 0.0,
+        "tool_calls": 0,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "estimated_total_cost_usd": 0.0,
+        "total_cost_usd": 0.0,
+        "llm_calls": 0,
+        "message_count": 0,
+        "created_at": job.created_at.isoformat() if getattr(job, "created_at", None) else "",
+        "root_actor": job.actor,
+        "job_type": job.job_type,
+        "attempts": int(job.attempts or 0),
+        "max_attempts": int(job.max_attempts or 0),
     }
 
 
@@ -407,7 +517,66 @@ async def _persist_pipeline_result(result: PipelineResult) -> None:
         session.close()
 
 
-async def _background_workflow(run_id: str, url: str) -> None:
+def _persist_trace_snapshot(run_id: str, *, root_actor: str, url: str) -> None:
+    trace = run_registry.get(run_id)
+    if trace is None:
+        return
+    session = get_session()
+    try:
+        RunRepository(session).save_trace_snapshot(run_id=run_id, root_actor=root_actor, url=url, trace=trace)
+        BackgroundJobRepository(session).heartbeat(run_id)
+    finally:
+        session.close()
+
+
+def _restore_trace_from_db(run_id: str) -> bool:
+    session = get_session()
+    try:
+        job = BackgroundJobRepository(session).get_by_run_id(run_id)
+        if job is None or job.status in {"succeeded", "failed", "dead_letter", "cancelled"}:
+            return False
+        events = RunRepository(session).list_runtime_events(run_id)
+    finally:
+        session.close()
+    if not events:
+        return False
+    observer = run_registry.create(
+        run_id=run_id,
+        root_actor=job.actor or ("orchestrator" if job.job_type == "workflow" else "agent"),
+        observability=get_observability_status(get_settings()),
+    )
+    observer.set_url(job.url or "")
+    for event in events:
+        observer.child(str(event.get("actor", "") or observer.actor)).emit(
+            str(event.get("kind", "event") or "event"),
+            str(event.get("message", "") or ""),
+            status=str(event.get("status", "info") or "info"),
+            details=event.get("details") if isinstance(event.get("details"), dict) else {},
+        )
+    return True
+
+
+async def _trace_persist_loop(
+    run_id: str,
+    *,
+    root_actor: str,
+    url: str,
+    interval_seconds: float = 1.2,
+) -> None:
+    try:
+        while True:
+            _persist_trace_snapshot(run_id, root_actor=root_actor, url=url)
+            trace = run_registry.get(run_id)
+            if trace is None or trace.completed:
+                break
+            await asyncio.sleep(max(0.3, float(interval_seconds)))
+    except asyncio.CancelledError:
+        return
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Trace persistence loop failed for run_id=%s: %s", run_id, exc)
+
+
+async def _background_workflow(run_id: str, url: str) -> dict[str, Any]:
     from src.agents.orchestrator import run_pipeline as _run_pipeline
 
     settings = get_settings()
@@ -416,6 +585,8 @@ async def _background_workflow(run_id: str, url: str) -> None:
         root_actor="orchestrator",
         observability=get_observability_status(settings),
     )
+    observer.set_url(url)
+    persist_task = asyncio.create_task(_trace_persist_loop(run_id, root_actor="orchestrator", url=url))
     try:
         timeout_seconds = max(1, int(settings.agent_timeout_seconds))
         result = await asyncio.wait_for(
@@ -423,18 +594,26 @@ async def _background_workflow(run_id: str, url: str) -> None:
             timeout=timeout_seconds,
         )
         await _persist_pipeline_result(result)
+        _persist_trace_snapshot(run_id, root_actor="orchestrator", url=url)
+        return {"ok": True, "result": result.model_dump(mode="json")}
     except asyncio.TimeoutError:
         message = f"Workflow timed out after {max(1, int(settings.agent_timeout_seconds))}s"
         _emit_failure_once(observer, "pipeline_failed", message)
         observer.finish(success=False, failure_mode="TimeoutError")
+        _persist_trace_snapshot(run_id, root_actor="orchestrator", url=url)
         logger.error("Background workflow timed out: run_id=%s timeout=%ss", run_id, max(1, int(settings.agent_timeout_seconds)))
+        return {"ok": False, "error": message}
     except Exception as exc:
         _emit_failure_once(observer, "pipeline_failed", str(exc))
         observer.finish(success=False, failure_mode=type(exc).__name__)
+        _persist_trace_snapshot(run_id, root_actor="orchestrator", url=url)
         logger.exception("Background workflow failed: %s", exc)
+        return {"ok": False, "error": str(exc)}
+    finally:
+        persist_task.cancel()
 
 
-async def _background_agent(run_id: str, agent: str, url: str, prompt_override: str = "") -> None:
+async def _background_agent(run_id: str, agent: str, url: str, prompt_override: str = "") -> dict[str, Any]:
     settings = get_settings()
     observer = run_registry.create(
         run_id=run_id,
@@ -442,6 +621,7 @@ async def _background_agent(run_id: str, agent: str, url: str, prompt_override: 
         observability=get_observability_status(settings),
     )
     observer.set_url(url)
+    persist_task = asyncio.create_task(_trace_persist_loop(run_id, root_actor=agent, url=url))
     try:
         timeout_seconds = max(1, int(settings.agent_timeout_seconds))
         result = await asyncio.wait_for(
@@ -458,20 +638,28 @@ async def _background_agent(run_id: str, agent: str, url: str, prompt_override: 
             success = result.status.value in {"success", "partial"}
             failure_mode = "" if success else result.status.value
         observer.finish(success=success, failure_mode=failure_mode)
+        _persist_trace_snapshot(run_id, root_actor=agent, url=url)
+        return {"ok": success, "result": result.model_dump(mode="json") if hasattr(result, "model_dump") else {}}
     except asyncio.TimeoutError:
         message = f"Agent timed out after {max(1, int(settings.agent_timeout_seconds))}s"
         _emit_failure_once(observer, "agent_failed", message)
         observer.finish(success=False, failure_mode="TimeoutError")
+        _persist_trace_snapshot(run_id, root_actor=agent, url=url)
         logger.error(
             "Background agent run timed out: run_id=%s agent=%s timeout=%ss",
             run_id,
             agent,
             max(1, int(settings.agent_timeout_seconds)),
         )
+        return {"ok": False, "error": message}
     except Exception as exc:
         _emit_failure_once(observer, "agent_failed", str(exc))
         observer.finish(success=False, failure_mode=type(exc).__name__)
+        _persist_trace_snapshot(run_id, root_actor=agent, url=url)
         logger.exception("Background agent run failed: %s", exc)
+        return {"ok": False, "error": str(exc)}
+    finally:
+        persist_task.cancel()
 
 
 async def _call_mcp_tool(
@@ -667,6 +855,32 @@ def _provider_lookup_urls(stream_urls: list[str], settings: Settings) -> list[di
         session.close()
 
 
+def _background_job_health() -> dict[str, Any]:
+    session = get_session()
+    try:
+        repo = BackgroundJobRepository(session)
+        rows = repo.list_active(limit=1000)
+        queued = sum(1 for row in rows if row.status in {"queued", "retrying"})
+        running = sum(1 for row in rows if row.status == "running")
+        return {
+            "healthy": True,
+            "worker_running": _background_worker_task is not None and not _background_worker_task.done(),
+            "queued": queued,
+            "running": running,
+            "queue_lag": queued,
+        }
+    except Exception:
+        return {
+            "healthy": False,
+            "worker_running": _background_worker_task is not None and not _background_worker_task.done(),
+            "queued": 0,
+            "running": 0,
+            "queue_lag": 0,
+        }
+    finally:
+        session.close()
+
+
 async def _stream_trace(run_id: str, request: Request | None = None):
     last_seq = 0
     first_tick = True
@@ -677,6 +891,46 @@ async def _stream_trace(run_id: str, request: Request | None = None):
 
             trace = run_registry.get(run_id)
             if trace is None:
+                if _restore_trace_from_db(run_id):
+                    await asyncio.sleep(0)
+                    continue
+                session = get_session()
+                try:
+                    repo = RunRepository(session)
+                    db_events = repo.list_runtime_events(run_id)
+                    if db_events:
+                        payload = {
+                            "run_id": run_id,
+                            "events": [event for event in db_events if int(event.get("seq", 0)) > last_seq],
+                            "metrics": None,
+                            "completed": True,
+                            "cancel_requested": False,
+                            "cancel_reason": "",
+                            "source": "database",
+                        }
+                        if payload["events"]:
+                            last_seq = int(payload["events"][-1].get("seq", last_seq))
+                        yield f"data: {json.dumps(payload, default=str)}\n\n"
+                        break
+                    job = BackgroundJobRepository(session).get_by_run_id(run_id)
+                    if job is not None:
+                        payload = {
+                            "run_id": run_id,
+                            "events": [],
+                            "completed": job.status in {"succeeded", "failed", "dead_letter", "cancelled"},
+                            "cancel_requested": job.status == "cancelled",
+                            "cancel_reason": job.error_text if job.status == "cancelled" else "",
+                            "job_status": job.status,
+                            "source": "background_job",
+                        }
+                        yield f"data: {json.dumps(payload, default=str)}\n\n"
+                        if payload["completed"]:
+                            break
+                        await asyncio.sleep(0.8)
+                        continue
+                finally:
+                    session.close()
+
                 payload = {"run_id": run_id, "events": [], "completed": True, "error": "run_not_found"}
                 yield f"data: {json.dumps(payload, default=str)}\n\n"
                 break
@@ -727,6 +981,7 @@ def health():
     settings = get_settings()
     mcp_status = probe_mcp(settings.mcp_server_url)
     browser_status = probe_browser(settings.browser_ws_endpoint)
+    background_status = _background_job_health()
 
     # In isolated mode, MCP launches and manages per-session browsers.
     # The shared CDP endpoint is only a fallback and may be intentionally absent.
@@ -744,7 +999,7 @@ def health():
         "agent_model": settings.agent_model,
         "browser_ws_endpoint": settings.browser_ws_endpoint,
         "mcp_server_url": settings.mcp_server_url,
-        "dependencies": {"browser": browser_status, "mcp": mcp_status},
+        "dependencies": {"browser": browser_status, "mcp": mcp_status, "background_jobs": background_status},
         "observability": get_observability_status(settings).model_dump(),
     }
 
@@ -911,9 +1166,16 @@ def get_memory_entries(domain: str = "", page_type: str = "", limit: int = 50):
 @app.get("/runs/{run_id}/events")
 def get_run_events(run_id: str):
     trace = run_registry.get(run_id)
-    if trace is None:
-        raise HTTPException(status_code=404, detail=f"Run trace '{run_id}' not found")
-    return trace.model_dump(mode="json")
+    if trace is not None:
+        return trace.model_dump(mode="json")
+    session = get_session()
+    try:
+        events = RunRepository(session).list_runtime_events(run_id)
+        if not events:
+            raise HTTPException(status_code=404, detail=f"Run trace '{run_id}' not found")
+        return {"run_id": run_id, "events": events, "completed": True, "source": "database"}
+    finally:
+        session.close()
 
 
 @app.get("/datasets/examples")
@@ -999,7 +1261,23 @@ def ui_runs(
 ):
     session = get_session()
     try:
-        return OperatorConsoleRepository(session).list_runs(limit=limit, offset=offset, status=status, page_type=page_type)
+        repo = OperatorConsoleRepository(session)
+        payload = repo.list_runs(limit=limit + offset + 200, offset=0, status=status, page_type=page_type)
+        jobs = BackgroundJobRepository(session).list_active(limit=400)
+        existing_run_ids = {str(row.get("run_id", "")) for row in payload.get("rows", [])}
+        pending_rows = []
+        for job in jobs:
+            if job.run_id in existing_run_ids:
+                continue
+            if status and job.status != status:
+                continue
+            pending_rows.append(_background_job_row(job))
+        rows = pending_rows + payload.get("rows", [])
+        sliced = rows[offset : offset + limit]
+        return {
+            "total": int(payload.get("total", 0)) + len(pending_rows),
+            "rows": sliced,
+        }
     finally:
         session.close()
 
@@ -1007,6 +1285,8 @@ def ui_runs(
 @app.get("/ui/runs/{run_id}")
 def ui_run_detail(run_id: str):
     active = run_registry.get(run_id)
+    if active is None and _restore_trace_from_db(run_id):
+        active = run_registry.get(run_id)
     if active is not None and not active.completed:
         return {"active_trace": active.model_dump(mode="json")}
 
@@ -1014,7 +1294,23 @@ def ui_run_detail(run_id: str):
     try:
         payload = OperatorConsoleRepository(session).get_run_detail(run_id)
         if payload is None:
-            raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+            job = BackgroundJobRepository(session).get_by_run_id(run_id)
+            if job is None:
+                raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+            return {
+                "run": _background_job_row(job),
+                "snapshot": job.result_json or {},
+                "agent_runs": [],
+                "tool_calls": [],
+                "llm_calls": [],
+                "events": [],
+                "job": {
+                    "status": job.status,
+                    "attempts": int(job.attempts or 0),
+                    "max_attempts": int(job.max_attempts or 0),
+                    "error_text": job.error_text,
+                },
+            }
         return payload
     finally:
         session.close()
@@ -1036,23 +1332,77 @@ async def ui_run_stream(run_id: str, request: Request):
 @app.post("/ui/runs/{run_id}/cancel")
 def ui_cancel_run(run_id: str):
     success = run_registry.request_cancel(run_id, reason="Cancelled from the Next.js operator console.")
+    session = get_session()
+    try:
+        job_repo = BackgroundJobRepository(session)
+        job = job_repo.get_by_run_id(run_id)
+        if job is not None:
+            job_repo.mark_cancelled(run_id, reason="Cancelled from the Next.js operator console.")
+            success = True
+    finally:
+        session.close()
     if not success:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found or already completed")
     return {"ok": True, "run_id": run_id}
 
 
+def _enqueue_background_job(
+    *,
+    run_id: str,
+    job_type: str,
+    url: str,
+    actor: str,
+    payload: dict[str, Any] | None = None,
+    idempotency_key: str = "",
+) -> dict[str, Any]:
+    session = get_session()
+    try:
+        repo = BackgroundJobRepository(session)
+        record = repo.enqueue(
+            run_id=run_id,
+            job_type=job_type,
+            url=url,
+            actor=actor,
+            payload=payload,
+            idempotency_key=idempotency_key,
+        )
+        return {
+            "run_id": record.run_id,
+            "root_actor": record.actor,
+            "job_status": record.status,
+            "job_id": record.job_id,
+            "idempotency_key": record.idempotency_key or "",
+        }
+    finally:
+        session.close()
+
+
 @app.post("/ui/workflows/run")
 async def ui_workflow_run(req: WorkflowRunRequest):
     run_id = str(uuid.uuid4())
-    asyncio.create_task(_background_workflow(run_id, req.url))
-    return {"run_id": run_id, "root_actor": "orchestrator"}
+    key = (req.idempotency_key or "").strip()
+    return _enqueue_background_job(
+        run_id=run_id,
+        job_type="workflow",
+        url=req.url,
+        actor="orchestrator",
+        payload={"url": req.url},
+        idempotency_key=key,
+    )
 
 
 @app.post("/ui/agents/test")
 async def ui_agent_test(req: AgentTestRequest):
     run_id = str(uuid.uuid4())
-    asyncio.create_task(_background_agent(run_id, req.agent, req.url, prompt_override=req.prompt_override))
-    return {"run_id": run_id, "root_actor": req.agent}
+    key = (req.idempotency_key or "").strip()
+    return _enqueue_background_job(
+        run_id=run_id,
+        job_type="agent",
+        url=req.url,
+        actor=req.agent,
+        payload={"agent": req.agent, "url": req.url, "prompt_override": req.prompt_override},
+        idempotency_key=key,
+    )
 
 
 @app.post("/ui/tools/call")
@@ -1500,21 +1850,46 @@ def ui_prompt_update(name: str, req: PromptUpdateRequest):
 @app.post("/ui/prompts/test")
 async def ui_prompt_test(req: PromptDryRunRequest):
     run_id = str(uuid.uuid4())
-    asyncio.create_task(
-        _background_agent(
-            run_id,
-            req.agent,
-            req.url,
-            prompt_override=req.content,
-        )
+    payload = _enqueue_background_job(
+        run_id=run_id,
+        job_type="agent",
+        url=req.url,
+        actor=req.agent,
+        payload={"agent": req.agent, "url": req.url, "prompt_override": req.content},
     )
-    return {"run_id": run_id, "root_actor": req.agent, "override_applied": True}
+    return {**payload, "override_applied": True}
 
 
 @app.get("/ui/runs/{run_id}/screenshot")
 def ui_run_latest_screenshot(run_id: str):
     trace = run_registry.get(run_id)
     if trace is None:
+        session = get_session()
+        try:
+            detail = OperatorConsoleRepository(session).get_run_detail(run_id)
+            if detail:
+                screenshots = ((detail.get("snapshot") or {}).get("all_screenshots") or [])
+                if screenshots:
+                    return {
+                        "run_id": run_id,
+                        "screenshot_url": str(screenshots[-1]),
+                        "event_seq": None,
+                        "timestamp": None,
+                        "source": "database_snapshot",
+                    }
+            job = BackgroundJobRepository(session).get_by_run_id(run_id)
+            if job is not None and job.result_json:
+                screenshot = _extract_screenshot_url_from_value(job.result_json)
+                if screenshot:
+                    return {
+                        "run_id": run_id,
+                        "screenshot_url": screenshot,
+                        "event_seq": None,
+                        "timestamp": None,
+                        "source": "background_job_result",
+                    }
+        finally:
+            session.close()
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
 
     for event in reversed(trace.events):
