@@ -463,7 +463,7 @@ class TestBackgroundAgentRunner:
     @pytest.mark.asyncio
     async def test_classification_agent_background_run(self, api_settings: Settings):
         from src.api.app import _background_agent
-        from src.utils.observability import RunObserver, run_registry
+        from src.utils.observability import run_registry
 
         result = _classification_result()
         with (

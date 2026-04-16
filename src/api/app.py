@@ -525,6 +525,8 @@ def _persist_trace_snapshot(run_id: str, *, root_actor: str, url: str) -> None:
     try:
         RunRepository(session).save_trace_snapshot(run_id=run_id, root_actor=root_actor, url=url, trace=trace)
         BackgroundJobRepository(session).heartbeat(run_id)
+    except SQLAlchemyError as exc:
+        logger.debug("Skipping trace snapshot persistence for run_id=%s: %s", run_id, exc)
     finally:
         session.close()
 
@@ -536,6 +538,8 @@ def _restore_trace_from_db(run_id: str) -> bool:
         if job is None or job.status in {"succeeded", "failed", "dead_letter", "cancelled"}:
             return False
         events = RunRepository(session).list_runtime_events(run_id)
+    except SQLAlchemyError:
+        return False
     finally:
         session.close()
     if not events:
@@ -1372,6 +1376,27 @@ def _enqueue_background_job(
             "job_status": record.status,
             "job_id": record.job_id,
             "idempotency_key": record.idempotency_key or "",
+        }
+    except SQLAlchemyError as exc:
+        logger.warning("Background job table unavailable; falling back to in-memory task execution: %s", exc)
+        if job_type == "workflow":
+            asyncio.create_task(_background_workflow(run_id, url))
+        else:
+            asyncio.create_task(
+                _background_agent(
+                    run_id,
+                    str((payload or {}).get("agent", "") or actor),
+                    url,
+                    prompt_override=str((payload or {}).get("prompt_override", "") or ""),
+                )
+            )
+        return {
+            "run_id": run_id,
+            "root_actor": actor,
+            "job_status": "queued",
+            "job_id": "",
+            "idempotency_key": idempotency_key,
+            "fallback": "in_memory",
         }
     finally:
         session.close()

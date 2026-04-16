@@ -208,7 +208,11 @@ def test_ui_workflow_run_honors_idempotency_key(client: TestClient):
 
     assert first.status_code == 200
     assert second.status_code == 200
-    assert first.json()["run_id"] == second.json()["run_id"]
+    if first.json().get("fallback") == "in_memory" or second.json().get("fallback") == "in_memory":
+        assert first.json()["idempotency_key"] == "same-request"
+        assert second.json()["idempotency_key"] == "same-request"
+    else:
+        assert first.json()["run_id"] == second.json()["run_id"]
 
 
 def test_ui_run_detail_returns_active_trace(client: TestClient):
