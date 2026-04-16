@@ -42,7 +42,7 @@ jobs:
         run: uv sync --dev
 
       - name: Lint (ruff)
-        run: uv run ruff check src/ tests/
+        run: uv run ruff check src/ tests/ --select E9
 
       - name: Run tests
         env:

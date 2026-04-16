@@ -74,7 +74,7 @@ If classification returns `other` with high confidence and no strong streaming e
    - `extraction_results`: list of server+stream data from hosting/embedded agents
      (each item = the `servers` + `streaming_urls` section from those agents)
 6. **De-duplicate URLs** before sub-agent calls (hosting and embedded).
-7. **Retry policy**: allow up to two retries per sub-agent node for transient failures (timeout/challenge), then continue the pipeline.
+7. **Retry policy**: allow one retry per sub-agent node for transient failures (timeout/challenge), then continue the pipeline.
 8. **Escalation rule**: call `run_embedded_agent` when hosting reports embedded hints or zero usable streams after normal attempts.
 9. **Keep reasoning compact**: prioritize routing decisions and completion over long explanations.
 10. **Unknown-class fallback**: if classification is `other`/unknown, do not stop early; run the Path D fallback and still complete analyze+email.

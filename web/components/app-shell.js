@@ -21,6 +21,8 @@ import {
 import { cn } from "@/lib/utils";
 import { apiUrl } from "@/lib/api";
 
+const ACTIVE_RUNS_POLL_INTERVAL_MS = 8000;
+
 const NAV = [
   { href: "/",            label: "Overview",        icon: Gauge,        section: null },
   { href: "/live",        label: "Live Pipeline",   icon: PlaySquare,   section: "Run" },
@@ -113,7 +115,7 @@ export function AppShell({ children }) {
       }
     }
     loadActiveRuns();
-    const timer = setInterval(loadActiveRuns, 8000);
+    const timer = setInterval(loadActiveRuns, ACTIVE_RUNS_POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
       clearInterval(timer);

@@ -7,6 +7,13 @@ import "reactflow/dist/style.css";
 
 import { Card } from "@/components/ui/card";
 
+const ROOT_X_OFFSET = 60;
+const ROOT_Y_OFFSET = 40;
+const CHILD_GRID_X_START = 300;
+const CHILD_GRID_Y_START = 200;
+const NODE_SPACING_X = 290;
+const NODE_SPACING_Y = 220;
+
 function eventTime(event) {
   if (!event?.timestamp) return "";
   const parsed = new Date(event.timestamp);
@@ -64,8 +71,8 @@ function buildFlow(events, rootActor) {
       id: actor,
       type: "actorNode",
       position: {
-        x: index === 0 ? 60 : 300 + ((index - 1) % 3) * 290,
-        y: index === 0 ? 40 : 200 + Math.floor((index - 1) / 3) * 220,
+        x: index === 0 ? ROOT_X_OFFSET : CHILD_GRID_X_START + ((index - 1) % 3) * NODE_SPACING_X,
+        y: index === 0 ? ROOT_Y_OFFSET : CHILD_GRID_Y_START + Math.floor((index - 1) / 3) * NODE_SPACING_Y,
       },
       data: {
         label: actor,

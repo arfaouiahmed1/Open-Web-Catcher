@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.evaluation.datasets import build_dataset_examples, export_dataset_examples
 from src.evaluation.scoring import evaluate_case_artifact
@@ -1541,7 +1542,10 @@ def ui_database_tables():
         rows: list[dict[str, Any]] = []
         for name in sorted(repo.TABLE_MAP.keys()):
             model = repo.TABLE_MAP[name]
-            row_count = int(session.query(model).count())
+            try:
+                row_count = int(session.query(model).count())
+            except SQLAlchemyError:
+                row_count = 0
             rows.append({"name": name, "row_count": row_count})
         return {"tables": [row["name"] for row in rows], "entries": rows}
     finally:

@@ -5,6 +5,8 @@ import { ChevronDown, ChevronRight, Copy } from "lucide-react";
 
 import { safeJson } from "@/lib/utils";
 
+const COPY_FEEDBACK_DURATION_MS = 900;
+
 function decodeUriStringSafe(value) {
   const text = String(value ?? "");
   if (!text || text.startsWith("data:")) return text;
@@ -68,7 +70,7 @@ function CopyButton({ value }) {
     try {
       await navigator.clipboard.writeText(typeof value === "string" ? value : safeJson(value));
       setCopied(true);
-      setTimeout(() => setCopied(false), 900);
+      setTimeout(() => setCopied(false), COPY_FEEDBACK_DURATION_MS);
     } catch {
       // ignore clipboard failures
     }

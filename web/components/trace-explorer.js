@@ -5,6 +5,8 @@ import { useMemo, useState } from "react";
 import { JsonViewer } from "@/components/json-viewer";
 import { safeJson } from "@/lib/utils";
 
+const MAX_DIFF_LINES = 80;
+
 function extractScreenshot(value) {
   if (!value) return "";
   if (typeof value === "string") {
@@ -42,7 +44,7 @@ function lineDiff(left, right) {
     if ((a[i] || "") === (b[i] || "")) continue;
     rows.push({ line: i + 1, before: a[i] || "", after: b[i] || "" });
   }
-  return rows.slice(0, 80);
+  return rows.slice(0, MAX_DIFF_LINES);
 }
 
 export function TraceExplorer({ events = [] }) {

@@ -34,7 +34,7 @@ export default async function RunDetailPage({ params }) {
           <p className="text-[10px] font-semibold uppercase tracking-widest text-signal">Run Detail</p>
           <h1 className="mt-1 text-2xl font-semibold text-white">Live run in memory</h1>
           <p className="mt-0.5 text-sm text-slate-500">
-            This run hasn't been persisted yet — data is streaming from the in-memory observability store.
+            This run hasn&apos;t been persisted yet — data is streaming from the in-memory observability store.
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
