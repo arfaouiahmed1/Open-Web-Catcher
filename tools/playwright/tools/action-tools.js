@@ -230,6 +230,10 @@ export async function selectOption({
     text,
     wait_ms,
     execute: async ({ frame, handle }) => {
+      if (!option_value && !option_text) {
+        throw new Error('Either option_value or option_text is required');
+      }
+
       const selectorValue = await handle.evaluate((node) => {
         if (node.id) return `#${node.id}`;
         if (node.getAttribute('name')) return `[name="${node.getAttribute('name')}"]`;
@@ -257,8 +261,7 @@ export async function selectOption({
           node.value = option.value;
           node.dispatchEvent(new Event('change', { bubbles: true }));
         }, option_text);
-      } else {
-        throw new Error('Either option_value or option_text is required');
+        return;
       }
     },
   });
