@@ -1,126 +1,110 @@
-# Playwright vs Puppeteer — Architecture & Feature Differentiation
+# Playwright vs Puppeteer — Parity, Contracts, and Upgrades
 
 ## Overview
 
-The system supports two browser engines: **Puppeteer** (port 3000) and **Playwright** (port 3002 externally, 3001 internally). The active engine is selected via the Settings UI and stored as `browser_engine` in `data/settings.runtime.yaml`. Switching takes effect immediately in-memory and persists across container restarts.
+The project ships two MCP browser engines:
+- **Puppeteer:** `/home/runner/work/Open-Web-Catcher/Open-Web-Catcher/tools/puppeteer`
+- **Playwright:** `/home/runner/work/Open-Web-Catcher/Open-Web-Catcher/tools/playwright`
+
+Runtime selection is controlled by `browser_engine` in `data/settings.runtime.yaml`.
 
 ---
 
-## Key Architectural Differences
+## Parity Matrix (Tool Name, Intent, Contract)
 
-### 1. Session Isolation Model
+| Group | Tool | Puppeteer | Playwright | Contract parity |
+|---|---|---:|---:|---|
+| Context | `get_page_context` | ✅ | ✅ | Same intent and envelope keys |
+| Context | `query_elements` | ✅ | ✅ | Same filters, regex support, element refs |
+| Context | `get_element_detail` | ✅ | ✅ | Same locator inputs and detail payload |
+| Context | `get_media_state` | ✅ | ✅ | Same media snapshot shape |
+| Context | `get_frame_tree` | ✅ | ✅ | Same frame path model |
+| Navigation | `open_url` | ✅ | ✅ | Same fields; Playwright defaults to `networkidle` with alias support |
+| Navigation | `go_back` | ✅ | ✅ | Same result envelope |
+| Navigation | `scroll_page` | ✅ | ✅ | Same input/output contract |
+| Navigation | `scroll_to_element` | ✅ | ✅ | Same locator inputs |
+| Navigation | `wait_for_page_state` | ✅ | ✅ | Same mode contract |
+| Actions | `click_element` | ✅ | ✅ | Same observed-change envelope |
+| Actions | `click_css` | ✅ | ✅ | Same contract |
+| Actions | `click_text` | ✅ | ✅ | Same contract |
+| Actions | `click_xpath` | ✅ | ✅ | Same contract |
+| Actions | `click_checkbox` | ✅ | ✅ | Same contract |
+| Actions | `click_radio` | ✅ | ✅ | Same contract |
+| Actions | `type_into` | ✅ | ✅ | Same contract |
+| Actions | `select_option` | ✅ | ✅ | Same contract; Playwright uses locator/selectOption flow |
+| Actions | `play_media` | ✅ | ✅ | Same contract |
+| Actions | `swipe_region` | ✅ | ✅ | Same contract |
+| Actions | `click_coordinates` | ✅ | ✅ | Same contract |
+| Extraction | `capture_streams` | ✅ | ✅ | Same output categories |
+| Legacy high-level | `navigate` | ✅ | ✅ | Same intent; Playwright wait aliases normalized |
+| Legacy high-level | `inspect` | ✅ | ✅ | Same top-level payload intent |
+| Legacy high-level | `inspect_landing` | ✅ | ✅ | Same profile-specific payload intent |
+| Legacy high-level | `inspect_hosting` | ✅ | ✅ | Same profile-specific payload intent |
+| Legacy high-level | `inspect_embedded` | ✅ | ✅ | Same profile-specific payload intent |
+| Legacy high-level | `interact` | ✅ | ✅ | Same high-level interaction contract |
+| Legacy high-level | `screenshot` | ✅ | ✅ | Same screenshot/result intent |
+| Legacy high-level | `harvest` | ✅ | ✅ | Same stream-harvest intent |
+| Memory | `memory_lookup` | ✅ | ✅ | Same store/read envelope |
+| Memory | `memory_update` | ✅ | ✅ | Same store/update envelope |
 
-| | Puppeteer | Playwright |
-|---|---|---|
-| Browser instances | One shared Chrome per container | One ephemeral browser **per SSE session** |
-| Context isolation | Shared (state leaks between runs) | `BrowserContext` per session — cookies, storage, cache fully isolated |
-| Teardown | Connection closed by tool | Full `browser.close()` on SSE disconnect |
-
-**Playwright implementation:** `launchEphemeralBrowser()` in `shared/browser.js` — each MCP session gets its own browser process via `chromium.launch()`. The MCP server (`mcp-server.js`) creates the session on SSE connect and tears it down on SSE close via `closeEphemeralBrowser()`.
-
-This eliminates cross-run state leakage that appears at scale with the Puppeteer shared-Chrome model (cookie bleed, cached auth states, old service workers).
-
----
-
-### 2. Ad Blocking
-
-| | Puppeteer | Playwright |
-|---|---|---|
-| Method | uBlock Origin Lite Chrome extension (loaded at browser launch) | `context.route()` network-level interception |
-| Scope | Extension-level, extension must load before navigation | Applied at context creation, active from the first request |
-| Per-session control | Not possible without relaunching | `pageBlockingDisabled` WeakSet — per-page disable without context teardown |
-| Cross-origin iframes | Extension handles (unreliable on certain CSP pages) | Route handler fires on all requests in the context including cross-origin iframes |
-
-**Playwright implementation:** `shared/adblocker.js` — attaches a `context.route()` handler using the same filter lists. The auto-recovery system in `shared/browser.js` can disable blocking per-page when a player request is blocked, then reload, without touching other pages in the context.
-
----
-
-### 3. CDP Access
-
-| | Puppeteer | Playwright |
-|---|---|---|
-| CDP scope | Browser-wide DevTools session | Page-scoped via `page.context().newCDPSession(page)` |
-| Cross-frame coverage | One session covers main frame only | CDP session is page-scoped; Playwright's `context.on('response')` covers all frames |
-
-**Playwright implementation:** `tools/harvest.js` uses:
-- `page.context().newCDPSession(page)` for `Network.requestWillBeSent` (low-level, before-send interception)
-- `context.on('response')` (not `page.on`) for cross-origin iframe response capture — this is the key difference vs Puppeteer where `page.on('response')` could miss cross-origin frame traffic
-
----
-
-### 4. Network Wait Conditions
-
-| | Puppeteer | Playwright |
-|---|---|---|
-| Idle condition | `networkidle0` (0 connections) / `networkidle2` (≤2 connections) | `networkidle` (0 connections for 500ms) |
-| Additional states | N/A | `commit` (navigation committed, before load) |
-
-**Playwright implementation:** `tools/navigate.js` and `tools/navigation-tools.js` normalize Puppeteer aliases:
-- `networkidle0` → `networkidle`
-- `networkidle2` → `networkidle`
-
-The tool schemas now use `networkidle` as the default with the Puppeteer aliases accepted for backward compatibility.
+Profile exposure is also parity-matched in:
+- `/home/runner/work/Open-Web-Catcher/Open-Web-Catcher/tools/puppeteer/profiles.js`
+- `/home/runner/work/Open-Web-Catcher/Open-Web-Catcher/tools/playwright/profiles.js`
 
 ---
 
-### 5. Fingerprinting & Stealth
+## General Tool Contract by Capability Group
 
-Both engines use the same stealth stack: `playwright-extra` + `puppeteer-extra-plugin-stealth` + `fingerprint-injector`. The implementation is equivalent.
+### 1) Context tools
+- Must return deterministic frame-aware context.
+- Must provide stable `element_ref` handles for follow-up actions.
+- Must keep filter semantics (contains/regex/attrs/visibility/limit) identical across engines.
 
-**Playwright-specific advantage:** Fingerprints are injected at the **context level** via `context.addInitScript()` — this means fingerprinting applies to all pages and cross-origin iframes within the context automatically, not just the top-level page.
+### 2) Navigation tools
+- Must return a standard navigation envelope (`ok`, `error`, observed change, diagnostics fields).
+- Must support backward-compatible wait semantics.
+- Playwright accepts `networkidle0/networkidle2` as aliases and normalizes to `networkidle`.
 
----
+### 3) Action tools
+- Must resolve targets through the same locator contract (`element_ref`, `selector`, `xpath`, `text`).
+- Must include observed-change metadata and post-action screenshot evidence.
+- Must remain frame-safe and avoid cross-frame ambiguity.
 
-### 6. Frame Handling
+### 4) Extraction tools
+- Must emit stream candidates grouped by type and include state/diagnostic metadata.
+- Must preserve deduplication and envelope consistency across engines.
 
-| | Puppeteer | Playwright |
-|---|---|---|
-| Frame enumeration | `page.frames()` | `page.frames()` / `frame.childFrames()` |
-| Frame wait | `page.waitForFrame()` | `page.frameLocator()` / `frame.waitForSelector()` |
-| Cross-origin iframes | CDP required for cross-origin access | Native cross-origin support via `frame.evaluate()` with `bypassCSP: true` on context |
-
-**Playwright implementation:** Context is created with `bypassCSP: true` — cross-origin iframe JS evaluation works without CDP bypasses.
-
----
-
-## Tool-by-Tool Status
-
-| Tool | Session handling | Playwright-native features used |
-|---|---|---|
-| `navigate` | `connectBrowser` + `finally disconnect()` | `page.waitForLoadState('networkidle')`, fallback wait chain |
-| `inspect` | `connectBrowser` + `disconnect()` | `page.frames()`, `frame.childFrames()`, `frame.evaluate()` |
-| `inspect_landing` | `withBrowserSession` | Context-scoped fingerprinting, `page.frames()` |
-| `inspect_hosting` | `withBrowserSession` | Same |
-| `inspect_embedded` | `withBrowserSession` | Same |
-| `screenshot` | `connectBrowser` + `disconnect()` | `page.screenshot()` with Playwright buffer API |
-| `harvest` | `connectBrowser` + `disconnect()` | `page.context().newCDPSession()`, **`context.on('response')`** (cross-origin) |
-| `interact` | Inline session check + `disconnect()` if owned | `frame.waitForSelector()`, `frame.$$()`, `page.waitForLoadState()` |
-| `open_url` | `withBrowserSession` | `page.waitForLoadState('networkidle')`, challenge detection via `frame.waitForFunction()` |
-| `context-tools` | `withBrowserSession` | `page.accessibility`, `page.frames()` |
-| `navigation-tools` | `withBrowserSession` | `page.waitForLoadState()`, `context.on('page')` for new tabs |
-| `action-tools` | `withBrowserSession` | `page.mouse`, `page.keyboard`, Playwright locator API |
-| `extraction-tools` | `withBrowserSession` | `context.route()` for stream interception |
-| `memory-tools` | No browser (file store) | N/A |
+### 5) Memory tools
+- Must preserve read/write schemas and not depend on browser session state.
 
 ---
 
-## MCP Switch Logic
+## Playwright-Native Reliability Upgrades
 
-The active engine is stored in `data/settings.runtime.yaml` as `browser_engine`. On load (`Settings.from_yaml()`), `mcp_server_url` is derived:
+1. **Session isolation by default in MCP mode**
+   - Ephemeral browser per SSE session, clean teardown on disconnect.
 
-```
-browser_engine = "playwright"  →  mcp_server_url = MCP_SERVER_URL_PLAYWRIGHT  (http://owc-tools-playwright:3001)
-browser_engine = "puppeteer"   →  mcp_server_url = MCP_SERVER_URL_PUPPETEER   (http://owc-tools:3000)
-```
+2. **Deterministic wait compatibility**
+   - Alias normalization (`networkidle0/networkidle2` → `networkidle`) while keeping old caller compatibility.
 
-This ensures the correct MCP server is targeted both in-memory (immediate after settings save) and after container restarts.
+3. **Frame-safe and locator-first action behavior**
+   - Uses frame-aware targeting and Playwright locator operations for consistency.
+
+4. **Context-level network handling**
+   - Playwright context-based interception/listening improves cross-frame capture reliability.
+
+5. **Improved diagnostics surfaces**
+   - Error/status fields and observed-change metadata stay explicit for agent decisioning.
 
 ---
 
-## Container Layout
+## Source of Truth
 
-```
-owc-tools           (Dockerfile.tools)          :3000  Puppeteer MCP + Chrome :9222
-owc-tools-playwright (Dockerfile.tools.playwright) :3002→:3001  Playwright MCP + Chrome :9223
-owc                  (Dockerfile)               :8000  Python API (connects to either)
-```
+- Tool schemas and examples:
+  - `/home/runner/work/Open-Web-Catcher/Open-Web-Catcher/tools/puppeteer/tool-registry.js`
+  - `/home/runner/work/Open-Web-Catcher/Open-Web-Catcher/tools/playwright/tool-registry.js`
+- Profile exposure:
+  - `/home/runner/work/Open-Web-Catcher/Open-Web-Catcher/tools/puppeteer/profiles.js`
+  - `/home/runner/work/Open-Web-Catcher/Open-Web-Catcher/tools/playwright/profiles.js`
+- Playwright MCP runtime:
+  - `/home/runner/work/Open-Web-Catcher/Open-Web-Catcher/tools/playwright/mcp-server.js`

@@ -7,9 +7,9 @@
 ## What Is the MCP Server?
 
 The MCP (Model Context Protocol) server is a **Node.js Express application** that exposes
-Puppeteer-based browser tools to Python agents via Server-Sent Events (SSE).
+browser tools (Puppeteer and Playwright variants) to Python agents via Server-Sent Events (SSE).
 
-**File:** [`tools_js/mcp-server.js`](../../tools_js/mcp-server.js)
+**Files:** [`tools/puppeteer/mcp-server.js`](../../tools/puppeteer/mcp-server.js), [`tools/playwright/mcp-server.js`](../../tools/playwright/mcp-server.js)
 
 Each agent connects to a **profile-specific SSE endpoint**. The server creates a new
 `McpServer` instance for that connection and registers **only the tools allowed by that
@@ -57,7 +57,7 @@ Python Agent (async context manager)
 
 ## Profile-Based Tool Isolation
 
-**File:** [`tools_js/profiles.js`](../../tools_js/profiles.js)
+**File:** [`tools/puppeteer/profiles.js`](../../tools/puppeteer/profiles.js)
 
 ```javascript
 export const PROFILES = {
@@ -105,7 +105,7 @@ events so failures surface explicitly in operator traces.
 
 ### `inspect`
 
-**File:** [`tools_js/tools/inspect.js`](../../tools_js/tools/inspect.js)
+**File:** [`tools/puppeteer/tools/inspect.js`](../../tools/puppeteer/tools/inspect.js)
 
 Full DOM scan of the current page. Returns everything the LLM needs to understand
 the page structure and decide its next action.
@@ -144,7 +144,7 @@ the page structure and decide its next action.
 
 ### `interact`
 
-**File:** [`tools_js/tools/interact.js`](../../tools_js/tools/interact.js)
+**File:** [`tools/puppeteer/tools/interact.js`](../../tools/puppeteer/tools/interact.js)
 
 6 interaction modes for triggering player loading and server switching.
 
@@ -194,7 +194,7 @@ or for coordinates:
 
 ### `harvest`
 
-**File:** [`tools_js/tools/harvest.js`](../../tools_js/tools/harvest.js)
+**File:** [`tools/puppeteer/tools/harvest.js`](../../tools/puppeteer/tools/harvest.js)
 
 6-layer stream URL capture. The most important tool for stream extraction.
 
@@ -233,7 +233,7 @@ or for coordinates:
 
 ### `navigate`
 
-**File:** [`tools_js/tools/navigate.js`](../../tools_js/tools/navigate.js)
+**File:** [`tools/puppeteer/tools/navigate.js`](../../tools/puppeteer/tools/navigate.js)
 
 Navigate to a URL, capture the redirect chain, detect domain changes.
 
@@ -260,7 +260,7 @@ Navigate to a URL, capture the redirect chain, detect domain changes.
 
 ### `screenshot`
 
-**File:** [`tools_js/tools/screenshot.js`](../../tools_js/tools/screenshot.js)
+**File:** [`tools/puppeteer/tools/screenshot.js`](../../tools/puppeteer/tools/screenshot.js)
 
 Lightweight screenshot capture without a full DOM scan. Faster than `inspect`.
 
@@ -288,7 +288,7 @@ Modes: `viewport` (default), `full` (full page), `element` (specific CSS selecto
 
 ## Shared Modules
 
-**Directory:** [`tools_js/shared/`](../../tools_js/shared/)
+**Directory:** [`tools/puppeteer/shared/`](../../tools/puppeteer/shared/)
 
 | Module | Exports | Purpose |
 |--------|---------|---------|
@@ -301,9 +301,9 @@ Modes: `viewport` (default), `full` (full page), `element` (specific CSS selecto
 
 ## Adding a New Tool
 
-1. Create `tools_js/tools/mytool.js` — export a Zod schema + async handler function
-2. Import and register in `tools_js/mcp-server.js` in the `TOOL_MAP`
-3. Add to relevant profiles in `tools_js/profiles.js`
+1. Create `tools/puppeteer/tools/mytool.js` — export a Zod schema + async handler function
+2. Import and register in `tools/puppeteer/mcp-server.js` in the `TOOL_MAP`
+3. Add to relevant profiles in `tools/puppeteer/profiles.js`
 4. The Python side needs no changes — `agent_tools()` auto-discovers tools via MCP
 
 ---

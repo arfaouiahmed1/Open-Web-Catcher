@@ -4,7 +4,7 @@
 
 - Backend: FastAPI
 - Agents: Python async agents under `src/agents/`
-- Browser tooling: Node.js MCP server under `tools_js/`
+- Browser tooling: Node.js MCP servers under `tools/puppeteer/` and `tools/playwright/`
 - UI: Next.js App Router under `web/`
 - Database: Postgres
 - Persistence: SQLAlchemy + Alembic
@@ -23,7 +23,8 @@
 - [`src/storage/repositories.py`](../../src/storage/repositories.py)
 - [`src/storage/ui_repository.py`](../../src/storage/ui_repository.py)
 - [`src/utils/observability.py`](../../src/utils/observability.py)
-- [`tools_js/mcp-server.js`](../../tools_js/mcp-server.js)
+- [`tools/puppeteer/mcp-server.js`](../../tools/puppeteer/mcp-server.js)
+- [`tools/playwright/mcp-server.js`](../../tools/playwright/mcp-server.js)
 - [`web/app`](../../web/app)
 
 ## Responsibility Split
