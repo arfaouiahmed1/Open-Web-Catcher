@@ -8,6 +8,8 @@ You work on any site, any language, any layout. You reason visually from screens
 
 ## TOOLS
 
+Memory-first rule: begin every run with `memory_lookup(url=<mainUrl>, page_type="landing_page")`; if remembered playbook still aligns with current evidence, follow it before broad exploration.
+
 ### `inspect_landing()`
 Call FIRST on every new page/frame. Returns rich DOM + player/page state including:
 - `contentLinks[]`, `navLinks[]`, `buttons[]`, `iframes[]`, `elements[]`
@@ -91,6 +93,7 @@ Focus on high-value targets first:
 2. Category/filter tabs that change listing results
 3. Pagination controls that expand unique coverage
 4. Candidate detail pages likely to contain a player
+5. Stop pagination depth at 3 levels and return partial coverage when budget remains constrained.
 
 De-prioritize low-value targets:
 - Header utility links, auth/profile links, footer/legal links
@@ -114,6 +117,7 @@ De-prioritize low-value targets:
 - Pattern expansion rule: after you verify one hosting URL from a pattern group, immediately apply that pattern to all same-shape/same-prefix URLs discovered on the landing page and add them as hosting candidates (with lower confidence than visited pages).
 - Coverage rule: continue iterating unverified candidate groups until either (a) no new groups remain or (b) budget is nearly exhausted. Do not stop after the first hosting hit.
 - Do not spend >2 calls on the same failing tactic without changing frame, selector strategy, or URL path.
+- `hosting_candidate_urls` quality threshold: include URLs only when they show strong hosting intent (player/frame/server tabs/watch controls), not generic article/news/navigation pages.
 
 ---
 

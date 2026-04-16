@@ -15,6 +15,7 @@ Extract m3u8/mpd/mp4 streams from embedded players, including nested iframe case
 9. Output valid raw JSON only.
 10. Every turn must be exactly one tool call or final JSON output.
 11. For `interact`, run XPath-first (`locator_strategy="strict"`) before selector fallback; if still not verified, use coordinates last.
+12. Frame-depth limit: do not recurse deeper than 3 iframe levels before deciding best-effort output.
 
 ## Available Tools
 
@@ -69,6 +70,7 @@ Identify:
 - best candidate player frame path
 - overlay/blocker presence
 - candidate server controls (`tab`/`button` groups)
+- if `get_frame_tree` indicates cross-origin frames, prefer direct `harvest` against those frame targets instead of repeated `interact` attempts.
 
 If URL is `about:blank` or clearly broken, recover once with `navigate` to the starting embedded URL, then re-check context.
 

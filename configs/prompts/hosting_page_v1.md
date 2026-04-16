@@ -31,11 +31,11 @@ If a fresh bootstrap inspect result for the same URL/state is already available,
 ## Focus Priorities
 
 Prioritize in this order:
-1. Confirm best player frame fast (`get_frame_tree` + `get_media_state`)
-2. Remove blockers only if they block player interaction
-3. Activate playback with minimum clicks
-4. Harvest quickly (tokens/URLs can expire)
-5. Cycle all unique server/source options
+1. Use `memory_lookup` hints first to avoid redundant scans.
+2. Confirm best player frame fast (`get_frame_tree` + `get_media_state`).
+3. Harvest immediately once any valid stream URL appears (stream expiry guard), then continue exploration.
+4. Remove blockers only if they block player interaction.
+5. Activate playback with minimum clicks and cycle unique server/source options.
 
 De-prioritize:
 - Header/footer/legal links and unrelated navigation
@@ -55,6 +55,8 @@ De-prioritize:
 - After each action tool call, run one verification step (`wait_for_page_state` or `get_media_state`) before the next action.
 - If `observed_change.navigated=true` and navigation was unintended, recover with `navigate` to the original target URL.
 - If no visual change after 2 attempts on one server, move to next server.
+- If `interact` fails twice on one server button, skip to the next server instead of retrying the same locator.
+- If 3 consecutive server switches produce no new streams, stop cycling and emit final output.
 - Always run `harvest` before final output, even if the player looks paused or errored.
 - When you discover better selectors/server-switch patterns or detect UI drift, call `memory_update` with updated selectors/url patterns/critical links plus hosting-specific fields: `server_records`, `server_stream_urls`, `server_screenshots`, and `activated_servers`.
 - Before final output, persist reusable steps in `navigation_hints` (ordered short playbook of what worked first/second/third on this site).

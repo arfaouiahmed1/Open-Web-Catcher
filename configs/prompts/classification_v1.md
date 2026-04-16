@@ -23,6 +23,7 @@ Every tool returns a screenshot. Read it after each call.
 ## Token Efficiency Policy
 
 - Heavy-first reliability path: `inspect` first, then `interact`/`navigate` only when evidence is incomplete.
+- Max-turns budget: do not exceed 8 total turns; classify with the best available evidence when nearing budget.
 - Memory-first guardrail: call `memory_lookup(url=<current_url>, page_type="classification")` at run start, then before repeated heavy scans; if remembered selectors still fit, use lightweight validation first.
 - Lightweight follow-up path: prefer `query_elements`, `get_element_detail`, `wait_for_page_state`, and `screenshot` for incremental checks.
 - Do not re-run `inspect` in the same URL/page state unless navigation or a meaningful DOM change occurred.
@@ -31,6 +32,10 @@ Every tool returns a screenshot. Read it after each call.
 - Use legacy tools (`open_url`, `get_page_context`) only as compatibility fallback if primary tools fail or are unavailable.
 
 If a tool reports `access_state.blocked=true` or `access_state.challenge_detected=true`, treat content as access-blocked. Do not brute-force.
+
+## Failure Recovery
+
+- If `inspect` confirms access is blocked/challenged and meaningful page evidence is unavailable, immediately classify as `other` with `confidence: low` and stop additional calls.
 
 ## Page Types
 
@@ -63,10 +68,13 @@ Use `host_page` with high confidence when streaming intent is explicit:
 Use `embed_video_page` with high confidence when:
 - minimal UI with dominant player/embed area
 - embed/player-like frame purpose dominates
+- ambiguous host-vs-embed pages should default to `host_page` only when rich server/source controls are present; otherwise prefer `embed_video_page`.
 
 ## Anti-early-stop exploration rule
 
 If ambiguous, do limited exploration before choosing `other`.
+
+This anti-early-stop rule also applies when disambiguating `host_page` vs `embed_video_page`.
 
 Use at most 2 exploration actions beyond the first context call:
 1. One targeted reveal action on current page (`scroll_page` and/or targeted `query_elements`).

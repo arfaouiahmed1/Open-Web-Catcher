@@ -7,6 +7,7 @@ import json
 import uuid
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
+from pathlib import Path
 from time import perf_counter
 from typing import Any, Literal
 
@@ -34,7 +35,7 @@ from src.models.schemas import (
 from src.storage.database import create_tables, get_session
 from src.storage.repositories import RunRepository
 from src.storage.ui_repository import OperatorConsoleRepository
-from src.tools.mcp_client import agent_tools
+from src.tools.mcp_client import REQUIRED_TOOLS_BY_PROFILE, agent_tools
 from src.utils.config import Settings
 from src.utils.ipinfo import lookup_multiple
 from src.utils.logging import get_logger, setup_logging
@@ -78,6 +79,19 @@ class DatasetExportRequest(BaseModel):
     dataset_name: str = ""
     limit: int = 25
     path: str = ""
+
+
+class PromptUpdateRequest(BaseModel):
+    content: str = ""
+
+
+class PromptDryRunRequest(BaseModel):
+    agent: str
+    url: str
+    content: str = ""
+
+
+PROMPTS_DIR = Path("configs/prompts").resolve()
 
 
 def get_settings() -> Settings:
@@ -349,22 +363,38 @@ def _emit_failure_once(observer, kind: str, message: str) -> None:
 async def _run_selected_agent(agent_key: str, url: str, observer):
     normalized = (agent_key or "").strip().lower()
     settings = get_settings()
+    prompt_override = ""
+    if isinstance(observer, dict):
+        prompt_override = str(observer.get("prompt_override", "") or "")
+        observer = observer.get("observer")
     if normalized == "classification":
         from src.agents.classification import ClassificationAgent
 
-        return await ClassificationAgent(settings).run(url=url, observer=observer)
+        agent = ClassificationAgent(settings)
+        if prompt_override.strip():
+            agent._system_prompt = prompt_override
+        return await agent.run(url=url, observer=observer)
     if normalized == "landing":
         from src.agents.landing_page import LandingPageAgent
 
-        return await LandingPageAgent(settings).run(url=url, observer=observer)
+        agent = LandingPageAgent(settings)
+        if prompt_override.strip():
+            agent._system_prompt = prompt_override
+        return await agent.run(url=url, observer=observer)
     if normalized == "hosting":
         from src.agents.hosting_page import HostingPageAgent
 
-        return await HostingPageAgent(settings).run(url=url, observer=observer)
+        agent = HostingPageAgent(settings)
+        if prompt_override.strip():
+            agent._system_prompt = prompt_override
+        return await agent.run(url=url, observer=observer)
     if normalized == "embedded":
         from src.agents.embedded_page import EmbeddedPageAgent
 
-        return await EmbeddedPageAgent(settings).run(url=url, observer=observer)
+        agent = EmbeddedPageAgent(settings)
+        if prompt_override.strip():
+            agent._system_prompt = prompt_override
+        return await agent.run(url=url, observer=observer)
     raise ValueError(f"Unknown agent '{agent_key}'")
 
 
@@ -403,7 +433,7 @@ async def _background_workflow(run_id: str, url: str) -> None:
         logger.exception("Background workflow failed: %s", exc)
 
 
-async def _background_agent(run_id: str, agent: str, url: str) -> None:
+async def _background_agent(run_id: str, agent: str, url: str, prompt_override: str = "") -> None:
     settings = get_settings()
     observer = run_registry.create(
         run_id=run_id,
@@ -413,7 +443,14 @@ async def _background_agent(run_id: str, agent: str, url: str) -> None:
     observer.set_url(url)
     try:
         timeout_seconds = max(1, int(settings.agent_timeout_seconds))
-        result = await asyncio.wait_for(_run_selected_agent(agent, url, observer), timeout=timeout_seconds)
+        result = await asyncio.wait_for(
+            _run_selected_agent(
+                agent,
+                url,
+                {"observer": observer, "prompt_override": prompt_override},
+            ),
+            timeout=timeout_seconds,
+        )
         success = True
         failure_mode = ""
         if isinstance(result, ExtractionResult):
@@ -557,6 +594,47 @@ async def _execute_tool_call_with_telemetry(
         "result": result,
         "record": record,
     }
+
+
+def _resolve_prompt_file(name: str) -> Path:
+    candidate = (PROMPTS_DIR / name).resolve()
+    if not candidate.is_file() or candidate.parent != PROMPTS_DIR:
+        raise HTTPException(status_code=404, detail=f"Prompt '{name}' not found")
+    return candidate
+
+
+def _extract_screenshot_url_from_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith("http") or text.startswith("data:image/"):
+            return text
+        try:
+            parsed = json.loads(text)
+            return _extract_screenshot_url_from_value(parsed)
+        except Exception:
+            return ""
+    if isinstance(value, list):
+        for item in value:
+            nested = _extract_screenshot_url_from_value(item)
+            if nested:
+                return nested
+        return ""
+    if isinstance(value, dict):
+        direct = value.get("screenshot_url")
+        if isinstance(direct, str) and direct.strip():
+            return direct.strip()
+        urls = value.get("screenshot_urls")
+        if isinstance(urls, list):
+            for url in urls:
+                if isinstance(url, str) and url.strip():
+                    return url.strip()
+        for nested in value.values():
+            candidate = _extract_screenshot_url_from_value(nested)
+            if candidate:
+                return candidate
+    return ""
 
 
 def _provider_lookup_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -972,7 +1050,7 @@ async def ui_workflow_run(req: WorkflowRunRequest):
 @app.post("/ui/agents/test")
 async def ui_agent_test(req: AgentTestRequest):
     run_id = str(uuid.uuid4())
-    asyncio.create_task(_background_agent(run_id, req.agent, req.url))
+    asyncio.create_task(_background_agent(run_id, req.agent, req.url, prompt_override=req.prompt_override))
     return {"run_id": run_id, "root_actor": req.agent}
 
 
@@ -986,6 +1064,22 @@ async def ui_tool_call(req: ToolPlaygroundRequest):
         "args": req.args,
         "result": execution["result"],
         "record": execution["record"],
+    }
+
+
+@app.get("/ui/tools/list")
+def ui_tools_list(profile: str = Query("", description="agent profile")):
+    normalized = profile.strip().lower()
+    if normalized and normalized not in REQUIRED_TOOLS_BY_PROFILE:
+        raise HTTPException(status_code=400, detail=f"Unknown profile '{profile}'")
+    if normalized:
+        names = sorted(REQUIRED_TOOLS_BY_PROFILE[normalized])
+        return {"profile": normalized, "tools": names, "count": len(names)}
+    return {
+        "profiles": {
+            key: sorted(value)
+            for key, value in REQUIRED_TOOLS_BY_PROFILE.items()
+        }
     }
 
 
@@ -1003,6 +1097,38 @@ def ui_tool_history(
         payload["limit"] = limit
         payload["offset"] = offset
         return payload
+    finally:
+        session.close()
+
+
+@app.get("/ui/tools/reliability")
+def ui_tool_reliability(limit: int = Query(500, ge=1, le=2000)):
+    session = get_session()
+    try:
+        repo = OperatorConsoleRepository(session)
+        payload = repo.list_tool_playground_calls(limit=limit, offset=0, profile="", origin="")
+        stats: dict[tuple[str, str], dict[str, Any]] = {}
+        for row in payload.get("rows", []):
+            tool = str(row.get("tool_name", "") or "").strip()
+            profile = str(row.get("profile", "") or "").strip()
+            if not tool or not profile:
+                continue
+            key = (tool, profile)
+            item = stats.setdefault(key, {"tool_name": tool, "profile": profile, "calls": 0, "successes": 0, "errors": 0, "avg_duration_seconds": 0.0})
+            item["calls"] += 1
+            if row.get("status") == "success":
+                item["successes"] += 1
+            else:
+                item["errors"] += 1
+            item["avg_duration_seconds"] += float(row.get("duration_seconds") or 0.0)
+        rows: list[dict[str, Any]] = []
+        for item in stats.values():
+            calls = max(1, int(item["calls"]))
+            item["success_rate"] = round(float(item["successes"]) / calls, 4)
+            item["avg_duration_seconds"] = round(float(item["avg_duration_seconds"]) / calls, 4)
+            rows.append(item)
+        rows.sort(key=lambda value: (value["tool_name"], value["profile"]))
+        return {"rows": rows, "total": len(rows)}
     finally:
         session.close()
 
@@ -1339,9 +1465,87 @@ async def ui_evaluation_run(req: EvaluationRunRequest):
         session.close()
 
 
+@app.get("/ui/prompts")
+def ui_prompts():
+    prompts: list[dict[str, Any]] = []
+    for file_path in sorted(PROMPTS_DIR.glob("*.md")):
+        stat = file_path.stat()
+        prompts.append(
+            {
+                "name": file_path.name,
+                "size_bytes": stat.st_size,
+                "updated_at": stat.st_mtime,
+            }
+        )
+    return {"prompts": prompts}
+
+
+@app.get("/ui/prompts/{name}")
+def ui_prompt_read(name: str):
+    prompt_path = _resolve_prompt_file(name)
+    return {"name": prompt_path.name, "content": prompt_path.read_text(encoding="utf-8")}
+
+
+@app.put("/ui/prompts/{name}")
+def ui_prompt_update(name: str, req: PromptUpdateRequest):
+    prompt_path = _resolve_prompt_file(name)
+    try:
+        prompt_path.write_text(req.content or "", encoding="utf-8")
+    except OSError as exc:
+        raise HTTPException(status_code=403, detail=f"Prompt file is not writable: {exc}") from exc
+    return {"name": prompt_path.name, "saved": True}
+
+
+@app.post("/ui/prompts/test")
+async def ui_prompt_test(req: PromptDryRunRequest):
+    run_id = str(uuid.uuid4())
+    asyncio.create_task(
+        _background_agent(
+            run_id,
+            req.agent,
+            req.url,
+            prompt_override=req.content,
+        )
+    )
+    return {"run_id": run_id, "root_actor": req.agent, "override_applied": True}
+
+
+@app.get("/ui/runs/{run_id}/screenshot")
+def ui_run_latest_screenshot(run_id: str):
+    trace = run_registry.get(run_id)
+    if trace is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+
+    for event in reversed(trace.events):
+        details = event.details if isinstance(event.details, dict) else {}
+        candidate = (
+            _extract_screenshot_url_from_value(details.get("result_full"))
+            or _extract_screenshot_url_from_value(details.get("result_preview"))
+            or _extract_screenshot_url_from_value(details)
+        )
+        if candidate:
+            return {
+                "run_id": run_id,
+                "screenshot_url": candidate,
+                "event_seq": event.seq,
+                "timestamp": event.timestamp.isoformat(),
+            }
+    return {"run_id": run_id, "screenshot_url": "", "event_seq": None, "timestamp": None}
+
+
 @app.get("/ui/database/tables")
 def ui_database_tables():
-    return {"tables": sorted(OperatorConsoleRepository.TABLE_MAP.keys())}
+    session = get_session()
+    try:
+        repo = OperatorConsoleRepository(session)
+        rows: list[dict[str, Any]] = []
+        for name in sorted(repo.TABLE_MAP.keys()):
+            model = repo.TABLE_MAP[name]
+            row_count = int(session.query(model).count())
+            rows.append({"name": name, "row_count": row_count})
+        return {"tables": [row["name"] for row in rows], "entries": rows}
+    finally:
+        session.close()
 
 
 @app.get("/ui/database/{table}", response_model=DatabaseTableResponse)

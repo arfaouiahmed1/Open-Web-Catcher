@@ -203,6 +203,7 @@ class OperatorOverview(BaseModel):
 class AgentTestRequest(BaseModel):
     agent: str
     url: str
+    prompt_override: str = ""
 
 
 class WorkflowRunRequest(BaseModel):
