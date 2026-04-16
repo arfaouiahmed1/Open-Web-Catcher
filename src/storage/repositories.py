@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -17,6 +17,7 @@ from src.models.schemas import PipelineResult
 from src.storage.models import (
     AgentOutputRecord,
     AgentRunRecord,
+    BackgroundJobRecord,
     LLMCallRecord,
     MemoryEntryRecord,
     MemoryHintUsedRecord,
@@ -75,6 +76,120 @@ class RunRepository:
             self._persist_memory_hints_used(result.run_id, agent_runs)
         self._session.refresh(record)
         return record
+
+    def save_trace_snapshot(
+        self,
+        *,
+        run_id: str,
+        root_actor: str,
+        url: str,
+        trace: RunTrace,
+    ) -> None:
+        txn = self._session.begin_nested() if self._session.in_transaction() else self._session.begin()
+        with txn:
+            legacy = self.get_by_run_id(run_id)
+            if legacy is None:
+                legacy = RunRecord(run_id=run_id)
+                self._session.add(legacy)
+            legacy.url = url
+            legacy.page_type = "unknown"
+            legacy.status = "running" if not trace.completed else ("success" if (trace.metrics and trace.metrics.success) else "failed")
+            legacy.success = bool(trace.metrics.success) if (trace.metrics and trace.completed) else False
+            legacy.streams_found = 0
+            metrics = trace.metrics
+            if metrics is not None:
+                legacy.tokens_in = int(metrics.total_tokens_in or 0)
+                legacy.tokens_out = int(metrics.total_tokens_out or 0)
+                legacy.tool_calls = int(metrics.total_tool_calls or 0)
+                legacy.duration_seconds = float(metrics.total_duration_seconds or 0.0)
+                legacy.failure_mode = metrics.failure_mode or ""
+            legacy.result_json = {
+                "run_id": run_id,
+                "url": url,
+                "status": legacy.status,
+                "metrics": metrics.model_dump(mode="json") if metrics else {},
+            }
+
+            pipeline = self._session.query(PipelineRunRecord).filter_by(run_id=run_id).first()
+            if pipeline is None:
+                pipeline = PipelineRunRecord(run_id=run_id)
+                self._session.add(pipeline)
+                self._session.flush()
+            pipeline.root_url = url
+            pipeline.page_type = "unknown"
+            pipeline.top_level_page_type = "unknown"
+            pipeline.final_status = legacy.status
+            pipeline.success = legacy.success
+            pipeline.failure_mode = legacy.failure_mode
+            pipeline.started_at = trace.started_at
+            pipeline.finished_at = trace.finished_at
+            if metrics is not None:
+                pipeline.total_tokens_in = int(metrics.total_tokens_in or 0)
+                pipeline.total_tokens_out = int(metrics.total_tokens_out or 0)
+                pipeline.total_tool_calls = int(metrics.total_tool_calls or 0)
+                pipeline.total_llm_calls = int(metrics.total_llm_calls or 0)
+                pipeline.total_messages = int(metrics.total_messages or 0)
+                pipeline.duration_seconds = float(metrics.total_duration_seconds or 0.0)
+                pipeline.estimated_input_cost_usd = float(metrics.estimated_input_cost_usd or 0.0)
+                pipeline.estimated_output_cost_usd = float(metrics.estimated_output_cost_usd or 0.0)
+                pipeline.estimated_total_cost_usd = float(metrics.estimated_total_cost_usd or 0.0)
+
+            snapshot = self._session.query(RunSnapshotRecord).filter_by(run_id=run_id).first()
+            if snapshot is None:
+                snapshot = RunSnapshotRecord(run_id=run_id, pipeline_run_id=pipeline.id)
+                self._session.add(snapshot)
+                self._session.flush()
+            snapshot.pipeline_run_id = pipeline.id
+            snapshot.snapshot_json = {
+                "run_id": run_id,
+                "url": url,
+                "status": legacy.status,
+                "metrics": metrics.model_dump(mode="json") if metrics else {},
+                "events": [event.model_dump(mode="json") for event in trace.events],
+            }
+
+            self._session.query(RuntimeEventRecord).filter_by(pipeline_run_id=pipeline.id).delete(synchronize_session=False)
+            for event in trace.events:
+                self._session.add(
+                    RuntimeEventRecord(
+                        pipeline_run_id=pipeline.id,
+                        agent_run_id=None,
+                        actor=event.actor,
+                        seq=event.seq,
+                        kind=event.kind,
+                        status=event.status,
+                        message=event.message,
+                        details_json=event.details or {},
+                        created_at=event.timestamp,
+                    )
+                )
+
+    def cleanup_old_artifacts(self, *, retention_days: int = 30) -> dict[str, int]:
+        threshold = datetime.utcnow() - timedelta(days=max(1, int(retention_days)))
+        old_pipeline_ids = [
+            int(row.id)
+            for row in self._session.query(PipelineRunRecord.id)
+            .filter(PipelineRunRecord.finished_at.is_not(None))
+            .filter(PipelineRunRecord.finished_at < threshold)
+            .all()
+        ]
+        if not old_pipeline_ids:
+            return {"runtime_events_deleted": 0, "run_screenshots_deleted": 0}
+        events_deleted = (
+            self._session.query(RuntimeEventRecord)
+            .filter(RuntimeEventRecord.pipeline_run_id.in_(old_pipeline_ids))
+            .delete(synchronize_session=False)
+        )
+        screenshots_deleted = (
+            self._session.query(RunScreenshotRecord)
+            .filter(RunScreenshotRecord.pipeline_run_id.in_(old_pipeline_ids))
+            .delete(synchronize_session=False)
+        )
+        self._session.commit()
+        return {
+            "runtime_events_deleted": int(events_deleted or 0),
+            "run_screenshots_deleted": int(screenshots_deleted or 0),
+        }
 
     def get_by_run_id(self, run_id: str) -> RunRecord | None:
         return self._session.query(RunRecord).filter_by(run_id=run_id).first()
@@ -768,6 +883,150 @@ class RunRepository:
             self._session.add(record)
             self._session.flush()
         return record.id
+
+
+class BackgroundJobRepository:
+    TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "dead_letter"}
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def enqueue(
+        self,
+        *,
+        run_id: str,
+        job_type: str,
+        url: str,
+        actor: str,
+        payload: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+        max_attempts: int = 2,
+    ) -> BackgroundJobRecord:
+        key = (idempotency_key or "").strip() or None
+        if key:
+            existing = (
+                self._session.query(BackgroundJobRecord)
+                .filter_by(job_type=job_type, idempotency_key=key)
+                .first()
+            )
+            if existing is not None:
+                return existing
+        record = BackgroundJobRecord(
+            job_id=_hash_text(f"{run_id}:{job_type}:{datetime.utcnow().isoformat()}"),
+            run_id=run_id,
+            job_type=job_type,
+            status="queued",
+            idempotency_key=key,
+            url=url,
+            actor=actor,
+            payload_json=payload or {},
+            max_attempts=max(1, int(max_attempts)),
+        )
+        self._session.add(record)
+        self._session.commit()
+        self._session.refresh(record)
+        return record
+
+    def list_active(self, limit: int = 200) -> list[BackgroundJobRecord]:
+        return (
+            self._session.query(BackgroundJobRecord)
+            .filter(BackgroundJobRecord.status.in_(["queued", "running", "retrying"]))
+            .order_by(BackgroundJobRecord.created_at.desc())
+            .limit(max(1, limit))
+            .all()
+        )
+
+    def get_by_run_id(self, run_id: str) -> BackgroundJobRecord | None:
+        return self._session.query(BackgroundJobRecord).filter_by(run_id=run_id).first()
+
+    def claim_next(
+        self,
+        *,
+        lease_seconds: int = 90,
+    ) -> BackgroundJobRecord | None:
+        now = datetime.utcnow()
+        candidate = (
+            self._session.query(BackgroundJobRecord)
+            .filter(
+                BackgroundJobRecord.status.in_(["queued", "retrying"]),
+            )
+            .order_by(BackgroundJobRecord.created_at.asc(), BackgroundJobRecord.id.asc())
+            .first()
+        )
+        if candidate is None:
+            return None
+        candidate.status = "running"
+        candidate.started_at = candidate.started_at or now
+        candidate.heartbeat_at = now
+        candidate.lease_expires_at = now + timedelta(seconds=max(5, int(lease_seconds)))
+        candidate.attempts = int(candidate.attempts or 0) + 1
+        candidate.error_text = ""
+        self._session.commit()
+        self._session.refresh(candidate)
+        return candidate
+
+    def heartbeat(self, run_id: str, *, lease_seconds: int = 90) -> None:
+        row = self.get_by_run_id(run_id)
+        if row is None:
+            return
+        now = datetime.utcnow()
+        row.heartbeat_at = now
+        row.lease_expires_at = now + timedelta(seconds=max(5, int(lease_seconds)))
+        self._session.commit()
+
+    def mark_cancelled(self, run_id: str, *, reason: str = "") -> None:
+        row = self.get_by_run_id(run_id)
+        if row is None or row.status in self.TERMINAL_STATUSES:
+            return
+        row.status = "cancelled"
+        row.error_text = reason
+        row.finished_at = datetime.utcnow()
+        self._session.commit()
+
+    def mark_succeeded(self, run_id: str, result_json: dict[str, Any] | None = None) -> None:
+        row = self.get_by_run_id(run_id)
+        if row is None:
+            return
+        row.status = "succeeded"
+        row.result_json = result_json or {}
+        row.error_text = ""
+        row.finished_at = datetime.utcnow()
+        row.lease_expires_at = None
+        self._session.commit()
+
+    def mark_failed(self, run_id: str, *, error_text: str) -> BackgroundJobRecord | None:
+        row = self.get_by_run_id(run_id)
+        if row is None:
+            return None
+        exhausted = int(row.attempts or 0) >= int(row.max_attempts or 1)
+        row.status = "dead_letter" if exhausted else "retrying"
+        row.error_text = error_text
+        row.finished_at = datetime.utcnow() if exhausted else None
+        row.lease_expires_at = None
+        self._session.commit()
+        self._session.refresh(row)
+        return row
+
+    def recover_stale_running(self, *, stale_after_seconds: int = 180) -> int:
+        now = datetime.utcnow()
+        threshold = now - timedelta(seconds=max(5, int(stale_after_seconds)))
+        rows = (
+            self._session.query(BackgroundJobRecord)
+            .filter(BackgroundJobRecord.status == "running")
+            .all()
+        )
+        recovered = 0
+        for row in rows:
+            heartbeat = row.heartbeat_at or row.started_at or row.created_at
+            lease_expired = row.lease_expires_at is not None and row.lease_expires_at <= now
+            if lease_expired or heartbeat <= threshold:
+                row.status = "retrying" if int(row.attempts or 0) < int(row.max_attempts or 1) else "dead_letter"
+                row.lease_expires_at = None
+                row.finished_at = now if row.status == "dead_letter" else None
+                recovered += 1
+        if recovered:
+            self._session.commit()
+        return recovered
 
 
 def _extract_agent_contexts(trace: RunTrace | None, result: PipelineResult) -> list[dict[str, Any]]:

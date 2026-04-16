@@ -193,14 +193,26 @@ def test_ui_database_tables_returns_allowlist(client: TestClient):
 
 
 def test_ui_workflow_run_returns_generated_run_id(client: TestClient):
-    with patch("src.api.app.asyncio.create_task") as mock_create_task:
-        mock_create_task.side_effect = lambda coro: (coro.close(), MagicMock())[1]
-        response = client.post("/ui/workflows/run", json={"url": "https://example.com/watch"})
+    response = client.post("/ui/workflows/run", json={"url": "https://example.com/watch"})
 
     assert response.status_code == 200
     assert response.json()["root_actor"] == "orchestrator"
     assert response.json()["run_id"]
-    mock_create_task.assert_called_once()
+    assert response.json()["job_status"] in {"queued", "running", "retrying"}
+
+
+def test_ui_workflow_run_honors_idempotency_key(client: TestClient):
+    payload = {"url": "https://example.com/watch", "idempotency_key": "same-request"}
+    first = client.post("/ui/workflows/run", json=payload)
+    second = client.post("/ui/workflows/run", json=payload)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    if first.json().get("fallback") == "in_memory" or second.json().get("fallback") == "in_memory":
+        assert first.json()["idempotency_key"] == "same-request"
+        assert second.json()["idempotency_key"] == "same-request"
+    else:
+        assert first.json()["run_id"] == second.json()["run_id"]
 
 
 def test_ui_run_detail_returns_active_trace(client: TestClient):

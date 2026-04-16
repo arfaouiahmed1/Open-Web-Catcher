@@ -5,6 +5,7 @@ import { formatCurrency, formatNumber } from "@/lib/utils";
 import { DataTable } from "@/components/data-table";
 import { JsonViewer } from "@/components/json-viewer";
 import { KpiCard } from "@/components/kpi-card";
+import { RunDetailLive } from "@/components/run-detail-live";
 import { Badge } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +34,7 @@ export default async function RunDetailPage({ params }) {
           <p className="text-[10px] font-semibold uppercase tracking-widest text-signal">Run Detail</p>
           <h1 className="mt-1 text-2xl font-semibold text-white">Live run in memory</h1>
           <p className="mt-0.5 text-sm text-slate-500">
-            This run hasn't been persisted yet — data is streaming from the in-memory observability store.
+            This run hasn&apos;t been persisted yet — data is streaming from the in-memory observability store.
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -42,7 +43,7 @@ export default async function RunDetailPage({ params }) {
           <KpiCard label="Tool Calls" value={formatNumber(metrics.total_tool_calls || 0)} />
           <KpiCard label="Cost"       value={formatCurrency(metrics.total_cost_usd ?? metrics.estimated_total_cost_usd ?? 0)} />
         </div>
-        <JsonViewer label="Active Trace" value={trace} />
+        <RunDetailLive runId={params.runId} activeTrace={trace} persistedEvents={trace.events || []} />
       </div>
     );
   }
@@ -121,6 +122,8 @@ export default async function RunDetailPage({ params }) {
         <JsonViewer label="Snapshot" value={snapshot} />
         <JsonViewer label="Run Payload" value={run} />
       </div>
+
+      <RunDetailLive runId={params.runId} persistedEvents={events} />
 
     </div>
   );

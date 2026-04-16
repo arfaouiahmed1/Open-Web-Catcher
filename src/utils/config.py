@@ -96,6 +96,7 @@ class Settings(BaseSettings):
 
     tool_timeout_seconds: int = 30
     agent_timeout_seconds: int = 300
+    background_job_retention_days: int = 30
 
     memory_enabled: bool = True
     memory_db_path: str = "data/site_memory.db"

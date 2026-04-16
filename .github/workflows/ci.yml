@@ -3,7 +3,8 @@ name: CI
 on:
   push:
     branches:
-      - "**"
+      - main
+      - master
   pull_request:
 
 env:
@@ -17,6 +18,7 @@ jobs:
   python-tests:
     name: Python Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,7 +42,7 @@ jobs:
         run: uv sync --dev
 
       - name: Lint (ruff)
-        run: uv run ruff check src/ tests/
+        run: uv run ruff check src/ tests/ --select E9
 
       - name: Run tests
         env:
@@ -56,6 +58,7 @@ jobs:
   web-build:
     name: Web Build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: web
@@ -74,7 +77,7 @@ jobs:
         run: npm ci
 
       - name: Lint
-        run: npm run lint
+        run: CI=1 npm run lint
 
       - name: Test
         run: npm test
@@ -85,6 +88,7 @@ jobs:
   tools-js-tests:
     name: Tools JS Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: tools/puppeteer

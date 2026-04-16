@@ -59,6 +59,9 @@ analyze_providers(...)
 generate_takedown_emails(...)
 ```
 
+### Short-circuit: high-confidence non-target page
+If classification returns `other` with high confidence and no strong streaming evidence, immediately produce an empty extraction result and skip downstream extraction agents.
+
 ## Rules
 
 1. **Process ALL hosting URLs** from the landing agent — not just the first.
@@ -71,11 +74,12 @@ generate_takedown_emails(...)
    - `extraction_results`: list of server+stream data from hosting/embedded agents
      (each item = the `servers` + `streaming_urls` section from those agents)
 6. **De-duplicate URLs** before sub-agent calls (hosting and embedded).
-7. **Retry policy**: allow one retry only for transient failures (timeout/challenge), then continue the pipeline.
+7. **Retry policy**: allow one retry per sub-agent node for transient failures (timeout/challenge), then continue the pipeline.
 8. **Escalation rule**: call `run_embedded_agent` when hosting reports embedded hints or zero usable streams after normal attempts.
 9. **Keep reasoning compact**: prioritize routing decisions and completion over long explanations.
 10. **Unknown-class fallback**: if classification is `other`/unknown, do not stop early; run the Path D fallback and still complete analyze+email.
 11. **Completion guarantee**: pipeline is only complete after analyze_providers and generate_takedown_emails are attempted.
+12. **Memory handoff**: pass useful memory hints discovered during classification to downstream landing/hosting/embedded calls to reduce redundant lookups.
 
 ## Budget
 

@@ -31,6 +31,34 @@ class RunRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
+class BackgroundJobRecord(Base):
+    __tablename__ = "background_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    job_type: Mapped[str] = mapped_column(String(32), index=True)  # workflow | agent
+    status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    url: Mapped[str] = mapped_column(Text, default="")
+    actor: Mapped[str] = mapped_column(String(64), default="")
+    payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    result_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    error_text: Mapped[str] = mapped_column(Text, default="")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=2)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("job_type", "idempotency_key", name="uq_background_jobs_type_idempotency"),
+    )
+
+
 class PipelineRunRecord(Base):
     __tablename__ = "pipeline_runs"
 

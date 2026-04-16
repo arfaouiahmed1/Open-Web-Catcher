@@ -13,6 +13,7 @@ from src.models.schemas import ProviderInfo
 from src.storage.models import (
     AgentRunRecord,
     AgentOutputRecord,
+    BackgroundJobRecord,
     EvaluationCaseRecord,
     EvaluationCaseResultRecord,
     EvaluationRunRecord,
@@ -55,6 +56,7 @@ class OperatorConsoleRepository:
         "llm_calls": LLMCallRecord,
         "tool_calls": ToolCallRecord,
         "tool_playground_calls": ToolPlaygroundCallRecord,
+        "background_jobs": BackgroundJobRecord,
         "provider_lookup_checks": ProviderLookupCheckRecord,
         "runtime_events": RuntimeEventRecord,
         "prompt_versions": PromptVersionRecord,

@@ -3,6 +3,51 @@ import { formatCurrency, formatNumber, formatPercent } from "@/lib/utils";
 import { DataTable } from "@/components/data-table";
 import { KpiCard } from "@/components/kpi-card";
 
+function TokenBurnChart({ trend = [] }) {
+  const rows = (trend || []).slice(-10);
+  if (!rows.length) return null;
+  const values = rows.map((row) => Number(row.tokens || 0));
+  const max = Math.max(...values, 1);
+  const points = rows.map((row, idx) => `${(idx / Math.max(rows.length - 1, 1)) * 100},${100 - ((Number(row.tokens || 0) / max) * 100)}`).join(" ");
+  return (
+    <div className="rounded-xl border border-white/8 bg-white/[0.03] p-4">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-600">Token burn rate (last 10)</div>
+      <div className="h-32 rounded bg-black/20 p-2">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full">
+          <polyline fill="none" stroke="rgba(117,169,255,0.95)" strokeWidth="2" points={points} />
+        </svg>
+      </div>
+      <div className="mt-2 text-xs text-slate-600">Peak {formatNumber(max)} tokens/day</div>
+    </div>
+  );
+}
+
+function CostBreakdown({ modelBreakdown = [] }) {
+  const rows = (modelBreakdown || []).slice(0, 5);
+  const total = rows.reduce((sum, row) => sum + Number(row.cost_usd || 0), 0) || 1;
+  return (
+    <div className="rounded-xl border border-white/8 bg-white/[0.03] p-4">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-600">Cost breakdown</div>
+      <div className="space-y-1.5">
+        {rows.map((row, idx) => {
+          const pct = (Number(row.cost_usd || 0) / total) * 100;
+          return (
+            <div key={`${row.label}-${idx}`}>
+              <div className="flex items-center text-xs">
+                <span className="text-slate-400">{row.label}</span>
+                <span className="ml-auto text-slate-600">{pct.toFixed(1)}%</span>
+              </div>
+              <div className="mt-1 h-2 rounded bg-black/20">
+                <div className="h-2 rounded bg-signal/60" style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export const dynamic = "force-dynamic";
 
 export default async function OverviewPage() {
@@ -118,6 +163,11 @@ export default async function OverviewPage() {
           columns={["tool_name","calls","successes","errors","success_rate","avg_duration_seconds"]}
           rows={overview.top_tools || []}
         />
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-2">
+        <TokenBurnChart trend={overview.trend || []} />
+        <CostBreakdown modelBreakdown={overview.model_breakdown || []} />
       </section>
 
     </div>

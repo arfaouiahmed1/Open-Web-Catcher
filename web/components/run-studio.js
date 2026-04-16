@@ -19,11 +19,15 @@ import {
   Terminal,
   Wrench,
   Zap,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 
 import { apiUrl } from "@/lib/api";
 import { cn, formatCurrency, formatNumber, safeJson } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { WorkflowCanvas } from "@/components/workflow-canvas";
+import { TimelinePanel } from "@/components/timeline-panel";
 
 /* ─── constants ─────────────────────────────────────────────────────────── */
 
@@ -325,7 +329,7 @@ function PayloadView({ title, value }) {
 
 /* ─── agent selector ────────────────────────────────────────────────────── */
 
-function AgentSelector({ value, onChange }) {
+function AgentSelector({ value, onChange, counts = {} }) {
   return (
     <div className="flex flex-wrap gap-2">
       {AGENTS.map((a) => (
@@ -340,7 +344,12 @@ function AgentSelector({ value, onChange }) {
           )}
         >
           <span className="text-sm font-medium">{a.label}</span>
-          <span className="text-xs text-slate-600">{a.description}</span>
+          <div className="flex w-full items-center gap-2">
+            <span className="text-xs text-slate-600">{a.description}</span>
+            <span className="ml-auto rounded bg-black/30 px-1.5 py-0.5 text-[10px] text-slate-500">
+              {counts[a.value] || 0} tools
+            </span>
+          </div>
         </button>
       ))}
     </div>
@@ -441,6 +450,53 @@ function ThinkingBlock({ event }) {
   );
 }
 
+function isScreenshotValue(v) {
+  return typeof v === "string" && v.trim().length > 0 && (v.startsWith("http") || v.startsWith("data:image/"));
+}
+
+function collectScreenshotUrls(value, out) {
+  if (value == null) return;
+
+  if (typeof value === "string") {
+    try {
+      collectScreenshotUrls(JSON.parse(value), out);
+      return;
+    } catch { /* fall through */ }
+
+    try {
+      const unescaped = value.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+      collectScreenshotUrls(JSON.parse(unescaped), out);
+      return;
+    } catch { /* fall through */ }
+
+    const pattern = /(?:\\?"screenshot_url\\?"\s*:\s*\\?")(https?:\/\/[^"\\]+|data:image\/[^"\\]+)(?:\\?")/g;
+    for (const match of value.matchAll(pattern)) {
+      const url = String(match[1] || "").trim();
+      if (isScreenshotValue(url)) out.add(url);
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) collectScreenshotUrls(item, out);
+    return;
+  }
+
+  if (typeof value === "object") {
+    const screenshotUrl = value.screenshot_url;
+    if (isScreenshotValue(screenshotUrl)) out.add(screenshotUrl.trim());
+    const screenshotUrls = value.screenshot_urls;
+    if (Array.isArray(screenshotUrls)) {
+      for (const item of screenshotUrls) {
+        if (isScreenshotValue(item)) out.add(item.trim());
+      }
+    }
+    for (const nested of Object.values(value)) {
+      collectScreenshotUrls(nested, out);
+    }
+  }
+}
+
 function ToolBlock({ event }) {
   const [expanded, setExpanded] = useState(true);
   const [loadedScreenshot, setLoadedScreenshot] = useState("");
@@ -449,59 +505,6 @@ function ToolBlock({ event }) {
   const resultPreview = event.details?.result_full ?? event.details?.result_preview;
   const isStart = event.kind === "tool_call_started";
   const isError = event.status === "error";
-
-  function isScreenshotValue(v) {
-    return typeof v === "string" && v.trim().length > 0 && (v.startsWith("http") || v.startsWith("data:image/"));
-  }
-
-  function collectScreenshotUrls(value, out) {
-    if (value == null) return;
-
-    if (typeof value === "string") {
-      // Try direct JSON parse first.
-      try {
-        collectScreenshotUrls(JSON.parse(value), out);
-        return;
-      } catch { /* fall through */ }
-
-      // result_preview arrives as an escaped JSON string like:
-      //   {\"screenshot_url\":\"https://...\"}
-      // Unescape the backslash-quotes and try again.
-      try {
-        const unescaped = value.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
-        collectScreenshotUrls(JSON.parse(unescaped), out);
-        return;
-      } catch { /* fall through */ }
-
-      // Last resort: regex scan for screenshot_url in any form.
-      // Matches both: "screenshot_url":"https://..." and \"screenshot_url\":\"https://...\"
-      const pattern = /(?:\\?"screenshot_url\\?"\s*:\s*\\?")(https?:\/\/[^"\\]+|data:image\/[^"\\]+)(?:\\?")/g;
-      for (const match of value.matchAll(pattern)) {
-        const url = String(match[1] || "").trim();
-        if (isScreenshotValue(url)) out.add(url);
-      }
-      return;
-    }
-
-    if (Array.isArray(value)) {
-      for (const item of value) collectScreenshotUrls(item, out);
-      return;
-    }
-
-    if (typeof value === "object") {
-      const screenshotUrl = value.screenshot_url;
-      if (isScreenshotValue(screenshotUrl)) out.add(screenshotUrl.trim());
-      const screenshotUrls = value.screenshot_urls;
-      if (Array.isArray(screenshotUrls)) {
-        for (const item of screenshotUrls) {
-          if (isScreenshotValue(item)) out.add(item.trim());
-        }
-      }
-      for (const nested of Object.values(value)) {
-        collectScreenshotUrls(nested, out);
-      }
-    }
-  }
 
   const screenshotUrls = (() => {
     const urls = new Set();
@@ -702,7 +705,7 @@ function EventRow({ event }) {
     <div className={cn(
       "rounded-md border text-xs transition-colors",
       isError ? "border-ember/30 bg-ember/5" : "border-white/6 hover:bg-white/[0.04]"
-    )}>
+    )} id={`event-${event.seq}`}>
       <button
         onClick={() => hasDetails && setExpanded((v) => !v)}
         disabled={!hasDetails}
@@ -770,6 +773,11 @@ export function RunStudio({ mode = "workflow" }) {
   const [streamError, setStreamError] = useState("");
   const [isStarting, setIsStarting] = useState(false);
   const [isRunning, setIsRunning]   = useState(false);
+  const [latestScreenshot, setLatestScreenshot] = useState("");
+  const [latestScreenshotAt, setLatestScreenshotAt] = useState("");
+  const [screenshotFlash, setScreenshotFlash] = useState(false);
+  const [promptPreview, setPromptPreview] = useState("");
+  const [showPromptPreview, setShowPromptPreview] = useState(false);
 
   useEffect(() => {
     if (!runId) return;
@@ -814,6 +822,38 @@ export function RunStudio({ mode = "workflow" }) {
     return () => source.close();
   }, [runId]);
 
+  useEffect(() => {
+    if (mode !== "agent") return;
+    fetch(apiUrl(`/ui/prompts/${agent}_v1.md`))
+      .then((res) => res.ok ? res.json() : { content: "" })
+      .then((payload) => setPromptPreview(payload?.content || ""))
+      .catch(() => setPromptPreview(""));
+  }, [agent, mode]);
+
+  useEffect(() => {
+    if (!runId || !isRunning) return;
+    const timer = setInterval(async () => {
+      try {
+        const response = await fetch(apiUrl(`/ui/runs/${runId}/screenshot`), { cache: "no-store" });
+        if (!response.ok) return;
+        const payload = await response.json();
+        const next = payload?.screenshot_url || "";
+        if (!next) return;
+        setLatestScreenshot((cur) => {
+          if (cur && cur !== next) {
+            setScreenshotFlash(true);
+            setTimeout(() => setScreenshotFlash(false), 450);
+          }
+          return next;
+        });
+        setLatestScreenshotAt(payload?.timestamp || "");
+      } catch {
+        // ignore transient polling errors
+      }
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [runId, isRunning]);
+
   const toolCalls   = events.filter((e) => e && e.kind === "tool_call_started").length;
   const llmCalls    = events.filter((e) => e && e.kind === "llm_response").length;
   const errorCount  = events.filter((e) => e && e.status === "error").length;
@@ -826,6 +866,30 @@ export function RunStudio({ mode = "workflow" }) {
   const completed   = tracePayload?.completed;
   const succeeded   = completed && metrics?.success;
   const failed      = completed && !metrics?.success;
+  const agentToolCounts = AGENTS.reduce((acc, item) => {
+    acc[item.value] = events.filter((e) => e.kind === "tool_call_started" && e.actor === item.value).length;
+    return acc;
+  }, {});
+  const screenshotStrip = (() => {
+    const rows = [];
+    const seen = new Set();
+    for (const event of events) {
+      const resultPreview = event?.details?.result_full ?? event?.details?.result_preview;
+      const urls = new Set();
+      collectScreenshotUrls(resultPreview, urls);
+      for (const urlItem of Array.from(urls)) {
+        if (seen.has(urlItem)) continue;
+        seen.add(urlItem);
+        rows.push({ url: urlItem, seq: event.seq });
+      }
+    }
+    return rows;
+  })();
+
+  function jumpToEvent(seq) {
+    if (!seq) return;
+    document.getElementById(`event-${seq}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
 
   async function startRun() {
     setIsStarting(true);
@@ -885,7 +949,22 @@ export function RunStudio({ mode = "workflow" }) {
             <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
               Agent
             </label>
-            <AgentSelector value={agent} onChange={setAgent} />
+            <AgentSelector value={agent} onChange={setAgent} counts={agentToolCounts} />
+            <div className="rounded-lg border border-white/10 bg-black/20">
+              <button
+                type="button"
+                onClick={() => setShowPromptPreview((v) => !v)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-400 hover:text-white"
+              >
+                {showPromptPreview ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
+                Prompt preview ({agent})
+              </button>
+              {showPromptPreview && (
+                <pre className="max-h-56 overflow-auto border-t border-white/10 px-3 py-2 text-[11px] text-slate-300 whitespace-pre-wrap">
+                  {promptPreview || "No prompt preview available"}
+                </pre>
+              )}
+            </div>
           </div>
         )}
 
@@ -963,31 +1042,78 @@ export function RunStudio({ mode = "workflow" }) {
 
       {/* ── live panels ───────────────────────────────────────────────────── */}
       {(events.length > 0 || runId) && (
-        <div className="grid gap-4 xl:grid-cols-[1fr_300px]">
+        <div className="space-y-4">
+          <WorkflowCanvas events={events} rootActor={tracePayload?.root_actor || (mode === "agent" ? agent : "orchestrator")} />
+          <div className={cn("grid gap-4", mode === "agent" ? "xl:grid-cols-[1fr_340px]" : "xl:grid-cols-[1fr_300px]")}>
 
-          {/* reasoning panel */}
-          <div className="rounded-xl border border-white/8 bg-white/[0.03] overflow-hidden">
-            <div className="flex items-center gap-2 border-b border-white/6 px-4 py-3">
-              <Brain className="h-3.5 w-3.5 text-violet-400" />
-              <span className="text-xs font-semibold text-white">Agent Reasoning</span>
-              {isRunning && <Loader2 className="h-3 w-3 animate-spin text-slate-600" />}
-              <span className="ml-auto text-xs text-slate-600">
-                {llmCalls} LLM turn{llmCalls !== 1 ? "s" : ""}
-              </span>
+            {/* reasoning panel */}
+            <div className="space-y-4">
+              <div className="rounded-xl border border-white/8 bg-white/[0.03] overflow-hidden">
+                <div className="flex items-center gap-2 border-b border-white/6 px-4 py-3">
+                  <Brain className="h-3.5 w-3.5 text-violet-400" />
+                  <span className="text-xs font-semibold text-white">Agent Reasoning</span>
+                  {isRunning && <Loader2 className="h-3 w-3 animate-spin text-slate-600" />}
+                  <span className="ml-auto text-xs text-slate-600">
+                    {llmCalls} LLM turn{llmCalls !== 1 ? "s" : ""}
+                  </span>
+                </div>
+                <div className="max-h-[560px] overflow-y-auto space-y-2 p-4">
+                  <ReasoningFeed events={events} />
+                </div>
+              </div>
+              <TimelinePanel events={events} onSelectEvent={jumpToEvent} />
             </div>
-            <div className="max-h-[560px] overflow-y-auto space-y-2 p-4">
-              <ReasoningFeed events={events} />
-            </div>
-          </div>
 
-          {/* event log */}
-          <div className="rounded-xl border border-white/8 bg-white/[0.03] overflow-hidden">
-            <div className="flex items-center gap-2 border-b border-white/6 px-3 py-3">
-              <span className="text-xs font-semibold text-white">Event Log</span>
-              <span className="ml-auto text-xs text-slate-600">{events.length}</span>
-            </div>
-            <div className="max-h-[560px] overflow-y-auto space-y-1 p-2">
-              <EventLog events={events} />
+            {/* right panel */}
+            <div className="space-y-4">
+              {mode === "agent" && (
+                <div className={cn("rounded-xl border border-white/8 bg-white/[0.03] overflow-hidden", screenshotFlash && "ring-2 ring-red-400/50")}>
+                  <div className="flex items-center gap-2 border-b border-white/6 px-3 py-3">
+                    <span className="text-xs font-semibold text-white">Live Screenshot</span>
+                    <span className="ml-auto text-[11px] text-slate-600">
+                      {latestScreenshotAt ? new Date(latestScreenshotAt).toLocaleTimeString() : "waiting"}
+                    </span>
+                  </div>
+                  {latestScreenshot ? (
+                    <button
+                      type="button"
+                      className="block w-full bg-black/20"
+                      onClick={() => window.open(latestScreenshot, "_blank", "noopener,noreferrer")}
+                    >
+                      <img src={latestScreenshot} alt="Live agent screenshot" className="h-44 w-full object-cover" />
+                    </button>
+                  ) : (
+                    <div className="px-3 py-10 text-center text-xs text-slate-700">No screenshot yet</div>
+                  )}
+                  {screenshotStrip.length > 0 && (
+                    <div className="flex gap-2 overflow-x-auto border-t border-white/6 p-2">
+                      {screenshotStrip.map((shot) => (
+                        <button
+                          key={`${shot.url}-${shot.seq}`}
+                          type="button"
+                          onClick={() => {
+                            setLatestScreenshot(shot.url);
+                            jumpToEvent(shot.seq);
+                          }}
+                          className="shrink-0 overflow-hidden rounded border border-white/10"
+                          title={`Jump to event #${shot.seq}`}
+                        >
+                          <img src={shot.url} alt={`Screenshot ${shot.seq}`} className="h-14 w-20 object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="rounded-xl border border-white/8 bg-white/[0.03] overflow-hidden">
+                <div className="flex items-center gap-2 border-b border-white/6 px-3 py-3">
+                  <span className="text-xs font-semibold text-white">Event Log</span>
+                  <span className="ml-auto text-xs text-slate-600">{events.length}</span>
+                </div>
+                <div className="max-h-[560px] overflow-y-auto space-y-1 p-2">
+                  <EventLog events={events} />
+                </div>
+              </div>
             </div>
           </div>
         </div>
