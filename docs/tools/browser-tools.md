@@ -2,8 +2,9 @@
 
 > **See also:** [MCP Server Architecture](../architecture/mcp-server.md) · [Python Tools](python-tools.md) · [← Docs Home](../README.md)
 
-All browser tools run inside the Node.js MCP server (`tools_js/`). They connect to
-Chrome via DevTools Protocol (CDP) WebSocket and return structured JSON.
+All browser tools run inside the Node.js MCP server (`tools/puppeteer/` and `tools/playwright/`).
+This reference uses Puppeteer file paths for examples; Playwright has equivalent files under
+`/home/runner/work/Open-Web-Catcher/Open-Web-Catcher/tools/playwright/` with matching tool intent and contracts.
 
 ## Agent-Specific Tool Sets
 
@@ -28,7 +29,7 @@ Chrome via DevTools Protocol (CDP) WebSocket and return structured JSON.
 
 ## `inspect`
 
-**File:** [`tools_js/tools/inspect.js`](../../tools_js/tools/inspect.js)
+**File:** [`tools/puppeteer/tools/inspect.js`](../../tools/puppeteer/tools/inspect.js)
 
 Full DOM scan. The primary tool for understanding any page. Most agent turns start with `inspect`.
 
@@ -135,7 +136,7 @@ Full DOM scan. The primary tool for understanding any page. Most agent turns sta
 
 ## `interact`
 
-**File:** [`tools_js/tools/interact.js`](../../tools_js/tools/interact.js)
+**File:** [`tools/puppeteer/tools/interact.js`](../../tools/puppeteer/tools/interact.js)
 
 Performs user interactions. Includes anti-bot simulation (realistic delays, bezier mouse paths).
 
@@ -219,7 +220,7 @@ When using `mode: click`, the tool tries to find the element in this order:
 
 ## `harvest`
 
-**File:** [`tools_js/tools/harvest.js`](../../tools_js/tools/harvest.js)
+**File:** [`tools/puppeteer/tools/harvest.js`](../../tools/puppeteer/tools/harvest.js)
 
 Stream URL capture using 6 detection layers in parallel. The core extraction tool.
 
@@ -296,7 +297,7 @@ by both CDP and JS player inspection is only returned once.
 
 ## `navigate`
 
-**File:** [`tools_js/tools/navigate.js`](../../tools_js/tools/navigate.js)
+**File:** [`tools/puppeteer/tools/navigate.js`](../../tools/puppeteer/tools/navigate.js)
 
 Navigate to a URL and capture the redirect chain.
 
@@ -334,7 +335,7 @@ The agent should handle this — likely by navigating back to the original URL.
 
 ## `screenshot`
 
-**File:** [`tools_js/tools/screenshot.js`](../../tools_js/tools/screenshot.js)
+**File:** [`tools/puppeteer/tools/screenshot.js`](../../tools/puppeteer/tools/screenshot.js)
 
 Quick screenshot without a full DOM scan. ~3× faster than `inspect`.
 
@@ -370,7 +371,7 @@ Use `inspect` when you need both structure and a screenshot.
 
 ## Shared Utilities
 
-**Directory:** [`tools_js/shared/`](../../tools_js/shared/)
+**Directory:** [`tools/puppeteer/shared/`](../../tools/puppeteer/shared/)
 
 ### `browser.js`
 
@@ -405,7 +406,7 @@ export async function screenshotElement(page, selector)  // specific element
 ```javascript
 export async function enableBlocking(page) {
   // Ghostery-backed blocking with cached EasyList/EasyPrivacy/HaGeZi/OISD/uBO lists
-  // Reads remote sources from tools_js/shared/filterlists/sources.json
+  // Reads remote sources from tools/puppeteer/shared/filterlists/sources.json
   // Caches downloaded lists and the compiled engine under data/cache/adblocker/
   // Exposes network/cosmetic mode flags, with cosmetic-only split kept as a placeholder
 }

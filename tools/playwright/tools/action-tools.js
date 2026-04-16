@@ -237,15 +237,19 @@ export async function selectOption({
       });
 
       if (selectorValue && option_value) {
-        // Playwright: use page.selectOption instead of frame.select
-        await page.locator(selectorValue).selectOption(option_value).catch(async () => {
-          await frame.locator(selectorValue).selectOption(option_value);
-        });
+        await frame.locator(selectorValue).selectOption({ value: option_value });
         return;
       }
 
-      await handle.selectOption(option_value || '');
-      if (option_text && !option_value) {
+      if (option_value) {
+        await handle.selectOption({ value: option_value });
+        return;
+      }
+
+      if (option_text) {
+        await handle.selectOption({ label: option_text }).catch(async () => {
+          await handle.selectOption({ value: option_text });
+        });
         await handle.evaluate((node, desiredText) => {
           const option = Array.from(node.options || []).find((entry) =>
             (entry.textContent || '').toLowerCase().includes(String(desiredText).toLowerCase()));
@@ -253,6 +257,8 @@ export async function selectOption({
           node.value = option.value;
           node.dispatchEvent(new Event('change', { bubbles: true }));
         }, option_text);
+      } else {
+        throw new Error('Either option_value or option_text is required');
       }
     },
   });
