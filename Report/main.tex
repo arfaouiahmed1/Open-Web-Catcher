@@ -1,0 +1,189 @@
+\documentclass[12pt,a4paper,oneside]{report}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{setspace}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{xurl}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!50!black,
+  urlcolor=blue!60!black,
+  citecolor=blue!50!black,
+  pdftitle={Design of a Multi-Agent AI Pipeline for Evidence Collection from Illegal Streaming Sites},
+  pdfauthor={Ahmed ARFAOUI}
+}
+
+\onehalfspacing
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.6em}
+\setlength{\headheight}{15pt}
+\setlength{\emergencystretch}{3em}
+\raggedbottom
+\setlist{nosep}
+
+\definecolor{codebg}{RGB}{247,247,247}
+\definecolor{codeframe}{RGB}{220,220,220}
+\definecolor{codetext}{RGB}{40,40,40}
+\definecolor{accent}{RGB}{25,78,121}
+
+\lstdefinestyle{reportstyle}{
+  basicstyle=\ttfamily\small\color{codetext},
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codeframe},
+  breaklines=true,
+  showstringspaces=false,
+  columns=fullflexible,
+  keepspaces=true
+}
+
+\titleformat{\chapter}[display]
+  {\bfseries\Huge\color{accent}}
+  {\filright\MakeUppercase{\chaptername} \thechapter}
+  {1ex}
+  {\filright}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Internship Report}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\newcommand{\reportTitle}{Design of a Multi-Agent AI Pipeline for Evidence Collection from Illegal Streaming Sites}
+\newcommand{\reportType}{Internship Report}
+\newcommand{\studentName}{Ahmed ARFAOUI}
+\newcommand{\schoolName}{[University / School]}
+\newcommand{\departmentName}{[Department / Program]}
+\newcommand{\hostOrganization}{Soft Stars}
+\newcommand{\clientName}{beIN SPORTS}
+\newcommand{\internshipPeriod}{[Internship Period]}
+\newcommand{\supervisorName}{[Academic Supervisor]}
+\newcommand{\industrySupervisorName}{Wael Hkiri}
+\newcommand{\placeholderfigure}[3]{
+  \begin{figure}[H]
+    \centering
+    \fbox{
+      \parbox[c][#2][c]{0.88\textwidth}{
+        \centering
+        \textbf{Image Placeholder}\\[0.5em]
+        #1
+      }
+    }
+    \caption{#3}
+  \end{figure}
+}
+\newcommand{\placeholdertable}[2]{
+  \begin{table}[H]
+    \centering
+    \fbox{
+      \parbox[c][5cm][c]{0.88\textwidth}{
+        \centering
+        \textbf{Table Placeholder}\\[0.5em]
+        #1
+      }
+    }
+    \caption{#2}
+  \end{table}
+}
+
+\begin{document}
+
+\hypersetup{pageanchor=false}
+\begin{titlepage}
+  \centering
+  {\Large \schoolName \par}
+  \vspace{0.5cm}
+  {\large \departmentName \par}
+  \vspace{2.0cm}
+  {\Huge \bfseries \reportTitle \par}
+  \vspace{0.8cm}
+  {\Large \reportType \par}
+  \vspace{2.0cm}
+
+  \begin{tabular}{>{\bfseries}p{4.5cm}p{9cm}}
+    Student & \studentName \\
+    Host organization & \hostOrganization \\
+    Client & \clientName \\
+    Internship period & \internshipPeriod \\
+    Academic supervisor & \supervisorName \\
+    Industry supervisor & \industrySupervisorName \\
+  \end{tabular}
+
+  \vfill
+  {\large \today \par}
+\end{titlepage}
+\hypersetup{pageanchor=true}
+
+\pagenumbering{roman}
+
+\chapter*{Abstract}
+This report presents the design and implementation of a multi-agent platform for collecting evidence from illegal streaming websites. The work was carried out during an internship at Soft Stars for the client beIN SPORTS. The practical objective was to inspect unstable websites, classify their pages, extract relevant hosting and stream information, identify infrastructure providers, and support downstream takedown actions with traceable evidence.
+
+The report also positions this work relative to the company's existing stream scraper. That scraper already performs deterministic crawling, page classification, host-page inspection, embedded-player discovery, screenshot capture, final stream extraction, and infrastructure enrichment. The solution developed during the internship was therefore not intended to replace that production capability directly. Instead, it was designed as an agentic workflow that can serve as a complementary and more adaptive backup path when highly dynamic pages, noisy HTML and JavaScript, nested iframes, or unusual anti-bot conditions reduce the effectiveness of the main scraper.
+
+The project evolved in two stages. The first stage relied on n8n and was valuable as a rapid experimentation environment for testing prompts, browser actions, and end-to-end workflow logic. The second stage replaced the visual prototype with a code-based platform built around FastAPI, Next.js, Puppeteer-driven browser tools, persistent observability, short-term and long-term memory, and first-party evaluation utilities. This transition improved maintainability, visibility, and cost control while preserving the lessons learned during the earlier n8n phase.
+
+The final system uses a lightweight orchestrator to route each URL toward specialized agents for classification, landing-page exploration, hosting-page extraction, and embedded-player analysis. The platform also includes provider lookup, takedown email drafting, runtime telemetry, and an operator console for monitoring runs. For deployment, the solution is packaged as containers and prepared for Azure, with event-driven execution through Azure Container Apps Jobs and Azure Service Bus.
+
+\chapter*{Acknowledgements}
+I would like to thank my academic and professional supervisors for their guidance throughout this internship. I also thank the Soft Stars team for the technical discussions, feedback, and trust that made this work possible.
+
+\tableofcontents
+\clearpage
+
+\pagenumbering{arabic}
+
+\input{chapters/01-introduction}
+\input{chapters/02-background}
+\input{chapters/03-analysis}
+\input{chapters/04-architecture}
+\input{chapters/05-implementation}
+\input{chapters/06-evaluation}
+\input{chapters/07-conclusion}
+
+\appendix
+\input{chapters/appendix-a-inventory}
+
+\chapter*{References}
+\addcontentsline{toc}{chapter}{References}
+\begin{thebibliography}{9}
+
+\bibitem{repo-readme}
+Project repository, \emph{README.md}, used as the main implementation entry point for the final platform.
+
+\bibitem{architecture-docs}
+Project documentation set, especially \emph{docs/architecture/overview.md}, \emph{docs/architecture/data-flow.md}, \emph{docs/architecture/agents.md}, and \emph{docs/architecture/implementation-deep-dive-2026-04-09.md}.
+
+\bibitem{api-docs}
+Project API documentation, \emph{docs/api/fastapi.md} and \emph{docs/api/operator-console.md}.
+
+\bibitem{source-code}
+Source code under \emph{src/}, \emph{tools/puppeteer/}, \emph{web/}, \emph{configs/}, and \emph{tests/}, used to describe the implemented architecture, runtime behavior, memory, caching, and evaluation workflow.
+
+\bibitem{crispdm}
+R. Wirth and J. Hipp, ``CRISP-DM: Towards a Standard Process Model for Data Mining,'' 2000.
+
+\bibitem{azure-jobs}
+Microsoft Learn, \emph{Jobs in Azure Container Apps}. Official documentation consulted to align the deployment section with Azure Container Apps Jobs capabilities.
+
+\bibitem{azure-event-jobs}
+Microsoft Learn, \emph{Tutorial: Deploy an event-driven job by using Azure Container Apps}. Official documentation consulted for the event-driven deployment pattern based on queue messages.
+
+\end{thebibliography}
+
+\end{document}

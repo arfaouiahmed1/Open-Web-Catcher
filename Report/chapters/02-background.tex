@@ -1,0 +1,251 @@
+\chapter{Technical Background and Working Tools}
+
+\section{Evidence collection on dynamic streaming websites}
+
+Streaming websites are difficult to analyze because they mix several technical patterns in the same browsing session. A landing page may behave like a catalog, a hosting page may expose multiple mirrors, and an embedded page may hide the actual player inside cross-origin iframes. Even when the player becomes visible, the actual stream often appears only after an interaction, and the final evidence may be found in the network layer rather than in visible HTML.
+
+This means that evidence collection cannot rely on one signal alone. A realistic system must combine:
+
+\begin{itemize}
+  \item structural evidence from the DOM and visible page elements;
+  \item visual evidence from screenshots;
+  \item behavioral evidence produced after navigation or interaction;
+  \item network evidence that confirms whether a real media stream was exposed.
+\end{itemize}
+
+\section{Agentic browser automation}
+
+The project uses an agentic approach to browser automation. Instead of asking a model to answer from static input, the model is placed inside a controlled environment where it can call tools, observe results, and decide its next step. This is particularly useful for websites where the relevant information is not visible immediately.
+
+In this project, the agentic approach is combined with strong task specialization:
+
+\begin{itemize}
+  \item the \textbf{classification agent} decides what kind of page is being visited;
+  \item the \textbf{landing-page agent} explores list-like pages and collects candidate hosting URLs;
+  \item the \textbf{hosting-page agent} activates players, cycles through servers, and captures streams;
+  \item the \textbf{embedded-page agent} focuses on iframe-heavy player contexts.
+\end{itemize}
+
+This specialization reduces ambiguity. It is easier to build a reliable landing-page explorer and a reliable hosting-page extractor separately than to ask one generic agent to solve everything equally well.
+
+\section{Why browser tooling is essential}
+
+The system uses real browser automation because target websites cannot be handled reliably from raw HTML alone. Browser tooling is needed to:
+
+\begin{itemize}
+  \item execute JavaScript and wait for dynamic content;
+  \item inspect iframe trees after the page has fully rendered;
+  \item click tabs, mirrors, and player controls;
+  \item capture screenshots after each important state change;
+  \item monitor network activity and detect stream URLs such as \texttt{m3u8}, \texttt{mpd}, and direct media files.
+\end{itemize}
+
+This practical requirement is one of the main reasons the internship moved toward a dedicated Puppeteer tool layer in the final platform.
+
+\section{Memory, observability, and cost in LLM systems}
+
+A browser-based agent is not useful if it cannot remember what it has already tried or if the operator cannot understand why a run failed. For that reason, the final platform introduces three important technical dimensions that go beyond simple extraction.
+
+\subsection{Short-term memory}
+
+Short-term memory stores the working state of the current run. It keeps track of visited URLs, tool attempts, discovered selectors, stream candidates, server labels, screenshots, and other useful signals. Its role is local: it helps the agent avoid repeating the same failed action during the same execution.
+
+\subsection{Long-term memory}
+
+Long-term memory stores reusable site knowledge across runs. In the current implementation, it preserves patterns such as repeated selectors, successful navigation hints, server labels, stream hosts, and stable URL patterns. This is a major difference from the initial n8n stage, where execution context mainly remained inside a single workflow run. The final platform can therefore benefit from accumulated experience on recurring domains.
+
+\subsection{Observability and cost control}
+
+The platform also records runtime events, token usage, tool calls, and estimated cost. This is important for two reasons:
+
+\begin{itemize}
+  \item it makes debugging possible;
+  \item it makes optimization measurable.
+\end{itemize}
+
+Without observability, it is difficult to know whether an expensive run failed because of a weak prompt, a browser issue, a quota problem, or a target-site change. Without cost tracking, it is difficult to improve the platform economically.
+
+\section{Technologies used during the internship}
+
+The internship combined prototype tooling, development tooling, application frameworks, and cloud deployment technology. Table~\ref{tab:tech-stack} summarizes the main technologies and their role.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.8cm} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X}
+\toprule
+Technology & Role in the project & Why it was useful \\
+\midrule
+\texttt{n8n} & Early orchestration and experimentation environment & Allowed rapid validation of the workflow logic, prompt design, and browser-action sequencing before the final coded platform was built \\
+\texttt{VS Code} & Main development environment & Practical for editing Python, JavaScript, prompts, Docker configuration, and LaTeX in one place while testing quickly during the internship \\
+\texttt{Puppeteer} & Browser automation engine & Enabled realistic page rendering, interaction, screenshot capture, and stream harvesting on dynamic websites \\
+\texttt{FastAPI} & Backend API and orchestration surface & Provided structured endpoints for runs, observability, evaluations, configuration, and investigation workflows \\
+\texttt{Next.js} & Operator console & Provided the UI used to monitor runs, inspect results, test agents, review evaluation outputs, and explore persisted data \\
+\texttt{Postgres} & Main persistence layer & Stored runs, events, costs, tool calls, provider analysis, and evaluation results in a structured form \\
+\texttt{Docker} & Container packaging & Made the browser-heavy runtime portable and easier to reproduce locally and in Azure \\
+\texttt{Azure} & Production deployment target & Supports containerized execution, queue-based triggering, and separation between interactive services and extraction jobs \\
+\bottomrule
+\end{tabularx}
+\caption{Main technologies used during the internship.}
+\label{tab:tech-stack}
+\end{table}
+
+\section{n8n as a testing ground}
+
+It is important to explain the role of n8n accurately. During the first phase of the internship, n8n was very useful. It made it possible to connect steps visually, try different prompts quickly, and show that the objective was achievable on real websites. In other words, n8n helped transform an idea into a working proof of concept.
+
+That first phase had several practical benefits:
+
+\begin{itemize}
+  \item faster iteration on workflow logic;
+  \item easy visibility of the main execution path;
+  \item low friction when testing alternative node sequences;
+  \item quick confirmation that browser-assisted extraction could support the client objective.
+\end{itemize}
+
+At the same time, the prototype revealed what the project would later need beyond a visual workflow.
+
+\section{Why the project moved beyond n8n}
+
+The move away from n8n was motivated by engineering requirements, not by the failure of the prototype. The coded platform became necessary because the project needed:
+
+\begin{itemize}
+  \item stronger software structure for growing prompts, tools, and API surfaces;
+  \item dedicated short-term and long-term memory rather than only execution-local context;
+  \item richer observability with persistent run events and cost metrics;
+  \item explicit caching strategies to optimize repeated context and repeated tool outputs;
+  \item a more complete operator interface than the earlier workflow dashboards;
+  \item a cleaner path toward Azure container deployment.
+\end{itemize}
+
+This background is essential for understanding the rest of the report. The final system is not disconnected from the n8n stage. It is the result of the lessons learned during that stage.
+
+\section{Existing company scraper and why an agentic backup was needed}
+
+Before the internship platform described in this report, the company already had a stream scraper dedicated to football-stream investigations. Its logic can be summarized as follows:
+
+\begin{itemize}
+  \item receive a landing page or seed URL;
+  \item classify the page as landing, host, embedded player, or other;
+  \item follow match links and extract match metadata when available;
+  \item inspect host pages to discover iframe sources, embedded players, and candidate stream URLs;
+  \item visit the embedded source, capture a screenshot of the player, and try to extract the final streaming URL;
+  \item preserve host-page evidence when the embed is blocked by Cloudflare or similar protections;
+  \item enrich the result with domain, WHOIS, and IP intelligence.
+\end{itemize}
+
+This existing scraper is important because it explains why the company was interested in an agentic workflow. The need was not simply ``build another scraper''. The real need was to create a \textbf{more adaptive fallback path} for situations where deterministic heuristics become fragile.
+
+The agentic approach is especially relevant in four cases:
+
+\begin{itemize}
+  \item ranking noisy iframe or JavaScript candidates when the real player source is not obvious;
+  \item reasoning across screenshots, DOM state, and network evidence together;
+  \item handling pages where anti-bot behavior, overlays, or template noise make fixed rules brittle;
+  \item preserving a richer review trail when the main scraper cannot reach a confident final answer.
+\end{itemize}
+
+In that sense, my solution should be understood as a \textbf{backup plan} for the company scraper. It complements the existing production logic instead of competing with it directly.
+
+\section{Page types used in the existing scraping workflow}
+
+The company scraper and the internship platform share the same broad page taxonomy because this taxonomy reflects the structure of the target websites themselves. Four page types are particularly important.
+
+\subsection{\texttt{landing\_page}}
+
+A landing page is a schedule, catalog, or aggregator page listing multiple football matches. It usually contains repeated cards or rows, and each entry may include the names of the teams, kickoff time, match status, channel name, or broadcaster information. In this kind of page, the goal is not immediate stream extraction. The goal is to identify which match links deserve deeper processing.
+
+\subsection{\texttt{host\_page}}
+
+A host page is dedicated to one match or one stream context. Compared with a landing page, it is more focused and usually contains one principal matchup, one group of servers, one embedded player region, or one dominant iframe chain. For the company scraper, this page type is a key place for network sniffing, iframe enumeration, and player-source discovery.
+
+\subsection{\texttt{embed\_video\_page}}
+
+An embedded video page is often a reduced player page designed to be loaded inside an iframe. It may contain little surrounding content and focus almost entirely on the player. In many real cases, this is where the final streaming manifest becomes visible through network activity.
+
+\subsection{\texttt{other}}
+
+The \texttt{other} category captures pages that do not contribute directly to extraction, such as general news pages, betting or advertisement pages, tracker-heavy redirects, and unrelated content. Correctly filtering such pages is important because it protects the rest of the pipeline from unnecessary cost and noise.
+
+\section{Processing pipeline of the existing scraper}
+
+The company scraper already implements a complete processing logic. Understanding it is important because the agentic workflow was designed in relation to this baseline.
+
+\subsection{Step 0: input handling}
+
+The process begins from a seed URL. This seed can already be a landing page, a host page, or another page whose role must be determined at runtime.
+
+\subsection{Step 1: page classification}
+
+The scraper loads the page through a hardened browser environment and classifies it into one of the four page types. This first decision controls the rest of the execution path:
+
+\begin{itemize}
+  \item if the page is a landing page, the scraper collects match links and metadata;
+  \item if the page is a host page, it starts direct host-page extraction;
+  \item if the page is an embedded page, it tries direct stream extraction and screenshot capture;
+  \item if the page is other, it is skipped or flagged depending on the operating rules.
+\end{itemize}
+
+\subsection{Step 2: host-page processing}
+
+For each host page, the scraper crawls the page more deeply. It enumerates iframe elements, inspects nested frames, watches the page network, and scans HTML and JavaScript for player-related signals. The objective is to identify one or more strong candidates for the real embedded player or the final stream source.
+
+\subsection{Step 3: embed visit and final extraction}
+
+Once a candidate embed source is chosen, the scraper opens that embed page in a focused browser session. It captures a screenshot of the player, monitors the network for manifests or direct media files, and tries to preserve the final stream URL. If the embed page becomes inaccessible because of Cloudflare or a similar protection layer, the host-page evidence is still kept for later retry or manual review.
+
+\section{Outputs produced by the existing scraper}
+
+The company workflow does more than return a single media URL. Its extraction result can include several layers of evidence and enrichment:
+
+\begin{itemize}
+  \item execution identifiers such as stream ID or job ID;
+  \item the original source URL;
+  \item match metadata, such as home team, away team, kickoff time, match status, broadcaster, and channel;
+  \item embedded URL candidates and final streaming URLs when available;
+  \item screenshots of the player area or page state;
+  \item WHOIS and IP information for the website URL, embedded URL, and streaming URL.
+\end{itemize}
+
+This output structure is important because it shows that the company scraper already works as an evidence-collection system, not as a minimal downloader.
+
+\section{Heuristics and technical strategies of the existing scraper}
+
+The current scraper already handles a wide set of practical difficulties. Its main technical strategies include:
+
+\begin{itemize}
+  \item stealth browsing and reduced fingerprinting in the browser;
+  \item network sniffing for \texttt{XHR}, \texttt{fetch}, WebSocket, and manifest traffic;
+  \item recursive iframe analysis, including cross-origin cases where only partial evidence is accessible;
+  \item extraction from HTML attributes, JavaScript initializers, and resolved page state;
+  \item selective resource control and ad mitigation;
+  \item validation of discovered outputs with typed schemas.
+\end{itemize}
+
+This means the agentic workflow enters an already mature environment. The contribution of the internship is therefore not to introduce the very idea of browser evidence, but to add a different style of reasoning on top of it.
+
+\section{Why prompting becomes useful after heuristics}
+
+The need for prompting appears most clearly after deterministic techniques have already done their work. When the page has several iframe candidates, several JavaScript strings, several redirect paths, or several noisy URLs, a fixed rule system can collect a lot of evidence without always knowing which candidate should be prioritized first.
+
+In these cases, prompting helps in a different way from heuristics:
+
+\begin{itemize}
+  \item heuristics \textbf{collect} candidate evidence efficiently;
+  \item prompting helps \textbf{interpret and rank} that evidence in ambiguous situations;
+  \item tool-constrained prompting can also decide which next action is the most informative.
+\end{itemize}
+
+This is one of the main reasons the company wanted an agentic workflow rather than only more rules.
+
+\section{Remaining limitations that justify a backup workflow}
+
+Even a strong deterministic scraper has practical limits. The company description highlights several of them:
+
+\begin{itemize}
+  \item some multi-server situations are only partially consolidated;
+  \item puzzle-style interactive protections are not solved automatically;
+  \item click-to-play sequences that open new windows or require stronger user intent remain difficult;
+  \item pages with very noisy HTML and JavaScript can produce too many plausible player candidates.
+\end{itemize}
+
+These are exactly the kinds of situations in which an agentic backup becomes valuable. The fallback path does not need to replace the primary scraper on every case. It only needs to improve the handling of the difficult cases where adaptive reasoning is worth the extra cost.

@@ -1,0 +1,361 @@
+\chapter{Implementation}
+
+\section{Implementation trajectory}
+
+The implementation progressed in two major phases. The first phase was centered on n8n. It provided the earliest working workflows and made it possible to verify that a multi-step extraction process could work on real target websites. The second phase moved the project into a coded platform whose main responsibilities are explicit in the repository: agent execution in Python, browser tooling in Node and Puppeteer, persistence in Postgres, and operator interaction through Next.js.
+
+This chapter focuses on the current implementation while keeping the early n8n phase as an important reference point for design decisions.
+
+\section{Backend implementation with FastAPI}
+
+The backend is implemented with \textbf{FastAPI}. It acts as the runtime gateway of the whole platform. In practice, it exposes:
+
+\begin{itemize}
+  \item health and execution endpoints;
+  \item routes for launching classification, extraction, and full pipeline runs;
+  \item run-history and observability endpoints;
+  \item memory and evaluation endpoints;
+  \item operator-console endpoints used by the web application.
+\end{itemize}
+
+This implementation choice has several benefits:
+
+\begin{itemize}
+  \item it provides a stable contract between the runtime and the operator console;
+  \item it makes the platform easy to integrate into a larger deployment;
+  \item it centralizes configuration, observability, and persistence access.
+\end{itemize}
+
+\section{Operator console implementation with Next.js}
+
+The user-facing application is implemented with \textbf{Next.js}. Instead of relying only on raw logs or database inspection, the platform offers an operator console with several practical views:
+
+\begin{itemize}
+  \item an overview dashboard for KPIs and trends;
+  \item a live workflow studio with server-sent events;
+  \item agent test pages for running specialists directly;
+  \item tool playground pages for direct browser-tool calls;
+  \item run history and drill-down pages;
+  \item evaluation and pricing interfaces;
+  \item database exploration views.
+\end{itemize}
+
+This web layer is important because the project is not only a backend pipeline. It is also an operational investigation environment.
+
+\section{Browser automation implementation with Puppeteer}
+
+Browser execution is implemented around \textbf{Puppeteer}. This choice is central to the whole project because it provides a real browser context that can:
+
+\begin{itemize}
+  \item load JavaScript-heavy websites;
+  \item inspect rendered page state;
+  \item interact with buttons, tabs, and players;
+  \item capture screenshots;
+  \item detect media requests that only appear after interaction.
+\end{itemize}
+
+The final implementation organizes Puppeteer through a tool layer instead of scattering browser code directly across the business logic. This makes the system easier to evolve and makes tool behavior clearer in prompts and tests.
+
+\section{Specialist-agent implementation}
+
+\subsection{Classification agent}
+
+The classification agent is the entry point of any run. Its purpose is to decide whether the URL behaves like a landing page, a hosting page, an embedded page, or another category. This first decision is critical because it determines the rest of the path.
+
+The agent uses structured inspection rather than blind guessing. It relies on browser signals to make the classification defensible and to reduce routing mistakes.
+
+\subsection{Landing-page agent}
+
+The landing-page agent is responsible for pages that behave like schedules, listings, or aggregators. Its job is not to extract the final stream directly. Instead, it must discover all relevant hosting pages and preserve enough context so that downstream extraction can continue efficiently.
+
+\subsection{Hosting-page agent}
+
+The hosting-page agent deals with the part of the pipeline where the extraction work becomes more expensive and more delicate. It must detect available servers, activate the player, switch mirrors when necessary, and capture evidence for every successful stream.
+
+\subsection{Embedded-page agent}
+
+The embedded-page agent handles situations where the player is delegated to a cross-origin or iframe-heavy page. This is a narrower but technically demanding task because normal interaction may no longer be enough.
+
+\section{Tooling comparison and operational roles}
+
+One of the points that must be explained clearly in the report is the comparison between the two tool philosophies present in the company context:
+
+\begin{itemize}
+  \item the \textbf{deterministic scraper toolchain}, already used by the company;
+  \item the \textbf{agentic toolchain}, developed during the internship.
+\end{itemize}
+
+The deterministic scraper relies on explicit crawling logic, targeted sniffing, iframe traversal, metadata extraction, screenshot capture, and infrastructure enrichment. Its main strength is speed and directness when the expected patterns are already known.
+
+The agentic toolchain uses browser tools in a different way. Instead of applying only predefined extraction rules, it allows a model to:
+
+\begin{itemize}
+  \item inspect current page evidence;
+  \item choose between navigation, interaction, harvesting, and screenshot capture;
+  \item reuse memory hints from earlier runs;
+  \item continue exploring when a page remains ambiguous.
+\end{itemize}
+
+The two approaches are therefore not enemies. They solve different parts of the same operational problem.
+
+\subsection{Tool-by-tool comparison}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.8cm} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X}
+\toprule
+Capability & Existing scraper implementation & Agentic implementation \\
+\midrule
+Classification & Deterministic page typing from browsing signals and predefined logic & Agent decides page type from structured browser evidence and prompt rules \\
+Landing discovery & DOM parsing and match-link extraction rules & Agent explores landing pages with \texttt{inspect}, \texttt{navigate}, \texttt{interact}, and structured output constraints \\
+Iframe handling & Recursive frame traversal and source capture & Same browser evidence, plus agent reasoning to rank iframe and embed candidates \\
+Network sniffing & Deterministic harvesting of manifests and media URLs & Harvest tool remains central, but the agent can decide when to activate it and after which interaction \\
+Screenshot capture & Evidence capture at key stages & Evidence capture becomes part of the reasoning loop and can confirm state transitions \\
+Metadata extraction & Fixed extraction logic for teams, channel, status, and provider data & Metadata can still be preserved, but the focus shifts toward adaptive extraction and richer traces \\
+Validation & Typed validation of discovered outputs & Typed validation remains necessary to constrain model outputs and reduce false positives \\
+\bottomrule
+\end{tabularx}
+\caption{Comparison of the main tool capabilities in the existing scraper and the internship workflow.}
+\label{tab:tool-compare}
+\end{table}
+
+\section{Prompting as an implementation component}
+
+Another point that deserves a fuller explanation is prompting. In this project, prompts are not decorative instructions added on top of the code. They behave more like execution policies. They tell the agent how to use tools, when it is allowed to stop, and what form the final output must take.
+
+\subsection{Why prompting matters here}
+
+In a deterministic scraper, control comes mainly from code and heuristics. In an agentic workflow, part of that control moves into the prompt. If the prompt is weak, the agent may:
+
+\begin{itemize}
+  \item stop too early;
+  \item misclassify a page;
+  \item skip a necessary tool call;
+  \item produce output that is difficult to parse or validate;
+  \item overreact to a noisy signal and ignore better evidence elsewhere.
+\end{itemize}
+
+For that reason, prompting became one of the main engineering tasks of the internship.
+
+\subsection{Prompting versus deterministic heuristics}
+
+The difference between prompting and deterministic heuristics can be summarized as follows:
+
+\begin{itemize}
+  \item deterministic heuristics are excellent when the target pattern is already known and stable;
+  \item prompting becomes useful when the system must choose between several plausible actions or several plausible player candidates;
+  \item prompting can express priorities such as ``inspect first'', ``harvest before output'', or ``do not stop after the first server'' without hardcoding every possible site variation;
+  \item deterministic validation is still necessary after prompting, especially when outputs must be stored reliably.
+\end{itemize}
+
+In other words, prompting did not replace engineering logic. It added an adaptive decision layer on top of it.
+
+\subsection{Classification prompting}
+
+The classification prompt is designed to keep the first routing decision stable. Its role is to make the agent reason from observable evidence rather than guess from superficial cues. It therefore emphasizes:
+
+\begin{itemize}
+  \item page definitions for each class;
+  \item structured evidence from the page;
+  \item cautious behavior when the page remains ambiguous;
+  \item schema-shaped output that later code can validate.
+\end{itemize}
+
+\subsection{Landing-page prompting}
+
+Landing pages are broad and often noisy. The landing prompt therefore pushes the agent toward controlled exploration. It encourages the agent to inspect first, understand the page structure, identify likely match or hosting links, and continue through pagination or hidden content only when needed.
+
+This is different from a pure scraper rule that simply extracts all anchors. The point is not to gather every link indiscriminately, but to identify the links most likely to matter for the next stage.
+
+\subsection{Hosting-page prompting}
+
+Hosting pages are where prompting becomes especially important. The agent must decide which player or server controls are worth trying, which screenshot confirms that the player actually changed state, and when harvesting should happen. A strong hosting prompt typically reinforces:
+
+\begin{itemize}
+  \item inspection before action;
+  \item repeated server cycling rather than stopping at the first clue;
+  \item harvest-after-activation logic;
+  \item evidence preservation for each server or player state.
+\end{itemize}
+
+\subsection{Embedded-page prompting}
+
+Embedded pages are narrower but more brittle. The embedded prompt must account for cross-origin iframes, minimal interfaces, and the possibility that the visible page contains very little content except the player itself. In such a context, the prompt acts as a guardrail that keeps the agent from wandering and reminds it to connect network evidence, player activation, and screenshot validation.
+
+\subsection{Prompting and output validation}
+
+Prompting alone is not enough. Because LLM outputs can still drift, the project relies on structured parsing and validation. This is one place where the deterministic philosophy of the company scraper remains extremely valuable. Typed validation protects the rest of the pipeline from malformed answers and reduces false positives.
+
+This means the final implementation is really hybrid:
+
+\begin{itemize}
+  \item prompts control adaptive reasoning;
+  \item typed schemas and code validation control output reliability.
+\end{itemize}
+
+\section{Why some n8n explanations became shorter}
+
+Yes, some of the earlier n8n material became shorter in the previous rewrite. The reason was not that it stopped being relevant, but that I compressed it too aggressively while trying to pivot the report toward the current coded platform.
+
+For the final report, the better balance is:
+
+\begin{itemize}
+  \item explain \textbf{n8n} clearly as the experimentation and validation phase;
+  \item explain the \textbf{coded platform} as the mature implementation phase;
+  \item explain the \textbf{existing company scraper} as the operational baseline;
+  \item explain the \textbf{agentic workflow} as the backup path for hard cases.
+\end{itemize}
+
+That four-part positioning is more faithful to the real history of the project.
+
+\section{Memory implementation}
+
+\subsection{Short-term memory in the coded platform}
+
+One of the strongest improvements over the initial prototype is the explicit implementation of \textbf{short-term memory}. In the current platform, short-term memory keeps a compact representation of the ongoing run:
+
+\begin{itemize}
+  \item URLs already visited;
+  \item actions already attempted;
+  \item selectors and patterns detected during the run;
+  \item discovered server labels, screenshots, and stream URLs.
+\end{itemize}
+
+This means the agent can reason with a clearer working state instead of treating each step as isolated.
+
+\subsection{Long-term memory in the coded platform}
+
+The platform also introduces \textbf{long-term memory}, which stores reusable site hints across different runs. This is a major departure from the early n8n phase. In n8n, context was mainly available inside the current workflow execution. That is useful, but it remains a form of short memory. The new platform can persist stable knowledge such as:
+
+\begin{itemize}
+  \item recurring navigation patterns;
+  \item repeated selectors;
+  \item domain-specific server labels;
+  \item frequently observed stream hosts;
+  \item successful extraction hints from earlier runs.
+\end{itemize}
+
+This makes the current system more cumulative: the platform does not start from zero every time it sees a familiar site.
+
+\section{Caching and optimization implementation}
+
+The coded platform includes optimization mechanisms that were difficult to express clearly in the earlier prototype.
+
+\subsection{Prompt and provider caching}
+
+Long agent runs repeatedly resend a large amount of context. The current platform therefore introduces provider-aware caching so that repeated prompt content does not always carry its full cost again.
+
+\subsection{Tool-result caching}
+
+If the same tool observation appears repeatedly, the platform can reuse that result instead of spending model and tool budget on identical evidence. This is particularly useful on noisy or repetitive pages.
+
+\subsection{Cost accounting}
+
+The project also implements first-party cost accounting. Token usage and estimated cost are recorded per run and surfaced to the operator console. This is a practical advantage over early experimentation because optimization becomes measurable.
+
+\section{n8n versus the current coded platform}
+
+The most important comparison in the report is not between two unrelated solutions. It is between two stages of the same project. Table~\ref{tab:n8n-compare} summarizes the main differences.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.2cm} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X}
+\toprule
+Dimension & Early n8n phase & Current coded platform \\
+\midrule
+Main role & Rapid prototyping and workflow validation & Structured product implementation and operational platform \\
+Development speed & Very fast for early experiments & Slightly slower initially, but much cleaner for long-term evolution \\
+Memory & Mainly execution-local context, useful as short memory within a run & Explicit short-term memory plus persistent long-term memory across runs \\
+Cost optimization & Limited and harder to formalize & Prompt caching, provider caching, tool-result caching, and direct cost accounting \\
+Observability & Basic workflow visibility & Persistent runtime events, tool calls, prompts, costs, and UI drill-downs \\
+Maintainability & Good for quick changes, harder for larger software structure & Better separation between backend, tools, UI, storage, prompts, and tests \\
+Deployment model & Workflow-centric and prototype-oriented & Containerized, API-driven, and aligned with Azure Container Apps Jobs \\
+Scalability & Good for early demonstrations & Better suited for repeatable investigations and queue-driven cloud execution \\
+\bottomrule
+\end{tabularx}
+\caption{Comparison between the early n8n solution and the current coded platform.}
+\label{tab:n8n-compare}
+\end{table}
+
+This comparison should not be read as a rejection of n8n. On the contrary, n8n served as a useful validation environment. It helped reach the original goal quickly and proved that the workflow logic could work. The limitations only became significant when the project needed stronger memory, deeper optimization, and a more maintainable production path.
+
+\section{Existing company scraper versus the agentic workflow}
+
+To position the internship work correctly, it is also necessary to compare the new platform with the scraper the company already had before this project. The two systems address the same business domain, but they are designed for slightly different operational roles.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.1cm} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X}
+\toprule
+Dimension & Existing company scraper & My agentic workflow solution \\
+\midrule
+Core style & Deterministic scraping and heuristics & LLM-guided, tool-using, adaptive workflow \\
+Main strength & Fast and direct when known patterns are handled well & More flexible on noisy, unstable, or ambiguous pages \\
+Classification & Page typing through predefined logic & Page typing supported by agent reasoning and browser evidence \\
+Embed discovery & Heuristics, sniffing, iframe traversal, and network observation & Same browser evidence plus agent assistance to rank difficult iframe and URL candidates \\
+Metadata extraction & Structured extraction of match and infrastructure metadata & Can preserve the same investigation context while adding richer reasoning traces \\
+Anti-bot handling & Strong browser and scraping techniques already in place & Useful when a second reasoning-driven path is needed after deterministic logic becomes uncertain \\
+Operational role & Main production scraper & Backup plan and complementary workflow \\
+Best use case & Standard cases with patterns already handled well & Edge cases, brittle pages, unusual templates, and manual-review-oriented fallback scenarios \\
+\bottomrule
+\end{tabularx}
+\caption{Comparison between the existing company scraper and the internship agentic workflow.}
+\label{tab:company-compare}
+\end{table}
+
+This comparison is important because it explains why the company was interested in agentic workflows in the first place. The issue was not that the existing scraper had no value. On the contrary, it already solved a large part of the operational problem. The issue was that some pages remain hard to solve with fixed logic alone.
+
+The agentic workflow is therefore best understood as a \textbf{backup plan}. When the main scraper succeeds, it remains the preferred path. When a page becomes too noisy, too dynamic, too obfuscated, or too ambiguous, the agentic workflow provides a second layer of analysis that can reason more adaptively and preserve richer evidence for review.
+
+\section{Operational fallback strategy}
+
+The most realistic production positioning is a staged strategy:
+
+\begin{enumerate}
+  \item run the existing deterministic scraper first on the target URL;
+  \item accept the result immediately when the scraper reaches a confident and complete extraction;
+  \item trigger the agentic workflow when the page remains ambiguous, the iframe ranking is uncertain, the final stream is missing, or the result needs richer review traces;
+  \item preserve both paths in persistence so that the operator can compare the evidence and decide whether a retry or manual review is needed.
+\end{enumerate}
+
+This staged strategy justifies the extra cost of an LLM-assisted workflow. The agentic path is not used because it is fashionable; it is used because some edge cases justify a more adaptive fallback.
+
+\section{Why the new implementation is more cost-efficient}
+
+One of the strongest reasons for moving away from the prototype was economic control. The n8n phase made it possible to validate the pipeline, but it offered fewer natural hooks for optimizations such as:
+
+\begin{itemize}
+  \item reusing stable prompt context through provider-side caching;
+  \item reusing repeated observations through tool-result caching;
+  \item measuring token consumption consistently across runs;
+  \item linking prompt choices to actual cost in the operator UI.
+\end{itemize}
+
+The current platform therefore improves not only code structure but also operational efficiency.
+
+\section{Development workflow and the role of VS Code}
+
+Although it is less central than the runtime stack, \textbf{VS Code} was an important part of the internship workflow. It made it easier to move between:
+
+\begin{itemize}
+  \item Python implementation;
+  \item JavaScript browser tooling;
+  \item Docker and configuration files;
+  \item prompt files;
+  \item notebooks and tests;
+  \item report writing in LaTeX.
+\end{itemize}
+
+This mattered because the project was highly multidisciplinary. It was not a backend-only project or a prompt-only project. It required constant movement between orchestration, browser tooling, UI work, debugging, and documentation.
+
+\section{Deployment-oriented implementation}
+
+The platform is implemented as a containerized system so that the browser runtime and service dependencies remain reproducible. This makes the Azure target architecture realistic rather than theoretical.
+
+For the deployment plan, the extraction workload is packaged as an \textbf{Azure Container Apps Job}. A work item is placed on \textbf{Azure Service Bus}, a job execution starts, the investigation runs to completion, and the resulting evidence is written back to persistence and exposed to the operator interface.
+
+This design fits the project well because a website investigation is a finite task. It is closer to a job than to an always-on HTTP service.
+
+\section{Implementation summary}
+
+The final implementation keeps the core intuition validated during the n8n stage -- specialized page handling with browser evidence -- while improving the engineering quality of the whole system. FastAPI structures the runtime, Next.js structures operator interaction, Puppeteer structures browser execution, and memory plus caching structure reuse and optimization. Together, these elements turn the project from a promising prototype into a more complete investigation platform and, in the company context, into a realistic backup workflow for the existing stream scraper.

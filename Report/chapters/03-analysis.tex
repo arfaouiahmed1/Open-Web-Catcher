@@ -1,0 +1,173 @@
+\chapter{Methodology, Requirements Analysis, and Design Constraints}
+
+\section{Methodology options considered}
+
+The project combines software engineering, iterative experimentation, prompt tuning, and evidence-oriented data collection. Because of that hybrid nature, several methodological frameworks could have been used to organize the work. The three most relevant ones were \textbf{Agile}, \textbf{TDSP}, and \textbf{CRISP-DM}.
+
+\subsection{Agile}
+
+Agile is well suited to iterative development, short feedback loops, and incremental delivery. It matches the day-to-day rhythm of implementation: develop a feature, test it, improve it, and adjust priorities quickly. This logic was present throughout the internship, especially during prompt iteration, debugging, and interface refinement.
+
+\subsection{TDSP}
+
+The Team Data Science Process (TDSP) is useful when a project has a strong data-science orientation, including formal data acquisition, feature engineering, model training, deployment, and lifecycle management. Some elements of the internship fit this view, especially evaluation and experimentation, but the project was not centered on training a predictive model from a dataset.
+
+\subsection{CRISP-DM}
+
+The Cross-Industry Standard Process for Data Mining (CRISP-DM) offers a balanced framework for projects where the work begins from a business objective, moves through data understanding and preparation, then proceeds to modeling, evaluation, and deployment. Even though the present internship is not a classic data-mining project, CRISP-DM maps well to its actual progression because the system repeatedly transforms raw web evidence into structured, reviewable outputs.
+
+\section{Chosen methodology: CRISP-DM}
+
+For this report, \textbf{CRISP-DM} is the most appropriate methodology. It was chosen because it describes the real progression of the internship more accurately than Agile or TDSP alone.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.7cm} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X}
+\toprule
+Methodology & Strength in this project & Limitation in this project \\
+\midrule
+Agile & Excellent for organizing iterative implementation and daily adaptation & Describes project rhythm well, but less clearly explains the full analytical lifecycle from business need to evaluation and deployment \\
+TDSP & Strong for data-science projects with modeling and operationalization & More model-centric than needed for a browser-agent evidence collection platform \\
+CRISP-DM & Connects business understanding, data understanding, preparation, modeling, evaluation, and deployment in a coherent loop & Needed slight adaptation because the project focuses on agentic extraction rather than traditional predictive data mining \\
+\bottomrule
+\end{tabularx}
+\caption{Comparison of methodology candidates.}
+\end{table}
+
+CRISP-DM was retained for three main reasons:
+
+\begin{itemize}
+  \item the internship started from a clear business objective defined by the client;
+  \item the work depended on understanding and structuring messy real-world web data;
+  \item evaluation and deployment decisions were as important as implementation itself.
+\end{itemize}
+
+\section{Applying CRISP-DM to the project}
+
+\subsection{Business understanding}
+
+The business objective was to help transform unstable streaming websites into structured evidence that could support investigation and takedown workflows. The platform therefore had to produce outputs that were not only technically correct, but also useful, reviewable, and traceable. In the company context, this objective was not pursued in isolation: an operational scraper already existed, so the new platform also had to justify its value as a complementary and fallback workflow.
+
+\subsection{Data understanding}
+
+In this project, ``data'' does not mean only stored rows. It also includes page layouts, links, screenshots, iframe structures, network requests, provider information, and agent traces. Understanding the target websites meant studying how different categories of pages expose useful information and what types of obstacles repeatedly appear.
+
+\subsection{Data preparation}
+
+Preparation consisted of organizing candidate URLs, deduplicating inputs, cleaning outputs, normalizing stream evidence, and structuring observability data. In the final system, this preparation also includes memory profiles, reusable prompt context, and normalized persistence.
+
+\subsection{Modeling}
+
+The modeling phase corresponds here to the design of the multi-agent pipeline: classification logic, specialist agents, prompts, tool contracts, routing rules, and extraction normalization. The early n8n workflows and the current coded platform both belong to this phase, with the final implementation representing the mature version of the design.
+
+\subsection{Evaluation}
+
+Evaluation includes batch testing on representative websites, measuring token use and execution behavior, reviewing screenshots and traces, and validating whether the extracted evidence is reliable enough to support downstream action.
+
+\subsection{Deployment}
+
+Deployment concerns container packaging, operational monitoring, UI exposure, and the Azure target architecture. In the current plan, the solution is deployed through containers, with Azure Service Bus triggering Azure Container Apps Jobs for extraction work.
+
+\section{Functional requirements}
+
+The final platform must satisfy the following functional requirements.
+
+\subsection{URL ingestion}
+
+The system must accept an input URL from an operator or another system and turn it into a full investigation run. In practice, this means the backend should expose endpoints capable of starting, monitoring, and retrieving runs.
+
+\subsection{Page classification}
+
+The system must determine whether the page is a landing page, a hosting page, an embedded page, or an irrelevant page before choosing an extraction strategy.
+
+\subsection{Adaptive extraction}
+
+The platform must collect relevant links and streams even when they are not present on initial load. This implies support for:
+
+\begin{itemize}
+  \item inspection after rendering;
+  \item navigation to discovered URLs;
+  \item interaction with tabs, buttons, and players;
+  \item stream harvesting after activation;
+  \item iframe-aware extraction.
+\end{itemize}
+
+\subsection{Fallback capability}
+
+The platform must be able to operate as a backup path when the existing deterministic scraper encounters ambiguous pages, unusual iframe chains, obfuscated player templates, or blocked embed pages. This fallback role is a functional requirement because it defines the practical value of the agentic workflow inside the company.
+
+\subsection{Evidence preservation}
+
+The system must preserve screenshots, tool outputs, runtime events, and final artifacts so that the result of each run can be reviewed later.
+
+\subsection{Provider analysis and downstream action}
+
+The pipeline must support the analysis of extracted stream infrastructure and the preparation of outputs that can feed takedown workflows.
+
+\subsection{Operator interaction}
+
+The project must provide an operator-facing surface to launch runs, inspect live execution, browse stored results, and test specialized agents.
+
+\section{Non-functional requirements}
+
+\subsection{Maintainability}
+
+The system must remain understandable and editable as prompts, tools, and page patterns evolve. This requirement strongly influenced the move from n8n toward a structured codebase.
+
+\subsection{Observability}
+
+The platform must expose enough internal information to diagnose failures. This includes event streams, token usage, tool calls, prompts, screenshots, and normalized database records.
+
+\subsection{Cost awareness}
+
+Because the system uses browser automation and LLM calls, it must measure and reduce avoidable cost. Caching and precise telemetry are therefore not optional extras.
+
+\subsection{Complementarity with the existing scraper}
+
+The solution must justify the cost of an agentic workflow by being used where adaptability matters most. In other words, it should not be positioned as the default path for every page, but as a higher-flexibility backup when the main scraper does not reach a sufficiently reliable result.
+
+\subsection{Scalability}
+
+The runtime must support repeated investigations and should scale more naturally than a manually operated prototype. Event-driven job execution in Azure addresses this need.
+
+\subsection{Portability}
+
+The solution must run in containers so that browser dependencies, environment variables, and application services can be reproduced consistently.
+
+\section{Design constraints}
+
+The project is subject to several important constraints.
+
+\subsection{Target-site volatility}
+
+Target websites change often. A page that works today may change its structure tomorrow, which means prompts and tools must remain robust to layout drift.
+
+\subsection{Ambiguous page states}
+
+Some pages resemble more than one class. A schedule page can also embed a player, and a hosting page can redirect toward another provider. Classification must therefore be cautious and evidence-based.
+
+\subsection{Cross-origin and anti-bot barriers}
+
+Embedded pages and protected players may block direct DOM access or react badly to repeated automation. This limits what any browser automation layer can guarantee.
+
+\subsection{Runtime cost growth}
+
+Every extra tool result increases context length. If memory and caching are not managed well, later turns become more expensive than early turns.
+
+\subsection{Need for production-grade deployment}
+
+The final platform is not meant to stay a local experiment. It has to move toward a cloud deployment model that separates operator-facing services from extraction jobs.
+
+\section{Derived design principles}
+
+From the previous analysis, five design principles guided the final solution:
+
+\begin{itemize}
+  \item \textbf{classify before extracting}, so each page is handled with the right strategy;
+  \item \textbf{specialize agents}, so prompts and tool contracts remain focused;
+  \item \textbf{ground reasoning in browser evidence}, so the model does not answer from guesswork;
+  \item \textbf{persist traces and memory}, so the system improves through reuse and post-run analysis;
+  \item \textbf{optimize cost explicitly}, so the platform remains viable beyond small-scale testing.
+\end{itemize}
+
+These principles shape the architecture described in the next chapter.

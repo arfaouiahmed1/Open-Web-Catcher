@@ -1,0 +1,187 @@
+\chapter{Evaluation, Testing, and Discussion}
+
+\section{Evaluation strategy}
+
+Evaluating this project requires more than checking whether a single script returns a URL. The platform combines LLM decisions, browser actions, state transitions, network harvesting, and persistence. For that reason, evaluation has to be multi-dimensional.
+
+The project supports evaluation through:
+
+\begin{itemize}
+  \item direct tests in the codebase;
+  \item live run inspection through the operator console;
+  \item persisted observability and event streams;
+  \item evaluation suites and notebook-based analysis;
+  \item manual review of screenshots, streams, and final outputs.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3cm} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X}
+\toprule
+Dimension & What is evaluated & Why it matters \\
+\midrule
+Classification quality & Whether the page is routed correctly & A wrong classification sends the URL to the wrong specialist and can invalidate the whole run \\
+Extraction quality & Whether hosting links and streams are collected correctly & This is the core business objective of the project \\
+Runtime reliability & Whether tools, prompts, and orchestration remain stable & Browser-heavy systems fail for many reasons beyond pure logic errors \\
+Observability quality & Whether failures can be diagnosed clearly & Useful systems are not only accurate; they are debuggable \\
+Cost efficiency & Whether the platform remains economically viable at scale & Long agent sessions can become expensive without explicit optimization \\
+\bottomrule
+\end{tabularx}
+\caption{Main evaluation dimensions of the platform.}
+\end{table}
+
+\section{Testing assets in the repository}
+
+The repository contains a meaningful testing surface. It is not limited to one generic integration test. The current codebase includes tests for:
+
+\begin{itemize}
+  \item orchestrator behavior and routing;
+  \item agent output normalization;
+  \item memory behavior;
+  \item prompt compilation and caching;
+  \item API endpoints;
+  \item repositories and migrations;
+  \item tool behavior and evaluation helpers.
+\end{itemize}
+
+This is an important sign of maturity. The current platform is much easier to validate systematically than the initial prototype.
+
+\section{What the current platform makes easier to evaluate}
+
+Compared with the early n8n phase, the coded platform improves evaluation in several practical ways.
+
+\subsection{Run-level traceability}
+
+Each run can be reviewed through explicit events, agent outputs, tool calls, screenshots, and normalized persistence. This makes it possible to answer operational questions such as:
+
+\begin{itemize}
+  \item Which agent handled the page?
+  \item Which tools were called?
+  \item Where did the extraction fail?
+  \item How much did the run cost?
+  \item Which screenshots and streams support the final result?
+\end{itemize}
+
+\subsection{Cost inspection}
+
+The current platform records token usage and estimated cost directly. This is especially valuable for comparing prompt strategies, model choices, and route complexity.
+
+\subsection{Reliability studies}
+
+Because the tool layer, prompts, and outputs are structured, the system is better suited to repeated evaluation on representative website sets.
+
+\section{Discussion of the n8n phase in evaluation terms}
+
+The n8n phase was valuable for evaluation too. It gave a fast environment for trying ideas, validating page flows, and confirming that the project objective was realistic. It also helped identify the true difficulty of the domain: real websites required more than a simple workflow with static rules.
+
+However, once the need for deeper evaluation became clear, the coded platform provided a better foundation because it could:
+
+\begin{itemize}
+  \item preserve richer evidence than a prototype workflow run;
+  \item compare runs more systematically;
+  \item support caching and cost analysis explicitly;
+  \item expose a cleaner testing surface through Python tests and operator UI views.
+\end{itemize}
+
+\section{Metrics that matter most for this project}
+
+The most relevant metrics are not only traditional accuracy metrics. For this platform, useful evaluation also includes:
+
+\begin{itemize}
+  \item page-classification correctness;
+  \item hosting-page discovery coverage;
+  \item successful stream extraction rate;
+  \item screenshot and evidence availability;
+  \item prompt-format compliance;
+  \item average token usage per run;
+  \item estimated cost per URL;
+  \item failure categories such as timeouts, tool mismatches, or blocked pages.
+\end{itemize}
+
+\section{How the backup-plan role changes evaluation}
+
+Because the internship platform is positioned as a backup plan rather than as the default first-line scraper, the evaluation criteria should reflect that role. The most important question is not only ``is the agentic workflow cheaper or faster than the existing scraper?'' In many standard cases, it may not be. The more relevant question is:
+
+\begin{quote}
+Does the agentic workflow improve the handling of difficult cases enough to justify its cost as a fallback path?
+\end{quote}
+
+This leads to a different evaluation logic:
+
+\begin{itemize}
+  \item the main scraper should be judged on throughput and direct success on standard cases;
+  \item the backup agentic workflow should be judged on recovery value in ambiguous or difficult cases;
+  \item the combined system should be judged on whether the fallback path reduces unresolved cases overall.
+\end{itemize}
+
+\section{Prompting and tool use as evaluation targets}
+
+Another reason the report needs a fuller prompting discussion is that prompts themselves became part of the system behavior. In this project, evaluation is not limited to output correctness; it also concerns whether the prompt caused the agent to use tools in the intended order.
+
+Useful prompt-and-tool evaluation questions include:
+
+\begin{itemize}
+  \item did the agent inspect before making a strong claim;
+  \item did it continue exploration on ambiguous pages instead of stopping too early;
+  \item did it harvest after player activation rather than before;
+  \item did it preserve evidence such as screenshots and server-level context;
+  \item did the final output remain compatible with validation and storage.
+\end{itemize}
+
+These criteria are especially important for a backup workflow because the whole value of the fallback path lies in how it behaves on difficult pages, not only in its final text output.
+
+\section{Current strengths of the final solution}
+
+The final solution has several strengths that became clearer after the transition away from the prototype.
+
+\subsection{Better software structure}
+
+The separation between backend, browser tools, UI, storage, tests, and prompts makes the current system easier to maintain and explain.
+
+\subsection{Better memory}
+
+The distinction between short-term and long-term memory gives the coded platform an advantage on recurring domains. The system can reuse prior knowledge while still tracking the details of the current run.
+
+\subsection{Better optimization}
+
+Caching and first-party cost accounting provide a path toward systematic optimization. This was one of the clearest missing pieces in the earlier workflow-centered stage.
+
+\subsection{Better operational visibility}
+
+The operator console and persisted observability make the system much more suitable for real investigative work than a purely prototype-oriented environment.
+
+\subsection{Better fallback behavior}
+
+Compared with a purely deterministic path, the agentic workflow offers a more adaptive way to continue when several plausible player candidates exist or when the page state is too noisy for a direct rule-based conclusion. This does not make it the universal first choice, but it does make it a valuable second choice.
+
+\section{Limitations}
+
+Despite the improvements, the current platform still faces important limits.
+
+\begin{itemize}
+  \item \textbf{Target-site volatility.} Websites change often, so a strong run today does not guarantee the same result tomorrow.
+  \item \textbf{Cross-origin restrictions.} Some embedded players remain hard to inspect or activate reliably.
+  \item \textbf{External dependency risk.} The system depends on browser tooling, model providers, and cloud services.
+  \item \textbf{Prompt maintenance.} Specialized prompts improve reliability, but they also become assets that must be versioned and tested carefully.
+  \item \textbf{Cloud validation still matters.} Final Azure behavior must always be confirmed in the real deployment environment.
+\end{itemize}
+
+\section{Material that can expand the final report toward 100 pages}
+
+The current report structure can be expanded naturally beyond 100 pages by adding project evidence rather than filler. The most valuable additions would be:
+
+\begin{itemize}
+  \item screenshots of the operator console and representative run drill-downs;
+  \item side-by-side case studies for difficult target websites;
+  \item exported evaluation charts from the notebook lab or dashboard;
+  \item tables of run metrics for representative landing, hosting, and embedded pages;
+  \item an appendix containing API routes, UI pages, and selected trace examples.
+\end{itemize}
+
+This is the right way to increase report size: by adding concrete engineering material that strengthens the document.
+
+\section{Discussion}
+
+From a technical perspective, the internship shows the value of starting with a rapid prototype and then moving toward a more maintainable coded system once the problem is validated. The early n8n phase helped prove the extraction logic. The current platform then improved structure, memory, observability, and cost control without losing the practical lessons of the prototype.
+
+The final result is therefore not just a multi-agent extractor. It is a full investigation platform with clearer engineering boundaries, better cloud readiness, and a stronger foundation for long-term use.

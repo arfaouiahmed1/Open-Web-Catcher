@@ -1,0 +1,104 @@
+\chapter{Introduction}
+
+\section{Internship context}
+
+Illegal streaming websites form a difficult technical environment for automation. They change frequently, rely on dynamic JavaScript, use nested iframes, and often place the real player behind overlays, redirects, tabs, or advertising layers. In that context, a traditional scraper that expects a stable HTML structure is usually not enough. A more adaptive approach is needed: one that can inspect the page, decide what kind of page it is, interact when necessary, and preserve evidence about what happened during execution.
+
+This internship was carried out at \textbf{Soft Stars} for the client \textbf{beIN SPORTS}. The official project title was \textit{Design of a Multi-Agent AI Pipeline for Evidence Collection from Illegal Streaming Sites}. In practical terms, the mission was to build a system capable of visiting target websites, extracting the relevant links and streams, understanding the infrastructure behind them, and producing outputs that could support later legal or operational action.
+
+\section{Project positioning inside the company context}
+
+An important point is that the company already had an operational \textbf{stream scraper}. That internal service crawls football-stream pages, classifies them, follows match links, discovers host and embed pages, extracts stream URLs when possible, captures screenshots, and enriches the final result with metadata such as teams, broadcaster, channel, match status, WHOIS information, and IP intelligence.
+
+Because of that existing capability, the goal of my work was not to rebuild the same deterministic scraper from zero or to present the new platform as an immediate replacement. The motivation for an \textbf{agentic workflow} came from the limits of fixed logic in highly unstable environments. Some pages are noisy, some iframe chains are difficult to rank deterministically, some JavaScript patterns are obfuscated, and some anti-bot situations require a more adaptive reasoning process.
+
+My solution is therefore best presented as a \textbf{backup plan} and a complementary path. When the main scraper works, it remains the fastest and most direct option. When the environment becomes ambiguous or brittle, the agentic workflow offers a second strategy that can inspect the page more flexibly, reason over multiple signals, and preserve richer traces for review.
+
+\section{Project evolution}
+
+The project did not start with the final coded platform. At the beginning of the internship, I worked with \textbf{n8n} as the main experimentation environment. This first step was useful because it allowed me to assemble workflows quickly, test agent prompts, connect browser actions, and validate the overall business objective with limited development overhead. It was an efficient testing ground for early iterations.
+
+As the scope became clearer, the limits of the workflow-only approach also became clearer. The platform needed stronger memory, finer observability, more explicit control over runtime behavior, better cost optimization, and a cleaner way to evolve prompts, tools, and interfaces together. For that reason, the project progressively moved from the early n8n prototype toward the current solution: a code-based platform built with \textbf{FastAPI}, \textbf{Next.js}, \textbf{Puppeteer}, structured persistence, and dedicated evaluation tooling.
+
+This evolution is central to the report. The n8n phase should be understood as a successful prototyping stage, not as a failed attempt. It helped validate the extraction logic and guided the design of the final system. The current codebase then turned those lessons into a more maintainable engineering solution.
+
+\section{Problem statement}
+
+The main problem addressed by the internship can be stated as follows:
+
+\begin{quote}
+How can we design a maintainable and extensible platform that analyses streaming websites, distinguishes different page roles, extracts relevant links and streams, and remains usable despite dynamic interfaces, multilingual layouts, and unstable execution conditions?
+\end{quote}
+
+This problem is difficult for several reasons:
+
+\begin{itemize}
+  \item a single website can expose landing pages, hosting pages, embedded players, and auxiliary pages;
+  \item the useful data may appear only after clicks, navigation, or player activation;
+  \item page evidence is distributed across the DOM, screenshots, iframe trees, and network requests;
+  \item website structure changes frequently, so brittle rules become obsolete quickly;
+  \item the cost of repeated LLM-assisted browsing can grow quickly if context and tools are not controlled carefully.
+\end{itemize}
+
+\section{Objectives}
+
+The main objective of the internship was to design and implement a multi-agent pipeline able to process suspicious streaming websites end to end. This overall objective can be broken down into the following operational goals:
+
+\begin{itemize}
+  \item classify each input URL before deeper extraction begins;
+  \item route the URL toward specialized agents according to page type;
+  \item collect hosting links, embedded links, and stream URLs through browser-assisted extraction;
+  \item preserve screenshots, traces, tool calls, and final results for later review;
+  \item analyze the infrastructure behind the extracted streams;
+  \item support takedown preparation with structured evidence;
+  \item expose the system through an operational interface and a programmatic API;
+  \item prepare the solution for containerized deployment on Azure;
+  \item position the platform as a fallback and backup workflow for cases where the existing company scraper reaches its limits.
+\end{itemize}
+
+\section{Main contributions}
+
+The internship produced contributions at both prototype and product level.
+
+\subsection{Prototype-level contributions}
+
+\begin{itemize}
+  \item rapid validation of the extraction pipeline with n8n;
+  \item early prompt experimentation on real target websites;
+  \item first browser-action sequences for classification, navigation, and extraction;
+  \item early feedback about the operational difficulties of the target domain.
+\end{itemize}
+
+\subsection{Final platform contributions}
+
+\begin{itemize}
+  \item a FastAPI backend for orchestration, execution, persistence, and evaluation;
+  \item a Next.js operator console for monitoring, testing, and reviewing runs;
+  \item specialized agents for classification, landing-page discovery, hosting extraction, and embedded-player extraction;
+  \item Puppeteer-based browser tooling exposed through a structured tool layer;
+  \item short-term and long-term memory mechanisms to reuse knowledge within and across runs;
+  \item provider-side and tool-result caching strategies to reduce unnecessary cost;
+  \item container-oriented packaging aligned with Azure deployment;
+  \item an agentic backup path that complements the company's existing deterministic scraping workflow.
+\end{itemize}
+
+\section{Why the transition mattered}
+
+The move from n8n to the current implementation was not only a change of technology; it was a change of engineering maturity.
+
+With n8n, it was possible to chain actions quickly and confirm that the business objective was achievable. However, the workflow environment was less suitable for long-lived engineering concerns such as:
+
+\begin{itemize}
+  \item maintaining large prompt and tool definitions over time;
+  \item persisting reusable site memory across many runs;
+  \item controlling caching explicitly;
+  \item centralizing observability and cost accounting;
+  \item building a richer operator-facing interface for investigations;
+  \item preparing a cleaner production deployment model.
+\end{itemize}
+
+The coded platform answers those needs while keeping the successful ideas of the prototype: specialized page handling, browser evidence, and iterative refinement.
+
+\section{Report structure}
+
+The remainder of this report is organized as follows. Chapter 2 introduces the technical background and the technologies used during the internship. Chapter 3 presents the adopted methodology, compares it with other candidate approaches, and derives the design requirements. Chapter 4 describes the architecture of the final platform and its Azure deployment target. Chapter 5 explains the implementation in detail and compares the current solution with the earlier n8n phase. Chapter 6 focuses on evaluation, testing, discussion, and limitations. Chapter 7 concludes the report and outlines possible future work.

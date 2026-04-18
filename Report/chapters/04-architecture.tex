@@ -1,0 +1,185 @@
+\chapter{System Architecture}
+
+\section{Overview of the final architecture}
+
+The final platform is built as a layered investigation system rather than as a single monolithic workflow. Its central idea is simple: each URL enters through an API, is classified by an orchestrated agent pipeline, is processed with specialized browser tools, and then produces structured evidence, telemetry, and operator-facing outputs.
+
+\begin{figure}[H]
+\centering
+\fbox{
+\parbox{0.92\textwidth}{
+\centering
+\textbf{Conceptual architecture of the implemented platform}\\[0.8em]
+\texttt{Incoming URL}\\[0.2em]
+$\downarrow$\\[0.2em]
+\texttt{FastAPI execution API}\\[0.2em]
+$\downarrow$\\[0.2em]
+\texttt{Orchestrator Agent}\\[0.2em]
+$\downarrow$\\[0.2em]
+\texttt{Classification Agent} $\rightarrow$ \texttt{Landing / Hosting / Embedded Agents}\\[0.3em]
+$\downarrow$\\[0.2em]
+\texttt{Puppeteer tool layer} $\rightarrow$ \texttt{Provider analysis} $\rightarrow$ \texttt{Takedown drafting}\\[0.3em]
+$\downarrow$\\[0.2em]
+\texttt{Postgres + observability + evaluations}\\[0.2em]
+$\downarrow$\\[0.2em]
+\texttt{Next.js operator console}
+}}
+\caption{High-level architecture of the current solution.}
+\end{figure}
+
+\section{Architectural layers}
+
+\subsection{Execution and API layer}
+
+The FastAPI backend is the operational entry point of the platform. It exposes routes for health checks, direct runs, live run streaming, observability access, evaluation execution, memory inspection, and configuration management. This layer is responsible for coordinating the runtime and exposing a stable interface to the rest of the system.
+
+\subsection{Agent orchestration layer}
+
+Above the API layer sits the orchestrator. Its job is not to browse websites directly, but to decide which specialist should handle each step. This is an important design choice. The orchestrator remains lightweight and cost-aware, while the more expensive specialist agents handle browser-heavy work.
+
+\subsection{Specialist-agent layer}
+
+The specialist-agent layer contains four main roles:
+
+\begin{itemize}
+  \item \textbf{classification}, which decides page type;
+  \item \textbf{landing}, which discovers candidate hosting pages;
+  \item \textbf{hosting}, which activates players and cycles through servers;
+  \item \textbf{embedded}, which extracts streams from iframe-centered pages.
+\end{itemize}
+
+\subsection{Browser tool layer}
+
+The browser tool layer exposes structured capabilities such as inspection, navigation, interaction, screenshot capture, and harvesting. This layer is implemented around Puppeteer and is shared across the specialist agents. It is the practical bridge between model reasoning and real browser behavior.
+
+\subsection{Persistence, memory, and observability layer}
+
+The persistence layer stores pipeline runs, agent runs, LLM calls, tool calls, provider checks, takedown emails, evaluation outputs, and operator-facing aggregates. It also supports memory and observability. This layer is a major improvement over the early prototype because it turns each run into a reusable source of engineering feedback.
+
+\subsection{Operator interface layer}
+
+The Next.js operator console sits on top of the backend and the persistence layer. It gives investigators and developers a practical way to launch runs, inspect live event streams, review completed investigations, and study evaluation results.
+
+\section{Sequence of a typical investigation}
+
+The runtime can be described by the sequence-style view in Table~\ref{tab:uml-sequence}. Even though the implementation is asynchronous, the logical order remains the same.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.9cm} >{\raggedright\arraybackslash}X}
+\toprule
+Actor or component & Main interaction \\
+\midrule
+Operator or caller & Submits a URL through the API or the operator console \\
+FastAPI backend & Creates the run, prepares observability, and calls the orchestrator \\
+Orchestrator agent & Requests page classification and selects the next specialist path \\
+Classification agent & Returns the page type and supporting evidence \\
+Landing agent & Collects hosting URLs when the page behaves like a catalog or schedule \\
+Hosting or embedded agent & Activates the player, switches servers when needed, and harvests streams \\
+Provider analysis tools & Resolve provider information from extracted stream URLs \\
+Email generation tools & Produce structured takedown drafts from the collected evidence \\
+Persistence layer & Stores the run result, telemetry, and evidence for later review \\
+Next.js console & Streams live progress and exposes completed results to the operator \\
+\bottomrule
+\end{tabularx}
+\caption{Sequence-style UML description of a typical investigation run.}
+\label{tab:uml-sequence}
+\end{table}
+
+\section{Memory and knowledge reuse architecture}
+
+The architecture contains two complementary memory layers.
+
+\subsection{Run-level memory}
+
+Run-level memory captures the local working state of the current execution. It stores what the agent has tried, what URLs were visited, which selectors were useful, which servers were activated, and what streams were already found.
+
+\subsection{Cross-run memory}
+
+Cross-run memory stores site-specific hints between executions. This creates a reusable playbook for recurring domains. If a site repeatedly uses the same selector family, the same pagination pattern, or the same stream host, that knowledge can be reintroduced as guidance in future runs.
+
+This separation between short-term and long-term memory is one of the clearest architectural differences between the current solution and the earlier n8n stage.
+
+\section{Caching and cost-aware architecture}
+
+Cost optimization is built into the architecture itself. The platform does not treat cost as a purely external reporting concern.
+
+The main mechanisms are:
+
+\begin{itemize}
+  \item \textbf{provider-side prompt caching}, which reduces the cost of repeated prompt context in long agent sessions;
+  \item \textbf{tool-result caching}, which avoids reusing the model budget on repeated identical observations;
+  \item \textbf{specialized routing}, which keeps expensive tools away from tasks that do not need them;
+  \item \textbf{first-party cost accounting}, which makes expensive runs visible to the operator.
+\end{itemize}
+
+These mechanisms make the architecture more viable for scale than the initial prototype, where cost optimization was much harder to control explicitly.
+
+\section{Current deployment target on Azure}
+
+The deployment target is based on containers and separates interactive services from extraction work. The operator-facing surfaces, such as the API and console, can run as long-lived services, while investigation workloads are better suited to event-driven jobs.
+
+\begin{figure}[H]
+\centering
+\fbox{
+\parbox{0.92\textwidth}{
+\centering
+\textbf{Azure deployment concept}\\[0.8em]
+\texttt{Operator Console / External caller}\\[0.2em]
+$\downarrow$\\[0.2em]
+\texttt{FastAPI service on Azure Container Apps}\\[0.2em]
+$\downarrow$\\[0.2em]
+\texttt{Azure Service Bus queue}\\[0.2em]
+$\downarrow$\\[0.2em]
+\texttt{Azure Container Apps Job execution}\\[0.2em]
+$\downarrow$\\[0.2em]
+\texttt{Browser tools + agents + persistence}\\[0.2em]
+$\downarrow$\\[0.2em]
+\texttt{Results back to database and UI}
+}}
+\caption{Deployment-oriented architecture based on Azure Service Bus and Azure Container Apps Jobs.}
+\end{figure}
+
+This deployment choice is appropriate for the project for several reasons:
+
+\begin{itemize}
+  \item each investigation is finite and naturally maps to a job execution;
+  \item queue-driven triggering decouples user requests from heavy browser work;
+  \item scaling can follow queue pressure more easily than a fixed always-on worker;
+  \item containers simplify the packaging of browser dependencies and runtime configuration.
+\end{itemize}
+
+\section{UML use-case view}
+
+The architecture can also be described through a use-case perspective. The main actors and actions are summarized in Table~\ref{tab:use-case}.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3cm} >{\raggedright\arraybackslash}X}
+\toprule
+Actor & Main use cases \\
+\midrule
+Operator & Launch investigation, watch live progress, inspect historical runs, review provider data, retrieve takedown drafts \\
+FastAPI service & Receive requests, start runs, stream events, expose observability and evaluation endpoints \\
+Orchestrator & Route work between specialist agents and downstream tools \\
+Specialist agents & Classify pages, collect hosting URLs, extract streams, analyze embedded players \\
+Browser tool layer & Render pages, inspect DOM, interact with UI controls, capture screenshots, harvest streams \\
+Azure Service Bus & Carry queued work items toward job execution \\
+Azure Container Apps Job & Execute a browser-heavy investigation until completion \\
+Database & Persist evidence, costs, events, and evaluation outputs \\
+\bottomrule
+\end{tabularx}
+\caption{Textual UML use-case view of the current platform.}
+\label{tab:use-case}
+\end{table}
+
+\section{Architectural transition from the prototype}
+
+From an architectural point of view, the early n8n system and the final coded system solve the same business problem, but they organize responsibility differently.
+
+\begin{itemize}
+  \item In the \textbf{n8n phase}, orchestration and experimentation were the priority.
+  \item In the \textbf{current platform}, orchestration, observability, memory, cost control, and deployment are all first-class concerns.
+\end{itemize}
+
+This is why the current architecture is better suited for long-term use. It transforms a successful prototype into a structured investigation product.

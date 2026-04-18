@@ -1,0 +1,27 @@
+\chapter{Conclusion and Future Work}
+
+\section{Conclusion}
+
+This internship began with a practical need: analyze unstable streaming websites and transform them into structured evidence that can support downstream action. The first working answer to that need was built with n8n. That early phase was valuable because it made experimentation fast and helped demonstrate that the objective was achievable on real websites.
+
+The final result of the internship is a more mature solution. The current platform replaces the prototype-centered workflow with a structured system built around FastAPI, Next.js, Puppeteer-based browser tools, persistent observability, memory, and cost-aware execution. It introduces specialized agents for classification, landing-page discovery, hosting extraction, and embedded-player analysis, and it prepares the workload for Azure deployment through containerized services and event-driven jobs.
+
+Inside the company context, the platform should be positioned clearly: it is not presented as an immediate replacement for the existing stream scraper. Instead, it acts as a complementary \textbf{backup plan}. The existing scraper remains highly valuable for deterministic, well-understood cases, while the agentic workflow becomes useful when pages are noisier, more dynamic, or harder to resolve through fixed heuristics alone.
+
+One of the main lessons of the project is that the right solution was not to choose between workflows and code from the beginning, but to use each at the right stage. n8n was the right environment to validate the idea quickly. The coded platform then became the right environment to scale the idea into a maintainable product.
+
+\section{Future work}
+
+Several directions can strengthen the platform further.
+
+\begin{itemize}
+  \item \textbf{Expand measured evaluation.} Add larger benchmark sets and more published metrics in the final report.
+  \item \textbf{Harden Azure deployment.} Finalize queue-driven production execution, security settings, and environment separation.
+  \item \textbf{Unify all tools under the same runtime model.} Continue reducing legacy differences between older and newer tool patterns.
+  \item \textbf{Enrich memory quality.} Improve how site memory is refreshed and validated when a target website changes structure.
+  \item \textbf{Refine operator workflows.} Add more investigation-specific UI features, exports, and reporting views.
+\end{itemize}
+
+\section{Final remark}
+
+The project demonstrates that evidence collection from illegal streaming sites benefits from a staged engineering approach: prototype early, learn quickly, then consolidate the solution into a structured platform. That is exactly the path followed during this internship, from the first n8n experiments to the current multi-agent system prepared for Azure deployment.
