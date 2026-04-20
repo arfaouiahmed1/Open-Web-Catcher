@@ -14,17 +14,17 @@ const MODES = ["hybrid", "synthetic", "mocked", "live"];
 
 function statusTone(s) {
   if (s === "completed" || s === "passed") return "success";
-  if (s === "running")  return "warning";
+  if (s === "running") return "warning";
   return "danger";
 }
 
 export default function EvaluationsPage() {
-  const [suites, setSuites]             = useState([]);
-  const [runs, setRuns]                 = useState([]);
-  const [selectedSuiteId, setSuiteId]   = useState("");
-  const [mode, setMode]                 = useState("hybrid");
-  const [selectedRun, setSelectedRun]   = useState(null);
-  const [isRunning, setIsRunning]       = useState(false);
+  const [suites, setSuites]           = useState([]);
+  const [runs, setRuns]               = useState([]);
+  const [selectedSuiteId, setSuiteId] = useState("");
+  const [mode, setMode]               = useState("hybrid");
+  const [selectedRun, setSelectedRun] = useState(null);
+  const [isRunning, setIsRunning]     = useState(false);
 
   async function loadAll() {
     const [sp, rp] = await Promise.all([
@@ -66,26 +66,32 @@ export default function EvaluationsPage() {
   return (
     <div className="space-y-6">
 
-      {/* header */}
+      {/* page header */}
       <div>
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-spark">Evaluations</p>
-        <h1 className="mt-1 text-2xl font-semibold text-white">Reliability & hallucination lab</h1>
-        <p className="mt-0.5 text-sm text-slate-500">
-          Run benchmark suites to score evidence discipline, tool accuracy, and operational reliability using DeepEval + OpenRouter.
+        <span className="owc-eyebrow">evaluations · reliability lab</span>
+        <h1 className="mt-2 font-['Inter_Tight',sans-serif] text-3xl font-medium tracking-tight text-[var(--ink)]">
+          Benchmark suites
+        </h1>
+        <p className="mt-1.5 max-w-[62ch] text-[13.5px] leading-relaxed text-[var(--mute)]">
+          Score evidence discipline, tool accuracy, and operational reliability using DeepEval + OpenRouter.
         </p>
       </div>
 
       {/* launch card */}
-      <div className="rounded-xl border border-white/8 bg-white/[0.03] p-4 space-y-3">
+      <div
+        className="rounded-[14px] border p-4 space-y-3"
+        style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+      >
         <div className="flex items-center gap-2">
-          <FlaskConical className="h-4 w-4 text-spark" />
-          <span className="text-sm font-semibold text-white">Launch suite</span>
+          <FlaskConical className="h-3.5 w-3.5" style={{ color: "var(--signal)" }} />
+          <span className="text-[13.5px] font-medium text-[var(--ink)]">Launch suite</span>
         </div>
         <div className="flex flex-wrap gap-3">
           <select
             value={selectedSuiteId}
             onChange={(e) => setSuiteId(e.target.value)}
-            className="flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-300 focus:border-signal/50 focus:outline-none"
+            className="flex-1 rounded-lg border px-3 py-2 text-[13px] focus:outline-none"
+            style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)", color: "var(--ink-dim)" }}
           >
             {suites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             {!suites.length && <option>No suites available</option>}
@@ -93,7 +99,8 @@ export default function EvaluationsPage() {
           <select
             value={mode}
             onChange={(e) => setMode(e.target.value)}
-            className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-300 focus:border-signal/50 focus:outline-none"
+            className="rounded-lg border px-3 py-2 text-[13px] focus:outline-none"
+            style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)", color: "var(--ink-dim)" }}
           >
             {MODES.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
@@ -104,11 +111,11 @@ export default function EvaluationsPage() {
         </div>
 
         {activeSuite && (
-          <div className="border-t border-white/6 pt-3">
+          <div className="border-t pt-3" style={{ borderColor: "var(--line)" }}>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium text-white">{activeSuite.name}</span>
+              <span className="text-[13.5px] font-medium text-[var(--ink)]">{activeSuite.name}</span>
               {activeSuite.description && (
-                <span className="text-xs text-slate-500">{activeSuite.description}</span>
+                <span className="text-[12px] text-[var(--mute)]">{activeSuite.description}</span>
               )}
               <Badge tone="signal" className="ml-auto">{activeSuite.mode || mode}</Badge>
             </div>
@@ -126,22 +133,27 @@ export default function EvaluationsPage() {
       <div className="grid gap-5 xl:grid-cols-[320px_1fr]">
 
         {/* run list */}
-        <div className="rounded-xl border border-white/8 bg-white/[0.03] overflow-hidden">
-          <div className="border-b border-white/6 px-4 py-3">
-            <span className="text-xs font-semibold text-white">Recent runs</span>
+        <div
+          className="rounded-[14px] border overflow-hidden"
+          style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+        >
+          <div className="border-b px-[18px] py-3.5" style={{ borderColor: "var(--line)" }}>
+            <span className="text-[13.5px] font-medium text-[var(--ink)]">Recent runs</span>
           </div>
-          <div className="divide-y divide-white/4">
+          <div className="divide-y" style={{ borderColor: "var(--line)" }}>
             {runs.length ? runs.map((run) => (
               <button
                 key={run.run_id}
                 onClick={() => inspectRun(run.run_id)}
-                className="w-full px-4 py-3 text-left transition-colors hover:bg-white/[0.04]"
+                className="w-full px-4 py-3 text-left transition-colors"
+                onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.025)"}
+                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium text-white truncate">{run.name || run.run_id?.slice(0, 12) + "…"}</span>
+                  <span className="text-[13px] font-medium text-[var(--ink)] truncate">{run.name || run.run_id?.slice(0, 12) + "…"}</span>
                   <Badge tone={statusTone(run.status)}>{run.status}</Badge>
                 </div>
-                <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500">
+                <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-[var(--mute)]">
                   <span>Pass {formatPercent(run.success_rate || 0)}</span>
                   <span>Halluc. {formatPercent(run.hallucination_rate || 0)}</span>
                   <span>Tools {formatPercent(run.tool_accuracy_rate || 0)}</span>
@@ -149,7 +161,7 @@ export default function EvaluationsPage() {
                 </div>
               </button>
             )) : (
-              <div className="px-4 py-8 text-center text-sm text-slate-600">No evaluation runs yet</div>
+              <div className="px-4 py-8 text-center text-[13px] text-[var(--mute)]">No evaluation runs yet</div>
             )}
           </div>
         </div>
@@ -159,25 +171,30 @@ export default function EvaluationsPage() {
           {selectedRun ? (
             <>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <KpiCard label="Pass rate"     value={formatPercent(selectedRun.success_rate || 0)}       accent="text-surge" />
-                <KpiCard label="Hallucination" value={formatPercent(selectedRun.hallucination_rate || 0)} accent={(selectedRun.hallucination_rate || 0) > 0.2 ? "text-ember" : undefined} />
+                <KpiCard label="Pass rate"     value={formatPercent(selectedRun.success_rate || 0)}       accent="mint" />
+                <KpiCard label="Hallucination" value={formatPercent(selectedRun.hallucination_rate || 0)} accent={(selectedRun.hallucination_rate || 0) > 0.2 ? "rose" : undefined} />
                 <KpiCard label="Tool accuracy" value={formatPercent(selectedRun.tool_accuracy_rate || 0)} />
                 <KpiCard label="Reliability"   value={formatPercent(selectedRun.reliability_rate || 0)} />
               </div>
 
-              <div className="rounded-xl border border-white/8 bg-white/[0.03] overflow-hidden">
-                <div className="border-b border-white/6 px-4 py-3 text-xs font-semibold text-white">Case results</div>
-                <div className="divide-y divide-white/4">
+              <div
+                className="rounded-[14px] border overflow-hidden"
+                style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+              >
+                <div className="border-b px-[18px] py-3.5" style={{ borderColor: "var(--line)" }}>
+                  <span className="text-[13.5px] font-medium text-[var(--ink)]">Case results</span>
+                </div>
+                <div className="divide-y" style={{ borderColor: "var(--line)" }}>
                   {(selectedRun.case_results || []).map((c, i) => (
-                    <div key={`${c.case_name}-${i}`} className="px-4 py-3">
+                    <div key={`${c.case_name}-${i}`} className="px-[18px] py-3">
                       <div className="flex items-center justify-between gap-2">
                         <div>
-                          <div className="text-sm font-medium text-white">{c.case_name || `Case ${i + 1}`}</div>
-                          <div className="mt-0.5 text-xs text-slate-600">{c.target_type}</div>
+                          <div className="text-[13px] font-medium text-[var(--ink)]">{c.case_name || `Case ${i + 1}`}</div>
+                          <div className="mt-0.5 text-[11px] text-[var(--mute)]">{c.target_type}</div>
                         </div>
                         <Badge tone={statusTone(c.status)}>{c.status}</Badge>
                       </div>
-                      <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-slate-500 sm:grid-cols-4">
+                      <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-[12px] text-[var(--mute)] sm:grid-cols-4">
                         <span>Latency {Number(c.latency_ms || 0).toFixed(0)}ms</span>
                         <span>Cost {formatCurrency(c.total_cost_usd || 0)}</span>
                         <span>Halluc. {formatPercent(c.hallucination_score || 0)}</span>
@@ -186,7 +203,7 @@ export default function EvaluationsPage() {
                     </div>
                   ))}
                   {!(selectedRun.case_results || []).length && (
-                    <div className="px-4 py-6 text-center text-sm text-slate-600">No case results</div>
+                    <div className="px-4 py-6 text-center text-[13px] text-[var(--mute)]">No case results</div>
                   )}
                 </div>
               </div>
@@ -194,13 +211,15 @@ export default function EvaluationsPage() {
               <JsonViewer label="Raw result" value={selectedRun} />
             </>
           ) : (
-            <div className="flex h-48 items-center justify-center rounded-xl border border-dashed border-white/8 text-sm text-slate-600">
+            <div
+              className="flex h-48 items-center justify-center rounded-[14px] border border-dashed text-[13px] text-[var(--mute)]"
+              style={{ borderColor: "var(--line)" }}
+            >
               Select a run to inspect its case-level results
             </div>
           )}
         </div>
       </div>
-
     </div>
   );
 }

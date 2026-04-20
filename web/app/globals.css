@@ -2,10 +2,41 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans:wght@400;500;600;700&family=Noto+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
+/* ── OWC design tokens ── */
 :root {
   color-scheme: dark;
+
+  /* surfaces */
+  --bg:       #05080f;
+  --panel:    #0a1220;
+  --panel-2:  #0f1828;
+  --card:     rgba(255,255,255,0.028);
+  --card-hi:  rgba(255,255,255,0.05);
+  --line:     rgba(255,255,255,0.07);
+  --line-hi:  rgba(255,255,255,0.13);
+
+  /* text */
+  --ink:      #f2f5fa;
+  --ink-dim:  #c4cbd8;
+  --mute:     #7a8699;
+  --mute-2:   #515d70;
+  --mute-3:   #2f3746;
+
+  /* accents */
+  --signal:   oklch(0.76 0.13 64);
+  --signal-2: oklch(0.88 0.11 80);
+  --mint:     oklch(0.78 0.13 170);
+  --violet:   oklch(0.72 0.14 300);
+  --rose:     oklch(0.70 0.15 20);
+  --sky:      oklch(0.76 0.12 240);
+
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow-card: 0 1px 0 rgba(255,255,255,0.04) inset, 0 10px 30px -18px rgba(0,0,0,0.9);
+  --shadow-glow: 0 0 0 1px color-mix(in oklch, var(--signal) 40%, transparent),
+                 0 10px 30px -10px color-mix(in oklch, var(--signal) 35%, transparent);
 }
 
 * { box-sizing: border-box; }
@@ -13,20 +44,144 @@
 html, body {
   margin: 0;
   min-height: 100%;
-  background: #060c16;
-  font-family: 'Inter', 'Noto Sans', 'Noto Sans Arabic', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--ink-dim);
+  font-family: 'Inter Tight', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11", "tnum";
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 20% -5%, color-mix(in oklch, var(--signal) 9%, transparent) 0%, transparent 60%),
+    radial-gradient(900px 500px at 100% 0%,  color-mix(in oklch, var(--violet) 8%, transparent) 0%, transparent 60%),
+    var(--bg);
 }
 
 a { color: inherit; text-decoration: none; }
+a:hover { color: var(--ink); }
 
-code, pre, .mono { font-family: 'JetBrains Mono', 'Noto Sans Arabic', 'Noto Sans', 'Fira Code', ui-monospace, monospace; }
+code, pre, .mono, kbd, samp {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-feature-settings: "ss01", "zero";
+}
 
 /* scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+::-webkit-scrollbar        { width: 8px; height: 8px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: rgba(255,255,255,0.08); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
 
-/* focus ring */
-:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; border-radius: 6px; }
+
+/* ── animation keyframes ── */
+
+@keyframes breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.55; transform: scale(0.92); }
+}
+@keyframes pulse-ring {
+  0%   { transform: scale(1);   opacity: 0.6; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+@keyframes flow {
+  0%   { transform: translateX(0); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translateX(var(--flow-dist, 200px)); opacity: 0; }
+}
+@keyframes scan {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+@keyframes dash-drift {
+  to { stroke-dashoffset: -24; }
+}
+@keyframes tput {
+  0%, 100% { height: 10%; background: var(--mute-3); }
+  50%      { height: 90%; background: var(--signal); }
+}
+@keyframes wave {
+  0%, 100% { height: 20%; }
+  50%       { height: 100%; }
+}
+
+/* ── utility classes ── */
+
+.owc-eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--signal);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.owc-eyebrow::before {
+  content: "";
+  width: 18px; height: 1px;
+  background: color-mix(in oklch, var(--signal) 60%, transparent);
+}
+
+.owc-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink-dim);
+}
+.owc-pill .dot { width: 5px; height: 5px; border-radius: 50%; }
+.owc-pill.ok   { color: var(--mint);   border-color: color-mix(in oklch, var(--mint) 30%, transparent);   background: color-mix(in oklch, var(--mint) 10%, transparent); }
+.owc-pill.warn { color: var(--signal); border-color: color-mix(in oklch, var(--signal) 30%, transparent); background: color-mix(in oklch, var(--signal) 10%, transparent); }
+.owc-pill.err  { color: var(--rose);   border-color: color-mix(in oklch, var(--rose) 30%, transparent);   background: color-mix(in oklch, var(--rose) 10%, transparent); }
+.owc-pill.live { color: var(--violet); border-color: color-mix(in oklch, var(--violet) 30%, transparent); background: color-mix(in oklch, var(--violet) 10%, transparent); }
+.owc-pill.ok   .dot { background: var(--mint); }
+.owc-pill.warn .dot { background: var(--signal); }
+.owc-pill.err  .dot { background: var(--rose); }
+.owc-pill.live .dot { background: var(--violet); animation: breathe 1.6s infinite; }
+
+/* ── progress bar ── */
+.owc-bar {
+  height: 4px; border-radius: 999px;
+  background: rgba(255,255,255,0.05);
+  overflow: hidden;
+  margin-top: 12px;
+}
+.owc-bar > span {
+  display: block; height: 100%;
+  background: var(--signal);
+  border-radius: inherit;
+}
+
+/* ── shimmer ── */
+.shimmer {
+  position: relative; overflow: hidden;
+}
+.shimmer::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+  animation: scan 2.4s linear infinite;
+}
+
+/* ── grid paper bg ── */
+.paper {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* ── side-link active rail ── */
+.owc-side-link-active::before {
+  content: "";
+  position: absolute; left: -10px; top: 8px; bottom: 8px;
+  width: 2px;
+  background: var(--signal);
+  border-radius: 2px;
+}

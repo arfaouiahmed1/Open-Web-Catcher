@@ -41,11 +41,7 @@ function collectScreenshot(value) {
   if (!value) return "";
   if (typeof value === "string") {
     if (value.startsWith("http") || value.startsWith("data:image/")) return value;
-    try {
-      return collectScreenshot(JSON.parse(value));
-    } catch {
-      return "";
-    }
+    try { return collectScreenshot(JSON.parse(value)); } catch { return ""; }
   }
   if (Array.isArray(value)) {
     for (const item of value) {
@@ -67,21 +63,47 @@ function collectScreenshot(value) {
 
 function Heatmap({ rows }) {
   if (!rows.length) {
-    return <div className="rounded-xl border border-white/8 bg-white/[0.03] p-4 text-xs text-slate-700">No reliability data yet</div>;
+    return (
+      <div
+        className="rounded-[14px] border p-4 text-[12.5px] text-[var(--mute)]"
+        style={{ borderColor: "var(--line)", background: "var(--card)" }}
+      >
+        No reliability data yet
+      </div>
+    );
   }
   return (
-    <div className="rounded-xl border border-white/8 bg-white/[0.03] p-4">
-      <div className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-600">Tool reliability heatmap</div>
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="rounded-[14px] border overflow-hidden" style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}>
+      <div className="border-b px-[18px] py-3.5" style={{ borderColor: "var(--line)" }}>
+        <span className="text-[13.5px] font-medium text-[var(--ink)]">Tool reliability heatmap</span>
+      </div>
+      <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
         {rows.map((row) => {
           const rate = Number(row.success_rate || 0);
-          const bg = rate > 0.8 ? "bg-emerald-500/20 border-emerald-500/30" : rate > 0.5 ? "bg-amber-500/20 border-amber-500/30" : "bg-red-500/20 border-red-500/30";
+          const border = rate > 0.8
+            ? "color-mix(in oklch, var(--mint) 35%, transparent)"
+            : rate > 0.5
+              ? "color-mix(in oklch, var(--signal) 35%, transparent)"
+              : "color-mix(in oklch, var(--rose) 35%, transparent)";
+          const bg = rate > 0.8
+            ? "color-mix(in oklch, var(--mint) 10%, transparent)"
+            : rate > 0.5
+              ? "color-mix(in oklch, var(--signal) 10%, transparent)"
+              : "color-mix(in oklch, var(--rose) 10%, transparent)";
+          const textColor = rate > 0.8 ? "var(--mint)" : rate > 0.5 ? "var(--signal)" : "var(--rose)";
           return (
-            <div key={`${row.tool_name}-${row.profile}`} className={`rounded-lg border px-3 py-2 text-xs ${bg}`}>
-              <div className="font-mono text-slate-200">{row.tool_name}</div>
-              <div className="text-slate-500">{row.profile}</div>
-              <div className="mt-1 text-slate-300">success {(rate * 100).toFixed(0)}%</div>
-              <div className="text-slate-500">calls {row.calls} · {Number(row.avg_duration_seconds || 0).toFixed(2)}s avg</div>
+            <div key={`${row.tool_name}-${row.profile}`}
+              className="rounded-[10px] border px-3 py-2.5"
+              style={{ borderColor: border, background: bg }}
+            >
+              <div className="font-mono text-[12px] text-[var(--ink)]">{row.tool_name}</div>
+              <div className="text-[11px] text-[var(--mute)]">{row.profile}</div>
+              <div className="mt-1.5 text-[12px] font-medium" style={{ color: textColor }}>
+                {(rate * 100).toFixed(0)}% success
+              </div>
+              <div className="text-[11px] text-[var(--mute)]">
+                {row.calls} calls · {Number(row.avg_duration_seconds || 0).toFixed(2)}s avg
+              </div>
             </div>
           );
         })}
@@ -169,32 +191,40 @@ export default function ToolsPage() {
 
   return (
     <div className="space-y-5">
+
+      {/* page header */}
       <div>
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-spark">Tool Playground</p>
-        <h1 className="mt-1 text-2xl font-semibold text-white">Direct MCP tool calls</h1>
-        <p className="mt-0.5 text-sm text-slate-500">
+        <span className="owc-eyebrow">tool playground · direct mcp calls</span>
+        <h1 className="mt-2 font-['Inter_Tight',sans-serif] text-3xl font-medium tracking-tight text-[var(--ink)]">
+          MCP tool workbench
+        </h1>
+        <p className="mt-1.5 max-w-[62ch] text-[13.5px] leading-relaxed text-[var(--mute)]">
           Execute MCP browser tools in isolation for debugging, verification, and reliability probes.
         </p>
       </div>
 
-      <div className="rounded-xl border border-white/8 bg-white/[0.03] p-4 space-y-4">
+      {/* execute card */}
+      <div
+        className="rounded-[14px] border p-4 space-y-4"
+        style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+      >
         <div className="flex items-center gap-2">
-          <Wrench className="h-4 w-4 text-spark" />
-          <span className="text-sm font-semibold text-white">Execute tool</span>
+          <Wrench className="h-3.5 w-3.5" style={{ color: "var(--signal)" }} />
+          <span className="text-[13.5px] font-medium text-[var(--ink)]">Execute tool</span>
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">Agent profile</label>
+          <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">Agent profile</label>
           <div className="flex flex-wrap gap-2">
             {PROFILES.map((p) => (
               <button
                 key={p}
                 onClick={() => selectProfile(p)}
-                className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
-                  profile === p
-                    ? "border-signal/50 bg-signal/10 text-white"
-                    : "border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/20 hover:text-slate-200"
-                }`}
+                className="rounded-lg border px-3 py-1.5 text-[13px] transition-colors"
+                style={profile === p
+                  ? { borderColor: "color-mix(in oklch, var(--signal) 55%, transparent)", background: "color-mix(in oklch, var(--signal) 9%, transparent)", color: "var(--ink)" }
+                  : { borderColor: "var(--line)", background: "var(--card-hi)", color: "var(--mute)" }
+                }
               >
                 {p}
               </button>
@@ -204,31 +234,30 @@ export default function ToolsPage() {
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">Tool name</label>
+            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">Tool name</label>
             <input
               value={toolName}
               onChange={(e) => setToolName(e.target.value)}
               list="tool-name-options"
               placeholder="inspect_hosting"
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder:text-slate-700 focus:border-signal/50 focus:outline-none font-mono"
+              className="w-full rounded-lg border px-3 py-2 text-[13px] font-mono focus:outline-none"
+              style={{ borderColor: "var(--line)", background: "black/20", color: "var(--ink)" }}
             />
             <datalist id="tool-name-options">
               {toolNames.map((name) => <option key={name} value={name} />)}
             </datalist>
           </div>
           <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">Starter template</label>
+            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">Starter template</label>
             <select
               value={templateName}
               onChange={(e) => {
                 const next = e.target.value;
                 setTemplateName(next);
-                if (templates[next]) {
-                  setToolName(next);
-                  setArgsText(templates[next]);
-                }
+                if (templates[next]) { setToolName(next); setArgsText(templates[next]); }
               }}
-              className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-300 focus:border-signal/50 focus:outline-none"
+              className="w-full rounded-lg border px-3 py-2 text-[13px] focus:outline-none"
+              style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)", color: "var(--ink-dim)" }}
             >
               <option value="">Select template</option>
               {Object.keys(templates).map((name) => <option key={name} value={name}>{name}</option>)}
@@ -244,7 +273,10 @@ export default function ToolsPage() {
         />
 
         {error && (
-          <div className="flex items-start gap-2 rounded-lg border border-ember/30 bg-ember/10 px-3 py-2.5 text-sm text-ember">
+          <div
+            className="flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[13px]"
+            style={{ borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)", background: "color-mix(in oklch, var(--rose) 10%, transparent)", color: "var(--rose)" }}
+          >
             <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
             {error}
           </div>
@@ -254,15 +286,20 @@ export default function ToolsPage() {
           <Button variant="accent" onClick={callTool} disabled={isRunning}>
             {isRunning ? "Calling…" : "Call tool"}
           </Button>
-          <Button variant="ghost" onClick={() => loadHistory(profile)} className="border border-white/10">
+          <Button variant="ghost" onClick={() => loadHistory(profile)} className="border border-[var(--line)]">
             Refresh history
           </Button>
         </div>
       </div>
 
       {lastScreenshot && (
-        <div className="rounded-xl border border-white/8 bg-white/[0.03] overflow-hidden">
-          <div className="border-b border-white/6 px-4 py-3 text-xs font-semibold text-white">Last screenshot</div>
+        <div
+          className="rounded-[14px] border overflow-hidden"
+          style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+        >
+          <div className="border-b px-[18px] py-3.5" style={{ borderColor: "var(--line)" }}>
+            <span className="text-[13.5px] font-medium text-[var(--ink)]">Last screenshot</span>
+          </div>
           <img src={lastScreenshot} alt="Last tool screenshot" className="h-56 w-full object-cover" />
         </div>
       )}
@@ -279,10 +316,19 @@ export default function ToolsPage() {
       </div>
 
       {selectedHistory && (
-        <div className="rounded-xl border border-white/8 bg-white/[0.03] p-4">
+        <div
+          className="rounded-[14px] border p-4"
+          style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+        >
           <div className="mb-3 flex items-center">
-            <div className="text-sm font-semibold text-white">History detail</div>
-            <button type="button" onClick={() => setSelectedHistory(null)} className="ml-auto text-xs text-slate-500 hover:text-white">Close</button>
+            <div className="text-[13.5px] font-medium text-[var(--ink)]">History detail</div>
+            <button
+              type="button"
+              onClick={() => setSelectedHistory(null)}
+              className="ml-auto text-[12px] text-[var(--mute)] hover:text-[var(--ink)]"
+            >
+              Close
+            </button>
           </div>
           <div className="grid gap-4 xl:grid-cols-2">
             <JsonViewer label="Input args" value={selectedHistory.args_json} />
