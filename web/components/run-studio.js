@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
+  Bot,
   Brain,
   Camera,
   CheckCircle2,
@@ -14,13 +15,13 @@ import {
   DollarSign,
   ExternalLink,
   Loader2,
+  PanelLeftClose,
+  PanelLeftOpen,
   Play,
   Square,
   Terminal,
   Wrench,
   Zap,
-  PanelLeftClose,
-  PanelLeftOpen,
 } from "lucide-react";
 
 import { apiUrl } from "@/lib/api";
@@ -331,27 +332,43 @@ function PayloadView({ title, value }) {
 
 function AgentSelector({ value, onChange, counts = {} }) {
   return (
-    <div className="flex flex-wrap gap-2">
-      {AGENTS.map((a) => (
-        <button
-          key={a.value}
-          onClick={() => onChange(a.value)}
-          className={cn(
-            "flex flex-col items-start rounded-lg border px-3 py-2 text-left transition-colors",
-            value === a.value
-              ? "border-signal/50 bg-signal/10 text-white"
-              : "border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/20 hover:text-slate-200"
-          )}
-        >
-          <span className="text-sm font-medium">{a.label}</span>
-          <div className="flex w-full items-center gap-2">
-            <span className="text-xs text-slate-600">{a.description}</span>
-            <span className="ml-auto rounded bg-black/30 px-1.5 py-0.5 text-[10px] text-slate-500">
-              {counts[a.value] || 0} tools
-            </span>
-          </div>
-        </button>
-      ))}
+    <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
+      {AGENTS.map((a) => {
+        const active = value === a.value;
+        return (
+          <button
+            key={a.value}
+            onClick={() => onChange(a.value)}
+            className={cn(
+              "relative flex flex-col items-start rounded-[14px] border p-[14px] text-left transition-colors",
+              active
+                ? "border-[color-mix(in_oklch,var(--signal)_55%,transparent)] bg-[color-mix(in_oklch,var(--signal)_9%,transparent)]"
+                : "border-[var(--line)] bg-[var(--card)] hover:border-[var(--line-hi)] hover:bg-[var(--card-hi)]"
+            )}
+          >
+            <div
+              className={cn(
+                "mb-3 flex h-11 w-11 items-center justify-center rounded-xl text-[var(--signal)]",
+                active && "relative"
+              )}
+              style={{ background: "color-mix(in oklch, var(--signal) 14%, transparent)" }}
+            >
+              {active && (
+                <span
+                  className="absolute inset-[-4px] rounded-[16px] border animate-pulse-ring"
+                  style={{ borderColor: "color-mix(in oklch, var(--signal) 50%, transparent)" }}
+                />
+              )}
+              <Bot className="h-5 w-5" />
+            </div>
+            <div className="text-[14px] font-medium text-[var(--ink)]">{a.label}</div>
+            <div className="mt-0.5 text-[12px] text-[var(--mute)]">{a.description}</div>
+            <div className="mt-3 flex w-full items-center gap-1.5 border-t border-[var(--line)] pt-2.5 font-mono text-[10.5px] text-[var(--mute-2)]">
+              <span>{counts[a.value] || 0} tools</span>
+            </div>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -360,15 +377,16 @@ function AgentSelector({ value, onChange, counts = {} }) {
 
 function Pill({ icon: Icon, label, value, danger }) {
   return (
-    <div className={cn(
-      "flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs",
-      danger
-        ? "border-ember/30 bg-ember/10 text-ember"
-        : "border-white/8 bg-white/[0.03] text-slate-400"
-    )}>
-      {Icon && <Icon className="h-3 w-3 shrink-0 text-slate-600" />}
-      <span className="text-slate-600">{label}</span>
-      <span className="ml-0.5 font-mono font-semibold text-slate-200">{value}</span>
+    <div
+      className={cn("flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px]")}
+      style={danger
+        ? { borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)", background: "color-mix(in oklch, var(--rose) 10%, transparent)", color: "var(--rose)" }
+        : { borderColor: "var(--line)", background: "var(--card)", color: "var(--mute)" }
+      }
+    >
+      {Icon && <Icon className="h-3 w-3 shrink-0" style={{ color: "var(--mute-2)" }} />}
+      <span style={{ color: danger ? undefined : "var(--mute-2)" }}>{label}</span>
+      <span className="ml-0.5 font-mono font-semibold" style={{ color: danger ? undefined : "var(--ink-dim)" }}>{value}</span>
     </div>
   );
 }
@@ -426,25 +444,34 @@ function ThinkingBlock({ event }) {
   const actor = event.actor ? event.actor.replace(/_/g, " ") : "agent";
 
   return (
-    <div className="rounded-lg border border-violet-500/20 bg-violet-500/[0.06] p-3">
+    <div
+      className="rounded-[10px] border p-3"
+      style={{
+        borderColor: "color-mix(in oklch, var(--violet) 28%, transparent)",
+        background: "color-mix(in oklch, var(--violet) 9%, transparent)",
+      }}
+    >
       <div className="mb-2 flex items-center gap-2">
-        <Brain className="h-3.5 w-3.5 shrink-0 text-violet-400" />
-        <span className="text-xs font-semibold uppercase tracking-wide text-violet-400">
+        <Brain className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--violet)" }} />
+        <span className="text-[10.5px] font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--violet)" }}>
           {actor}
         </span>
         <div className="ml-auto flex items-center gap-2">
           {toolCount > 0 && (
-            <span className="rounded bg-violet-500/20 px-1.5 py-0.5 text-xs text-violet-300">
+            <span
+              className="rounded px-1.5 py-0.5 text-[11px]"
+              style={{ background: "color-mix(in oklch, var(--violet) 20%, transparent)", color: "var(--violet)" }}
+            >
               {toolCount} tool{toolCount !== 1 ? "s" : ""}
             </span>
           )}
-          <span className="font-mono text-xs text-slate-600">{formatNumber(tokens)} tok</span>
+          <span className="font-mono text-[11px]" style={{ color: "var(--mute-2)" }}>{formatNumber(tokens)} tok</span>
         </div>
       </div>
       {preview ? (
-        <p dir="auto" className="text-sm leading-relaxed text-slate-200 whitespace-pre-wrap">{preview}</p>
+        <p dir="auto" className="text-[13.5px] leading-relaxed whitespace-pre-wrap" style={{ color: "var(--ink-dim)" }}>{preview}</p>
       ) : (
-        <p className="text-xs italic text-slate-700">No content preview available</p>
+        <p className="text-[11px] italic" style={{ color: "var(--mute-3)" }}>No content preview available</p>
       )}
     </div>
   );
@@ -929,32 +956,32 @@ export function RunStudio({ mode = "workflow" }) {
 
       {/* ── page header ───────────────────────────────────────────────────── */}
       <div>
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-spark">
-          {mode === "workflow" ? "Workflow Studio" : "Agent Lab"}
-        </p>
-        <h1 className="mt-1 text-xl font-semibold text-white">
-          {mode === "workflow" ? "Full pipeline run" : "Single-agent test"}
+        <span className="owc-eyebrow">
+          {mode === "workflow" ? "workflow studio · streaming" : "agent lab · single-agent test"}
+        </span>
+        <h1 className="mt-2 font-['Inter_Tight',sans-serif] text-3xl font-medium tracking-tight text-[var(--ink)]">
+          {mode === "workflow" ? "Live pipeline" : "Isolate, instrument, iterate"}
         </h1>
-        <p className="mt-0.5 text-sm text-slate-500">
+        <p className="mt-1.5 max-w-[62ch] text-[13.5px] leading-relaxed text-[var(--mute)]">
           {mode === "workflow"
-            ? "Classify → extract → provider analysis → DMCA email. LLM reasoning streams live."
-            : "Run one agent in isolation. Every thought, tool call, and token appears in real time."}
+            ? "Classify → Landing → Hosting → Email. Every tool call, LLM turn, and token arrives in real time over SSE."
+            : "Run any one agent against a URL to inspect its tools, tokens, and reasoning without the rest of the pipeline firing."}
         </p>
       </div>
 
       {/* ── control card ──────────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-white/8 bg-white/[0.03] p-4 space-y-3">
+      <div className="rounded-[14px] border border-[var(--line)] p-4 space-y-3" style={{ background: "var(--card)", boxShadow: "var(--shadow-card)" }}>
         {mode === "agent" && (
           <div className="space-y-2">
-            <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
               Agent
             </label>
             <AgentSelector value={agent} onChange={setAgent} counts={agentToolCounts} />
-            <div className="rounded-lg border border-white/10 bg-black/20">
+            <div className="rounded-lg border border-[var(--line)] bg-black/20">
               <button
                 type="button"
                 onClick={() => setShowPromptPreview((v) => !v)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-400 hover:text-white"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[11.5px] text-[var(--mute)] hover:text-[var(--ink-dim)]"
               >
                 {showPromptPreview ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
                 Prompt preview ({agent})
@@ -969,7 +996,7 @@ export function RunStudio({ mode = "workflow" }) {
         )}
 
         <div>
-          <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+          <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
             Target URL
           </label>
           <div className="mt-1.5 flex gap-2">
@@ -978,7 +1005,8 @@ export function RunStudio({ mode = "workflow" }) {
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && url && !isStarting && !isRunning && startRun()}
               placeholder="https://streaming-site.example.com/watch/123"
-              className="flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white placeholder:text-slate-700 focus:border-signal/50 focus:outline-none"
+              className="flex-1 rounded-lg border border-[var(--line)] bg-black/25 px-3 py-2 text-[13px] text-[var(--ink)] placeholder:text-[var(--mute-3)] focus:outline-none"
+              style={{ transition: "border-color .15s" }}
             />
             <Button
               variant="accent"
@@ -1000,20 +1028,20 @@ export function RunStudio({ mode = "workflow" }) {
 
         {/* status bar */}
         {runId && (
-          <div className="flex flex-wrap items-center gap-2 border-t border-white/6 pt-3">
-            <span className="font-mono text-xs text-slate-700">{runId.slice(0, 12)}…</span>
+          <div className="flex flex-wrap items-center gap-2 border-t border-[var(--line)] pt-3">
+            <span className="font-mono text-[11px] text-[var(--mute-3)]">{runId.slice(0, 12)}…</span>
             {isRunning && (
-              <span className="flex items-center gap-1 text-xs text-signal">
+              <span className="flex items-center gap-1 font-mono text-[11px] text-[var(--signal)]">
                 <Loader2 className="h-3 w-3 animate-spin" />streaming
               </span>
             )}
             {succeeded && (
-              <span className="flex items-center gap-1 text-xs text-surge">
+              <span className="flex items-center gap-1 font-mono text-[11px] text-[var(--mint)]">
                 <CheckCircle2 className="h-3 w-3" />completed
               </span>
             )}
             {failed && (
-              <span className="flex items-center gap-1 text-xs text-ember">
+              <span className="flex items-center gap-1 font-mono text-[11px] text-[var(--rose)]">
                 <AlertCircle className="h-3 w-3" />
                 {tracePayload?.cancel_requested ? "cancelled" : `failed · ${metrics?.failure_mode || "unknown"}`}
               </span>
@@ -1034,7 +1062,7 @@ export function RunStudio({ mode = "workflow" }) {
         )}
 
         {streamError && (
-          <div className="rounded-lg border border-ember/30 bg-ember/10 px-3 py-2 text-xs text-ember">
+          <div className="rounded-lg border border-[var(--rose)]/30 bg-[var(--rose)]/10 px-3 py-2 text-[12.5px] text-[var(--rose)]">
             {streamError}
           </div>
         )}
@@ -1048,14 +1076,13 @@ export function RunStudio({ mode = "workflow" }) {
 
             {/* reasoning panel */}
             <div className="space-y-4">
-              <div className="rounded-xl border border-white/8 bg-white/[0.03] overflow-hidden">
-                <div className="flex items-center gap-2 border-b border-white/6 px-4 py-3">
-                  <Brain className="h-3.5 w-3.5 text-violet-400" />
-                  <span className="text-xs font-semibold text-white">Agent Reasoning</span>
-                  {isRunning && <Loader2 className="h-3 w-3 animate-spin text-slate-600" />}
-                  <span className="ml-auto text-xs text-slate-600">
-                    {llmCalls} LLM turn{llmCalls !== 1 ? "s" : ""}
-                  </span>
+              <div className="overflow-hidden rounded-[14px] border border-[var(--line)]" style={{ background: "var(--card)", boxShadow: "var(--shadow-card)" }}>
+                <div className="flex items-center gap-2 border-b border-[var(--line)] px-[18px] py-3.5">
+                  <Brain className="h-3.5 w-3.5 shrink-0 text-[var(--violet)]" />
+                  <span className="text-[13.5px] font-medium text-[var(--ink)]">Agent reasoning</span>
+                  <span className="text-[12px] text-[var(--mute)]">LLM thoughts + tool activity</span>
+                  {isRunning && <Loader2 className="h-3 w-3 animate-spin text-[var(--mute-2)]" />}
+                  <span className="owc-pill live ml-auto"><span className="dot" />{isRunning ? "live" : `${llmCalls} turns`}</span>
                 </div>
                 <div className="max-h-[560px] overflow-y-auto space-y-2 p-4">
                   <ReasoningFeed events={events} />
@@ -1067,10 +1094,10 @@ export function RunStudio({ mode = "workflow" }) {
             {/* right panel */}
             <div className="space-y-4">
               {mode === "agent" && (
-                <div className={cn("rounded-xl border border-white/8 bg-white/[0.03] overflow-hidden", screenshotFlash && "ring-2 ring-red-400/50")}>
-                  <div className="flex items-center gap-2 border-b border-white/6 px-3 py-3">
-                    <span className="text-xs font-semibold text-white">Live Screenshot</span>
-                    <span className="ml-auto text-[11px] text-slate-600">
+                <div className={cn("overflow-hidden rounded-[14px] border border-[var(--line)]", screenshotFlash && "ring-2 ring-[var(--signal)]/50")} style={{ background: "var(--card)", boxShadow: "var(--shadow-card)" }}>
+                  <div className="flex items-center gap-2 border-b border-[var(--line)] px-[18px] py-3.5">
+                    <span className="text-[13.5px] font-medium text-[var(--ink)]">Live Screenshot</span>
+                    <span className="ml-auto font-mono text-[11px] text-[var(--mute-2)]">
                       {latestScreenshotAt ? new Date(latestScreenshotAt).toLocaleTimeString() : "waiting"}
                     </span>
                   </div>
@@ -1083,10 +1110,10 @@ export function RunStudio({ mode = "workflow" }) {
                       <img src={latestScreenshot} alt="Live agent screenshot" className="h-44 w-full object-cover" />
                     </button>
                   ) : (
-                    <div className="px-3 py-10 text-center text-xs text-slate-700">No screenshot yet</div>
+                    <div className="px-3 py-10 text-center font-mono text-[11px] text-[var(--mute-3)]">No screenshot yet</div>
                   )}
                   {screenshotStrip.length > 0 && (
-                    <div className="flex gap-2 overflow-x-auto border-t border-white/6 p-2">
+                    <div className="flex gap-2 overflow-x-auto border-t border-[var(--line)] p-2">
                       {screenshotStrip.map((shot) => (
                         <button
                           key={`${shot.url}-${shot.seq}`}
@@ -1095,7 +1122,7 @@ export function RunStudio({ mode = "workflow" }) {
                             setLatestScreenshot(shot.url);
                             jumpToEvent(shot.seq);
                           }}
-                          className="shrink-0 overflow-hidden rounded border border-white/10"
+                          className="shrink-0 overflow-hidden rounded border border-[var(--line)]"
                           title={`Jump to event #${shot.seq}`}
                         >
                           <img src={shot.url} alt={`Screenshot ${shot.seq}`} className="h-14 w-20 object-cover" />
@@ -1105,10 +1132,10 @@ export function RunStudio({ mode = "workflow" }) {
                   )}
                 </div>
               )}
-              <div className="rounded-xl border border-white/8 bg-white/[0.03] overflow-hidden">
-                <div className="flex items-center gap-2 border-b border-white/6 px-3 py-3">
-                  <span className="text-xs font-semibold text-white">Event Log</span>
-                  <span className="ml-auto text-xs text-slate-600">{events.length}</span>
+              <div className="overflow-hidden rounded-[14px] border border-[var(--line)]" style={{ background: "var(--card)", boxShadow: "var(--shadow-card)" }}>
+                <div className="flex items-center gap-2 border-b border-[var(--line)] px-[18px] py-3.5">
+                  <span className="text-[13.5px] font-medium text-[var(--ink)]">Event log</span>
+                  <span className="ml-auto font-mono text-[11px] text-[var(--mute)]">{events.length} events</span>
                 </div>
                 <div className="max-h-[560px] overflow-y-auto space-y-1 p-2">
                   <EventLog events={events} />

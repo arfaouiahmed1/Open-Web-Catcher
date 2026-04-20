@@ -12,44 +12,90 @@ function fmtHeader(key) {
     .replace(/\bLlm\b/, "LLM");
 }
 
+function StatusPill({ value }) {
+  const s = String(value).toLowerCase();
+  const cls =
+    ["success", "passed", "ok"].includes(s) ? "ok"   :
+    ["failed", "error", "fail"].includes(s)  ? "err"  :
+    ["partial", "warning"].includes(s)       ? "warn" : null;
+
+  if (!cls) return <span>{value}</span>;
+  return (
+    <span className={`owc-pill ${cls}`}>
+      <span className="dot" />
+      {s === "success" || s === "passed" ? "ok" : s}
+    </span>
+  );
+}
+
 function fmtCell(key, value) {
-  if (value === null || value === undefined) return <span className="text-slate-700">—</span>;
+  if (value === null || value === undefined) {
+    return <span style={{ color: "var(--mute-3)" }}>—</span>;
+  }
   if (typeof value === "boolean") {
     return value
-      ? <span className="text-emerald-400">Yes</span>
-      : <span className="text-slate-600">No</span>;
+      ? <span style={{ color: "var(--mint)" }}>Yes</span>
+      : <span style={{ color: "var(--mute-3)" }}>No</span>;
   }
-  if (typeof value === "object") return <span className="font-mono text-slate-500">{JSON.stringify(value)}</span>;
+  if (typeof value === "object") {
+    return (
+      <span className="mono text-[12px]" style={{ color: "var(--mute)" }}>
+        {JSON.stringify(value)}
+      </span>
+    );
+  }
   const str = String(value);
 
-  // status-style values
-  if (["success","passed"].includes(str)) return <span className="inline-flex items-center rounded-md bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-400">{str}</span>;
-  if (["failed","error","fail"].includes(str)) return <span className="inline-flex items-center rounded-md bg-red-500/10 border border-red-500/20 px-2 py-0.5 text-xs font-medium text-red-400">{str}</span>;
-  if (["partial","warning"].includes(str)) return <span className="inline-flex items-center rounded-md bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-400">{str}</span>;
+  /* status pills */
+  if (["success","passed","ok","failed","error","fail","partial","warning"].includes(str.toLowerCase())) {
+    return <StatusPill value={str} />;
+  }
 
-  // long strings
-  if (str.length > 60) return <span className="font-mono text-xs text-slate-400 break-all">{str.slice(0, 60)}&hellip;</span>;
-  if ((key.includes("id") || key.includes("_id")) && str.length > 12) {
-    return <span className="font-mono text-xs text-slate-400">{str.slice(0, 8)}&hellip;</span>;
+  /* truncate long strings */
+  if (str.length > 60) {
+    return (
+      <span className="mono text-xs" style={{ color: "var(--mute)" }} title={str}>
+        {str.slice(0, 60)}&hellip;
+      </span>
+    );
+  }
+  if ((key.includes("id") || key.includes("_id")) && str.length > 14) {
+    return (
+      <span className="mono text-[11.5px]" style={{ color: "var(--ink-dim)" }}>
+        {str.slice(0, 12)}&hellip;
+      </span>
+    );
   }
   return str;
 }
 
 export function DataTable({ title, description, columns, rows, onRowClick, className }) {
   return (
-    <div className={cn("rounded-xl border border-white/8 bg-white/[0.03] shadow-card overflow-hidden", className)}>
+    <div
+      className={cn("overflow-hidden rounded-[14px] border border-[var(--line)]", className)}
+      style={{ background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+    >
       {(title || description) && (
-        <div className="px-5 py-3.5 border-b border-white/6">
-          {title && <div className="text-sm font-semibold text-white">{title}</div>}
-          {description && <div className="mt-0.5 text-xs text-slate-500">{description}</div>}
+        <div className="flex items-center gap-2.5 border-b border-[var(--line)] px-[18px] py-3.5">
+          {title && <div className="text-[13.5px] font-medium text-[var(--ink)]">{title}</div>}
+          {description && (
+            <div className="text-[12px] text-[var(--mute)]">{description}</div>
+          )}
         </div>
       )}
       <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
+        <table
+          className="min-w-full border-collapse"
+          style={{ borderSpacing: 0, fontSize: "13px" }}
+        >
           <thead>
-            <tr className="border-b border-white/6">
+            <tr>
               {columns.map((col) => (
-                <th key={col} className="px-4 py-2.5 text-xs font-medium text-slate-500 whitespace-nowrap">
+                <th
+                  key={col}
+                  className="whitespace-nowrap border-b border-[var(--line)] px-4 py-2.5 text-left text-[10.5px] font-medium uppercase tracking-[0.1em]"
+                  style={{ color: "var(--mute)", background: "rgba(255,255,255,0.012)" }}
+                >
                   {fmtHeader(col)}
                 </th>
               ))}
@@ -62,12 +108,13 @@ export function DataTable({ title, description, columns, rows, onRowClick, class
                   key={i}
                   onClick={() => onRowClick?.(row)}
                   className={cn(
-                    "border-b border-white/4 text-slate-300 transition-colors",
-                    onRowClick && "cursor-pointer hover:bg-white/4"
+                    "border-b border-[var(--line)] transition-colors last:border-b-0",
+                    onRowClick && "cursor-pointer hover:bg-white/[0.018]"
                   )}
+                  style={{ color: "var(--ink-dim)" }}
                 >
                   {columns.map((col) => (
-                    <td key={col} className="px-4 py-2.5 align-top whitespace-nowrap">
+                    <td key={col} className="whitespace-nowrap px-4 py-[11px] align-middle">
                       {fmtCell(col, row[col])}
                     </td>
                   ))}
@@ -75,7 +122,11 @@ export function DataTable({ title, description, columns, rows, onRowClick, class
               ))
             ) : (
               <tr>
-                <td colSpan={columns.length} className="px-4 py-8 text-center text-sm text-slate-600">
+                <td
+                  colSpan={columns.length}
+                  className="px-4 py-10 text-center text-sm"
+                  style={{ color: "var(--mute-3)" }}
+                >
                   No data yet
                 </td>
               </tr>

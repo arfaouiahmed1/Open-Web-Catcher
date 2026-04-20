@@ -3,87 +3,204 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import {
-  Activity,
-  Bot,
-  Database,
-  FlaskConical,
-  Gauge,
-  Menu,
-  Network,
-  PlaySquare,
-  Settings2,
-  Wrench,
-  Shield,
-  FilePenLine,
-  X,
-} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiUrl } from "@/lib/api";
 
-const ACTIVE_RUNS_POLL_INTERVAL_MS = 8000;
+const ACTIVE_RUNS_POLL_MS = 8000;
 
-const NAV = [
-  { href: "/",            label: "Overview",        icon: Gauge,        section: null },
-  { href: "/live",        label: "Live Pipeline",   icon: PlaySquare,   section: "Run" },
-  { href: "/agents",      label: "Agent Lab",       icon: Bot,          section: "Run" },
-  { href: "/tools",       label: "Tool Playground", icon: Wrench,       section: "Run" },
-  { href: "/runs",        label: "Run History",     icon: Activity,     section: "Inspect" },
-  { href: "/providers",   label: "Provider Intel",  icon: Network,      section: "Inspect" },
-  { href: "/evaluations", label: "Evaluations",     icon: FlaskConical, section: "Inspect" },
-  { href: "/database",    label: "Database",        icon: Database,     section: "System" },
-  { href: "/prompts",     label: "Prompts",         icon: FilePenLine,  section: "System" },
-  { href: "/settings",    label: "Settings",        icon: Settings2,    section: "System" },
-];
+/* ── SVG logo ────────────────────────────────────────────────────────────── */
 
-function NavGroup({ label, items, pathname, onNavigate }) {
+function LogoMark({ className }) {
   return (
-    <div className="mt-5">
-      <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-        {label}
-      </div>
-      {items.map((item) => {
-        const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={onNavigate}
-            className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-              active
-                ? "bg-white/8 text-white font-medium"
-                : "text-slate-500 hover:bg-white/4 hover:text-slate-300"
-            )}
-          >
-            <Icon className={cn("h-4 w-4 shrink-0", active ? "text-signal" : "text-slate-600")} />
-            {item.label}
-            {active && (
-              <div className="ml-auto h-1.5 w-1.5 rounded-full bg-signal" />
-            )}
-          </Link>
-        );
-      })}
-    </div>
+    <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} aria-hidden>
+      {/* hex aperture outer */}
+      <path d="M16 3.5 L26.5 9.25 L26.5 22.75 L16 28.5 L5.5 22.75 L5.5 9.25 Z"
+            stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" opacity="0.9"/>
+      {/* inner hex */}
+      <path d="M16 9.5 L21 12.25 L21 19.75 L16 22.5 L11 19.75 L11 12.25 Z"
+            stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" opacity="0.55"/>
+      {/* stream bars */}
+      <path d="M3 16 H9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+      <path d="M23 16 H29" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+      {/* nucleus */}
+      <circle cx="16" cy="16" r="2.1" fill="currentColor"/>
+    </svg>
   );
 }
+
+/* ── nav icons ───────────────────────────────────────────────────────────── */
+
+const ICONS = {
+  overview: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 13a9 9 0 1 1 18 0"/><path d="M12 13l4-5"/>
+      <circle cx="12" cy="13" r="1.2" fill="currentColor" stroke="none"/>
+    </svg>
+  ),
+  live: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9"/>
+      <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>
+    </svg>
+  ),
+  agent: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="7" width="16" height="13" rx="2"/>
+      <path d="M12 4v3"/><circle cx="9" cy="13" r="1" fill="currentColor"/>
+      <circle cx="15" cy="13" r="1" fill="currentColor"/><path d="M10 17h4"/>
+    </svg>
+  ),
+  tools: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 3a4 4 0 0 0-3 6.8L4 18l2 2 8.2-8.2A4 4 0 0 0 21 9l-3 1-2-2 1-3z"/>
+    </svg>
+  ),
+  runs: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18M3 12h18M3 18h12"/>
+    </svg>
+  ),
+  providers: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/>
+      <path d="M8 6h8M8 8l4 8M16 8l-4 8"/>
+    </svg>
+  ),
+  evals: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 3h6v3l-3 4 3 4v7H9v-7l3-4-3-4V3z"/>
+    </svg>
+  ),
+  database: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <ellipse cx="12" cy="5" rx="8" ry="2.5"/>
+      <path d="M4 5v6c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5V5"/>
+      <path d="M4 11v6c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5v-6"/>
+    </svg>
+  ),
+  prompts: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/>
+      <path d="M9 9h1M9 13h6M9 17h6"/>
+    </svg>
+  ),
+  settings: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>
+    </svg>
+  ),
+  search: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>
+    </svg>
+  ),
+  play: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="6 4 20 12 6 20 6 4" fill="currentColor" stroke="none"/>
+    </svg>
+  ),
+};
+
+/* ── nav config ──────────────────────────────────────────────────────────── */
+
+const NAV = [
+  { href: "/",            label: "Overview",        key: "overview",  kbd: "G O", section: null     },
+  { href: "/live",        label: "Live Pipeline",   key: "live",      kbd: "G L", section: "Run",   badge: true },
+  { href: "/agents",      label: "Agent Lab",       key: "agent",     kbd: "G A", section: "Run"    },
+  { href: "/tools",       label: "Tool Playground", key: "tools",     kbd: "G T", section: "Run"    },
+  { href: "/runs",        label: "Run History",     key: "runs",      kbd: "G H", section: "Inspect"},
+  { href: "/providers",   label: "Provider Intel",  key: "providers", kbd: "G P", section: "Inspect"},
+  { href: "/evaluations", label: "Evaluations",     key: "evals",     kbd: "G E", section: "Inspect"},
+  { href: "/database",    label: "Database",        key: "database",  kbd: "G D", section: "System" },
+  { href: "/prompts",     label: "Prompts",         key: "prompts",   kbd: "G M", section: "System" },
+  { href: "/settings",    label: "Settings",        key: "settings",  kbd: "G S", section: "System" },
+];
+
+const GROUPS = [
+  { label: "Run",     num: "01" },
+  { label: "Inspect", num: "02" },
+  { label: "System",  num: "03" },
+];
+
+/* ── sidebar nav link ────────────────────────────────────────────────────── */
+
+function NavLink({ item, active, badge, onClick }) {
+  return (
+    <Link
+      href={item.href}
+      onClick={onClick}
+      className={cn(
+        "relative flex items-center gap-[11px] rounded-lg px-2.5 py-[7px] text-[13px] whitespace-nowrap transition-colors",
+        active
+          ? "owc-side-link-active bg-[color-mix(in_oklch,var(--signal)_10%,transparent)] text-[var(--ink)]"
+          : "text-[var(--mute)] hover:bg-white/[0.03] hover:text-[var(--ink-dim)]"
+      )}
+    >
+      <span className={cn("h-3.5 w-3.5 shrink-0", active ? "text-[var(--signal)]" : "text-[var(--mute-2)]")}>
+        {ICONS[item.key]}
+      </span>
+      <span className="flex-1 min-w-0 overflow-hidden text-ellipsis">{item.label}</span>
+      {badge ? (
+        <span className="ml-auto font-mono text-[10px] text-[var(--signal)] px-1.5 py-0.5 rounded-full bg-[color-mix(in_oklch,var(--signal)_12%,transparent)]">
+          {badge}
+        </span>
+      ) : (
+        <span className="ml-auto font-mono text-[10px] text-[var(--mute-3)] px-1.5 py-0.5 rounded border border-[var(--line)] bg-white/[0.02]">
+          {item.kbd}
+        </span>
+      )}
+    </Link>
+  );
+}
+
+/* ── keyboard shortcut help ──────────────────────────────────────────────── */
 
 function ShortcutHelp({ open, onClose }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-xl border border-white/10 bg-surface p-4" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-2 text-sm font-semibold text-white">Keyboard shortcuts</div>
-        <ul className="space-y-1.5 text-xs text-slate-300">
-          <li><span className="font-mono text-signal">?</span> toggle this help</li>
-          <li><span className="font-mono text-signal">R</span> run (on Live/Agent pages)</li>
-          <li><span className="font-mono text-signal">C</span> cancel active run</li>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-[14px] border border-[var(--line-hi)] bg-[var(--panel)] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.8)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 font-semibold text-sm text-[var(--ink)]">Keyboard shortcuts</div>
+        <ul className="space-y-2 text-[12.5px] text-[var(--mute)]">
+          <li><span className="font-mono text-[var(--signal)]">?</span> — toggle this help</li>
+          <li><span className="font-mono text-[var(--signal)]">G O</span> — Overview</li>
+          <li><span className="font-mono text-[var(--signal)]">G L</span> — Live Pipeline</li>
+          <li><span className="font-mono text-[var(--signal)]">G A</span> — Agent Lab</li>
+          <li><span className="font-mono text-[var(--signal)]">R</span> — run (on Live/Agent pages)</li>
+          <li><span className="font-mono text-[var(--signal)]">C</span> — cancel active run</li>
         </ul>
       </div>
     </div>
   );
 }
+
+/* ── breadcrumbs helper ──────────────────────────────────────────────────── */
+
+function pathToCrumbs(pathname) {
+  const map = {
+    "/":            ["overview"],
+    "/live":        ["run", "live-pipeline"],
+    "/agents":      ["run", "agent-lab"],
+    "/tools":       ["run", "tool-playground"],
+    "/runs":        ["inspect", "runs"],
+    "/providers":   ["inspect", "provider-intel"],
+    "/evaluations": ["inspect", "evaluations"],
+    "/database":    ["system", "database"],
+    "/prompts":     ["system", "prompts"],
+    "/settings":    ["system", "settings"],
+  };
+  const base = "/" + (pathname.split("/")[1] || "");
+  return map[base] || ["overview"];
+}
+
+/* ── main shell ──────────────────────────────────────────────────────────── */
 
 export function AppShell({ children }) {
   const pathname = usePathname();
@@ -91,113 +208,220 @@ export function AppShell({ children }) {
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [activeRuns, setActiveRuns] = useState(0);
 
+  /* keyboard shortcut handler */
   useEffect(() => {
-    function onKeyDown(event) {
-      if (event.key === "?") {
-        event.preventDefault();
+    function onKey(e) {
+      if (e.key === "?" && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
         setShortcutOpen((v) => !v);
       }
     }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  /* active run count */
   useEffect(() => {
     let cancelled = false;
-    async function loadActiveRuns() {
+    async function poll() {
       try {
         const res = await fetch(apiUrl("/ui/overview"), { cache: "no-store" });
         if (!res.ok || cancelled) return;
-        const payload = await res.json();
-        if (!cancelled) setActiveRuns((payload?.active_runs || []).filter((item) => !item.completed).length);
-      } catch {
-        // ignore
-      }
+        const p = await res.json();
+        if (!cancelled) setActiveRuns((p?.active_runs || []).filter((r) => !r.completed).length);
+      } catch { /* ignore */ }
     }
-    loadActiveRuns();
-    const timer = setInterval(loadActiveRuns, ACTIVE_RUNS_POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
+    poll();
+    const t = setInterval(poll, ACTIVE_RUNS_POLL_MS);
+    return () => { cancelled = true; clearInterval(t); };
   }, []);
 
-  const groups = [
-    { label: "Run",     items: NAV.filter((n) => n.section === "Run") },
-    { label: "Inspect", items: NAV.filter((n) => n.section === "Inspect") },
-    { label: "System",  items: NAV.filter((n) => n.section === "System") },
-  ];
+  const crumbs = pathToCrumbs(pathname);
 
-  const overviewItem = NAV.find((n) => n.section === null);
-  const overviewActive = pathname === "/";
+  const isActive = (item) =>
+    item.href === "/"
+      ? pathname === "/"
+      : pathname === item.href || pathname.startsWith(item.href + "/");
+
+  const topItem    = NAV.find((n) => n.section === null);
+  const topActive  = isActive(topItem);
+
+  const closeSidebar = () => setSidebarOpen(false);
 
   return (
-    <div className="flex min-h-screen bg-ink">
+    <div style={{ display: "grid", gridTemplateColumns: "256px 1fr", minHeight: "100vh" }}>
       <ShortcutHelp open={shortcutOpen} onClose={() => setShortcutOpen(false)} />
-      <button
-        type="button"
-        onClick={() => setSidebarOpen((v) => !v)}
-        className="fixed left-3 top-3 z-40 rounded-md border border-white/10 bg-surface p-2 text-slate-300 md:hidden"
-      >
-        {sidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-      </button>
 
-      <aside className={cn(
-        "fixed inset-y-0 left-0 z-30 flex w-64 shrink-0 flex-col border-r border-white/6 bg-surface transition-transform md:static md:translate-x-0",
-        sidebarOpen ? "translate-x-0" : "-translate-x-full"
-      )}>
-        <div className="flex items-center gap-2.5 border-b border-white/6 px-4 py-4">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-signal/20">
-            <Shield className="h-4 w-4 text-signal" />
+      {/* mobile overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-black/60 md:hidden"
+          onClick={closeSidebar}
+        />
+      )}
+
+      {/* ── sidebar ── */}
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-30 flex w-64 flex-col border-r border-[var(--line)] md:static transition-transform duration-200",
+          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        )}
+        style={{
+          background: "linear-gradient(180deg, rgba(255,255,255,0.015), transparent 25%), var(--panel)",
+        }}
+      >
+        {/* brand */}
+        <div className="flex items-center gap-3 border-b border-[var(--line)] px-[18px] py-5">
+          <div
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px]"
+            style={{
+              background: "color-mix(in oklch, var(--signal) 12%, transparent)",
+              boxShadow: "inset 0 0 0 1px color-mix(in oklch, var(--signal) 30%, transparent)",
+              color: "var(--signal)",
+            }}
+          >
+            <LogoMark className="h-5 w-5" />
           </div>
-          <div>
-            <div className="text-sm font-semibold text-white leading-none">OWC</div>
-            <div className="text-[10px] text-slate-600 mt-0.5">Operator Console</div>
+          <div className="leading-none">
+            <div className="text-sm font-semibold tracking-tight text-[var(--ink)]">Open Web Catcher</div>
+            <div className="mt-1 font-mono text-[10px] text-[var(--mute-2)]">operator · v0.2.1</div>
           </div>
+          {/* breathing status dot */}
+          <span
+            className="ml-auto h-[7px] w-[7px] shrink-0 rounded-full animate-breathe"
+            style={{
+              background: "var(--mint)",
+              boxShadow: "0 0 0 3px color-mix(in oklch, var(--mint) 20%, transparent)",
+            }}
+            title="connected"
+          />
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-2 py-3">
-          <Link
-            href={overviewItem?.href || "/"}
-            onClick={() => setSidebarOpen(false)}
-            className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-              overviewActive
-                ? "bg-white/8 text-white font-medium"
-                : "text-slate-500 hover:bg-white/4 hover:text-slate-300"
-            )}
-          >
-            <Gauge className={cn("h-4 w-4 shrink-0", overviewActive ? "text-signal" : "text-slate-600")} />
-            Overview
-            {overviewActive && <div className="ml-auto h-1.5 w-1.5 rounded-full bg-signal" />}
-          </Link>
+        {/* nav */}
+        <nav className="flex-1 overflow-y-auto p-2.5 pb-5">
+          {/* top-level overview link */}
+          <NavLink item={topItem} active={topActive} onClick={closeSidebar} />
 
-          {groups.map((g) => (
-            <NavGroup key={g.label} label={g.label} items={g.items} pathname={pathname} onNavigate={() => setSidebarOpen(false)} />
-          ))}
+          {/* grouped sections */}
+          {GROUPS.map((g) => {
+            const items = NAV.filter((n) => n.section === g.label);
+            return (
+              <div key={g.label} className="mt-4">
+                <div className="mb-1 flex items-center gap-2 px-2.5 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-3)]">
+                  <span className="font-mono text-[var(--mute-3)]">{g.num}</span>
+                  {g.label}
+                </div>
+                {items.map((item) => (
+                  <NavLink
+                    key={item.href}
+                    item={item}
+                    active={isActive(item)}
+                    badge={item.badge && activeRuns > 0 ? String(activeRuns) : null}
+                    onClick={closeSidebar}
+                  />
+                ))}
+              </div>
+            );
+          })}
         </nav>
 
-        <div className="border-t border-white/6 px-4 py-3">
-          <div className="mb-1.5 flex items-center gap-2 text-[10px] text-slate-500">
-            <span className={cn("inline-block h-1.5 w-1.5 rounded-full", activeRuns > 0 ? "bg-emerald-400 animate-pulse" : "bg-slate-700")} />
-            {activeRuns} active run{activeRuns !== 1 ? "s" : ""}
-          </div>
-          <a
-            href="https://github.com/arfaouiahmed1/Open-Web-Catcher/releases"
-            target="_blank"
-            rel="noreferrer"
-            className="text-[10px] text-slate-700 hover:text-slate-400"
-          >
-            Open Web Catcher v0.2
-          </a>
+        {/* footer */}
+        <div className="flex items-center justify-between border-t border-[var(--line)] px-4 py-3 font-mono text-[10px] text-[var(--mute-3)]">
+          <span>pg · 5432</span>
+          <span>rev 7a3f·d18</span>
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0 overflow-auto">
-        <div className="mx-auto max-w-7xl px-6 py-6 pt-14 md:pt-6">
-          {children}
+      {/* ── main area ── */}
+      <div className="flex min-w-0 flex-col">
+        {/* topbar */}
+        <div
+          className="sticky top-0 z-10 flex items-center gap-4 border-b border-[var(--line)] px-7 py-4"
+          style={{
+            background: "color-mix(in oklch, var(--bg) 92%, transparent)",
+            backdropFilter: "blur(12px)",
+          }}
+        >
+          {/* mobile hamburger */}
+          <button
+            type="button"
+            onClick={() => setSidebarOpen((v) => !v)}
+            className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded border border-[var(--line)] text-[var(--mute)] md:hidden"
+            aria-label="Toggle sidebar"
+          >
+            <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
+              <rect x="1" y="3" width="14" height="1.5" rx="1"/>
+              <rect x="1" y="7.25" width="14" height="1.5" rx="1"/>
+              <rect x="1" y="11.5" width="14" height="1.5" rx="1"/>
+            </svg>
+          </button>
+
+          {/* breadcrumbs */}
+          <div className="flex items-center gap-1.5 font-mono text-[11px] text-[var(--mute-2)]">
+            <span>owc</span>
+            {crumbs.map((c, i) => (
+              <span key={i} className="flex items-center gap-1.5">
+                <span className="text-[var(--mute-3)]">/</span>
+                <span className={i === crumbs.length - 1 ? "text-[var(--ink-dim)]" : ""}>{c}</span>
+              </span>
+            ))}
+          </div>
+
+          <div className="flex-1" />
+
+          {/* store status chip */}
+          <span
+            className="hidden items-center gap-1.5 rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] text-[var(--mute)] sm:flex"
+            style={{ background: "var(--card)" }}
+          >
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: "var(--mint)", boxShadow: "0 0 6px var(--mint)" }}
+            />
+            store <span className="font-mono text-[var(--ink-dim)]">connected</span>
+          </span>
+
+          {/* region chip */}
+          <span
+            className="hidden items-center gap-1.5 rounded-full border border-[var(--line)] px-2.5 py-1 font-mono text-[11px] text-[var(--ink-dim)] sm:flex"
+            style={{ background: "var(--card)" }}
+          >
+            us-east-1 · k8s-prod-03
+          </span>
+
+          {/* search button */}
+          <button
+            type="button"
+            onClick={() => setShortcutOpen(true)}
+            className="flex items-center gap-2 rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-[12.5px] text-[var(--mute)] transition-colors hover:border-[var(--line-hi)] hover:text-[var(--ink-dim)]"
+            style={{ background: "var(--card)" }}
+          >
+            <span className="h-3.5 w-3.5">{ICONS.search}</span>
+            <span className="rounded border border-[var(--line)] px-1.5 py-0.5 font-mono text-[10px]">⌘K</span>
+          </button>
+
+          {/* new run button */}
+          <Link
+            href="/live"
+            className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition-all"
+            style={{
+              background: "var(--signal)",
+              color: "#0d0a04",
+              boxShadow: "var(--shadow-glow)",
+            }}
+          >
+            <span className="h-3.5 w-3.5">{ICONS.play}</span>
+            New Run
+          </Link>
         </div>
-      </main>
+
+        {/* page content */}
+        <main className="flex-1 overflow-auto">
+          <div className="mx-auto max-w-[1280px] px-7 py-7 pb-20">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
