@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from functools import partial
@@ -28,6 +29,63 @@ from src.utils.instrumentation import observability_span, set_span_output, using
 from src.utils.observability import RunObserver, get_observability_status, run_registry
 
 logger = get_logger(__name__)
+
+
+class HandoffContext(TypedDict, total=False):
+    """Structured context passed from orchestrator to each child agent.
+
+    All fields are optional so callers only populate what they have.
+    Use ``render_handoff()`` to convert to a prompt string.
+    """
+    root_url: str
+    target_url: str
+    page_type: str
+    classification_reasoning: str
+    candidate_title: str
+    candidate_participants: str
+    landing_route: str
+    landing_iframes: list[str]
+    source_hosting_url: str
+    source_hosting_status: str
+    source_hosting_decision: str
+    source_streams_found: int
+    focus: str
+    memory_hints: str
+
+
+def render_handoff(ctx: HandoffContext) -> str:
+    """Serialize HandoffContext to a human-readable prompt string."""
+    lines = ["ORCHESTRATOR HANDOFF"]
+    if ctx.get("root_url"):
+        lines.append(f"- root url: {ctx['root_url']}")
+    if ctx.get("target_url") and ctx.get("target_url") != ctx.get("root_url"):
+        lines.append(f"- target url: {ctx['target_url']}")
+    if ctx.get("page_type"):
+        lines.append(f"- upstream classification: {ctx['page_type']}")
+    if ctx.get("classification_reasoning"):
+        lines.append(f"- classification reasoning: {_truncate(ctx['classification_reasoning'])}")
+    if ctx.get("candidate_title"):
+        lines.append(f"- candidate title: {_truncate(ctx['candidate_title'], max_chars=180)}")
+    if ctx.get("candidate_participants"):
+        lines.append(f"- participants: {_truncate(ctx['candidate_participants'], max_chars=180)}")
+    if ctx.get("landing_route"):
+        lines.append(f"- landing suggested route: {ctx['landing_route']}")
+    if ctx.get("landing_iframes"):
+        lines.append(f"- landing iframes to watch: {', '.join(ctx['landing_iframes'][:4])}")
+    if ctx.get("source_hosting_url"):
+        lines.append(f"- source hosting page: {ctx['source_hosting_url']}")
+    if ctx.get("source_hosting_status"):
+        lines.append(f"- source hosting status: {ctx['source_hosting_status']}")
+    if ctx.get("source_hosting_decision"):
+        lines.append(f"- source hosting decision: {ctx['source_hosting_decision']}")
+    if ctx.get("source_streams_found"):
+        lines.append(f"- source hosting already found streams: {ctx['source_streams_found']}")
+    if ctx.get("focus"):
+        lines.append(f"- focus: {ctx['focus']}")
+    if ctx.get("memory_hints"):
+        lines.append("- memory check: prior hints found for this domain; use as soft guidance")
+        lines.append(_truncate(ctx["memory_hints"], max_chars=1200))
+    return "\n".join(lines)
 
 
 class PipelineState(TypedDict):
@@ -122,20 +180,14 @@ def _build_landing_handoff(
     memory_hint_text: str,
 ) -> str:
     classification = state.get("classification")
-    page_type = classification.page_type.value if classification is not None else "unknown"
-    reasoning = _truncate(classification.reasoning if classification is not None else "")
-    lines = [
-        "ORCHESTRATOR HANDOFF",
-        f"- root url: {state['url']}",
-        f"- upstream classification: {page_type}",
-    ]
-    if reasoning:
-        lines.append(f"- classification reasoning: {reasoning}")
-    lines.append("- focus: return clean hosting candidates (with route + iframe hints) and avoid duplicates")
-    if memory_hint_text:
-        lines.append("- memory check: previous landing-page hints exist for this domain; use as soft guidance")
-        lines.append(_truncate(memory_hint_text, max_chars=1200))
-    return "\n".join(lines)
+    ctx: HandoffContext = {
+        "root_url": state["url"],
+        "page_type": classification.page_type.value if classification is not None else "unknown",
+        "classification_reasoning": classification.reasoning if classification is not None else "",
+        "focus": "return clean hosting candidates (with route + iframe hints) and avoid duplicates",
+        "memory_hints": memory_hint_text,
+    }
+    return render_handoff(ctx)
 
 
 def _build_hosting_handoff(
@@ -145,31 +197,21 @@ def _build_hosting_handoff(
     memory_hint_text: str,
 ) -> str:
     classification = state.get("classification")
-    classification_reason = _truncate(classification.reasoning if classification is not None else "")
     match = _match_for_url(state.get("matches", []), target_url)
-
-    lines = [
-        "ORCHESTRATOR HANDOFF",
-        f"- root url: {state['url']}",
-        f"- target hosting candidate: {target_url}",
-    ]
-    if classification is not None:
-        lines.append(f"- upstream classification: {classification.page_type.value}")
-    if classification_reason:
-        lines.append(f"- classification reasoning: {classification_reason}")
+    ctx: HandoffContext = {
+        "root_url": state["url"],
+        "target_url": target_url,
+        "page_type": classification.page_type.value if classification is not None else "",
+        "classification_reasoning": classification.reasoning if classification is not None else "",
+        "focus": "verify direct m3u8/mpd/mp4 first; look out for server switch tabs, player iframe URLs, cloudinary screenshots, and clean server labels; return embedded handoff only when needed",
+        "memory_hints": memory_hint_text,
+    }
     if match is not None:
-        lines.append(f"- candidate title: {_truncate(match.title, max_chars=180) or 'n/a'}")
-        if match.participants:
-            lines.append(f"- participants: {_truncate(match.participants, max_chars=180)}")
-        lines.append(f"- landing suggested route: {match.route}")
-        if match.iframes:
-            lines.append(f"- landing iframes to watch: {', '.join(_dedupe_urls(match.iframes)[:4])}")
-    lines.append("- focus: verify direct m3u8/mpd/mp4 first, then return embedded handoff only when needed")
-    lines.append("- look out for: server switch tabs, player iframe URLs, cloudinary screenshots, and clean server labels")
-    if memory_hint_text:
-        lines.append("- memory check: prior hosting-page hints found for this domain; validate before reuse")
-        lines.append(_truncate(memory_hint_text, max_chars=1200))
-    return "\n".join(lines)
+        ctx["candidate_title"] = match.title or ""
+        ctx["candidate_participants"] = match.participants or ""
+        ctx["landing_route"] = match.route or ""
+        ctx["landing_iframes"] = _dedupe_urls(match.iframes)[:4] if match.iframes else []
+    return render_handoff(ctx)
 
 
 def _build_embedded_handoff(
@@ -179,25 +221,18 @@ def _build_embedded_handoff(
     memory_hint_text: str,
 ) -> str:
     source_hosting = _latest_hosting_context_for_embedded(state.get("extraction_results", []), embedded_url=target_url)
-    lines = [
-        "ORCHESTRATOR HANDOFF",
-        f"- root url: {state['url']}",
-        f"- embedded target url: {target_url}",
-    ]
+    ctx: HandoffContext = {
+        "root_url": state["url"],
+        "target_url": target_url,
+        "focus": "recover stream URLs from the embedded player; look out for iframe-local controls, activated server tabs, and screenshot evidence; keep server artifacts clean",
+        "memory_hints": memory_hint_text,
+    }
     if source_hosting is not None:
-        lines.append(f"- source hosting page: {source_hosting.url}")
-        lines.append(f"- source hosting status: {source_hosting.status.value}")
-        decision = str(source_hosting.metadata.get("decision", "") or "").strip()
-        if decision:
-            lines.append(f"- source hosting decision: {decision}")
-        if source_hosting.streams:
-            lines.append(f"- source hosting already found streams: {len(source_hosting.streams)}")
-    lines.append("- focus: recover stream URLs from the embedded player and keep server artifacts clean")
-    lines.append("- look out for: iframe-local controls, activated server tabs, and screenshot evidence")
-    if memory_hint_text:
-        lines.append("- memory check: prior embedded-page hints found for this domain; use as soft hints")
-        lines.append(_truncate(memory_hint_text, max_chars=1200))
-    return "\n".join(lines)
+        ctx["source_hosting_url"] = source_hosting.url
+        ctx["source_hosting_status"] = source_hosting.status.value
+        ctx["source_hosting_decision"] = str(source_hosting.metadata.get("decision", "") or "").strip()
+        ctx["source_streams_found"] = len(source_hosting.streams)
+    return render_handoff(ctx)
 
 
 async def classify_node(
@@ -229,20 +264,51 @@ async def landing_page_node(
     memory: LongTermMemory | None = None,
 ) -> dict[str, Any]:
     from src.agents.landing_page import LandingPageAgent
+    from src.agents.hosting_page import HostingPageAgent
 
-    child = observer.child("landing", AgentType.LANDING_PAGE) if observer else None
+    landing_child = observer.child("landing", AgentType.LANDING_PAGE) if observer else None
+    hosting_child = observer.child("hosting", AgentType.HOSTING_PAGE) if observer else None
+
     landing_memory_hint = _memory_hint(
         memory,
         url=state["url"],
         page_type=AgentType.LANDING_PAGE.value,
     )
-    handoff = _build_landing_handoff(state, memory_hint_text=landing_memory_hint)
-    extraction = await LandingPageAgent(settings).run(
+    landing_handoff = _build_landing_handoff(state, memory_hint_text=landing_memory_hint)
+
+    root_hosting_memory_hint = _memory_hint(
+        memory,
         url=state["url"],
-        observer=child,
-        orchestrator_handoff=handoff,
+        page_type=AgentType.HOSTING_PAGE.value,
     )
-    hosting_pages = extraction.metadata.get("hosting_pages", [])
+    root_hosting_handoff = _build_hosting_handoff(
+        state,
+        target_url=state["url"],
+        memory_hint_text=root_hosting_memory_hint,
+    )
+
+    landing_task = LandingPageAgent(settings).run(
+        url=state["url"],
+        observer=landing_child,
+        orchestrator_handoff=landing_handoff,
+    )
+    root_hosting_task = HostingPageAgent(settings).run(
+        url=state["url"],
+        observer=hosting_child,
+        orchestrator_handoff=root_hosting_handoff,
+    )
+    landing_outcome, root_hosting_outcome = await asyncio.gather(
+        landing_task,
+        root_hosting_task,
+        return_exceptions=True,
+    )
+
+    hosting_pages: list[dict[str, Any]] = []
+    if isinstance(landing_outcome, Exception):
+        logger.warning("Landing page agent failed for %s: %s", state["url"], landing_outcome)
+    else:
+        hosting_pages = landing_outcome.metadata.get("hosting_pages", [])
+
     matches: list[MatchInfo] = []
     for page in hosting_pages:
         if not isinstance(page, dict) or not page.get("url"):
@@ -251,13 +317,38 @@ async def landing_page_node(
             matches.append(MatchInfo(**page))
         except Exception:
             logger.warning("Skipping malformed landing-page match payload: %s", page)
-    pending_hosting_urls = _dedupe_urls([match.url for match in matches])
-    if not pending_hosting_urls:
-        # Fallback discovery path: if landing returns no candidates, probe the root once as hosting.
-        pending_hosting_urls = _dedupe_urls([state["url"]])
+
+    pending_hosting_urls = _dedupe_urls([match.url for match in matches if match.url != state["url"]])
+
+    extraction_results = list(state["extraction_results"])
+    pending_embedded_urls = list(state["pending_embedded_urls"])
+
+    if isinstance(root_hosting_outcome, Exception):
+        logger.warning("Root hosting probe failed for %s: %s", state["url"], root_hosting_outcome)
+        root_extraction = ExtractionResult(
+            url=state["url"],
+            page_type=PageType.HOSTING,
+            status=ExtractionStatus.FAILED,
+            agent_type=AgentType.HOSTING_PAGE,
+            error_message=str(root_hosting_outcome),
+            metadata={"orchestrator_error": type(root_hosting_outcome).__name__},
+        )
+    else:
+        root_extraction = root_hosting_outcome
+
+    extraction_results.append(root_extraction)
+    embedded_candidates = _collect_embedded_urls(root_extraction)
+    needs_embed_followup = _requires_embedded_followup(root_extraction)
+    if needs_embed_followup and not embedded_candidates:
+        embedded_candidates = [state["url"]]
+    if needs_embed_followup:
+        pending_embedded_urls = _dedupe_urls([*pending_embedded_urls, *embedded_candidates])
+
     return {
         "matches": matches,
         "pending_hosting_urls": pending_hosting_urls,
+        "pending_embedded_urls": pending_embedded_urls,
+        "extraction_results": extraction_results,
     }
 
 
@@ -273,38 +364,60 @@ async def hosting_page_node(
     if not state["pending_hosting_urls"]:
         return {}
 
-    target_url = state["pending_hosting_urls"][0]
-    remaining_hosting_urls = state["pending_hosting_urls"][1:]
-    child = observer.child("hosting", AgentType.HOSTING_PAGE) if observer else None
-    hosting_memory_hint = _memory_hint(
-        memory,
-        url=target_url,
-        page_type=AgentType.HOSTING_PAGE.value,
-    )
-    handoff = _build_hosting_handoff(
-        state,
-        target_url=target_url,
-        memory_hint_text=hosting_memory_hint,
-    )
-    extraction = await HostingPageAgent(settings).run(
-        url=target_url,
-        observer=child,
-        orchestrator_handoff=handoff,
-    )
+    target_urls = _dedupe_urls(state["pending_hosting_urls"])
+    tasks = []
+    for target_url in target_urls:
+        child = observer.child("hosting", AgentType.HOSTING_PAGE) if observer else None
+        hosting_memory_hint = _memory_hint(
+            memory,
+            url=target_url,
+            page_type=AgentType.HOSTING_PAGE.value,
+        )
+        handoff = _build_hosting_handoff(
+            state,
+            target_url=target_url,
+            memory_hint_text=hosting_memory_hint,
+        )
+        tasks.append(
+            HostingPageAgent(settings).run(
+                url=target_url,
+                observer=child,
+                orchestrator_handoff=handoff,
+            )
+        )
 
-    embedded_candidates = _collect_embedded_urls(extraction)
-    needs_embed_followup = _requires_embedded_followup(extraction)
-    if needs_embed_followup and not embedded_candidates:
-        embedded_candidates = [target_url]
+    outcomes = await asyncio.gather(*tasks, return_exceptions=True)
 
+    extraction_results = list(state["extraction_results"])
     pending_embedded_urls = list(state["pending_embedded_urls"])
-    if needs_embed_followup:
-        pending_embedded_urls = _dedupe_urls([*pending_embedded_urls, *embedded_candidates])
+
+    for target_url, outcome in zip(target_urls, outcomes, strict=False):
+        if isinstance(outcome, Exception):
+            logger.warning("Hosting page agent failed for %s: %s", target_url, outcome)
+            extraction = ExtractionResult(
+                url=target_url,
+                page_type=PageType.HOSTING,
+                status=ExtractionStatus.FAILED,
+                agent_type=AgentType.HOSTING_PAGE,
+                error_message=str(outcome),
+                metadata={"orchestrator_error": type(outcome).__name__},
+            )
+        else:
+            extraction = outcome
+
+        extraction_results.append(extraction)
+
+        embedded_candidates = _collect_embedded_urls(extraction)
+        needs_embed_followup = _requires_embedded_followup(extraction)
+        if needs_embed_followup and not embedded_candidates:
+            embedded_candidates = [target_url]
+        if needs_embed_followup:
+            pending_embedded_urls = _dedupe_urls([*pending_embedded_urls, *embedded_candidates])
 
     return {
-        "pending_hosting_urls": remaining_hosting_urls,
+        "pending_hosting_urls": [],
         "pending_embedded_urls": pending_embedded_urls,
-        "extraction_results": [*state["extraction_results"], extraction],
+        "extraction_results": extraction_results,
     }
 
 
@@ -320,27 +433,49 @@ async def embedded_page_node(
     if not state["pending_embedded_urls"]:
         return {}
 
-    target_url = state["pending_embedded_urls"][0]
-    remaining_embedded_urls = state["pending_embedded_urls"][1:]
-    child = observer.child("embedded", AgentType.EMBEDDED_PAGE) if observer else None
-    embedded_memory_hint = _memory_hint(
-        memory,
-        url=target_url,
-        page_type=AgentType.EMBEDDED_PAGE.value,
-    )
-    handoff = _build_embedded_handoff(
-        state,
-        target_url=target_url,
-        memory_hint_text=embedded_memory_hint,
-    )
-    extraction = await EmbeddedPageAgent(settings).run(
-        url=target_url,
-        observer=child,
-        orchestrator_handoff=handoff,
-    )
+    target_urls = _dedupe_urls(state["pending_embedded_urls"])
+    tasks = []
+    for target_url in target_urls:
+        child = observer.child("embedded", AgentType.EMBEDDED_PAGE) if observer else None
+        embedded_memory_hint = _memory_hint(
+            memory,
+            url=target_url,
+            page_type=AgentType.EMBEDDED_PAGE.value,
+        )
+        handoff = _build_embedded_handoff(
+            state,
+            target_url=target_url,
+            memory_hint_text=embedded_memory_hint,
+        )
+        tasks.append(
+            EmbeddedPageAgent(settings).run(
+                url=target_url,
+                observer=child,
+                orchestrator_handoff=handoff,
+            )
+        )
+
+    outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+
+    extraction_results = list(state["extraction_results"])
+    for target_url, outcome in zip(target_urls, outcomes, strict=False):
+        if isinstance(outcome, Exception):
+            logger.warning("Embedded page agent failed for %s: %s", target_url, outcome)
+            extraction = ExtractionResult(
+                url=target_url,
+                page_type=PageType.EMBEDDED,
+                status=ExtractionStatus.FAILED,
+                agent_type=AgentType.EMBEDDED_PAGE,
+                error_message=str(outcome),
+                metadata={"orchestrator_error": type(outcome).__name__},
+            )
+        else:
+            extraction = outcome
+        extraction_results.append(extraction)
+
     return {
-        "pending_embedded_urls": remaining_embedded_urls,
-        "extraction_results": [*state["extraction_results"], extraction],
+        "pending_embedded_urls": [],
+        "extraction_results": extraction_results,
     }
 
 
@@ -387,7 +522,11 @@ def route_after_classification(state: PipelineState) -> str:
 
 
 def route_after_landing(state: PipelineState) -> str:
-    return "hosting_page" if state["pending_hosting_urls"] else "analyze_providers"
+    if state["pending_hosting_urls"]:
+        return "hosting_page"
+    if state["pending_embedded_urls"]:
+        return "embedded_page"
+    return "analyze_providers"
 
 
 def route_after_hosting(state: PipelineState) -> str:

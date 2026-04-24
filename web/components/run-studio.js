@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Bot,
@@ -39,6 +39,13 @@ const AGENTS = [
   { value: "embedded",       label: "Embedded",       description: "Handle iframes" },
 ];
 
+const AGENT_PROMPT_FILES = {
+  classification: "classification_v1.md",
+  landing: "landing_page_v1.md",
+  hosting: "hosting_page_v1.md",
+  embedded: "embedded_page_v1.md",
+};
+
 const EVENT_META = {
   agent_started:       { color: "text-signal",    label: "Agent started" },
   agent_finished:      { color: "text-surge",     label: "Agent finished" },
@@ -62,6 +69,83 @@ const EVENT_META = {
   pipeline_failed:     { color: "text-ember",     label: "Pipeline failed" },
   run_cancelled:       { color: "text-amber-400", label: "Cancelled" },
 };
+
+const MAX_TEXT_SEGMENTS = 80;
+const MAX_TEXT_PREVIEW_CHARS = 2400;
+const MAX_JSON_PREVIEW_CHARS = 20000;
+const MAX_PAYLOAD_TABLE_ROWS = 500;
+
+function truncateText(value, maxChars = MAX_TEXT_PREVIEW_CHARS) {
+  const text = String(value || "");
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n\n…truncated for performance…`;
+}
+
+function eventFallbackKey(event) {
+  return [
+    String(event?.timestamp || ""),
+    String(event?.actor || ""),
+    String(event?.kind || ""),
+    String(event?.status || ""),
+    String(event?.message || ""),
+  ].join("|");
+}
+
+function mergeEvents(currentEvents, incomingEvents) {
+  if (!Array.isArray(incomingEvents) || incomingEvents.length === 0) {
+    return currentEvents;
+  }
+
+  const merged = Array.isArray(currentEvents) ? [...currentEvents] : [];
+  const seqToIndex = new Map();
+  const fallbackKeys = new Set();
+
+  merged.forEach((event, index) => {
+    const seq = Number(event?.seq);
+    if (Number.isFinite(seq) && seq > 0) {
+      seqToIndex.set(seq, index);
+      return;
+    }
+    fallbackKeys.add(eventFallbackKey(event));
+  });
+
+  for (const event of incomingEvents) {
+    if (!event || typeof event !== "object") continue;
+
+    const seq = Number(event.seq);
+    if (Number.isFinite(seq) && seq > 0) {
+      const existingIndex = seqToIndex.get(seq);
+      if (existingIndex !== undefined) {
+        merged[existingIndex] = { ...merged[existingIndex], ...event };
+      } else {
+        seqToIndex.set(seq, merged.length);
+        merged.push(event);
+      }
+      continue;
+    }
+
+    const fallback = eventFallbackKey(event);
+    if (!fallbackKeys.has(fallback)) {
+      fallbackKeys.add(fallback);
+      merged.push(event);
+    }
+  }
+
+  merged.sort((a, b) => {
+    const aSeq = Number(a?.seq);
+    const bSeq = Number(b?.seq);
+    const aHasSeq = Number.isFinite(aSeq) && aSeq > 0;
+    const bHasSeq = Number.isFinite(bSeq) && bSeq > 0;
+
+    if (aHasSeq && bHasSeq) return aSeq - bSeq;
+    if (aHasSeq) return -1;
+    if (bHasSeq) return 1;
+
+    return String(a?.timestamp || "").localeCompare(String(b?.timestamp || ""));
+  });
+
+  return merged;
+}
 
 function tryParseJsonString(value) {
   if (typeof value !== "string") return value;
@@ -197,7 +281,9 @@ function toDisplayValue(value) {
   return safeJson(value);
 }
 
-function collectPayloadRows(value, path, rows, seen) {
+function collectPayloadRows(value, path, rows, seen, maxRows = MAX_PAYLOAD_TABLE_ROWS) {
+  if (rows.length >= maxRows) return;
+
   if (value === undefined) {
     rows.push({ path, type: "undefined", value: "undefined" });
     return;
@@ -224,7 +310,7 @@ function collectPayloadRows(value, path, rows, seen) {
       rows.push({ path, type: "array", value: "[]" });
     } else {
       value.forEach((entry, idx) => {
-        collectPayloadRows(entry, `${path}[${idx}]`, rows, seen);
+        collectPayloadRows(entry, `${path}[${idx}]`, rows, seen, maxRows);
       });
     }
     seen.delete(value);
@@ -239,22 +325,34 @@ function collectPayloadRows(value, path, rows, seen) {
   }
 
   for (const [key, nested] of entries) {
+    if (rows.length >= maxRows) break;
     const childPath = path === "$" ? key : `${path}.${key}`;
-    collectPayloadRows(nested, childPath, rows, seen);
+    collectPayloadRows(nested, childPath, rows, seen, maxRows);
   }
 
   seen.delete(value);
 }
 
 function ToolPayloadTable({ value }) {
-  const normalized = normalizePayloadValue(value);
+  const normalized = useMemo(() => normalizePayloadValue(value), [value]);
+
+  const rows = useMemo(() => {
+    if (normalized == null || normalized === "") return [];
+    const nextRows = [];
+    collectPayloadRows(normalized, "$", nextRows, new WeakSet());
+    if (nextRows.length >= MAX_PAYLOAD_TABLE_ROWS) {
+      nextRows.push({
+        path: "…",
+        type: "notice",
+        value: `Truncated to ${MAX_PAYLOAD_TABLE_ROWS} rows for performance.`,
+      });
+    }
+    return nextRows;
+  }, [normalized]);
 
   if (normalized == null || normalized === "") {
     return <div className="rounded bg-black/30 p-2 text-xs text-slate-600">No data</div>;
   }
-
-  const rows = [];
-  collectPayloadRows(normalized, "$", rows, new WeakSet());
 
   return (
     <div className="max-h-[420px] overflow-auto rounded border border-white/10 bg-black/20">
@@ -284,8 +382,11 @@ function ToolPayloadTable({ value }) {
 
 function PayloadView({ title, value }) {
   const [viewMode, setViewMode] = useState("table");
-  const normalized = normalizePayloadValue(value);
-  const jsonText = typeof normalized === "string" ? normalized : safeJson(normalized);
+  const normalized = useMemo(() => normalizePayloadValue(value), [value]);
+  const jsonText = useMemo(() => {
+    const text = typeof normalized === "string" ? normalized : safeJson(normalized);
+    return truncateText(text, MAX_JSON_PREVIEW_CHARS);
+  }, [normalized]);
 
   return (
     <div>
@@ -394,7 +495,9 @@ function Pill({ icon: Icon, label, value, danger }) {
 /* ─── reasoning feed blocks ─────────────────────────────────────────────── */
 
 function collectTextSegments(value, out, seen = new WeakSet()) {
+  if (out.length >= MAX_TEXT_SEGMENTS) return;
   if (value == null) return;
+
   if (typeof value === "string") {
     const decoded = decodeUriStringSafe(value);
     if (decoded.trim()) out.push(decoded);
@@ -411,6 +514,7 @@ function collectTextSegments(value, out, seen = new WeakSet()) {
 
   if (Array.isArray(value)) {
     for (const item of value) {
+      if (out.length >= MAX_TEXT_SEGMENTS) break;
       collectTextSegments(item, out, seen);
     }
     return;
@@ -424,21 +528,23 @@ function collectTextSegments(value, out, seen = new WeakSet()) {
     out.push(value.content);
   }
 
-  for (const nested of Object.values(value)) {
+  for (const [key, nested] of Object.entries(value)) {
+    if (key === "signature") continue;
+    if (out.length >= MAX_TEXT_SEGMENTS) break;
     collectTextSegments(nested, out, seen);
   }
 }
 
 function ThinkingBlock({ event }) {
   const rawPreview = event.details?.content_full ?? event.details?.content ?? event.details?.content_preview ?? event.message;
-  const preview = (() => {
+  const preview = useMemo(() => {
     const textParts = [];
     collectTextSegments(rawPreview, textParts);
-    if (textParts.length) return textParts.join("\n\n");
-    if (rawPreview && typeof rawPreview === "object") return safeJson(rawPreview);
-    if (typeof rawPreview === "string") return rawPreview;
-    return String(rawPreview || "");
-  })();
+    if (textParts.length) return truncateText(textParts.join("\n\n"));
+    if (rawPreview && typeof rawPreview === "object") return truncateText(safeJson(rawPreview), MAX_JSON_PREVIEW_CHARS);
+    if (typeof rawPreview === "string") return truncateText(rawPreview);
+    return truncateText(String(rawPreview || ""));
+  }, [rawPreview]);
   const toolCount = event.details?.tool_calls || 0;
   const tokens = (event.details?.input_tokens || 0) + (event.details?.output_tokens || 0);
   const actor = event.actor ? event.actor.replace(/_/g, " ") : "agent";
@@ -525,19 +631,20 @@ function collectScreenshotUrls(value, out) {
 }
 
 function ToolBlock({ event }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [loadedScreenshot, setLoadedScreenshot] = useState("");
-  const toolName = event.details?.tool_name;
+  const toolName = event.details?.tool_name || "tool";
   const args = event.details?.tool_args ?? event.details?.args;
   const resultPreview = event.details?.result_full ?? event.details?.result_preview;
   const isStart = event.kind === "tool_call_started";
   const isError = event.status === "error";
+  const hasPayload = Boolean(args || resultPreview);
 
-  const screenshotUrls = (() => {
+  const screenshotUrls = useMemo(() => {
     const urls = new Set();
     collectScreenshotUrls(resultPreview, urls);
     return Array.from(urls).slice(0, 3);
-  })();
+  }, [resultPreview]);
 
   const color = isError ? "text-ember" : isStart ? "text-spark" : "text-surge";
   const border = isError ? "border-ember/20 bg-ember/5" : isStart ? "border-spark/20 bg-spark/5" : "border-surge/20 bg-surge/5";
@@ -563,7 +670,7 @@ function ToolBlock({ event }) {
           <span className="ml-1 rounded bg-black/30 px-1.5 py-0.5 font-mono text-xs text-slate-200 truncate">
             {toolName}
           </span>
-          {(args || resultPreview) && (
+          {hasPayload && (
             <ChevronDown className={cn("ml-auto h-3 w-3 shrink-0 text-slate-600 transition-transform", expanded && "rotate-180")} />
           )}
         </button>
@@ -628,7 +735,7 @@ function ToolBlock({ event }) {
       )}
 
       {/* ── expanded details ── */}
-      {expanded && (args || resultPreview) && (
+      {expanded && hasPayload && (
         <div className="mt-2 space-y-1.5">
           {args && (
             <PayloadView title="Input JSON" value={args} />
@@ -678,25 +785,28 @@ function ReasoningFeed({ events }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [events.length]);
 
-  const relevant = events.filter((e) =>
-    e.kind === "tool_session_connecting" ||
-    e.kind === "tool_session_ready" ||
-    e.kind === "tool_session_closed" ||
-    e.kind === "tool_session_failed" ||
-    e.kind === "llm_turn_started" ||
-    e.kind === "llm_response" ||
-    e.kind === "llm_timeout" ||
-    e.kind === "llm_rate_limited" ||
-    e.kind === "llm_error" ||
-    e.kind === "tool_call_started" ||
-    e.kind === "tool_call_finished" ||
-    e.kind === "agent_started" ||
-    e.kind === "agent_finished" ||
-    e.kind === "agent_failed" ||
-    e.kind === "pipeline_started" ||
-    e.kind === "pipeline_failed" ||
-    e.kind === "run_cancelled" ||
-    e.status === "error"
+  const relevant = useMemo(
+    () => events.filter((e) =>
+      e.kind === "tool_session_connecting" ||
+      e.kind === "tool_session_ready" ||
+      e.kind === "tool_session_closed" ||
+      e.kind === "tool_session_failed" ||
+      e.kind === "llm_turn_started" ||
+      e.kind === "llm_response" ||
+      e.kind === "llm_timeout" ||
+      e.kind === "llm_rate_limited" ||
+      e.kind === "llm_error" ||
+      e.kind === "tool_call_started" ||
+      e.kind === "tool_call_finished" ||
+      e.kind === "agent_started" ||
+      e.kind === "agent_finished" ||
+      e.kind === "agent_failed" ||
+      e.kind === "pipeline_started" ||
+      e.kind === "pipeline_failed" ||
+      e.kind === "run_cancelled" ||
+      e.status === "error"
+    ),
+    [events]
   );
 
   if (!relevant.length) {
@@ -810,48 +920,85 @@ export function RunStudio({ mode = "workflow" }) {
     if (!runId) return;
     setIsRunning(true);
     setStreamError("");
-    const source = new EventSource(apiUrl(`/ui/runs/${runId}/stream`));
-    source.onmessage = (e) => {
-      try {
-        const payload = JSON.parse(e.data || "{}");
-        if (!payload || typeof payload !== "object") {
+
+    let source = null;
+    let reconnectTimer = null;
+    let retryCount = 0;
+    let lastEventId = null;
+    let done = false;
+    const MAX_RETRIES = 6;
+    const BASE_DELAY_MS = 1000;
+
+    function connect() {
+      if (done) return;
+      const url = lastEventId
+        ? apiUrl(`/ui/runs/${runId}/stream?last_event_id=${encodeURIComponent(lastEventId)}`)
+        : apiUrl(`/ui/runs/${runId}/stream`);
+      source = new EventSource(url);
+
+      source.onmessage = (e) => {
+        retryCount = 0;
+        if (e.lastEventId) lastEventId = e.lastEventId;
+        try {
+          const payload = JSON.parse(e.data || "{}");
+          if (!payload || typeof payload !== "object") return;
+
+          setStreamError("");
+          setTrace(payload);
+
+          const incomingEvents = Array.isArray(payload.events)
+            ? payload.events.filter((item) => item && typeof item === "object")
+            : [];
+          if (incomingEvents.length) {
+            setEvents((cur) => mergeEvents(cur, incomingEvents));
+          }
+
+          if (payload.metrics && typeof payload.metrics === "object") {
+            setMetrics(payload.metrics);
+          }
+
+          if (payload.error) {
+            setStreamError((prev) => prev || `Stream error: ${payload.error}`);
+          }
+
+          if (payload.completed) {
+            done = true;
+            source.close();
+            setIsRunning(false);
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err || "Unknown stream parse error");
+          setStreamError(`Stream payload parse failed: ${message}`);
+        }
+      };
+
+      source.onerror = () => {
+        source.close();
+        if (done) return;
+        if (retryCount >= MAX_RETRIES) {
+          setIsRunning(false);
+          setStreamError("Live stream disconnected. Reload to resume.");
           return;
         }
+        const delay = BASE_DELAY_MS * Math.pow(2, retryCount);
+        retryCount += 1;
+        setStreamError(`Live stream interrupted — reconnecting in ${Math.round(delay / 1000)}s… (attempt ${retryCount}/${MAX_RETRIES})`);
+        reconnectTimer = setTimeout(connect, delay);
+      };
+    }
 
-        setTrace(payload);
-
-        const incomingEvents = Array.isArray(payload.events)
-          ? payload.events.filter((item) => item && typeof item === "object")
-          : [];
-
-        if (incomingEvents.length) {
-          setEvents((cur) => [...cur, ...incomingEvents]);
-        }
-
-        if (payload.metrics && typeof payload.metrics === "object") {
-          setMetrics(payload.metrics);
-        }
-
-        if (payload.completed) {
-          source.close();
-          setIsRunning(false);
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err || "Unknown stream parse error");
-        setStreamError(`Stream payload parse failed: ${message}`);
-      }
+    connect();
+    return () => {
+      done = true;
+      clearTimeout(reconnectTimer);
+      if (source) source.close();
     };
-    source.onerror = () => {
-      source.close();
-      setIsRunning(false);
-      setStreamError((prev) => prev || "Live stream disconnected unexpectedly.");
-    };
-    return () => source.close();
   }, [runId]);
 
   useEffect(() => {
     if (mode !== "agent") return;
-    fetch(apiUrl(`/ui/prompts/${agent}_v1.md`))
+    const promptFile = AGENT_PROMPT_FILES[agent] || `${agent}_v1.md`;
+    fetch(apiUrl(`/ui/prompts/${promptFile}`))
       .then((res) => res.ok ? res.json() : { content: "" })
       .then((payload) => setPromptPreview(payload?.content || ""))
       .catch(() => setPromptPreview(""));
@@ -881,9 +1028,37 @@ export function RunStudio({ mode = "workflow" }) {
     return () => clearInterval(timer);
   }, [runId, isRunning]);
 
-  const toolCalls   = events.filter((e) => e && e.kind === "tool_call_started").length;
-  const llmCalls    = events.filter((e) => e && e.kind === "llm_response").length;
-  const errorCount  = events.filter((e) => e && e.status === "error").length;
+  const eventCounters = useMemo(() => {
+    const counters = {
+      toolCalls: 0,
+      llmCalls: 0,
+      errorCount: 0,
+      agentToolCounts: AGENTS.reduce((acc, item) => {
+        acc[item.value] = 0;
+        return acc;
+      }, {}),
+    };
+
+    for (const event of events) {
+      if (!event || typeof event !== "object") continue;
+      if (event.kind === "tool_call_started") {
+        counters.toolCalls += 1;
+        if (event.actor && Object.prototype.hasOwnProperty.call(counters.agentToolCounts, event.actor)) {
+          counters.agentToolCounts[event.actor] += 1;
+        }
+      }
+      if (event.kind === "llm_response") counters.llmCalls += 1;
+      if (event.status === "error") counters.errorCount += 1;
+    }
+
+    return counters;
+  }, [events]);
+
+  const toolCalls = eventCounters.toolCalls;
+  const llmCalls = eventCounters.llmCalls;
+  const errorCount = eventCounters.errorCount;
+  const agentToolCounts = eventCounters.agentToolCounts;
+
   const totalTokens = (metrics?.total_tokens_in || 0) + (metrics?.total_tokens_out || 0);
   const cachedInputTokens = metrics?.total_cached_input_tokens || 0;
   const newInputTokens = metrics?.total_new_input_tokens || 0;
@@ -893,11 +1068,8 @@ export function RunStudio({ mode = "workflow" }) {
   const completed   = tracePayload?.completed;
   const succeeded   = completed && metrics?.success;
   const failed      = completed && !metrics?.success;
-  const agentToolCounts = AGENTS.reduce((acc, item) => {
-    acc[item.value] = events.filter((e) => e.kind === "tool_call_started" && e.actor === item.value).length;
-    return acc;
-  }, {});
-  const screenshotStrip = (() => {
+
+  const screenshotStrip = useMemo(() => {
     const rows = [];
     const seen = new Set();
     for (const event of events) {
@@ -911,7 +1083,7 @@ export function RunStudio({ mode = "workflow" }) {
       }
     }
     return rows;
-  })();
+  }, [events]);
 
   function jumpToEvent(seq) {
     if (!seq) return;
@@ -924,6 +1096,9 @@ export function RunStudio({ mode = "workflow" }) {
     setMetrics(null);
     setTrace(null);
     setStreamError("");
+    setLatestScreenshot("");
+    setLatestScreenshotAt("");
+    setScreenshotFlash(false);
     setRunId("");
     try {
       const endpoint = mode === "workflow" ? "/ui/workflows/run" : "/ui/agents/test";
