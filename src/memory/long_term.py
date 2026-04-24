@@ -211,8 +211,14 @@ class LongTermMemory:
     recurring failure patterns grouped by domain and page type.
     """
 
-    def __init__(self, db_path: str = "data/site_memory.db", profiles_path: str | None = None) -> None:
+    def __init__(
+        self,
+        db_path: str = "data/site_memory.db",
+        profiles_path: str | None = None,
+        entry_ttl_days: int = 90,
+    ) -> None:
         self.db_path = db_path
+        self._entry_ttl_days = max(int(entry_ttl_days or 90), 1)
         db_file = Path(db_path)
         db_file.parent.mkdir(parents=True, exist_ok=True)
         if profiles_path:
@@ -239,10 +245,16 @@ class LongTermMemory:
                     url TEXT NOT NULL,
                     success INTEGER NOT NULL,
                     data TEXT NOT NULL,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT
                 )
                 """
             )
+            # Migration: add expires_at to existing databases that lack the column.
+            try:
+                conn.execute("ALTER TABLE site_memory_entries ADD COLUMN expires_at TEXT")
+            except Exception:
+                pass  # Column already exists — no action needed.
             conn.commit()
 
     def save_pattern(self, domain: str, pattern_type: str, data: dict[str, Any]) -> None:
@@ -397,12 +409,16 @@ class LongTermMemory:
             actor=actor,
             short_memory_summary=short_memory_summary,
         )
+        from datetime import timedelta  # noqa: PLC0415
+        now = datetime.utcnow()
+        expires_at_str = (now + timedelta(days=self._entry_ttl_days)).isoformat()
+
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO site_memory_entries
-                (domain, page_type, status, run_id, url, success, data, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (domain, page_type, status, run_id, url, success, data, created_at, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     domain,
@@ -412,7 +428,8 @@ class LongTermMemory:
                     url,
                     1 if data["success"] else 0,
                     json.dumps(data, ensure_ascii=False),
-                    datetime.utcnow().isoformat(),
+                    now.isoformat(),
+                    expires_at_str,
                 ),
             )
             conn.commit()
@@ -630,6 +647,7 @@ class LongTermMemory:
             SELECT page_type, status, success, data, created_at
             FROM site_memory_entries
             WHERE domain = ?
+            AND (expires_at IS NULL OR expires_at > datetime('now'))
         """
         params: list[Any] = [domain]
         if page_type:
