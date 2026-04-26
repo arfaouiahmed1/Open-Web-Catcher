@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { TimelinePanel }     from "@/components/timeline-panel";
 import { OrchestratorGraph } from "@/components/orchestrator-graph";
 import { TraceExplorer }     from "@/components/trace-explorer";
+import { BrowserLiveView }   from "@/components/browser-live-view";
+import { RunViewSettingsButton, useRunViewSettings } from "@/components/run-view-settings";
 import { apiUrl }            from "@/lib/api";
 
 /* ── merge helper ── */
@@ -68,11 +70,9 @@ function fmt(ts) {
 
 /* ── single event entry ── */
 function EventEntry({ event, idx }) {
-  const meta = getKindMeta(event.kind);
+  const meta    = getKindMeta(event.kind);
   const isTool  = event.kind === "tool_call_started";
   const isLlm   = event.kind === "llm_response";
-  const isAgent = event.kind?.startsWith("agent_");
-  const isPipe  = event.kind?.startsWith("pipeline_");
   const details = event.details || {};
 
   return (
@@ -95,43 +95,35 @@ function EventEntry({ event, idx }) {
       {/* content col */}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-2">
-          {/* actor */}
           {event.actor && (
             <span className="font-mono text-[9.5px] font-medium" style={{ color: "var(--mute-2)" }}>
               {event.actor}
             </span>
           )}
-          {/* kind label */}
           <span className="text-[11px] font-medium" style={{ color: meta.color }}>
             {meta.label}
           </span>
-          {/* tool name chip */}
           {isTool && details.tool_name && (
             <span className="tool-chip">{details.tool_name}</span>
           )}
-          {/* model badge */}
           {isLlm && details.model_name && (
             <span className="model-badge">{details.model_name.replace(/^models\//, "")}</span>
           )}
-          {/* token counts */}
           {isLlm && (details.input_tokens || details.output_tokens) && (
             <span className="font-mono text-[9.5px]" style={{ color: "var(--mute-2)" }}>
               {details.input_tokens ?? 0}→{details.output_tokens ?? 0} tok
             </span>
           )}
-          {/* cost */}
           {isLlm && details.estimated_total_cost_usd && (
             <span className="font-mono text-[9.5px]" style={{ color: "var(--mute-3)" }}>
               ${Number(details.estimated_total_cost_usd).toFixed(5)}
             </span>
           )}
-          {/* duration for tool_call_finished */}
           {event.kind === "tool_call_finished" && details.duration_seconds && (
             <span className="font-mono text-[9.5px]" style={{ color: "var(--mute-3)" }}>
               {Number(details.duration_seconds).toFixed(2)}s
             </span>
           )}
-          {/* status dot */}
           {event.status && event.status !== "info" && (
             <span
               className="font-mono text-[9px] uppercase tracking-wide"
@@ -144,13 +136,10 @@ function EventEntry({ event, idx }) {
               {event.status}
             </span>
           )}
-          {/* timestamp */}
           <span className="ml-auto font-mono text-[9px] opacity-0 transition-opacity group-hover:opacity-100" style={{ color: "var(--mute-3)" }}>
             {fmt(event.timestamp)}
           </span>
         </div>
-
-        {/* message line */}
         {event.message && event.message !== event.kind && (
           <div className="mt-0.5 text-[11px] leading-snug" style={{ color: "var(--mute-2)" }}>
             {event.message}
@@ -162,17 +151,20 @@ function EventEntry({ event, idx }) {
 }
 
 /* ── event stream panel ── */
-function EventStream({ events }) {
+function EventStream({ events, autoScroll, eventLimit }) {
   const listRef = useRef(null);
-  const [autoScroll, setAutoScroll] = useState(true);
+  const [localAutoScroll, setLocalAutoScroll] = useState(autoScroll);
+
+  // Sync with settings
+  useEffect(() => { setLocalAutoScroll(autoScroll); }, [autoScroll]);
 
   useEffect(() => {
-    if (autoScroll && listRef.current) {
+    if (localAutoScroll && listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
-  }, [events.length, autoScroll]);
+  }, [events.length, localAutoScroll]);
 
-  const displayed = events.slice(-80);
+  const displayed = events.slice(-Math.max(20, eventLimit || 120));
 
   if (!displayed.length) {
     return (
@@ -189,25 +181,26 @@ function EventStream({ events }) {
 
   return (
     <div className="flex h-full flex-col">
-      {/* scroll container */}
       <div
         ref={listRef}
         className="flex-1 overflow-y-auto p-2 space-y-0.5"
         onScroll={(e) => {
           const el = e.currentTarget;
           const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-          setAutoScroll(atBottom);
+          setLocalAutoScroll(atBottom);
         }}
       >
         {displayed.map((e, idx) => (
           <EventEntry key={`${e.seq}-${idx}`} event={e} idx={idx} />
         ))}
       </div>
-      {/* auto-scroll toggle */}
-      {!autoScroll && (
+      {!localAutoScroll && (
         <button
           type="button"
-          onClick={() => { setAutoScroll(true); if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }}
+          onClick={() => {
+            setLocalAutoScroll(true);
+            if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+          }}
           className="mx-2 mb-2 rounded-lg py-1.5 text-center text-[11px] transition-colors"
           style={{
             background: "color-mix(in oklch, var(--signal) 12%, transparent)",
@@ -239,10 +232,10 @@ function MetricsStrip({ events }) {
       className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b px-4 py-2.5"
       style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.012)" }}
     >
-      <Metric label="Tools" value={m.toolCalls} color="var(--sky)" />
-      <Metric label="LLM calls" value={m.llmCalls} color="var(--violet)" />
-      <Metric label="Tokens" value={m.totalTok.toLocaleString()} color="var(--signal)" />
-      <Metric label="Est. cost" value={`$${m.totalCost.toFixed(5)}`} color="var(--mint)" />
+      <Metric label="Tools"    value={m.toolCalls}                     color="var(--sky)" />
+      <Metric label="LLM"      value={m.llmCalls}                      color="var(--violet)" />
+      <Metric label="Tokens"   value={m.totalTok.toLocaleString()}      color="var(--signal)" />
+      <Metric label="Est. cost" value={`$${m.totalCost.toFixed(5)}`}   color="var(--mint)" />
     </div>
   );
 }
@@ -276,11 +269,12 @@ function TabBtn({ active, onClick, children }) {
 
 /* ── main export ── */
 export function RunDetailLive({ runId, activeTrace = null, persistedEvents = [] }) {
-  const [events, setEvents] = useState(() => mergeLiveEvents([], activeTrace?.events || persistedEvents || []));
+  const [events, setEvents]     = useState(() => mergeLiveEvents([], activeTrace?.events || persistedEvents || []));
   const [liveStream, setLiveStream] = useState(Boolean(activeTrace));
-  const [replayMs, setReplayMs]   = useState(80);
+  const [replayMs, setReplayMs] = useState(80);
   const [isReplaying, setIsReplaying] = useState(false);
-  const [tab, setTab] = useState("graph");
+  const [tab, setTab]           = useState("graph");
+  const { settings, update, reset } = useRunViewSettings();
 
   /* SSE live stream */
   useEffect(() => {
@@ -316,8 +310,12 @@ export function RunDetailLive({ runId, activeTrace = null, persistedEvents = [] 
 
   const isLive = liveStream && !isReplaying;
 
+  /* whether this run is actively running (use to auto-fetch browser screenshots) */
+  const isActiveRun = Boolean(activeTrace) || (liveStream && events.some((e) => e.kind === "pipeline_started") && !events.some((e) => e.kind === "pipeline_finished" || e.kind === "pipeline_failed"));
+
   return (
     <div className="space-y-4 animate-fade-up">
+
       {/* ── control bar ── */}
       <div
         className="flex flex-wrap items-center gap-2 rounded-[12px] border px-3 py-2.5"
@@ -376,10 +374,14 @@ export function RunDetailLive({ runId, activeTrace = null, persistedEvents = [] 
           {events.length} events
         </span>
 
-        <div className="ml-auto flex items-center gap-1">
-          <TabBtn active={tab === "graph"}    onClick={() => setTab("graph")}>Graph</TabBtn>
-          <TabBtn active={tab === "timeline"} onClick={() => setTab("timeline")}>Timeline</TabBtn>
-          <TabBtn active={tab === "trace"}    onClick={() => setTab("trace")}>Trace</TabBtn>
+        <div className="ml-auto flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <TabBtn active={tab === "graph"}    onClick={() => setTab("graph")}>Graph</TabBtn>
+            <TabBtn active={tab === "timeline"} onClick={() => setTab("timeline")}>Timeline</TabBtn>
+            <TabBtn active={tab === "trace"}    onClick={() => setTab("trace")}>Trace</TabBtn>
+          </div>
+          {/* settings */}
+          <RunViewSettingsButton settings={settings} update={update} reset={reset} />
         </div>
       </div>
 
@@ -393,52 +395,63 @@ export function RunDetailLive({ runId, activeTrace = null, persistedEvents = [] 
         </div>
       )}
 
-      {/* ── main content grid ── */}
-      <div className="grid gap-4 xl:grid-cols-[1fr_340px]">
+      {/* ── Browser live view (top of stack when enabled) ── */}
+      {settings.showLiveView && runId && (
+        <BrowserLiveView
+          runId={runId}
+          events={events}
+          autoRefresh={isLive}
+        />
+      )}
+
+      {/* ── main content grid: graph/timeline/trace + event stream ── */}
+      <div className={`grid gap-4 ${settings.showEventStream ? "xl:grid-cols-[1fr_340px]" : ""}`}>
         {/* left: graph / timeline / trace */}
         <div>
-          {tab === "graph" && (
-            <OrchestratorGraph events={events} rootActor={rootActor} />
-          )}
-          {tab === "timeline" && (
-            <TimelinePanel events={events} onSelectEvent={() => {}} />
-          )}
-          {tab === "trace" && (
-            <TraceExplorer events={events} />
-          )}
+          {tab === "graph" && <OrchestratorGraph events={events} rootActor={rootActor} />}
+          {tab === "timeline" && <TimelinePanel events={events} onSelectEvent={() => {}} />}
+          {tab === "trace" && <TraceExplorer events={events} />}
         </div>
 
         {/* right: live event stream */}
-        <div
-          className="flex flex-col overflow-hidden rounded-[14px] border"
-          style={{
-            borderColor: "var(--line)",
-            background: "var(--card)",
-            boxShadow: "var(--shadow-card)",
-            minHeight: 380,
-            maxHeight: 500,
-          }}
-        >
-          {/* stream header */}
+        {settings.showEventStream && (
           <div
-            className="flex shrink-0 items-center gap-2 border-b px-3 py-2.5"
-            style={{ borderColor: "var(--line)" }}
+            className="flex flex-col overflow-hidden rounded-[14px] border"
+            style={{
+              borderColor: "var(--line)",
+              background: "var(--card)",
+              boxShadow: "var(--shadow-card)",
+              minHeight: 380,
+              maxHeight: 500,
+            }}
           >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ color: "var(--mute-2)", flexShrink: 0 }}>
-              <path d="M1 3h10M1 6h7M1 9h9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-            </svg>
-            <span className="text-[11px] font-semibold tracking-wide" style={{ color: "var(--ink-dim)" }}>
-              Event Stream
-            </span>
-            {isLive && (
-              <span className="live-badge ml-auto">
-                <span className="dot" />
-                LIVE
+            <div
+              className="flex shrink-0 items-center gap-2 border-b px-3 py-2.5"
+              style={{ borderColor: "var(--line)" }}
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ color: "var(--mute-2)", flexShrink: 0 }}>
+                <path d="M1 3h10M1 6h7M1 9h9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+              </svg>
+              <span className="text-[11px] font-semibold tracking-wide" style={{ color: "var(--ink-dim)" }}>
+                Event Stream
               </span>
-            )}
+              <span className="ml-1 font-mono text-[10px]" style={{ color: "var(--mute-3)" }}>
+                ({events.length})
+              </span>
+              {isLive && (
+                <span className="live-badge ml-auto">
+                  <span className="dot" />
+                  LIVE
+                </span>
+              )}
+            </div>
+            <EventStream
+              events={events}
+              autoScroll={settings.autoScroll}
+              eventLimit={settings.eventLimit}
+            />
           </div>
-          <EventStream events={events} />
-        </div>
+        )}
       </div>
     </div>
   );

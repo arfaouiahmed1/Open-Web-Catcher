@@ -13,6 +13,24 @@ import { Select } from "@/components/ui/select";
 const PAGE_TYPES = ["", "hosting_page", "landing_page", "embedded_page"];
 const STATUSES = ["", "running", "success", "partial", "failed", "cancelled"];
 
+const PROVIDER_COLORS = {
+  google: "var(--sky)",
+  openai: "var(--mint)",
+  anthropic: "var(--signal)",
+  openrouter: "var(--violet)",
+};
+
+function ModelBadge({ provider, model }) {
+  const color = PROVIDER_COLORS[provider?.toLowerCase()] || "var(--mute)";
+  const short = model?.split("/").pop() || model || "—";
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="font-mono text-[10px] font-semibold uppercase tracking-wider" style={{ color }}>{provider || "—"}</span>
+      <span className="max-w-[140px] truncate font-mono text-[11px]" style={{ color: "var(--ink-dim)" }} title={model}>{short}</span>
+    </div>
+  );
+}
+
 function statusTone(s) {
   if (s === "running") return "signal";
   if (s === "cancelled") return "warning";
@@ -149,7 +167,7 @@ export default function RunsPage() {
           <table className="min-w-full text-[13px]">
             <thead>
               <tr className="border-b" style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.012)" }}>
-                {["", "Run ID", "Status", "Page type", "Streams", "LLM", "Tools", "Tokens", "Cost", "Duration", "Date"].map((h) => (
+                {["", "Run ID", "Status", "Model", "Page type", "Streams", "LLM", "Tools", "Tokens", "Cost", "Duration", "Date"].map((h) => (
                   <th key={h || "select"} className="px-4 py-2.5 text-left text-[10.5px] font-medium uppercase tracking-[0.1em] whitespace-nowrap" style={{ color: "var(--mute)" }}>{h}</th>
                 ))}
               </tr>
@@ -184,6 +202,11 @@ export default function RunsPage() {
                   <td className="px-4 py-3 align-top">
                     <Badge tone={statusTone(row.final_status)}>{row.final_status}</Badge>
                   </td>
+                  <td className="px-4 py-3 align-top">
+                    {row.primary_model ? (
+                      <ModelBadge provider={row.primary_provider} model={row.primary_model} />
+                    ) : <span className="text-[11px] text-[var(--mute-3)]">—</span>}
+                  </td>
                   <td className="px-4 py-3 align-top text-[12px] text-[var(--mute)]">{row.page_type || "—"}</td>
                   <td className="px-4 py-3 align-top tabular-nums text-[var(--ink-dim)]">{formatNumber(row.stream_count)}</td>
                   <td className="px-4 py-3 align-top tabular-nums text-[var(--ink-dim)]">{formatNumber(row.total_llm_calls)}</td>
@@ -199,7 +222,7 @@ export default function RunsPage() {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={11} className="px-4 py-12 text-center text-[13px] text-[var(--mute)]">
+                  <td colSpan={12} className="px-4 py-12 text-center text-[13px] text-[var(--mute)]">
                     {isLoading ? "Loading…" : "No runs matched this filter"}
                   </td>
                 </tr>

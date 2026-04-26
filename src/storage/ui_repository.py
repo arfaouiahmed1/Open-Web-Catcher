@@ -13,6 +13,8 @@ from src.models.schemas import EvaluationCase, EvaluationCaseResult, EvaluationR
 from src.models.schemas import ProviderInfo
 from src.storage.models import (
     AgentRunRecord,
+    MemoryHintUsedRecord,
+    RunRecord,
     AgentOutputRecord,
     BackgroundJobRecord,
     EvaluationCaseRecord,
@@ -73,6 +75,8 @@ class OperatorConsoleRepository:
         "evaluation_cases": EvaluationCaseRecord,
         "evaluation_runs": EvaluationRunRecord,
         "evaluation_case_results": EvaluationCaseResultRecord,
+        "runs": RunRecord,
+        "memory_hints_used": MemoryHintUsedRecord,
     }
 
     def __init__(self, session: Session) -> None:
@@ -339,7 +343,43 @@ class OperatorConsoleRepository:
             .limit(max(limit, 1))
             .all()
         )
-        return {"total": total, "rows": [self._run_row(row) for row in rows]}
+        run_ids = [row.id for row in rows]
+        model_map: dict[int, tuple[str, str]] = {}
+        if run_ids:
+            max_calls_sq = (
+                self._session.query(
+                    RunModelUsageRecord.pipeline_run_id,
+                    func.max(RunModelUsageRecord.llm_calls).label("max_calls"),
+                )
+                .filter(RunModelUsageRecord.pipeline_run_id.in_(run_ids))
+                .group_by(RunModelUsageRecord.pipeline_run_id)
+                .subquery()
+            )
+            dominant = (
+                self._session.query(
+                    RunModelUsageRecord.pipeline_run_id,
+                    RunModelUsageRecord.provider,
+                    RunModelUsageRecord.model_name,
+                )
+                .join(
+                    max_calls_sq,
+                    (RunModelUsageRecord.pipeline_run_id == max_calls_sq.c.pipeline_run_id)
+                    & (RunModelUsageRecord.llm_calls == max_calls_sq.c.max_calls),
+                )
+                .all()
+            )
+            for d in dominant:
+                if d.pipeline_run_id not in model_map:
+                    model_map[d.pipeline_run_id] = (d.provider, d.model_name)
+
+        result_rows = []
+        for row in rows:
+            r = self._run_row(row)
+            provider, model_name = model_map.get(row.id, ("", ""))
+            r["primary_provider"] = provider
+            r["primary_model"] = model_name
+            result_rows.append(r)
+        return {"total": total, "rows": result_rows}
 
     def get_run_detail(self, run_id: str) -> dict[str, Any] | None:
         pipeline = self._session.query(PipelineRunRecord).filter_by(run_id=run_id).first()

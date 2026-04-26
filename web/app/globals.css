@@ -220,6 +220,9 @@ code, pre, .mono, kbd, samp {
   80%  { transform: scale(2.2); opacity: 0; }
   100% { transform: scale(2.2); opacity: 0; }
 }
+@keyframes owc-spin {
+  to { transform: rotate(360deg); }
+}
 
 /* ── utility classes ── */
 
@@ -299,6 +302,19 @@ code, pre, .mono, kbd, samp {
   background: var(--signal);
   border-radius: 2px;
 }
+
+/* ── spinner ── */
+.owc-spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 1.75px solid color-mix(in oklch, currentColor 28%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: owc-spin 600ms linear infinite;
+  flex-shrink: 0;
+}
+.owc-spinner-sm { width: 11px; height: 11px; border-width: 1.5px; }
+.owc-spinner-lg { width: 20px; height: 20px; border-width: 2.25px; }
 
 /* ── animation utilities ── */
 .animate-fade-up          { animation: fade-up 220ms ease both; }

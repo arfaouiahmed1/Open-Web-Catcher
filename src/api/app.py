@@ -1895,6 +1895,9 @@ class ModelConfigRequest(BaseModel):
     disabled_tools_by_profile: dict | None = None
     disabled_tools_by_browser_profile: dict | None = None
     browser_runtime: dict | None = None
+    deepeval_provider: str | None = None
+    deepeval_model: str | None = None
+    deepeval_temperature: float | None = None
 
 
 class PricingSyncRequest(BaseModel):
@@ -1931,6 +1934,9 @@ def _ui_config_payload(
             legacy=getattr(settings, "disabled_tools_by_profile", {}),
         ),
         "browser_runtime": normalize_browser_runtime(getattr(settings, "browser_runtime", {})),
+        "deepeval_provider": getattr(settings, "deepeval_provider", "openai"),
+        "deepeval_model": getattr(settings, "deepeval_model", "gpt-4o"),
+        "deepeval_temperature": getattr(settings, "deepeval_temperature", 0.0),
         "api_keys": {
             "google": bool(settings.google_api_key),
             "openai": bool(settings.openai_api_key),
@@ -2020,6 +2026,12 @@ def ui_update_config(body: ModelConfigRequest):
         s.browser_runtime = normalize_browser_runtime(body.browser_runtime)
     else:
         s.browser_runtime = normalize_browser_runtime(getattr(s, "browser_runtime", {}))
+    if body.deepeval_provider is not None:
+        s.deepeval_provider = body.deepeval_provider
+    if body.deepeval_model is not None:
+        s.deepeval_model = body.deepeval_model
+    if body.deepeval_temperature is not None:
+        s.deepeval_temperature = max(0.0, float(body.deepeval_temperature))
     if body.agent_model_config is None:
         s.agent_model_config = normalize_agent_model_config(s, getattr(s, "agent_model_config", {}))
     persist_path = ""
@@ -2293,6 +2305,51 @@ def ui_run_latest_screenshot(run_id: str):
                 "timestamp": event.timestamp.isoformat(),
             }
     return {"run_id": run_id, "screenshot_url": "", "event_seq": None, "timestamp": None}
+
+
+@app.get("/ui/browser/screenshot")
+async def ui_browser_live_screenshot(profile: str = Query("landing", description="Agent profile for MCP session")):
+    """Capture a live screenshot of the current browser session via the MCP tool server."""
+    try:
+        result = await _call_mcp_tool(profile, "screenshot", {}, reuse_playground_session=True)
+        # Check for base64 image content in MCP response format
+        content_list = result.get("content", []) if isinstance(result, dict) else []
+        for item in (content_list if isinstance(content_list, list) else []):
+            if isinstance(item, dict) and item.get("type") == "image":
+                data = item.get("data", "")
+                mime = item.get("mimeType", "image/jpeg")
+                if data:
+                    return {
+                        "screenshot": f"data:{mime};base64,{data}",
+                        "source": "mcp_base64",
+                        "error": None,
+                    }
+        # Fall back to URL extraction from result
+        screenshot_url = _extract_screenshot_url_from_value(result)
+        return {
+            "screenshot": screenshot_url,
+            "source": "mcp_url",
+            "error": None,
+        }
+    except HTTPException as exc:
+        return {"screenshot": "", "source": "error", "error": str(exc.detail)}
+    except Exception as exc:
+        return {"screenshot": "", "source": "error", "error": str(exc)}
+
+
+@app.get("/ui/browser/status")
+def ui_browser_status():
+    """Return browser and MCP server health status."""
+    settings = get_settings()
+    browser_status = probe_browser(settings.browser_ws_endpoint)
+    mcp_status = probe_mcp(settings.mcp_server_url)
+    return {
+        "browser": browser_status,
+        "mcp": mcp_status,
+        "browser_engine": settings.browser_engine,
+        "browser_ws_endpoint": settings.browser_ws_endpoint,
+        "mcp_server_url": settings.mcp_server_url,
+    }
 
 
 @app.get("/ui/database/tables")
