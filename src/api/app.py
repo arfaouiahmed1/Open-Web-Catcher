@@ -2322,6 +2322,82 @@ def ui_sync_pricing(req: PricingSyncRequest):
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@app.get("/ui/settings/estimate-costs")
+def ui_estimate_costs(
+    provider: str = Query(..., description="Provider name"),
+    model: str = Query(..., description="Model name"),
+    input_tokens: int = Query(1000, ge=0, description="Input token count"),
+    output_tokens: int = Query(1000, ge=0, description="Output token count"),
+    cached_input_tokens: int = Query(0, ge=0, description="Cached input token count"),
+):
+    """Estimate cost for a given provider, model, and token counts."""
+    from src.utils.instrumentation import estimate_usage_cost, resolve_model_pricing
+
+    settings = get_settings()
+    session = get_session()
+    try:
+        repo = OperatorConsoleRepository(session)
+        pricing_configs = repo.list_pricing_configs()
+
+        # Build pricing lookup
+        pricing_by_key = {}
+        for config in pricing_configs:
+            key = f"{config.provider}::{config.model_name}"
+            pricing_by_key[key] = config
+            if not config.provider:
+                pricing_by_key[config.model_name] = config
+
+        # Find pricing for this model
+        pricing_config = None
+        search_keys = [
+            f"{provider}::{model}",
+            model,
+            f"{provider}::{model.split('::')[0]}",
+        ]
+        for key in search_keys:
+            if key in pricing_by_key:
+                pricing_config = pricing_by_key[key]
+                break
+
+        if not pricing_config:
+            # No pricing found
+            return {
+                "provider": provider,
+                "model": model,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cached_input_tokens": cached_input_tokens,
+                "input_cost_usd": 0.0,
+                "output_cost_usd": 0.0,
+                "total_cost_usd": 0.0,
+                "pricing_source": "no_pricing_available",
+            }
+
+        # Calculate costs
+        # Cached tokens often don't count toward cost, or count at reduced rate
+        chargeable_input_tokens = input_tokens + cached_input_tokens  # Conservative: count all
+        costs = estimate_usage_cost(
+            input_tokens=chargeable_input_tokens,
+            output_tokens=output_tokens,
+            input_per_million=pricing_config.input_per_million,
+            output_per_million=pricing_config.output_per_million,
+        )
+
+        return {
+            "provider": provider,
+            "model": model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cached_input_tokens": cached_input_tokens,
+            "input_cost_usd": costs["estimated_input_cost_usd"],
+            "output_cost_usd": costs["estimated_output_cost_usd"],
+            "total_cost_usd": costs["estimated_total_cost_usd"],
+            "pricing_source": "database",
+        }
+    finally:
+        session.close()
+
+
 @app.get("/ui/evaluations/suites")
 def ui_evaluation_suites():
     session = get_session()

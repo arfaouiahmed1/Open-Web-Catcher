@@ -701,6 +701,12 @@ function TuningFieldGrid({ fields, values, onChange }) {
     );
   }
 
+  const useSlider = (field) => {
+    // Use sliders for temperature, top_p, and similar fractional fields
+    const sliderKeys = ['temperature', 'top_p', 'top_k'];
+    return sliderKeys.some(key => field.key.toLowerCase().includes(key)) && field.type !== 'enum';
+  };
+
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       {fields.map((field) => {
@@ -719,6 +725,42 @@ function TuningFieldGrid({ fields, values, onChange }) {
               }))}
               placeholder={`Select ${field.label.toLowerCase()}`}
             />
+          );
+        }
+
+        if (useSlider(field)) {
+          // Render slider with value display
+          return (
+            <div key={field.key} className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
+                  {field.label}
+                </label>
+                <span className="text-[11px] font-mono text-[var(--ink-dim)]" style={{ minWidth: '45px', textAlign: 'right' }}>
+                  {value || 0}
+                </span>
+              </div>
+              <input
+                value={value}
+                onChange={(event) => onChange(field, parseFieldValue(field, event.target.value))}
+                type="range"
+                min={field.min || 0}
+                max={field.max || 1}
+                step={field.step || 0.01}
+                className="w-full"
+                style={{
+                  cursor: 'pointer',
+                  accentColor: 'var(--signal)',
+                }}
+              />
+              <div className="flex justify-between text-[9px] text-[var(--mute)]">
+                <span>{field.min || 0}</span>
+                <span>{field.max || 1}</span>
+              </div>
+              {field.description && (
+                <p className="text-[11px] text-[var(--mute)]">{field.description}</p>
+              )}
+            </div>
           );
         }
 
@@ -838,6 +880,125 @@ function ToggleRow({ label, checked, onChange, description = "" }) {
         <FieldNote>{description}</FieldNote>
       </span>
     </label>
+  );
+}
+
+function CostEstimator({ provider, model }) {
+  const [inputTokens, setInputTokens] = useState(1000);
+  const [outputTokens, setOutputTokens] = useState(1000);
+  const [cachedTokens, setCachedTokens] = useState(0);
+  const [costs, setCosts] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchCosts = async () => {
+    if (!provider || !model) return;
+    setLoading(true);
+    try {
+      const response = await apiFetch(
+        `/ui/settings/estimate-costs?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}&input_tokens=${inputTokens}&output_tokens=${outputTokens}&cached_input_tokens=${cachedTokens}`
+      );
+      setCosts(response);
+    } catch (error) {
+      console.error("Cost estimation error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(fetchCosts, 500);
+    return () => clearTimeout(timer);
+  }, [provider, model, inputTokens, outputTokens, cachedTokens]);
+
+  if (!provider || !model) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-4 rounded-[14px] border p-4" style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.02)" }}>
+      <div className="text-[13px] font-medium text-[var(--ink)]">Estimated Cost</div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="space-y-1.5">
+          <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
+            Input tokens
+          </label>
+          <input
+            type="number"
+            value={inputTokens}
+            onChange={(e) => setInputTokens(parseInt(e.target.value) || 0)}
+            min="0"
+            step="100"
+            className="h-9 w-full rounded-[8px] border px-2 text-[12px] focus:outline-none"
+            style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)", color: "var(--ink-dim)" }}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
+            Output tokens
+          </label>
+          <input
+            type="number"
+            value={outputTokens}
+            onChange={(e) => setOutputTokens(parseInt(e.target.value) || 0)}
+            min="0"
+            step="100"
+            className="h-9 w-full rounded-[8px] border px-2 text-[12px] focus:outline-none"
+            style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)", color: "var(--ink-dim)" }}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
+            Cached tokens
+          </label>
+          <input
+            type="number"
+            value={cachedTokens}
+            onChange={(e) => setCachedTokens(parseInt(e.target.value) || 0)}
+            min="0"
+            step="100"
+            className="h-9 w-full rounded-[8px] border px-2 text-[12px] focus:outline-none"
+            style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)", color: "var(--ink-dim)" }}
+          />
+        </div>
+      </div>
+
+      {costs ? (
+        <div className="grid gap-2 rounded-[10px] border p-3" style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.01)" }}>
+          <div className="flex items-center justify-between text-[12px]">
+            <span style={{ color: "var(--mute)" }}>Input cost</span>
+            <span style={{ color: "var(--ink-dim)", fontFamily: "monospace" }}>
+              ${costs.input_cost_usd.toFixed(6)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-[12px]">
+            <span style={{ color: "var(--mute)" }}>Output cost</span>
+            <span style={{ color: "var(--ink-dim)", fontFamily: "monospace" }}>
+              ${costs.output_cost_usd.toFixed(6)}
+            </span>
+          </div>
+          <div className="border-t border-[var(--line)]" />
+          <div className="flex items-center justify-between text-[12px] font-medium">
+            <span style={{ color: "var(--ink)" }}>Total</span>
+            <span style={{ color: "var(--signal)", fontFamily: "monospace", fontSize: "14px" }}>
+              ${costs.total_cost_usd.toFixed(6)}
+            </span>
+          </div>
+          {costs.pricing_source && costs.pricing_source !== 'no_pricing_available' && (
+            <p className="mt-2 text-[10px]" style={{ color: "var(--mute)" }}>
+              Pricing: {costs.pricing_source}
+            </p>
+          )}
+          {costs.pricing_source === 'no_pricing_available' && (
+            <p className="mt-2 text-[10px]" style={{ color: "var(--rose)" }}>
+              No pricing available for this model
+            </p>
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -1450,44 +1611,55 @@ export default function SettingsPage() {
               ) : null}
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
-                    Fallback temperature
-                    <HelpIcon tip="Global temperature applied when no provider-specific or agent-specific override is set. 0 = deterministic, 1+ = creative." />
-                  </label>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-1.5">
+                    <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
+                      Fallback temperature
+                      <HelpIcon tip="Global temperature applied when no provider-specific or agent-specific override is set. 0 = deterministic, 1+ = creative." />
+                    </label>
+                    <span className="text-[11px] font-mono text-[var(--ink-dim)]" style={{ minWidth: '40px', textAlign: 'right' }}>
+                      {fallbackTemperature}
+                    </span>
+                  </div>
                   <input
                     value={fallbackTemperature}
                     onChange={(event) => setFallbackTemperature(event.target.value)}
-                    type="number"
+                    type="range"
                     min="0"
                     max="2"
                     step="0.1"
-                    className="h-11 w-full rounded-[12px] border px-3 text-[13px] focus:outline-none"
-                    style={{
-                      borderColor: "var(--line)",
-                      background: "rgba(0,0,0,0.2)",
-                      color: "var(--ink-dim)",
-                    }}
+                    className="w-full"
+                    style={{ cursor: 'pointer', accentColor: 'var(--signal)' }}
                   />
+                  <div className="flex justify-between text-[9px] text-[var(--mute)]">
+                    <span>0</span>
+                    <span>2</span>
+                  </div>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
-                    Tool cache stabilization threshold
-                    <HelpIcon tip="How many identical consecutive tool results must be seen before the response is cached. Higher = less aggressive caching." />
-                  </label>
+                  <div className="flex items-center justify-between gap-1.5">
+                    <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
+                      Tool cache stabilization threshold
+                      <HelpIcon tip="How many identical consecutive tool results must be seen before the response is cached. Higher = less aggressive caching." />
+                    </label>
+                    <span className="text-[11px] font-mono text-[var(--ink-dim)]" style={{ minWidth: '30px', textAlign: 'right' }}>
+                      {toolCacheStable}
+                    </span>
+                  </div>
                   <input
                     value={toolCacheStable}
                     onChange={(event) => setToolCacheStable(event.target.value)}
-                    type="number"
+                    type="range"
                     min="1"
+                    max="10"
                     step="1"
-                    className="h-11 w-full rounded-[12px] border px-3 text-[13px] focus:outline-none"
-                    style={{
-                      borderColor: "var(--line)",
-                      background: "rgba(0,0,0,0.2)",
-                      color: "var(--ink-dim)",
-                    }}
+                    className="w-full"
+                    style={{ cursor: 'pointer', accentColor: 'var(--signal)' }}
                   />
+                  <div className="flex justify-between text-[9px] text-[var(--mute)]">
+                    <span>1</span>
+                    <span>10</span>
+                  </div>
                 </div>
               </div>
 
@@ -1682,6 +1854,12 @@ export default function SettingsPage() {
                 );
               })}
             </div>
+
+            <SectionHeader>Cost Calculator</SectionHeader>
+            <p className="text-[13.5px] text-[var(--mute)]">
+              Estimate API costs based on token usage for the default model.
+            </p>
+            <CostEstimator provider={provider} model={agentModelConfig.orchestrator?.model || ""} />
 
           </section>
         ) : null}

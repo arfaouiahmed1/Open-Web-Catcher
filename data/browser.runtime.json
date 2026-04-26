@@ -1,5 +1,5 @@
 {
-  "browser_engine": "playwright",
+  "browser_engine": "puppeteer",
   "browser_runtime": {
     "puppeteer": {
       "launch_timeout_ms": 45000,
@@ -35,6 +35,9 @@
       "proxy_cache_ttl_ms": 600000,
       "proxy_max_candidates": 25,
       "proxy_test_url": "https://api.ipify.org?format=json",
+      "streaming_safe_mode": "adaptive",
+      "media_proxy_strategy": "direct_first",
+      "asset_diagnostics_enabled": true,
       "ubol_enabled": true,
       "stream_cors_patch_enabled": false,
       "stream_cors_include_credentials": false,
@@ -85,6 +88,9 @@
       "proxy_cache_ttl_ms": 600000,
       "proxy_max_candidates": 25,
       "proxy_test_url": "https://api.ipify.org?format=json",
+      "streaming_safe_mode": "adaptive",
+      "media_proxy_strategy": "direct_first",
+      "asset_diagnostics_enabled": true,
       "iframe_sandbox_patch_enabled": true,
       "iframe_auto_recovery_enabled": true,
       "iframe_recovery_timeout_ms": 20000,
@@ -98,5 +104,11 @@
       "media_cors_patch_enabled": false,
       "media_playback_verification_enabled": true
     }
+  },
+  "runtime_sync": {
+    "source_path": "/app/data/settings.runtime.yaml",
+    "bridge_path": "/app/data/browser.runtime.json",
+    "synced_at": "2026-04-26T18:36:57.339146+00:00",
+    "active_runtime_source": "runtime_yaml"
   }
 }

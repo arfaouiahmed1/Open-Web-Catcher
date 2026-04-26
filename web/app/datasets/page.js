@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Database, Loader2, RefreshCw, Tag, UploadCloud } from "lucide-react";
+import { Database, Loader2, RefreshCw, Tag } from "lucide-react";
 
 import { apiFetch } from "@/lib/api";
 import { formatPercent } from "@/lib/utils";
@@ -68,7 +68,6 @@ function ProgressBar({ value, total }) {
 
 export default function DatasetsPage() {
   const [meta, setMeta] = useState({ languages: [], labels: [] });
-  const [csvInfo, setCsvInfo] = useState({ path: "", exists: true });
   const [stats, setStats] = useState(null);
   const [results, setResults] = useState(null);
   const [sites, setSites] = useState([]);
@@ -76,7 +75,6 @@ export default function DatasetsPage() {
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeBatch, setActiveBatch] = useState(null);
-  const [importing, setImporting] = useState(false);
   const [selected, setSelected] = useState(new Set());
   const [notice, setNotice] = useState("");
 
@@ -103,7 +101,6 @@ export default function DatasetsPage() {
       apiFetch("/api/datasets/batches?limit=1&offset=0"),
     ]);
     setMeta({ languages: metaPayload.languages || [], labels: metaPayload.labels || [] });
-    setCsvInfo(metaPayload.csv || { path: "", exists: true });
     setStats(statsPayload);
     setResults(resultsPayload);
     const latestBatch = batchPayload?.batches?.[0] || null;
@@ -162,21 +159,6 @@ export default function DatasetsPage() {
 
   async function refreshAll() {
     await Promise.all([loadSummary(), loadSites()]);
-  }
-
-  async function importCsv() {
-    setImporting(true);
-    try {
-      const payload = await apiFetch("/api/datasets/import", { method: "POST" });
-      setNotice(
-        `Imported ${payload.inserted || 0} new site${payload.inserted === 1 ? "" : "s"}, updated ${payload.updated || 0}, total ${payload.total || 0}.`,
-      );
-      await refreshAll();
-    } catch (error) {
-      setNotice(error?.message ? `Import failed: ${error.message}` : "Import failed.");
-    } finally {
-      setImporting(false);
-    }
   }
 
   async function updateSite(siteId, patch) {
@@ -255,21 +237,8 @@ export default function DatasetsPage() {
             <RefreshCw size={14} className="mr-1.5" />
             Refresh
           </Button>
-          <Button size="sm" variant="accent" onClick={importCsv} disabled={importing}>
-            {importing ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <UploadCloud size={14} className="mr-1.5" />}
-            Import sites.csv
-          </Button>
         </div>
       </div>
-
-      {!csvInfo.exists ? (
-        <div
-          className="rounded-[14px] border px-4 py-3 text-[12px]"
-          style={{ borderColor: "color-mix(in oklch, var(--rose) 32%, transparent)", background: "color-mix(in oklch, var(--rose) 8%, transparent)", color: "var(--rose)" }}
-        >
-          Dataset CSV not found at {csvInfo.path || "datasets/sites.csv"}.
-        </div>
-      ) : null}
 
       {notice ? (
         <div

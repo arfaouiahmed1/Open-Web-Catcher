@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -13,9 +12,6 @@ from src.storage.dataset_repository import DatasetRepository, LABELS, LANGUAGES
 from src.storage.repositories import BackgroundJobRepository
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SITES_CSV = (REPO_ROOT / "datasets" / "sites.csv").resolve()
 
 
 class SiteUpdate(BaseModel):
@@ -43,7 +39,6 @@ def _with_repo(callback):
     session = get_session()
     try:
         repo = DatasetRepository(session)
-        repo.ensure_seeded_from_csv(SITES_CSV)
         return callback(session, repo)
     finally:
         session.close()
@@ -56,21 +51,9 @@ def get_meta():
             "languages": LANGUAGES,
             "labels": LABELS,
             "stats": repo.site_stats(),
-            "csv": {
-                "path": str(SITES_CSV),
-                "exists": SITES_CSV.exists(),
-            },
         }
 
     return _with_repo(_handler)
-
-
-@router.post("/import")
-def import_sites():
-    result = _with_repo(lambda _session, repo: repo.import_csv(SITES_CSV, source="csv_import"))
-    if result.get("missing"):
-        raise HTTPException(status_code=404, detail=f"Dataset CSV not found at {result.get('csv_path')}")
-    return result
 
 
 @router.get("/sites")
