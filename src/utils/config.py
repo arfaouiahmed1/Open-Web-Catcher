@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from src.utils.browser_runtime import normalize_browser_runtime
 
 
 class Settings(BaseSettings):
@@ -19,6 +22,8 @@ class Settings(BaseSettings):
     agent_model: str = "gemini-2.5-flash"
     gemini_model: str = "gemini-2.5-flash"
     gemini_temperature: float = 0.0
+    llm_tuning: dict = Field(default_factory=dict)
+    agent_model_config: dict = Field(default_factory=dict)
 
     google_api_key: str = ""
     openai_api_key: str = ""
@@ -112,6 +117,11 @@ class Settings(BaseSettings):
     tool_result_cache_enabled: bool = True
     tool_result_cache_min_identical_observations: int = 2
 
+    # Per-profile disabled tool names: {"landing": ["screenshot", "play_media"], ...}
+    disabled_tools_by_profile: dict = Field(default_factory=dict)
+    disabled_tools_by_browser_profile: dict = Field(default_factory=dict)
+    browser_runtime: dict = Field(default_factory=dict)
+
     @classmethod
     def from_yaml(
         cls,
@@ -165,12 +175,17 @@ class Settings(BaseSettings):
         existing["agent_model"] = self.agent_model
         existing["orchestrator_model"] = self.orchestrator_model
         existing["gemini_temperature"] = self.gemini_temperature
+        existing["llm_tuning"] = self.llm_tuning
+        existing["agent_model_config"] = self.agent_model_config
         existing["provider_cache_enabled"] = self.provider_cache_enabled
         existing["gemini_explicit_cache_enabled"] = self.gemini_explicit_cache_enabled
         existing["gemini_explicit_cache_ttl_seconds"] = self.gemini_explicit_cache_ttl_seconds
         existing["gemini_explicit_cache_refresh_lead_seconds"] = self.gemini_explicit_cache_refresh_lead_seconds
         existing["tool_result_cache_enabled"] = self.tool_result_cache_enabled
         existing["tool_result_cache_min_identical_observations"] = self.tool_result_cache_min_identical_observations
+        existing["disabled_tools_by_profile"] = self.disabled_tools_by_profile
+        existing["disabled_tools_by_browser_profile"] = self.disabled_tools_by_browser_profile
+        existing["browser_runtime"] = self.browser_runtime
 
         try:
             primary_path.parent.mkdir(parents=True, exist_ok=True)
@@ -189,3 +204,23 @@ class Settings(BaseSettings):
             with open(fallback_path, "w", encoding="utf-8") as f:
                 yaml.safe_dump(fallback_existing, f, default_flow_style=False, allow_unicode=True)
             return fallback_path
+
+    def save_browser_runtime_bridge(
+        self,
+        runtime_json_path: str | Path = "data/browser.runtime.json",
+    ) -> Path:
+        """Persist browser-runtime settings for Node-based MCP tool servers.
+
+        The browser containers share the ``data`` volume with the API service, so
+        this JSON bridge lets Playwright/Puppeteer pick up runtime config changes
+        on the next session without a container restart.
+        """
+
+        target_path = Path(runtime_json_path)
+        payload = {
+            "browser_engine": self.browser_engine,
+            "browser_runtime": normalize_browser_runtime(getattr(self, "browser_runtime", {})),
+        }
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text(f"{json.dumps(payload, indent=2)}\n", encoding="utf-8")
+        return target_path

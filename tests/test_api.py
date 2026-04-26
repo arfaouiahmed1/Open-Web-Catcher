@@ -155,6 +155,14 @@ def test_ui_config_update_reports_persist_path(client: TestClient, api_settings:
                 "agent_model": "gpt-4o-mini",
                 "orchestrator_model": "gpt-4o-mini",
                 "gemini_temperature": 0.4,
+                "llm_tuning": {
+                    "provider_defaults": {
+                        "openai": {"temperature": 0.3, "top_p": 0.9},
+                    },
+                    "model_overrides": {
+                        "openai::gpt-4o-mini": {"max_tokens": 1024},
+                    },
+                },
             },
         )
 
@@ -162,6 +170,8 @@ def test_ui_config_update_reports_persist_path(client: TestClient, api_settings:
     payload = response.json()
     assert payload["llm_provider"] == "openai"
     assert payload["agent_model"] == "gpt-4o-mini"
+    assert payload["llm_tuning"]["provider_defaults"]["openai"]["temperature"] == 0.3
+    assert payload["llm_tuning"]["model_overrides"]["openai::gpt-4o-mini"]["max_tokens"] == 1024
     assert payload["config_persisted"] is True
     assert payload["config_persist_path"].replace("\\", "/").endswith("data/settings.runtime.yaml")
 
@@ -181,6 +191,69 @@ def test_ui_config_update_reports_persist_error(client: TestClient, api_settings
     assert payload["llm_provider"] == "openrouter"
     assert payload["config_persisted"] is False
     assert "read-only" in payload["config_persist_error"].lower()
+
+
+def test_ui_config_update_normalizes_browser_runtime(client: TestClient, api_settings: Settings):
+    with patch.object(api_settings.__class__, "save_yaml", return_value=Path("data/settings.runtime.yaml")), \
+         patch.object(api_settings.__class__, "save_browser_runtime_bridge", return_value=Path("data/browser.runtime.json")):
+        response = client.put(
+            "/ui/config",
+            json={
+                "browser_runtime": {
+                    "puppeteer": {
+                        "fingerprint_fallback_strategy": "none",
+                        "proxy_enabled": True,
+                        "proxy_source_mode": "remote",
+                        "proxy_source_order": ["speedx-http", "openproxylist-socks5"],
+                        "proxy_rotation_mode": "sticky",
+                        "proxy_selection_strategy": "random",
+                        "proxy_fallback_strategy": "fail",
+                        "proxy_fetch_timeout_ms": 9000,
+                        "proxy_validation_timeout_ms": 14000,
+                        "proxy_cache_ttl_ms": 700000,
+                        "proxy_max_candidates": 30,
+                        "proxy_test_url": "https://example.com/ip",
+                    }
+                }
+            },
+        )
+
+    assert response.status_code == 200
+    runtime = response.json()["browser_runtime"]["puppeteer"]
+    assert runtime["fingerprint_fallback_strategy"] == "none"
+    assert runtime["proxy_enabled"] is True
+    assert runtime["proxy_source_mode"] == "remote"
+    assert runtime["proxy_source_order"] == ["speedx-http", "openproxylist-socks5"]
+    assert runtime["proxy_rotation_mode"] == "sticky"
+    assert runtime["proxy_selection_strategy"] == "random"
+    assert runtime["proxy_fallback_strategy"] == "fail"
+    assert runtime["proxy_fetch_timeout_ms"] == 9000
+    assert runtime["proxy_validation_timeout_ms"] == 14000
+    assert runtime["proxy_cache_ttl_ms"] == 700000
+    assert runtime["proxy_max_candidates"] == 30
+    assert runtime["proxy_test_url"] == "https://example.com/ip"
+
+
+def test_ui_provider_models_returns_catalog(client: TestClient):
+    catalog = {
+        "provider": "openai",
+        "name": "OpenAI",
+        "key_env": "OPENAI_API_KEY",
+        "api_key_set": True,
+        "source": "provider_api",
+        "error": "",
+        "models": [{"id": "gpt-5", "label": "gpt-5"}],
+        "hyperparameters": [{"key": "temperature", "type": "number"}],
+    }
+
+    with patch("src.api.app.get_provider_model_catalog", return_value=catalog) as mock_catalog:
+        response = client.get("/ui/providers/models", params={"provider": "openai"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider"] == "openai"
+    assert payload["models"][0]["id"] == "gpt-5"
+    mock_catalog.assert_called_once()
 
 
 def test_ui_database_tables_returns_allowlist(client: TestClient):

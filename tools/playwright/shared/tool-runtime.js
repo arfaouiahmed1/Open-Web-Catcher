@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-import { connectBrowser, getPage } from './browser.js';
+import { closeEphemeralBrowser, connectBrowser, getPage } from './browser.js';
 import { screenshotFull, screenshotViewport } from './screenshot.js';
 import { uploadImage } from './upload.js';
 
@@ -862,7 +862,7 @@ export async function withBrowserSession(browserSession, run, pageOptions = {}) 
 
   if (typeof browserSession === 'string') {
     // Legacy path: given a WS endpoint string, connect and own the session.
-    session = await connectBrowser(browserSession);
+    session = await connectBrowser(browserSession || undefined);
     owned = true;
   }
 
@@ -870,8 +870,8 @@ export async function withBrowserSession(browserSession, run, pageOptions = {}) 
     const page = await getPage(session, pageOptions);
     return await run({ browser: session.browser, context: session.context, page });
   } finally {
-    if (owned && session?.browser) {
-      await session.browser.close().catch(() => {});
+    if (owned && session) {
+      await closeEphemeralBrowser(session).catch(() => {});
     }
   }
 }

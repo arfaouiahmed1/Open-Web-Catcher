@@ -1,30 +1,32 @@
-\chapter{Platform Inventory and Report Enrichment Material}
+\chapter{Platform Technical Inventory}
 
 \section{Core implementation inventory}
 
 \begin{longtable}{>{\bfseries}p{4cm}p{9.5cm}}
 \toprule
-Artefact or folder & Role in the platform \\
+\rowcolor{accent!8}
+Artefact or module & Role in the platform \\
 \midrule
 \endfirsthead
 \toprule
-Artefact or folder & Role in the platform \\
+\rowcolor{accent!8}
+Artefact or module & Role in the platform \\
 \midrule
 \endhead
-\texttt{src/api/app.py} & FastAPI entry point. Exposes execution, observability, evaluation, memory, pricing, and UI support endpoints. \\
-\texttt{src/agents/orchestrator.py} & Coordinates the whole extraction pipeline and routes work between specialist agents. \\
-\texttt{src/agents/classification.py} & Implements the page-classification logic. \\
-\texttt{src/agents/landing\_page.py} & Handles discovery of hosting pages from landing pages. \\
-\texttt{src/agents/hosting\_page.py} & Handles hosting-page extraction, server cycling, and stream normalization. \\
-\texttt{src/agents/embedded\_page.py} & Handles embedded-player extraction with iframe-aware logic. \\
-\texttt{src/memory/short\_term.py} & Stores run-level working memory. \\
-\texttt{src/memory/long\_term.py} & Stores reusable site memory across runs. \\
-\texttt{src/storage/repositories.py} & Persists run artifacts and normalized observability records. \\
-\texttt{src/evaluation/} & Contains scoring, dataset, and evaluation helpers. \\
-\texttt{tools/puppeteer/} & Browser automation runtime and tools exposed to the agents. \\
-\texttt{web/} & Next.js operator console. \\
-\texttt{configs/prompts/} & Prompt files for orchestrator and specialist agents. \\
-\texttt{tests/} & Automated tests for the backend, agents, tools, memory, caching, and API. \\
+\path|src/api/app.py| & FastAPI entry point. Exposes execution, observability, evaluation, memory, pricing, and UI support endpoints. \\
+\path|src/agents/orchestrator.py| & Coordinates the whole extraction pipeline and routes work between specialist agents. \\
+\path|src/agents/classification.py| & Implements the page-classification logic. \\
+\path|src/agents/landing_page.py| & Handles discovery of hosting pages from landing pages. \\
+\path|src/agents/hosting_page.py| & Handles hosting-page extraction, server cycling, and stream normalization. \\
+\path|src/agents/embedded_page.py| & Handles embedded-player extraction with iframe-aware logic. \\
+\path|src/memory/short_term.py| & Stores run-level working memory. \\
+\path|src/memory/long_term.py| & Stores reusable site memory across runs. \\
+\path|src/storage/repositories.py| & Persists run artifacts and normalized observability records. \\
+\path|src/evaluation/| & Contains scoring, dataset, and evaluation helpers. \\
+\path|tools/puppeteer/| & Browser automation runtime and tools exposed to the agents. \\
+\path|web/| & Next.js operator console. \\
+\path|configs/prompts/| & Prompt files for orchestrator and specialist agents. \\
+\path|tests/| & Automated tests for the backend, agents, tools, memory, caching, and API. \\
 \bottomrule
 \end{longtable}
 
@@ -32,10 +34,12 @@ Artefact or folder & Role in the platform \\
 
 \begin{longtable}{>{\bfseries}p{3cm}p{4cm}p{6.5cm}}
 \toprule
+\rowcolor{accent!8}
 Technology & Main responsibility & Concrete contribution in the project \\
 \midrule
 \endfirsthead
 \toprule
+\rowcolor{accent!8}
 Technology & Main responsibility & Concrete contribution in the project \\
 \midrule
 \endhead
@@ -46,8 +50,8 @@ Technology & Main responsibility & Concrete contribution in the project \\
 \texttt{Puppeteer} & Browser execution & Rendering, interaction, screenshot capture, and stream harvesting on dynamic websites \\
 \texttt{Postgres} & Persistence & Run history, telemetry, provider data, pricing, and evaluation results \\
 \texttt{Docker} & Portability & Reproducible packaging of browser-heavy services \\
-\texttt{Azure Service Bus} & Work distribution & Queue-based triggering of investigation work items \\
-\texttt{Azure Container Apps Jobs} & Event-driven compute & Finite extraction executions that run to completion and stop \\
+\texttt{Azure Service Bus} & Work distribution & Queue-based triggering of investigation work items in the target cloud architecture (planned, not used as primary runtime during internship execution) \\
+\texttt{Azure Container Apps Jobs} & Event-driven compute & Finite extraction executions in the target cloud architecture (planned, not used as primary runtime during internship execution) \\
 \bottomrule
 \end{longtable}
 
@@ -55,10 +59,12 @@ Technology & Main responsibility & Concrete contribution in the project \\
 
 \begin{longtable}{>{\bfseries}p{4cm}p{9.5cm}}
 \toprule
+\rowcolor{accent!8}
 Console area & Purpose \\
 \midrule
 \endfirsthead
 \toprule
+\rowcolor{accent!8}
 Console area & Purpose \\
 \midrule
 \endhead
@@ -73,118 +79,3 @@ Pricing and configuration pages & Adjust runtime options and review cost configu
 \bottomrule
 \end{longtable}
 
-\section{Recommended diagrams for the final submitted version}
-
-The report already includes textual UML-style descriptions. The final submitted version can be strengthened further by inserting graphical versions of the following diagrams:
-
-\begin{longtable}{>{\bfseries}p{4cm}p{9.5cm}}
-\toprule
-Diagram & Recommended content \\
-\midrule
-\endfirsthead
-\toprule
-Diagram & Recommended content \\
-\midrule
-\endhead
-Global component diagram & FastAPI, orchestrator, specialist agents, Puppeteer tools, Postgres, and Next.js console \\
-Sequence diagram & Operator request, API call, classification, specialist-agent routing, stream extraction, provider analysis, and persistence \\
-Use-case diagram & Operator, API service, specialist agents, Service Bus, Container Apps Job, and database \\
-Deployment diagram & Operator UI, Azure Container Apps service, Azure Service Bus, Azure Container Apps Job, persistence, and observability \\
-Evolution diagram & Visual comparison of the early n8n prototype and the final coded platform \\
-\bottomrule
-\end{longtable}
-
-\section{Material that can be inserted to increase report depth}
-
-To move the report comfortably beyond 100 pages while keeping it natural and technically valuable, the following additions are recommended:
-
-\begin{itemize}
-  \item screenshots of the operator console pages;
-  \item screenshots of representative landing, hosting, and embedded pages;
-  \item exported run traces for one successful and one failed case;
-  \item tables of token usage and cost for representative URLs;
-  \item a short appendix on API route families and their purpose;
-  \item one or two annotated case studies from real target websites.
-\end{itemize}
-
-\section{API route families that can be documented in the final report}
-
-\begin{longtable}{>{\bfseries}p{4cm}p{9.5cm}}
-\toprule
-Route family & Suggested explanation in the report \\
-\midrule
-\endfirsthead
-\toprule
-Route family & Suggested explanation in the report \\
-\midrule
-\endhead
-\texttt{/health} & Simple operational health verification for the backend service. \\
-\texttt{/classify}, \texttt{/extract}, \texttt{/run} & Core runtime endpoints that trigger page understanding, extraction, or complete pipeline execution. \\
-\texttt{/runs} and detailed run routes & Retrieval of stored investigations, evidence, prompts, events, tool calls, and LLM calls. \\
-\texttt{/memory} & Inspection of persisted memory entries and reusable site knowledge. \\
-\texttt{/datasets/*} & Dataset export and evaluation support routes. \\
-\texttt{/observability} & Aggregated runtime visibility for operational analysis. \\
-\texttt{/ui/overview}, \texttt{/ui/runs}, \texttt{/ui/runs/\{id\}/stream} & Operator console routes for dashboards, run history, and live event streaming. \\
-\texttt{/ui/agents/test} and \texttt{/ui/tools/call} & Direct testing routes for specialist agents and browser tools. \\
-\texttt{/ui/config} and \texttt{/ui/pricing} & Runtime model and pricing configuration routes. \\
-\texttt{/ui/evaluations/*} & Evaluation execution and reporting routes. \\
-\texttt{/ui/database/*} & Read-oriented database exploration routes for investigation support. \\
-\bottomrule
-\end{longtable}
-
-\section{Evaluation assets that can be turned into annexes}
-
-\begin{longtable}{>{\bfseries}p{4cm}p{9.5cm}}
-\toprule
-Asset & How it can strengthen the final report \\
-\midrule
-\endfirsthead
-\toprule
-Asset & How it can strengthen the final report \\
-\midrule
-\endhead
-\texttt{notebooks/06\_agent\_evaluation\_lab.ipynb} & Can produce charts and comparative analysis for classification, landing, hosting, embedded, and full orchestrator runs. \\
-\texttt{data/evals/*.csv} & Can be summarized as benchmark tables or representative case sets. \\
-\texttt{tests/test\_orchestrator.py} & Can support a short annex on deterministic routing guarantees. \\
-\texttt{tests/test\_memory.py} & Can support a short annex on short-term and long-term memory behavior. \\
-\texttt{tests/test\_agent\_loop.py} & Can support an annex on caching and runtime safety behavior. \\
-\texttt{docs/architecture/implementation-deep-dive-2026-04-09.md} & Can be converted into formal diagrams and discussion material for architecture and deployment. \\
-\texttt{web/app/*} pages & Screenshots from these pages can be inserted to document operator workflows and UI organization. \\
-\bottomrule
-\end{longtable}
-
-\section{Case-study template for representative target websites}
-
-For each representative website included in the final submission, the following structure can be reused:
-
-\begin{enumerate}
-  \item present the starting URL and explain why the page is representative;
-  \item show the initial rendered page or landing layout;
-  \item state the classification result and the evidence behind it;
-  \item summarize the tool sequence used by the selected agent;
-  \item present the final extracted hosting links, streams, screenshots, or failure mode;
-  \item explain what the case teaches about the strengths or limits of the platform.
-\end{enumerate}
-
-This type of structured case study is one of the most efficient ways to increase the final report length while also improving its academic quality.
-
-\section{Recommended evidence checklist per chapter}
-
-\begin{longtable}{>{\bfseries}p{3.5cm}p{10cm}}
-\toprule
-Chapter & Evidence worth inserting before final submission \\
-\midrule
-\endfirsthead
-\toprule
-Chapter & Evidence worth inserting before final submission \\
-\midrule
-\endhead
-Introduction & Short timeline showing the transition from n8n prototype to coded platform. \\
-Technical Background & One table comparing the technologies used and their role in the internship. \\
-Methodology & A CRISP-DM mapping diagram linking project tasks to each methodology phase. \\
-Architecture & A clean component diagram and a deployment diagram for Azure. \\
-Implementation & Screenshots of the operator console, selected tool outputs, and one sequence diagram for a run. \\
-Evaluation & Real metrics tables, run screenshots, and one or two case studies on representative websites. \\
-Conclusion & A concise roadmap diagram summarizing future work. \\
-\bottomrule
-\end{longtable}

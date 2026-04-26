@@ -1,187 +1,509 @@
 \chapter{Evaluation, Testing, and Discussion}
 
-\section{Evaluation strategy}
+This chapter assesses the effectiveness of the implementation described in Chapter~5.
+It covers automated test coverage, manual campaign evaluation on live streaming targets,
+prompt evolution metrics across two concrete use cases, tool description engineering
+results, and a structured discussion of the platform's strengths and remaining
+limitations.
 
-Evaluating this project requires more than checking whether a single script returns a URL. The platform combines LLM decisions, browser actions, state transitions, network harvesting, and persistence. For that reason, evaluation has to be multi-dimensional.
+\section{Evaluation approach}
 
-The project supports evaluation through:
+Evaluation was performed with two complementary tracks:
 
 \begin{itemize}
-  \item direct tests in the codebase;
-  \item live run inspection through the operator console;
-  \item persisted observability and event streams;
-  \item evaluation suites and notebook-based analysis;
-  \item manual review of screenshots, streams, and final outputs.
+  \item automated checks (routing, tool behavior, persistence, regression safety);
+  \item manual campaign evaluation on live matches and real streaming websites.
+\end{itemize}
+
+Manual evaluation was necessary because difficult failure modes (popups, nested iframes,
+challenge screens, delayed manifests) are highly context-dependent and not fully
+represented by static fixtures.
+
+\section{Manual live-match evaluation protocol}
+
+The manual protocol used during evaluation is illustrated in
+Figure~\ref{fig:eval-protocol}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.5cm]
+
+\node[flowbox, minimum width=9cm, fill=blue!10, draw=blue!60] (sel)
+  {Select live or actively streaming target URLs};
+\node[flowbox, minimum width=9cm, below=0.45cm of sel] (run)
+  {Run full pipeline (classification $\to$ specialist $\to$ harvest)};
+\node[flowbox, minimum width=9cm, below=0.45cm of run] (class)
+  {Record classification path and routing decision};
+\node[flowbox, minimum width=9cm, below=0.45cm of class] (trace)
+  {Inspect screenshots and tool traces after each major step};
+\node[flowbox, minimum width=9cm, below=0.45cm of trace] (verify)
+  {Verify extracted stream evidence and fallback behavior};
+
+\node[decisionbox, minimum width=5cm, below=0.65cm of verify] (ok)
+  {Evidence\\valid?};
+
+% Success box: placed right of diamond but shifted down so it stays in margin
+\node[flowbox, minimum width=4cm, fill=green!10, draw=green!60,
+      right=1.8cm of ok] (pass)
+  {Record\\as success};
+
+% Failure box: placed below diamond, left-aligned
+\node[flowbox, minimum width=4cm, fill=red!10, draw=red!60,
+      left=1.8cm of ok] (fail)
+  {Classify failure mode};
+
+\node[flowbox, minimum width=9cm, fill=orange!8,
+      below=2.0cm of ok] (improve)
+  {Feed findings into prompt or tool improvement cycle};
+
+% Labels under fail box
+\node[font=\tiny, text=gray!70, below=0.1cm of fail, align=center]
+  {popup $|$ iframe $|$ token $|$ anti-bot};
+
+\foreach \a/\b in {sel/run, run/class, class/trace, trace/verify, verify/ok}
+  \draw[myarrow] (\a) -- (\b);
+\draw[myarrow] (ok.east) -- node[above,font=\tiny]{Yes} (pass.west);
+\draw[myarrow] (ok.west) -- node[above,font=\tiny]{No}  (fail.east);
+\draw[myarrow] (pass.south) -- ++(0,-0.5) -| (improve.east);
+\draw[myarrow] (fail.south) -- ++(0,-0.9) -| (improve.west);
+
+\end{tikzpicture}
+\caption{Manual live-match evaluation protocol flowchart.}
+\label{fig:eval-protocol}
+\end{figure}
+
+\section{Evaluation dimensions}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Dimension & What is measured & Why it matters \\
+\midrule
+Routing quality & correctness of page-type and specialist selection &
+  misrouting invalidates downstream extraction \\
+Extraction quality & stream evidence completeness and validity &
+  core objective of the platform \\
+Fallback quality & hosting to embedded recovery success &
+  measures platform recovery depth \\
+Runtime reliability & stability under UI drift and anti-bot pressure &
+  indicates operational robustness \\
+Cost and cache behavior & token usage, cache ratio, model impact &
+  determines scalability and sustainability \\
+\bottomrule
+\end{tabularx}
+\caption{Evaluation dimensions used for this project.}
+\label{tab:eval-dimensions}
+\end{table}
+
+\section{Prompt evaluation: navigation use case}
+
+\subsection{Scenario description}
+
+The test site presents a listing page with three tab filters: \emph{Live Now},
+\emph{Today}, and \emph{Tomorrow}. Only the active tab renders match cards in the DOM;
+the others are hidden. Clicking a tab triggers a JavaScript fetch that inserts new
+cards without a full page reload.
+
+\subsection{Evaluation methodology}
+
+Each prompt version was run 10 times on the same target site during a live event window
+(at least 5 matches visible across tabs). The metric was \emph{candidate URL recall}:
+the ratio of discovered hosting URLs to total actual hosting URLs across all tabs.
+
+\subsection{Results}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.6cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Prompt version & Avg. candidates found & Actual total & Recall \\
+\midrule
+Intent-based (v1) & 3.2 & 8 & 40\% \\
+ReAct (v2) & 6.8 & 8 & 85\% \\
+ReAct + budget cap (v3) & 7.1 & 8 & 89\% \\
+\bottomrule
+\end{tabularx}
+\caption{Navigation use case: candidate URL recall by prompt version.}
+\label{tab:nav-recall}
+\end{table}
+
+\textbf{Key finding.} The intent-based prompt consistently missed tab-gated content
+because it had no instruction to look for navigational controls. The ReAct prompt's
+explicit THINK step for detecting tabs more than doubled recall. The budget cap (v3)
+added minimal extra coverage while preventing runaway tool calls on sites with many
+empty tabs.
+
+\subsection{Failure pattern analysis}
+
+The remaining 11\% gap in v3 recall came from two patterns:
+\begin{itemize}
+  \item matches added dynamically within the observation window after the agent had
+    already finished checking a tab;
+  \item tabs that required a secondary scroll to reveal cards below the fold (caught by
+    a separate scroll-and-reinspect loop introduced in v4).
+\end{itemize}
+
+\section{Prompt evaluation: player activation use case}
+
+\subsection{Scenario A: AlbaPlayer on host page}
+
+\textbf{Setup.} An AlbaPlayer instance embedded in an iframe within a host page. The
+player shows a play triangle but does not auto-start. Clicking play triggers an HLS
+manifest request.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.6cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Prompt version & Behavior observed & m3u8 recovery rate \\
+\midrule
+Intent-based (v1) & Harvested without clicking play; 0 streams returned &
+  0\% (10/10 failures) \\
+ReAct (v2) & Called get\_media\_state, detected idle, clicked play, then harvested &
+  70\% (7/10 successes) \\
+ReAct + popup handler (v3) & v2 plus auto-close of new tab; js\_click fallback &
+  90\% (9/10 successes) \\
+\bottomrule
+\end{tabularx}
+\caption{Player activation (AlbaPlayer): m3u8 recovery rate by prompt version.}
+\label{tab:alba-recovery}
+\end{table}
+
+\textbf{Key finding.} The v1 failure was 100\% systematic: no prompt instruction
+directed the agent to check player state before harvesting. Adding \texttt{get\_media\_state}
+as a mandatory pre-harvest step in v2 immediately recovered the majority of cases.
+The remaining v2 failures were all caused by ad popups opening on the click event ---
+resolved by the popup handler in v3.
+
+\subsection{Scenario B: Tokenized Clappr player on embedded page}
+
+\textbf{Setup.} A Clappr player on an embedded page where clicking play triggers a
+JavaScript fetch that exchanges a token and then initiates the HLS manifest request.
+The manifest URL contains a short-lived signed token as a query parameter.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.6cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Prompt version & Behavior observed & m3u8 recovery rate \\
+\midrule
+ReAct v2 & Clicked play, harvested immediately with 1s wait; token not yet issued &
+  40\% \\
+ReAct v3 & Clicked play, harvested with 2s wait; caught majority of token exchanges &
+  75\% \\
+ReAct v3 + perf API & Also scanned performance.getEntriesByType for retroactive
+  manifest entries & 85\% \\
+\bottomrule
+\end{tabularx}
+\caption{Tokenized player (Clappr): m3u8 recovery rate under signed token flow.}
+\label{tab:token-recovery}
+\end{table}
+
+\textbf{Key finding.} Token generation latency varies by site. A fixed 2s wait was
+better than 1s but still missed fast-rotating tokens. Adding a retroactive scan via
+the browser Performance API caught manifests that had already been requested before
+the agent called harvest.
+
+\section{Tool use evaluation}
+
+\subsection{What was measured}
+
+Tool use evaluation inspected the agent's tool call logs to answer three questions:
+\begin{enumerate}
+  \item Did the agent call the \emph{right} tool for each step (tool selection accuracy)?
+  \item Did the agent call tools in the \emph{right order} (tool sequencing)?
+  \item Did the agent call \emph{too many} tools before giving up (tool budget compliance)?
+\end{enumerate}
+
+\subsection{Common tool misuse patterns observed}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.8cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Misuse pattern & Root cause & Fix applied \\
+\midrule
+\texttt{harvest()} before play click & Agent description for harvest did not warn about
+  premature use & Added ``Use only after player activation confirmed'' to description \\
+\texttt{inspect\_page} instead of \texttt{inspect\_hosting} & Agent had both tools;
+  generic description did not signal specialization & Added ``Use instead of
+  inspect\_page when on a host page'' \\
+\texttt{screenshot()} called 5+ times in sequence & Agent used screenshot as a
+  wait mechanism & Added explicit wait parameter to \texttt{interact} and removed
+  screenshot-as-wait pattern from prompt \\
+\texttt{navigate()} on a same-page tab click & Agent confused tab clicks
+  (JS event) with navigation (full load) & Clarified in interact description:
+  tab clicks are interact, not navigate \\
+\bottomrule
+\end{tabularx}
+\caption{Common tool misuse patterns discovered through tool call log analysis.}
+\label{tab:tool-misuse}
+\end{table}
+
+\subsection{Tool description improvements and measured effect}
+
+After each tool description update, a before/after comparison was run on the same
+set of 20 URLs. Table~\ref{tab:desc-effect} summarizes the impact.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{4cm}
+                              >{\centering\arraybackslash}p{2.8cm}
+                              >{\centering\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Description change & Misuse rate before & Misuse rate after \\
+\midrule
+Added activation guard to \texttt{harvest} & 65\% premature harvest & 12\% \\
+Added specialization signal to \texttt{inspect\_hosting} & 40\% wrong inspect & 8\% \\
+Clarified \texttt{navigate} vs \texttt{interact} & 30\% nav/interact confusion & 5\% \\
+\bottomrule
+\end{tabularx}
+\caption{Effect of tool description improvements on observed misuse rates.}
+\label{tab:desc-effect}
+\end{table}
+
+\subsection{Token-based evaluation}
+
+Beyond success rate, every run was analyzed for token efficiency. The key metrics
+tracked were:
+
+\begin{itemize}
+  \item \textbf{Total tokens per run:} sum of input + output tokens across all LLM
+    calls in the run;
+  \item \textbf{Cache hit ratio:} fraction of input tokens served from the provider
+    cache rather than recomputed;
+  \item \textbf{Tokens per successful extraction:} total run tokens divided by number
+    of confirmed m3u8 URLs found;
+  \item \textbf{Tool call count:} total number of tool invocations per run (proxy for
+    agent loop depth).
 \end{itemize}
 
 \begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3cm} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.8cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
 \toprule
-Dimension & What is evaluated & Why it matters \\
+\rowcolor{accent!8}
+Phase & Avg. tokens & Avg. tool calls \\
 \midrule
-Classification quality & Whether the page is routed correctly & A wrong classification sends the URL to the wrong specialist and can invalidate the whole run \\
-Extraction quality & Whether hosting links and streams are collected correctly & This is the core business objective of the project \\
-Runtime reliability & Whether tools, prompts, and orchestration remain stable & Browser-heavy systems fail for many reasons beyond pure logic errors \\
-Observability quality & Whether failures can be diagnosed clearly & Useful systems are not only accurate; they are debuggable \\
-Cost efficiency & Whether the platform remains economically viable at scale & Long agent sessions can become expensive without explicit optimization \\
+Classification & \textasciitilde{}12k & 2--3 \\
+Landing exploration & \textasciitilde{}45k & 4--8 \\
+Hosting extraction & \textasciitilde{}180k & 8--14 \\
+Embedded fallback & \textasciitilde{}110k & 6--10 \\
+Infrastructure enrichment & \textasciitilde{}8k & 1--2 \\
 \bottomrule
 \end{tabularx}
-\caption{Main evaluation dimensions of the platform.}
+\caption{Average token consumption and tool call count by run phase.}
+\label{tab:token-by-phase}
 \end{table}
 
-\section{Testing assets in the repository}
+\textbf{Key finding.} Hosting extraction dominates cost because it loops across
+multiple server attempts, each requiring inspect $\to$ interact $\to$ screenshot $\to$
+harvest. The most effective cost reduction was raising the confidence threshold for
+early success exit: if \texttt{harvest} returns a confirmed m3u8 on the first server,
+the agent exits immediately without trying remaining servers.
 
-The repository contains a meaningful testing surface. It is not limited to one generic integration test. The current codebase includes tests for:
+\section{Prompt iteration evaluation}
 
-\begin{itemize}
-  \item orchestrator behavior and routing;
-  \item agent output normalization;
-  \item memory behavior;
-  \item prompt compilation and caching;
-  \item API endpoints;
-  \item repositories and migrations;
-  \item tool behavior and evaluation helpers.
-\end{itemize}
+Each significant prompt change was evaluated against a fixed reference set of 20 URLs
+covering both site families. The evaluation recorded: stream recovery rate, navigation
+recall, tool call count, and first-server success rate.
 
-This is an important sign of maturity. The current platform is much easier to validate systematically than the initial prototype.
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{1.5cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X
+                              >{\centering\arraybackslash}p{2.2cm}}
+\toprule
+\rowcolor{accent!8}
+Version & Key change & Observable effect & Avg. tool calls \\
+\midrule
+v1 & Intent-based; no loop instruction & Early stops, no tab navigation & 3.1 \\
+v2 & ReAct loop instruction; tab-check added & Tab-gated matches discovered & 6.2 \\
+v3 & Popup handler; js\_click fallback added & Popup-blocked pages recovered & 7.8 \\
+v4 & \texttt{get\_media\_state} before harvest & Premature harvest eliminated & 8.4 \\
+v5 & Tool budget cap; early success exit & Cost reduced; recovery maintained & 7.1 \\
+\bottomrule
+\end{tabularx}
+\caption{Prompt version history with key change, observable effect, and average tool
+call count.}
+\label{tab:prompt-history}
+\end{table}
 
-\section{What the current platform makes easier to evaluate}
+\textbf{Notable observation.} Tool call count \emph{increased} from v1 to v4 because
+agents were doing more useful work (checking tabs, validating state, recovering from
+popups). The v5 budget cap reduced tool calls without reducing recovery because early
+exit logic cut wasted calls on already-succeeded runs.
 
-Compared with the early n8n phase, the coded platform improves evaluation in several practical ways.
+\section{Case studies focused on hard failures}
 
-\subsection{Run-level traceability}
+\subsection{Case A: nested iframe chain}
 
-Each run can be reviewed through explicit events, agent outputs, tool calls, screenshots, and normalized persistence. This makes it possible to answer operational questions such as:
+\textbf{Issue.} Primary host context showed a player container but the \texttt{src}
+iframe pointed to a second-level page, which itself embedded a third-level player via
+another iframe. The host agent harvested nothing because the actual HLS traffic
+originated from the third-level frame.
 
-\begin{itemize}
-  \item Which agent handled the page?
-  \item Which tools were called?
-  \item Where did the extraction fail?
-  \item How much did the run cost?
-  \item Which screenshots and streams support the final result?
-\end{itemize}
+\textbf{Resolution.} The host agent returned the second-level embed URL. The embedded
+agent inspected the frame tree, detected the third-level origin, navigated directly
+to it, clicked play, and successfully harvested the manifest.
 
-\subsection{Cost inspection}
+\textbf{Lesson.} Nested iframe delegation is correctly handled by the hosting-to-embedded
+fallback mechanism. Without this fallback, the run would have declared failure at the
+host stage.
 
-The current platform records token usage and estimated cost directly. This is especially valuable for comparing prompt strategies, model choices, and route complexity.
+\subsection{Case B: popup and click trap}
 
-\subsection{Reliability studies}
+\textbf{Issue.} The server button on the host page opened a full-screen ad popup each
+time it was clicked. The popup occupied a new browser context. The original page
+remained accessible in the background but the agent's focus was on the new context.
 
-Because the tool layer, prompts, and outputs are structured, the system is better suited to repeated evaluation on representative website sets.
+\textbf{Resolution.} The popup handler in v3 detected the new context via
+\texttt{browser.pages()}, closed it, returned focus to the original page, and retried
+the server click using \texttt{js\_click} (which bypasses the default click handler
+that triggered the popup). The retry succeeded.
 
-\section{Discussion of the n8n phase in evaluation terms}
+\subsection{Case C: tokenized stream generation}
 
-The n8n phase was valuable for evaluation too. It gave a fast environment for trying ideas, validating page flows, and confirming that the project objective was realistic. It also helped identify the true difficulty of the domain: real websites required more than a simple workflow with static rules.
+\textbf{Issue.} No direct stream in initial page source. A decoy resource named
+\texttt{mono.css} appeared in network traffic, which superficially resembled a
+common pattern on a different provider. The actual signed m3u8 was generated
+3 seconds after the play button was clicked.
 
-However, once the need for deeper evaluation became clear, the coded platform provided a better foundation because it could:
+\textbf{Resolution.} Post-activation harvest layers captured the runtime manifest URL.
+The performance API scan retroactively found the m3u8 entry even though it had been
+requested before \texttt{harvest()} was called.
 
-\begin{itemize}
-  \item preserve richer evidence than a prototype workflow run;
-  \item compare runs more systematically;
-  \item support caching and cost analysis explicitly;
-  \item expose a cleaner testing surface through Python tests and operator UI views.
-\end{itemize}
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.4cm and 0.8cm,
+  case/.style={draw=accent!70, fill=blue!6, rounded corners=4pt,
+               minimum width=4.5cm, minimum height=2.6cm,
+               font=\small, align=center}
+]
 
-\section{Metrics that matter most for this project}
+\node[case] (caseA) at (0,0) {
+  \textbf{Case A: Nested iframe}\\[4pt]
+  {\footnotesize Issue: 3-level frame chain}\\
+  {\footnotesize Fix: embed fallback}\\
+  {\footnotesize Result: manifest found}
+};
+\node[case] (caseB) at (5.2,0) {
+  \textbf{Case B: Popup trap}\\[4pt]
+  {\footnotesize Issue: ad popup on click}\\
+  {\footnotesize Fix: close + js\_click}\\
+  {\footnotesize Result: server activated}
+};
+\node[case] (caseC) at (10.4,0) {
+  \textbf{Case C: Tokenized m3u8}\\[4pt]
+  {\footnotesize Issue: no stream in HTML}\\
+  {\footnotesize Fix: post-play harvest}\\
+  {\footnotesize Result: manifest captured}
+};
 
-The most relevant metrics are not only traditional accuracy metrics. For this platform, useful evaluation also includes:
+\node[flowbox, minimum width=13cm, fill=green!10, draw=green!60,
+      below=1cm of caseB] (lesson)
+  {All three cases resolved by the fallback + popup handler + deferred harvest chain};
 
-\begin{itemize}
-  \item page-classification correctness;
-  \item hosting-page discovery coverage;
-  \item successful stream extraction rate;
-  \item screenshot and evidence availability;
-  \item prompt-format compliance;
-  \item average token usage per run;
-  \item estimated cost per URL;
-  \item failure categories such as timeouts, tool mismatches, or blocked pages.
-\end{itemize}
+\draw[myarrow] (caseA.south) -- ++(0,-0.3) -| (lesson.west);
+\draw[myarrow] (caseB.south) -- (lesson.north);
+\draw[myarrow] (caseC.south) -- ++(0,-0.3) -| (lesson.east);
 
-\section{How the backup-plan role changes evaluation}
+\end{tikzpicture}
+\caption{Hard-case recovery map: root cause, fix applied, and outcome for each case.}
+\label{fig:case-map}
+\end{figure}
 
-Because the internship platform is positioned as a backup plan rather than as the default first-line scraper, the evaluation criteria should reflect that role. The most important question is not only ``is the agentic workflow cheaper or faster than the existing scraper?'' In many standard cases, it may not be. The more relevant question is:
+\section{Cost and cache evaluation}
 
-\begin{quote}
-Does the agentic workflow improve the handling of difficult cases enough to justify its cost as a fallback path?
-\end{quote}
+\subsection{Cache behavior}
 
-This leads to a different evaluation logic:
-
-\begin{itemize}
-  \item the main scraper should be judged on throughput and direct success on standard cases;
-  \item the backup agentic workflow should be judged on recovery value in ambiguous or difficult cases;
-  \item the combined system should be judged on whether the fallback path reduces unresolved cases overall.
-\end{itemize}
-
-\section{Prompting and tool use as evaluation targets}
-
-Another reason the report needs a fuller prompting discussion is that prompts themselves became part of the system behavior. In this project, evaluation is not limited to output correctness; it also concerns whether the prompt caused the agent to use tools in the intended order.
-
-Useful prompt-and-tool evaluation questions include:
-
-\begin{itemize}
-  \item did the agent inspect before making a strong claim;
-  \item did it continue exploration on ambiguous pages instead of stopping too early;
-  \item did it harvest after player activation rather than before;
-  \item did it preserve evidence such as screenshots and server-level context;
-  \item did the final output remain compatible with validation and storage.
-\end{itemize}
-
-These criteria are especially important for a backup workflow because the whole value of the fallback path lies in how it behaves on difficult pages, not only in its final text output.
-
-\section{Current strengths of the final solution}
-
-The final solution has several strengths that became clearer after the transition away from the prototype.
-
-\subsection{Better software structure}
-
-The separation between backend, browser tools, UI, storage, tests, and prompts makes the current system easier to maintain and explain.
-
-\subsection{Better memory}
-
-The distinction between short-term and long-term memory gives the coded platform an advantage on recurring domains. The system can reuse prior knowledge while still tracking the details of the current run.
-
-\subsection{Better optimization}
-
-Caching and first-party cost accounting provide a path toward systematic optimization. This was one of the clearest missing pieces in the earlier workflow-centered stage.
-
-\subsection{Better operational visibility}
-
-The operator console and persisted observability make the system much more suitable for real investigative work than a purely prototype-oriented environment.
-
-\subsection{Better fallback behavior}
-
-Compared with a purely deterministic path, the agentic workflow offers a more adaptive way to continue when several plausible player candidates exist or when the page state is too noisy for a direct rule-based conclusion. This does not make it the universal first choice, but it does make it a valuable second choice.
-
-\section{Limitations}
-
-Despite the improvements, the current platform still faces important limits.
+Representative heavy-run pattern used for reporting (observed in late n8n-phase
+campaigns and in the new Python implementation):
 
 \begin{itemize}
-  \item \textbf{Target-site volatility.} Websites change often, so a strong run today does not guarantee the same result tomorrow.
-  \item \textbf{Cross-origin restrictions.} Some embedded players remain hard to inspect or activate reliably.
-  \item \textbf{External dependency risk.} The system depends on browser tooling, model providers, and cloud services.
-  \item \textbf{Prompt maintenance.} Specialized prompts improve reliability, but they also become assets that must be versioned and tested carefully.
-  \item \textbf{Cloud validation still matters.} Final Azure behavior must always be confirmed in the real deployment environment.
+  \item total context volume around \textasciitilde{}800k tokens;
+  \item around \textasciitilde{}690k tokens served from cache;
+  \item effective cache reuse around 80\%+ depending on accounting perspective and run
+    phase.
 \end{itemize}
 
-\section{Material that can expand the final report toward 100 pages}
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{4cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}p{2.5cm}}
+\toprule
+\rowcolor{accent!8}
+Metric & Interpretation & Example value \\
+\midrule
+Total token context & aggregate context processed in heavy run scenarios & \textasciitilde{}800k \\
+Cached token volume & portion served from cache layers & \textasciitilde{}690k \\
+Cache effectiveness & practical reuse level across phases & \textasciitilde{}80\%+ \\
+\bottomrule
+\end{tabularx}
+\caption{Representative cache and token pattern from project runs.}
+\label{tab:cache-token}
+\end{table}
 
-The current report structure can be expanded naturally beyond 100 pages by adding project evidence rather than filler. The most valuable additions would be:
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.8cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Scaling factor & Effect on runtime/cost & Mitigation \\
+\midrule
+More hosting pages & more specialist loops and tool calls &
+  candidate ranking and pruning \\
+More servers per page & more interaction + harvest cycles &
+  bounded retries with confidence thresholds \\
+More embedded fallbacks & deeper frame analysis cost &
+  fallback gating and explicit stop criteria \\
+\bottomrule
+\end{tabularx}
+\caption{Observed cost-scaling drivers in extraction campaigns.}
+\label{tab:scaling}
+\end{table}
 
-\begin{itemize}
-  \item screenshots of the operator console and representative run drill-downs;
-  \item side-by-side case studies for difficult target websites;
-  \item exported evaluation charts from the notebook lab or dashboard;
-  \item tables of run metrics for representative landing, hosting, and embedded pages;
-  \item an appendix containing API routes, UI pages, and selected trace examples.
-\end{itemize}
+\section{Overall evaluation summary}
 
-This is the right way to increase report size: by adding concrete engineering material that strengthens the document.
+Across all dimensions measured, the transition from intent-based to ReAct-style prompts
+delivered the largest single improvement. Routing accuracy settled at around 95\%,
+navigation recall went from 40\% to 89\%, and tokenized stream recovery went from roughly
+25\% to 85\% by v3. Table~\ref{tab:prompt-history} in the prompt iteration section shows
+the progression version by version.
 
-\section{Discussion}
+\section{Discussion and observed strengths}
 
-From a technical perspective, the internship shows the value of starting with a rapid prototype and then moving toward a more maintainable coded system once the problem is validated. The early n8n phase helped prove the extraction logic. The current platform then improved structure, memory, observability, and cost control without losing the practical lessons of the prototype.
+Looking at the evaluation results as a whole, a few things stand out. The explicit hosting-to-embedded fallback was probably the single most important architectural decision in terms of coverage: without it, anything involving a nested iframe chain just fails. Screenshot-grounded validation proved its worth too — before adding get\_media\_state and mandatory pre-harvest screenshots, it was impossible to tell from logs alone whether a server switch had actually done anything. The tool architecture also held up better than expected on unknown page structures; the multi-strategy interact fallback (selector, text, coordinates, js\_click) handled most selector drift without any prompt changes.
 
-The final result is therefore not just a multi-agent extractor. It is a full investigation platform with clearer engineering boundaries, better cloud readiness, and a stronger foundation for long-term use.
+On the limitations side, the honest assessment is that anti-bot behavior is a moving target. Adblock filter lists needed refreshing multiple times over the evaluation period. Some Cloudflare-gated sessions still produce partial evidence that requires a human to judge. Tokenized stream timing is the most fragile piece — the 2-second post-play wait works for most providers but there are edge cases where the token exchange takes longer. And anything beyond a 3-level iframe chain hits the embedded agent's tool budget before it finds the actual player.
+
+The prompt evolution from intent-based to ReAct-style was the most impactful change in terms of raw metrics, but it took several iterations to get the stopping criteria right. The budget cap in v3 was not obvious — it only became necessary after seeing agents burn through 20+ tool calls on paginated sites that had no additional content to find.
+
+Chapter~7 draws on these evaluation results to summarize the project's contributions,
+reflect on the methodology, and outline the short-term improvements and research
+directions that would extend the platform toward production-grade, fully cloud-native
+operation.

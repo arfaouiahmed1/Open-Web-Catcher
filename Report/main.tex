@@ -6,6 +6,7 @@
 \usepackage[a4paper,margin=2.5cm]{geometry}
 \usepackage{setspace}
 \usepackage{graphicx}
+\graphicspath{{figures/}}
 \usepackage{booktabs}
 \usepackage{longtable}
 \usepackage{tabularx}
@@ -13,11 +14,22 @@
 \usepackage{float}
 \usepackage{enumitem}
 \usepackage{xcolor}
+\usepackage{colortbl}
 \usepackage{hyperref}
 \usepackage{xurl}
 \usepackage{listings}
 \usepackage{fancyhdr}
 \usepackage{titlesec}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta,shapes.geometric,positioning,fit,backgrounds,calc,decorations.pathreplacing}
+\usepackage{mdframed}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+\usepackage{pifont}
+\newcommand{\sstar}{\ding{72}}
+\newcommand{\hstar}{\ding{73}}
 
 \hypersetup{
   colorlinks=true,
@@ -35,6 +47,8 @@
 \setlength{\emergencystretch}{3em}
 \raggedbottom
 \setlist{nosep}
+\urlstyle{tt}
+\Urlmuskip=0mu plus 2mu\relax
 
 \definecolor{codebg}{RGB}{247,247,247}
 \definecolor{codeframe}{RGB}{220,220,220}
@@ -50,6 +64,36 @@
   showstringspaces=false,
   columns=fullflexible,
   keepspaces=true
+}
+
+\lstdefinestyle{promptstyle}{
+  basicstyle=\ttfamily\footnotesize\color{codetext},
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{accent},
+  breaklines=true,
+  showstringspaces=false,
+  columns=fullflexible,
+  keepspaces=true,
+  xleftmargin=6pt,
+  xrightmargin=6pt
+}
+
+\tikzset{
+  sysbox/.style={draw=accent, fill=blue!4, rounded corners=4pt,
+    minimum width=11cm, minimum height=1.0cm,
+    text width=10.5cm, align=center,
+    font=\small\bfseries, text=black, inner sep=6pt},
+  agentbox/.style={draw=accent, fill=blue!8, rounded corners=4pt, minimum width=5.2cm,
+    minimum height=2.8cm, text centered, font=\small, align=center},
+  toolbox/.style={draw=gray!60, fill=gray!10, rounded corners=3pt, minimum width=4.8cm,
+    minimum height=0.75cm, text centered, font=\footnotesize, align=center},
+  flowbox/.style={draw=accent!70, fill=blue!5, rounded corners=4pt, minimum width=3.8cm,
+    minimum height=0.9cm, text centered, font=\small, align=center},
+  decisionbox/.style={draw=orange!70, fill=orange!10, diamond, shape aspect=2.2,
+    minimum width=4.5cm, minimum height=1.2cm, text centered, font=\small, align=center},
+  myarrow/.style={->, >=Stealth, thick, accent},
+  grayarrow/.style={->, >=Stealth, thick, gray!70},
 }
 
 \titleformat{\chapter}[display]
@@ -101,44 +145,287 @@
   \end{table}
 }
 
+% ===== ESPRIT COVER PAGE COLORS =====
+\definecolor{espritred}{RGB}{176,28,36}
+\definecolor{espritdarkred}{RGB}{130,10,20}
+\definecolor{espritgray}{RGB}{140,140,140}
+\definecolor{espritdarkgray}{RGB}{75,75,75}
+
 \begin{document}
 
 \hypersetup{pageanchor=false}
+
+% =====================================================================
+%  PAGE 1 — ESPRIT GRADUATION PROJECT COVER
+% =====================================================================
 \begin{titlepage}
-  \centering
-  {\Large \schoolName \par}
-  \vspace{0.5cm}
-  {\large \departmentName \par}
-  \vspace{2.0cm}
-  {\Huge \bfseries \reportTitle \par}
-  \vspace{0.8cm}
-  {\Large \reportType \par}
-  \vspace{2.0cm}
+\newgeometry{margin=0pt}
+\thispagestyle{empty}
 
-  \begin{tabular}{>{\bfseries}p{4.5cm}p{9cm}}
-    Student & \studentName \\
-    Host organization & \hostOrganization \\
-    Client & \clientName \\
-    Internship period & \internshipPeriod \\
-    Academic supervisor & \supervisorName \\
-    Industry supervisor & \industrySupervisorName \\
-  \end{tabular}
+\begin{tikzpicture}[remember picture, overlay]
 
-  \vfill
-  {\large \today \par}
+% ---------- LIGHT GREY BACKGROUND (matches ESPRIT template) ----------
+\fill[espritgray!18] (current page.south west) rectangle (current page.north east);
+
+% ==========================================================
+%  LEFT-SIDE TRIANGLE CLUSTER  (top group)
+% ==========================================================
+% Large red inverted triangle (top-left dominant)
+\fill[espritred]
+  ([xshift=-0.2cm, yshift=-1.8cm]current page.north west) --
+  ([xshift= 4.2cm, yshift=-1.8cm]current page.north west) --
+  ([xshift= 2.0cm, yshift=-7.8cm]current page.north west) -- cycle;
+
+% Grey triangle left of the red one (outlined)
+\draw[espritgray, line width=1.2pt]
+  ([xshift=-0.1cm, yshift=-4.2cm]current page.north west) --
+  ([xshift= 2.4cm, yshift=-4.2cm]current page.north west) --
+  ([xshift= 1.15cm,yshift=-6.8cm]current page.north west) -- cycle;
+
+% Small dark grey solid triangle (lower inside the grey)
+\fill[espritdarkgray]
+  ([xshift= 0.8cm, yshift=-5.2cm]current page.north west) --
+  ([xshift= 2.0cm, yshift=-5.2cm]current page.north west) --
+  ([xshift= 1.4cm, yshift=-6.5cm]current page.north west) -- cycle;
+
+% ==========================================================
+%  LEFT-SIDE TRIANGLE CLUSTER  (lower-left group)
+% ==========================================================
+% Red triangle - lower left, pointing right
+\fill[espritred]
+  ([xshift=-0.2cm, yshift= 8.8cm]current page.south west) --
+  ([xshift=-0.2cm, yshift= 5.6cm]current page.south west) --
+  ([xshift= 2.5cm, yshift= 7.2cm]current page.south west) -- cycle;
+
+% Larger grey filled triangle
+\fill[espritgray]
+  ([xshift= 0.5cm, yshift= 5.8cm]current page.south west) --
+  ([xshift= 3.6cm, yshift= 5.8cm]current page.south west) --
+  ([xshift= 2.1cm, yshift= 3.4cm]current page.south west) -- cycle;
+
+% Small red solid - bottom left
+\fill[espritred]
+  ([xshift= 0.2cm, yshift= 3.6cm]current page.south west) --
+  ([xshift= 1.8cm, yshift= 3.6cm]current page.south west) --
+  ([xshift= 1.0cm, yshift= 2.2cm]current page.south west) -- cycle;
+
+% Outlined grey triangle - bottom center-left
+\draw[espritgray, line width=1pt]
+  ([xshift= 2.2cm, yshift= 3.0cm]current page.south west) --
+  ([xshift= 4.4cm, yshift= 3.0cm]current page.south west) --
+  ([xshift= 3.3cm, yshift= 1.4cm]current page.south west) -- cycle;
+
+% Dark grey small filled - far right of cluster
+\fill[espritdarkgray]
+  ([xshift= 3.8cm, yshift= 5.0cm]current page.south west) --
+  ([xshift= 5.4cm, yshift= 5.0cm]current page.south west) --
+  ([xshift= 4.6cm, yshift= 3.6cm]current page.south west) -- cycle;
+
+% Small red accent - right of lower cluster
+\fill[espritred]
+  ([xshift= 4.8cm, yshift= 3.2cm]current page.south west) --
+  ([xshift= 6.0cm, yshift= 3.2cm]current page.south west) --
+  ([xshift= 5.4cm, yshift= 2.2cm]current page.south west) -- cycle;
+
+% ==========================================================
+%  TOP-RIGHT — ESPRIT WORD MARK
+% ==========================================================
+\node[anchor=north east, inner sep=0pt]
+  at ([xshift=-1.5cm, yshift=-1.2cm]current page.north east) {%
+  \sffamily%
+  {\fontsize{42}{42}\selectfont\bfseries\color{black}espr}%
+  {\fontsize{42}{42}\selectfont\bfseries\color{espritred}it}%
+};
+\node[anchor=north east, inner sep=0pt]
+  at ([xshift=-1.5cm, yshift=-4.2cm]current page.north east) {%
+  {\small\sffamily\itshape\color{black} Se former autrement}%
+};
+
+% ==========================================================
+%  YEAR + PROJECT TYPE
+% ==========================================================
+\node[anchor=north west, inner sep=0pt]
+  at ([xshift=5.0cm, yshift=-5.5cm]current page.north west) {%
+  {\fontsize{22}{22}\selectfont\bfseries\color{espritred}2025 -- 2026}%
+};
+\node[anchor=north west, inner sep=0pt]
+  at ([xshift=5.0cm, yshift=-7.6cm]current page.north west) {%
+  {\fontsize{16}{16}\selectfont\bfseries\color{black}GRADUATION PROJECT}%
+};
+
+% ==========================================================
+%  RED BANNER — NATIONAL ENGINEERING DEGREE
+% ==========================================================
+\fill[espritred]
+  ([xshift=4.5cm, yshift=-9.4cm]current page.north west) rectangle
+  ([xshift=21.0cm, yshift=-11.0cm]current page.north west);
+\node[anchor=west, inner sep=0pt, text=white]
+  at ([xshift=5.2cm, yshift=-10.2cm]current page.north west) {%
+  {\fontsize{14}{14}\selectfont\bfseries NATIONAL ENGINEERING DEGREE}%
+};
+
+% ==========================================================
+%  DARK RED BANNER — SPECIALTY
+% ==========================================================
+\fill[espritdarkred]
+  ([xshift=4.5cm, yshift=-11.3cm]current page.north west) rectangle
+  ([xshift=21.0cm, yshift=-12.6cm]current page.north west);
+\node[anchor=west, inner sep=0pt, text=white]
+  at ([xshift=5.2cm, yshift=-11.95cm]current page.north west) {%
+  {\fontsize{11}{11}\selectfont\bfseries SPECIALTY:\ INFORMATION TECHNOLOGY}%
+};
+
+% ==========================================================
+%  MAIN CONTENT — TITLE + STUDENT INFO
+% ==========================================================
+\node[anchor=north west, text width=13.5cm, align=left, inner sep=0pt]
+  at ([xshift=5.2cm, yshift=-13.2cm]current page.north west) {%
+  {\fontsize{13}{17}\selectfont\bfseries\color{black}
+   Design of a Multi-Agent AI Pipeline\\
+   for Evidence Collection from\\
+   Illegal Streaming Sites}%
+};
+
+\node[anchor=north west, text width=13.5cm, align=left, inner sep=0pt]
+  at ([xshift=5.2cm, yshift=-17.0cm]current page.north west) {%
+  {\fontsize{11}{18}\selectfont\color{black}
+   \textbf{By:} \hspace{0.4em} Ahmed ARFAOUI \\[4pt]
+   \textbf{Academic supervisor:} \hspace{0.4em} \supervisorName \\[4pt]
+   \textbf{Corporate Internship Supervisor:} \hspace{0.4em} Wael Hkiri}%
+};
+
+% ==========================================================
+%  COMPANY LOGO PLACEHOLDER BOX
+% ==========================================================
+\draw[espritgray, dashed, line width=0.8pt]
+  ([xshift=10.5cm, yshift=-19.0cm]current page.north west) rectangle
+  ([xshift=16.0cm, yshift=-21.8cm]current page.north west);
+\node[text=espritgray, font=\small\itshape]
+  at ([xshift=13.25cm, yshift=-20.4cm]current page.north west)
+  {\textit{LOGO ENTREPRISE}};
+
+% ==========================================================
+%  BOTTOM LOGO STRIP — accreditation logos (text placeholders)
+% ==========================================================
+\draw[espritgray!50, line width=0.4pt]
+  ([xshift=0cm, yshift=2.0cm]current page.south west) --
+  ([xshift=21cm, yshift=2.0cm]current page.south west);
+
+\node[font=\fontsize{7}{8}\selectfont\color{espritdarkgray},
+      anchor=south, align=center, text width=2.8cm]
+  at ([xshift= 2.5cm, yshift=0.3cm]current page.south west)
+  {\textbf{uni Tunis}\\Universit\'e de Tunis};
+
+\node[font=\fontsize{8}{8}\selectfont\bfseries\color{espritdarkgray},
+      anchor=south, align=center]
+  at ([xshift= 6.5cm, yshift=0.6cm]current page.south west)
+  {cdio};
+
+\node[font=\fontsize{7}{8}\selectfont\color{espritdarkgray},
+      anchor=south, align=center, text width=2.8cm]
+  at ([xshift=10.5cm, yshift=0.3cm]current page.south west)
+  {\textbf{EUR-ACE}\\Accredited};
+
+\node[font=\fontsize{7}{8}\selectfont\color{espritdarkgray},
+      anchor=south, align=center, text width=2.2cm]
+  at ([xshift=14.5cm, yshift=0.3cm]current page.south west)
+  {\textbf{CTi}\\Accredited};
+
+\node[font=\fontsize{7}{8}\selectfont\color{espritdarkgray},
+      anchor=south, align=center, text width=3.4cm]
+  at ([xshift=18.5cm, yshift=0.3cm]current page.south west)
+  {\textbf{CONF\'ERENCE DES}\\GRANDES \'ECOLES};
+
+\end{tikzpicture}
+\restoregeometry
 \end{titlepage}
+
+% =====================================================================
+%  PAGE 2 — VALIDATION FORM  (inserted after cover page)
+% =====================================================================
+\newpage
+\thispagestyle{empty}
+{%
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.5em}
+
+Je valide le dépôt du rapport PFE relatif à l'étudiant nommé ci-dessous / I validate the submission of the student's report:
+
+\begin{itemize}
+  \item \textbf{Nom \& Prénom / Name \& Surname :} Ahmed ARFAOUI
+\end{itemize}
+
+\vspace{1.2cm}
+
+% === Box 1: Business Supervisor ===
+\begin{center}
+\begin{tabular}{|p{14cm}|}
+\hline
+\vspace{0.4cm}
+\begin{center}
+{\large Encadrant Entreprise / Business site Supervisor}
+\end{center}
+\vspace{0.6cm}
+
+\begin{itemize}
+  \item \textbf{Nom \& Prénom / Name \& Surname :} Wael Hkiri
+\end{itemize}
+
+\vspace{0.3cm}
+\begin{center}
+\textbf{Cachet \& Signature / Stamp \& Signature}
+\end{center}
+
+\vspace{3.5cm}
+\\
+\hline
+\end{tabular}
+\end{center}
+
+\vspace{1.0cm}
+
+% === Box 2: Academic Supervisor ===
+\begin{center}
+\begin{tabular}{|p{14cm}|}
+\hline
+\vspace{0.4cm}
+\begin{center}
+{\large Encadrant Académique / Academic Supervisor}
+\end{center}
+\vspace{0.6cm}
+
+\begin{itemize}
+  \item \textbf{Nom \& Prénom / Name \& Surname :} \supervisorName
+\end{itemize}
+
+\vspace{0.3cm}
+\begin{center}
+\textbf{Signature / Signature}
+\end{center}
+
+\vspace{3.5cm}
+\\
+\hline
+\end{tabular}
+\end{center}
+
+\vspace{0.8cm}
+Ce formulaire doit être rempli, signé et \underline{\textbf{scanné}} / This form must be completed, signed and \underline{\textbf{scanned}}.
+
+Ce formulaire doit être introduit après la page de garde / This form must be inserted after the cover page.
+}
+\newpage
+
 \hypersetup{pageanchor=true}
 
 \pagenumbering{roman}
 
 \chapter*{Abstract}
-This report presents the design and implementation of a multi-agent platform for collecting evidence from illegal streaming websites. The work was carried out during an internship at Soft Stars for the client beIN SPORTS. The practical objective was to inspect unstable websites, classify their pages, extract relevant hosting and stream information, identify infrastructure providers, and support downstream takedown actions with traceable evidence.
+This report presents the design and implementation of a multi-agent AI platform for collecting evidence from illegal streaming websites. The work was carried out during an internship at Soft Stars for the client beIN SPORTS. The objective was to build a system capable of visiting target websites, classifying their pages, extracting stream URLs and hosting infrastructure details, and producing structured, auditable evidence to support downstream legal and operational action.
 
-The report also positions this work relative to the company's existing stream scraper. That scraper already performs deterministic crawling, page classification, host-page inspection, embedded-player discovery, screenshot capture, final stream extraction, and infrastructure enrichment. The solution developed during the internship was therefore not intended to replace that production capability directly. Instead, it was designed as an agentic workflow that can serve as a complementary and more adaptive backup path when highly dynamic pages, noisy HTML and JavaScript, nested iframes, or unusual anti-bot conditions reduce the effectiveness of the main scraper.
+The project evolved in two stages. The first stage used n8n as a rapid experimentation environment for validating prompts, browser interactions, and end-to-end workflow logic. The second stage replaced the prototype with a code-based platform built around FastAPI, Next.js, Puppeteer-driven browser tools, structured observability, short-term and long-term memory, and first-party evaluation tooling.
 
-The project evolved in two stages. The first stage relied on n8n and was valuable as a rapid experimentation environment for testing prompts, browser actions, and end-to-end workflow logic. The second stage replaced the visual prototype with a code-based platform built around FastAPI, Next.js, Puppeteer-driven browser tools, persistent observability, short-term and long-term memory, and first-party evaluation utilities. This transition improved maintainability, visibility, and cost control while preserving the lessons learned during the earlier n8n phase.
-
-The final system uses a lightweight orchestrator to route each URL toward specialized agents for classification, landing-page exploration, hosting-page extraction, and embedded-player analysis. The platform also includes provider lookup, takedown email drafting, runtime telemetry, and an operator console for monitoring runs. For deployment, the solution is packaged as containers and prepared for Azure, with event-driven execution through Azure Container Apps Jobs and Azure Service Bus.
+The final system routes each input URL through specialized agents for classification, landing-page exploration, hosting-page extraction, and embedded-player analysis. The platform includes provider lookup, runtime telemetry, cost tracking, and an operator console for monitoring live and historical runs. For deployment, the solution is containerized and prepared for Azure, with event-driven execution through Azure Container Apps Jobs and Azure Service Bus.
 
 \chapter*{Acknowledgements}
 I would like to thank my academic and professional supervisors for their guidance throughout this internship. I also thank the Soft Stars team for the technical discussions, feedback, and trust that made this work possible.
@@ -161,29 +448,262 @@ I would like to thank my academic and professional supervisors for their guidanc
 
 \chapter*{References}
 \addcontentsline{toc}{chapter}{References}
-\begin{thebibliography}{9}
+\begin{thebibliography}{99}
 
-\bibitem{repo-readme}
-Project repository, \emph{README.md}, used as the main implementation entry point for the final platform.
+% ---- AI Agents and ReAct Framework ----
 
-\bibitem{architecture-docs}
-Project documentation set, especially \emph{docs/architecture/overview.md}, \emph{docs/architecture/data-flow.md}, \emph{docs/architecture/agents.md}, and \emph{docs/architecture/implementation-deep-dive-2026-04-09.md}.
+\bibitem{react}
+S. Yao, J. Zhao, D. Yu, N. Du, I. Shafran, K. Narasimhan, and Y. Cao,
+``ReAct: Synergizing Reasoning and Acting in Language Models,''
+in \emph{Proceedings of the International Conference on Learning Representations (ICLR)},
+2023. Available: \url{https://arxiv.org/abs/2210.03629}
 
-\bibitem{api-docs}
-Project API documentation, \emph{docs/api/fastapi.md} and \emph{docs/api/operator-console.md}.
+\bibitem{toolformer}
+T. Schick, J. Dwivedi-Yu, R. Dess\`{i}, R. Raileanu, M. Ciaramita, L. Zettlemoyer,
+H. Sch\"{u}tze, and T. Scialom,
+``Toolformer: Language Models Can Teach Themselves to Use Tools,''
+in \emph{Advances in Neural Information Processing Systems (NeurIPS)}, vol.~36, 2023.
+Available: \url{https://arxiv.org/abs/2302.04761}
 
-\bibitem{source-code}
-Source code under \emph{src/}, \emph{tools/puppeteer/}, \emph{web/}, \emph{configs/}, and \emph{tests/}, used to describe the implemented architecture, runtime behavior, memory, caching, and evaluation workflow.
+\bibitem{agent-survey}
+L. Wang, C. Ma, X. Feng, Z. Zhang, H. Yang, J. Zhang, Z. Chen, J. Tang, X. Chen,
+Y. Lin, W. X. Zhao, Z. Wei, and J. Wen,
+``A Survey on Large Language Model based Autonomous Agents,''
+\emph{Frontiers of Computer Science}, vol.~18, no.~6, 2024.
+Available: \url{https://arxiv.org/abs/2308.11432}
+
+\bibitem{cot}
+J. Wei, X. Wang, D. Schuurmans, M. Bosma, B. Ichter, F. Xia, E. Chi, Q. Le,
+and D. Zhou,
+``Chain-of-Thought Prompting Elicits Reasoning in Large Language Models,''
+in \emph{Advances in Neural Information Processing Systems (NeurIPS)}, vol.~35, 2022.
+Available: \url{https://arxiv.org/abs/2201.11903}
+
+% ---- Large Language Models ----
+
+\bibitem{claude}
+Anthropic,
+\emph{Claude 3 Model Card},
+Anthropic, 2024.
+Available: \url{https://www.anthropic.com/claude}
+
+\bibitem{gemini}
+Google DeepMind,
+\emph{Gemini: A Family of Highly Capable Multimodal Models},
+Technical Report, Google DeepMind, 2023.
+Available: \url{https://arxiv.org/abs/2312.11805}
+
+% ---- Browser Automation and Web Agents ----
+
+\bibitem{puppeteer}
+Google Chrome Developers,
+\emph{Puppeteer: A Node.js Library for Controlling Headless Chrome},
+Google, 2024.
+Available: \url{https://pptr.dev}
+
+\bibitem{webarena}
+S. Zhou, F. F. Xu, H. Zhu, X. Zhou, R. Lo, A. Sridhar, X. Cheng, T. Bisk,
+D. Fried, U. Alon, and G. Neubig,
+``WebArena: A Realistic Web Environment for Building Autonomous Agents,''
+in \emph{Proceedings of ICLR}, 2024.
+Available: \url{https://arxiv.org/abs/2307.13854}
+
+\bibitem{cdp}
+Google,
+\emph{Chrome DevTools Protocol Documentation},
+Google Developers, 2024.
+Available: \url{https://chromedevtools.github.io/devtools-protocol/}
+
+% ---- Methodology ----
 
 \bibitem{crispdm}
-R. Wirth and J. Hipp, ``CRISP-DM: Towards a Standard Process Model for Data Mining,'' 2000.
+R. Wirth and J. Hipp,
+``CRISP-DM: Towards a Standard Process Model for Data Mining,''
+in \emph{Proceedings of the 4th International Conference on the Practical
+Application of Knowledge Discovery and Data Mining (PAKDD)}, 2000, pp.~29--39.
+
+% ---- Web Technologies and APIs ----
+
+\bibitem{fastapi}
+S. Ram\'irez,
+\emph{FastAPI: Modern, Fast Web Framework for Building APIs with Python},
+2024. Available: \url{https://fastapi.tiangolo.com}
+
+\bibitem{nextjs}
+Vercel,
+\emph{Next.js: The React Framework for the Web},
+Vercel, 2024.
+Available: \url{https://nextjs.org/docs}
+
+\bibitem{n8n}
+n8n GmbH,
+\emph{n8n: Workflow Automation for Technical People},
+2024.
+Available: \url{https://docs.n8n.io}
+
+% ---- Cloud and Deployment ----
 
 \bibitem{azure-jobs}
-Microsoft Learn, \emph{Jobs in Azure Container Apps}. Official documentation consulted to align the deployment section with Azure Container Apps Jobs capabilities.
+Microsoft,
+``Jobs in Azure Container Apps,''
+\emph{Microsoft Learn}, 2024.
+Available: \url{https://learn.microsoft.com/en-us/azure/container-apps/jobs}
 
-\bibitem{azure-event-jobs}
-Microsoft Learn, \emph{Tutorial: Deploy an event-driven job by using Azure Container Apps}. Official documentation consulted for the event-driven deployment pattern based on queue messages.
+\bibitem{azure-servicebus}
+Microsoft,
+``Azure Service Bus Messaging Service,''
+\emph{Microsoft Learn}, 2024.
+Available: \url{https://learn.microsoft.com/en-us/azure/service-bus-messaging/}
+
+\bibitem{cloudinary}
+Cloudinary,
+\emph{Cloudinary Image and Video Upload, Storage, Optimization and CDN},
+Cloudinary, 2024.
+Available: \url{https://cloudinary.com/documentation}
+
+% ---- Streaming Protocols and Media ----
+
+\bibitem{hls-rfc}
+R. Pantos and W. May,
+\emph{HTTP Live Streaming}, RFC 8216,
+Internet Engineering Task Force (IETF), August 2017.
+Available: \url{https://www.rfc-editor.org/rfc/rfc8216}
+
+% ---- Ad Blocking and Privacy Tools ----
+
+\bibitem{ublock}
+R. Hill,
+\emph{uBlock Origin: An Efficient Blocker for Chromium and Firefox},
+GitHub, 2024.
+Available: \url{https://github.com/gorhill/uBlock}
+
+\bibitem{ghostery}
+Cliqz/Ghostery,
+\emph{Ghostery: Privacy Ad Blocker Extension},
+Ghostery Inc., 2024.
+Available: \url{https://www.ghostery.com}
+
+% ---- Sports Rights and Content Protection ----
+
+\bibitem{muso-piracy}
+MUSO,
+\emph{Global Piracy Insights: Sports Streaming Report},
+MUSO Intelligence, 2023.
+Available: \url{https://www.muso.com/insights}
+
+\bibitem{audiovisual-obs}
+European Audiovisual Observatory,
+\emph{Trends in the Field of Audiovisual Piracy in Europe},
+Council of Europe, Strasbourg, 2022.
+Available: \url{https://rm.coe.int/}
 
 \end{thebibliography}
+
+% =====================================================================
+%  LAST PAGE — ESPRIT BACK COVER
+% =====================================================================
+\clearpage
+\thispagestyle{empty}
+\newgeometry{margin=0pt}
+
+\begin{tikzpicture}[remember picture, overlay]
+
+% Light grey background
+\fill[espritgray!18] (current page.south west) rectangle (current page.north east);
+
+% ---- Top: large central downward triangle with cap icon ----
+\fill[espritred]
+  ([xshift= 5.5cm, yshift=-0.5cm]current page.north west) --
+  ([xshift=15.5cm, yshift=-0.5cm]current page.north west) --
+  ([xshift=10.5cm, yshift=-9.5cm]current page.north west) -- cycle;
+
+% Red horizontal ribbon across upper-middle
+\fill[espritred!90]
+  ([xshift=-0.5cm, yshift=-5.8cm]current page.north west) rectangle
+  ([xshift=21.5cm, yshift=-7.5cm]current page.north west);
+
+% ---- Left side scattered triangles ----
+% Top-left grey triangle (outline)
+\draw[espritgray, line width=1.2pt]
+  ([xshift=-0.3cm, yshift=-3.5cm]current page.north west) --
+  ([xshift= 2.2cm, yshift=-3.5cm]current page.north west) --
+  ([xshift= 0.95cm,yshift=-5.8cm]current page.north west) -- cycle;
+
+% Small dark grey left
+\fill[espritdarkgray]
+  ([xshift= 0.2cm, yshift=-6.5cm]current page.north west) --
+  ([xshift= 1.4cm, yshift=-6.5cm]current page.north west) --
+  ([xshift= 0.8cm, yshift=-7.8cm]current page.north west) -- cycle;
+
+% Lower-left red triangle
+\fill[espritred]
+  ([xshift=-0.3cm, yshift= 9.0cm]current page.south west) --
+  ([xshift= 2.5cm, yshift= 9.0cm]current page.south west) --
+  ([xshift= 1.1cm, yshift= 7.0cm]current page.south west) -- cycle;
+
+% Lower-left grey filled
+\fill[espritgray]
+  ([xshift= 0.4cm, yshift= 7.2cm]current page.south west) --
+  ([xshift= 3.0cm, yshift= 7.2cm]current page.south west) --
+  ([xshift= 1.7cm, yshift= 5.2cm]current page.south west) -- cycle;
+
+% Bottom-left cluster
+\fill[espritdarkgray]
+  ([xshift= 1.0cm, yshift= 5.4cm]current page.south west) --
+  ([xshift= 2.8cm, yshift= 5.4cm]current page.south west) --
+  ([xshift= 1.9cm, yshift= 4.0cm]current page.south west) -- cycle;
+
+\fill[espritred]
+  ([xshift= 2.6cm, yshift= 4.2cm]current page.south west) --
+  ([xshift= 4.2cm, yshift= 4.2cm]current page.south west) --
+  ([xshift= 3.4cm, yshift= 3.0cm]current page.south west) -- cycle;
+
+\draw[espritgray, line width=1pt]
+  ([xshift= 3.5cm, yshift= 5.8cm]current page.south west) --
+  ([xshift= 5.4cm, yshift= 5.8cm]current page.south west) --
+  ([xshift= 4.45cm,yshift= 4.2cm]current page.south west) -- cycle;
+
+% ---- Right side scattered triangles ----
+\fill[espritgray]
+  ([xshift=16.5cm, yshift=-2.5cm]current page.north west) --
+  ([xshift=18.8cm, yshift=-2.5cm]current page.north west) --
+  ([xshift=17.65cm,yshift=-4.5cm]current page.north west) -- cycle;
+
+\fill[espritdarkgray]
+  ([xshift=18.2cm, yshift=-4.0cm]current page.north west) --
+  ([xshift=20.2cm, yshift=-4.0cm]current page.north west) --
+  ([xshift=19.2cm, yshift=-5.8cm]current page.north west) -- cycle;
+
+\draw[espritgray, line width=1pt]
+  ([xshift=15.8cm, yshift= 7.5cm]current page.south west) --
+  ([xshift=18.2cm, yshift= 7.5cm]current page.south west) --
+  ([xshift=17.0cm, yshift= 5.8cm]current page.south west) -- cycle;
+
+\fill[espritred]
+  ([xshift=17.8cm, yshift= 5.0cm]current page.south west) --
+  ([xshift=20.0cm, yshift= 5.0cm]current page.south west) --
+  ([xshift=18.9cm, yshift= 3.5cm]current page.south west) -- cycle;
+
+% ---- ESPRIT SCHOOL OF ENGINEERING text block ----
+\node[anchor=south, text=black, font=\large\bfseries\sffamily]
+  at ([xshift=10.5cm, yshift=2.8cm]current page.south west)
+  {ESPRIT SCHOOL OF ENGINEERING};
+
+\node[anchor=south, font=\footnotesize\sffamily, text=espritdarkgray, align=center]
+  at ([xshift=10.5cm, yshift=1.7cm]current page.south west)
+  {\textbf{www.esprit.tn}\ \ --\ \ E-mail : contact@esprit.tn};
+
+\node[anchor=south, font=\fontsize{6.5}{8}\selectfont\sffamily, text=espritdarkgray, align=center,
+      text width=17cm]
+  at ([xshift=10.5cm, yshift=0.85cm]current page.south west)
+  {Si\`{e}ge Social : 18 rue de l'Usine - Charguia II - 2035 - T\'{e}l. : +216 71 941 541 - Fax. : +216 71 941 889};
+
+\node[anchor=south, font=\fontsize{6.5}{8}\selectfont\sffamily, text=espritdarkgray, align=center,
+      text width=17cm]
+  at ([xshift=10.5cm, yshift=0.2cm]current page.south west)
+  {Annexe : Z.I. Chotrana II - B.P. 160 - 2083 - P\^{o}le Technologique - El Ghazala - T\'{e}l. : +216 70 685 685 - Fax : +216 70 685 454};
+
+\end{tikzpicture}
+\restoregeometry
 
 \end{document}

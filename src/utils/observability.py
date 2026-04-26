@@ -13,7 +13,6 @@ from src.models.enums import AgentType
 from src.models.schemas import ModelUsage, RunMetrics
 from src.utils.config import Settings
 from src.utils.instrumentation import (
-    estimate_usage_cost,
     resolve_default_dataset_name,
     resolve_model_pricing,
     resolve_model_pricing_config,
@@ -104,15 +103,7 @@ def _extract_provider_reported_costs(
     response_metadata: Any = None,
     additional_kwargs: Any = None,
 ) -> dict[str, float]:
-    payloads = [
-        _coerce_mapping(usage),
-        _coerce_mapping(response_metadata),
-        _coerce_mapping(additional_kwargs),
-    ]
-    for payload in payloads:
-        if not payload:
-            continue
-        # Known cost key variants observed across provider SDK wrappers.
+    def _read_costs(payload: dict[str, Any]) -> tuple[float | None, float | None, float | None]:
         total_cost = payload.get("total_cost_usd", payload.get("total_cost", payload.get("cost")))
         input_cost = payload.get("input_cost_usd", payload.get("prompt_cost", payload.get("input_cost")))
         output_cost = payload.get("output_cost_usd", payload.get("completion_cost", payload.get("output_cost")))
@@ -124,22 +115,34 @@ def _extract_provider_reported_costs(
             output_cost = nested_usage.get("output_cost_usd", nested_usage.get("completion_cost", output_cost))
 
         try:
-            parsed_total = float(total_cost) if total_cost is not None else 0.0
-            parsed_input = float(input_cost) if input_cost is not None else 0.0
-            parsed_output = float(output_cost) if output_cost is not None else 0.0
+            parsed_total = float(total_cost) if total_cost is not None else None
+            parsed_input = float(input_cost) if input_cost is not None else None
+            parsed_output = float(output_cost) if output_cost is not None else None
         except (TypeError, ValueError):
-            continue
+            return (None, None, None)
 
-        if parsed_total == 0.0 and parsed_input == 0.0 and parsed_output == 0.0:
-            continue
+        if parsed_total is None and parsed_input is None and parsed_output is None:
+            return (None, None, None)
+        if parsed_total is None and (parsed_input is not None or parsed_output is not None):
+            parsed_total = float(parsed_input or 0.0) + float(parsed_output or 0.0)
+        return (parsed_total, parsed_input, parsed_output)
 
-        if parsed_total == 0.0:
-            parsed_total = parsed_input + parsed_output
+    payloads = [
+        _coerce_mapping(usage),
+        _coerce_mapping(response_metadata),
+        _coerce_mapping(additional_kwargs),
+    ]
+    for payload in payloads:
+        if not payload:
+            continue
+        parsed_total, parsed_input, parsed_output = _read_costs(payload)
+        if parsed_total is None and parsed_input is None and parsed_output is None:
+            continue
 
         return {
-            "estimated_input_cost_usd": round(max(parsed_input, 0.0), 8),
-            "estimated_output_cost_usd": round(max(parsed_output, 0.0), 8),
-            "estimated_total_cost_usd": round(max(parsed_total, 0.0), 8),
+            "estimated_input_cost_usd": round(max(float(parsed_input or 0.0), 0.0), 8),
+            "estimated_output_cost_usd": round(max(float(parsed_output or 0.0), 0.0), 8),
+            "estimated_total_cost_usd": round(max(float(parsed_total or 0.0), 0.0), 8),
         }
 
     return {
@@ -309,12 +312,6 @@ class RunObserver:
         )
         pricing = pricing or {}
         resolved_provider = str(pricing.get("provider") or provider or "").strip()
-        fallback_costs = estimate_usage_cost(
-            input_tokens,
-            output_tokens,
-            input_per_million=float(pricing.get("input_per_million", 0.0) or 0.0),
-            output_per_million=float(pricing.get("output_per_million", 0.0) or 0.0),
-        )
         reported_costs = _extract_provider_reported_costs(
             usage,
             response_metadata=response_metadata,
@@ -328,17 +325,8 @@ class RunObserver:
                 "estimated_total_cost_usd",
             )
         )
-        costs = reported_costs if has_reported_costs else fallback_costs
-        has_pricing_rates = (
-            float(pricing.get("input_per_million", 0.0) or 0.0) > 0.0
-            or float(pricing.get("output_per_million", 0.0) or 0.0) > 0.0
-        )
-        if has_reported_costs:
-            cost_source = "provider_reported"
-        elif has_pricing_rates:
-            cost_source = "provider_pricing_catalog"
-        else:
-            cost_source = "unpriced"
+        costs = reported_costs
+        cost_source = "provider_reported" if has_reported_costs else "provider_unreported"
         resolved_cache = cache_metrics or _extract_cache_metrics(
             usage,
             response_metadata=response_metadata,

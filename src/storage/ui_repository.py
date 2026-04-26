@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -151,6 +152,7 @@ class OperatorConsoleRepository:
             func.coalesce(func.sum(case((PipelineRunRecord.final_status == "success", 1), else_=0)), 0),
             func.coalesce(func.sum(case((PipelineRunRecord.final_status == "partial", 1), else_=0)), 0),
             func.coalesce(func.sum(case((PipelineRunRecord.final_status == "failed", 1), else_=0)), 0),
+            func.coalesce(func.sum(case((PipelineRunRecord.final_status == "running", 1), else_=0)), 0),
             func.coalesce(func.sum(PipelineRunRecord.total_tokens_in), 0),
             func.coalesce(func.sum(PipelineRunRecord.total_tokens_out), 0),
             func.coalesce(func.sum(PipelineRunRecord.total_llm_calls), 0),
@@ -166,20 +168,32 @@ class OperatorConsoleRepository:
         total_runs = int(pipeline_totals[0] or 0)
         success_count = int(pipeline_totals[1] or 0)
         partial_count = int(pipeline_totals[2] or 0)
-        failure_count = max(total_runs - success_count - partial_count, int(pipeline_totals[3] or 0))
-        total_tokens_in = int(pipeline_totals[4] or 0)
-        total_tokens_out = int(pipeline_totals[5] or 0)
-        total_llm_calls = int(pipeline_totals[6] or 0)
-        total_tool_calls = int(pipeline_totals[7] or 0)
-        total_cost = float(pipeline_totals[8] or 0.0)
-        avg_latency = float(pipeline_totals[9] or 0.0)
-        runs_with_streams = int(pipeline_totals[10] or 0)
-        runs_with_emails = int(pipeline_totals[11] or 0)
-        total_streams = int(pipeline_totals[12] or 0)
-        total_emails = int(pipeline_totals[13] or 0)
-        total_provider_analyses = int(pipeline_totals[14] or 0)
+        failure_count = int(pipeline_totals[3] or 0)
+        running_count = int(pipeline_totals[4] or 0)
+        total_tokens_in = int(pipeline_totals[5] or 0)
+        total_tokens_out = int(pipeline_totals[6] or 0)
+        total_llm_calls = int(pipeline_totals[7] or 0)
+        total_tool_calls = int(pipeline_totals[8] or 0)
+        total_cost = float(pipeline_totals[9] or 0.0)
+        avg_latency = float(pipeline_totals[10] or 0.0)
+        runs_with_streams = int(pipeline_totals[11] or 0)
+        runs_with_emails = int(pipeline_totals[12] or 0)
+        total_streams = int(pipeline_totals[13] or 0)
+        total_emails = int(pipeline_totals[14] or 0)
+        total_provider_analyses = int(pipeline_totals[15] or 0)
+        terminal_runs = success_count + partial_count + failure_count
+        rate_denominator = terminal_runs if terminal_runs > 0 else total_runs
         total_tokens = total_tokens_in + total_tokens_out
 
+        pipeline_ids_with_tool_rows = {
+            int(pipeline_id)
+            for (pipeline_id,) in (
+                self._session.query(AgentRunRecord.pipeline_run_id)
+                .join(ToolCallRecord, ToolCallRecord.agent_run_id == AgentRunRecord.id)
+                .distinct()
+                .all()
+            )
+        }
         tool_totals = self._session.query(
             func.count(ToolCallRecord.id),
             func.coalesce(func.sum(case((ToolCallRecord.status == "success", 1), else_=0)), 0),
@@ -191,19 +205,21 @@ class OperatorConsoleRepository:
         failed_tool_calls = int(tool_totals[2] or 0)
         avg_tool_duration = float(tool_totals[3] or 0.0)
 
-        model_usage_rows = (
-            self._session.query(
-                RunModelUsageRecord.provider,
-                RunModelUsageRecord.model_name,
-                func.coalesce(func.sum(RunModelUsageRecord.llm_calls), 0),
-                func.coalesce(func.sum(RunModelUsageRecord.input_tokens + RunModelUsageRecord.output_tokens), 0),
-                func.coalesce(func.sum(RunModelUsageRecord.estimated_total_cost_usd), 0.0),
-            )
-            .group_by(RunModelUsageRecord.provider, RunModelUsageRecord.model_name)
-            .order_by(func.sum(RunModelUsageRecord.estimated_total_cost_usd).desc(), func.sum(RunModelUsageRecord.llm_calls).desc())
-            .limit(12)
-            .all()
-        )
+        tool_event_fallback = self._runtime_tool_rollup(excluded_pipeline_ids=pipeline_ids_with_tool_rows)
+        fallback_tool_duration_count = int(tool_event_fallback.get("duration_count", 0) or 0)
+        fallback_tool_duration_sum = float(tool_event_fallback.get("duration_sum", 0.0) or 0.0)
+
+        observed_tool_calls += int(tool_event_fallback.get("calls", 0) or 0)
+        successful_tool_calls += int(tool_event_fallback.get("successes", 0) or 0)
+        failed_tool_calls += int(tool_event_fallback.get("errors", 0) or 0)
+
+        db_duration_count = int(tool_totals[0] or 0)
+        db_duration_sum = float(avg_tool_duration or 0.0) * db_duration_count
+        total_duration_count = db_duration_count + fallback_tool_duration_count
+        total_duration_sum = db_duration_sum + fallback_tool_duration_sum
+        avg_tool_duration = (total_duration_sum / total_duration_count) if total_duration_count else 0.0
+
+        model_breakdown_rows = self._merged_model_usage_rows(limit=12)
 
         provider_rows = (
             self._session.query(
@@ -218,19 +234,7 @@ class OperatorConsoleRepository:
             .all()
         )
 
-        top_tool_rows = (
-            self._session.query(
-                ToolCallRecord.tool_name,
-                func.count(ToolCallRecord.id),
-                func.coalesce(func.sum(case((ToolCallRecord.status == "success", 1), else_=0)), 0),
-                func.coalesce(func.sum(case((ToolCallRecord.status == "error", 1), else_=0)), 0),
-                func.coalesce(func.avg(ToolCallRecord.duration_seconds), 0.0),
-            )
-            .group_by(ToolCallRecord.tool_name)
-            .order_by(func.count(ToolCallRecord.id).desc(), ToolCallRecord.tool_name.asc())
-            .limit(10)
-            .all()
-        )
+        top_tool_rows = self._merged_top_tool_rows(limit=10)
 
         trend_buckets = self._daily_trend(window_days=7)
 
@@ -249,9 +253,11 @@ class OperatorConsoleRepository:
         return {
             "summary": {
                 "total_runs": total_runs,
-                "success_rate": round(success_count / total_runs, 4) if total_runs else 0.0,
-                "partial_rate": round(partial_count / total_runs, 4) if total_runs else 0.0,
-                "failure_rate": round(failure_count / total_runs, 4) if total_runs else 0.0,
+                "terminal_runs": terminal_runs,
+                "running_runs": running_count,
+                "success_rate": round(success_count / rate_denominator, 4) if rate_denominator else 0.0,
+                "partial_rate": round(partial_count / rate_denominator, 4) if rate_denominator else 0.0,
+                "failure_rate": round(failure_count / rate_denominator, 4) if rate_denominator else 0.0,
                 "total_tokens_in": total_tokens_in,
                 "total_tokens_out": total_tokens_out,
                 "total_tokens": total_tokens,
@@ -264,18 +270,18 @@ class OperatorConsoleRepository:
                 "tool_failure_rate": round(failed_tool_calls / observed_tool_calls, 4) if observed_tool_calls else 0.0,
                 "avg_tool_duration_seconds": round(avg_tool_duration, 3),
                 "total_cost_usd": round(total_cost, 6),
-                "avg_cost_usd": round(total_cost / total_runs, 6) if total_runs else 0.0,
+                "avg_cost_usd": round(total_cost / rate_denominator, 6) if rate_denominator else 0.0,
                 "avg_latency_seconds": round(avg_latency, 3),
                 "runs_with_streams": runs_with_streams,
                 "runs_with_emails": runs_with_emails,
-                "stream_yield_rate": round(runs_with_streams / total_runs, 4) if total_runs else 0.0,
-                "email_yield_rate": round(runs_with_emails / total_runs, 4) if total_runs else 0.0,
+                "stream_yield_rate": round(runs_with_streams / rate_denominator, 4) if rate_denominator else 0.0,
+                "email_yield_rate": round(runs_with_emails / rate_denominator, 4) if rate_denominator else 0.0,
                 "total_streams": total_streams,
                 "total_emails": total_emails,
-                "avg_streams_per_run": round(total_streams / total_runs, 3) if total_runs else 0.0,
-                "avg_emails_per_run": round(total_emails / total_runs, 3) if total_runs else 0.0,
+                "avg_streams_per_run": round(total_streams / rate_denominator, 3) if rate_denominator else 0.0,
+                "avg_emails_per_run": round(total_emails / rate_denominator, 3) if rate_denominator else 0.0,
                 "total_provider_analyses": total_provider_analyses,
-                "active_runs": len(active_traces or []),
+                "active_runs": len([trace for trace in (active_traces or []) if not bool(trace.get("completed"))]),
             },
             "trend": trend_buckets,
             "model_breakdown": [
@@ -287,7 +293,7 @@ class OperatorConsoleRepository:
                     "tokens": int(tokens or 0),
                     "cost_usd": round(float(cost or 0.0), 6),
                 }
-                for provider, model_name, calls, tokens, cost in model_usage_rows
+                for provider, model_name, calls, tokens, cost in model_breakdown_rows
             ],
             "provider_breakdown": [
                 {
@@ -777,6 +783,8 @@ class OperatorConsoleRepository:
             "estimated_total_cost_usd": total_cost,
             "total_cost_usd": total_cost,
             "duration_seconds": float(row.duration_seconds or 0.0),
+            "failure_mode": row.failure_mode or "",
+            "top_level_page_type": row.top_level_page_type or "",
             "created_at": row.created_at.isoformat(),
         }
 
@@ -793,6 +801,213 @@ class OperatorConsoleRepository:
             for column in row.__table__.columns
         }
 
+    def _merged_model_usage_rows(self, *, limit: int = 12) -> list[tuple[str, str, int, int, float]]:
+        aggregated: dict[tuple[str, str], dict[str, float]] = defaultdict(lambda: {
+            "calls": 0.0,
+            "tokens": 0.0,
+            "cost": 0.0,
+        })
+
+        model_usage_rows = (
+            self._session.query(
+                RunModelUsageRecord.provider,
+                RunModelUsageRecord.model_name,
+                func.coalesce(func.sum(RunModelUsageRecord.llm_calls), 0),
+                func.coalesce(func.sum(RunModelUsageRecord.input_tokens + RunModelUsageRecord.output_tokens), 0),
+                func.coalesce(func.sum(RunModelUsageRecord.estimated_total_cost_usd), 0.0),
+            )
+            .group_by(RunModelUsageRecord.provider, RunModelUsageRecord.model_name)
+            .all()
+        )
+        for provider, model_name, calls, tokens, cost in model_usage_rows:
+            key = ((provider or "unknown") or "unknown", (model_name or "unknown") or "unknown")
+            aggregated[key]["calls"] += int(calls or 0)
+            aggregated[key]["tokens"] += int(tokens or 0)
+            aggregated[key]["cost"] += float(cost or 0.0)
+
+        pipeline_ids_with_model_rows = {
+            int(pipeline_id)
+            for (pipeline_id,) in self._session.query(RunModelUsageRecord.pipeline_run_id).distinct().all()
+        }
+        for provider, model_name, calls, tokens, cost in self._runtime_model_rollup(
+            excluded_pipeline_ids=pipeline_ids_with_model_rows
+        ):
+            key = ((provider or "unknown") or "unknown", (model_name or "unknown") or "unknown")
+            aggregated[key]["calls"] += int(calls or 0)
+            aggregated[key]["tokens"] += int(tokens or 0)
+            aggregated[key]["cost"] += float(cost or 0.0)
+
+        rows = [
+            (
+                provider,
+                model_name,
+                int(values["calls"]),
+                int(values["tokens"]),
+                float(values["cost"]),
+            )
+            for (provider, model_name), values in aggregated.items()
+        ]
+        rows.sort(key=lambda item: (-float(item[4] or 0.0), -int(item[2] or 0), item[1]))
+        return rows[: max(limit, 1)]
+
+    def _runtime_model_rollup(self, *, excluded_pipeline_ids: set[int]) -> list[tuple[str, str, int, int, float]]:
+        query = self._session.query(RuntimeEventRecord.pipeline_run_id, RuntimeEventRecord.details_json).filter(
+            RuntimeEventRecord.kind == "llm_response"
+        )
+        if excluded_pipeline_ids:
+            query = query.filter(~RuntimeEventRecord.pipeline_run_id.in_(excluded_pipeline_ids))
+
+        aggregated: dict[tuple[str, str], dict[str, float]] = defaultdict(lambda: {
+            "calls": 0.0,
+            "tokens": 0.0,
+            "cost": 0.0,
+        })
+
+        for _, details_json in query.all():
+            details = details_json if isinstance(details_json, dict) else {}
+            provider = str(details.get("provider", "") or "unknown")
+            model_name = str(details.get("model_name", "") or "unknown")
+            input_tokens = int(details.get("input_tokens", 0) or 0)
+            output_tokens = int(details.get("output_tokens", 0) or 0)
+            estimated_total_cost_usd = float(details.get("estimated_total_cost_usd", 0.0) or 0.0)
+
+            key = (provider, model_name)
+            aggregated[key]["calls"] += 1
+            aggregated[key]["tokens"] += input_tokens + output_tokens
+            aggregated[key]["cost"] += estimated_total_cost_usd
+
+        rows = [
+            (provider, model_name, int(values["calls"]), int(values["tokens"]), float(values["cost"]))
+            for (provider, model_name), values in aggregated.items()
+        ]
+        rows.sort(key=lambda item: (-float(item[4] or 0.0), -int(item[2] or 0), item[1]))
+        return rows
+
+    def _merged_top_tool_rows(self, *, limit: int = 10) -> list[tuple[str, int, int, int, float]]:
+        rows = (
+            self._session.query(
+                ToolCallRecord.tool_name,
+                func.count(ToolCallRecord.id),
+                func.coalesce(func.sum(case((ToolCallRecord.status == "success", 1), else_=0)), 0),
+                func.coalesce(func.sum(case((ToolCallRecord.status == "error", 1), else_=0)), 0),
+                func.coalesce(func.avg(ToolCallRecord.duration_seconds), 0.0),
+            )
+            .group_by(ToolCallRecord.tool_name)
+            .all()
+        )
+
+        aggregated: dict[str, dict[str, float]] = defaultdict(lambda: {
+            "calls": 0.0,
+            "successes": 0.0,
+            "errors": 0.0,
+            "duration_sum": 0.0,
+            "duration_count": 0.0,
+        })
+        for tool_name, count, successes, errors, avg_duration in rows:
+            key = str(tool_name or "unknown")
+            calls = int(count or 0)
+            aggregated[key]["calls"] += calls
+            aggregated[key]["successes"] += int(successes or 0)
+            aggregated[key]["errors"] += int(errors or 0)
+            aggregated[key]["duration_sum"] += float(avg_duration or 0.0) * calls
+            aggregated[key]["duration_count"] += calls
+
+        pipeline_ids_with_tool_rows = {
+            int(pipeline_id)
+            for (pipeline_id,) in (
+                self._session.query(AgentRunRecord.pipeline_run_id)
+                .join(ToolCallRecord, ToolCallRecord.agent_run_id == AgentRunRecord.id)
+                .distinct()
+                .all()
+            )
+        }
+        fallback_rows = self._runtime_tool_rows(excluded_pipeline_ids=pipeline_ids_with_tool_rows)
+        for tool_name, calls, successes, errors, avg_duration, duration_count in fallback_rows:
+            key = str(tool_name or "unknown")
+            aggregated[key]["calls"] += int(calls or 0)
+            aggregated[key]["successes"] += int(successes or 0)
+            aggregated[key]["errors"] += int(errors or 0)
+            aggregated[key]["duration_sum"] += float(avg_duration or 0.0) * int(duration_count or 0)
+            aggregated[key]["duration_count"] += int(duration_count or 0)
+
+        merged_rows: list[tuple[str, int, int, int, float]] = []
+        for tool_name, values in aggregated.items():
+            duration_count = int(values["duration_count"])
+            avg_duration = (float(values["duration_sum"]) / duration_count) if duration_count else 0.0
+            merged_rows.append(
+                (
+                    tool_name,
+                    int(values["calls"]),
+                    int(values["successes"]),
+                    int(values["errors"]),
+                    avg_duration,
+                )
+            )
+        merged_rows.sort(key=lambda item: (-int(item[1] or 0), item[0]))
+        return merged_rows[: max(limit, 1)]
+
+    def _runtime_tool_rows(self, *, excluded_pipeline_ids: set[int]) -> list[tuple[str, int, int, int, float, int]]:
+        query = self._session.query(
+            RuntimeEventRecord.pipeline_run_id,
+            RuntimeEventRecord.status,
+            RuntimeEventRecord.details_json,
+        ).filter(RuntimeEventRecord.kind == "tool_call_finished")
+        if excluded_pipeline_ids:
+            query = query.filter(~RuntimeEventRecord.pipeline_run_id.in_(excluded_pipeline_ids))
+
+        aggregated: dict[str, dict[str, float]] = defaultdict(lambda: {
+            "calls": 0.0,
+            "successes": 0.0,
+            "errors": 0.0,
+            "duration_sum": 0.0,
+            "duration_count": 0.0,
+        })
+        for _, event_status, details_json in query.all():
+            details = details_json if isinstance(details_json, dict) else {}
+            tool_name = str(details.get("tool_name", "") or "unknown")
+            status = str(details.get("status", "") or event_status or "info").strip().lower()
+            duration = float(details.get("duration_seconds", 0.0) or 0.0)
+
+            aggregated[tool_name]["calls"] += 1
+            if status == "success":
+                aggregated[tool_name]["successes"] += 1
+            elif status in {"error", "failed", "fail"}:
+                aggregated[tool_name]["errors"] += 1
+            aggregated[tool_name]["duration_sum"] += duration
+            aggregated[tool_name]["duration_count"] += 1
+
+        rows: list[tuple[str, int, int, int, float, int]] = []
+        for tool_name, values in aggregated.items():
+            duration_count = int(values["duration_count"])
+            avg_duration = (float(values["duration_sum"]) / duration_count) if duration_count else 0.0
+            rows.append(
+                (
+                    tool_name,
+                    int(values["calls"]),
+                    int(values["successes"]),
+                    int(values["errors"]),
+                    avg_duration,
+                    duration_count,
+                )
+            )
+        rows.sort(key=lambda item: (-int(item[1] or 0), item[0]))
+        return rows
+
+    def _runtime_tool_rollup(self, *, excluded_pipeline_ids: set[int]) -> dict[str, float]:
+        rows = self._runtime_tool_rows(excluded_pipeline_ids=excluded_pipeline_ids)
+        calls = sum(int(row[1] or 0) for row in rows)
+        successes = sum(int(row[2] or 0) for row in rows)
+        errors = sum(int(row[3] or 0) for row in rows)
+        duration_count = sum(int(row[5] or 0) for row in rows)
+        duration_sum = sum(float(row[4] or 0.0) * int(row[5] or 0) for row in rows)
+        return {
+            "calls": calls,
+            "successes": successes,
+            "errors": errors,
+            "duration_count": duration_count,
+            "duration_sum": duration_sum,
+        }
+
     def _daily_trend(self, *, window_days: int = 7) -> list[dict[str, Any]]:
         start_date = datetime.utcnow().date() - timedelta(days=max(window_days - 1, 0))
         buckets = {
@@ -801,6 +1016,7 @@ class OperatorConsoleRepository:
                 "runs": 0,
                 "successes": 0,
                 "partials": 0,
+                "running": 0,
                 "failures": 0,
                 "tokens": 0,
                 "cost_usd": 0.0,
@@ -815,6 +1031,7 @@ class OperatorConsoleRepository:
                 func.coalesce(func.sum(case((PipelineRunRecord.final_status == "success", 1), else_=0)), 0),
                 func.coalesce(func.sum(case((PipelineRunRecord.final_status == "partial", 1), else_=0)), 0),
                 func.coalesce(func.sum(case((PipelineRunRecord.final_status == "failed", 1), else_=0)), 0),
+                func.coalesce(func.sum(case((PipelineRunRecord.final_status == "running", 1), else_=0)), 0),
                 func.coalesce(func.sum(PipelineRunRecord.total_tokens_in + PipelineRunRecord.total_tokens_out), 0),
                 func.coalesce(func.sum(PipelineRunRecord.estimated_total_cost_usd), 0.0),
                 func.coalesce(func.avg(PipelineRunRecord.duration_seconds), 0.0),
@@ -823,14 +1040,15 @@ class OperatorConsoleRepository:
             .group_by(func.date(PipelineRunRecord.created_at))
             .all()
         )
-        for row_date, runs, successes, partials, failures, tokens, cost, avg_latency in rows:
+        for row_date, runs, successes, partials, failures, running, tokens, cost, avg_latency in rows:
             key = self._normalize_day_key(row_date)
             bucket = buckets.get(key)
             if bucket is None:
                 continue
             bucket["runs"] = int(runs or 0)
             bucket["successes"] = int(successes or 0)
-            bucket["partials"] = int(partials or 0)
+            bucket["partials"] = int(partials or 0) + int(running or 0)
+            bucket["running"] = int(running or 0)
             bucket["failures"] = int(failures or 0)
             bucket["tokens"] = int(tokens or 0)
             bucket["cost_usd"] = round(float(cost or 0.0), 6)

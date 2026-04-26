@@ -5,7 +5,16 @@
       "Bash(sed -i \"s/async \\({ browser, page }\\)/async \\({ browser, context, page }\\)/g\" \"c:/Users/ahmed/Desktop/PFE New Test/tools/playwright/tools/action-tools.js\")",
       "Bash(sed -i \"s/async \\({ browser, context, page, context }\\)/async \\({ browser, context, page }\\)/g\" \"c:/Users/ahmed/Desktop/PFE New Test/tools/playwright/tools/action-tools.js\")",
       "Bash(grep -n \"async \\({ browser, context, page }\\)\\\\|async \\({ page }\\)\" \"c:/Users/ahmed/Desktop/PFE New Test/tools/playwright/tools/action-tools.js\")",
-      "Bash(grep -n \"async \\({ browser, page }\\)\\\\|async \\({ page }\\)\" \"c:/Users/ahmed/Desktop/PFE New Test/tools/playwright/tools/navigation-tools.js\")"
+      "Bash(grep -n \"async \\({ browser, page }\\)\\\\|async \\({ page }\\)\" \"c:/Users/ahmed/Desktop/PFE New Test/tools/playwright/tools/navigation-tools.js\")",
+      "Bash(grep -E \"\\\\.\\(py|js|json\\)$\")",
+      "Bash(python -c \"import src.agents.cache; import src.agents.base; import src.agents.orchestrator; import src.memory.long_term; print\\('imports OK'\\)\")",
+      "Bash(python3 -c \"import src.agents.cache; import src.agents.base; import src.agents.orchestrator; import src.memory.long_term; print\\('imports OK'\\)\")",
+      "Bash(where py *)",
+      "Bash(py --version)",
+      "Bash(py -c \"import ast, sys; files = ['src/agents/cache.py','src/agents/base.py','src/agents/orchestrator.py','src/memory/long_term.py']; [ast.parse\\(open\\(f\\).read\\(\\)\\) or print\\(f,'OK'\\) for f in files]; print\\('syntax OK'\\)\")",
+      "Bash(py -c \"import ast; files = ['src/agents/cache.py','src/agents/base.py','src/agents/orchestrator.py','src/memory/long_term.py']; [ast.parse\\(open\\(f\\).read\\(\\)\\) for f in files]; print\\('syntax OK'\\)\")",
+      "Bash(gh pr create --title 'Refactor agent loop, typed handoffs, SSE reconnect, and memory TTL' --body ' *)",
+      "Bash(where gh *)"
     ]
   }
 }

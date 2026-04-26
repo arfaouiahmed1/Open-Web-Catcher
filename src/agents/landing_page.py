@@ -283,7 +283,7 @@ def _augment_landing_output(
 class LandingPageAgent:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.llm = build_llm(settings)
+        self.llm = build_llm(settings, agent_id="landing")
         self.memory = LongTermMemory(settings.memory_db_path) if settings.memory_enabled else None
         self._system_prompt = (
             PROMPT_PATH.read_text(encoding="utf-8")

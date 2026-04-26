@@ -16,6 +16,7 @@ from langgraph.graph.message import add_messages
 
 from src.agents.cache import GeminiCacheManager, ToolResultCache
 from src.utils.config import Settings
+from src.utils.provider_models import resolve_agent_model_selection, resolve_llm_tuning
 from src.utils.logging import get_logger
 from src.utils.observability import RunObserver
 from src.utils.instrumentation import (
@@ -359,15 +360,19 @@ def build_llm(
     settings: Settings,
     temperature: float | None = None,
     model_override: str | None = None,
+    provider_override: str | None = None,
+    agent_id: str | None = None,
 ):
     """Build an LLM instance for the configured provider.
 
     Imports for non-default providers are deferred so that the container
     works with only langchain-google-genai installed (the default).
     """
-    model_name = model_override or settings.agent_model
-    temp = temperature if temperature is not None else settings.gemini_temperature
-    provider = (settings.llm_provider or "google").lower()
+    selection = resolve_agent_model_selection(settings, agent_id or "")
+    provider = (provider_override or selection.get("provider") or settings.llm_provider or "google").lower()
+    model_name = model_override or selection.get("model") or settings.agent_model
+    tuning = resolve_llm_tuning(settings, provider=provider, model_name=model_name, agent_id=agent_id or "")
+    temp = temperature if temperature is not None else tuning.pop("temperature", settings.gemini_temperature)
 
     if provider == "openai":
         from langchain_openai import ChatOpenAI  # noqa: PLC0415
@@ -375,6 +380,7 @@ def build_llm(
             model=model_name,
             api_key=settings.openai_api_key or None,
             temperature=temp,
+            **_filter_llm_kwargs(tuning, {"top_p", "max_tokens", "reasoning_effort"}),
         )
 
     if provider == "anthropic":
@@ -383,6 +389,7 @@ def build_llm(
             model=model_name,
             api_key=settings.anthropic_api_key or None,
             temperature=temp,
+            **_filter_llm_kwargs(tuning, {"top_p", "top_k", "max_tokens"}),
         )
 
     if provider == "openrouter":
@@ -392,6 +399,7 @@ def build_llm(
             api_key=settings.openrouter_api_key or None,
             base_url=settings.openrouter_base_url,
             temperature=temp,
+            **_filter_llm_kwargs(tuning, {"top_p", "top_k", "max_tokens"}),
         )
 
     # default: google / gemini
@@ -399,8 +407,13 @@ def build_llm(
         model=model_name,
         google_api_key=settings.google_api_key,
         temperature=temp,
+        **_filter_llm_kwargs(tuning, {"top_p", "top_k", "max_output_tokens"}),
         convert_system_message_to_human=True,
     )
+
+
+def _filter_llm_kwargs(values: dict[str, Any], allowed: set[str]) -> dict[str, Any]:
+    return {key: value for key, value in values.items() if key in allowed and value is not None}
 
 
 async def run_agent_loop(

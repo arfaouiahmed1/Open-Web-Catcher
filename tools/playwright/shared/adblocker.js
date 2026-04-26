@@ -15,6 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PlaywrightBlocker } from '@ghostery/adblocker-playwright';
+import { getBrowserRuntimeSettings } from './runtime-config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
@@ -30,6 +31,7 @@ const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
 const DEFAULT_EXCLUDED_CATEGORIES = ['nsfw', 'gambling'];
 
 let blockerSnapshotPromise = null;
+const attachedContexts = new WeakSet();
 
 // CDN and player resource hosts that must never be blocked
 const CDN_WHITELIST = [
@@ -68,6 +70,10 @@ function resolveCacheRoot() {
   return path.resolve(PROJECT_ROOT, configuredPath);
 }
 
+function runtimeSetting(key) {
+  return getBrowserRuntimeSettings('playwright')?.[key];
+}
+
 function parseInteger(value, fallback) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -95,7 +101,7 @@ function normalizeHost(candidate) {
 }
 
 function getAllowlistHosts() {
-  const configured = process.env.OWC_ADBLOCK_ALLOWLIST_HOSTS;
+  const configured = runtimeSetting('adblock_allowlist_hosts') ?? process.env.OWC_ADBLOCK_ALLOWLIST_HOSTS;
   if (!configured) return new Set();
   return new Set(Array.from(parseCsvSet(configured)).map((e) => normalizeHost(e)).filter(Boolean));
 }
@@ -116,14 +122,14 @@ function isAllowlistedHost(candidate) {
 }
 
 function getExcludedCategories() {
-  const configured = process.env.OWC_ADBLOCK_EXCLUDED_CATEGORIES;
+  const configured = runtimeSetting('adblock_excluded_categories') ?? process.env.OWC_ADBLOCK_EXCLUDED_CATEGORIES;
   if (!configured) return new Set(DEFAULT_EXCLUDED_CATEGORIES);
   const parsed = parseCsvSet(configured);
   return parsed.size > 0 ? parsed : new Set(DEFAULT_EXCLUDED_CATEGORIES);
 }
 
 export function isAdblockEnabled() {
-  return parseBoolean(process.env.OWC_ADBLOCK_ENABLED, false);
+  return parseBoolean(runtimeSetting('adblock_enabled') ?? process.env.OWC_ADBLOCK_ENABLED, false);
 }
 
 function sha256(value) {
@@ -272,6 +278,7 @@ export async function getBlockerSnapshot() {
  */
 export async function attachAdBlocker(context, { pageBlockingDisabled } = {}) {
   if (!isAdblockEnabled()) return;
+  if (attachedContexts.has(context)) return;
 
   let blocker;
   try {
@@ -304,6 +311,7 @@ export async function attachAdBlocker(context, { pageBlockingDisabled } = {}) {
 
     return route.continue();
   });
+  attachedContexts.add(context);
 }
 
 /**

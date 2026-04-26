@@ -11,7 +11,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 
 import { PROFILES } from './profiles.js';
-import { closeEphemeralBrowser, launchEphemeralBrowser } from './shared/browser.js';
+import { closeEphemeralBrowser, isSharedBrowserFallbackAllowed, launchEphemeralBrowser } from './shared/browser.js';
 import { decodeUriEverywhere } from './shared/tool-runtime.js';
 import { getToolCatalog, getToolDefinitions, getToolSpec } from './tool-registry.js';
 
@@ -128,6 +128,11 @@ app.get('/mcp/:profile/sse', async (req, res) => {
 
   // Fallback: connect to shared browser via CDP
   if (!browserSession) {
+    if (!isSharedBrowserFallbackAllowed()) {
+      return res.status(503).json({
+        error: 'Isolated browser launch failed and shared browser fallback is disabled by proxy settings.',
+      });
+    }
     try {
       const { connectBrowser } = await import('./shared/browser.js');
       browserSession = await connectBrowser(BROWSER_WS);
