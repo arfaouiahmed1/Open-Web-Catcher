@@ -11,7 +11,16 @@ import { FingerprintInjector } from 'fingerprint-injector';
 import puppeteerCore from 'puppeteer-core';
 import { addExtra } from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import {
+  describeProxyCandidate,
+  getProxyCandidatePlan,
+  markProxyFailure,
+  markProxySuccess,
+  normalizeProxyRuntimeConfig,
+  shouldAllowSharedBrowserFallback,
+} from '../../shared/proxy-pool.js';
 import { disableBlocking, enableBlocking } from './adblocker.js';
+import { getBrowserRuntimeSettings } from './runtime-config.js';
 
 const puppeteer = addExtra(puppeteerCore);
 const stealthPlugin = StealthPlugin();
@@ -32,47 +41,11 @@ const CHROME_VERSION_TIMEOUT_MS = Number.parseInt(
   String(process.env.OWC_CHROME_VERSION_FETCH_TIMEOUT_MS || '6000'),
   10,
 );
-const BROWSER_LAUNCH_TIMEOUT_MS = Number.parseInt(
-  String(process.env.OWC_BROWSER_LAUNCH_TIMEOUT_MS || '45000'),
-  10,
-);
 const FORCED_VIEWPORT = { width: 1920, height: 1080 };
 const FORCED_WINDOWS_PLATFORM = 'Win32';
 const FORCED_WINDOWS_PLATFORM_VERSION = '10.0.0';
 const FORCED_LANGUAGE = 'en-US,en;q=0.9';
-const UBOL_ENABLED = parseBoolean(process.env.OWC_UBOL_ENABLED, true);
 const UBOL_EXTENSION_DIR = String(process.env.OWC_UBOL_EXTENSION_DIR || '/app/tools/puppeteer/extensions/ubol').trim();
-const FINGERPRINT_ROTATION_MODE = String(process.env.OWC_FINGERPRINT_ROTATION_MODE || 'origin')
-  .trim()
-  .toLowerCase();
-const FINGERPRINT_ROTATION_INTERVAL_MS = Number.parseInt(
-  String(process.env.OWC_FINGERPRINT_ROTATION_INTERVAL_MS || '180000'),
-  10,
-);
-const FINGERPRINT_ROTATION_MAX_USES = Number.parseInt(
-  String(process.env.OWC_FINGERPRINT_ROTATION_MAX_USES || '6'),
-  10,
-);
-const FINGERPRINT_RECENT_POOL_SIZE = Number.parseInt(
-  String(process.env.OWC_FINGERPRINT_RECENT_POOL_SIZE || '12'),
-  10,
-);
-const ADBLOCK_AUTO_RECOVERY_ENABLED = parseBoolean(
-  process.env.OWC_ADBLOCK_AUTO_RECOVERY_ENABLED,
-  true,
-);
-const ADBLOCK_AUTO_RECOVERY_ON_ABORT = parseBoolean(
-  process.env.OWC_ADBLOCK_AUTO_RECOVERY_ON_ABORT,
-  true,
-);
-const ADBLOCK_AUTO_RECOVERY_RETRY_ENABLED = parseBoolean(
-  process.env.OWC_ADBLOCK_AUTO_RECOVERY_RETRY,
-  true,
-);
-const STREAM_CORS_INCLUDE_CREDENTIALS = parseBoolean(
-  process.env.OWC_STREAM_CORS_INCLUDE_CREDENTIALS,
-  false,
-);
 const DEFAULT_LAUNCH_ARGS = [
   '--no-sandbox',
   '--disable-dev-shm-usage',
@@ -132,7 +105,13 @@ const pageNetworkState = new WeakMap();
 const pageNetworkListeners = new WeakSet();
 const recentlyUsedFingerprintSignatures = [];
 let chromeVersionPromise = null;
-let fingerprintSuitePromise = null;
+const fingerprintSuiteCache = new Map();
+const launchedSessionMetadata = new Map();
+const browserProxyMetadata = new WeakMap();
+
+function runtimeSetting(key) {
+  return getBrowserRuntimeSettings('puppeteer')?.[key];
+}
 
 function buildChromeBrands(majorVersion) {
   return [
@@ -208,11 +187,132 @@ async function resolveLatestStableChromeVersion() {
   return chromeVersionPromise;
 }
 
+function parseChromeVersionCandidate(value) {
+  const match = String(value || '').match(/(\d+\.\d+\.\d+\.\d+)/);
+  return match?.[1] || '';
+}
+
+async function resolveEffectiveChromeVersion(browser = null) {
+  const explicitVersion = String(process.env.OWC_CHROME_VERSION || '').trim();
+  if (explicitVersion) {
+    return explicitVersion;
+  }
+
+  try {
+    const detectedVersion = parseChromeVersionCandidate(await browser?.version?.());
+    if (detectedVersion) {
+      return detectedVersion;
+    }
+  } catch {
+    // Fall back to official version sources below.
+  }
+
+  return resolveLatestStableChromeVersion();
+}
+
 function parseBoolean(value, defaultValue = false) {
   if (value == null) return defaultValue;
   const normalized = String(value).trim().toLowerCase();
   if (!normalized) return defaultValue;
   return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+}
+
+function getBrowserLaunchTimeoutMs() {
+  return Number.parseInt(
+    String(runtimeSetting('launch_timeout_ms') ?? process.env.OWC_BROWSER_LAUNCH_TIMEOUT_MS ?? '45000'),
+    10,
+  );
+}
+
+function getUbolEnabled() {
+  return parseBoolean(runtimeSetting('ubol_enabled') ?? process.env.OWC_UBOL_ENABLED, true);
+}
+
+function getFingerprintRotationMode() {
+  return String(runtimeSetting('fingerprint_rotation_mode') ?? process.env.OWC_FINGERPRINT_ROTATION_MODE ?? 'origin')
+    .trim()
+    .toLowerCase();
+}
+
+function getFingerprintRotationIntervalMs() {
+  return Number.parseInt(
+    String(runtimeSetting('fingerprint_rotation_interval_ms') ?? process.env.OWC_FINGERPRINT_ROTATION_INTERVAL_MS ?? '180000'),
+    10,
+  );
+}
+
+function getFingerprintRotationMaxUses() {
+  return Number.parseInt(
+    String(runtimeSetting('fingerprint_rotation_max_uses') ?? process.env.OWC_FINGERPRINT_ROTATION_MAX_USES ?? '6'),
+    10,
+  );
+}
+
+function getFingerprintRecentPoolSize() {
+  return Number.parseInt(
+    String(runtimeSetting('fingerprint_recent_pool_size') ?? process.env.OWC_FINGERPRINT_RECENT_POOL_SIZE ?? '12'),
+    10,
+  );
+}
+
+function getFingerprintFallbackStrategy() {
+  return String(runtimeSetting('fingerprint_fallback_strategy') ?? process.env.OWC_FINGERPRINT_FALLBACK_STRATEGY ?? 'profile')
+    .trim()
+    .toLowerCase();
+}
+
+function getAdblockAutoRecoveryEnabled() {
+  return parseBoolean(
+    runtimeSetting('adblock_auto_recovery_enabled') ?? process.env.OWC_ADBLOCK_AUTO_RECOVERY_ENABLED,
+    true,
+  );
+}
+
+function getAdblockAutoRecoveryOnAbort() {
+  return parseBoolean(
+    runtimeSetting('adblock_auto_recovery_on_abort') ?? process.env.OWC_ADBLOCK_AUTO_RECOVERY_ON_ABORT,
+    true,
+  );
+}
+
+function getAdblockAutoRecoveryRetryEnabled() {
+  return parseBoolean(
+    runtimeSetting('adblock_auto_recovery_retry') ?? process.env.OWC_ADBLOCK_AUTO_RECOVERY_RETRY,
+    true,
+  );
+}
+
+function getStreamCorsPatchEnabled() {
+  return parseBoolean(
+    runtimeSetting('stream_cors_patch_enabled') ?? process.env.OWC_ENABLE_STREAM_CORS_PATCH,
+    false,
+  );
+}
+
+function getStreamCorsIncludeCredentials() {
+  return parseBoolean(
+    runtimeSetting('stream_cors_include_credentials') ?? process.env.OWC_STREAM_CORS_INCLUDE_CREDENTIALS,
+    false,
+  );
+}
+
+function getIframeSandboxPatchEnabled() {
+  return parseBoolean(
+    runtimeSetting('iframe_sandbox_patch_enabled') ?? process.env.OWC_IFRAME_SANDBOX_PATCH,
+    true,
+  );
+}
+
+function getExtraLaunchArgs() {
+  const configured = runtimeSetting('extra_launch_args');
+  if (!Array.isArray(configured)) {
+    return [];
+  }
+  return configured.map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+function getProxyRuntimeConfig() {
+  return normalizeProxyRuntimeConfig(getBrowserRuntimeSettings('puppeteer') || {});
 }
 
 function clampPositiveInteger(value, fallback) {
@@ -273,7 +373,7 @@ function rememberFingerprintSignature(signature) {
   if (!signature) return;
 
   recentlyUsedFingerprintSignatures.push(signature);
-  const poolSize = clampPositiveInteger(FINGERPRINT_RECENT_POOL_SIZE, 12);
+  const poolSize = clampPositiveInteger(getFingerprintRecentPoolSize(), 12);
   while (recentlyUsedFingerprintSignatures.length > poolSize) {
     recentlyUsedFingerprintSignatures.shift();
   }
@@ -288,7 +388,7 @@ function shouldRotateFingerprint(state, page, targetUrl, forceRotate) {
     return true;
   }
 
-  const rotationMode = normalizeRotationMode(FINGERPRINT_ROTATION_MODE);
+  const rotationMode = normalizeRotationMode(getFingerprintRotationMode());
   if (rotationMode === 'never') {
     return false;
   }
@@ -298,8 +398,8 @@ function shouldRotateFingerprint(state, page, targetUrl, forceRotate) {
   }
 
   const now = Date.now();
-  const maxUses = clampPositiveInteger(FINGERPRINT_ROTATION_MAX_USES, 6);
-  const intervalMs = clampPositiveInteger(FINGERPRINT_ROTATION_INTERVAL_MS, 180000);
+  const maxUses = clampPositiveInteger(getFingerprintRotationMaxUses(), 6);
+  const intervalMs = clampPositiveInteger(getFingerprintRotationIntervalMs(), 180000);
   if (maxUses > 0 && state.useCount >= maxUses) {
     return true;
   }
@@ -430,12 +530,12 @@ function attachNetworkDiagnostics(page) {
     const failure = recordRequestFailure(page, request);
     const state = getNetworkState(page);
 
-    if (!ADBLOCK_AUTO_RECOVERY_ENABLED || state.autoRecovery.attempted) {
+    if (!getAdblockAutoRecoveryEnabled() || state.autoRecovery.attempted) {
       return;
     }
 
     const recoverableFailure = failure.iframe_or_player_related
-      && (failure.blocked_by_client || (ADBLOCK_AUTO_RECOVERY_ON_ABORT && failure.aborted));
+      && (failure.blocked_by_client || (getAdblockAutoRecoveryOnAbort() && failure.aborted));
 
     if (!recoverableFailure) {
       return;
@@ -541,7 +641,7 @@ export async function retryNavigationAfterAutoRecovery(page, {
     await state.autoRecovery.disable_promise.catch(() => {});
   }
 
-  if (!ADBLOCK_AUTO_RECOVERY_RETRY_ENABLED) {
+  if (!getAdblockAutoRecoveryRetryEnabled()) {
     return {
       attempted: false,
       reason: 'auto_recovery_retry_disabled',
@@ -658,7 +758,7 @@ function generateFingerprintBundle(generator, chromeMajorVersion) {
 }
 
 function generateRotatingFingerprintBundle(generator, chromeVersion, chromeMajorVersion) {
-  const attempts = Math.max(4, clampPositiveInteger(FINGERPRINT_RECENT_POOL_SIZE, 12));
+  const attempts = Math.max(4, clampPositiveInteger(getFingerprintRecentPoolSize(), 12));
   let selected = null;
   let selectedSignature = '';
 
@@ -798,7 +898,7 @@ async function ensureStreamCorsInjection(page, profile) {
   // Most video CDNs reject credentialed CORS (no ACAO: * + ACAC: true) so the
   // patch actively breaks playback on sites like FreeShot. Only turn it on
   // for sites you know require it via OWC_ENABLE_STREAM_CORS_PATCH=true.
-  if (!parseBoolean(process.env.OWC_ENABLE_STREAM_CORS_PATCH, false)) {
+  if (!getStreamCorsPatchEnabled()) {
     return;
   }
 
@@ -808,7 +908,7 @@ async function ensureStreamCorsInjection(page, profile) {
     secFetchDest: 'empty',
     secFetchMode: 'cors',
     secFetchSite: 'cross-site',
-    includeCredentials: STREAM_CORS_INCLUDE_CREDENTIALS,
+    includeCredentials: getStreamCorsIncludeCredentials(),
     secChUa: profile.secChUa,
     secChUaMobile: '?0',
     secChUaPlatform: '"Windows"',
@@ -922,7 +1022,7 @@ async function ensureStreamCorsInjection(page, profile) {
 }
 
 async function ensureIframeSandboxPatch(page) {
-  if (!parseBoolean(process.env.OWC_IFRAME_SANDBOX_PATCH, true)) {
+  if (!getIframeSandboxPatchEnabled()) {
     return;
   }
 
@@ -1029,23 +1129,64 @@ async function ensureIframeSandboxPatch(page) {
   await page.evaluate(patchIframeSandbox).catch(() => {});
 }
 
-async function getFingerprintSuite() {
-  if (!fingerprintSuitePromise) {
-    fingerprintSuitePromise = (async () => {
-      const chromeVersion = await resolveLatestStableChromeVersion();
-      const chromeMajorVersion = getChromeMajorVersion(chromeVersion);
-      const fingerprintGenerator = new FingerprintGenerator();
+async function getFingerprintSuite(browser = null) {
+  const chromeVersion = await resolveEffectiveChromeVersion(browser);
+  const cacheKey = chromeVersion || CHROME_VERSION_FALLBACK;
 
-      return {
-        chromeVersion,
-        chromeMajorVersion,
-        fingerprintGenerator,
-        fingerprintInjector: new FingerprintInjector(),
-      };
-    })();
+  if (!fingerprintSuiteCache.has(cacheKey)) {
+    fingerprintSuiteCache.set(cacheKey, {
+      chromeVersion: cacheKey,
+      chromeMajorVersion: getChromeMajorVersion(cacheKey),
+      fingerprintGenerator: new FingerprintGenerator(),
+      fingerprintInjector: new FingerprintInjector(),
+    });
   }
 
-  return fingerprintSuitePromise;
+  return fingerprintSuiteCache.get(cacheKey);
+}
+
+function buildFallbackFingerprintProfile(chromeVersion, chromeMajorVersion) {
+  const brands = buildChromeBrands(chromeMajorVersion);
+  const fullVersionList = brands.map((entry) => ({ ...entry, version: chromeVersion }));
+  const userAgent = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+    'AppleWebKit/537.36 (KHTML, like Gecko)',
+    `Chrome/${chromeVersion}`,
+    'Safari/537.36',
+  ].join(' ');
+  const secChUa = buildSecChUa(brands);
+
+  return {
+    userAgent,
+    language: FORCED_LANGUAGE,
+    secChUa,
+    chromeVersion,
+    chromeMajorVersion,
+    headers: {
+      'User-Agent': userAgent,
+      'Accept-Language': FORCED_LANGUAGE,
+      'Cache-Control': 'max-age=0',
+      Pragma: 'no-cache',
+      'Upgrade-Insecure-Requests': '1',
+      'Sec-CH-UA': secChUa,
+      'Sec-CH-UA-Mobile': '?0',
+      'Sec-CH-UA-Platform': '"Windows"',
+      'Sec-CH-UA-Platform-Version': `"${FORCED_WINDOWS_PLATFORM_VERSION}"`,
+      'Sec-CH-UA-Full-Version': `"${chromeVersion}"`,
+    },
+    userAgentMetadata: {
+      brands,
+      fullVersion: chromeVersion,
+      fullVersionList,
+      platform: 'Windows',
+      platformVersion: FORCED_WINDOWS_PLATFORM_VERSION,
+      architecture: 'x86',
+      model: '',
+      mobile: false,
+      bitness: '64',
+      wow64: false,
+    },
+  };
 }
 
 async function applyRuntimeFingerprintProfile(page, runtimeProfile) {
@@ -1143,6 +1284,65 @@ async function applyRuntimeFingerprintProfile(page, runtimeProfile) {
   await page.evaluate(applyProfile, runtimeProfile).catch(() => {});
 }
 
+async function applyFingerprintProfileToPage(page, profile) {
+  await page.setViewport(FORCED_VIEWPORT);
+
+  await page.setUserAgent({
+    userAgent: profile.userAgent,
+    userAgentMetadata: profile.userAgentMetadata,
+    platform: FORCED_WINDOWS_PLATFORM,
+  });
+
+  const cdp = await getPageCdp(page);
+  await cdp.send('Network.enable');
+  await cdp.send('Network.setCacheDisabled', { cacheDisabled: false });
+  await cdp.send('Network.setUserAgentOverride', {
+    userAgent: profile.userAgent,
+    acceptLanguage: profile.language,
+    platform: FORCED_WINDOWS_PLATFORM,
+    userAgentMetadata: profile.userAgentMetadata,
+  });
+  await cdp.send('Network.setExtraHTTPHeaders', {
+    headers: toCdpHeaderRecord(profile.headers),
+  });
+
+  await page.setCacheEnabled(true);
+  await page.setBypassCSP(true);
+  await page.setExtraHTTPHeaders(profile.headers);
+  await ensureStreamCorsInjection(page, profile);
+  await ensureIframeSandboxPatch(page);
+  await applyRuntimeFingerprintProfile(page, {
+    userAgent: profile.userAgent,
+    userAgentMetadata: profile.userAgentMetadata,
+    chromeVersion: profile.chromeVersion,
+    chromeMajorVersion: profile.chromeMajorVersion,
+    secChUa: profile.secChUa,
+  });
+}
+
+function rememberPageFingerprintState(page, targetUrl, profile) {
+  pageFingerprintState.set(page, {
+    useCount: 1,
+    appliedAt: Date.now(),
+    lastUsedAt: Date.now(),
+    origin: getOriginFromUrl(targetUrl) || getOriginFromUrl(page.url()),
+    userAgent: profile.userAgent,
+  });
+}
+
+async function applyProxyAuthentication(page) {
+  const metadata = browserProxyMetadata.get(page.browser()) || null;
+  const proxy = metadata?.proxy || null;
+  if (!proxy || (!proxy.username && !proxy.password)) {
+    return;
+  }
+
+  await page.authenticate({
+    username: proxy.username || '',
+    password: proxy.password || '',
+  });
+}
+
 async function applyFingerprint(page, { targetUrl = '', forceRotate = false } = {}) {
   const state = pageFingerprintState.get(page) || null;
   if (!shouldRotateFingerprint(state, page, targetUrl, forceRotate) && state) {
@@ -1154,8 +1354,9 @@ async function applyFingerprint(page, { targetUrl = '', forceRotate = false } = 
     return;
   }
 
+  let suite = null;
   try {
-    const suite = await getFingerprintSuite();
+    suite = await getFingerprintSuite(page.browser());
     const synchronized = generateRotatingFingerprintBundle(
       suite.fingerprintGenerator,
       suite.chromeVersion,
@@ -1168,52 +1369,35 @@ async function applyFingerprint(page, { targetUrl = '', forceRotate = false } = 
     );
 
     await suite.fingerprintInjector.attachFingerprintToPuppeteer(page, synchronized);
-    // Fingerprint injector can alter viewport; force exact desktop dimensions afterwards.
-    await page.setViewport(FORCED_VIEWPORT);
-
-    await page.setUserAgent({
-      userAgent: profile.userAgent,
-      userAgentMetadata: profile.userAgentMetadata,
-      platform: FORCED_WINDOWS_PLATFORM,
-    });
-
-    const cdp = await getPageCdp(page);
-    await cdp.send('Network.enable');
-    await cdp.send('Network.setCacheDisabled', { cacheDisabled: false });
-    await cdp.send('Network.setUserAgentOverride', {
-      userAgent: profile.userAgent,
-      acceptLanguage: profile.language,
-      platform: FORCED_WINDOWS_PLATFORM,
-      userAgentMetadata: profile.userAgentMetadata,
-    });
-    await cdp.send('Network.setExtraHTTPHeaders', {
-      headers: toCdpHeaderRecord(profile.headers),
-    });
-
-    await page.setCacheEnabled(true);
-    await page.setBypassCSP(true);
-    await page.setExtraHTTPHeaders(profile.headers);
-    await ensureStreamCorsInjection(page, profile);
-    await ensureIframeSandboxPatch(page);
-    await applyRuntimeFingerprintProfile(page, {
-      userAgent: profile.userAgent,
-      userAgentMetadata: profile.userAgentMetadata,
-      chromeVersion: profile.chromeVersion,
-      chromeMajorVersion: profile.chromeMajorVersion,
-      secChUa: profile.secChUa,
-    });
-
-    pageFingerprintState.set(page, {
-      useCount: 1,
-      appliedAt: Date.now(),
-      lastUsedAt: Date.now(),
-      origin: getOriginFromUrl(targetUrl) || getOriginFromUrl(page.url()),
-      userAgent: profile.userAgent,
-    });
+    await applyFingerprintProfileToPage(page, profile);
+    rememberPageFingerprintState(page, targetUrl, profile);
   } catch (error) {
-    // Best-effort hardening only; do not fail tool calls on fingerprint setup.
     const debugFingerprint = String(process.env.OWC_DEBUG_FINGERPRINT || '').trim().toLowerCase();
-    if (debugFingerprint === '1' || debugFingerprint === 'true' || debugFingerprint === 'yes') {
+    const fallbackStrategy = getFingerprintFallbackStrategy();
+    const fallbackEnabled = fallbackStrategy === 'profile';
+
+    if (fallbackEnabled) {
+      try {
+        suite = suite || await getFingerprintSuite(page.browser());
+        const fallbackProfile = buildFallbackFingerprintProfile(
+          suite.chromeVersion,
+          suite.chromeMajorVersion,
+        );
+        await applyFingerprintProfileToPage(page, fallbackProfile);
+        rememberPageFingerprintState(page, targetUrl, fallbackProfile);
+        if (debugFingerprint === '1' || debugFingerprint === 'true' || debugFingerprint === 'yes') {
+          console.warn('[owc] fingerprint injector fallback applied:', error?.message || error);
+        }
+        return;
+      } catch (fallbackError) {
+        if (debugFingerprint === '1' || debugFingerprint === 'true' || debugFingerprint === 'yes') {
+          console.warn(
+            '[owc] fingerprint hardening skipped:',
+            `${error?.message || error}; fallback failed: ${fallbackError?.message || fallbackError}`,
+          );
+        }
+      }
+    } else if (debugFingerprint === '1' || debugFingerprint === 'true' || debugFingerprint === 'yes') {
       console.warn('[owc] fingerprint hardening skipped:', error?.message || error);
     }
 
@@ -1248,33 +1432,10 @@ async function enforceWindowBounds(browser, page) {
   }
 }
 
-/**
- * Connect to an existing browser by WebSocket endpoint.
- */
-export async function connectBrowser(wsEndpoint = WS_ENDPOINT) {
-  return puppeteer.connect({
-    browserWSEndpoint: wsEndpoint,
-    defaultViewport: FORCED_VIEWPORT,
-  });
-}
-
-/**
- * Launch an isolated browser for one MCP session.
- */
-export async function launchEphemeralBrowser(sessionId) {
-  const safeSessionId = String(sessionId || 'session').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const userDataDir = path.join(os.tmpdir(), `owc-browser-${safeSessionId}-${Date.now()}`);
-  const launchTimeout = Number.isFinite(BROWSER_LAUNCH_TIMEOUT_MS) ? Math.max(0, BROWSER_LAUNCH_TIMEOUT_MS) : 45000;
-  const launchArgs = [...DEFAULT_LAUNCH_ARGS];
-
-  if (UBOL_ENABLED && UBOL_EXTENSION_DIR) {
-    try {
-      await fs.access(path.join(UBOL_EXTENSION_DIR, 'manifest.json'));
-      launchArgs.push(`--disable-extensions-except=${UBOL_EXTENSION_DIR}`);
-      launchArgs.push(`--load-extension=${UBOL_EXTENSION_DIR}`);
-    } catch {
-      console.warn(`[owc] uBOL extension not found at ${UBOL_EXTENSION_DIR}; continuing without extension.`);
-    }
+async function launchBrowserAttempt({ launchTimeout, launchArgs, userDataDir, proxy = null } = {}) {
+  const nextLaunchArgs = [...launchArgs];
+  if (proxy?.server) {
+    nextLaunchArgs.push(`--proxy-server=${proxy.server}`);
   }
 
   const browser = await puppeteer.launch({
@@ -1284,8 +1445,117 @@ export async function launchEphemeralBrowser(sessionId) {
     timeout: launchTimeout,
     waitForInitialPage: true,
     userDataDir,
-    args: launchArgs,
+    args: nextLaunchArgs,
   });
+
+  browserProxyMetadata.set(browser, { proxy });
+  return browser;
+}
+
+async function validateProxyConnection(browser, { testUrl, timeoutMs } = {}) {
+  const pages = await browser.pages();
+  const page = pages.find((candidate) => candidate.url() === 'about:blank') || pages[0] || await browser.newPage();
+  await applyProxyAuthentication(page);
+  const response = await page.goto(testUrl, {
+    waitUntil: 'domcontentloaded',
+    timeout: timeoutMs,
+  });
+  if (!response || !response.ok()) {
+    throw new Error(`Proxy validation failed for ${testUrl}`);
+  }
+  await page.goto('about:blank', { waitUntil: 'load', timeout: Math.min(timeoutMs, 5000) }).catch(() => {});
+}
+
+export function isSharedBrowserFallbackAllowed() {
+  return shouldAllowSharedBrowserFallback(getProxyRuntimeConfig());
+}
+
+/**
+ * Connect to an existing browser by WebSocket endpoint.
+ */
+export async function connectBrowser(wsEndpoint = WS_ENDPOINT) {
+  const browser = await puppeteer.connect({
+    browserWSEndpoint: wsEndpoint,
+    defaultViewport: FORCED_VIEWPORT,
+  });
+  const metadata = launchedSessionMetadata.get(wsEndpoint);
+  if (metadata) {
+    browserProxyMetadata.set(browser, metadata);
+  }
+  return browser;
+}
+
+/**
+ * Launch an isolated browser for one MCP session.
+ */
+export async function launchEphemeralBrowser(sessionId) {
+  const safeSessionId = String(sessionId || 'session').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const userDataDir = path.join(os.tmpdir(), `owc-browser-${safeSessionId}-${Date.now()}`);
+  const launchTimeoutMs = getBrowserLaunchTimeoutMs();
+  const launchTimeout = Number.isFinite(launchTimeoutMs) ? Math.max(0, launchTimeoutMs) : 45000;
+  const launchArgs = [...DEFAULT_LAUNCH_ARGS];
+  launchArgs.push(...getExtraLaunchArgs());
+
+  if (getUbolEnabled() && UBOL_EXTENSION_DIR) {
+    try {
+      await fs.access(path.join(UBOL_EXTENSION_DIR, 'manifest.json'));
+      launchArgs.push(`--disable-extensions-except=${UBOL_EXTENSION_DIR}`);
+      launchArgs.push(`--load-extension=${UBOL_EXTENSION_DIR}`);
+    } catch {
+      console.warn(`[owc] uBOL extension not found at ${UBOL_EXTENSION_DIR}; continuing without extension.`);
+    }
+  }
+
+  const proxyPlan = await getProxyCandidatePlan('puppeteer', getProxyRuntimeConfig());
+  const attemptedErrors = [];
+  let browser = null;
+  let selectedProxy = null;
+
+  if (proxyPlan.enabled) {
+    for (const candidate of proxyPlan.candidates) {
+      try {
+        browser = await launchBrowserAttempt({
+          launchTimeout,
+          launchArgs,
+          userDataDir,
+          proxy: candidate,
+        });
+        await validateProxyConnection(browser, {
+          testUrl: proxyPlan.testUrl,
+          timeoutMs: proxyPlan.validationTimeoutMs,
+        });
+        markProxySuccess('puppeteer', candidate);
+        selectedProxy = candidate;
+        break;
+      } catch (error) {
+        attemptedErrors.push(`${describeProxyCandidate(candidate)} -> ${error?.message || error}`);
+        markProxyFailure('puppeteer', candidate);
+        if (browser) {
+          await browser.close().catch(() => {});
+          browser = null;
+        }
+      }
+    }
+  }
+
+  if (!browser && (!proxyPlan.enabled || proxyPlan.allowDirectFallback)) {
+    browser = await launchBrowserAttempt({
+      launchTimeout,
+      launchArgs,
+      userDataDir,
+      proxy: null,
+    });
+  }
+
+  if (!browser) {
+    throw new Error(
+      attemptedErrors.length
+        ? `No working proxy candidate was available. ${attemptedErrors.join(' | ')}`
+        : 'No working proxy candidate was available.',
+    );
+  }
+
+  launchedSessionMetadata.set(browser.wsEndpoint(), { proxy: selectedProxy });
 
   return {
     browser,
@@ -1301,6 +1571,9 @@ export async function closeEphemeralBrowser(session) {
   if (!session) return;
 
   try {
+    if (session.wsEndpoint) {
+      launchedSessionMetadata.delete(session.wsEndpoint);
+    }
     if (session.browser) {
       await session.browser.close();
     }
@@ -1326,6 +1599,8 @@ export async function getPage(browser, {
   const page = navigated[navigated.length - 1]
     ?? pages.find((p) => p.url() === 'about:blank')
     ?? await browser.newPage();
+
+  await applyProxyAuthentication(page);
 
   // applyFingerprint internally enforces FORCED_VIEWPORT after injector runs.
   // We set it once more here as the single authoritative enforcement point so

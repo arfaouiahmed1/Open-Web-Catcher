@@ -23,6 +23,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PuppeteerBlocker } from '@ghostery/adblocker-puppeteer';
+import { getBrowserRuntimeSettings } from './runtime-config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
@@ -39,6 +40,10 @@ const DEFAULT_EXCLUDED_CATEGORIES = ['nsfw', 'gambling'];
 const enabledPages = new WeakSet();
 
 let blockerSnapshotPromise = null;
+
+function runtimeSetting(key) {
+  return getBrowserRuntimeSettings('puppeteer')?.[key];
+}
 
 function resolveCacheRoot() {
   const configuredPath = process.env.OWC_ADBLOCK_CACHE_DIR;
@@ -86,7 +91,7 @@ function normalizeHost(candidate) {
 }
 
 function getAllowlistHosts() {
-  const configured = process.env.OWC_ADBLOCK_ALLOWLIST_HOSTS;
+  const configured = runtimeSetting('adblock_allowlist_hosts') ?? process.env.OWC_ADBLOCK_ALLOWLIST_HOSTS;
   if (!configured) {
     return new Set();
   }
@@ -115,7 +120,7 @@ function isAllowlistedHost(hostname) {
 }
 
 function getExcludedCategories() {
-  const configured = process.env.OWC_ADBLOCK_EXCLUDED_CATEGORIES;
+  const configured = runtimeSetting('adblock_excluded_categories') ?? process.env.OWC_ADBLOCK_EXCLUDED_CATEGORIES;
   if (!configured) {
     return new Set(DEFAULT_EXCLUDED_CATEGORIES);
   }
@@ -125,7 +130,7 @@ function getExcludedCategories() {
 }
 
 function isAdblockEnabled() {
-  return parseBoolean(process.env.OWC_ADBLOCK_ENABLED, false);
+  return parseBoolean(runtimeSetting('adblock_enabled') ?? process.env.OWC_ADBLOCK_ENABLED, false);
 }
 
 function nowIso() {

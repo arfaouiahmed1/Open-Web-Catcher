@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge";
 export const dynamic = "force-dynamic";
 
 function statusTone(s) {
+  if (s === "running") return "signal";
+  if (s === "cancelled") return "warning";
   if (s === "success") return "success";
   if (s === "partial") return "warning";
   return "danger";

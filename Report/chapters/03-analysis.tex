@@ -1,173 +1,300 @@
 \chapter{Methodology, Requirements Analysis, and Design Constraints}
 
+This chapter defines the methodological framework adopted for the project, derives the
+functional and non-functional requirements from the operational context established in
+Chapter~2, and documents the design constraints that bounded the solution space. Together
+these elements provide the formal basis for the architectural decisions described in
+Chapter~4.
+
 \section{Methodology options considered}
 
-The project combines software engineering, iterative experimentation, prompt tuning, and evidence-oriented data collection. Because of that hybrid nature, several methodological frameworks could have been used to organize the work. The three most relevant ones were \textbf{Agile}, \textbf{TDSP}, and \textbf{CRISP-DM}.
+The project combines software engineering, browser automation, prompt design, and
+evidence-oriented investigation. Three methodologies were considered: Agile, TDSP,
+and CRISP-DM.
 
 \subsection{Agile}
 
-Agile is well suited to iterative development, short feedback loops, and incremental delivery. It matches the day-to-day rhythm of implementation: develop a feature, test it, improve it, and adjust priorities quickly. This logic was present throughout the internship, especially during prompt iteration, debugging, and interface refinement.
+Agile matched the day-to-day iteration loop (build, run, inspect, improve), especially
+during prompt and tool refinement.
 
 \subsection{TDSP}
 
-The Team Data Science Process (TDSP) is useful when a project has a strong data-science orientation, including formal data acquisition, feature engineering, model training, deployment, and lifecycle management. Some elements of the internship fit this view, especially evaluation and experimentation, but the project was not centered on training a predictive model from a dataset.
+TDSP was useful for thinking about experimentation and lifecycle discipline, but the
+project is not centered on training a predictive model.
 
 \subsection{CRISP-DM}
 
-The Cross-Industry Standard Process for Data Mining (CRISP-DM) offers a balanced framework for projects where the work begins from a business objective, moves through data understanding and preparation, then proceeds to modeling, evaluation, and deployment. Even though the present internship is not a classic data-mining project, CRISP-DM maps well to its actual progression because the system repeatedly transforms raw web evidence into structured, reviewable outputs.
-
-\section{Chosen methodology: CRISP-DM}
-
-For this report, \textbf{CRISP-DM} is the most appropriate methodology. It was chosen because it describes the real progression of the internship more accurately than Agile or TDSP alone.
+CRISP-DM~\cite{crispdm} offered the best end-to-end narrative from business objective
+to deployment and evaluation, while still allowing iterative engineering inside each phase.
 
 \begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.7cm} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.7cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
 \toprule
-Methodology & Strength in this project & Limitation in this project \\
+\rowcolor{accent!8}
+Methodology & Strength for this project & Limitation for this project \\
 \midrule
-Agile & Excellent for organizing iterative implementation and daily adaptation & Describes project rhythm well, but less clearly explains the full analytical lifecycle from business need to evaluation and deployment \\
-TDSP & Strong for data-science projects with modeling and operationalization & More model-centric than needed for a browser-agent evidence collection platform \\
-CRISP-DM & Connects business understanding, data understanding, preparation, modeling, evaluation, and deployment in a coherent loop & Needed slight adaptation because the project focuses on agentic extraction rather than traditional predictive data mining \\
+Agile & Excellent short-cycle execution and adaptation & Less explicit about
+  data/evidence lifecycle structure \\
+TDSP & Strong experimentation and operationalization framing & More model-training
+  oriented than this use case \\
+CRISP-DM & Clear business-to-deployment and evaluation progression & Needed adaptation
+  for agentic browser workflows \\
 \bottomrule
 \end{tabularx}
-\caption{Comparison of methodology candidates.}
+\caption{Methodology comparison used in the analysis phase.}
+\label{tab:method-compare}
 \end{table}
 
-CRISP-DM was retained for three main reasons:
+\section{Chosen methodology and adaptation}
 
-\begin{itemize}
-  \item the internship started from a clear business objective defined by the client;
-  \item the work depended on understanding and structuring messy real-world web data;
-  \item evaluation and deployment decisions were as important as implementation itself.
-\end{itemize}
+CRISP-DM was selected as the primary methodology, with Agile iteration behavior inside
+each phase. The adapted cycle is illustrated in Figure~\ref{fig:crispdm}.
 
-\section{Applying CRISP-DM to the project}
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  phase/.style={draw=accent, fill=blue!8, rounded corners=6pt,
+                minimum width=3.5cm, minimum height=1.1cm,
+                text centered, font=\small\bfseries, align=center},
+  annot/.style={font=\tiny, text=gray!80, align=center, text width=2.8cm},
+  arr/.style={->, >=Stealth, thick, accent!70}
+]
 
-\subsection{Business understanding}
+% Hexagonal placement of phases
+\node[phase] (biz)  at (0,    3.5) {Business\\Understanding};
+\node[phase] (data) at (3.2,  2.0) {Data\\Understanding};
+\node[phase] (prep) at (3.2, -0.5) {Data\\Preparation};
+\node[phase] (mod)  at (0,   -2.0) {Modeling\\(Agent Design)};
+\node[phase] (eval) at (-3.2,-0.5) {Evaluation};
+\node[phase] (dep)  at (-3.2, 2.0) {Deployment};
 
-The business objective was to help transform unstable streaming websites into structured evidence that could support investigation and takedown workflows. The platform therefore had to produce outputs that were not only technically correct, but also useful, reviewable, and traceable. In the company context, this objective was not pursued in isolation: an operational scraper already existed, so the new platform also had to justify its value as a complementary and fallback workflow.
+% Center label
+\node[draw=accent!40, fill=yellow!10, rounded corners=4pt,
+      font=\footnotesize\bfseries, align=center] at (0, 0.7)
+  {Iterative\\CRISP-DM\\Cycle};
 
-\subsection{Data understanding}
+% Arrows (cycle)
+\draw[arr] (biz)  -- (data);
+\draw[arr] (data) -- (prep);
+\draw[arr] (prep) -- (mod);
+\draw[arr] (mod)  -- (eval);
+\draw[arr] (eval) -- (dep);
+\draw[arr] (dep)  -- (biz);
 
-In this project, ``data'' does not mean only stored rows. It also includes page layouts, links, screenshots, iframe structures, network requests, provider information, and agent traces. Understanding the target websites meant studying how different categories of pages expose useful information and what types of obstacles repeatedly appear.
+% Annotations
+\node[annot, right=0.15cm of data]
+  {DOM state, screenshots,\\network traces};
+\node[annot, right=0.15cm of prep]
+  {URL dedup, output shaping,\\context structuring};
+\node[annot, below=0.2cm of mod]
+  {Agent roles, tools,\\prompt policy};
+\node[annot, left=0.15cm of eval]
+  {Manual live-match\\campaigns + auto checks};
+\node[annot, left=0.15cm of dep]
+  {Azure Container Apps\\Jobs + Service Bus};
+\node[annot, above=0.2cm of biz]
+  {Produce evidence for\\takedown actions};
 
-\subsection{Data preparation}
+\end{tikzpicture}
+\caption{CRISP-DM methodology adapted for agentic browser evidence collection.}
+\label{fig:crispdm}
+\end{figure}
 
-Preparation consisted of organizing candidate URLs, deduplicating inputs, cleaning outputs, normalizing stream evidence, and structuring observability data. In the final system, this preparation also includes memory profiles, reusable prompt context, and normalized persistence.
+\section{Project evolution timeline}
 
-\subsection{Modeling}
+The project progressed through two main stages as shown in Figure~\ref{fig:timeline}.
 
-The modeling phase corresponds here to the design of the multi-agent pipeline: classification logic, specialist agents, prompts, tool contracts, routing rules, and extraction normalization. The early n8n workflows and the current coded platform both belong to this phase, with the final implementation representing the mature version of the design.
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  milestone/.style={draw=accent, fill=blue!8, rounded corners=4pt,
+                    minimum width=3.8cm, minimum height=1.4cm,
+                    text centered, font=\footnotesize, align=center},
+  event/.style={font=\tiny, align=center, text width=3.0cm, text=gray!80}
+]
 
-\subsection{Evaluation}
+% Main horizontal axis
+\draw[very thick, accent!60] (-0.5,0) -- (13.5,0);
+\foreach \x in {0,3.5,7,10.5,13}
+  \draw[thick, accent!60] (\x,-0.15) -- (\x,0.15);
 
-Evaluation includes batch testing on representative websites, measuring token use and execution behavior, reviewing screenshots and traces, and validating whether the extracted evidence is reliable enough to support downstream action.
+% Stage 1
+\node[milestone, fill=orange!10, draw=orange!60] at (1.75, 1.5)
+  {\textbf{n8n Phase}\\Rapid feasibility\\validation};
+\draw[->, thick, orange!70] (1.75,0.9) -- (1.75,0.15);
 
-\subsection{Deployment}
+\node[event] at (0,  -0.8) {Internship\\start};
+\node[event] at (3.5,-0.8) {n8n\\prototype};
 
-Deployment concerns container packaging, operational monitoring, UI exposure, and the Azure target architecture. In the current plan, the solution is deployed through containers, with Azure Service Bus triggering Azure Container Apps Jobs for extraction work.
+% Stage 2
+\node[milestone, fill=blue!10, draw=blue!60] at (5.25, 1.5)
+  {\textbf{Transition}\\Lessons codified;\\new platform design};
+\draw[->, thick, blue!70] (5.25,0.9) -- (5.25,0.15);
+\node[event] at (7,-0.8) {Python\\platform};
 
-\section{Functional requirements}
+% Stage 3
+\node[milestone, fill=green!10, draw=green!60] at (8.75, 1.5)
+  {\textbf{Python Platform}\\FastAPI, agents,\\tools, observability};
+\draw[->, thick, green!70] (8.75,0.9) -- (8.75,0.15);
+\node[event] at (10.5,-0.8) {Evaluation\\campaigns};
 
-The final platform must satisfy the following functional requirements.
+% Stage 4
+\node[milestone, fill=purple!10, draw=purple!60] at (11.75, 1.5)
+  {\textbf{Hardening}\\Cloud packaging,\\deployment design};
+\draw[->, thick, purple!70] (11.75,0.9) -- (11.75,0.15);
+\node[event] at (13,-0.8) {Azure\\target design};
 
-\subsection{URL ingestion}
+\end{tikzpicture}
+\caption{Project evolution timeline: n8n phase to coded platform to cloud-ready design.}
+\label{fig:timeline}
+\end{figure}
 
-The system must accept an input URL from an operator or another system and turn it into a full investigation run. In practice, this means the backend should expose endpoints capable of starting, monitoring, and retrieving runs.
+\section{CRISP-DM applied to this project}
 
-\subsection{Page classification}
+Each phase was adapted to the constraints of agentic browser automation on adversarial
+targets. Business understanding produced the core success criteria: classify every URL
+reliably, extract at least one validated stream URL per hosting page, and make every
+run fully auditable. Data understanding was conducted through manual observation of
+live pages — DOM output, screenshots, network traces, and frame trees — since no static
+labelled dataset exists. Data preparation covers URL normalization, HTML noise reduction
+(stripping scripts, ads, and tracking tags before LLM context building), and network
+log filtering to isolate m3u8/mpd candidates from unrelated traffic. Modeling refers to
+agent role design, prompt iteration (covered in Chapter~5), and model routing: lightweight
+models handle cheap decisions (classification, orchestration) while stronger models run
+extraction loops. Evaluation ran continuously through manual live-match campaigns and
+automated regression checks. Deployment follows an event-driven cloud model: FastAPI
+and Next.js as always-on services, Puppeteer extraction as Azure Container Apps Jobs
+triggered by Azure Service Bus, and Cloudinary for stateless screenshot storage.
 
-The system must determine whether the page is a landing page, a hosting page, an embedded page, or an irrelevant page before choosing an extraction strategy.
+\section{Functional and non-functional requirements}
 
-\subsection{Adaptive extraction}
+Table~\ref{tab:fr-summary} summarizes the ten functional requirements derived from the
+operational context. All critical requirements were implemented in the final platform.
 
-The platform must collect relevant links and streams even when they are not present on initial load. This implies support for:
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{1.2cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}p{2.5cm}}
+\toprule
+\rowcolor{accent!8}
+ID & Requirement summary & Priority \\
+\midrule
+FR-1 & URL ingestion and run lifecycle management & Critical \\
+FR-2 & Page-type classification with DOM + screenshot & Critical \\
+FR-3 & Specialist routing by page type & Critical \\
+FR-4 & Tab-aware landing-page candidate discovery & High \\
+FR-5 & Multi-server hosting extraction loop & Critical \\
+FR-6 & Embedded player activation and stream capture & Critical \\
+FR-7 & Hosting-to-embedded fallback & High \\
+FR-8 & Screenshot capture and Cloudinary storage & High \\
+FR-9 & WHOIS / IP infrastructure enrichment & Medium \\
+FR-10 & Real-time operator console + SSE tracing & High \\
+\bottomrule
+\end{tabularx}
+\caption{Functional requirements summary with priority.}
+\label{tab:fr-summary}
+\end{table}
 
-\begin{itemize}
-  \item inspection after rendering;
-  \item navigation to discovered URLs;
-  \item interaction with tabs, buttons, and players;
-  \item stream harvesting after activation;
-  \item iframe-aware extraction.
-\end{itemize}
+Table~\ref{tab:nfr-summary} lists the non-functional requirements and the architectural
+decisions that address each one.
 
-\subsection{Fallback capability}
-
-The platform must be able to operate as a backup path when the existing deterministic scraper encounters ambiguous pages, unusual iframe chains, obfuscated player templates, or blocked embed pages. This fallback role is a functional requirement because it defines the practical value of the agentic workflow inside the company.
-
-\subsection{Evidence preservation}
-
-The system must preserve screenshots, tool outputs, runtime events, and final artifacts so that the result of each run can be reviewed later.
-
-\subsection{Provider analysis and downstream action}
-
-The pipeline must support the analysis of extracted stream infrastructure and the preparation of outputs that can feed takedown workflows.
-
-\subsection{Operator interaction}
-
-The project must provide an operator-facing surface to launch runs, inspect live execution, browse stored results, and test specialized agents.
-
-\section{Non-functional requirements}
-
-\subsection{Maintainability}
-
-The system must remain understandable and editable as prompts, tools, and page patterns evolve. This requirement strongly influenced the move from n8n toward a structured codebase.
-
-\subsection{Observability}
-
-The platform must expose enough internal information to diagnose failures. This includes event streams, token usage, tool calls, prompts, screenshots, and normalized database records.
-
-\subsection{Cost awareness}
-
-Because the system uses browser automation and LLM calls, it must measure and reduce avoidable cost. Caching and precise telemetry are therefore not optional extras.
-
-\subsection{Complementarity with the existing scraper}
-
-The solution must justify the cost of an agentic workflow by being used where adaptability matters most. In other words, it should not be positioned as the default path for every page, but as a higher-flexibility backup when the main scraper does not reach a sufficiently reliable result.
-
-\subsection{Scalability}
-
-The runtime must support repeated investigations and should scale more naturally than a manually operated prototype. Event-driven job execution in Azure addresses this need.
-
-\subsection{Portability}
-
-The solution must run in containers so that browser dependencies, environment variables, and application services can be reproduced consistently.
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{1.4cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}p{3cm}}
+\toprule
+\rowcolor{accent!8}
+ID & Non-functional requirement & How it is addressed \\
+\midrule
+NFR-1 & Maintainability & Versioned prompt files; modular tool registry \\
+NFR-2 & Observability & Structured event log; SSE console; cost dashboard \\
+NFR-3 & Cost control & Model routing; provider-side caching; token budgets \\
+NFR-4 & Reliability & Tool error contracts; popup handler; retry logic \\
+NFR-5 & Scalability & Azure Container Apps Jobs; Service Bus queue \\
+NFR-6 & Portability & Docker Compose; configurable browser profiles \\
+NFR-7 & Evidence traceability & Run-linked artifact chain: event $\to$ screenshot $\to$ URL \\
+\bottomrule
+\end{tabularx}
+\caption{Non-functional requirements and implementation approach.}
+\label{tab:nfr-summary}
+\end{table}
 
 \section{Design constraints}
 
-The project is subject to several important constraints.
+Five constraints bounded the solution space throughout: (1) target-site layouts and
+anti-bot behavior can change without notice between broadcast windows; (2) the player
+can be nested behind multiple iframe hops from the top-level page; (3) popups, overlays,
+and fake play controls can divert scripted extraction; (4) final stream manifests may
+only be generated after a runtime token exchange triggered by player activation; and
+(5) inference cost scales with exploration depth, number of hosting pages, and servers
+tested per page — requiring active caching and model routing to remain viable at scale.
 
-\subsection{Target-site volatility}
+\section{Prompting methodology evolution: intent-based to ReAct-style loops}
 
-Target websites change often. A page that works today may change its structure tomorrow, which means prompts and tools must remain robust to layout drift.
+The prompting strategy evolved in two stages. Figure~\ref{fig:prompt-evolution} compares
+the two approaches side by side.
 
-\subsection{Ambiguous page states}
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.55cm and 2.4cm]
 
-Some pages resemble more than one class. A schedule page can also embed a player, and a hosting page can redirect toward another provider. Classification must therefore be cautious and evidence-based.
+% ==== LEFT: Intent-based ====
+\node[flowbox, minimum width=5cm, fill=orange!12, draw=orange!60] (i1)
+  at (0, 5.5) {\textbf{Intent-Based Prompt (early)}};
+\node[toolbox, minimum width=4.8cm, below=0.5cm of i1] (i2)
+  {System role + high-level goal};
+\node[toolbox, minimum width=4.8cm, below=0.45cm of i2] (i3)
+  {List of tools available};
+\node[toolbox, minimum width=4.8cm, below=0.45cm of i3] (i4)
+  {Expected JSON output schema};
+\node[toolbox, minimum width=4.8cm, below=0.45cm of i4] (i5)
+  {LLM calls tools in one pass};
+\node[toolbox, minimum width=4.8cm, fill=red!10, draw=red!50, below=0.45cm of i5] (i6)
+  {Returns answer — stops early\\if page is ambiguous};
 
-\subsection{Cross-origin and anti-bot barriers}
+\draw[grayarrow] (i1)--(i2); \draw[grayarrow] (i2)--(i3);
+\draw[grayarrow] (i3)--(i4); \draw[grayarrow] (i4)--(i5);
+\draw[grayarrow] (i5)--(i6);
 
-Embedded pages and protected players may block direct DOM access or react badly to repeated automation. This limits what any browser automation layer can guarantee.
+% ==== RIGHT: ReAct ====
+\node[flowbox, minimum width=5cm, fill=blue!12, draw=blue!60] (r1)
+  at (7.5, 5.5) {\textbf{ReAct-Style Prompt (current)}};
+\node[toolbox, minimum width=4.8cm, below=0.5cm of r1] (r2)
+  {System role + final objective};
+\node[toolbox, minimum width=4.8cm, below=0.45cm of r2] (r3)
+  {Explicit loop instruction:\\Observe $\to$ Reason $\to$ Act};
+\node[toolbox, minimum width=4.8cm, below=0.45cm of r3] (r4)
+  {Evidence-grounded stopping\\criteria};
+\node[toolbox, minimum width=4.8cm, below=0.45cm of r4] (r5)
+  {LLM iterates: tool call $\to$\\re-observe $\to$ next decision};
+\node[toolbox, minimum width=4.8cm, fill=green!10, draw=green!50,
+      below=0.45cm of r5] (r6)
+  {Stops when evidence found\\or budget hit};
+\draw[->, >=Stealth, thick, blue!50, bend right=35] (r6.east) to (r5.east);
 
-\subsection{Runtime cost growth}
+\draw[myarrow] (r1)--(r2); \draw[myarrow] (r2)--(r3);
+\draw[myarrow] (r3)--(r4); \draw[myarrow] (r4)--(r5);
+\draw[myarrow] (r5)--(r6);
 
-Every extra tool result increases context length. If memory and caching are not managed well, later turns become more expensive than early turns.
+% Divider
+\draw[dashed, gray!50, thick] (3.75,-0.3) -- (3.75,6.0);
 
-\subsection{Need for production-grade deployment}
+\end{tikzpicture}
+\caption{Prompt strategy evolution: intent-based linear flow versus ReAct-style
+iterative loop.}
+\label{fig:prompt-evolution}
+\end{figure}
 
-The final platform is not meant to stay a local experiment. It has to move toward a cloud deployment model that separates operator-facing services from extraction jobs.
+The practical difference was not subtle. The intent-based prompt would often declare a run complete after inspecting the first server option, whether or not a stream had actually appeared in network traffic. The ReAct loop couldn't do that — the stopping criteria required explicit evidence. This also made debugging much easier, since each step in the trace corresponded to a specific reasoning decision rather than one large opaque LLM call.
 
-\section{Derived design principles}
+The design principles that fell out of this analysis were: classify before deep extraction; use specialist agents with explicit fallback paths; ground every conclusion in browser evidence; validate state changes with screenshots; control cost through caching and model routing; and treat anti-bot configuration as a maintenance process, not a one-time setup.
 
-From the previous analysis, five design principles guided the final solution:
-
-\begin{itemize}
-  \item \textbf{classify before extracting}, so each page is handled with the right strategy;
-  \item \textbf{specialize agents}, so prompts and tool contracts remain focused;
-  \item \textbf{ground reasoning in browser evidence}, so the model does not answer from guesswork;
-  \item \textbf{persist traces and memory}, so the system improves through reuse and post-run analysis;
-  \item \textbf{optimize cost explicitly}, so the platform remains viable beyond small-scale testing.
-\end{itemize}
-
-These principles shape the architecture described in the next chapter.
+The requirements, constraints, and methodology defined in this chapter establish the
+formal scope of the system. Chapter~4 translates these inputs into a concrete
+multi-agent architecture, documenting the component structure, agent roles, tool
+allocation decisions, and deployment model.

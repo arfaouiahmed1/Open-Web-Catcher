@@ -34,7 +34,6 @@ from src.storage.models import (
     TakedownEmailRecord,
     ToolCallRecord,
 )
-from src.utils.instrumentation import estimate_usage_cost
 from src.utils.observability import RunTrace
 
 _PROMPT_PATHS = {
@@ -93,7 +92,17 @@ class RunRepository:
                 self._session.add(legacy)
             legacy.url = url
             legacy.page_type = "unknown"
-            legacy.status = "running" if not trace.completed else ("success" if (trace.metrics and trace.metrics.success) else "failed")
+            failure_mode = str((trace.metrics.failure_mode if trace.metrics else "") or "").lower()
+            if not trace.completed:
+                legacy.status = "running"
+            elif trace.cancel_requested or failure_mode in {"runcancellederror", "cancelled", "canceled"}:
+                legacy.status = "cancelled"
+            elif trace.metrics and trace.metrics.success:
+                legacy.status = "success"
+            elif failure_mode == "partial":
+                legacy.status = "partial"
+            else:
+                legacy.status = "failed"
             legacy.success = bool(trace.metrics.success) if (trace.metrics and trace.completed) else False
             legacy.streams_found = 0
             metrics = trace.metrics
@@ -147,22 +156,15 @@ class RunRepository:
                 "metrics": metrics.model_dump(mode="json") if metrics else {},
                 "events": [event.model_dump(mode="json") for event in trace.events],
             }
-
-            self._session.query(RuntimeEventRecord).filter_by(pipeline_run_id=pipeline.id).delete(synchronize_session=False)
-            for event in trace.events:
-                self._session.add(
-                    RuntimeEventRecord(
-                        pipeline_run_id=pipeline.id,
-                        agent_run_id=None,
-                        actor=event.actor,
-                        seq=event.seq,
-                        kind=event.kind,
-                        status=event.status,
-                        message=event.message,
-                        details_json=event.details or {},
-                        created_at=event.timestamp,
-                    )
-                )
+            self._replace_trace_children(pipeline.id)
+            agent_runs = self._persist_trace_agent_runs(
+                pipeline.id,
+                trace,
+                url=url,
+                root_actor=root_actor,
+            )
+            self._persist_trace_runtime_events(pipeline.id, trace, agent_runs)
+            self._persist_trace_model_usage(pipeline.id, trace)
 
     def cleanup_old_artifacts(self, *, retention_days: int = 30) -> dict[str, int]:
         threshold = datetime.utcnow() - timedelta(days=max(1, int(retention_days)))
@@ -528,6 +530,17 @@ class RunRepository:
         self._session.query(TakedownEmailRecord).filter_by(pipeline_run_id=pipeline_run_id).delete(synchronize_session=False)
         self._session.query(AgentRunRecord).filter_by(pipeline_run_id=pipeline_run_id).delete(synchronize_session=False)
 
+    def _replace_trace_children(self, pipeline_run_id: int) -> None:
+        agent_run_ids = self._session.query(AgentRunRecord.id).filter(AgentRunRecord.pipeline_run_id == pipeline_run_id)
+        self._session.query(MemoryHintUsedRecord).filter(MemoryHintUsedRecord.agent_run_id.in_(agent_run_ids)).delete(synchronize_session=False)
+        self._session.query(PromptCompilationRecord).filter(PromptCompilationRecord.agent_run_id.in_(agent_run_ids)).delete(synchronize_session=False)
+        self._session.query(LLMCallRecord).filter(LLMCallRecord.agent_run_id.in_(agent_run_ids)).delete(synchronize_session=False)
+        self._session.query(ToolCallRecord).filter(ToolCallRecord.agent_run_id.in_(agent_run_ids)).delete(synchronize_session=False)
+        self._session.query(AgentOutputRecord).filter(AgentOutputRecord.agent_run_id.in_(agent_run_ids)).delete(synchronize_session=False)
+        self._session.query(RuntimeEventRecord).filter_by(pipeline_run_id=pipeline_run_id).delete(synchronize_session=False)
+        self._session.query(RunModelUsageRecord).filter_by(pipeline_run_id=pipeline_run_id).delete(synchronize_session=False)
+        self._session.query(AgentRunRecord).filter_by(pipeline_run_id=pipeline_run_id).delete(synchronize_session=False)
+
     def _persist_agent_runs(self, pipeline_run_id: int, result: PipelineResult, trace: RunTrace | None) -> list[dict[str, Any]]:
         contexts = _extract_agent_contexts(trace, result)
         rows: list[dict[str, Any]] = []
@@ -589,6 +602,74 @@ class RunRepository:
             rows.append({**ctx, "id": agent_run.id})
         return rows
 
+    def _persist_trace_agent_runs(
+        self,
+        pipeline_run_id: int,
+        trace: RunTrace,
+        *,
+        url: str,
+        root_actor: str,
+    ) -> list[dict[str, Any]]:
+        contexts = _extract_trace_agent_contexts(trace, default_url=url, root_actor=root_actor)
+        rows: list[dict[str, Any]] = []
+        for ctx in contexts:
+            agent_run = AgentRunRecord(
+                pipeline_run_id=pipeline_run_id,
+                actor=ctx["actor"],
+                agent_type=ctx["agent_type"],
+                target_url=ctx["target_url"],
+                page_type=ctx["page_type"],
+                status=ctx["status"],
+                tool_call_budget=ctx["tool_call_budget"],
+                tool_calls_made=ctx["tool_calls_made"],
+                llm_calls_made=ctx["llm_calls_made"],
+                prompt_compiled=bool(ctx.get("prompt")),
+                memory_injected=bool(ctx.get("memory_loaded")),
+                started_at=ctx["started_at"],
+                finished_at=ctx["finished_at"],
+                duration_seconds=ctx["duration_seconds"],
+                invocation_index=ctx["invocation_index"],
+            )
+            self._session.add(agent_run)
+            self._session.flush()
+
+            output_payload = _trace_agent_output_payload(ctx)
+            self._session.add(
+                AgentOutputRecord(
+                    agent_run_id=agent_run.id,
+                    output_json=output_payload,
+                    summary_text=_trace_agent_output_summary(ctx["agent_type"], output_payload, ctx["status"]),
+                    stream_count=_stream_count_from_payload(output_payload),
+                    embedded_url_count=len(output_payload.get("embedded_urls", []) or []),
+                    hosting_page_count=len(output_payload.get("hosting_pages", []) or []),
+                    validation_status="ok" if output_payload else "missing",
+                )
+            )
+
+            prompt_details = ctx.get("prompt") or {}
+            if prompt_details:
+                prompt_version_id = self._ensure_prompt_version(ctx["agent_type"], prompt_details)
+                self._session.add(
+                    PromptCompilationRecord(
+                        prompt_version_id=prompt_version_id,
+                        agent_run_id=agent_run.id,
+                        cache_mode=str(prompt_details.get("cache_mode", "") or ""),
+                        compiled_prompt_hash=str(prompt_details.get("compiled_prompt_hash", "") or ""),
+                        provider_cache_key=str(prompt_details.get("provider_cache_key", "") or ""),
+                        provider_cache_eligible=bool(prompt_details.get("provider_cache_eligible", False)),
+                        static_cache_hit=bool(prompt_details.get("static_cache_hit", False)),
+                        memory_injected=bool(prompt_details.get("memory_injected", False)),
+                        output_contract_version=str(prompt_details.get("output_contract_version", "") or ""),
+                        sections_json=prompt_details.get("sections", []) or [],
+                        metadata_json=prompt_details,
+                    )
+                )
+
+            self._persist_llm_calls(agent_run.id, ctx)
+            self._persist_tool_calls(agent_run.id, ctx)
+            rows.append({**ctx, "id": agent_run.id})
+        return rows
+
     def _persist_llm_calls(self, agent_run_id: int, ctx: dict[str, Any]) -> None:
         llm_seq = 0
         for event in ctx["events"]:
@@ -602,18 +683,6 @@ class RunRepository:
             estimated_input_cost_usd = float(details.get("estimated_input_cost_usd", 0.0) or 0.0)
             estimated_output_cost_usd = float(details.get("estimated_output_cost_usd", 0.0) or 0.0)
             estimated_total_cost_usd = float(details.get("estimated_total_cost_usd", 0.0) or 0.0)
-
-            if estimated_total_cost_usd == 0.0:
-                pricing = details.get("pricing", {}) or {}
-                fallback = estimate_usage_cost(
-                    input_tokens,
-                    output_tokens,
-                    input_per_million=float(pricing.get("input_per_million", 0.0) or 0.0),
-                    output_per_million=float(pricing.get("output_per_million", 0.0) or 0.0),
-                )
-                estimated_input_cost_usd = float(fallback["estimated_input_cost_usd"])
-                estimated_output_cost_usd = float(fallback["estimated_output_cost_usd"])
-                estimated_total_cost_usd = float(fallback["estimated_total_cost_usd"])
 
             usage_metadata = details.get("usage_metadata", {}) or {}
             if isinstance(usage_metadata, dict):
@@ -657,20 +726,26 @@ class RunRepository:
             )
 
     def _persist_tool_calls(self, agent_run_id: int, ctx: dict[str, Any]) -> None:
-        pending: dict[int, dict[str, Any]] = {}
+        pending: dict[str, dict[str, Any]] = {}
         seq = 0
         for event in ctx["events"]:
             details = event.details or {}
             if event.kind == "tool_call_started":
                 seq += 1
-                pending[seq] = {
+                tool_call_id = str(details.get("tool_call_id", "") or f"seq-{seq}")
+                pending[tool_call_id] = {
+                    "seq": seq,
                     "tool_name": str(details.get("tool_name", "") or ""),
                     "args": details.get("tool_args", {}) or {},
                     "started_at": event.timestamp,
                 }
             elif event.kind == "tool_call_finished":
-                current_seq = max(pending.keys(), default=0)
-                started = pending.pop(current_seq, None)
+                tool_call_id = str(details.get("tool_call_id", "") or "")
+                if tool_call_id and tool_call_id in pending:
+                    started = pending.pop(tool_call_id, None)
+                else:
+                    fallback_key = next(reversed(pending), "")
+                    started = pending.pop(fallback_key, None) if fallback_key else None
                 tool_name = str(details.get("tool_name", "") or (started or {}).get("tool_name", ""))
                 result_preview = str(details.get("result_preview", "") or "")
                 status = str(details.get("status", "") or event.status or "info")
@@ -678,7 +753,7 @@ class RunRepository:
                 self._session.add(
                     ToolCallRecord(
                         agent_run_id=agent_run_id,
-                        seq=current_seq or seq or 1,
+                        seq=int((started or {}).get("seq", seq or 1) or 1),
                         tool_name=tool_name,
                         args_json=(started or {}).get("args", {}),
                         target_summary=_tool_target_summary(tool_name, (started or {}).get("args", {})),
@@ -713,8 +788,47 @@ class RunRepository:
                 )
             )
 
+    def _persist_trace_runtime_events(self, pipeline_run_id: int, trace: RunTrace, agent_runs: list[dict[str, Any]]) -> None:
+        seq_to_agent_run_id: dict[int, int | None] = {}
+        for agent_run in agent_runs:
+            for event in agent_run["events"]:
+                seq_to_agent_run_id[event.seq] = agent_run["id"]
+        for event in trace.events:
+            self._session.add(
+                RuntimeEventRecord(
+                    pipeline_run_id=pipeline_run_id,
+                    agent_run_id=seq_to_agent_run_id.get(event.seq),
+                    actor=event.actor,
+                    seq=event.seq,
+                    kind=event.kind,
+                    status=event.status,
+                    message=event.message,
+                    details_json=event.details or {},
+                    created_at=event.timestamp,
+                )
+            )
+
     def _persist_run_model_usage(self, pipeline_run_id: int, result: PipelineResult) -> None:
         metrics = result.metrics
+        if metrics is None:
+            return
+        for entry in metrics.model_usage:
+            self._session.add(
+                RunModelUsageRecord(
+                    pipeline_run_id=pipeline_run_id,
+                    provider=entry.provider,
+                    model_name=entry.model_name,
+                    llm_calls=entry.llm_calls,
+                    input_tokens=entry.input_tokens,
+                    output_tokens=entry.output_tokens,
+                    estimated_input_cost_usd=entry.estimated_input_cost_usd,
+                    estimated_output_cost_usd=entry.estimated_output_cost_usd,
+                    estimated_total_cost_usd=entry.estimated_total_cost_usd,
+                )
+            )
+
+    def _persist_trace_model_usage(self, pipeline_run_id: int, trace: RunTrace) -> None:
+        metrics = trace.metrics
         if metrics is None:
             return
         for entry in metrics.model_usage:
@@ -936,6 +1050,14 @@ class BackgroundJobRepository:
             .all()
         )
 
+    def list_all(self, limit: int = 400) -> list[BackgroundJobRecord]:
+        return (
+            self._session.query(BackgroundJobRecord)
+            .order_by(BackgroundJobRecord.created_at.desc())
+            .limit(max(1, limit))
+            .all()
+        )
+
     def get_by_run_id(self, run_id: str) -> BackgroundJobRecord | None:
         return self._session.query(BackgroundJobRecord).filter_by(run_id=run_id).first()
 
@@ -985,7 +1107,7 @@ class BackgroundJobRepository:
 
     def mark_succeeded(self, run_id: str, result_json: dict[str, Any] | None = None) -> None:
         row = self.get_by_run_id(run_id)
-        if row is None:
+        if row is None or row.status == "cancelled":
             return
         row.status = "succeeded"
         row.result_json = result_json or {}
@@ -996,7 +1118,7 @@ class BackgroundJobRepository:
 
     def mark_failed(self, run_id: str, *, error_text: str) -> BackgroundJobRecord | None:
         row = self.get_by_run_id(run_id)
-        if row is None:
+        if row is None or row.status == "cancelled":
             return None
         exhausted = int(row.attempts or 0) >= int(row.max_attempts or 1)
         row.status = "dead_letter" if exhausted else "retrying"
@@ -1218,6 +1340,133 @@ def _resolve_agent_status(ctx: dict[str, Any], result: PipelineResult) -> str:
         status = str(payload.get("status", "") or "")
         return status or str(ctx["events"][-1].status or "unknown").replace("warning", "partial")
     return str(ctx["events"][-1].status or "unknown")
+
+
+def _extract_trace_agent_contexts(trace: RunTrace, *, default_url: str, root_actor: str) -> list[dict[str, Any]]:
+    contexts: list[dict[str, Any]] = []
+    open_runs: dict[str, dict[str, Any]] = {}
+    invocation_counts: dict[str, int] = {}
+
+    for event in trace.events:
+        actor = event.actor or root_actor or "unknown"
+        if actor == "control-room":
+            continue
+        kind = event.kind
+        is_start = kind in {"agent_started", "pipeline_started"}
+        is_finish = kind in {"agent_finished", "pipeline_finished", "pipeline_failed", "run_cancelled"}
+        current = open_runs.get(actor)
+
+        if is_start:
+            invocation_counts[actor] = invocation_counts.get(actor, 0) + 1
+            current = {
+                "actor": actor,
+                "agent_type": _ACTOR_TO_AGENT_TYPE.get(actor, actor),
+                "events": [event],
+                "started_at": event.timestamp,
+                "finished_at": None,
+                "invocation_index": invocation_counts[actor],
+            }
+            open_runs[actor] = current
+            continue
+
+        if current is None:
+            invocation_counts[actor] = invocation_counts.get(actor, 0) + 1
+            current = {
+                "actor": actor,
+                "agent_type": _ACTOR_TO_AGENT_TYPE.get(actor, actor),
+                "events": [],
+                "started_at": event.timestamp,
+                "finished_at": None,
+                "invocation_index": invocation_counts[actor],
+            }
+            open_runs[actor] = current
+
+        current["events"].append(event)
+
+        if is_finish:
+            current["finished_at"] = event.timestamp
+            contexts.append(current)
+            open_runs.pop(actor, None)
+
+    for current in open_runs.values():
+        current["finished_at"] = current["events"][-1].timestamp if current["events"] else current["started_at"]
+        contexts.append(current)
+
+    contexts.sort(key=lambda item: item["started_at"])
+
+    type_counts: dict[str, int] = {}
+    for ctx in contexts:
+        agent_type = ctx["agent_type"]
+        type_counts[agent_type] = type_counts.get(agent_type, 0) + 1
+        ctx["type_invocation_index"] = type_counts[agent_type]
+        ctx["target_url"] = _extract_target_url(ctx["events"], default_url)
+        ctx["page_type"] = _trace_page_type_for_agent(ctx)
+        ctx["prompt"] = _first_event_details(ctx["events"], "prompt_compiled")
+        ctx["memory_loaded"] = _first_event_details(ctx["events"], "memory_loaded")
+        ctx["tool_call_budget"] = int((_first_event_details(ctx["events"], "agent_loop_started") or {}).get("max_tool_calls", 0) or 0)
+        ctx["tool_calls_made"] = sum(1 for event in ctx["events"] if event.kind == "tool_call_started")
+        ctx["llm_calls_made"] = sum(1 for event in ctx["events"] if event.kind == "llm_response")
+        ctx["duration_seconds"] = max((ctx["finished_at"] - ctx["started_at"]).total_seconds(), 0.0)
+        ctx["status"] = _resolve_trace_agent_status(ctx)
+    return contexts
+
+
+def _trace_page_type_for_agent(ctx: dict[str, Any]) -> str:
+    agent_type = ctx["agent_type"]
+    if agent_type == AgentType.CLASSIFICATION.value:
+        payload = _trace_agent_output_payload(ctx)
+        return str(payload.get("page_type", "classification") or "classification")
+    return agent_type
+
+
+def _resolve_trace_agent_status(ctx: dict[str, Any]) -> str:
+    events = ctx.get("events", [])
+    kinds = {event.kind for event in events}
+    if "run_cancelled" in kinds or "cancel_requested" in kinds:
+        return "cancelled"
+    final = next((event for event in reversed(events) if event.kind in {"agent_finished", "pipeline_finished", "pipeline_failed", "agent_failed"}), None)
+    if final is None:
+        return "running"
+    status = str(final.status or "").lower()
+    if final.kind in {"pipeline_failed", "agent_failed"} or status == "error":
+        return "failed"
+    if status == "warning":
+        return "partial"
+    if status == "success":
+        return "success"
+    return "failed"
+
+
+def _trace_agent_output_payload(ctx: dict[str, Any]) -> dict[str, Any]:
+    for event in reversed(ctx.get("events", [])):
+        if event.kind != "llm_response":
+            continue
+        details = event.details or {}
+        content = details.get("content_full") or details.get("content_preview") or ""
+        if not isinstance(content, str) or not content.strip():
+            continue
+        try:
+            import json
+
+            parsed = json.loads(content)
+        except Exception:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
+def _trace_agent_output_summary(agent_type: str, payload: dict[str, Any], status: str) -> str:
+    if payload:
+        if agent_type == AgentType.CLASSIFICATION.value:
+            return f"classified as {payload.get('page_type', 'unknown')}"
+        if agent_type == AgentType.LANDING_PAGE.value:
+            return f"hosting pages found={len(payload.get('hosting_pages', []) or [])}"
+        if agent_type in {AgentType.HOSTING_PAGE.value, AgentType.EMBEDDED_PAGE.value}:
+            return f"streams found={_stream_count_from_payload(payload)}"
+        if agent_type == AgentType.ORCHESTRATOR.value:
+            return f"pipeline status={payload.get('final_status', status or 'unknown')}"
+    return f"status={status or 'unknown'}"
 
 
 def _first_event_details(events: list[Any], kind: str) -> dict[str, Any]:

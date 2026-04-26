@@ -2,184 +2,284 @@
 
 \section{Overview of the final architecture}
 
-The final platform is built as a layered investigation system rather than as a single monolithic workflow. Its central idea is simple: each URL enters through an API, is classified by an orchestrated agent pipeline, is processed with specialized browser tools, and then produces structured evidence, telemetry, and operator-facing outputs.
+The final system is implemented as a layered investigation platform with clear
+responsibility boundaries. Figure~\ref{fig:arch-overview} shows the complete layer
+stack from the operator-facing console down to persistence.
 
 \begin{figure}[H]
 \centering
-\fbox{
-\parbox{0.92\textwidth}{
-\centering
-\textbf{Conceptual architecture of the implemented platform}\\[0.8em]
-\texttt{Incoming URL}\\[0.2em]
-$\downarrow$\\[0.2em]
-\texttt{FastAPI execution API}\\[0.2em]
-$\downarrow$\\[0.2em]
-\texttt{Orchestrator Agent}\\[0.2em]
-$\downarrow$\\[0.2em]
-\texttt{Classification Agent} $\rightarrow$ \texttt{Landing / Hosting / Embedded Agents}\\[0.3em]
-$\downarrow$\\[0.2em]
-\texttt{Puppeteer tool layer} $\rightarrow$ \texttt{Provider analysis} $\rightarrow$ \texttt{Takedown drafting}\\[0.3em]
-$\downarrow$\\[0.2em]
-\texttt{Postgres + observability + evaluations}\\[0.2em]
-$\downarrow$\\[0.2em]
-\texttt{Next.js operator console}
-}}
-\caption{High-level architecture of the current solution.}
+\begin{tikzpicture}[
+  layer/.style={draw=accent, rounded corners=4pt,
+    text width=13.5cm, minimum height=1.4cm,
+    align=center, inner sep=8pt, font=\small},
+  arr/.style={->, >=Stealth, thick, accent!80},
+  node distance=0.4cm
+]
+
+\node[layer, fill=blue!5] (ui) {%
+  {\bfseries Operator Console \textnormal{(Next.js)}}\\[3pt]
+  {\footnotesize\normalfont Run launch \textbullet{} Live trace streaming
+   \textbullet{} Run history \textbullet{} Evaluation review}};
+
+\node[layer, fill=blue!5, below=0.4cm of ui] (api) {%
+  {\bfseries FastAPI Backend}\\[3pt]
+  {\footnotesize\normalfont Run management \textbullet{} Orchestration entry
+   \textbullet{} Evaluation routes \textbullet{} Status endpoints}};
+
+\node[layer, fill=blue!5, below=0.4cm of api] (orch) {%
+  {\bfseries Orchestrator}\\[3pt]
+  {\footnotesize\normalfont Page-type router \textbullet{} Specialist dispatcher
+   \textbullet{} Fallback coordinator}};
+
+\node[layer, fill=orange!8, draw=orange!60, below=0.4cm of orch] (spec) {%
+  {\bfseries Specialist Agents}\\[3pt]
+  {\footnotesize\normalfont
+   Classification Agent \textbullet{}
+   Landing-page Agent \textbullet{}
+   Hosting Agent \textbullet{}
+   Embedded Agent}};
+
+\node[layer, fill=green!8, draw=green!60, below=0.4cm of spec] (tools) {%
+  {\bfseries Browser Tool Layer \textnormal{(Puppeteer)}}\\[3pt]
+  {\footnotesize\normalfont
+   \texttt{inspect\_page} \textbullet{}
+   \texttt{interact} \textbullet{}
+   \texttt{harvest\_streams} \textbullet{}
+   \texttt{screenshot} \textbullet{}
+   \texttt{navigate} \textbullet{}
+   \texttt{get\_media\_state}}};
+
+\node[layer, fill=purple!8, draw=purple!60, below=0.4cm of tools] (persist) {%
+  {\bfseries Persistence \& Memory}\\[3pt]
+  {\footnotesize\normalfont
+   PostgreSQL \textbullet{} Run events \textbullet{} Tool traces
+   \textbullet{} LLM call logs \textbullet{}
+   Short-term memory \textbullet{} Long-term site profiles}};
+
+\node[layer, fill=gray!10, draw=gray!60, below=0.4cm of persist] (azure) {%
+  {\bfseries Deployment Target \textnormal{(Azure)}}\\[3pt]
+  {\footnotesize\normalfont
+   Service Bus queue \textbullet{}
+   Container Apps Jobs \textbullet{}
+   Blob storage for screenshots}};
+
+% Vertical arrows
+\foreach \a/\b in {ui/api, api/orch, orch/spec, spec/tools, tools/persist, persist/azure}
+  \draw[arr] (\a) -- (\b);
+
+% Feedback dashed arrow on the right
+\draw[->, >=Stealth, thick, gray!50, dashed]
+  ([xshift=0.3cm]persist.east) -- ++(0.8,0)
+  |- node[near start, right, font=\tiny, gray!60]{traces \& memory}
+  ([xshift=0.3cm]orch.east);
+
+\end{tikzpicture}
+\caption{Full architecture layer stack of the investigation platform.}
+\label{fig:arch-overview}
 \end{figure}
 
 \section{Architectural layers}
 
 \subsection{Execution and API layer}
 
-The FastAPI backend is the operational entry point of the platform. It exposes routes for health checks, direct runs, live run streaming, observability access, evaluation execution, memory inspection, and configuration management. This layer is responsible for coordinating the runtime and exposing a stable interface to the rest of the system.
+The FastAPI backend is the entry point for runs, status checks, traces, and evaluation
+routes. It isolates runtime control from browser internals and gives the operator
+console a stable interface. Key endpoints include:
+
+\begin{itemize}
+  \item \texttt{POST /runs} — submit a seed URL and start an investigation run;
+  \item \texttt{GET /runs/\{id\}/events} — stream live run events;
+  \item \texttt{GET /runs/\{id\}/artifacts} — retrieve stream evidence and screenshots;
+  \item \texttt{GET /evaluate} — access the evaluation and review surface.
+\end{itemize}
 
 \subsection{Agent orchestration layer}
 
-Above the API layer sits the orchestrator. Its job is not to browse websites directly, but to decide which specialist should handle each step. This is an important design choice. The orchestrator remains lightweight and cost-aware, while the more expensive specialist agents handle browser-heavy work.
+The orchestrator coordinates execution order and specialist handoff. It is intentionally
+lightweight so routing logic stays understandable and model-intensive work stays in
+specialist agents. The orchestrator calls the classification agent first on every URL,
+then dispatches to the appropriate specialist based on the classification result.
 
 \subsection{Specialist-agent layer}
 
-The specialist-agent layer contains four main roles:
-
-\begin{itemize}
-  \item \textbf{classification}, which decides page type;
-  \item \textbf{landing}, which discovers candidate hosting pages;
-  \item \textbf{hosting}, which activates players and cycles through servers;
-  \item \textbf{embedded}, which extracts streams from iframe-centered pages.
-\end{itemize}
+The specialist layer contains four focused roles. Each agent has its own system prompt,
+tool set, and stopping criteria. This structure reduces over-general prompts and makes
+failure analysis more precise. Agent composition is detailed in
+Chapter~\ref{chap:implementation}.
 
 \subsection{Browser tool layer}
 
-The browser tool layer exposes structured capabilities such as inspection, navigation, interaction, screenshot capture, and harvesting. This layer is implemented around Puppeteer and is shared across the specialist agents. It is the practical bridge between model reasoning and real browser behavior.
+The browser tool layer exposes controlled actions (inspect, navigate, click, screenshot,
+harvest). It acts as the boundary between model decisions and browser-side execution.
+All tools are implemented as Node.js Puppeteer processes invoked from the Python backend.
+
+\subsection{Anti-evasion and runtime-hygiene layer}
+
+A dedicated anti-evasion perspective is required in this domain. The architecture embeds
+runtime hygiene policies that were validated during the internship:
+
+\begin{itemize}
+  \item realistic browsing behavior and pacing;
+  \item fingerprint profile hardening and periodic adjustments;
+  \item adaptive adblock behavior rather than static one-time setup;
+  \item interaction fallbacks for overlays and unstable selectors;
+  \item evidence-first operation (screenshots + network + DOM state).
+\end{itemize}
 
 \subsection{Persistence, memory, and observability layer}
 
-The persistence layer stores pipeline runs, agent runs, LLM calls, tool calls, provider checks, takedown emails, evaluation outputs, and operator-facing aggregates. It also supports memory and observability. This layer is a major improvement over the early prototype because it turns each run into a reusable source of engineering feedback.
+This layer stores runs, events, tool calls, LLM calls, and output artifacts. It enables
+post-mortem analysis and supports both short-term and long-term memory strategies.
 
 \subsection{Operator interface layer}
 
-The Next.js operator console sits on top of the backend and the persistence layer. It gives investigators and developers a practical way to launch runs, inspect live event streams, review completed investigations, and study evaluation results.
+The Next.js operator console provides run launch, live tracing, historical inspection,
+and evaluation navigation. It is designed for operational review, not only developer
+debugging.
 
-\section{Sequence of a typical investigation}
+\section{UML component diagram}
 
-The runtime can be described by the sequence-style view in Table~\ref{tab:uml-sequence}. Even though the implementation is asynchronous, the logical order remains the same.
-
-\begin{table}[H]
-\centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.9cm} >{\raggedright\arraybackslash}X}
-\toprule
-Actor or component & Main interaction \\
-\midrule
-Operator or caller & Submits a URL through the API or the operator console \\
-FastAPI backend & Creates the run, prepares observability, and calls the orchestrator \\
-Orchestrator agent & Requests page classification and selects the next specialist path \\
-Classification agent & Returns the page type and supporting evidence \\
-Landing agent & Collects hosting URLs when the page behaves like a catalog or schedule \\
-Hosting or embedded agent & Activates the player, switches servers when needed, and harvests streams \\
-Provider analysis tools & Resolve provider information from extracted stream URLs \\
-Email generation tools & Produce structured takedown drafts from the collected evidence \\
-Persistence layer & Stores the run result, telemetry, and evidence for later review \\
-Next.js console & Streams live progress and exposes completed results to the operator \\
-\bottomrule
-\end{tabularx}
-\caption{Sequence-style UML description of a typical investigation run.}
-\label{tab:uml-sequence}
-\end{table}
-
-\section{Memory and knowledge reuse architecture}
-
-The architecture contains two complementary memory layers.
-
-\subsection{Run-level memory}
-
-Run-level memory captures the local working state of the current execution. It stores what the agent has tried, what URLs were visited, which selectors were useful, which servers were activated, and what streams were already found.
-
-\subsection{Cross-run memory}
-
-Cross-run memory stores site-specific hints between executions. This creates a reusable playbook for recurring domains. If a site repeatedly uses the same selector family, the same pagination pattern, or the same stream host, that knowledge can be reintroduced as guidance in future runs.
-
-This separation between short-term and long-term memory is one of the clearest architectural differences between the current solution and the earlier n8n stage.
-
-\section{Caching and cost-aware architecture}
-
-Cost optimization is built into the architecture itself. The platform does not treat cost as a purely external reporting concern.
-
-The main mechanisms are:
-
-\begin{itemize}
-  \item \textbf{provider-side prompt caching}, which reduces the cost of repeated prompt context in long agent sessions;
-  \item \textbf{tool-result caching}, which avoids reusing the model budget on repeated identical observations;
-  \item \textbf{specialized routing}, which keeps expensive tools away from tasks that do not need them;
-  \item \textbf{first-party cost accounting}, which makes expensive runs visible to the operator.
-\end{itemize}
-
-These mechanisms make the architecture more viable for scale than the initial prototype, where cost optimization was much harder to control explicitly.
-
-\section{Current deployment target on Azure}
-
-The deployment target is based on containers and separates interactive services from extraction work. The operator-facing surfaces, such as the API and console, can run as long-lived services, while investigation workloads are better suited to event-driven jobs.
+Figure~\ref{fig:component} shows the component-level view with explicit interfaces
+between modules.
 
 \begin{figure}[H]
 \centering
-\fbox{
-\parbox{0.92\textwidth}{
-\centering
-\textbf{Azure deployment concept}\\[0.8em]
-\texttt{Operator Console / External caller}\\[0.2em]
-$\downarrow$\\[0.2em]
-\texttt{FastAPI service on Azure Container Apps}\\[0.2em]
-$\downarrow$\\[0.2em]
-\texttt{Azure Service Bus queue}\\[0.2em]
-$\downarrow$\\[0.2em]
-\texttt{Azure Container Apps Job execution}\\[0.2em]
-$\downarrow$\\[0.2em]
-\texttt{Browser tools + agents + persistence}\\[0.2em]
-$\downarrow$\\[0.2em]
-\texttt{Results back to database and UI}
-}}
-\caption{Deployment-oriented architecture based on Azure Service Bus and Azure Container Apps Jobs.}
+\begin{tikzpicture}[
+  comp/.style={draw=accent, fill=blue!6, rounded corners=4pt,
+               minimum width=3.0cm, minimum height=1.3cm,
+               font=\small\bfseries, align=center},
+  agent/.style={draw=accent!80, fill=blue!10, rounded corners=4pt,
+                minimum width=2.6cm, minimum height=1.2cm,
+                font=\footnotesize\bfseries, align=center},
+  interf/.style={font=\tiny, gray!80, align=center}
+]
+
+% Top-level components (centered)
+\node[comp] (console) at (0, 8.0) {Next.js\\Operator Console};
+\node[comp] (api)     at (0, 6.2) {FastAPI\\Backend};
+\node[comp] (orch)    at (0, 4.4) {Orchestrator};
+
+% Four agents in a row — spaced to fit within margins
+\node[agent] (cls)  at (-5.1, 2.4) {Classification\\Agent};
+\node[agent] (land) at (-1.7, 2.4) {Landing\\Agent};
+\node[agent] (host) at ( 1.7, 2.4) {Hosting\\Agent};
+\node[agent] (emb)  at ( 5.1, 2.4) {Embedded\\Agent};
+
+% Tool + persistence layer
+\node[comp, fill=green!8] (tools) at (0, 0.6) {Puppeteer\\Tool Layer};
+\node[comp, fill=orange!8] (cdn) at (-5.1, -1.2) {Cloudinary\\Screenshot CDN};
+\node[comp, fill=purple!8] (db)  at (-1.7, -1.2) {PostgreSQL\\Persistence};
+\node[comp, fill=purple!8] (mem) at ( 1.7, -1.2) {Memory\\Store};
+\node[comp, fill=gray!12]  (ad)  at ( 5.1, -1.2) {uBlock / Ghostery\\Ad Filter Layer};
+
+% Connections
+\draw[myarrow] (console) -- node[right, interf]{HTTP REST + SSE} (api);
+\draw[myarrow] (api)     -- node[right, interf]{run control interface} (orch);
+\foreach \ag in {cls, land, host, emb}
+  \draw[myarrow] (orch.south) -- (\ag.north);
+\foreach \ag in {cls, land, host, emb}
+  \draw[myarrow] (\ag.south) -- (tools.north);
+\draw[myarrow] (tools.south) -- (cdn.north);
+\draw[myarrow] (tools.south) -- (db.north);
+\draw[myarrow] (tools.south) -- (mem.north);
+\draw[myarrow] (tools.south) -- (ad.north);
+
+% Fallback dashed arrow
+\draw[->, >=Stealth, thick, red!60, dashed]
+  (host.east) -- ++(0.4,0) node[right, font=\tiny, red!60]{fallback}
+  -- ++(0.8,0) |- (emb.east);
+
+\end{tikzpicture}
+\caption{UML component diagram: four specialist agents share the Puppeteer tool layer,
+which writes to PostgreSQL, memory, and Cloudinary, and runs behind the ad filter.}
+\label{fig:component}
 \end{figure}
 
-This deployment choice is appropriate for the project for several reasons:
+\section{Memory and knowledge reuse architecture}
 
-\begin{itemize}
-  \item each investigation is finite and naturally maps to a job execution;
-  \item queue-driven triggering decouples user requests from heavy browser work;
-  \item scaling can follow queue pressure more easily than a fixed always-on worker;
-  \item containers simplify the packaging of browser dependencies and runtime configuration.
-\end{itemize}
+\subsection{Run-level (short-term) memory}
 
-\section{UML use-case view}
+Run-level memory captures local progress for the active session: visited pages, tried
+actions, discovered signals. It reduces repeated failures in the same run by making
+previous tool call results available to the agent in the same conversation context.
 
-The architecture can also be described through a use-case perspective. The main actors and actions are summarized in Table~\ref{tab:use-case}.
+\subsection{Cross-run (long-term) memory}
+
+Cross-run memory stores reusable site knowledge between runs. It supports faster warm
+starts on recurring domains by reusing successful selectors, layout patterns, and
+server strategies. The memory is implemented as a structured database keyed by domain
+and page-type.
 
 \begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3cm} >{\raggedright\arraybackslash}X}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.5cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
 \toprule
-Actor & Main use cases \\
+\rowcolor{accent!8}
+Memory type & Scope & What is stored \\
 \midrule
-Operator & Launch investigation, watch live progress, inspect historical runs, review provider data, retrieve takedown drafts \\
-FastAPI service & Receive requests, start runs, stream events, expose observability and evaluation endpoints \\
-Orchestrator & Route work between specialist agents and downstream tools \\
-Specialist agents & Classify pages, collect hosting URLs, extract streams, analyze embedded players \\
-Browser tool layer & Render pages, inspect DOM, interact with UI controls, capture screenshots, harvest streams \\
-Azure Service Bus & Carry queued work items toward job execution \\
-Azure Container Apps Job & Execute a browser-heavy investigation until completion \\
-Database & Persist evidence, costs, events, and evaluation outputs \\
+Short-term (run-level) & One investigation run & Visited URLs, tool call results, agent
+  reasoning trace, discovered signals within current session \\
+Long-term (cross-run) & Across multiple runs & Successful selectors, layout fingerprints,
+  server count patterns, known provider domains, observed break tactics per domain \\
 \bottomrule
 \end{tabularx}
-\caption{Textual UML use-case view of the current platform.}
-\label{tab:use-case}
+\caption{Two-layer memory architecture and stored content.}
+\label{tab:memory-arch}
 \end{table}
 
-\section{Architectural transition from the prototype}
+\section{Caching and cost-aware architecture}
 
-From an architectural point of view, the early n8n system and the final coded system solve the same business problem, but they organize responsibility differently.
+Cost control is part of the architecture, not an afterthought. The main mechanisms are:
 
 \begin{itemize}
-  \item In the \textbf{n8n phase}, orchestration and experimentation were the priority.
-  \item In the \textbf{current platform}, orchestration, observability, memory, cost control, and deployment are all first-class concerns.
+  \item provider-aware prompt caching (LLM system prompts cached across turns);
+  \item tool-result reuse when observations are identical within a run;
+  \item specialist routing to avoid unnecessary heavy steps on simple cases;
+  \item per-run cost visibility in observability surfaces.
 \end{itemize}
 
-This is why the current architecture is better suited for long-term use. It transforms a successful prototype into a structured investigation product.
+\section{Azure deployment target}
+
+The target production model separates interactive services from heavy extraction jobs
+as shown in Figure~\ref{fig:azure-deploy}. The two core Azure components are
+Azure Service Bus~\cite{azure-servicebus} for message-driven work distribution and
+Azure Container Apps Jobs~\cite{azure-jobs} for event-triggered, finite-lifetime
+extraction executions.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.7cm and 1.6cm,
+  azbox/.style={draw=blue!60, fill=blue!7, rounded corners=4pt,
+                minimum width=4cm, minimum height=1.1cm,
+                font=\small, align=center}
+]
+
+\node[azbox] (bus) {Azure Service Bus\\Queue};
+\node[azbox, left=2.5cm of bus] (fn) {Azure Function\\(timer trigger)};
+\node[azbox, right=2.5cm of bus] (job) {Container Apps Job\\(event-driven)};
+\node[azbox, above=1.2cm of fn] (db) {PostgreSQL\\(input URLs table)};
+\node[azbox, below=1.2cm of job] (blob) {Blob Storage\\(screenshots)};
+\node[azbox, below=1.2cm of bus] (pg) {PostgreSQL\\(output evidence)};
+\node[azbox, right=2.5cm of job] (api) {FastAPI Service\\+ Next.js Console};
+
+\draw[myarrow] (db) -- node[right, font=\tiny]{new URLs} (fn);
+\draw[myarrow] (fn) -- node[above, font=\tiny]{enqueue} (bus);
+\draw[myarrow] (bus) -- node[above, font=\tiny]{trigger} (job);
+\draw[myarrow] (job) -- node[right, font=\tiny]{screenshots} (blob);
+\draw[myarrow] (job) -- node[right, font=\tiny]{evidence} (pg);
+\draw[myarrow, dashed, gray!60] (api) -- node[above, font=\tiny]{monitor} (job);
+
+\end{tikzpicture}
+\caption{Azure deployment architecture: queue-driven extraction jobs with persistent
+output storage.}
+\label{fig:azure-deploy}
+\end{figure}
+
+\textbf{Important implementation note.} During the internship execution phase, Azure
+Service Bus and Azure Container Apps Jobs were \textbf{documented as target architecture}
+but were \textbf{not used in daily runtime}. Most runs were executed in
+local/containerized environments while preserving cloud-compatible design boundaries.
+
+The n8n prototype confirmed feasibility but had structural limits at scale: workflow context was local to each execution, large flows were hard to debug, and prompt/tool evolution was difficult to govern. The coded platform addresses all three: an explicit Python orchestrator with versioned prompts, persistent memory, and per-event structured traces. That transition is what makes long-term operation feasible as a maintainable evidence collection system.

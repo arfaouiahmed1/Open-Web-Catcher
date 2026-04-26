@@ -1,251 +1,538 @@
 \chapter{Technical Background and Working Tools}
 
-\section{Evidence collection on dynamic streaming websites}
+This chapter establishes the technical context required to understand the design choices
+made in subsequent chapters. It covers the structural challenges of illegal streaming
+websites, the core technologies selected to address them, the streaming protocols that
+the platform is designed to capture, and the residual limitations that motivate an
+adaptive agentic approach rather than a fixed scraper.
 
-Streaming websites are difficult to analyze because they mix several technical patterns in the same browsing session. A landing page may behave like a catalog, a hosting page may expose multiple mirrors, and an embedded page may hide the actual player inside cross-origin iframes. Even when the player becomes visible, the actual stream often appears only after an interaction, and the final evidence may be found in the network layer rather than in visible HTML.
+\section{Why this domain is hard in practice}
 
-This means that evidence collection cannot rely on one signal alone. A realistic system must combine:
+Illegal streaming websites are difficult to automate because they are built for volatility. In a single run, the same domain can present list pages, server switchers, nested player frames, popups, redirects, and anti-bot interstitials. A system that succeeds only on static HTML snapshots will fail frequently in this environment.
 
-\begin{itemize}
-  \item structural evidence from the DOM and visible page elements;
-  \item visual evidence from screenshots;
-  \item behavioral evidence produced after navigation or interaction;
-  \item network evidence that confirms whether a real media stream was exposed.
-\end{itemize}
-
-\section{Agentic browser automation}
-
-The project uses an agentic approach to browser automation. Instead of asking a model to answer from static input, the model is placed inside a controlled environment where it can call tools, observe results, and decide its next step. This is particularly useful for websites where the relevant information is not visible immediately.
-
-In this project, the agentic approach is combined with strong task specialization:
+From repeated runs, the main difficulties were:
 
 \begin{itemize}
-  \item the \textbf{classification agent} decides what kind of page is being visited;
-  \item the \textbf{landing-page agent} explores list-like pages and collects candidate hosting URLs;
-  \item the \textbf{hosting-page agent} activates players, cycles through servers, and captures streams;
-  \item the \textbf{embedded-page agent} focuses on iframe-heavy player contexts.
+  \item content that appears only after user-like interaction;
+  \item deeply nested iframe trees where the useful player is not in the top frame;
+  \item unstable selectors caused by obfuscation and frequent layout changes;
+  \item anti-bot behaviors that escalate after repetitive scripted actions;
+  \item stream URLs that are signed, short-lived, or generated after runtime JavaScript logic.
 \end{itemize}
 
-This specialization reduces ambiguity. It is easier to build a reliable landing-page explorer and a reliable hosting-page extractor separately than to ask one generic agent to solve everything equally well.
+\section{From deterministic scripts to adaptive agents}
 
-\section{Why browser tooling is essential}
+The fundamental challenge is that no single rule generalizes across all the page structures
+encountered. A static scraper excels on predictable pages with stable selectors, but breaks
+when layout or anti-bot behavior changes. The solution is an adaptive system that can
+\emph{observe}, \emph{reason}, and \emph{act} iteratively, adjusting strategy based on
+what it actually finds on the page. Large language model based autonomous agents have been shown to handle precisely this
+kind of open-ended, multi-step decision-making in environments where the state space is
+too large to enumerate in advance~\cite{agent-survey}. Benchmark environments such as
+WebArena~\cite{webarena} have demonstrated that LLM-driven agents can navigate realistic
+web interfaces, execute multi-step tasks, and generalize across different website
+structures without site-specific hand-coding.
 
-The system uses real browser automation because target websites cannot be handled reliably from raw HTML alone. Browser tooling is needed to:
+Figure~\ref{fig:classic-pattern} illustrates the conceptual contrast between a
+fixed workflow and an agent-based loop.
 
-\begin{itemize}
-  \item execute JavaScript and wait for dynamic content;
-  \item inspect iframe trees after the page has fully rendered;
-  \item click tabs, mirrors, and player controls;
-  \item capture screenshots after each important state change;
-  \item monitor network activity and detect stream URLs such as \texttt{m3u8}, \texttt{mpd}, and direct media files.
-\end{itemize}
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.55cm and 2.2cm]
 
-This practical requirement is one of the main reasons the internship moved toward a dedicated Puppeteer tool layer in the final platform.
+% === LEFT SIDE: Workflow ===
+\node[draw=gray!70, fill=gray!10, rounded corners, minimum width=5.2cm,
+      minimum height=7.2cm, label={[font=\bfseries\small]above:AI Workflow}] (wfbox) at (0,0) {};
 
-\section{Memory, observability, and cost in LLM systems}
+\node[flowbox, minimum width=4.4cm, fill=green!15, draw=green!50] (start) at (0,2.5)
+  {Start};
+\node[flowbox, minimum width=4.4cm, below=0.45cm of start] (taskA)
+  {Task A};
+\node[decisionbox, minimum width=3.8cm, below=0.5cm of taskA] (dec)
+  {Decision};
+\node[flowbox, minimum width=1.8cm, below left=0.6cm and 0.6cm of dec] (taskB)
+  {Task B};
+\node[flowbox, minimum width=1.8cm, below right=0.6cm and 0.6cm of dec] (taskC)
+  {Task C};
+\node[flowbox, minimum width=4.4cm, fill=green!15, draw=green!50,
+      below=0.45cm of taskB, xshift=0.6cm] (endwf)
+  {End};
 
-A browser-based agent is not useful if it cannot remember what it has already tried or if the operator cannot understand why a run failed. For that reason, the final platform introduces three important technical dimensions that go beyond simple extraction.
+\draw[myarrow] (start) -- (taskA);
+\draw[myarrow] (taskA) -- (dec);
+\draw[myarrow] (dec) -- node[left,font=\tiny]{Yes} (taskB);
+\draw[myarrow] (dec) -- node[right,font=\tiny]{No}  (taskC);
+\draw[myarrow] (taskB) -- (endwf);
+\draw[myarrow] (taskC) -- (endwf);
 
-\subsection{Short-term memory}
+% === RIGHT SIDE: Agent ===
+\node[draw=accent!70, fill=blue!5, rounded corners, minimum width=5.4cm,
+      minimum height=7.2cm, label={[font=\bfseries\small]above:AI Agent}] (agbox) at (7.2,0) {};
 
-Short-term memory stores the working state of the current run. It keeps track of visited URLs, tool attempts, discovered selectors, stream candidates, server labels, screenshots, and other useful signals. Its role is local: it helps the agent avoid repeating the same failed action during the same execution.
+\node[flowbox, minimum width=4.6cm, fill=orange!15, draw=orange!50] (env) at (7.2,2.5)
+  {Environment};
+\node[flowbox, minimum width=4.6cm, fill=blue!15, draw=blue!50,
+      below=0.5cm of env] (proc)
+  {ProcessInput};
+\node[flowbox, minimum width=4.6cm, fill=blue!15, draw=blue!50,
+      below=0.45cm of proc] (decide)
+  {DecideAction};
+\node[flowbox, minimum width=4.6cm, fill=blue!15, draw=blue!50,
+      below=0.45cm of decide] (exec)
+  {ExecuteAction};
+\node[flowbox, minimum width=4.6cm, fill=green!15, draw=green!50,
+      below=0.45cm of exec] (fb)
+  {Feedback};
 
-\subsection{Long-term memory}
+\draw[myarrow] (env) -- node[right,font=\tiny]{Receives} (proc);
+\draw[myarrow] (proc) -- node[right,font=\tiny]{Decides} (decide);
+\draw[myarrow] (decide) -- node[right,font=\tiny]{Executes} (exec);
+\draw[myarrow] (exec) -- node[right,font=\tiny]{Feeds back} (fb);
+\draw[myarrow] (fb.east) -- ++(0.4,0) -- ++(0,3.85) -- (env.east);
+\draw[myarrow] (fb.west) -- ++(-0.4,0) -- ++(0,3.85) -- (env.west)
+  node[midway, left, font=\tiny, align=right]{Updates\\state};
 
-Long-term memory stores reusable site knowledge across runs. In the current implementation, it preserves patterns such as repeated selectors, successful navigation hints, server labels, stream hosts, and stable URL patterns. This is a major difference from the initial n8n stage, where execution context mainly remained inside a single workflow run. The final platform can therefore benefit from accumulated experience on recurring domains.
+\end{tikzpicture}
+\caption{Classic pattern: fixed workflow (left) versus adaptive agent loop (right).}
+\label{fig:classic-pattern}
+\end{figure}
 
-\subsection{Observability and cost control}
+\section{The ReAct framework}
 
-The platform also records runtime events, token usage, tool calls, and estimated cost. This is important for two reasons:
+The Reasoning and Acting (ReAct) framework~\cite{react} structures agent behavior as an
+interleaved loop of thought, action, and observation, as shown in
+Figure~\ref{fig:react-loop}.
 
-\begin{itemize}
-  \item it makes debugging possible;
-  \item it makes optimization measurable.
-\end{itemize}
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.2cm and 1.6cm]
 
-Without observability, it is difficult to know whether an expensive run failed because of a weak prompt, a browser issue, a quota problem, or a target-site change. Without cost tracking, it is difficult to improve the platform economically.
+\node[flowbox, minimum width=3.4cm, fill=blue!15, draw=blue!50] (obs)
+  {\textbf{Observe}\\{\footnotesize HTML, screenshot,}\\{\footnotesize network signals}};
+\node[flowbox, minimum width=3.4cm, fill=orange!10, draw=orange!60,
+      right=2cm of obs] (think)
+  {\textbf{Think}\\{\footnotesize LLM reasons about}\\{\footnotesize current state}};
+\node[flowbox, minimum width=3.4cm, fill=green!10, draw=green!60,
+      right=2cm of think] (act)
+  {\textbf{Act}\\{\footnotesize Call browser tool}\\{\footnotesize (click, harvest\ldots)}};
+\node[flowbox, minimum width=3.4cm, fill=purple!10, draw=purple!60,
+      below=1.5cm of act] (reflect)
+  {\textbf{Reflect}\\{\footnotesize Memory update,}\\{\footnotesize error check}};
 
-\section{Technologies used during the internship}
+\node[flowbox, minimum width=3.4cm, fill=green!20, draw=green!70,
+      left=2cm of reflect] (done)
+  {\textbf{Done?}\\{\footnotesize Evidence found}\\{\footnotesize or budget hit}};
 
-The internship combined prototype tooling, development tooling, application frameworks, and cloud deployment technology. Table~\ref{tab:tech-stack} summarizes the main technologies and their role.
+\draw[myarrow] (obs)     -- (think);
+\draw[myarrow] (think)   -- (act);
+\draw[myarrow] (act)     -- (reflect);
+\draw[myarrow] (reflect) -- (done);
+\draw[myarrow] (done.west) -- ++(-0.8,0) |- (obs.south)
+  node[near start, above, font=\tiny]{Loop again};
+
+\node[draw=accent, fill=yellow!10, rounded corners, font=\small,
+      right=0.5cm of reflect, yshift=0.5cm, xshift=0.6cm]
+  {\emph{exit when objective met}};
+
+\end{tikzpicture}
+\caption{The ReAct loop as implemented in each specialist agent.}
+\label{fig:react-loop}
+\end{figure}
+
+ReAct works well here because each observation is a fresh browser state — new HTML, new screenshot, updated network events captured after the last action. The agent doesn't reason from a snapshot taken at page load; it reasons from what the page looks like right now. That means it can notice when a server click opened an ad popup instead of activating the player, or when the player is still showing an idle state after what looked like a successful play click. The loop gives the agent a chance to recover rather than committing to an incorrect first read.
+
+\section{Three-layer page taxonomy}
+
+Manual analysis of many streaming websites revealed a consistent three-layer structure
+that the pipeline exploits. Figure~\ref{fig:page-taxonomy} shows how a single
+investigation progresses through these layers.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.0cm]
+
+\node[sysbox, minimum width=3.8cm, minimum height=2.6cm, fill=blue!8, align=left,
+      text width=3.4cm] (land)
+{\textbf{landing\_page}\\[2pt]
+{\footnotesize Match schedule, team cards, date tabs.
+Extraction target: hosting-page URLs and match metadata.}};
+
+\node[sysbox, minimum width=3.8cm, minimum height=2.6cm, fill=orange!8, align=left,
+      text width=3.4cm, right=1.6cm of land] (host)
+{\textbf{host\_page}\\[2pt]
+{\footnotesize Server switchers, player container, single-match focus.
+Extraction target: m3u8/mpd streams or embedded URL.}};
+
+\node[sysbox, minimum width=3.8cm, minimum height=2.6cm, fill=green!8, align=left,
+      text width=3.4cm, right=1.6cm of host] (emb)
+{\textbf{embed\_video\_page}\\[2pt]
+{\footnotesize Minimal player UI, iframe-origin.
+Extraction target: final stream manifest after play activation.}};
+
+\draw[myarrow, very thick] (land.east) --
+  node[above, font=\footnotesize]{click match} (host.west);
+\draw[myarrow, very thick] (host.east) --
+  node[above, font=\footnotesize]{iframe src} (emb.west);
+
+% fallback dashed
+\draw[->, >=Stealth, dashed, thick, red!60] (host.south)
+  -- ++(0,-0.7) -| node[near end, right, font=\tiny, red!60]{fallback} (emb.south);
+
+\node[below=1.5cm of host, font=\small\itshape, text=gray]{
+  Solid arrow = normal flow \quad Dashed arrow = fallback path};
+
+\end{tikzpicture}
+\caption{Three-layer taxonomy of streaming-site page types and the extraction flow.}
+\label{fig:page-taxonomy}
+\end{figure}
+
+\section{Why returning only HTML does not work}
+
+For this project, plain HTML retrieval is insufficient for five concrete reasons:
+
+\begin{enumerate}
+  \item many pages render critical controls through JavaScript after load;
+  \item active stream URLs often appear only in network requests after play/click actions;
+  \item iframe content can be isolated and absent from the top-level DOM snapshot;
+  \item anti-bot defenses may show alternate HTML to suspicious sessions;
+  \item visible state transitions (loading, paused, playing, error overlays) require
+    visual confirmation.
+\end{enumerate}
+
+This is why browser-assisted extraction is not optional in this domain.
+
+\section{Tool comparison: n8n, Azure Logic Apps, and Azure AI Agents}
+
+During the internship, three orchestration tools were evaluated specifically for
+LLM-driven web scraping on Puppeteer with Azure Container Apps Jobs.
 
 \begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.8cm} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{4.2cm}
+                              >{\centering\arraybackslash}p{2.8cm}
+                              >{\centering\arraybackslash}p{2.8cm}
+                              >{\centering\arraybackslash}X}
 \toprule
-Technology & Role in the project & Why it was useful \\
+\rowcolor{accent!8}
+Capability & n8n & Azure Logic Apps & Azure AI Agents \\
 \midrule
-\texttt{n8n} & Early orchestration and experimentation environment & Allowed rapid validation of the workflow logic, prompt design, and browser-action sequencing before the final coded platform was built \\
-\texttt{VS Code} & Main development environment & Practical for editing Python, JavaScript, prompts, Docker configuration, and LaTeX in one place while testing quickly during the internship \\
-\texttt{Puppeteer} & Browser automation engine & Enabled realistic page rendering, interaction, screenshot capture, and stream harvesting on dynamic websites \\
-\texttt{FastAPI} & Backend API and orchestration surface & Provided structured endpoints for runs, observability, evaluations, configuration, and investigation workflows \\
-\texttt{Next.js} & Operator console & Provided the UI used to monitor runs, inspect results, test agents, review evaluation outputs, and explore persisted data \\
-\texttt{Postgres} & Main persistence layer & Stored runs, events, costs, tool calls, provider analysis, and evaluation results in a structured form \\
-\texttt{Docker} & Container packaging & Made the browser-heavy runtime portable and easier to reproduce locally and in Azure \\
-\texttt{Azure} & Production deployment target & Supports containerized execution, queue-based triggering, and separation between interactive services and extraction jobs \\
+Run scraper container job
+  & \sstar\sstar\sstar\hstar\hstar
+  & \sstar\sstar\sstar\sstar\sstar
+  & \sstar\sstar\sstar\sstar\sstar \\
+Retry failures
+  & \sstar\sstar\sstar\sstar\hstar
+  & \sstar\sstar\sstar\sstar\sstar
+  & \sstar\sstar\sstar\sstar\sstar \\
+Extract data with LLM
+  & \sstar\sstar\sstar\sstar\hstar
+  & \sstar\sstar\sstar\sstar\hstar
+  & \sstar\sstar\sstar\sstar\sstar \\
+Manage cross-run memory
+  & \sstar\hstar\hstar\hstar\hstar
+  & \sstar\hstar\hstar\hstar\hstar
+  & \sstar\sstar\sstar\sstar\sstar \\
+Handle dynamic sites
+  & \sstar\sstar\hstar\hstar\hstar
+  & \sstar\sstar\hstar\hstar\hstar
+  & \sstar\sstar\sstar\sstar\sstar \\
+Handle thousands of req/day
+  & \sstar\sstar\sstar\hstar\hstar
+  & \sstar\sstar\sstar\sstar\sstar
+  & \sstar\sstar\sstar\sstar\hstar \\
+Lowest cost
+  & \sstar\sstar\sstar\sstar\sstar
+  & \sstar\sstar\sstar\sstar\sstar
+  & \sstar\sstar\hstar\hstar\hstar \\
+Automation power
+  & \sstar\sstar\sstar\hstar\hstar
+  & \sstar\sstar\sstar\sstar\hstar
+  & \sstar\sstar\sstar\sstar\sstar \\
 \bottomrule
 \end{tabularx}
-\caption{Main technologies used during the internship.}
-\label{tab:tech-stack}
+\caption{Comparative rating of orchestration tools for this use case
+(\sstar\sstar\sstar\sstar\sstar\ = best, \sstar\hstar\hstar\hstar\hstar\ = weakest).}
+\label{tab:tool-compare}
 \end{table}
 
-\section{n8n as a testing ground}
+\textbf{Decision rationale.} n8n was used first because it is free, self-hostable,
+and excellent for rapid experimentation with visual workflow logic. Azure Logic Apps
+was evaluated as the most cost-effective Azure-native orchestrator. Azure AI Agents
+(AI Foundry) offered the best built-in memory, planning, and tool-calling features but
+at the highest complexity and cost.
 
-It is important to explain the role of n8n accurately. During the first phase of the internship, n8n was very useful. It made it possible to connect steps visually, try different prompts quickly, and show that the objective was achievable on real websites. In other words, n8n helped transform an idea into a working proof of concept.
+The final architecture moved away from n8n's visual workflow chains toward a coded
+platform because: n8n workflows became large and difficult to reason about as prompts
+and tools evolved; parallel branches increased recovery complexity; and memory behavior
+was mostly local to a single execution run. The coded Python platform preserves n8n's
+rapid-iteration lessons while giving engineering-grade control over memory, tracing, and
+cost.
 
-That first phase had several practical benefits:
+\section{Technologies used and why they mattered}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.8cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Technology & Role in the project & Why it was useful \\
+\midrule
+\texttt{n8n}~\cite{n8n} & Early orchestration phase requested by the company & Rapid validation of
+  workflow logic and prompt/tool sequencing \\
+\texttt{Puppeteer}~\cite{puppeteer} & Browser execution layer & JavaScript rendering,
+  \texttt{evaluate()}-based state probing, interaction, CDP network interception~\cite{cdp},
+  and evidence capture \\
+\texttt{FastAPI}~\cite{fastapi} & Runtime API and orchestration surface & Clear run lifecycle,
+  observability, and evaluation endpoints \\
+\texttt{Next.js}~\cite{nextjs} & Operator interface & Live runs, traces, and review workflows via SSE \\
+\texttt{PostgreSQL} & Persistent storage & Structured run events, evidence, and traces \\
+\texttt{Cloudinary}~\cite{cloudinary} & Screenshot CDN & Persistent, CDN-served screenshot evidence
+  without requiring container storage \\
+\texttt{uBlock Origin}~\cite{ublock} & Ad and tracker blocking (extension) & Prevents majority of
+  popup-triggering ad scripts at the network request level \\
+\texttt{Ghostery}~\cite{ghostery} & Tracker-level ad blocking (extension) & Blocks first-visit popup
+  triggers missed by network-level filters \\
+\texttt{Docker} & Runtime packaging & Reproducible browser-heavy execution environment \\
+\texttt{Azure} & Target deployment model & Queue and job architecture for scalable
+  event-driven execution \\
+\bottomrule
+\end{tabularx}
+\caption{Technology stack and operational value.}
+\label{tab:stack-value}
+\end{table}
+
+
+\section{Common break tactics and the platform's responses}
+
+Piracy sites use a fairly consistent set of tactics to make extraction difficult. Redirect chains open ad popups before the real player appears. Nested iframes hide the actual media request several layers deep, often across different domains. Stream URLs are signed and short-lived, only generated after runtime JavaScript logic runs. Bait resources — assets with names that look like stream manifests — appear in network traffic alongside the real thing. And Cloudflare-style challenge pages serve completely different HTML when automation signals are detected.
+
+The handling strategies are summarized in Table~\ref{tab:difficulty-handling}.
+
+\section{Ad blocking and continuous anti-bot adaptation}
+
+Illegal streaming sites monetize through aggressive advertising, and this creates a real problem for automation: popups open new browser contexts and divert interaction away from the actual player, while redirect chains triggered by ad clicks can leave the original page unusable. Two Chromium extensions handle most of this at the network level: uBlock Origin blocks ad server domains and injected scripts before they execute, while Ghostery covers tracker-triggered popup behavior on first page visit. Neither extension is a complete solution — sites that serve ads from the same domain as player content can't be filtered without breaking the player — so the hosting and embedded agents retain explicit popup handling logic as a fallback.
+
+Anti-bot adaptation is not a one-time setup. Fingerprint profiles, adblock filter lists, and interaction timing all required periodic adjustment throughout the internship; the environment changes too often for a static configuration to stay reliable.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.8cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Challenge & Typical symptom & Applied handling & Remaining risk \\
+\midrule
+Nested iframe chains & wrong frame selected for interaction & frame diagnostics +
+  iterative targeting & frame structure can change per session \\
+Popup blockers & click target unreachable & fallback click strategy & some overlays
+  need custom site logic \\
+Tokenized stream generation & no final stream in static source & post-activation
+  network/player harvesting & token lifetime can expire quickly \\
+Cloudflare-like challenge & interstitial/challenge screen & low-signal behavior +
+  controlled retries & intermittent manual review still required \\
+\bottomrule
+\end{tabularx}
+\caption{Difficulty-to-handling mapping used in practice.}
+\label{tab:difficulty-handling}
+\end{table}
+
+\section{Streaming protocol infrastructure}
+
+Understanding the protocols used by streaming piracy infrastructure is a prerequisite for
+understanding what the platform is designed to capture. Piracy hosts do not use a single
+streaming technology: content is served over several adaptive-bitrate protocols, each with
+its own manifest format, URL structure, and tokenization scheme. The \texttt{harvest} tool
+is built to intercept all of them simultaneously.
+
+\subsection{HLS — HTTP Live Streaming}
+
+HLS~\cite{hls-rfc} is the dominant adaptive-bitrate protocol encountered in this domain.
+It is text-based and organized in a strict two-level hierarchy.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  every node/.style={font=\small},
+  box/.style={draw=accent, fill=blue!5, rounded corners=3pt, inner sep=6pt,
+              align=center, text width=3.6cm},
+  segbox/.style={draw=gray!60, fill=gray!8, rounded corners=2pt, inner sep=4pt,
+                 align=center, text width=2.4cm, font=\footnotesize},
+  arr/.style={->, >=Stealth, thick, accent},
+  garr/.style={->, >=Stealth, gray!70}
+]
+\node[box, text width=4.2cm] (master) at (0,0)
+  {\textbf{Master Playlist}\\[2pt]\texttt{index.m3u8}\\[2pt]
+   \footnotesize\texttt{\#EXT-X-STREAM-INF:} per rendition};
+\node[box] (v1) at (5.8, 1.8)
+  {\textbf{Variant 1080p}\\[2pt]\texttt{high/playlist.m3u8}};
+\node[box] (v2) at (5.8, 0)
+  {\textbf{Variant 720p}\\[2pt]\texttt{med/mono.m3u8}};
+\node[box] (v3) at (5.8,-1.8)
+  {\textbf{Variant 480p}\\[2pt]\texttt{low/index.m3u8}};
+\node[segbox] (s1) at (10.2, 2.3) {\texttt{seg000.ts}};
+\node[segbox] (s2) at (10.2, 1.8) {\texttt{seg001.ts}};
+\node[segbox] (s3) at (10.2, 1.3) {\texttt{seg002.ts}\,\ldots};
+\draw[arr] (master.east) -- (v1.west);
+\draw[arr] (master.east) -- (v2.west);
+\draw[arr] (master.east) -- (v3.west);
+\draw[garr] (v1.east) -- (s1.west);
+\draw[garr] (v1.east) -- (s2.west);
+\draw[garr] (v1.east) -- (s3.west);
+\draw[garr, dashed] (v2.east) -- ++(1.1,0)
+  node[right, font=\footnotesize, text=gray] {\texttt{seg*.ts}\,\ldots};
+\draw[garr, dashed] (v3.east) -- ++(1.1,0)
+  node[right, font=\footnotesize, text=gray] {\texttt{seg*.ts}\,\ldots};
+\node[draw=espritred!50, fill=espritred!5, rounded corners=3pt,
+      font=\footnotesize\itshape, inner sep=5pt, text width=5.0cm, align=center]
+  at (0,-2.8)
+  {CDP captures the master playlist URL --- the primary evidence artifact};
+\end{tikzpicture}
+\caption{HLS two-level playlist hierarchy. The \texttt{harvest} tool captures the master
+playlist URL at the CDP network layer; variant playlists and \texttt{.ts} media segments
+are derived from it by the player.}
+\label{fig:hls-hierarchy}
+\end{figure}
+
+The \textbf{master playlist} (commonly named \texttt{index.m3u8}, \texttt{manifest.m3u8},
+or \texttt{playlist.m3u8} depending on the CDN) lists every available rendition with its
+bitrate, resolution, and codec. Each rendition entry points to a \textbf{variant playlist}
+that contains time-coded references to the actual MPEG-2 Transport Stream media segments
+(\texttt{.ts} files). The player selects the appropriate variant based on available
+bandwidth.
+
+From an evidence perspective, the master playlist URL is the most important artifact because
+it is the entry point that ties the stream to a specific CDN path. Several URL patterns
+appear regularly across piracy infrastructure:
 
 \begin{itemize}
-  \item faster iteration on workflow logic;
-  \item easy visibility of the main execution path;
-  \item low friction when testing alternative node sequences;
-  \item quick confirmation that browser-assisted extraction could support the client objective.
+  \item \texttt{/live/index.m3u8} — the canonical HLS master playlist;
+  \item \texttt{/stream/mono.m3u8} — a single-rendition playlist that skips the master
+    level; the player goes directly to segments;
+  \item \texttt{/hls/playlist.m3u8?token=\textit{xxx}\&expires=\textit{timestamp}} —
+    a tokenized manifest where signed query parameters grant short-lived CDN access;
+  \item \texttt{/live/manifest.m3u8} — an alternative naming convention common on
+    infrastructure built around open-source re-streaming panels.
 \end{itemize}
 
-At the same time, the prototype revealed what the project would later need beyond a visual workflow.
+Tokenized manifests are the most operationally significant variant. The token in the query
+string is signed by the CDN key server and carries an expiry timestamp. The \texttt{harvest}
+tool captures the full URL including the token at the moment the browser requests it,
+preserving complete evidence before the token expires.
 
-\section{Why the project moved beyond n8n}
+\subsection{MPEG-DASH}
 
-The move away from n8n was motivated by engineering requirements, not by the failure of the prototype. The coded platform became necessary because the project needed:
+MPEG-DASH (Dynamic Adaptive Streaming over HTTP, ISO/IEC 23009-1) is the second protocol
+regularly encountered. Unlike HLS, DASH manifests are XML documents (\texttt{.mpd}) that
+describe a hierarchical segment addressing scheme:
 
 \begin{itemize}
-  \item stronger software structure for growing prompts, tools, and API surfaces;
-  \item dedicated short-term and long-term memory rather than only execution-local context;
-  \item richer observability with persistent run events and cost metrics;
-  \item explicit caching strategies to optimize repeated context and repeated tool outputs;
-  \item a more complete operator interface than the earlier workflow dashboards;
-  \item a cleaner path toward Azure container deployment.
+  \item \textbf{MPD} (Media Presentation Description) — the root XML manifest;
+  \item \textbf{Period} — a contiguous time range of the presentation;
+  \item \textbf{AdaptationSet} — a group of representations sharing the same media type
+    (video, audio, or subtitles);
+  \item \textbf{Representation} — one specific quality level with its codec and bitrate;
+  \item \textbf{SegmentTemplate} or \textbf{SegmentList} — the addressing scheme for
+    individual \texttt{.m4s} fragment files.
 \end{itemize}
 
-This background is essential for understanding the rest of the report. The final system is not disconnected from the n8n stage. It is the result of the lessons learned during that stage.
+The \texttt{harvest} tool captures DASH manifests via the URL pattern
+\texttt{/\textbackslash.mpd(\textbackslash?|\$)/i}, which matches naming conventions such
+as \texttt{manifest.mpd}, \texttt{stream.mpd}, and \texttt{dash.mpd}.
 
-\section{Existing company scraper and why an agentic backup was needed}
+\subsection{Additional protocols captured}
 
-Before the internship platform described in this report, the company already had a stream scraper dedicated to football-stream investigations. Its logic can be summarized as follows:
+Beyond HLS and DASH, the \texttt{harvest} tool captures three further protocol families:
 
 \begin{itemize}
-  \item receive a landing page or seed URL;
-  \item classify the page as landing, host, embedded player, or other;
-  \item follow match links and extract match metadata when available;
-  \item inspect host pages to discover iframe sources, embedded players, and candidate stream URLs;
-  \item visit the embedded source, capture a screenshot of the player, and try to extract the final streaming URL;
-  \item preserve host-page evidence when the embed is blocked by Cloudflare or similar protections;
-  \item enrich the result with domain, WHOIS, and IP intelligence.
+  \item \textbf{Progressive MP4} (\texttt{.mp4}) — static download links embedded in
+    player configuration objects; less common on live streams but present on replay and
+    clip pages.
+  \item \textbf{WebM} (\texttt{.webm}) — the Chromium-native open container format, used
+    on some alternative-player implementations and lower-quality fallback streams.
+  \item \textbf{Smooth Streaming} (\texttt{.ism/manifest}) — the Microsoft-origin
+    fragmented-MP4 format, occasionally found on infrastructure using legacy streaming
+    servers.
 \end{itemize}
 
-This existing scraper is important because it explains why the company was interested in an agentic workflow. The need was not simply ``build another scraper''. The real need was to create a \textbf{more adaptive fallback path} for situations where deterministic heuristics become fragile.
+\subsection{Protocol comparison}
 
-The agentic approach is especially relevant in four cases:
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.8cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Attribute & HLS (RFC 8216) & MPEG-DASH (ISO 23009-1) & Progressive / Other \\
+\midrule
+Manifest format & Plain text (\texttt{.m3u8}) & XML (\texttt{.mpd}) &
+  None (direct URL) \\
+Segment format & MPEG-TS (\texttt{.ts}) or fMP4 (\texttt{.m4s}) &
+  fMP4 (\texttt{.m4s}) & MP4, WebM \\
+Common patterns & \texttt{index.m3u8}, \texttt{mono.m3u8},
+  \texttt{playlist.m3u8} & \texttt{manifest.mpd}, \texttt{stream.mpd} &
+  \texttt{video.mp4}, \texttt{clip.webm} \\
+Tokenization & Query string \newline(\texttt{?token=\&expires=}) &
+  Query string or signed path & Signed path or none \\
+Hierarchy levels & 2 (master $\to$ variant $\to$ segments) &
+  4 (MPD $\to$ Period $\to$ AdaptationSet $\to$ segments) & 1 (direct) \\
+CDP capture layer & \texttt{Network.requestWill}\newline\texttt{BeSent} + perf API &
+  \texttt{Network.requestWill}\newline\texttt{BeSent} &
+  \texttt{Network.requestWill}\newline\texttt{BeSent} \\
+\bottomrule
+\end{tabularx}
+\caption{Comparison of the streaming protocols captured by the \texttt{harvest} tool,
+with their manifest formats, URL patterns, and detection method.}
+\label{tab:protocol-compare}
+\end{table}
+
+\subsection{The harvest tool's six-layer capture strategy}
+
+The \texttt{harvest} tool uses six parallel detection layers to ensure manifest URLs are
+captured regardless of which protocol is in use and regardless of whether the manifest
+loaded before the tool was invoked:
+
+\begin{enumerate}
+  \item \textbf{CDP \texttt{Network.requestWillBeSent}} — the Chrome DevTools Protocol
+    fires this event for every outgoing network request, including from within cross-origin
+    iframes. This is the primary layer and fires before the request leaves the browser.
+  \item \textbf{Puppeteer response listener} — a secondary \texttt{page.on('response')}
+    handler provides redundancy and captures response HTTP status codes alongside the URL.
+  \item \textbf{DOM element scan} — the tool queries \texttt{<video src>} and
+    \texttt{<source src>} attributes for statically embedded stream references.
+  \item \textbf{JavaScript player API inspection} — \texttt{page.evaluate()} probes
+    known player surfaces: hls.js instance URLs, video.js current source, jwplayer
+    playlist items, and dash.js manifest references.
+  \item \textbf{\texttt{performance.getEntriesByType('resource')}} — a retroactive
+    resource-timing scan recovers manifest URLs loaded before the tool began listening.
+  \item \textbf{Frame-level CDP session} — when the player is in a cross-origin iframe,
+    a dedicated CDP session is opened on that frame to capture its network traffic
+    independently.
+\end{enumerate}
+
+All captured URLs are matched against the protocol patterns and returned grouped by
+protocol. The concrete implementation is detailed in Chapter~5.
+
+\section{Remaining limitations of rule-based approaches}
+
+Even with the mitigations above, difficult websites remain. This justifies the fallback
+role of the agentic path:
 
 \begin{itemize}
-  \item ranking noisy iframe or JavaScript candidates when the real player source is not obvious;
-  \item reasoning across screenshots, DOM state, and network evidence together;
-  \item handling pages where anti-bot behavior, overlays, or template noise make fixed rules brittle;
-  \item preserving a richer review trail when the main scraper cannot reach a confident final answer.
+  \item some protections still force partial evidence outcomes;
+  \item highly dynamic pages can invalidate previously successful selectors quickly;
+  \item operational cost grows with deeper exploration and server count.
 \end{itemize}
 
-In that sense, my solution should be understood as a \textbf{backup plan} for the company scraper. It complements the existing production logic instead of competing with it directly.
+For this reason, the adaptive workflow is used where its flexibility provides clear
+recovery value.
 
-\section{Page types used in the existing scraping workflow}
-
-The company scraper and the internship platform share the same broad page taxonomy because this taxonomy reflects the structure of the target websites themselves. Four page types are particularly important.
-
-\subsection{\texttt{landing\_page}}
-
-A landing page is a schedule, catalog, or aggregator page listing multiple football matches. It usually contains repeated cards or rows, and each entry may include the names of the teams, kickoff time, match status, channel name, or broadcaster information. In this kind of page, the goal is not immediate stream extraction. The goal is to identify which match links deserve deeper processing.
-
-\subsection{\texttt{host\_page}}
-
-A host page is dedicated to one match or one stream context. Compared with a landing page, it is more focused and usually contains one principal matchup, one group of servers, one embedded player region, or one dominant iframe chain. For the company scraper, this page type is a key place for network sniffing, iframe enumeration, and player-source discovery.
-
-\subsection{\texttt{embed\_video\_page}}
-
-An embedded video page is often a reduced player page designed to be loaded inside an iframe. It may contain little surrounding content and focus almost entirely on the player. In many real cases, this is where the final streaming manifest becomes visible through network activity.
-
-\subsection{\texttt{other}}
-
-The \texttt{other} category captures pages that do not contribute directly to extraction, such as general news pages, betting or advertisement pages, tracker-heavy redirects, and unrelated content. Correctly filtering such pages is important because it protects the rest of the pipeline from unnecessary cost and noise.
-
-\section{Processing pipeline of the existing scraper}
-
-The company scraper already implements a complete processing logic. Understanding it is important because the agentic workflow was designed in relation to this baseline.
-
-\subsection{Step 0: input handling}
-
-The process begins from a seed URL. This seed can already be a landing page, a host page, or another page whose role must be determined at runtime.
-
-\subsection{Step 1: page classification}
-
-The scraper loads the page through a hardened browser environment and classifies it into one of the four page types. This first decision controls the rest of the execution path:
-
-\begin{itemize}
-  \item if the page is a landing page, the scraper collects match links and metadata;
-  \item if the page is a host page, it starts direct host-page extraction;
-  \item if the page is an embedded page, it tries direct stream extraction and screenshot capture;
-  \item if the page is other, it is skipped or flagged depending on the operating rules.
-\end{itemize}
-
-\subsection{Step 2: host-page processing}
-
-For each host page, the scraper crawls the page more deeply. It enumerates iframe elements, inspects nested frames, watches the page network, and scans HTML and JavaScript for player-related signals. The objective is to identify one or more strong candidates for the real embedded player or the final stream source.
-
-\subsection{Step 3: embed visit and final extraction}
-
-Once a candidate embed source is chosen, the scraper opens that embed page in a focused browser session. It captures a screenshot of the player, monitors the network for manifests or direct media files, and tries to preserve the final stream URL. If the embed page becomes inaccessible because of Cloudflare or a similar protection layer, the host-page evidence is still kept for later retry or manual review.
-
-\section{Outputs produced by the existing scraper}
-
-The company workflow does more than return a single media URL. Its extraction result can include several layers of evidence and enrichment:
-
-\begin{itemize}
-  \item execution identifiers such as stream ID or job ID;
-  \item the original source URL;
-  \item match metadata, such as home team, away team, kickoff time, match status, broadcaster, and channel;
-  \item embedded URL candidates and final streaming URLs when available;
-  \item screenshots of the player area or page state;
-  \item WHOIS and IP information for the website URL, embedded URL, and streaming URL.
-\end{itemize}
-
-This output structure is important because it shows that the company scraper already works as an evidence-collection system, not as a minimal downloader.
-
-\section{Heuristics and technical strategies of the existing scraper}
-
-The current scraper already handles a wide set of practical difficulties. Its main technical strategies include:
-
-\begin{itemize}
-  \item stealth browsing and reduced fingerprinting in the browser;
-  \item network sniffing for \texttt{XHR}, \texttt{fetch}, WebSocket, and manifest traffic;
-  \item recursive iframe analysis, including cross-origin cases where only partial evidence is accessible;
-  \item extraction from HTML attributes, JavaScript initializers, and resolved page state;
-  \item selective resource control and ad mitigation;
-  \item validation of discovered outputs with typed schemas.
-\end{itemize}
-
-This means the agentic workflow enters an already mature environment. The contribution of the internship is therefore not to introduce the very idea of browser evidence, but to add a different style of reasoning on top of it.
-
-\section{Why prompting becomes useful after heuristics}
-
-The need for prompting appears most clearly after deterministic techniques have already done their work. When the page has several iframe candidates, several JavaScript strings, several redirect paths, or several noisy URLs, a fixed rule system can collect a lot of evidence without always knowing which candidate should be prioritized first.
-
-In these cases, prompting helps in a different way from heuristics:
-
-\begin{itemize}
-  \item heuristics \textbf{collect} candidate evidence efficiently;
-  \item prompting helps \textbf{interpret and rank} that evidence in ambiguous situations;
-  \item tool-constrained prompting can also decide which next action is the most informative.
-\end{itemize}
-
-This is one of the main reasons the company wanted an agentic workflow rather than only more rules.
-
-\section{Remaining limitations that justify a backup workflow}
-
-Even a strong deterministic scraper has practical limits. The company description highlights several of them:
-
-\begin{itemize}
-  \item some multi-server situations are only partially consolidated;
-  \item puzzle-style interactive protections are not solved automatically;
-  \item click-to-play sequences that open new windows or require stronger user intent remain difficult;
-  \item pages with very noisy HTML and JavaScript can produce too many plausible player candidates.
-\end{itemize}
-
-These are exactly the kinds of situations in which an agentic backup becomes valuable. The fallback path does not need to replace the primary scraper on every case. It only needs to improve the handling of the difficult cases where adaptive reasoning is worth the extra cost.
+With the technical background established — the domain challenges, the tools selected to
+address them, the streaming protocols being targeted, and the remaining limitations that
+motivate adaptivity — Chapter~3 formalizes the methodology, requirements, and design
+constraints that guided the system's architecture.

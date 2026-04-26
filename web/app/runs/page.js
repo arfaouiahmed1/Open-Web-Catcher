@@ -10,9 +10,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 const PAGE_TYPES = ["", "hosting_page", "landing_page", "embedded_page"];
-const STATUSES = ["", "success", "partial", "failed"];
+const STATUSES = ["", "running", "success", "partial", "failed", "cancelled"];
 
 function statusTone(s) {
+  if (s === "running") return "signal";
+  if (s === "cancelled") return "warning";
   if (s === "success") return "success";
   if (s === "partial") return "warning";
   return "danger";

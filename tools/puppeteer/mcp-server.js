@@ -11,7 +11,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 
 import { PROFILES } from './profiles.js';
-import { closeEphemeralBrowser, launchEphemeralBrowser } from './shared/browser.js';
+import { closeEphemeralBrowser, isSharedBrowserFallbackAllowed, launchEphemeralBrowser } from './shared/browser.js';
 import { decodeUriEverywhere } from './shared/tool-runtime.js';
 import { getToolCatalog, getToolDefinitions, getToolSpec } from './tool-registry.js';
 
@@ -126,6 +126,12 @@ app.get('/mcp/:profile/sse', async (req, res) => {
       browserSession = null;
       browserWsEndpoint = BROWSER_WS;
     }
+  }
+
+  if (!browserSession && !isSharedBrowserFallbackAllowed()) {
+    return res.status(503).json({
+      error: 'Isolated browser launch failed and shared browser fallback is disabled by proxy settings.',
+    });
   }
 
   const server = buildServer(profile, browserWsEndpoint);

@@ -19,7 +19,15 @@ import { FingerprintGenerator } from 'fingerprint-generator';
 import { FingerprintInjector } from 'fingerprint-injector';
 import { chromium } from 'playwright-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import {
+  getProxyCandidatePlan,
+  markProxyFailure,
+  markProxySuccess,
+  normalizeProxyRuntimeConfig,
+  shouldAllowSharedBrowserFallback,
+} from '../../shared/proxy-pool.js';
 import { attachAdBlocker } from './adblocker.js';
+import { getBrowserRuntimeSettings } from './runtime-config.js';
 
 const stealthPlugin = StealthPlugin();
 // fingerprint-injector controls userAgent — stealth's override contradicts it.
@@ -41,46 +49,10 @@ const CHROME_VERSION_TIMEOUT_MS = Number.parseInt(
   String(process.env.OWC_CHROME_VERSION_FETCH_TIMEOUT_MS || '6000'),
   10,
 );
-const BROWSER_LAUNCH_TIMEOUT_MS = Number.parseInt(
-  String(process.env.OWC_BROWSER_LAUNCH_TIMEOUT_MS || '45000'),
-  10,
-);
 const FORCED_VIEWPORT = { width: 1920, height: 1080 };
 const FORCED_WINDOWS_PLATFORM = 'Win32';
 const FORCED_WINDOWS_PLATFORM_VERSION = '10.0.0';
 const FORCED_LANGUAGE = 'en-US,en;q=0.9';
-const FINGERPRINT_ROTATION_MODE = String(process.env.OWC_FINGERPRINT_ROTATION_MODE || 'origin')
-  .trim()
-  .toLowerCase();
-const FINGERPRINT_ROTATION_INTERVAL_MS = Number.parseInt(
-  String(process.env.OWC_FINGERPRINT_ROTATION_INTERVAL_MS || '180000'),
-  10,
-);
-const FINGERPRINT_ROTATION_MAX_USES = Number.parseInt(
-  String(process.env.OWC_FINGERPRINT_ROTATION_MAX_USES || '6'),
-  10,
-);
-const FINGERPRINT_RECENT_POOL_SIZE = Number.parseInt(
-  String(process.env.OWC_FINGERPRINT_RECENT_POOL_SIZE || '12'),
-  10,
-);
-const ADBLOCK_AUTO_RECOVERY_ENABLED = parseBoolean(
-  process.env.OWC_ADBLOCK_AUTO_RECOVERY_ENABLED,
-  true,
-);
-const ADBLOCK_AUTO_RECOVERY_ON_ABORT = parseBoolean(
-  process.env.OWC_ADBLOCK_AUTO_RECOVERY_ON_ABORT,
-  true,
-);
-const ADBLOCK_AUTO_RECOVERY_RETRY_ENABLED = parseBoolean(
-  process.env.OWC_ADBLOCK_AUTO_RECOVERY_RETRY,
-  true,
-);
-const STREAM_CORS_INCLUDE_CREDENTIALS = parseBoolean(
-  process.env.OWC_STREAM_CORS_INCLUDE_CREDENTIALS,
-  false,
-);
-
 // Playwright: no uBOL extension — adblock done via context.route() in adblocker.js
 
 const DEFAULT_LAUNCH_ARGS = [
@@ -137,7 +109,12 @@ const pageNetworkState = new WeakMap();
 const pageNetworkListeners = new WeakSet();
 const recentlyUsedFingerprintSignatures = [];
 let chromeVersionPromise = null;
-let fingerprintSuitePromise = null;
+const fingerprintSuiteCache = new Map();
+const preparedContexts = new WeakSet();
+
+function runtimeSetting(key) {
+  return getBrowserRuntimeSettings('playwright')?.[key];
+}
 
 // ---------------------------------------------------------------------------
 // Utility helpers (identical to Puppeteer version)
@@ -200,11 +177,108 @@ async function resolveLatestStableChromeVersion() {
   return chromeVersionPromise;
 }
 
+function parseChromeVersionCandidate(value) {
+  const match = String(value || '').match(/(\d+\.\d+\.\d+\.\d+)/);
+  return match?.[1] || '';
+}
+
+async function resolveEffectiveChromeVersion(browser = null) {
+  const explicitVersion = String(process.env.OWC_CHROME_VERSION || '').trim();
+  if (explicitVersion) return explicitVersion;
+
+  try {
+    const detectedVersion = parseChromeVersionCandidate(await browser?.version?.());
+    if (detectedVersion) return detectedVersion;
+  } catch {
+    // Fall back to official version sources below.
+  }
+
+  return resolveLatestStableChromeVersion();
+}
+
 function parseBoolean(value, defaultValue = false) {
   if (value == null) return defaultValue;
   const normalized = String(value).trim().toLowerCase();
   if (!normalized) return defaultValue;
   return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+}
+
+function getBrowserLaunchTimeoutMs() {
+  return Number.parseInt(
+    String(runtimeSetting('launch_timeout_ms') ?? process.env.OWC_BROWSER_LAUNCH_TIMEOUT_MS ?? '45000'),
+    10,
+  );
+}
+
+function getFingerprintRotationMode() {
+  return String(runtimeSetting('fingerprint_rotation_mode') ?? process.env.OWC_FINGERPRINT_ROTATION_MODE ?? 'origin')
+    .trim()
+    .toLowerCase();
+}
+
+function getFingerprintRotationIntervalMs() {
+  return Number.parseInt(
+    String(runtimeSetting('fingerprint_rotation_interval_ms') ?? process.env.OWC_FINGERPRINT_ROTATION_INTERVAL_MS ?? '180000'),
+    10,
+  );
+}
+
+function getFingerprintRotationMaxUses() {
+  return Number.parseInt(
+    String(runtimeSetting('fingerprint_rotation_max_uses') ?? process.env.OWC_FINGERPRINT_ROTATION_MAX_USES ?? '6'),
+    10,
+  );
+}
+
+function getFingerprintRecentPoolSize() {
+  return Number.parseInt(
+    String(runtimeSetting('fingerprint_recent_pool_size') ?? process.env.OWC_FINGERPRINT_RECENT_POOL_SIZE ?? '12'),
+    10,
+  );
+}
+
+function getFingerprintFallbackStrategy() {
+  return String(runtimeSetting('fingerprint_fallback_strategy') ?? process.env.OWC_FINGERPRINT_FALLBACK_STRATEGY ?? 'profile')
+    .trim()
+    .toLowerCase();
+}
+
+function getAdblockAutoRecoveryEnabled() {
+  return parseBoolean(
+    runtimeSetting('adblock_auto_recovery_enabled') ?? process.env.OWC_ADBLOCK_AUTO_RECOVERY_ENABLED,
+    true,
+  );
+}
+
+function getAdblockAutoRecoveryOnAbort() {
+  return parseBoolean(
+    runtimeSetting('adblock_auto_recovery_on_abort') ?? process.env.OWC_ADBLOCK_AUTO_RECOVERY_ON_ABORT,
+    true,
+  );
+}
+
+function getAdblockAutoRecoveryRetryEnabled() {
+  return parseBoolean(
+    runtimeSetting('adblock_auto_recovery_retry') ?? process.env.OWC_ADBLOCK_AUTO_RECOVERY_RETRY,
+    true,
+  );
+}
+
+function getIframeSandboxPatchEnabled() {
+  return parseBoolean(
+    runtimeSetting('iframe_sandbox_patch_enabled') ?? process.env.OWC_IFRAME_SANDBOX_PATCH,
+    true,
+  );
+}
+
+function getExtraLaunchArgs() {
+  const configured = runtimeSetting('extra_launch_args');
+  if (!Array.isArray(configured)) return [];
+  return configured.map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+function getProxyRuntimeConfig() {
+  return normalizeProxyRuntimeConfig(getBrowserRuntimeSettings('playwright') || {});
 }
 
 function clampPositiveInteger(value, fallback) {
@@ -241,7 +315,7 @@ function getFingerprintSignature(bundle) {
 function rememberFingerprintSignature(signature) {
   if (!signature) return;
   recentlyUsedFingerprintSignatures.push(signature);
-  const poolSize = clampPositiveInteger(FINGERPRINT_RECENT_POOL_SIZE, 12);
+  const poolSize = clampPositiveInteger(getFingerprintRecentPoolSize(), 12);
   while (recentlyUsedFingerprintSignatures.length > poolSize) {
     recentlyUsedFingerprintSignatures.shift();
   }
@@ -249,12 +323,12 @@ function rememberFingerprintSignature(signature) {
 
 function shouldRotateFingerprint(state, page, targetUrl, forceRotate) {
   if (forceRotate || !state) return true;
-  const rotationMode = normalizeRotationMode(FINGERPRINT_ROTATION_MODE);
+  const rotationMode = normalizeRotationMode(getFingerprintRotationMode());
   if (rotationMode === 'never') return false;
   if (rotationMode === 'page') return true;
   const now = Date.now();
-  const maxUses = clampPositiveInteger(FINGERPRINT_ROTATION_MAX_USES, 6);
-  const intervalMs = clampPositiveInteger(FINGERPRINT_ROTATION_INTERVAL_MS, 180000);
+  const maxUses = clampPositiveInteger(getFingerprintRotationMaxUses(), 6);
+  const intervalMs = clampPositiveInteger(getFingerprintRotationIntervalMs(), 180000);
   if (maxUses > 0 && state.useCount >= maxUses) return true;
   if (intervalMs > 0 && (now - state.appliedAt) >= intervalMs) return true;
   if (rotationMode === 'origin') {
@@ -368,10 +442,10 @@ function attachNetworkDiagnostics(page) {
     const failure = recordRequestFailure(page, request);
     const state = getNetworkState(page);
 
-    if (!ADBLOCK_AUTO_RECOVERY_ENABLED || state.autoRecovery.attempted) return;
+    if (!getAdblockAutoRecoveryEnabled() || state.autoRecovery.attempted) return;
 
     const recoverableFailure = failure.iframe_or_player_related
-      && (failure.blocked_by_client || (ADBLOCK_AUTO_RECOVERY_ON_ABORT && failure.aborted));
+      && (failure.blocked_by_client || (getAdblockAutoRecoveryOnAbort() && failure.aborted));
 
     if (!recoverableFailure) return;
 
@@ -455,7 +529,7 @@ export async function retryNavigationAfterAutoRecovery(page, {
     await state.autoRecovery.disable_promise.catch(() => {});
   }
 
-  if (!ADBLOCK_AUTO_RECOVERY_RETRY_ENABLED) {
+  if (!getAdblockAutoRecoveryRetryEnabled()) {
     return { attempted: false, reason: 'auto_recovery_retry_disabled' };
   }
   if (!state.autoRecovery.disabled_blocking) {
@@ -471,7 +545,7 @@ export async function retryNavigationAfterAutoRecovery(page, {
     await page.goto(targetUrl, { waitUntil, timeout: timeoutMs });
     state.autoRecovery.retry_succeeded = true;
     return { attempted: true, succeeded: true, wait_until: waitUntil, target_url: targetUrl };
-  } catch (error) {
+  } catch {
     state.autoRecovery.retry_succeeded = false;
     state.autoRecovery.error = error?.message || String(error);
     return {
@@ -625,7 +699,7 @@ function buildProfileFromFingerprint(synchronizedBundle, chromeVersion, chromeMa
 }
 
 function generateRotatingFingerprintBundle(generator, chromeVersion, chromeMajorVersion) {
-  const attempts = Math.max(4, clampPositiveInteger(FINGERPRINT_RECENT_POOL_SIZE, 12));
+  const attempts = Math.max(4, clampPositiveInteger(getFingerprintRecentPoolSize(), 12));
   let selected = null;
   let selectedSignature = '';
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -645,20 +719,64 @@ function generateRotatingFingerprintBundle(generator, chromeVersion, chromeMajor
   return synchronized;
 }
 
-async function getFingerprintSuite() {
-  if (!fingerprintSuitePromise) {
-    fingerprintSuitePromise = (async () => {
-      const chromeVersion = await resolveLatestStableChromeVersion();
-      const chromeMajorVersion = getChromeMajorVersion(chromeVersion);
-      return {
-        chromeVersion,
-        chromeMajorVersion,
-        fingerprintGenerator: new FingerprintGenerator(),
-        fingerprintInjector: new FingerprintInjector(),
-      };
-    })();
+async function getFingerprintSuite(browser = null) {
+  const chromeVersion = await resolveEffectiveChromeVersion(browser);
+  const cacheKey = chromeVersion || CHROME_VERSION_FALLBACK;
+
+  if (!fingerprintSuiteCache.has(cacheKey)) {
+    fingerprintSuiteCache.set(cacheKey, {
+      chromeVersion: cacheKey,
+      chromeMajorVersion: getChromeMajorVersion(cacheKey),
+      fingerprintGenerator: new FingerprintGenerator(),
+      fingerprintInjector: new FingerprintInjector(),
+    });
   }
-  return fingerprintSuitePromise;
+
+  return fingerprintSuiteCache.get(cacheKey);
+}
+
+function buildFallbackFingerprintProfile(chromeVersion, chromeMajorVersion) {
+  const brands = buildChromeBrands(chromeMajorVersion);
+  const fullVersionList = brands.map((entry) => ({ ...entry, version: chromeVersion }));
+  const userAgent = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+    'AppleWebKit/537.36 (KHTML, like Gecko)',
+    `Chrome/${chromeVersion}`,
+    'Safari/537.36',
+  ].join(' ');
+  const secChUa = buildSecChUa(brands);
+
+  return {
+    userAgent,
+    language: FORCED_LANGUAGE,
+    secChUa,
+    chromeVersion,
+    chromeMajorVersion,
+    headers: {
+      'User-Agent': userAgent,
+      'Accept-Language': FORCED_LANGUAGE,
+      'Cache-Control': 'max-age=0',
+      Pragma: 'no-cache',
+      'Upgrade-Insecure-Requests': '1',
+      'Sec-CH-UA': secChUa,
+      'Sec-CH-UA-Mobile': '?0',
+      'Sec-CH-UA-Platform': '"Windows"',
+      'Sec-CH-UA-Platform-Version': `"${FORCED_WINDOWS_PLATFORM_VERSION}"`,
+      'Sec-CH-UA-Full-Version': `"${chromeVersion}"`,
+    },
+    userAgentMetadata: {
+      brands,
+      fullVersion: chromeVersion,
+      fullVersionList,
+      platform: 'Windows',
+      platformVersion: FORCED_WINDOWS_PLATFORM_VERSION,
+      architecture: 'x86',
+      model: '',
+      mobile: false,
+      bitness: '64',
+      wow64: false,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -778,9 +896,7 @@ const patchIframeSandboxFn = () => {
 // Context-level fingerprint application (Playwright approach)
 // ---------------------------------------------------------------------------
 
-async function createFingerprintedContext(browser, profile, synchronizedBundle) {
-  const suite = await getFingerprintSuite();
-
+async function createFingerprintedContext(browser, profile, synchronizedBundle = null, { injectFingerprint = true } = {}) {
   const context = await browser.newContext({
     viewport: FORCED_VIEWPORT,
     userAgent: profile.userAgent,
@@ -792,10 +908,13 @@ async function createFingerprintedContext(browser, profile, synchronizedBundle) 
   });
 
   // Apply fingerprint at context level (affects all pages including cross-origin iframes)
-  try {
-    await suite.fingerprintInjector.attachFingerprintToPlaywright(context, synchronizedBundle);
-  } catch (err) {
-    console.warn('[owc-pw] fingerprint injection skipped:', err?.message || err);
+  if (injectFingerprint && synchronizedBundle) {
+    try {
+      const suite = await getFingerprintSuite(browser);
+      await suite.fingerprintInjector.attachFingerprintToPlaywright(context, synchronizedBundle);
+    } catch (err) {
+      console.warn('[owc-pw] fingerprint injection skipped:', err?.message || err);
+    }
   }
 
   // Runtime JS patches via addInitScript (= evaluateOnNewDocument but context-scoped)
@@ -807,7 +926,9 @@ async function createFingerprintedContext(browser, profile, synchronizedBundle) 
     secChUa: profile.secChUa,
   });
 
-  await context.addInitScript(patchIframeSandboxFn);
+  if (getIframeSandboxPatchEnabled()) {
+    await context.addInitScript(patchIframeSandboxFn);
+  }
 
   // Remove Playwright-specific globals that some sites check
   await context.addInitScript(() => {
@@ -817,8 +938,66 @@ async function createFingerprintedContext(browser, profile, synchronizedBundle) 
 
   // Apply route-based ad blocking
   await attachAdBlocker(context, { pageBlockingDisabled });
+  preparedContexts.add(context);
 
   return context;
+}
+
+async function prepareSharedContext(context) {
+  if (preparedContexts.has(context)) {
+    return context;
+  }
+
+  if (getIframeSandboxPatchEnabled()) {
+    await context.addInitScript(patchIframeSandboxFn);
+  }
+  await context.addInitScript(() => {
+    try { delete window.__playwright; } catch { /* ignore */ }
+    try { delete window.__pw_manual; } catch { /* ignore */ }
+  });
+  await attachAdBlocker(context, { pageBlockingDisabled });
+  preparedContexts.add(context);
+  return context;
+}
+
+async function launchBrowserAttempt({ launchTimeout, launchArgs, proxy = null } = {}) {
+  return chromium.launch({
+    executablePath: EXECUTABLE_PATH,
+    headless: true,
+    timeout: launchTimeout,
+    args: launchArgs,
+    proxy: proxy?.server
+      ? {
+          server: proxy.server,
+          username: proxy.username || undefined,
+          password: proxy.password || undefined,
+        }
+      : undefined,
+  });
+}
+
+async function validateProxyConnection(browser, { testUrl, timeoutMs } = {}) {
+  const context = await browser.newContext({
+    viewport: FORCED_VIEWPORT,
+    ignoreHTTPSErrors: true,
+  });
+
+  try {
+    const page = await context.newPage();
+    const response = await page.goto(testUrl, {
+      waitUntil: 'domcontentloaded',
+      timeout: timeoutMs,
+    });
+    if (!response || !response.ok()) {
+      throw new Error(`Proxy validation failed for ${testUrl}`);
+    }
+  } finally {
+    await context.close().catch(() => {});
+  }
+}
+
+export function isSharedBrowserFallbackAllowed() {
+  return shouldAllowSharedBrowserFallback(getProxyRuntimeConfig());
 }
 
 // ---------------------------------------------------------------------------
@@ -838,17 +1017,53 @@ export async function connectBrowser(wsEndpoint = WS_ENDPOINT) {
     if (typeof wsEndpoint.disconnect === 'function') return wsEndpoint;
     return { ...wsEndpoint, disconnect: async () => {} };
   }
-  const browser = await chromium.connectOverCDP(wsEndpoint);
-  let context = browser.contexts()[0];
-  if (!context) {
-    const suite = await getFingerprintSuite();
+  const endpoint = String(wsEndpoint || '').trim() || WS_ENDPOINT;
+  const browser = await chromium.connectOverCDP(endpoint);
+
+  let context = null;
+  let ownsContext = false;
+  try {
+    const suite = await getFingerprintSuite(browser);
     const synchronized = generateRotatingFingerprintBundle(
       suite.fingerprintGenerator, suite.chromeVersion, suite.chromeMajorVersion,
     );
     const profile = buildProfileFromFingerprint(synchronized, suite.chromeVersion, suite.chromeMajorVersion);
     context = await createFingerprintedContext(browser, profile, synchronized);
+    ownsContext = true;
+  } catch (error) {
+    if (getFingerprintFallbackStrategy() === 'profile') {
+      try {
+        const suite = await getFingerprintSuite(browser);
+        const profile = buildFallbackFingerprintProfile(suite.chromeVersion, suite.chromeMajorVersion);
+        context = await createFingerprintedContext(browser, profile, null, { injectFingerprint: false });
+        ownsContext = true;
+      } catch {
+        context = browser.contexts()[0] || null;
+        if (context) {
+          await prepareSharedContext(context);
+        }
+      }
+    } else {
+      context = browser.contexts()[0] || null;
+      if (context) {
+        await prepareSharedContext(context);
+      }
+    }
   }
-  return { browser, context, userDataDir: null, disconnect: () => browser.disconnect() };
+
+  if (!context) {
+    throw new Error('Could not resolve a Playwright browser context from the connected browser.');
+  }
+
+  return {
+    browser,
+    context,
+    userDataDir: null,
+    sharedConnection: true,
+    ownsBrowser: false,
+    ownsContext,
+    disconnect: async () => browser.disconnect(),
+  };
 }
 
 /**
@@ -858,23 +1073,85 @@ export async function connectBrowser(wsEndpoint = WS_ENDPOINT) {
 export async function launchEphemeralBrowser(sessionId) {
   const safeSessionId = String(sessionId || 'session').replace(/[^a-zA-Z0-9_-]/g, '_');
   const userDataDir = path.join(os.tmpdir(), `owc-pw-${safeSessionId}-${Date.now()}`);
-  const launchTimeout = Number.isFinite(BROWSER_LAUNCH_TIMEOUT_MS) ? Math.max(0, BROWSER_LAUNCH_TIMEOUT_MS) : 45000;
+  const launchTimeoutMs = getBrowserLaunchTimeoutMs();
+  const launchTimeout = Number.isFinite(launchTimeoutMs) ? Math.max(0, launchTimeoutMs) : 45000;
+  const launchArgs = [...DEFAULT_LAUNCH_ARGS, ...getExtraLaunchArgs()];
+  const proxyPlan = await getProxyCandidatePlan('playwright', getProxyRuntimeConfig());
+  const attemptedErrors = [];
+  let browser = null;
+  let selectedProxy = null;
 
-  const browser = await chromium.launch({
-    executablePath: EXECUTABLE_PATH,
-    headless: true,
-    timeout: launchTimeout,
-    args: DEFAULT_LAUNCH_ARGS,
-  });
+  if (proxyPlan.enabled) {
+    for (const candidate of proxyPlan.candidates) {
+      try {
+        browser = await launchBrowserAttempt({
+          launchTimeout,
+          launchArgs,
+          proxy: candidate,
+        });
+        await validateProxyConnection(browser, {
+          testUrl: proxyPlan.testUrl,
+          timeoutMs: proxyPlan.validationTimeoutMs,
+        });
+        markProxySuccess('playwright', candidate);
+        selectedProxy = candidate;
+        break;
+      } catch (error) {
+        attemptedErrors.push(`${candidate.server} (${candidate.sourceId}) -> ${error?.message || error}`);
+        markProxyFailure('playwright', candidate);
+        if (browser) {
+          await browser.close().catch(() => {});
+          browser = null;
+        }
+      }
+    }
+  }
 
-  const suite = await getFingerprintSuite();
-  const synchronized = generateRotatingFingerprintBundle(
-    suite.fingerprintGenerator, suite.chromeVersion, suite.chromeMajorVersion,
-  );
-  const profile = buildProfileFromFingerprint(synchronized, suite.chromeVersion, suite.chromeMajorVersion);
-  const context = await createFingerprintedContext(browser, profile, synchronized);
+  if (!browser && (!proxyPlan.enabled || proxyPlan.allowDirectFallback)) {
+    browser = await launchBrowserAttempt({
+      launchTimeout,
+      launchArgs,
+      proxy: null,
+    });
+  }
 
-  return { browser, context, userDataDir };
+  if (!browser) {
+    throw new Error(
+      attemptedErrors.length
+        ? `No working proxy candidate was available. ${attemptedErrors.join(' | ')}`
+        : 'No working proxy candidate was available.',
+    );
+  }
+
+  const suite = await getFingerprintSuite(browser);
+  let context = null;
+  try {
+    const synchronized = generateRotatingFingerprintBundle(
+      suite.fingerprintGenerator,
+      suite.chromeVersion,
+      suite.chromeMajorVersion,
+    );
+    const profile = buildProfileFromFingerprint(synchronized, suite.chromeVersion, suite.chromeMajorVersion);
+    context = await createFingerprintedContext(browser, profile, synchronized);
+  } catch (error) {
+    if (getFingerprintFallbackStrategy() !== 'profile') {
+      await browser.close().catch(() => {});
+      throw error;
+    }
+    const profile = buildFallbackFingerprintProfile(suite.chromeVersion, suite.chromeMajorVersion);
+    context = await createFingerprintedContext(browser, profile, null, { injectFingerprint: false });
+  }
+
+  return {
+    browser,
+    context,
+    userDataDir,
+    proxy: selectedProxy,
+    sharedConnection: false,
+    ownsBrowser: true,
+    ownsContext: true,
+    disconnect: async () => browser.close(),
+  };
 }
 
 /**
@@ -883,7 +1160,22 @@ export async function launchEphemeralBrowser(sessionId) {
 export async function closeEphemeralBrowser(session) {
   if (!session) return;
   try {
-    if (session.browser) await session.browser.close();
+    if (session.sharedConnection) {
+      if (session.ownsContext && session.context?.close) {
+        await session.context.close().catch(() => {});
+      }
+      if (typeof session.disconnect === 'function') {
+        await session.disconnect().catch(() => {});
+      }
+      return;
+    }
+
+    if (session.context?.close && session.ownsContext) {
+      await session.context.close().catch(() => {});
+    }
+    if (session.browser && session.ownsBrowser !== false) {
+      await session.browser.close();
+    }
   } finally {
     if (session.userDataDir) {
       await fs.rm(session.userDataDir, { recursive: true, force: true }).catch(() => {});
@@ -913,7 +1205,9 @@ export async function getPage(session, {
   attachNetworkDiagnostics(page);
 
   // Apply iframe sandbox patch to the live page as well (addInitScript covers future pages)
-  await page.evaluate(patchIframeSandboxFn).catch(() => {});
+  if (getIframeSandboxPatchEnabled()) {
+    await page.evaluate(patchIframeSandboxFn).catch(() => {});
+  }
 
   return page;
 }

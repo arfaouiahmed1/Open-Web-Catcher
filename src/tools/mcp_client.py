@@ -147,6 +147,24 @@ REQUIRED_TOOLS_BY_PROFILE = {
 }
 
 
+def _disabled_tools_for_profile(settings: Settings, profile: str) -> set[str]:
+    browser = str(getattr(settings, "browser_engine", "") or "puppeteer").strip().lower()
+    by_browser = getattr(settings, "disabled_tools_by_browser_profile", {}) or {}
+    if isinstance(by_browser, dict):
+        browser_profiles = by_browser.get(browser, {})
+        if isinstance(browser_profiles, dict):
+            tools = browser_profiles.get(profile, [])
+            if isinstance(tools, list):
+                return {str(tool).strip() for tool in tools if str(tool).strip()}
+
+    legacy = getattr(settings, "disabled_tools_by_profile", {}) or {}
+    if isinstance(legacy, dict):
+        tools = legacy.get(profile, [])
+        if isinstance(tools, list):
+            return {str(tool).strip() for tool in tools if str(tool).strip()}
+    return set()
+
+
 @asynccontextmanager
 async def agent_tools(
     profile: str,
@@ -234,6 +252,13 @@ async def agent_tools(
             raise RuntimeError(
                 f"MCP profile '{profile}' is missing required tools: {', '.join(missing_tools)}"
             )
+        # Apply per-profile disabled tool list from settings
+        disabled = _disabled_tools_for_profile(settings, profile)
+        if disabled:
+            tools = [t for t in tools if t.name not in disabled]
+            logger.info("MCP profile '%s' filtered out disabled tools: %s", profile, sorted(disabled))
+
+        tool_names = [t.name for t in tools]
         logger.info("MCP profile '%s' loaded %d tools: %s", profile, len(tools), tool_names)
         if observer is not None:
             observer.emit(

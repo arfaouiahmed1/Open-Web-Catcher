@@ -20,6 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from src.evaluation.datasets import build_dataset_examples, export_dataset_examples
 from src.evaluation.scoring import evaluate_case_artifact
 from src.evaluation.tracing import setup_tracing_from_settings
+from src.agents.base import RunCancelledError
 from src.models.schemas import (
     AgentTestRequest,
     ClassificationResult,
@@ -37,10 +38,18 @@ from src.storage.database import create_tables, get_session
 from src.storage.repositories import BackgroundJobRepository, RunRepository
 from src.storage.ui_repository import OperatorConsoleRepository
 from src.tools.mcp_client import REQUIRED_TOOLS_BY_PROFILE, agent_tools
+from src.utils.browser_runtime import normalize_browser_runtime, normalize_disabled_tools_by_browser_profile
 from src.utils.config import Settings
 from src.utils.ipinfo import lookup_multiple
 from src.utils.logging import get_logger, setup_logging
 from src.utils.observability import get_observability_status, run_registry
+from src.utils.provider_models import (
+    ProviderModelCatalogError,
+    get_provider_model_catalog,
+    normalize_agent_model_config,
+    normalize_llm_tuning,
+    resolve_agent_model_selection,
+)
 from src.utils.provider_pricing import ProviderPricingSyncError, fetch_provider_pricing
 from src.utils.service_health import probe_browser, probe_mcp
 
@@ -347,6 +356,8 @@ async def _process_background_job() -> bool:
         repo = BackgroundJobRepository(session)
         if execution.get("ok"):
             repo.mark_succeeded(job.run_id, result_json=execution.get("result") or {})
+        elif execution.get("cancelled"):
+            repo.mark_cancelled(job.run_id, reason=str(execution.get("error", "Cancelled")))
         else:
             repo.mark_failed(job.run_id, error_text=str(execution.get("error", "background_job_failed")))
     finally:
@@ -423,13 +434,27 @@ app.add_middleware(
 def _active_trace_row(trace: Any) -> dict[str, Any]:
     metrics = trace.metrics
     total_cost = metrics.estimated_total_cost_usd if metrics else 0.0
+    total_tokens_in = int(metrics.total_tokens_in or 0) if metrics else 0
+    total_tokens_out = int(metrics.total_tokens_out or 0) if metrics else 0
+    status = "running"
+    if trace.completed:
+        if trace.cancel_requested or str((metrics.failure_mode if metrics else "") or "").lower() in {"runcancellederror", "cancelled", "canceled"}:
+            status = "cancelled"
+        else:
+            status = "success" if (metrics and metrics.success) else "failed"
+
     return {
         "run_id": trace.run_id,
         "root_actor": trace.root_actor,
+        "url": metrics.url if metrics else "",
+        "status": status,
         "event_count": len(trace.events),
         "completed": trace.completed,
         "cancel_requested": trace.cancel_requested,
         "started_at": trace.started_at.isoformat(),
+        "total_tokens_in": total_tokens_in,
+        "total_tokens_out": total_tokens_out,
+        "total_tokens": total_tokens_in + total_tokens_out,
         "total_tool_calls": metrics.total_tool_calls if metrics else 0,
         "total_llm_calls": metrics.total_llm_calls if metrics else 0,
         "estimated_total_cost_usd": total_cost,
@@ -438,27 +463,45 @@ def _active_trace_row(trace: Any) -> dict[str, Any]:
 
 
 def _background_job_row(job: Any) -> dict[str, Any]:
+    display_status = _background_job_display_status(job)
     return {
         "run_id": job.run_id,
         "url": job.url,
         "page_type": "unknown",
-        "status": job.status,
-        "streams_found": 0,
-        "success": job.status == "succeeded",
+        "status": display_status,
+        "final_status": display_status,
+        "stream_count": 0,
+        "screenshot_count": 0,
+        "email_count": 0,
+        "provider_analysis_count": 0,
+        "success": display_status == "success",
         "duration_seconds": 0.0,
-        "tool_calls": 0,
-        "tokens_in": 0,
-        "tokens_out": 0,
+        "total_tool_calls": 0,
+        "total_llm_calls": 0,
+        "total_tokens_in": 0,
+        "total_tokens_out": 0,
         "estimated_total_cost_usd": 0.0,
         "total_cost_usd": 0.0,
-        "llm_calls": 0,
-        "message_count": 0,
+        "total_messages": 0,
         "created_at": job.created_at.isoformat() if getattr(job, "created_at", None) else "",
         "root_actor": job.actor,
         "job_type": job.job_type,
         "attempts": int(job.attempts or 0),
         "max_attempts": int(job.max_attempts or 0),
     }
+
+
+def _background_job_display_status(job: Any) -> str:
+    status = str(getattr(job, "status", "") or "").strip().lower()
+    if status == "succeeded":
+        return "success"
+    if status in {"queued", "running", "retrying"}:
+        return "running"
+    if status == "cancelled":
+        return "cancelled"
+    if status == "dead_letter":
+        return "failed"
+    return status or "unknown"
 
 
 def _emit_failure_once(observer, kind: str, message: str) -> None:
@@ -598,7 +641,6 @@ async def _background_workflow(run_id: str, url: str) -> dict[str, Any]:
             timeout=timeout_seconds,
         )
         await _persist_pipeline_result(result)
-        _persist_trace_snapshot(run_id, root_actor="orchestrator", url=url)
         return {"ok": True, "result": result.model_dump(mode="json")}
     except asyncio.TimeoutError:
         message = f"Workflow timed out after {max(1, int(settings.agent_timeout_seconds))}s"
@@ -607,6 +649,10 @@ async def _background_workflow(run_id: str, url: str) -> dict[str, Any]:
         _persist_trace_snapshot(run_id, root_actor="orchestrator", url=url)
         logger.error("Background workflow timed out: run_id=%s timeout=%ss", run_id, max(1, int(settings.agent_timeout_seconds)))
         return {"ok": False, "error": message}
+    except RunCancelledError as exc:
+        observer.finish(success=False, failure_mode="cancelled")
+        _persist_trace_snapshot(run_id, root_actor="orchestrator", url=url)
+        return {"ok": False, "cancelled": True, "error": str(exc)}
     except Exception as exc:
         _emit_failure_once(observer, "pipeline_failed", str(exc))
         observer.finish(success=False, failure_mode=type(exc).__name__)
@@ -656,6 +702,10 @@ async def _background_agent(run_id: str, agent: str, url: str, prompt_override: 
             max(1, int(settings.agent_timeout_seconds)),
         )
         return {"ok": False, "error": message}
+    except RunCancelledError as exc:
+        observer.finish(success=False, failure_mode="cancelled")
+        _persist_trace_snapshot(run_id, root_actor=agent, url=url)
+        return {"ok": False, "cancelled": True, "error": str(exc)}
     except Exception as exc:
         _emit_failure_once(observer, "agent_failed", str(exc))
         observer.finish(success=False, failure_mode=type(exc).__name__)
@@ -1267,13 +1317,13 @@ def ui_runs(
     try:
         repo = OperatorConsoleRepository(session)
         payload = repo.list_runs(limit=limit + offset + 200, offset=0, status=status, page_type=page_type)
-        jobs = BackgroundJobRepository(session).list_active(limit=400)
+        jobs = BackgroundJobRepository(session).list_all(limit=400)
         existing_run_ids = {str(row.get("run_id", "")) for row in payload.get("rows", [])}
         pending_rows = []
         for job in jobs:
             if job.run_id in existing_run_ids:
                 continue
-            if status and job.status != status:
+            if status and _background_job_display_status(job) != status:
                 continue
             pending_rows.append(_background_job_row(job))
         rows = pending_rows + payload.get("rows", [])
@@ -1538,6 +1588,8 @@ class ModelConfigRequest(BaseModel):
     agent_model: str = ""
     orchestrator_model: str = ""
     gemini_temperature: float | None = None
+    llm_tuning: dict | None = None
+    agent_model_config: dict | None = None
     provider_cache_enabled: bool | None = None
     gemini_explicit_cache_enabled: bool | None = None
     gemini_explicit_cache_ttl_seconds: int | None = None
@@ -1545,6 +1597,9 @@ class ModelConfigRequest(BaseModel):
     tool_result_cache_enabled: bool | None = None
     tool_result_cache_min_identical_observations: int | None = None
     browser_engine: str | None = None
+    disabled_tools_by_profile: dict | None = None
+    disabled_tools_by_browser_profile: dict | None = None
+    browser_runtime: dict | None = None
 
 
 class PricingSyncRequest(BaseModel):
@@ -1564,6 +1619,8 @@ def _ui_config_payload(
         "agent_model": settings.agent_model,
         "orchestrator_model": settings.orchestrator_model,
         "gemini_temperature": settings.gemini_temperature,
+        "llm_tuning": normalize_llm_tuning(getattr(settings, "llm_tuning", {})),
+        "agent_model_config": normalize_agent_model_config(settings, getattr(settings, "agent_model_config", {})),
         "provider_cache_enabled": settings.provider_cache_enabled,
         "gemini_explicit_cache_enabled": settings.gemini_explicit_cache_enabled,
         "gemini_explicit_cache_ttl_seconds": settings.gemini_explicit_cache_ttl_seconds,
@@ -1573,6 +1630,12 @@ def _ui_config_payload(
         "browser_engine": settings.browser_engine,
         "mcp_server_url_puppeteer": settings.mcp_server_url_puppeteer,
         "mcp_server_url_playwright": settings.mcp_server_url_playwright,
+        "disabled_tools_by_profile": settings.disabled_tools_by_profile,
+        "disabled_tools_by_browser_profile": normalize_disabled_tools_by_browser_profile(
+            getattr(settings, "disabled_tools_by_browser_profile", {}),
+            legacy=getattr(settings, "disabled_tools_by_profile", {}),
+        ),
+        "browser_runtime": normalize_browser_runtime(getattr(settings, "browser_runtime", {})),
         "api_keys": {
             "google": bool(settings.google_api_key),
             "openai": bool(settings.openai_api_key),
@@ -1593,6 +1656,15 @@ def ui_get_config():
     return _ui_config_payload(get_settings())
 
 
+@app.get("/ui/providers/models")
+def ui_provider_models(provider: str = Query(..., min_length=2), max_models: int = Query(default=200, ge=1, le=1000)):
+    """Return provider-backed model catalog and tuning metadata."""
+    try:
+        return get_provider_model_catalog(get_settings(), provider=provider, max_models=max_models)
+    except ProviderModelCatalogError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.put("/ui/config")
 def ui_update_config(body: ModelConfigRequest):
     """Update active LLM provider/model at runtime and persist to settings.yaml."""
@@ -1605,6 +1677,14 @@ def ui_update_config(body: ModelConfigRequest):
         s.orchestrator_model = body.orchestrator_model
     if body.gemini_temperature is not None:
         s.gemini_temperature = body.gemini_temperature
+    if body.llm_tuning is not None:
+        s.llm_tuning = normalize_llm_tuning(body.llm_tuning)
+    if body.agent_model_config is not None:
+        s.agent_model_config = normalize_agent_model_config(s, body.agent_model_config)
+        classification_selection = resolve_agent_model_selection(s, "classification")
+        orchestrator_selection = resolve_agent_model_selection(s, "orchestrator")
+        s.agent_model = classification_selection.get("model", s.agent_model)
+        s.orchestrator_model = orchestrator_selection.get("model", s.orchestrator_model)
     if body.provider_cache_enabled is not None:
         s.provider_cache_enabled = body.provider_cache_enabled
     if body.gemini_explicit_cache_enabled is not None:
@@ -1629,9 +1709,31 @@ def ui_update_config(body: ModelConfigRequest):
             s.mcp_server_url_playwright if body.browser_engine == "playwright"
             else s.mcp_server_url_puppeteer
         )
+    if body.disabled_tools_by_profile is not None:
+        s.disabled_tools_by_profile = body.disabled_tools_by_profile
+    if body.disabled_tools_by_browser_profile is not None:
+        s.disabled_tools_by_browser_profile = normalize_disabled_tools_by_browser_profile(
+            body.disabled_tools_by_browser_profile,
+            legacy=body.disabled_tools_by_profile if body.disabled_tools_by_profile is not None else s.disabled_tools_by_profile,
+        )
+    else:
+        s.disabled_tools_by_browser_profile = normalize_disabled_tools_by_browser_profile(
+            getattr(s, "disabled_tools_by_browser_profile", {}),
+            legacy=s.disabled_tools_by_profile,
+        )
+    if body.browser_runtime is not None:
+        s.browser_runtime = normalize_browser_runtime(body.browser_runtime)
+    else:
+        s.browser_runtime = normalize_browser_runtime(getattr(s, "browser_runtime", {}))
+    if body.agent_model_config is None:
+        s.agent_model_config = normalize_agent_model_config(s, getattr(s, "agent_model_config", {}))
     persist_path = ""
     persist_error = ""
     config_persisted = True
+    try:
+        s.save_browser_runtime_bridge()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not persist browser runtime bridge: %s", exc)
     try:
         persist_path = str(s.save_yaml())
     except Exception as exc:

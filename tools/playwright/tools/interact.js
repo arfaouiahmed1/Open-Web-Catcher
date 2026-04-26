@@ -54,7 +54,7 @@ export async function interact({
 } = {}) {
   const owned = typeof browserWsEndpoint === 'string';
   const session = owned
-    ? await connectBrowser(browserWsEndpoint)
+    ? await connectBrowser(browserWsEndpoint || undefined)
     : browserWsEndpoint;
   const browser = session.browser;
   const context = session.context;

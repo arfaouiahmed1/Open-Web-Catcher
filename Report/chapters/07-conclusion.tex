@@ -1,27 +1,183 @@
-\chapter{Conclusion and Future Work}
+\chapter{Conclusion and Perspectives}
+
+\section{Summary of contributions}
+
+This internship delivered a practical adaptive platform for evidence collection on
+unstable streaming websites. The work addressed a concrete operational need at Soft Stars:
+certain page conditions — deeply nested iframes, heavy anti-bot pressure, click-gated
+players, and tokenized stream generation — make fully automated evidence collection
+challenging. The agentic platform built during this internship tackles precisely those
+cases through reasoning-driven browser automation.
+
+The contributions can be summarized along five dimensions:
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.5cm}
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Contribution & Description \\
+\midrule
+n8n prototype & Rapid feasibility validation of the extraction pipeline on real targets;
+  established that the multi-agent approach was viable before committing to a full coded
+  platform. \\
+Agent architecture & Four specialist agents (classification, landing, hosting, embedded)
+  each with a targeted ReAct-style prompt, dedicated tool set, and explicit stopping
+  criteria. \\
+Browser tool layer & Puppeteer-based tools (inspect, interact, harvest, screenshot,
+  navigate, get\_media\_state) that enable adaptive page interaction beyond static HTML
+  retrieval. \\
+Operator platform & FastAPI backend with structured observability + Next.js operator
+  console providing live run streaming, history, and evaluation surfaces. \\
+Prompt engineering & Iterative evolution from intent-based to ReAct-style prompts,
+  evaluated across navigation and player activation use cases, with documented improvement
+  in recall and recovery rate. \\
+\bottomrule
+\end{tabularx}
+\caption{Summary of main contributions by dimension.}
+\label{tab:contrib-summary}
+\end{table}
+
+\section{Key technical lessons}
+
+\subsection{Prompt design matters more than agent count}
+
+The biggest improvement across all evaluation runs came from switching to ReAct-style prompts, not from adding more agents or tools. The intent-based prompt left agents free to skip navigational controls entirely — they'd look at the first visible state and decide they were done. Adding an explicit THINK step that checks for tabs or checks player state before harvesting made the agents dramatically more reliable. More tools without better prompts just gave the agent more ways to make the same mistakes.
+
+\subsection{Fallback paths are not optional}
+
+No single extraction strategy works on all pages. The hosting-to-embedded fallback recovered cases that would have been hard failures — the 3-level iframe chain in Case A being the clearest example. Without that routing rule, the hosting agent would have reported no stream found and the run would have ended there. In this domain, you need layers.
+
+\subsection{Observability drives improvement}
+
+Without the per-step tool trace and screenshot artifacts, most of the debugging during evaluation would have been guesswork. The improvements to tool descriptions — adding the "use only after activation confirmed" guard to harvest, clarifying when to use inspect\_hosting versus inspect\_page — were only discovered by looking at the actual tool call logs, not by reading the prompt. Structured observability is what made it possible to turn failures into targeted fixes.
+
+\subsection{Anti-bot adaptation is continuous}
+
+Nothing static stayed reliable across the evaluation window. Adblock filter lists needed updating. Fingerprint settings that worked in week one triggered challenges in week three on the same sites. The value of the platform is not that it "solves" anti-bot — it doesn't — but that it gives you a framework for continuously re-solving it as things change.
 
 \section{Conclusion}
 
-This internship began with a practical need: analyze unstable streaming websites and transform them into structured evidence that can support downstream action. The first working answer to that need was built with n8n. That early phase was valuable because it made experimentation fast and helped demonstrate that the objective was achievable on real websites.
+The platform built during this internship works, but more importantly it's maintainable. That distinction matters in a domain where target behavior changes continuously. A system that works once and then breaks the next time a site updates its anti-bot configuration is not useful for legal enforcement. What Soft Stars needed was a framework they could keep adapting — and that's what the evaluation campaign actually validated.
 
-The final result of the internship is a more mature solution. The current platform replaces the prototype-centered workflow with a structured system built around FastAPI, Next.js, Puppeteer-based browser tools, persistent observability, memory, and cost-aware execution. It introduces specialized agents for classification, landing-page discovery, hosting extraction, and embedded-player analysis, and it prepares the workload for Azure deployment through containerized services and event-driven jobs.
+The improvements didn't come from clever algorithms. They came from systematically working through failure modes: navigation-heavy sites needed state-loop exploration rather than single-pass scanning; popup-blocked pages needed fallback click strategies; Cloudflare-gated sessions needed lower automation signals; tokenized streams needed deferred harvest after play activation. Each fix was small on its own but the combination produced a system that handles the majority of real-world streaming infrastructure effectively.
 
-Inside the company context, the platform should be positioned clearly: it is not presented as an immediate replacement for the existing stream scraper. Instead, it acts as a complementary \textbf{backup plan}. The existing scraper remains highly valuable for deterministic, well-understood cases, while the agentic workflow becomes useful when pages are noisier, more dynamic, or harder to resolve through fixed heuristics alone.
-
-One of the main lessons of the project is that the right solution was not to choose between workflows and code from the beginning, but to use each at the right stage. n8n was the right environment to validate the idea quickly. The coded platform then became the right environment to scale the idea into a maintainable product.
+The n8n phase was genuinely useful as a rapid validation tool. The coded platform replaced it not because n8n was wrong but because the engineering requirements outgrew what a visual workflow tool can sensibly maintain. Versioned prompts, structured traces, per-run cost tracking, and a proper evaluation harness — those are what make it possible to keep improving the system after the internship is done.
 
 \section{Future work}
 
-Several directions can strengthen the platform further.
+\subsection{Short-term improvements}
 
 \begin{itemize}
-  \item \textbf{Expand measured evaluation.} Add larger benchmark sets and more published metrics in the final report.
-  \item \textbf{Harden Azure deployment.} Finalize queue-driven production execution, security settings, and environment separation.
-  \item \textbf{Unify all tools under the same runtime model.} Continue reducing legacy differences between older and newer tool patterns.
-  \item \textbf{Enrich memory quality.} Improve how site memory is refreshed and validated when a target website changes structure.
-  \item \textbf{Refine operator workflows.} Add more investigation-specific UI features, exports, and reporting views.
+  \item formalize periodic fingerprint and adblock policy rotation as a scheduled
+    maintenance process;
+  \item expand case-study benchmarks with standardized before/after mitigation evidence;
+  \item integrate stricter automatic fallback triggers between deterministic and agentic
+    paths;
+  \item add a \texttt{scroll-and-reinspect} loop to the landing agent for sites that
+    require scrolling to reveal all match cards.
 \end{itemize}
+
+\subsection{Medium-term directions}
+
+\begin{itemize}
+  \item validate cloud execution under production load profiles (Azure Service Bus +
+    Container Apps Jobs);
+  \item implement long-term vector memory for site layout pattern reuse across runs;
+  \item add YOLO or OCR-based play button detection as a fallback for non-standard player
+    UIs;
+  \item implement multi-server parallel harvesting to reduce time-per-host-page;
+  \item build a prompt regression test suite that runs against a fixed snapshot dataset
+    whenever prompts are modified.
+\end{itemize}
+
+\subsection{Research directions}
+
+\begin{itemize}
+  \item investigate self-improving selector generation: the agent proposes a new selector,
+    the system tests it, and stores the result in long-term memory;
+  \item explore fine-tuned classification models as replacements for the LLM
+    classification call to reduce cost at scale;
+  \item study the stability of tokenized stream URL patterns to determine if
+    pre-activation network monitoring can predict manifest timing.
+\end{itemize}
+
+\section{Deployment roadmap}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.5cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Phase & Objective & Azure components \\
+\midrule
+Phase 1 (done) & Local and containerized execution; cloud-compatible design &
+  Docker containers; PostgreSQL \\
+Phase 2 (next) & Queue-driven execution on cloud & Azure Service Bus; Container Apps
+  Jobs; Blob storage \\
+Phase 3 (future) & Auto-scaling and parallel job execution & Container Apps with
+  KEDA scaling; multi-replica job workers \\
+\bottomrule
+\end{tabularx}
+\caption{Deployment roadmap toward fully cloud-native execution.}
+\label{tab:deploy-roadmap}
+\end{table}
+
+\section{Reflection on the methodology}
+
+Using CRISP-DM as an organising framework for an agentic engineering project was a deliberate
+choice, but it required adaptation. The standard CRISP-DM phases presuppose a dataset that
+can be explored statistically before modelling begins. In this project, the ``data'' is not
+a file: it is a live web page whose structure varies at runtime. Data understanding was
+therefore conducted through manual observation campaigns against real targets, and the
+modelling phase consisted of designing agent prompts and tool schemas rather than fitting
+predictive models.
+
+The iterative character of CRISP-DM was, however, precisely the right framework for
+prompt engineering. The inner cycle of \textit{observe failure $\to$ hypothesize cause $\to$
+revise prompt $\to$ re-test} mirrors the CRISP-DM loop between modeling and evaluation.
+Each prompt version recorded in the evaluation chapter corresponds to one CRISP-DM cycle.
+The framework gave the iterative process structure and made it easier to document decision
+points that would otherwise have been invisible.
+
+A key methodological insight from the evaluation is that \textbf{tool descriptions are
+a first-class engineering artifact}. They are not documentation for human readers; they
+are the primary signal the LLM uses to decide which tool to invoke on each reasoning
+step. Treating tool descriptions with the same care as prompt system messages, and
+evaluating them empirically through misuse rate tables, was one of the most effective
+levers for improving system reliability without changing the model or the tool
+implementation.
+
+\section{Lessons for future agentic projects}
+
+A few things from this project feel worth recording for anyone building something similar.
+
+Specialization helps more than it might seem. The four-agent design costs more to set up than a single general agent, but it pays back quickly: smaller tool menus mean fewer wrong-tool selection errors, prompts are easier to reason about because each one only handles one page type, and failures are easier to trace because you know which agent was responsible. A general-purpose agent that handles landing pages, host pages, and embedded players all at once accumulates context fast and tends to confuse itself.
+
+ReAct-style prompts are not just a style choice — they produce measurably different behavior. The difference is not subtle. An intent-based prompt ("find the stream") leaves the agent free to declare success after looking at the initial HTML. An explicit instruction ("call get\_media\_state before harvest; if idle, click play; if click opens a new tab, close it and retry with js\_click") eliminates entire failure categories. The specificity feels excessive until you watch an intent-based agent harvest an empty page three times in a row.
+
+Observability designed upfront is worth more than observability added later. The decision to log every tool call, screenshot, and LLM response from the start — rather than adding logging when something went wrong — is why the evaluation was productive. Most of the improvements to tool descriptions came from looking at the trace for a failed run and seeing exactly which tool was called in the wrong order or with the wrong timing.
+
+Memory is also what separates a demo from a production tool. The n8n prototype started every run from scratch. The coded platform stores what worked on each domain and reuses it. That cross-run knowledge accumulation is how the system gets faster and more reliable over time without manual intervention.
 
 \section{Final remark}
 
-The project demonstrates that evidence collection from illegal streaming sites benefits from a staged engineering approach: prototype early, learn quickly, then consolidate the solution into a structured platform. That is exactly the path followed during this internship, from the first n8n experiments to the current multi-agent system prepared for Azure deployment.
+The final value of the project is not that it ``solves'' anti-bot constraints once.
+Its value is that it provides a disciplined framework to keep solving them as target
+behavior changes, while preserving technical evidence that investigators can trust.
+
+The clearest sign of success is not the extraction rate alone but the fact that the
+platform produces reviewable, auditable evidence with traceable reasoning at every step.
+That traceability is what makes the agentic workflow operationally useful for a legal
+and investigative context like beIN SPORTS evidence collection.
+
+Beyond the specific use case, this project illustrates a general pattern for building
+adaptive automation in adversarial environments: combine a reasoning layer that decides
+what to do next with a browser tool layer that executes those decisions, structure the
+evidence trail so that every failure is diagnosable, and iterate on prompts and tool
+descriptions as first-class engineering artifacts. That pattern is not unique to sports
+rights enforcement — it applies to any domain where the target environment is dynamic,
+heterogeneous, and deliberately resistant to automation.
