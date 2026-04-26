@@ -11,7 +11,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.models.enums import AgentType, Confidence, ExtractionStatus, PageType
-from src.models.schemas import ClassificationResult, ExtractionResult, PipelineResult, PricingConfig
+from src.models.schemas import (
+    ClassificationResult,
+    EvaluationCaseResult,
+    EvaluationRun,
+    ExtractionResult,
+    PipelineResult,
+    PricingConfig,
+)
 from src.utils.config import Settings
 from src.utils.observability import ObservabilityStatus, run_registry
 
@@ -254,6 +261,90 @@ def test_ui_provider_models_returns_catalog(client: TestClient):
     assert payload["provider"] == "openai"
     assert payload["models"][0]["id"] == "gpt-5"
     mock_catalog.assert_called_once()
+
+
+def test_ui_evaluation_lab_reports_deepeval_readiness(client: TestClient, api_settings: Settings):
+    api_settings.openrouter_api_key = "sk-or-test"
+
+    with patch("src.api.app.importlib.util.find_spec", side_effect=lambda name: object() if name in {"deepeval", "openai"} else None):
+        response = client.get("/ui/evaluations/lab")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ready"] is True
+    assert payload["deepeval_available"] is True
+    assert payload["openai_package_available"] is True
+    assert payload["openrouter_api_key_configured"] is True
+    assert payload["metrics"][0]["id"] == "hallucination"
+    assert payload["commands"]["deepeval"] == "deepeval test run tests/test_deepeval_metrics.py"
+
+
+def test_ui_evaluation_run_supports_manual_batches(client: TestClient):
+    def build_case_result(case, *_args, **_kwargs) -> EvaluationCaseResult:
+        return EvaluationCaseResult(
+            case_id=case.id,
+            case_name=case.name,
+            status="passed",
+            target_type=case.target_type,
+            latency_ms=250.0,
+            total_cost_usd=0.02,
+            hallucination_score=1.0,
+            tool_accuracy_score=1.0,
+            reliability_score=1.0,
+            output={"url": case.input.get("url", ""), "final_status": "success"},
+            trace={"events": [{"kind": "tool_call_started", "details": {"tool_name": "open_url"}}]},
+        )
+
+    def finalize_run(run_id: str, *, case_results, summary, status: str = "completed") -> EvaluationRun:
+        return EvaluationRun(
+            run_id=run_id,
+            name="Smoke batch",
+            mode=summary["mode"],
+            status=status,
+            success_rate=1.0,
+            hallucination_rate=0.0,
+            tool_accuracy_rate=1.0,
+            reliability_rate=1.0,
+            avg_latency_ms=250.0,
+            avg_cost_usd=0.02,
+            case_count=len(case_results),
+            pass_count=summary["pass_count"],
+            summary=summary,
+            case_results=case_results,
+        )
+
+    with patch("src.api.app.get_session", return_value=MagicMock()) as mock_get_session, \
+         patch("src.api.app.OperatorConsoleRepository") as mock_repo_cls, \
+         patch("src.api.app._execute_evaluation_case", side_effect=build_case_result):
+        repo = MagicMock()
+        repo.finalize_evaluation_run.side_effect = finalize_run
+        mock_repo_cls.return_value = repo
+
+        response = client.post(
+            "/ui/evaluations/run",
+            json={
+                "batch_name": "Smoke batch",
+                "mode": "live",
+                "urls": [
+                    "https://alpha.example/live",
+                    "https://beta.example/watch",
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["source"] == "manual_batch"
+    assert payload["summary"]["input_urls"] == [
+        "https://alpha.example/live",
+        "https://beta.example/watch",
+    ]
+    repo.create_evaluation_run.assert_called_once()
+    create_args = repo.create_evaluation_run.call_args.args
+    assert create_args[0] is None
+    assert create_args[1] == "Smoke batch"
+    assert create_args[2] == "live"
+    mock_get_session.return_value.close.assert_called_once()
 
 
 def test_ui_database_tables_returns_allowlist(client: TestClient):

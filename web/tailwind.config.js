@@ -39,8 +39,8 @@ module.exports = {
         border: "rgba(255,255,255,0.07)",
       },
       fontFamily: {
-        sans: ["'Inter Tight'", "Inter", "ui-sans-serif", "system-ui", "sans-serif"],
-        mono: ["'JetBrains Mono'", "ui-monospace", "monospace"],
+        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
       borderRadius: {
         card: "10px",

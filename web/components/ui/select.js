@@ -38,6 +38,7 @@ export function Select({
   placeholder = "Select",
   emptyMessage = "No options available",
   searchable = false,
+  searchPlaceholder = "Search options",
   disabled = false,
 }) {
   const triggerRef = useRef(null);
@@ -137,7 +138,7 @@ export function Select({
                     autoFocus
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search models"
+                    placeholder={searchPlaceholder}
                     className="h-9 w-full bg-transparent text-[13px] text-[var(--ink)] placeholder:text-[var(--mute)] focus:outline-none"
                   />
                 </div>

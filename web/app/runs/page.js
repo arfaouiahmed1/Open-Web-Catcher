@@ -8,6 +8,7 @@ import { apiFetch } from "@/lib/api";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 
 const PAGE_TYPES = ["", "hosting_page", "landing_page", "embedded_page"];
 const STATUSES = ["", "running", "success", "partial", "failed", "cancelled"];
@@ -94,7 +95,7 @@ export default function RunsPage() {
       {/* page header */}
       <div>
         <span className="owc-eyebrow">run history · all workflows</span>
-        <h1 className="mt-2 font-['Inter_Tight',sans-serif] text-3xl font-medium tracking-tight text-[var(--ink)]">
+        <h1 className="mt-2 text-3xl font-semibold text-[var(--ink)]">
           Pipeline runs
         </h1>
         <p className="mt-1.5 max-w-[62ch] text-[13.5px] leading-relaxed text-[var(--mute)]">
@@ -108,22 +109,24 @@ export default function RunsPage() {
         style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
       >
         <Filter className="h-3.5 w-3.5 shrink-0 text-[var(--mute)]" />
-        <select
+        <Select
+          className="min-w-[210px]"
           value={status}
-          onChange={(e) => { setStatus(e.target.value); setOffset(0); }}
-          className="rounded-lg border px-3 py-1.5 text-[13px] focus:outline-none"
-          style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)", color: "var(--ink-dim)" }}
-        >
-          {STATUSES.map((s) => <option key={s || "all"} value={s}>{s || "All statuses"}</option>)}
-        </select>
-        <select
+          onChange={(value) => { setStatus(value); setOffset(0); }}
+          options={STATUSES.map((item) => ({
+            value: item,
+            label: item || "All statuses",
+          }))}
+        />
+        <Select
+          className="min-w-[220px]"
           value={pageType}
-          onChange={(e) => { setPageType(e.target.value); setOffset(0); }}
-          className="rounded-lg border px-3 py-1.5 text-[13px] focus:outline-none"
-          style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)", color: "var(--ink-dim)" }}
-        >
-          {PAGE_TYPES.map((t) => <option key={t || "all"} value={t}>{t || "All page types"}</option>)}
-        </select>
+          onChange={(value) => { setPageType(value); setOffset(0); }}
+          options={PAGE_TYPES.map((item) => ({
+            value: item,
+            label: item || "All page types",
+          }))}
+        />
         <span className="ml-auto text-[12px] text-[var(--mute)]">
           {formatNumber(total)} run{total !== 1 ? "s" : ""} · page {page} of {pages} · {selected.length} selected
         </span>

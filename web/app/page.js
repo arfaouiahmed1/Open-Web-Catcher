@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { apiUrl } from "@/lib/api";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/utils";
 import { KpiCard } from "@/components/kpi-card";
@@ -100,7 +100,7 @@ function AgentPerfCard({ actor, total, success, failed, avgDur, toolCalls, llmCa
       <div className="flex items-start justify-between gap-2 mb-3">
         <div>
           <div className="font-mono text-[10px] uppercase tracking-wide" style={{ color: "var(--mute)" }}>agent</div>
-          <div className="mt-0.5 text-[15px] font-semibold tracking-tight" style={{ color }}>{actor}</div>
+          <div className="mt-0.5 text-[15px] font-semibold" style={{ color }}>{actor}</div>
         </div>
         <span
           className="rounded-full px-2 py-0.5 font-mono text-[10px]"
@@ -327,7 +327,7 @@ function TabBar({ active, onChange }) {
    PAGE
 ══════════════════════════════════════════════════════════ */
 
-export default function OverviewPage() {
+function OverviewPageContent() {
   const searchParams = useSearchParams();
   const router       = useRouter();
   const pathname     = usePathname();
@@ -475,7 +475,7 @@ export default function OverviewPage() {
       <div className="flex items-start justify-between gap-6">
         <div>
           <span className="owc-eyebrow">operator console · live</span>
-          <h1 className="mt-2 font-display text-3xl font-bold tracking-tight" style={{ color: "var(--ink)" }}>
+          <h1 className="mt-2 text-3xl font-semibold" style={{ color: "var(--ink)" }}>
             Operator Dashboard
           </h1>
           <p className="mt-1.5 max-w-[60ch] text-[13.5px] leading-relaxed" style={{ color: "var(--mute)" }}>
@@ -716,5 +716,24 @@ export default function OverviewPage() {
 
       </div>{/* end tab content */}
     </div>
+  );
+}
+
+export default function OverviewPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-8 animate-fade-up">
+          <div
+            className="flex h-48 items-center justify-center rounded-[14px] border text-[13px] text-[var(--mute)]"
+            style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+          >
+            Loading overview...
+          </div>
+        </div>
+      }
+    >
+      <OverviewPageContent />
+    </Suspense>
   );
 }

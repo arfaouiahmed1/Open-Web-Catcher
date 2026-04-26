@@ -3,10 +3,14 @@ import { cn } from "@/lib/utils";
 export function Input({ className, label, ...props }) {
   return (
     <div className={label ? "space-y-1.5" : undefined}>
-      {label && <label className="text-xs font-medium text-slate-400">{label}</label>}
+      {label && (
+        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
+          {label}
+        </label>
+      )}
       <input
         className={cn(
-          "h-9 w-full rounded-lg border border-white/10 bg-black/20 px-3 text-sm text-white placeholder:text-slate-600 focus:border-signal/60 focus:outline-none transition-colors",
+          "h-11 w-full rounded-[12px] border border-[var(--line)] bg-black/20 px-3 text-[13px] text-[var(--ink)] placeholder:text-[var(--mute)] transition-colors focus:border-[var(--signal)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50",
           className
         )}
         {...props}

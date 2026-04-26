@@ -7,6 +7,8 @@ import { apiFetch } from "@/lib/api";
 import { DataTable } from "@/components/data-table";
 import { JsonViewer } from "@/components/json-viewer";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 
 function TableCards({ entries = [], selected, onSelect }) {
   return (
@@ -74,7 +76,7 @@ export default function DatabasePage() {
       {/* page header */}
       <div>
         <span className="owc-eyebrow">database · postgres explorer</span>
-        <h1 className="mt-2 font-['Inter_Tight',sans-serif] text-3xl font-medium tracking-tight text-[var(--ink)]">
+        <h1 className="mt-2 text-3xl font-semibold text-[var(--ink)]">
           Data explorer
         </h1>
         <p className="mt-1.5 max-w-[62ch] text-[13.5px] leading-relaxed text-[var(--mute)]">
@@ -90,22 +92,22 @@ export default function DatabasePage() {
         style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
       >
         <Database className="h-3.5 w-3.5 shrink-0 text-[var(--mute)]" />
-        <select
+        <Select
+          className="min-w-[220px]"
           value={table}
-          onChange={(e) => { setTable(e.target.value); setOffset(0); }}
-          className="rounded-lg border px-3 py-1.5 text-[13px] focus:outline-none"
-          style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)", color: "var(--ink-dim)" }}
-        >
-          {tables.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <input
+          onChange={(value) => { setTable(value); setOffset(0); }}
+          options={tables.map((item) => ({
+            value: item,
+            label: item,
+          }))}
+        />
+        <Input
           type="number"
           min="1"
           max="200"
           value={limit}
           onChange={(e) => { setLimit(Math.min(Math.max(Number(e.target.value || 25), 1), 200)); setOffset(0); }}
-          className="w-20 rounded-lg border px-3 py-1.5 text-[13px] focus:outline-none"
-          style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)", color: "var(--ink-dim)" }}
+          className="w-24"
         />
         <button
           type="button"

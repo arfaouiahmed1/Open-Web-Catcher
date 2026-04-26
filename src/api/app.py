@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
+import os
 import uuid
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +20,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 
+from src.evaluation.deepeval_bridge import EXPECTED_TOOLS_BY_PROFILE
 from src.evaluation.datasets import build_dataset_examples, export_dataset_examples
 from src.evaluation.scoring import evaluate_case_artifact
 from src.evaluation.tracing import setup_tracing_from_settings
@@ -25,7 +29,11 @@ from src.models.schemas import (
     AgentTestRequest,
     ClassificationResult,
     DatabaseTableResponse,
+    EvaluationAssertionResult,
+    EvaluationCase,
+    EvaluationCaseResult,
     EvaluationRunRequest,
+    EvaluationSuite,
     ExtractionResult,
     OperatorOverview,
     PipelineResult,
@@ -103,6 +111,44 @@ class PromptDryRunRequest(BaseModel):
 
 
 PROMPTS_DIR = Path("configs/prompts").resolve()
+EVALUATION_MODES = {"hybrid", "synthetic", "mocked", "live"}
+DEEPEVAL_DEFAULT_METRICS = [
+    {
+        "id": "hallucination",
+        "label": "Hallucination",
+        "threshold": 0.5,
+        "kind": "llm_judge",
+        "description": "Flags unsupported stream, provider, and evidence claims.",
+    },
+    {
+        "id": "faithfulness",
+        "label": "Faithfulness",
+        "threshold": 0.7,
+        "kind": "llm_judge",
+        "description": "Checks whether takedown output stays grounded in tool evidence.",
+    },
+    {
+        "id": "tool_correctness",
+        "label": "Tool correctness",
+        "threshold": 0.6,
+        "kind": "deterministic",
+        "description": "Verifies that the expected browser tools were actually used.",
+    },
+    {
+        "id": "answer_relevancy",
+        "label": "Answer relevancy",
+        "threshold": 0.7,
+        "kind": "llm_judge",
+        "description": "Measures whether the final output stays relevant to the source URL.",
+    },
+    {
+        "id": "task_completion",
+        "label": "Task completion",
+        "threshold": 0.6,
+        "kind": "llm_judge",
+        "description": "Measures whether the pipeline completed the takedown workflow goal.",
+    },
+]
 
 
 def get_settings() -> Settings:
@@ -198,6 +244,255 @@ async def _invoke_named_tool(tools: list[Any], profile: str, tool_name: str, arg
 
 def _cors_origins(settings: Settings) -> list[str]:
     return [item.strip() for item in settings.ui_cors_origins.split(",") if item.strip()]
+
+
+def _normalize_evaluation_mode(value: str) -> str:
+    normalized = str(value or "hybrid").strip().lower() or "hybrid"
+    if normalized not in EVALUATION_MODES:
+        raise HTTPException(status_code=400, detail=f"Unsupported evaluation mode '{value}'")
+    return normalized
+
+
+def _normalize_manual_batch_urls(values: list[str], *, max_urls: int = 40) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+
+    for raw_value in values or []:
+        url = str(raw_value or "").strip()
+        if not url:
+            continue
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise HTTPException(status_code=400, detail=f"Invalid website URL '{url}'")
+        if url in seen:
+            continue
+        seen.add(url)
+        normalized.append(url)
+
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Provide at least one website URL for the manual batch.")
+    if len(normalized) > max_urls:
+        raise HTTPException(status_code=400, detail=f"Manual batches are limited to {max_urls} websites per run.")
+    return normalized
+
+
+def _manual_batch_case_name(url: str, index: int) -> str:
+    host = (urlparse(url).netloc or "").replace("www.", "").strip()
+    return host or f"website-{index:02d}"
+
+
+def _build_manual_evaluation_suite(req: EvaluationRunRequest) -> EvaluationSuite:
+    urls = _normalize_manual_batch_urls(req.urls)
+    batch_name = str(req.batch_name or "").strip()
+    effective_mode = _normalize_evaluation_mode(req.mode)
+    if effective_mode not in {"hybrid", "live"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Manual website batches only support 'live' or 'hybrid' mode.",
+        )
+    return EvaluationSuite(
+        name=batch_name or f"Manual Website Batch ({len(urls)})",
+        description=f"Ad hoc website batch submitted from the operator console ({len(urls)} targets).",
+        mode="live" if effective_mode == "hybrid" else effective_mode,
+        active=True,
+        config={
+            "origin": "manual_batch",
+            "input_urls": urls,
+            "submitted_from": "ui",
+        },
+        cases=[
+            EvaluationCase(
+                name=_manual_batch_case_name(url, index + 1),
+                description=url,
+                mode="live",
+                target_type="workflow",
+                active=True,
+                input={"url": url},
+                assertions={
+                    "required_tools": ["open_url"],
+                    "forbidden_tools": ["delete_data"],
+                },
+                metadata={
+                    "origin": "manual_batch",
+                    "url": url,
+                    "host": _manual_batch_case_name(url, index + 1),
+                },
+            )
+            for index, url in enumerate(urls)
+        ],
+    )
+
+
+def _evaluation_failure_result(
+    case: EvaluationCase,
+    *,
+    message: str,
+    artifact: dict[str, Any] | None = None,
+    trace: dict[str, Any] | None = None,
+    latency_ms: float = 0.0,
+    total_cost_usd: float = 0.0,
+) -> EvaluationCaseResult:
+    safe_artifact = dict(artifact or {})
+    if case.input.get("url") and not safe_artifact.get("url"):
+        safe_artifact["url"] = case.input.get("url")
+    safe_artifact.setdefault("final_status", "failed")
+    safe_artifact.setdefault("status", "failed")
+    safe_artifact.setdefault("error_message", message)
+
+    return EvaluationCaseResult(
+        case_id=case.id,
+        case_name=case.name,
+        status="failed",
+        target_type=case.target_type,
+        latency_ms=latency_ms,
+        total_cost_usd=total_cost_usd,
+        hallucination_score=1.0,
+        tool_accuracy_score=0.0,
+        reliability_score=0.0,
+        assertion_results=[
+            EvaluationAssertionResult(
+                name="runtime_error",
+                passed=False,
+                expected="case execution completes",
+                actual=message,
+                message="The evaluation case raised an exception before it could be scored normally.",
+            )
+        ],
+        output=safe_artifact,
+        trace=trace or {"events": []},
+    )
+
+
+async def _execute_evaluation_case(
+    case: EvaluationCase,
+    *,
+    requested_mode: str,
+    settings: Settings,
+    run_id: str,
+) -> EvaluationCaseResult:
+    artifact: dict[str, Any] = {}
+    trace_payload: dict[str, Any] = {}
+    latency_ms = 0.0
+    total_cost = 0.0
+    observer = None
+    mode = case.mode if requested_mode == "hybrid" else requested_mode
+
+    try:
+        if mode in {"synthetic", "mocked"}:
+            artifact = case.input.get("artifact", {})
+            trace_payload = case.input.get("trace", {})
+        elif case.target_type == "workflow":
+            observer = run_registry.create(
+                run_id=str(uuid.uuid4()),
+                root_actor="orchestrator",
+                observability=get_observability_status(settings),
+            )
+            from src.agents.orchestrator import run_pipeline as _run_pipeline
+
+            result = await _run_pipeline(url=case.input.get("url", ""), settings=settings, observer=observer)
+            await _persist_pipeline_result(result)
+            artifact = result.model_dump(mode="json")
+            trace_model = observer.trace()
+            trace_payload = trace_model.model_dump(mode="json")
+            latency_ms = (trace_model.metrics.total_duration_seconds if trace_model.metrics else 0.0) * 1000.0
+            total_cost = trace_model.metrics.estimated_total_cost_usd if trace_model.metrics else 0.0
+        elif case.target_type == "agent":
+            agent_name = case.input.get("agent", "classification")
+            observer = run_registry.create(
+                run_id=str(uuid.uuid4()),
+                root_actor=agent_name,
+                observability=get_observability_status(settings),
+            )
+            observer.set_url(case.input.get("url", ""))
+            result = await _run_selected_agent(agent_name, case.input.get("url", ""), observer)
+            observer.finish(success=True, failure_mode="")
+            artifact = result.model_dump(mode="json") if hasattr(result, "model_dump") else {}
+            trace_model = observer.trace()
+            trace_payload = trace_model.model_dump(mode="json")
+            latency_ms = (trace_model.metrics.total_duration_seconds if trace_model.metrics else 0.0) * 1000.0
+            total_cost = trace_model.metrics.estimated_total_cost_usd if trace_model.metrics else 0.0
+        elif case.target_type == "tool":
+            artifact = {
+                "result": (
+                    await _execute_tool_call_with_telemetry(
+                        case.input.get("profile", "hosting"),
+                        case.input.get("tool_name", ""),
+                        case.input.get("args", {}),
+                        origin="evaluation",
+                        related_run_id=run_id,
+                    )
+                )["result"]
+            }
+            trace_payload = {"events": []}
+        else:
+            raise ValueError(f"Unsupported evaluation target_type '{case.target_type}'")
+
+        return evaluate_case_artifact(
+            case,
+            artifact=artifact,
+            trace=trace_payload,
+            latency_ms=latency_ms,
+            total_cost_usd=total_cost,
+        )
+    except Exception as exc:  # noqa: BLE001
+        if observer is not None and not trace_payload:
+            try:
+                trace_model = observer.trace()
+            except Exception:  # noqa: BLE001
+                trace_model = None
+            if trace_model is not None:
+                trace_payload = trace_model.model_dump(mode="json")
+                latency_ms = (trace_model.metrics.total_duration_seconds if trace_model.metrics else 0.0) * 1000.0
+                total_cost = trace_model.metrics.estimated_total_cost_usd if trace_model.metrics else 0.0
+
+        logger.exception(
+            "Evaluation case execution failed | eval_run=%s | case=%s | target_type=%s | mode=%s",
+            run_id,
+            case.name,
+            case.target_type,
+            mode,
+        )
+        return _evaluation_failure_result(
+            case,
+            message=str(exc) or exc.__class__.__name__,
+            artifact=artifact,
+            trace=trace_payload,
+            latency_ms=latency_ms,
+            total_cost_usd=total_cost,
+        )
+
+
+def _deepeval_lab_payload(settings: Settings) -> dict[str, Any]:
+    deepeval_available = importlib.util.find_spec("deepeval") is not None
+    openai_available = importlib.util.find_spec("openai") is not None
+    openrouter_api_key_configured = bool(os.environ.get("OPENROUTER_API_KEY") or settings.openrouter_api_key)
+    warnings: list[str] = []
+
+    if not deepeval_available:
+        warnings.append("deepeval is not installed in the current Python environment.")
+    if not openai_available:
+        warnings.append("The openai package used by the OpenRouter judge is not installed.")
+    if not openrouter_api_key_configured:
+        warnings.append("OPENROUTER_API_KEY is not configured, so the LLM-judge metrics cannot run.")
+
+    return {
+        "ready": deepeval_available and openai_available and openrouter_api_key_configured,
+        "deepeval_available": deepeval_available,
+        "openai_package_available": openai_available,
+        "openrouter_api_key_configured": openrouter_api_key_configured,
+        "judge_model": os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini"),
+        "metrics": DEEPEVAL_DEFAULT_METRICS,
+        "profiles": [
+            {"profile": profile, "expected_tools": tools}
+            for profile, tools in EXPECTED_TOOLS_BY_PROFILE.items()
+        ],
+        "commands": {
+            "pytest": "pytest tests/test_deepeval_metrics.py -v",
+            "pytest_skip_marker": 'pytest -m "not deepeval"',
+            "deepeval": "deepeval test run tests/test_deepeval_metrics.py",
+        },
+        "warnings": warnings,
+    }
 
 
 def _merged_pricing_config(settings: Settings, config: PricingConfig) -> dict[str, dict[str, Any]]:
@@ -1830,6 +2125,11 @@ def ui_evaluation_suites():
         session.close()
 
 
+@app.get("/ui/evaluations/lab")
+def ui_evaluation_lab():
+    return _deepeval_lab_payload(get_settings())
+
+
 @app.get("/ui/evaluations/runs")
 def ui_evaluation_runs(limit: int = 20):
     session = get_session()
@@ -1858,84 +2158,43 @@ async def ui_evaluation_run(req: EvaluationRunRequest):
     session = get_session()
     repo = OperatorConsoleRepository(session)
     try:
-        suites = repo.ensure_default_evaluation_suites()
-        suite = next((item for item in suites if item.id == req.suite_id), suites[0] if suites else None)
-        if suite is None:
-            raise HTTPException(status_code=404, detail="No evaluation suites available")
+        requested_mode = _normalize_evaluation_mode(req.mode)
+        if req.urls:
+            suite = _build_manual_evaluation_suite(req)
+            suite_source = "manual_batch"
+        else:
+            suites = repo.ensure_default_evaluation_suites()
+            suite = next((item for item in suites if item.id == req.suite_id), suites[0] if suites else None)
+            suite_source = "saved_suite"
+            if suite is None:
+                raise HTTPException(status_code=404, detail="No evaluation suites available")
 
         run_id = str(uuid.uuid4())
-        repo.create_evaluation_run(suite.id, suite.name, req.mode or suite.mode, run_id)
+        run_name = str(req.batch_name or "").strip() or suite.name
+        repo.create_evaluation_run(suite.id, run_name, requested_mode if requested_mode != "hybrid" else suite.mode, run_id)
 
-        case_results = []
+        case_results: list[EvaluationCaseResult] = []
         for case in [item for item in suite.cases if item.active]:
-            artifact: dict[str, Any] = {}
-            trace_payload: dict[str, Any] = {}
-            latency_ms = 0.0
-            total_cost = 0.0
-            mode = case.mode if req.mode == "hybrid" else req.mode
-
-            if mode in {"synthetic", "mocked"}:
-                artifact = case.input.get("artifact", {})
-                trace_payload = case.input.get("trace", {})
-            elif case.target_type == "workflow":
-                observer = run_registry.create(
-                    run_id=str(uuid.uuid4()),
-                    root_actor="orchestrator",
-                    observability=get_observability_status(settings),
-                )
-                from src.agents.orchestrator import run_pipeline as _run_pipeline
-
-                result = await _run_pipeline(url=case.input.get("url", ""), settings=settings, observer=observer)
-                await _persist_pipeline_result(result)
-                artifact = result.model_dump(mode="json")
-                trace_model = observer.trace()
-                trace_payload = trace_model.model_dump(mode="json")
-                latency_ms = (trace_model.metrics.total_duration_seconds if trace_model.metrics else 0.0) * 1000.0
-                total_cost = trace_model.metrics.estimated_total_cost_usd if trace_model.metrics else 0.0
-            elif case.target_type == "agent":
-                agent_name = case.input.get("agent", "classification")
-                observer = run_registry.create(
-                    run_id=str(uuid.uuid4()),
-                    root_actor=agent_name,
-                    observability=get_observability_status(settings),
-                )
-                observer.set_url(case.input.get("url", ""))
-                result = await _run_selected_agent(agent_name, case.input.get("url", ""), observer)
-                observer.finish(success=True, failure_mode="")
-                artifact = result.model_dump(mode="json") if hasattr(result, "model_dump") else {}
-                trace_model = observer.trace()
-                trace_payload = trace_model.model_dump(mode="json")
-                latency_ms = (trace_model.metrics.total_duration_seconds if trace_model.metrics else 0.0) * 1000.0
-                total_cost = trace_model.metrics.estimated_total_cost_usd if trace_model.metrics else 0.0
-            elif case.target_type == "tool":
-                artifact = {
-                    "result": (
-                        await _execute_tool_call_with_telemetry(
-                            case.input.get("profile", "hosting"),
-                            case.input.get("tool_name", ""),
-                            case.input.get("args", {}),
-                            origin="evaluation",
-                            related_run_id=run_id,
-                        )
-                    )["result"]
-                }
-                trace_payload = {"events": []}
-
             case_results.append(
-                evaluate_case_artifact(
+                await _execute_evaluation_case(
                     case,
-                    artifact=artifact,
-                    trace=trace_payload,
-                    latency_ms=latency_ms,
-                    total_cost_usd=total_cost,
+                    requested_mode=requested_mode,
+                    settings=settings,
+                    run_id=run_id,
                 )
             )
 
         summary = {
-            "suite_name": suite.name,
-            "mode": req.mode,
+            "suite_name": run_name,
+            "mode": requested_mode if requested_mode != "hybrid" else suite.mode,
             "case_count": len(case_results),
             "pass_count": sum(1 for item in case_results if item.status == "passed"),
+            "source": suite_source,
+            "input_urls": [
+                case.input.get("url")
+                for case in suite.cases
+                if case.active and case.input.get("url")
+            ],
         }
         finalized = repo.finalize_evaluation_run(run_id, case_results=case_results, summary=summary)
         return finalized.model_dump(mode="json")

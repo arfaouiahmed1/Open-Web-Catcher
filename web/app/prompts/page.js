@@ -5,7 +5,9 @@ import { Play, Save } from "lucide-react";
 
 import { apiFetch, apiUrl } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { JsonViewer } from "@/components/json-viewer";
+import { Textarea } from "@/components/ui/textarea";
 
 function diffLines(original, edited) {
   const a = String(original || "").split("\n");
@@ -81,7 +83,7 @@ export default function PromptsPage() {
       {/* page header */}
       <div>
         <span className="owc-eyebrow">prompts · system prompt studio</span>
-        <h1 className="mt-2 font-['Inter_Tight',sans-serif] text-3xl font-medium tracking-tight text-[var(--ink)]">
+        <h1 className="mt-2 text-3xl font-semibold text-[var(--ink)]">
           Prompt Studio
         </h1>
         <p className="mt-1.5 max-w-[62ch] text-[13.5px] leading-relaxed text-[var(--mute)]">
@@ -131,22 +133,21 @@ export default function PromptsPage() {
                 {changes.length} changed line{changes.length !== 1 ? "s" : ""}
               </div>
             </div>
-            <textarea
+            <Textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="min-h-[360px] w-full rounded-lg border px-3 py-2 font-mono text-[12px] focus:outline-none"
-              style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)", color: "var(--ink-dim)" }}
+              className="min-h-[360px]"
+              mono
             />
             <div className="flex flex-wrap gap-2">
               <Button variant="accent" onClick={savePrompt} disabled={!selected}>
                 <Save className="mr-1.5 h-3.5 w-3.5" />Save
               </Button>
-              <input
+              <Input
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://example.com/watch/123"
-                className="min-w-[280px] flex-1 rounded-lg border px-3 py-2 text-[13px] focus:outline-none"
-                style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)", color: "var(--ink)" }}
+                className="min-w-[280px] flex-1"
               />
               <Button variant="ghost" onClick={testPrompt} disabled={!selected || !url} className="border border-[var(--line)]">
                 <Play className="mr-1.5 h-3.5 w-3.5" />Test

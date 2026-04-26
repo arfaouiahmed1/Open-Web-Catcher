@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { apiFetch, apiUrl } from "@/lib/api";
 
 const PROVIDERS = [
@@ -656,21 +657,12 @@ function BrowserRuntimeInput({ label, value, onChange, type = "text", min, max, 
 function BrowserRuntimeTextarea({ label, value, onChange, placeholder, description = "" }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
-        {label}
-      </label>
-      <textarea
+      <Textarea
+        label={label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        rows={4}
         placeholder={placeholder}
-        className="w-full rounded-[12px] border px-3 py-2.5 text-[13px] focus:outline-none"
-        style={{
-          borderColor: "var(--line)",
-          background: "rgba(0,0,0,0.2)",
-          color: "var(--ink-dim)",
-          resize: "vertical",
-        }}
+        className="min-h-[104px]"
       />
       <FieldNote>{description}</FieldNote>
     </div>
@@ -992,7 +984,7 @@ export default function SettingsPage() {
     <div className="space-y-8">
       <div>
         <span className="owc-eyebrow">settings - runtime config</span>
-        <h1 className="mt-2 font-['Inter_Tight',sans-serif] text-3xl font-medium tracking-tight text-[var(--ink)]">
+        <h1 className="mt-2 text-3xl font-semibold text-[var(--ink)]">
           Configuration
         </h1>
       </div>

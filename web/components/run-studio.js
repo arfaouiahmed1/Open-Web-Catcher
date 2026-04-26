@@ -1134,7 +1134,7 @@ export function RunStudio({ mode = "workflow" }) {
         <span className="owc-eyebrow">
           {mode === "workflow" ? "workflow studio · streaming" : "agent lab · single-agent test"}
         </span>
-        <h1 className="mt-2 font-['Inter_Tight',sans-serif] text-3xl font-medium tracking-tight text-[var(--ink)]">
+        <h1 className="mt-2 text-3xl font-semibold text-[var(--ink)]">
           {mode === "workflow" ? "Live pipeline" : "Isolate, instrument, iterate"}
         </h1>
         <p className="mt-1.5 max-w-[62ch] text-[13.5px] leading-relaxed text-[var(--mute)]">

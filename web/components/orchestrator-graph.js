@@ -217,8 +217,8 @@ function AgentNode({ node, actorData, recentTool }) {
         fill={isIdle ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.92)"}
         fontSize="12"
         fontWeight="600"
-        fontFamily="'Inter Tight', sans-serif"
-        letterSpacing="-0.2"
+        fontFamily="var(--font-sans)"
+        letterSpacing="0"
       >
         {label}
       </text>

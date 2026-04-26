@@ -7,6 +7,8 @@ import { apiFetch, apiUrl } from "@/lib/api";
 import { DataTable } from "@/components/data-table";
 import { JsonViewer } from "@/components/json-viewer";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
 const PROFILES = ["classification", "landing", "hosting", "embedded"];
@@ -195,7 +197,7 @@ export default function ToolsPage() {
       {/* page header */}
       <div>
         <span className="owc-eyebrow">tool playground · direct mcp calls</span>
-        <h1 className="mt-2 font-['Inter_Tight',sans-serif] text-3xl font-medium tracking-tight text-[var(--ink)]">
+        <h1 className="mt-2 text-3xl font-semibold text-[var(--ink)]">
           MCP tool workbench
         </h1>
         <p className="mt-1.5 max-w-[62ch] text-[13.5px] leading-relaxed text-[var(--mute)]">
@@ -234,35 +236,30 @@ export default function ToolsPage() {
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">Tool name</label>
-            <input
+            <Input
+              label="Tool name"
               value={toolName}
               onChange={(e) => setToolName(e.target.value)}
               list="tool-name-options"
               placeholder="inspect_hosting"
-              className="w-full rounded-lg border px-3 py-2 text-[13px] font-mono focus:outline-none"
-              style={{ borderColor: "var(--line)", background: "black/20", color: "var(--ink)" }}
+              className="font-mono"
             />
             <datalist id="tool-name-options">
               {toolNames.map((name) => <option key={name} value={name} />)}
             </datalist>
           </div>
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">Starter template</label>
-            <select
-              value={templateName}
-              onChange={(e) => {
-                const next = e.target.value;
-                setTemplateName(next);
-                if (templates[next]) { setToolName(next); setArgsText(templates[next]); }
-              }}
-              className="w-full rounded-lg border px-3 py-2 text-[13px] focus:outline-none"
-              style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)", color: "var(--ink-dim)" }}
-            >
-              <option value="">Select template</option>
-              {Object.keys(templates).map((name) => <option key={name} value={name}>{name}</option>)}
-            </select>
-          </div>
+          <Select
+            label="Starter template"
+            value={templateName}
+            onChange={(value) => {
+              setTemplateName(value);
+              if (templates[value]) { setToolName(value); setArgsText(templates[value]); }
+            }}
+            options={[
+              { value: "", label: "Select template" },
+              ...Object.keys(templates).map((name) => ({ value: name, label: name })),
+            ]}
+          />
         </div>
 
         <Textarea
@@ -270,6 +267,7 @@ export default function ToolsPage() {
           value={argsText}
           onChange={(e) => setArgsText(e.target.value)}
           className="min-h-[100px]"
+          mono
         />
 
         {error && (

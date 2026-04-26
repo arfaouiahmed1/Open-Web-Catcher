@@ -289,6 +289,8 @@ class EvaluationRun(BaseModel):
 class EvaluationRunRequest(BaseModel):
     suite_id: int | None = None
     mode: str = "hybrid"
+    batch_name: str = ""
+    urls: list[str] = Field(default_factory=list)
 
 
 class DatabaseTableResponse(BaseModel):

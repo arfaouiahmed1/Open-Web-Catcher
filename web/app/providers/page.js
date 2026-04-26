@@ -63,7 +63,7 @@ export default function ProvidersPage() {
       {/* page header */}
       <div>
         <span className="owc-eyebrow">provider intel · stream resolution</span>
-        <h1 className="mt-2 font-['Inter_Tight',sans-serif] text-3xl font-medium tracking-tight text-[var(--ink)]">
+        <h1 className="mt-2 text-3xl font-semibold text-[var(--ink)]">
           Stream URL intelligence
         </h1>
         <p className="mt-1.5 max-w-[62ch] text-[13.5px] leading-relaxed text-[var(--mute)]">
