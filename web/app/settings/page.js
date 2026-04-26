@@ -10,7 +10,6 @@ import {
   RefreshCw,
   Save,
   Settings2,
-  SlidersHorizontal,
   ToggleLeft,
   ToggleRight,
   Wrench,
@@ -694,6 +693,9 @@ export default function SettingsPage() {
   const [llmTuning, setLlmTuning] = useState({ ...EMPTY_TUNING });
   const [agentModelConfig, setAgentModelConfig] = useState(normalizeAgentModelConfig(null));
   const [providerCacheEnabled, setProviderCacheEnabled] = useState(true);
+  const [geminiExplicitCacheEnabled, setGeminiExplicitCacheEnabled] = useState(true);
+  const [geminiExplicitCacheTtl, setGeminiExplicitCacheTtl] = useState("1800");
+  const [geminiExplicitCacheRefreshLead, setGeminiExplicitCacheRefreshLead] = useState("120");
   const [toolCacheEnabled, setToolCacheEnabled] = useState(true);
   const [toolCacheStable, setToolCacheStable] = useState("2");
   const [browserEngine, setBrowserEngine] = useState("puppeteer");
@@ -773,6 +775,9 @@ export default function SettingsPage() {
     setLlmTuning(normalizeTuning(payload.llm_tuning));
     setAgentModelConfig(nextAgentConfig);
     setProviderCacheEnabled(Boolean(payload.provider_cache_enabled ?? true));
+    setGeminiExplicitCacheEnabled(Boolean(payload.gemini_explicit_cache_enabled ?? true));
+    setGeminiExplicitCacheTtl(String(payload.gemini_explicit_cache_ttl_seconds ?? 1800));
+    setGeminiExplicitCacheRefreshLead(String(payload.gemini_explicit_cache_refresh_lead_seconds ?? 120));
     setToolCacheEnabled(Boolean(payload.tool_result_cache_enabled ?? true));
     setToolCacheStable(String(payload.tool_result_cache_min_identical_observations ?? 2));
     setBrowserEngine(payload.browser_engine || "puppeteer");
@@ -950,6 +955,9 @@ export default function SettingsPage() {
           llm_tuning: llmTuning,
           agent_model_config: agentModelConfig,
           provider_cache_enabled: providerCacheEnabled,
+          gemini_explicit_cache_enabled: geminiExplicitCacheEnabled,
+          gemini_explicit_cache_ttl_seconds: Number(geminiExplicitCacheTtl || 1800),
+          gemini_explicit_cache_refresh_lead_seconds: Number(geminiExplicitCacheRefreshLead || 120),
           tool_result_cache_enabled: toolCacheEnabled,
           tool_result_cache_min_identical_observations: Number(toolCacheStable || 2),
           browser_engine: browserEngine,
@@ -1172,6 +1180,67 @@ export default function SettingsPage() {
                   checked={toolCacheEnabled}
                   onChange={setToolCacheEnabled}
                 />
+              </div>
+
+              <div
+                className="space-y-4 rounded-[12px] border p-4"
+                style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.02)" }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[13px] font-medium text-[var(--ink)]">Gemini explicit cache</div>
+                    <p className="mt-0.5 text-[12px] text-[var(--mute)]">
+                      Server-side cached context for Gemini models — reduces latency and cost on repeated system prompts.
+                    </p>
+                  </div>
+                  <ToggleRow
+                    label="Enabled"
+                    checked={geminiExplicitCacheEnabled}
+                    onChange={setGeminiExplicitCacheEnabled}
+                  />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
+                      Cache TTL (seconds)
+                    </label>
+                    <input
+                      value={geminiExplicitCacheTtl}
+                      onChange={(event) => setGeminiExplicitCacheTtl(event.target.value)}
+                      type="number"
+                      min="60"
+                      step="60"
+                      disabled={!geminiExplicitCacheEnabled}
+                      className="h-11 w-full rounded-[12px] border px-3 text-[13px] focus:outline-none disabled:opacity-40"
+                      style={{
+                        borderColor: "var(--line)",
+                        background: "rgba(0,0,0,0.2)",
+                        color: "var(--ink-dim)",
+                      }}
+                    />
+                    <p className="text-[11px] text-[var(--mute)]">How long the server keeps the cached context alive (min 60 s).</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
+                      Refresh lead (seconds)
+                    </label>
+                    <input
+                      value={geminiExplicitCacheRefreshLead}
+                      onChange={(event) => setGeminiExplicitCacheRefreshLead(event.target.value)}
+                      type="number"
+                      min="5"
+                      step="5"
+                      disabled={!geminiExplicitCacheEnabled}
+                      className="h-11 w-full rounded-[12px] border px-3 text-[13px] focus:outline-none disabled:opacity-40"
+                      style={{
+                        borderColor: "var(--line)",
+                        background: "rgba(0,0,0,0.2)",
+                        color: "var(--ink-dim)",
+                      }}
+                    />
+                    <p className="text-[11px] text-[var(--mute)]">Seconds before expiry when the runtime pre-warms a new cache entry.</p>
+                  </div>
+                </div>
               </div>
             </div>
 
