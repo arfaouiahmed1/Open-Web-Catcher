@@ -128,18 +128,13 @@ export function KpiCard({
     prevValue.current = value;
   }, [value]);
 
-  const valColor =
-    accent === "mint"   ? "var(--mint)"   :
-    accent === "rose"   ? "var(--rose)"   :
-    accent === "accent" ? "var(--signal)" :
-    accent              ? accent           :
-    "var(--ink)";
-
-  const resolvedBarColor =
-    barColor              ? barColor        :
-    accent === "mint"     ? "var(--mint)"   :
-    accent === "rose"     ? "var(--rose)"   :
-    "var(--signal)";
+  const ACCENT_MAP = {
+    signal: "var(--signal)", mint: "var(--mint)", rose: "var(--rose)",
+    sky: "var(--sky)", violet: "var(--violet)", warning: "var(--signal)",
+    accent: "var(--signal)", success: "var(--mint)", danger: "var(--rose)",
+  };
+  const valColor = ACCENT_MAP[accent] || accent || "var(--ink)";
+  const resolvedBarColor = barColor || ACCENT_MAP[accent] || "var(--signal)";
 
   const displayValue = isNumeric
     ? (Number.isInteger(numValue) ? Math.round(countedUp).toLocaleString() : countedUp.toFixed(2))

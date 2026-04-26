@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { useNotifPrefs } from "@/components/notification-provider";
+import { RunViewSettingsPanel, useRunViewSettings } from "@/components/run-view-settings";
 import { JsonViewer } from "@/components/json-viewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -127,6 +128,7 @@ const SETTINGS_TABS = [
   { id: "models", label: "Models & Provider" },
   { id: "browser", label: "Browser" },
   { id: "evaluation", label: "Evaluation" },
+  { id: "display", label: "Display" },
   { id: "api-keys", label: "API Keys" },
   { id: "notifications", label: "Notifications" },
   { id: "mcp-tools", label: "MCP Tools" },
@@ -1980,6 +1982,10 @@ export default function SettingsPage() {
           </section>
         ) : null}
 
+        {activeTab === "display" ? (
+          <DisplaySettingsSection />
+        ) : null}
+
         {activeTab === "notifications" ? (
           <section className="space-y-4">
             <SectionHeader>Notification Preferences</SectionHeader>
@@ -2039,5 +2045,66 @@ export default function SettingsPage() {
         </section>
       ) : null}
     </div>
+  );
+}
+
+/* ── Display settings section ─────────────────────────────────────────────── */
+function DisplaySettingsSection() {
+  const { settings, update, reset } = useRunViewSettings();
+  const [saved, setSaved] = useState(false);
+
+  function handleSave() {
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1800);
+  }
+
+  return (
+    <section className="space-y-6">
+      <div>
+        <SectionHeader>Run View Display</SectionHeader>
+        <p className="mt-1 text-[13.5px] leading-relaxed" style={{ color: "var(--mute)" }}>
+          Control what panels and behaviors appear on the run detail pages. Settings are stored in your browser.
+        </p>
+      </div>
+
+      <RunViewSettingsPanel settings={settings} update={update} reset={reset} />
+
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={handleSave}
+          className="flex items-center gap-2 rounded-lg px-4 py-2 text-[13px] font-medium transition-all"
+          style={{
+            background: saved
+              ? "color-mix(in oklch, var(--mint) 20%, transparent)"
+              : "color-mix(in oklch, var(--signal) 20%, transparent)",
+            border: `1px solid ${saved ? "color-mix(in oklch, var(--mint) 35%, transparent)" : "color-mix(in oklch, var(--signal) 35%, transparent)"}`,
+            color: saved ? "var(--mint)" : "var(--signal)",
+          }}
+        >
+          {saved ? "✓ Saved to browser" : "Save display preferences"}
+        </button>
+        <span className="text-[11.5px]" style={{ color: "var(--mute-3)" }}>
+          (Auto-saved on change — this confirms)
+        </span>
+      </div>
+
+      <div
+        className="rounded-[12px] border p-4 space-y-2"
+        style={{ borderColor: "var(--line)", background: "var(--card)" }}
+      >
+        <div className="text-[12px] font-semibold" style={{ color: "var(--ink-dim)" }}>About Browser Live View</div>
+        <p className="text-[12px] leading-relaxed" style={{ color: "var(--mute)" }}>
+          The browser live view panel polls the active run for the latest screenshot the headless browser captured.
+          It shows the current URL being visited, the tool being executed (with highlights), and auto-refreshes
+          while the run is live. Screenshots are captured by the agent during tool calls — not a continuous screen
+          stream.
+        </p>
+        <p className="text-[12px] leading-relaxed" style={{ color: "var(--mute)" }}>
+          Tool activity overlays display the tool name, action label, and target selector or URL from the
+          tool call arguments so you can follow exactly what the agent is doing in the browser.
+        </p>
+      </div>
+    </section>
   );
 }

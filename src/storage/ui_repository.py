@@ -13,6 +13,8 @@ from src.models.schemas import EvaluationCase, EvaluationCaseResult, EvaluationR
 from src.models.schemas import ProviderInfo
 from src.storage.models import (
     AgentRunRecord,
+    MemoryHintUsedRecord,
+    RunRecord,
     AgentOutputRecord,
     BackgroundJobRecord,
     EvaluationCaseRecord,
@@ -73,6 +75,8 @@ class OperatorConsoleRepository:
         "evaluation_cases": EvaluationCaseRecord,
         "evaluation_runs": EvaluationRunRecord,
         "evaluation_case_results": EvaluationCaseResultRecord,
+        "runs": RunRecord,
+        "memory_hints_used": MemoryHintUsedRecord,
     }
 
     def __init__(self, session: Session) -> None:

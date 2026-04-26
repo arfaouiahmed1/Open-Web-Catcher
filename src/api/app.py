@@ -2307,6 +2307,51 @@ def ui_run_latest_screenshot(run_id: str):
     return {"run_id": run_id, "screenshot_url": "", "event_seq": None, "timestamp": None}
 
 
+@app.get("/ui/browser/screenshot")
+async def ui_browser_live_screenshot(profile: str = Query("landing", description="Agent profile for MCP session")):
+    """Capture a live screenshot of the current browser session via the MCP tool server."""
+    try:
+        result = await _call_mcp_tool(profile, "screenshot", {}, reuse_playground_session=True)
+        # Check for base64 image content in MCP response format
+        content_list = result.get("content", []) if isinstance(result, dict) else []
+        for item in (content_list if isinstance(content_list, list) else []):
+            if isinstance(item, dict) and item.get("type") == "image":
+                data = item.get("data", "")
+                mime = item.get("mimeType", "image/jpeg")
+                if data:
+                    return {
+                        "screenshot": f"data:{mime};base64,{data}",
+                        "source": "mcp_base64",
+                        "error": None,
+                    }
+        # Fall back to URL extraction from result
+        screenshot_url = _extract_screenshot_url_from_value(result)
+        return {
+            "screenshot": screenshot_url,
+            "source": "mcp_url",
+            "error": None,
+        }
+    except HTTPException as exc:
+        return {"screenshot": "", "source": "error", "error": str(exc.detail)}
+    except Exception as exc:
+        return {"screenshot": "", "source": "error", "error": str(exc)}
+
+
+@app.get("/ui/browser/status")
+def ui_browser_status():
+    """Return browser and MCP server health status."""
+    settings = get_settings()
+    browser_status = probe_browser(settings.browser_ws_endpoint)
+    mcp_status = probe_mcp(settings.mcp_server_url)
+    return {
+        "browser": browser_status,
+        "mcp": mcp_status,
+        "browser_engine": settings.browser_engine,
+        "browser_ws_endpoint": settings.browser_ws_endpoint,
+        "mcp_server_url": settings.mcp_server_url,
+    }
+
+
 @app.get("/ui/database/tables")
 def ui_database_tables():
     session = get_session()
