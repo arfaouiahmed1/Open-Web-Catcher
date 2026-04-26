@@ -8,6 +8,8 @@
 
 FROM python:3.11-slim-bookworm
 
+ARG BUILDKIT_INLINE_CACHE=1
+
 WORKDIR /app
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -25,7 +27,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv venv .venv --python 3.11 && \
     python - <<'PY' > /tmp/requirements-dev.txt

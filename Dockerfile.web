@@ -2,13 +2,17 @@
 
 FROM node:20-alpine AS deps
 
+ARG BUILDKIT_INLINE_CACHE=1
+
 WORKDIR /app/web
 
-COPY web/package.json ./
-COPY web/package-lock.json ./
-RUN npm ci
+COPY web/package*.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
 
 FROM node:20-alpine AS builder
+
+ARG BUILDKIT_INLINE_CACHE=1
 
 WORKDIR /app/web
 
@@ -20,6 +24,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 FROM node:20-alpine AS runner
+
+ARG BUILDKIT_INLINE_CACHE=1
 
 WORKDIR /app/web
 

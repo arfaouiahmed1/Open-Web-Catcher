@@ -14,7 +14,8 @@
       "Bash(py -c \"import ast, sys; files = ['src/agents/cache.py','src/agents/base.py','src/agents/orchestrator.py','src/memory/long_term.py']; [ast.parse\\(open\\(f\\).read\\(\\)\\) or print\\(f,'OK'\\) for f in files]; print\\('syntax OK'\\)\")",
       "Bash(py -c \"import ast; files = ['src/agents/cache.py','src/agents/base.py','src/agents/orchestrator.py','src/memory/long_term.py']; [ast.parse\\(open\\(f\\).read\\(\\)\\) for f in files]; print\\('syntax OK'\\)\")",
       "Bash(gh pr create --title 'Refactor agent loop, typed handoffs, SSE reconnect, and memory TTL' --body ' *)",
-      "Bash(where gh *)"
+      "Bash(where gh *)",
+      "Bash(python scripts/reorganize_datasets.py)"
     ]
   }
 }

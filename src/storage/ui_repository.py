@@ -223,7 +223,7 @@ class OperatorConsoleRepository:
         total_duration_sum = db_duration_sum + fallback_tool_duration_sum
         avg_tool_duration = (total_duration_sum / total_duration_count) if total_duration_count else 0.0
 
-        model_breakdown_rows = self._merged_model_usage_rows(limit=12)
+        model_breakdown_rows, llm_usage_totals = self._merged_model_usage_rows(limit=12)
 
         provider_rows = (
             self._session.query(
@@ -263,6 +263,8 @@ class OperatorConsoleRepository:
                 "partial_rate": round(partial_count / rate_denominator, 4) if rate_denominator else 0.0,
                 "failure_rate": round(failure_count / rate_denominator, 4) if rate_denominator else 0.0,
                 "total_tokens_in": total_tokens_in,
+                "total_cached_input_tokens": int(llm_usage_totals.get("cached_input_tokens", 0) or 0),
+                "total_new_input_tokens": int(llm_usage_totals.get("new_input_tokens", 0) or 0),
                 "total_tokens_out": total_tokens_out,
                 "total_tokens": total_tokens,
                 "total_llm_calls": total_llm_calls,
@@ -288,17 +290,7 @@ class OperatorConsoleRepository:
                 "active_runs": len([trace for trace in (active_traces or []) if not bool(trace.get("completed"))]),
             },
             "trend": trend_buckets,
-            "model_breakdown": [
-                {
-                    "label": f"{provider or 'unknown'}::{model_name or 'unknown'}",
-                    "provider": provider or "unknown",
-                    "model_name": model_name or "unknown",
-                    "calls": int(calls or 0),
-                    "tokens": int(tokens or 0),
-                    "cost_usd": round(float(cost or 0.0), 6),
-                }
-                for provider, model_name, calls, tokens, cost in model_breakdown_rows
-            ],
+            "model_breakdown": model_breakdown_rows,
             "provider_breakdown": [
                 {
                     "provider": provider,
@@ -841,10 +833,13 @@ class OperatorConsoleRepository:
             for column in row.__table__.columns
         }
 
-    def _merged_model_usage_rows(self, *, limit: int = 12) -> list[tuple[str, str, int, int, float]]:
+    def _merged_model_usage_rows(self, *, limit: int = 12) -> tuple[list[dict[str, Any]], dict[str, int]]:
         aggregated: dict[tuple[str, str], dict[str, float]] = defaultdict(lambda: {
             "calls": 0.0,
-            "tokens": 0.0,
+            "input_tokens": 0.0,
+            "output_tokens": 0.0,
+            "cached_input_tokens": 0.0,
+            "new_input_tokens": 0.0,
             "cost": 0.0,
         })
 
@@ -853,74 +848,101 @@ class OperatorConsoleRepository:
                 RunModelUsageRecord.provider,
                 RunModelUsageRecord.model_name,
                 func.coalesce(func.sum(RunModelUsageRecord.llm_calls), 0),
-                func.coalesce(func.sum(RunModelUsageRecord.input_tokens + RunModelUsageRecord.output_tokens), 0),
+                func.coalesce(func.sum(RunModelUsageRecord.input_tokens), 0),
+                func.coalesce(func.sum(RunModelUsageRecord.output_tokens), 0),
                 func.coalesce(func.sum(RunModelUsageRecord.estimated_total_cost_usd), 0.0),
             )
             .group_by(RunModelUsageRecord.provider, RunModelUsageRecord.model_name)
             .all()
         )
-        for provider, model_name, calls, tokens, cost in model_usage_rows:
+        for provider, model_name, calls, input_tokens, output_tokens, cost in model_usage_rows:
             key = ((provider or "unknown") or "unknown", (model_name or "unknown") or "unknown")
             aggregated[key]["calls"] += int(calls or 0)
-            aggregated[key]["tokens"] += int(tokens or 0)
+            aggregated[key]["input_tokens"] += int(input_tokens or 0)
+            aggregated[key]["output_tokens"] += int(output_tokens or 0)
             aggregated[key]["cost"] += float(cost or 0.0)
+        runtime_rows = self._runtime_llm_rollup()
+        for provider, model_name, calls, input_tokens, output_tokens, cached_input_tokens, new_input_tokens, cost in runtime_rows:
+            key = ((provider or "unknown") or "unknown", (model_name or "unknown") or "unknown")
+            if key not in aggregated:
+                aggregated[key]["calls"] += int(calls or 0)
+                aggregated[key]["input_tokens"] += int(input_tokens or 0)
+                aggregated[key]["output_tokens"] += int(output_tokens or 0)
+                aggregated[key]["cost"] += float(cost or 0.0)
+            aggregated[key]["cached_input_tokens"] += int(cached_input_tokens or 0)
+            aggregated[key]["new_input_tokens"] += int(new_input_tokens or 0)
 
-        pipeline_ids_with_model_rows = {
-            int(pipeline_id)
-            for (pipeline_id,) in self._session.query(RunModelUsageRecord.pipeline_run_id).distinct().all()
-        }
-        for provider, model_name, calls, tokens, cost in self._runtime_model_rollup(
-            excluded_pipeline_ids=pipeline_ids_with_model_rows
-        ):
-            key = ((provider or "unknown") or "unknown", (model_name or "unknown") or "unknown")
-            aggregated[key]["calls"] += int(calls or 0)
-            aggregated[key]["tokens"] += int(tokens or 0)
-            aggregated[key]["cost"] += float(cost or 0.0)
+        rows: list[dict[str, Any]] = []
+        totals = {"cached_input_tokens": 0, "new_input_tokens": 0}
+        for (provider, model_name), values in aggregated.items():
+            input_tokens = int(values["input_tokens"])
+            output_tokens = int(values["output_tokens"])
+            cached_input_tokens = int(values["cached_input_tokens"])
+            new_input_tokens = int(values["new_input_tokens"])
+            rows.append(
+                {
+                    "label": f"{provider or 'unknown'}::{model_name or 'unknown'}",
+                    "provider": provider or "unknown",
+                    "model_name": model_name or "unknown",
+                    "calls": int(values["calls"]),
+                    "tokens": input_tokens + output_tokens,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "cached_input_tokens": cached_input_tokens,
+                    "new_input_tokens": new_input_tokens,
+                    "cost_usd": round(float(values["cost"] or 0.0), 6),
+                }
+            )
+            totals["cached_input_tokens"] += cached_input_tokens
+            totals["new_input_tokens"] += new_input_tokens
+
+        rows.sort(key=lambda item: (-float(item.get("cost_usd", 0.0) or 0.0), -int(item.get("calls", 0) or 0), item.get("model_name", "")))
+        return rows[: max(limit, 1)], totals
+
+    def _runtime_llm_rollup(self) -> list[tuple[str, str, int, int, int, int, int, float]]:
+        query = self._session.query(RuntimeEventRecord.details_json).filter(RuntimeEventRecord.kind == "llm_response")
+
+        aggregated: dict[tuple[str, str], dict[str, float]] = defaultdict(lambda: {
+            "calls": 0.0,
+            "input_tokens": 0.0,
+            "output_tokens": 0.0,
+            "cached_input_tokens": 0.0,
+            "new_input_tokens": 0.0,
+            "cost": 0.0,
+        })
+
+        for (details_json,) in query.all():
+            details = details_json if isinstance(details_json, dict) else {}
+            provider = str(details.get("provider", "") or "unknown")
+            model_name = str(details.get("model_name", "") or "unknown")
+            input_tokens = int(details.get("input_tokens", 0) or 0)
+            output_tokens = int(details.get("output_tokens", 0) or 0)
+            cached_input_tokens = int(details.get("cached_input_tokens", 0) or 0)
+            new_input_tokens = int(details.get("new_input_tokens", max(input_tokens - cached_input_tokens, 0)) or 0)
+            estimated_total_cost_usd = float(details.get("estimated_total_cost_usd", 0.0) or 0.0)
+
+            key = (provider, model_name)
+            aggregated[key]["calls"] += 1
+            aggregated[key]["input_tokens"] += input_tokens
+            aggregated[key]["output_tokens"] += output_tokens
+            aggregated[key]["cached_input_tokens"] += cached_input_tokens
+            aggregated[key]["new_input_tokens"] += new_input_tokens
+            aggregated[key]["cost"] += estimated_total_cost_usd
 
         rows = [
             (
                 provider,
                 model_name,
                 int(values["calls"]),
-                int(values["tokens"]),
+                int(values["input_tokens"]),
+                int(values["output_tokens"]),
+                int(values["cached_input_tokens"]),
+                int(values["new_input_tokens"]),
                 float(values["cost"]),
             )
             for (provider, model_name), values in aggregated.items()
         ]
-        rows.sort(key=lambda item: (-float(item[4] or 0.0), -int(item[2] or 0), item[1]))
-        return rows[: max(limit, 1)]
-
-    def _runtime_model_rollup(self, *, excluded_pipeline_ids: set[int]) -> list[tuple[str, str, int, int, float]]:
-        query = self._session.query(RuntimeEventRecord.pipeline_run_id, RuntimeEventRecord.details_json).filter(
-            RuntimeEventRecord.kind == "llm_response"
-        )
-        if excluded_pipeline_ids:
-            query = query.filter(~RuntimeEventRecord.pipeline_run_id.in_(excluded_pipeline_ids))
-
-        aggregated: dict[tuple[str, str], dict[str, float]] = defaultdict(lambda: {
-            "calls": 0.0,
-            "tokens": 0.0,
-            "cost": 0.0,
-        })
-
-        for _, details_json in query.all():
-            details = details_json if isinstance(details_json, dict) else {}
-            provider = str(details.get("provider", "") or "unknown")
-            model_name = str(details.get("model_name", "") or "unknown")
-            input_tokens = int(details.get("input_tokens", 0) or 0)
-            output_tokens = int(details.get("output_tokens", 0) or 0)
-            estimated_total_cost_usd = float(details.get("estimated_total_cost_usd", 0.0) or 0.0)
-
-            key = (provider, model_name)
-            aggregated[key]["calls"] += 1
-            aggregated[key]["tokens"] += input_tokens + output_tokens
-            aggregated[key]["cost"] += estimated_total_cost_usd
-
-        rows = [
-            (provider, model_name, int(values["calls"]), int(values["tokens"]), float(values["cost"]))
-            for (provider, model_name), values in aggregated.items()
-        ]
-        rows.sort(key=lambda item: (-float(item[4] or 0.0), -int(item[2] or 0), item[1]))
+        rows.sort(key=lambda item: (-float(item[7] or 0.0), -int(item[2] or 0), item[1]))
         return rows
 
     def _merged_top_tool_rows(self, *, limit: int = 10) -> list[tuple[str, int, int, int, float]]:

@@ -35,7 +35,7 @@ if (-not (Confirm-OwcAction -Prompt "Stop the compose stack now?" -DefaultYes -Y
 
 $startedAt = Get-Date
 Write-OwcStep "Stopping stack..."
-Invoke-OwcComposeChecked -Context $context -Arguments @("stop", $context.Service) | Out-Null
+Invoke-OwcComposeChecked -Context $context -Arguments (@("stop") + $context.StartServices) | Out-Null
 
 $duration = Format-OwcDuration -Duration ((Get-Date) - $startedAt)
 Write-OwcDivider

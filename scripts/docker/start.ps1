@@ -22,25 +22,29 @@ Ensure-OwcEnvFile -Context $context -Yes:$Yes
 Write-OwcHeader "Open Web Catcher - Start"
 Write-OwcInfo "Compose file: $($context.ComposeFile)"
 Write-OwcInfo "Service: $($context.Service)"
+Write-OwcInfo "Tools service: $($context.ToolService)"
+Write-OwcInfo "Playwright tools service: $($context.PlaywrightToolService)"
 Write-OwcInfo "Web service: $($context.WebService)"
 Write-OwcInfo "Container: $($context.Container)"
 Write-OwcInfo "Tools container: $($context.ToolContainer)"
+Write-OwcInfo "Playwright tools container: $($context.PlaywrightToolContainer)"
 Write-OwcInfo "Web container: $($context.WebContainer)"
 
 $needsBuild = $Build -or `
     -not (Test-OwcImageExists -ImageRef $context.ImageRef) -or `
     -not (Test-OwcImageExists -ImageRef $context.ToolImageRef) -or `
+    -not (Test-OwcImageExists -ImageRef $context.PlaywrightToolImageRef) -or `
     -not (Test-OwcImageExists -ImageRef $context.WebImageRef)
 if ($needsBuild) {
     $useCache = Resolve-OwcBuildUsesCache -NoCache:$NoCache -Yes:$Yes
-    Write-OwcStep "Building application image $(if ($useCache) { 'with cache' } else { 'without cache' })..."
+    Write-OwcStep "Building stack images $(if ($useCache) { 'with cache' } else { 'without cache' })..."
     Invoke-OwcBuild -Context $context -NoCache:(-not $useCache)
 }
 
 $startedAt = Get-Date
 Write-OwcDivider
 Write-OwcStep "Starting stack..."
-Invoke-OwcComposeChecked -Context $context -Arguments @("up", "-d", "--remove-orphans", $context.Service, $context.WebService) | Out-Null
+Invoke-OwcComposeChecked -Context $context -Arguments (@("up", "-d", "--remove-orphans") + $context.StartServices) | Out-Null
 
 if (-not $NoWait) {
     Write-OwcStep "Waiting for application health..."

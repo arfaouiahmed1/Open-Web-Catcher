@@ -39,6 +39,7 @@ class HandoffContext(TypedDict, total=False):
     """
     root_url: str
     target_url: str
+    target_label: str
     page_type: str
     classification_reasoning: str
     candidate_title: str
@@ -59,7 +60,8 @@ def render_handoff(ctx: HandoffContext) -> str:
     if ctx.get("root_url"):
         lines.append(f"- root url: {ctx['root_url']}")
     if ctx.get("target_url") and ctx.get("target_url") != ctx.get("root_url"):
-        lines.append(f"- target url: {ctx['target_url']}")
+        target_label = str(ctx.get("target_label") or "target url")
+        lines.append(f"- {target_label}: {ctx['target_url']}")
     if ctx.get("page_type"):
         lines.append(f"- upstream classification: {ctx['page_type']}")
     if ctx.get("classification_reasoning"):
@@ -201,6 +203,7 @@ def _build_hosting_handoff(
     ctx: HandoffContext = {
         "root_url": state["url"],
         "target_url": target_url,
+        "target_label": "target hosting candidate",
         "page_type": classification.page_type.value if classification is not None else "",
         "classification_reasoning": classification.reasoning if classification is not None else "",
         "focus": "verify direct m3u8/mpd/mp4 first; look out for server switch tabs, player iframe URLs, cloudinary screenshots, and clean server labels; return embedded handoff only when needed",
@@ -224,6 +227,7 @@ def _build_embedded_handoff(
     ctx: HandoffContext = {
         "root_url": state["url"],
         "target_url": target_url,
+        "target_label": "target embedded player",
         "focus": "recover stream URLs from the embedded player; look out for iframe-local controls, activated server tabs, and screenshot evidence; keep server artifacts clean",
         "memory_hints": memory_hint_text,
     }
@@ -264,10 +268,8 @@ async def landing_page_node(
     memory: LongTermMemory | None = None,
 ) -> dict[str, Any]:
     from src.agents.landing_page import LandingPageAgent
-    from src.agents.hosting_page import HostingPageAgent
 
     landing_child = observer.child("landing", AgentType.LANDING_PAGE) if observer else None
-    hosting_child = observer.child("hosting", AgentType.HOSTING_PAGE) if observer else None
 
     landing_memory_hint = _memory_hint(
         memory,
@@ -275,39 +277,16 @@ async def landing_page_node(
         page_type=AgentType.LANDING_PAGE.value,
     )
     landing_handoff = _build_landing_handoff(state, memory_hint_text=landing_memory_hint)
-
-    root_hosting_memory_hint = _memory_hint(
-        memory,
-        url=state["url"],
-        page_type=AgentType.HOSTING_PAGE.value,
-    )
-    root_hosting_handoff = _build_hosting_handoff(
-        state,
-        target_url=state["url"],
-        memory_hint_text=root_hosting_memory_hint,
-    )
-
-    landing_task = LandingPageAgent(settings).run(
-        url=state["url"],
-        observer=landing_child,
-        orchestrator_handoff=landing_handoff,
-    )
-    root_hosting_task = HostingPageAgent(settings).run(
-        url=state["url"],
-        observer=hosting_child,
-        orchestrator_handoff=root_hosting_handoff,
-    )
-    landing_outcome, root_hosting_outcome = await asyncio.gather(
-        landing_task,
-        root_hosting_task,
-        return_exceptions=True,
-    )
-
     hosting_pages: list[dict[str, Any]] = []
-    if isinstance(landing_outcome, Exception):
-        logger.warning("Landing page agent failed for %s: %s", state["url"], landing_outcome)
-    else:
+    try:
+        landing_outcome = await LandingPageAgent(settings).run(
+            url=state["url"],
+            observer=landing_child,
+            orchestrator_handoff=landing_handoff,
+        )
         hosting_pages = landing_outcome.metadata.get("hosting_pages", [])
+    except Exception as exc:
+        logger.warning("Landing page agent failed for %s: %s", state["url"], exc)
 
     matches: list[MatchInfo] = []
     for page in hosting_pages:
@@ -318,37 +297,24 @@ async def landing_page_node(
         except Exception:
             logger.warning("Skipping malformed landing-page match payload: %s", page)
 
-    pending_hosting_urls = _dedupe_urls([match.url for match in matches if match.url != state["url"]])
-
-    extraction_results = list(state["extraction_results"])
+    pending_hosting_urls = _dedupe_urls([match.url for match in matches])
     pending_embedded_urls = list(state["pending_embedded_urls"])
 
-    if isinstance(root_hosting_outcome, Exception):
-        logger.warning("Root hosting probe failed for %s: %s", state["url"], root_hosting_outcome)
-        root_extraction = ExtractionResult(
-            url=state["url"],
-            page_type=PageType.HOSTING,
-            status=ExtractionStatus.FAILED,
-            agent_type=AgentType.HOSTING_PAGE,
-            error_message=str(root_hosting_outcome),
-            metadata={"orchestrator_error": type(root_hosting_outcome).__name__},
+    if not pending_hosting_urls:
+        fallback_iframes = _dedupe_urls(
+            iframe
+            for match in matches
+            for iframe in (match.iframes or [])
         )
-    else:
-        root_extraction = root_hosting_outcome
-
-    extraction_results.append(root_extraction)
-    embedded_candidates = _collect_embedded_urls(root_extraction)
-    needs_embed_followup = _requires_embedded_followup(root_extraction)
-    if needs_embed_followup and not embedded_candidates:
-        embedded_candidates = [state["url"]]
-    if needs_embed_followup:
-        pending_embedded_urls = _dedupe_urls([*pending_embedded_urls, *embedded_candidates])
+        if fallback_iframes:
+            pending_embedded_urls = _dedupe_urls([*pending_embedded_urls, *fallback_iframes])
+        else:
+            pending_hosting_urls = [state["url"]]
 
     return {
         "matches": matches,
         "pending_hosting_urls": pending_hosting_urls,
         "pending_embedded_urls": pending_embedded_urls,
-        "extraction_results": extraction_results,
     }
 
 
@@ -542,7 +508,7 @@ def route_after_hosting(state: PipelineState) -> str:
 
 
 def route_after_embedded(state: PipelineState) -> str:
-    return "embedded_page" if state["pending_embedded_urls"] else "analyze_providers"
+    return "analyze_providers"
 
 
 def build_graph(settings: Settings, observer: RunObserver | None = None):
@@ -581,7 +547,11 @@ def build_graph(settings: Settings, observer: RunObserver | None = None):
     graph.add_conditional_edges(
         "landing_page",
         route_after_landing,
-        {"hosting_page": "hosting_page", "analyze_providers": "analyze_providers"},
+        {
+            "hosting_page": "hosting_page",
+            "embedded_page": "embedded_page",
+            "analyze_providers": "analyze_providers",
+        },
     )
     graph.add_edge("queue_root_hosting", "hosting_page")
     graph.add_conditional_edges(

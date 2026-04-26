@@ -1,343 +1,316 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Maximize2, Minimize2, Monitor, RefreshCw, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ExternalLink, Maximize2, Minimize2, Monitor, RefreshCw, X } from "lucide-react";
 
 import { apiUrl } from "@/lib/api";
+import { formatNumber } from "@/lib/utils";
+import { buildStageView, STAGE_LABELS, STAGE_ORDER } from "@/lib/run-trace";
 
-/* ── Tool metadata ──────────────────────────────────────────────────────── */
-const TOOL_META = {
-  navigate:          { icon: "🌐", label: "Navigating",     color: "var(--sky)" },
-  open_url:          { icon: "🌐", label: "Opening URL",    color: "var(--sky)" },
-  screenshot:        { icon: "📷", label: "Screenshot",     color: "var(--violet)" },
-  click_element:     { icon: "👆", label: "Clicking",       color: "var(--signal)" },
-  click_css:         { icon: "👆", label: "Clicking CSS",   color: "var(--signal)" },
-  click_text:        { icon: "👆", label: "Clicking text",  color: "var(--signal)" },
-  click_xpath:       { icon: "👆", label: "Clicking XPath", color: "var(--signal)" },
-  click_coordinates: { icon: "👆", label: "Clicking coords",color: "var(--signal)" },
-  click_checkbox:    { icon: "☑️",  label: "Checking box",  color: "var(--signal)" },
-  click_radio:       { icon: "🔘", label: "Selecting",      color: "var(--signal)" },
-  type_into:         { icon: "⌨️",  label: "Typing",        color: "var(--mint)" },
-  select_option:     { icon: "📋", label: "Selecting",      color: "var(--mint)" },
-  scroll_page:       { icon: "📜", label: "Scrolling",      color: "var(--mute-2)" },
-  scroll_to_element: { icon: "📜", label: "Scrolling to",   color: "var(--mute-2)" },
-  swipe_region:      { icon: "👋", label: "Swiping",        color: "var(--mute-2)" },
-  inspect:           { icon: "🔍", label: "Inspecting",     color: "var(--sky)" },
-  inspect_landing:   { icon: "🔍", label: "Inspecting",     color: "var(--sky)" },
-  inspect_hosting:   { icon: "🔍", label: "Inspecting",     color: "var(--sky)" },
-  inspect_embedded:  { icon: "🔍", label: "Inspecting",     color: "var(--sky)" },
-  interact:          { icon: "🖱️",  label: "Interacting",   color: "var(--sky)" },
-  query_elements:    { icon: "🔎", label: "Querying DOM",   color: "var(--sky)" },
-  get_page_context:  { icon: "📄", label: "Reading page",   color: "var(--sky)" },
-  get_frame_tree:    { icon: "🗂️",  label: "Frame tree",    color: "var(--sky)" },
-  get_element_detail:{ icon: "🔎", label: "Element detail", color: "var(--sky)" },
-  go_back:           { icon: "⬅️",  label: "Going back",    color: "var(--mute-2)" },
-  wait_for_page_state:{ icon:"⏳",  label: "Waiting",       color: "var(--mute-2)" },
-  play_media:        { icon: "▶️",  label: "Playing media", color: "var(--rose)" },
-  capture_streams:   { icon: "📡", label: "Capturing",      color: "var(--rose)" },
-  harvest:           { icon: "🌾", label: "Harvesting",     color: "var(--mint)" },
-  memory_lookup:     { icon: "🧠", label: "Memory lookup",  color: "var(--violet)" },
-  memory_update:     { icon: "🧠", label: "Memory update",  color: "var(--violet)" },
-  get_media_state:   { icon: "📡", label: "Media state",    color: "var(--rose)" },
-};
+const EMPTY_ARRAY = [];
 
-function getToolMeta(name) {
-  return TOOL_META[name] || { icon: "🔧", label: name || "Tool", color: "var(--sky)" };
+function frameLabel(frame) {
+  if (!frame) return "";
+  return [frame.toolName, frame.target].filter(Boolean).join(" | ");
 }
 
-/* ── Extract a useful target string from tool args ──────────────────────── */
-function extractTarget(details) {
-  const args = details?.args || details?.arguments || {};
+function stageTone(stage) {
+  if (stage === "classification") return "var(--sky)";
+  if (stage === "landing") return "var(--violet)";
+  if (stage === "hosting") return "var(--mint)";
+  if (stage === "embedded") return "var(--signal)";
+  return "var(--mute)";
+}
+
+function StageButton({ stage, active, autoSelected, disabled, count, onClick }) {
+  const color = stageTone(stage);
   return (
-    args.url || args.selector || args.css_selector || args.xpath ||
-    args.text || args.value || args.element_id || ""
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded-full border px-3 py-1 text-[11px] font-medium transition-colors disabled:opacity-45"
+      style={{
+        borderColor: active ? `color-mix(in oklch, ${color} 40%, transparent)` : "var(--line)",
+        background: active ? `color-mix(in oklch, ${color} 14%, transparent)` : "transparent",
+        color: active ? color : "var(--mute-2)",
+      }}
+    >
+      {STAGE_LABELS[stage]}
+      <span className="ml-1.5 font-mono text-[10px]" style={{ color: active ? color : "var(--mute-3)" }}>
+        {formatNumber(count)}
+      </span>
+      {autoSelected && active ? <span className="ml-1.5 font-mono text-[9px]">AUTO</span> : null}
+    </button>
   );
 }
 
-/* ── Tool activity overlay ───────────────────────────────────────────────── */
-function ToolOverlay({ event }) {
-  if (!event) return null;
-  const toolName = event.details?.tool_name || "";
-  const meta = getToolMeta(toolName);
-  const isActive = event.kind === "tool_call_started";
-  const target = extractTarget(event.details);
-
+function FrameOverlay({ frame, status }) {
+  if (!frame) return null;
+  const color = stageTone(frame.stage);
   return (
     <div
-      className="absolute bottom-0 left-0 right-0 flex items-start gap-2.5 px-3 py-2.5"
+      className="absolute inset-x-0 bottom-0 px-3 py-2.5"
       style={{
-        background: `linear-gradient(to top, color-mix(in oklch, ${meta.color} 22%, rgba(0,0,0,0.92)) 0%, transparent 100%)`,
-        backdropFilter: "blur(4px)",
+        background: `linear-gradient(to top, color-mix(in oklch, ${color} 28%, rgba(0,0,0,0.94)) 0%, transparent 100%)`,
       }}
     >
-      <span className="mt-0.5 text-[15px] leading-none">{meta.icon}</span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          {isActive && (
-            <span
-              className="h-1.5 w-1.5 shrink-0 rounded-full"
-              style={{ background: meta.color, animation: "breathe 1.2s ease-in-out infinite" }}
-            />
-          )}
-          <span className="text-[11.5px] font-semibold" style={{ color: meta.color }}>
-            {meta.label}
-          </span>
-          {!isActive && (
-            <span className="text-[10px] font-medium uppercase tracking-wide" style={{ color: "var(--mint)" }}>
-              done
-            </span>
-          )}
-          {isActive && <span className="owc-spinner owc-spinner-sm" style={{ color: meta.color }} />}
-        </div>
-        {target && (
-          <div
-            className="mt-0.5 truncate font-mono text-[10px]"
-            style={{ color: "rgba(255,255,255,0.5)" }}
-            title={target}
-          >
-            {target.length > 60 ? target.slice(0, 57) + "…" : target}
-          </div>
-        )}
-        {event.message && !target && (
-          <div className="mt-0.5 truncate text-[10px]" style={{ color: "rgba(255,255,255,0.45)" }}>
-            {event.message}
-          </div>
-        )}
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] font-semibold" style={{ color }}>
+          {STAGE_LABELS[frame.stage]}
+        </span>
+        <span className="rounded-full px-2 py-0.5 font-mono text-[10px]" style={{ background: "rgba(0,0,0,0.22)", color: "rgba(255,255,255,0.78)" }}>
+          {frame.toolName || "screenshot"}
+        </span>
+        <span className="ml-auto font-mono text-[10px]" style={{ color: "rgba(255,255,255,0.74)" }}>
+          {status}
+        </span>
       </div>
+      {frame.target ? (
+        <div className="mt-1 truncate font-mono text-[10px]" style={{ color: "rgba(255,255,255,0.58)" }} title={frame.target}>
+          {frame.target}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-/* ── Main component ──────────────────────────────────────────────────────── */
 export function BrowserLiveView({
   runId,
   events = [],
   autoRefresh = true,
-  standalone = false, // use /ui/browser/screenshot instead of run-based
+  standalone = false,
   onClose,
 }) {
-  const [screenshot, setScreenshot] = useState("");
-  const [isLoading, setIsLoading]   = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [lastFetch, setLastFetch]   = useState(null);
+  const [manualMode, setManualMode] = useState(false);
+  const [manualStage, setManualStage] = useState("classification");
+  const [selectedFrameUrl, setSelectedFrameUrl] = useState("");
+  const [fallbackScreenshot, setFallbackScreenshot] = useState("");
+  const [fallbackTimestamp, setFallbackTimestamp] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState("");
-  const intervalRef = useRef(null);
-  const loadingRef  = useRef(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
-  /* latest tool event (for overlay) */
-  const latestToolEvent = useMemo(() => {
-    for (let i = events.length - 1; i >= 0; i--) {
-      const e = events[i];
-      if (e?.kind === "tool_call_started" || e?.kind === "tool_call_finished") return e;
-    }
-    return null;
-  }, [events]);
+  const stageView = useMemo(() => buildStageView(events), [events]);
+  const stages = stageView.stages;
+  const autoStage = stageView.autoStage;
+  const selectedStage = manualMode ? manualStage : autoStage;
+  const selectedStageData = stages.find((stage) => stage.stage === selectedStage) || stages[0];
+  const availableFrames = selectedStageData?.frames ?? EMPTY_ARRAY;
+  const latestFrame = selectedStageData?.latestFrame || null;
+  const anyFrames = stages.some((stage) => (stage.frames || []).length > 0);
 
-  /* current page URL from navigate events */
-  const currentUrl = useMemo(() => {
-    for (let i = events.length - 1; i >= 0; i--) {
-      const e = events[i];
-      if (e?.kind === "tool_call_started" || e?.kind === "tool_call_finished") {
-        const args = e?.details?.args || e?.details?.arguments || {};
-        if (args.url) return args.url;
-      }
-    }
-    return "";
-  }, [events]);
-
-  const fetchScreenshot = useCallback(async () => {
-    if (loadingRef.current) return;
-    loadingRef.current = true;
-    setIsLoading(true);
-    setFetchError("");
-    try {
-      const url = standalone
-        ? apiUrl("/ui/browser/screenshot")
-        : apiUrl(`/ui/runs/${runId}/screenshot`);
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const imgSrc = data.screenshot || data.screenshot_url || "";
-      if (imgSrc) {
-        setScreenshot(imgSrc);
-        setLastFetch(new Date());
-      }
-    } catch (e) {
-      setFetchError(e.message);
-    } finally {
-      loadingRef.current = false;
-      setIsLoading(false);
-    }
-  }, [runId, standalone]);
-
-  /* auto-refresh interval */
   useEffect(() => {
-    if (!autoRefresh || (!standalone && !runId)) { clearInterval(intervalRef.current); return; }
+    if (!manualMode) {
+      setManualStage(autoStage);
+    }
+  }, [autoStage, manualMode]);
+
+  useEffect(() => {
+    const nextUrl = latestFrame?.url || "";
+    if (!manualMode || !selectedFrameUrl || !availableFrames.some((frame) => frame.url === selectedFrameUrl)) {
+      setSelectedFrameUrl(nextUrl);
+    }
+  }, [availableFrames, latestFrame, manualMode, selectedFrameUrl]);
+
+  useEffect(() => {
+    if (anyFrames || (!standalone && !runId) || !autoRefresh) return undefined;
+
+    let cancelled = false;
+    let timer = null;
+
+    async function fetchScreenshot() {
+      setIsLoading(true);
+      try {
+        const url = standalone ? apiUrl("/ui/browser/screenshot") : apiUrl(`/ui/runs/${runId}/screenshot`);
+        const response = await fetch(url, { cache: "no-store" });
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (cancelled) return;
+        const next = payload?.screenshot || payload?.screenshot_url || "";
+        if (next) {
+          setFallbackScreenshot(next);
+          setFallbackTimestamp(payload?.timestamp || "");
+          setFetchError("");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setFetchError(error instanceof Error ? error.message : String(error || "Screenshot fetch failed"));
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
     fetchScreenshot();
-    intervalRef.current = setInterval(fetchScreenshot, 2500);
-    return () => clearInterval(intervalRef.current);
-  }, [autoRefresh, fetchScreenshot]);
+    timer = window.setInterval(fetchScreenshot, 2500);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearInterval(timer);
+    };
+  }, [anyFrames, autoRefresh, refreshNonce, runId, standalone]);
 
-  /* fetch on tool completion (immediate feedback) */
-  const lastToolSeq = latestToolEvent?.seq;
-  useEffect(() => {
-    if (latestToolEvent?.kind === "tool_call_finished") fetchScreenshot();
-  }, [lastToolSeq]); // eslint-disable-line react-hooks/exhaustive-deps
+  const activeFrame = availableFrames.find((frame) => frame.url === selectedFrameUrl) || latestFrame;
+  const activeUrl = activeFrame?.url || (!anyFrames ? fallbackScreenshot : "");
+  const statusLabel = selectedStageData?.status || "idle";
+  const stageColor = stageTone(selectedStage);
 
   return (
     <div
-      className={`flex flex-col overflow-hidden rounded-[14px] border ${isFullscreen ? "fixed inset-4 z-50" : ""}`}
+      className={`overflow-hidden rounded-[14px] border ${isFullscreen ? "fixed inset-4 z-50" : ""}`}
       style={{
         borderColor: "var(--line)",
         background: "var(--card)",
-        boxShadow: isFullscreen
-          ? "0 24px 72px rgba(0,0,0,0.55)"
-          : "var(--shadow-card)",
-        minHeight: isFullscreen ? undefined : 260,
+        boxShadow: isFullscreen ? "0 24px 72px rgba(0,0,0,0.52)" : "var(--shadow-card)",
       }}
     >
-      {/* ── Browser chrome header ── */}
-      <div
-        className="flex shrink-0 items-center gap-2 border-b px-3 py-2"
-        style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.018)" }}
-      >
-        {/* macOS traffic lights */}
-        <div className="flex shrink-0 items-center gap-1.5">
-          <div className="h-2.5 w-2.5 rounded-full" style={{ background: "#FF5F57" }} />
-          <div className="h-2.5 w-2.5 rounded-full" style={{ background: "#FEBC2E" }} />
-          <div className="h-2.5 w-2.5 rounded-full" style={{ background: "#28C840" }} />
+      <div className="flex items-center gap-2 border-b px-3 py-2.5" style={{ borderColor: "var(--line)" }}>
+        <div className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#FF5F57" }} />
+          <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#FEBC2E" }} />
+          <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#28C840" }} />
         </div>
 
-        {/* URL bar */}
         <div
-          className="mx-2 flex flex-1 items-center gap-2 overflow-hidden rounded-md px-2.5 py-1"
-          style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--line)" }}
+          className="mx-2 flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-2.5 py-1.5"
+          style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.04)" }}
         >
-          <Monitor className="h-3 w-3 shrink-0" style={{ color: "var(--mute-3)" }} />
-          <span
-            className="flex-1 truncate font-mono text-[10.5px]"
-            style={{ color: currentUrl ? "var(--mute-2)" : "var(--mute-3)" }}
-            title={currentUrl || undefined}
-          >
-            {currentUrl || "Browser live view"}
+          <Monitor className="h-3.5 w-3.5 shrink-0" style={{ color: stageColor }} />
+          <span className="truncate font-mono text-[10.5px]" style={{ color: activeUrl ? "var(--ink-dim)" : "var(--mute-3)" }} title={frameLabel(activeFrame) || undefined}>
+            {frameLabel(activeFrame) || "Waiting for agent screenshots"}
           </span>
-          {isLoading && (
-            <span className="owc-spinner owc-spinner-sm shrink-0" style={{ color: "var(--sky)" }} />
-          )}
         </div>
 
-        {/* Controls */}
         <button
           type="button"
-          title="Refresh"
-          onClick={fetchScreenshot}
-          className="rounded p-1 transition-colors"
-          style={{ color: "var(--mute-2)" }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--ink)")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--mute-2)")}
+          onClick={() => {
+            setManualMode(false);
+            setSelectedFrameUrl(latestFrame?.url || "");
+          }}
+          className="rounded-full border px-3 py-1 text-[11px] font-medium"
+          style={{
+            borderColor: !manualMode ? `color-mix(in oklch, ${stageColor} 40%, transparent)` : "var(--line)",
+            background: !manualMode ? `color-mix(in oklch, ${stageColor} 14%, transparent)` : "transparent",
+            color: !manualMode ? stageColor : "var(--mute-2)",
+          }}
         >
-          <RefreshCw className="h-3.5 w-3.5" />
+          Auto
         </button>
+
         <button
           type="button"
-          title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-          onClick={() => setIsFullscreen((v) => !v)}
-          className="rounded p-1 transition-colors"
+          onClick={() => setRefreshNonce((value) => value + 1)}
+          className="rounded p-1"
+          title="Refresh screenshot"
           style={{ color: "var(--mute-2)" }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--ink)")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "var(--mute-2)")}
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setIsFullscreen((value) => !value)}
+          className="rounded p-1"
+          style={{ color: "var(--mute-2)" }}
         >
           {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
         </button>
-        {onClose && (
-          <button
-            type="button"
-            title="Close"
-            onClick={onClose}
-            className="rounded p-1 transition-colors"
-            style={{ color: "var(--mute-2)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--rose)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--mute-2)")}
-          >
+
+        {onClose ? (
+          <button type="button" onClick={onClose} className="rounded p-1" style={{ color: "var(--mute-2)" }}>
             <X className="h-3.5 w-3.5" />
           </button>
-        )}
+        ) : null}
       </div>
 
-      {/* ── Screenshot viewport ── */}
-      <div
-        className="relative flex-1 overflow-hidden"
-        style={{ background: "#050508", minHeight: isFullscreen ? 0 : 200 }}
-      >
-        {screenshot ? (
-          <>
-            <img
-              src={screenshot}
-              alt="Browser viewport"
-              className="h-full w-full object-contain"
-              style={{ imageRendering: "auto", display: "block" }}
-            />
-            {/* Scan-line aesthetic overlay */}
-            <div
-              className="pointer-events-none absolute inset-0"
-              style={{
-                backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px)",
+      <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2.5" style={{ borderColor: "var(--line)" }}>
+        {STAGE_ORDER.map((stage) => {
+          const stageData = stages.find((item) => item.stage === stage);
+          return (
+            <StageButton
+              key={stage}
+              stage={stage}
+              count={stageData?.frames?.length || 0}
+              active={selectedStage === stage}
+              autoSelected={!manualMode && autoStage === stage}
+              disabled={false}
+              onClick={() => {
+                setManualMode(true);
+                setManualStage(stage);
+                setSelectedFrameUrl(stageData?.latestFrame?.url || "");
               }}
             />
-          </>
-        ) : (
-          <div
-            className="flex h-full items-center justify-center"
-            style={{ color: "var(--mute-3)", minHeight: 200 }}
-          >
-            {fetchError ? (
-              <div className="text-center px-4">
-                <div className="text-[12px] font-medium" style={{ color: "var(--rose)" }}>
-                  No screenshot available
-                </div>
-                <div className="mt-1 text-[11px] opacity-60">{fetchError}</div>
-              </div>
-            ) : isLoading ? (
-              <div className="flex flex-col items-center gap-2">
-                <span className="owc-spinner owc-spinner-lg" style={{ color: "var(--sky)" }} />
-                <div className="text-[11px]">Capturing…</div>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-2">
-                <Monitor className="h-8 w-8 opacity-20" />
-                <div className="text-[12px]">Waiting for browser activity…</div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Tool activity overlay */}
-        {screenshot && <ToolOverlay event={latestToolEvent} />}
+          );
+        })}
+        <span className="ml-auto font-mono text-[10px]" style={{ color: stageColor }}>
+          {STAGE_LABELS[selectedStage] || "Stage"} | {statusLabel}
+        </span>
       </div>
 
-      {/* ── Footer status bar ── */}
-      <div
-        className="flex shrink-0 items-center gap-3 border-t px-3 py-1.5"
-        style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.012)" }}
-      >
-        <span className="font-mono text-[9.5px]" style={{ color: "var(--mute-3)" }}>
-          {lastFetch ? `Updated ${lastFetch.toLocaleTimeString()}` : "Waiting…"}
-        </span>
-        {autoRefresh && (
-          <span className="flex items-center gap-1 font-mono text-[9.5px]" style={{ color: "var(--mint)" }}>
-            <span
-              className="h-1.5 w-1.5 rounded-full"
-              style={{ background: "var(--mint)", animation: "breathe 2s ease-in-out infinite" }}
-            />
-            Live
-          </span>
+      <div className="relative flex items-center justify-center overflow-hidden" style={{ minHeight: isFullscreen ? "calc(100vh - 220px)" : 280, background: "#050508" }}>
+        {activeUrl ? (
+          <>
+            <img src={activeUrl} alt="Agent browser view" className="h-full w-full object-contain" />
+            <FrameOverlay frame={activeFrame || { stage: selectedStage, toolName: "", target: "" }} status={statusLabel} />
+          </>
+        ) : (
+          <div className="px-4 text-center">
+            <Monitor className="mx-auto h-8 w-8 opacity-20" style={{ color: "var(--mute-3)" }} />
+            <div className="mt-2 text-[12px]" style={{ color: "var(--mute-3)" }}>
+              {fetchError || "No screenshot captured for this stage yet."}
+            </div>
+          </div>
         )}
+      </div>
+
+      {(availableFrames.length > 1 || (!anyFrames && fallbackScreenshot)) ? (
+        <div className="flex gap-2 overflow-x-auto border-t p-2" style={{ borderColor: "var(--line)" }}>
+          {(availableFrames.length ? availableFrames : [{ url: fallbackScreenshot, seq: 0, stage: selectedStage }]).map((frame, index) => (
+            <button
+              key={`${frame.url}-${frame.seq}-${index}`}
+              type="button"
+              onClick={() => {
+                setManualMode(true);
+                setManualStage(selectedStage);
+                setSelectedFrameUrl(frame.url);
+              }}
+              className="shrink-0 overflow-hidden rounded-[8px] border"
+              style={{
+                width: 92,
+                height: 58,
+                borderColor: frame.url === activeUrl ? stageColor : "var(--line)",
+                background: "#050508",
+              }}
+            >
+              <img src={frame.url} alt={`${selectedStage} frame ${index + 1}`} className="h-full w-full object-cover" />
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="flex items-center gap-3 border-t px-3 py-2" style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.015)" }}>
+        <span className="font-mono text-[10px]" style={{ color: "var(--mute-3)" }}>
+          {activeFrame?.timestamp
+            ? `Updated ${new Date(activeFrame.timestamp).toLocaleTimeString()}`
+            : fallbackTimestamp
+              ? `Updated ${new Date(fallbackTimestamp).toLocaleTimeString()}`
+              : "Waiting"}
+        </span>
+        <span className="font-mono text-[10px]" style={{ color: "var(--mute-3)" }}>
+          {formatNumber(availableFrames.length || (fallbackScreenshot ? 1 : 0))} frame{(availableFrames.length || fallbackScreenshot ? 1 : 0) === 1 ? "" : "s"}
+        </span>
+        {activeUrl ? (
+          <a href={activeUrl} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 text-[10px]" style={{ color: "var(--mute-2)" }}>
+            open
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        ) : null}
       </div>
     </div>
   );
 }
 
-/* ── Screenshot gallery (for persisted runs) ────────────────────────────── */
 export function ScreenshotGallery({ screenshots = [] }) {
   const [selected, setSelected] = useState(null);
   const [zoom, setZoom] = useState(false);
@@ -363,11 +336,7 @@ export function ScreenshotGallery({ screenshots = [] }) {
       className="overflow-hidden rounded-[14px] border"
       style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
     >
-      {/* header */}
-      <div
-        className="flex items-center justify-between border-b px-4 py-2.5"
-        style={{ borderColor: "var(--line)" }}
-      >
+      <div className="flex items-center justify-between border-b px-4 py-2.5" style={{ borderColor: "var(--line)" }}>
         <div className="flex items-center gap-2">
           <span className="text-[13.5px] font-medium" style={{ color: "var(--ink)" }}>Screenshots</span>
           <span className="font-mono text-[11px]" style={{ color: "var(--mute)" }}>
@@ -376,30 +345,19 @@ export function ScreenshotGallery({ screenshots = [] }) {
         </div>
       </div>
 
-      {/* main viewer */}
-      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events,jsx-a11y/no-static-element-interactions */}
       <div
         className="relative cursor-zoom-in overflow-hidden"
         style={{ background: "#050508", maxHeight: 380 }}
         onClick={() => setZoom(true)}
       >
-        <img
-          src={active}
-          alt="Screenshot"
-          className="w-full object-contain"
-          style={{ maxHeight: 380, display: "block" }}
-        />
+        <img src={active} alt="Screenshot" className="w-full object-contain" style={{ maxHeight: 380, display: "block" }} />
       </div>
 
-      {/* thumbnails strip */}
-      {screenshots.length > 1 && (
-        <div
-          className="flex gap-2 overflow-x-auto border-t p-2"
-          style={{ borderColor: "var(--line)" }}
-        >
-          {screenshots.map((src, idx) => (
+      {screenshots.length > 1 ? (
+        <div className="flex gap-2 overflow-x-auto border-t p-2" style={{ borderColor: "var(--line)" }}>
+          {screenshots.map((src, index) => (
             <button
-              key={idx}
+              key={`${src}-${index}`}
               type="button"
               onClick={() => setSelected(src)}
               className="shrink-0 overflow-hidden rounded-[6px] border transition-all"
@@ -407,22 +365,16 @@ export function ScreenshotGallery({ screenshots = [] }) {
                 width: 72,
                 height: 48,
                 borderColor: src === active ? "var(--signal)" : "var(--line)",
-                boxShadow: src === active ? "0 0 0 2px color-mix(in oklch, var(--signal) 35%, transparent)" : "none",
                 background: "#050508",
               }}
             >
-              <img
-                src={src}
-                alt={`Screenshot ${idx + 1}`}
-                className="h-full w-full object-cover"
-              />
+              <img src={src} alt={`Screenshot ${index + 1}`} className="h-full w-full object-cover" />
             </button>
           ))}
         </div>
-      )}
+      ) : null}
 
-      {/* fullscreen zoom modal */}
-      {zoom && (
+      {zoom ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center"
           style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(8px)" }}
@@ -436,14 +388,9 @@ export function ScreenshotGallery({ screenshots = [] }) {
           >
             <X className="h-5 w-5" />
           </button>
-          <img
-            src={active}
-            alt="Screenshot fullscreen"
-            className="max-h-[90vh] max-w-[90vw] rounded-[8px] object-contain"
-            style={{ boxShadow: "0 24px 72px rgba(0,0,0,0.7)" }}
-          />
+          <img src={active} alt="Screenshot fullscreen" className="max-h-[90vh] max-w-[90vw] rounded-[8px] object-contain" />
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

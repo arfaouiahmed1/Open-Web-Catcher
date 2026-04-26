@@ -181,6 +181,13 @@ const DEFAULT_BROWSER_RUNTIME = {
     stream_cors_patch_enabled: false,
     stream_cors_include_credentials: false,
     iframe_sandbox_patch_enabled: true,
+    iframe_auto_recovery_enabled: true,
+    iframe_recovery_timeout_ms: 20000,
+    media_capture_timeout_ms: 30000,
+    media_retry_count: 3,
+    media_retry_backoff_ms: [1000, 2000, 4000],
+    media_cors_patch_enabled: false,
+    media_playback_verification_enabled: true,
   },
   playwright: {
     launch_timeout_ms: 45000,
@@ -209,6 +216,13 @@ const DEFAULT_BROWSER_RUNTIME = {
     proxy_max_candidates: 25,
     proxy_test_url: "https://api.ipify.org?format=json",
     iframe_sandbox_patch_enabled: true,
+    iframe_auto_recovery_enabled: true,
+    iframe_recovery_timeout_ms: 20000,
+    media_capture_timeout_ms: 30000,
+    media_retry_count: 3,
+    media_retry_backoff_ms: [1000, 2000, 4000],
+    media_cors_patch_enabled: false,
+    media_playback_verification_enabled: true,
   },
 };
 
@@ -221,6 +235,7 @@ function cloneBrowserRuntime() {
       adblock_excluded_categories: [...DEFAULT_BROWSER_RUNTIME.puppeteer.adblock_excluded_categories],
       proxy_source_order: [...DEFAULT_BROWSER_RUNTIME.puppeteer.proxy_source_order],
       proxy_custom_list: [...DEFAULT_BROWSER_RUNTIME.puppeteer.proxy_custom_list],
+      media_retry_backoff_ms: [...DEFAULT_BROWSER_RUNTIME.puppeteer.media_retry_backoff_ms],
     },
     playwright: {
       ...DEFAULT_BROWSER_RUNTIME.playwright,
@@ -229,6 +244,7 @@ function cloneBrowserRuntime() {
       adblock_excluded_categories: [...DEFAULT_BROWSER_RUNTIME.playwright.adblock_excluded_categories],
       proxy_source_order: [...DEFAULT_BROWSER_RUNTIME.playwright.proxy_source_order],
       proxy_custom_list: [...DEFAULT_BROWSER_RUNTIME.playwright.proxy_custom_list],
+      media_retry_backoff_ms: [...DEFAULT_BROWSER_RUNTIME.playwright.media_retry_backoff_ms],
     },
   };
 }
@@ -249,6 +265,17 @@ function normalizeStringList(value, fallback = []) {
     deduped.push(item);
   });
   return deduped;
+}
+
+function normalizeIntegerList(value, fallback = []) {
+  let rows = [];
+  if (Array.isArray(value)) rows = value;
+  else if (typeof value === "string") rows = value.split(",").map((item) => item.trim());
+  else rows = fallback;
+
+  return rows
+    .map((item) => Number.parseInt(String(item ?? "").trim(), 10))
+    .filter((item) => Number.isFinite(item) && item >= 0);
 }
 
 function normalizeTuning(tuning) {
@@ -313,6 +340,7 @@ function normalizeBrowserRuntime(value) {
       adblock_excluded_categories: normalizeStringList(current.adblock_excluded_categories, base[id].adblock_excluded_categories),
       proxy_source_order: normalizeStringList(current.proxy_source_order, base[id].proxy_source_order),
       proxy_custom_list: normalizeStringList(current.proxy_custom_list, base[id].proxy_custom_list),
+      media_retry_backoff_ms: normalizeIntegerList(current.media_retry_backoff_ms, base[id].media_retry_backoff_ms),
     };
   });
 
@@ -932,6 +960,10 @@ export default function SettingsPage() {
 
   function updateBrowserRuntimeList(browserId, key, value) {
     updateBrowserRuntime(browserId, key, normalizeStringList(value));
+  }
+
+  function updateBrowserRuntimeIntegerList(browserId, key, value) {
+    updateBrowserRuntime(browserId, key, normalizeIntegerList(value));
   }
 
   function activeBrowserTools() {
@@ -1738,6 +1770,96 @@ export default function SettingsPage() {
                     description="Include credentials when the stream CORS patch is active. Leave off unless the target site explicitly needs it."
                   />
                 ) : null}
+              </div>
+
+              <div className="space-y-6">
+                <div className="space-y-3 rounded-[12px] border px-4 py-3" style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.02)" }}>
+                  <SectionHeader>Navigation Retry Behavior</SectionHeader>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-[10px] border px-3 py-2.5" style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)" }}>
+                      <div className="text-[12px] font-medium text-[var(--ink)]">Transient errors</div>
+                      <FieldNote>Automatic retries for `ERR_FAILED`, `ERR_NETWORK`, connection resets, DNS, timeout, and `chrome-error://` failures.</FieldNote>
+                    </div>
+                    <div className="rounded-[10px] border px-3 py-2.5" style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)" }}>
+                      <div className="text-[12px] font-medium text-[var(--ink)]">Limited retries</div>
+                      <FieldNote>`ERR_TOO_MANY_REDIRECTS` and `ERR_UNKNOWN_URL_SCHEME` retry fewer times before falling through to the next wait strategy.</FieldNote>
+                    </div>
+                    <div className="rounded-[10px] border px-3 py-2.5" style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)" }}>
+                      <div className="text-[12px] font-medium text-[var(--ink)]">Permanent failures</div>
+                      <FieldNote>`ERR_BLOCKED_BY_CLIENT`, certificate, and invalid-argument failures stop immediately so the agent can pivot faster.</FieldNote>
+                    </div>
+                  </div>
+                  <FieldNote>Built-in retry backoff: 1000 ms, 2000 ms, 4000 ms, 8000 ms. Wait strategy fallback still degrades from network idle to DOM content loaded to full load.</FieldNote>
+                </div>
+
+                <div className="space-y-4">
+                  <SectionHeader>Iframe Recovery</SectionHeader>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    <ToggleRow
+                      label="Enable iframe auto-recovery"
+                      checked={!!activeBrowserRuntime.iframe_auto_recovery_enabled}
+                      onChange={(value) => updateBrowserRuntime(browserSettingsTab, "iframe_auto_recovery_enabled", value)}
+                      description="Automatically retry iframe failures caused by sandbox, CORS-like blocking, and transient network errors."
+                    />
+                    <BrowserRuntimeInput
+                      label="Iframe recovery timeout (ms)"
+                      value={String(activeBrowserRuntime.iframe_recovery_timeout_ms ?? "")}
+                      onChange={(value) => updateBrowserRuntime(browserSettingsTab, "iframe_recovery_timeout_ms", Number.parseInt(value || "0", 10) || 0)}
+                      type="number"
+                      min="5000"
+                      max="60000"
+                      step="1000"
+                      description="Maximum time allowed for a recovery reload or patch attempt before the runtime reports failure."
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <SectionHeader>Media And Streaming</SectionHeader>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <BrowserRuntimeInput
+                      label="Media capture timeout (ms)"
+                      value={String(activeBrowserRuntime.media_capture_timeout_ms ?? "")}
+                      onChange={(value) => updateBrowserRuntime(browserSettingsTab, "media_capture_timeout_ms", Number.parseInt(value || "0", 10) || 0)}
+                      type="number"
+                      min="5000"
+                      max="120000"
+                      step="1000"
+                      description="How long the runtime listens for HLS, DASH, and direct media requests before returning capture evidence."
+                    />
+                    <BrowserRuntimeInput
+                      label="Media playback retry count"
+                      value={String(activeBrowserRuntime.media_retry_count ?? "")}
+                      onChange={(value) => updateBrowserRuntime(browserSettingsTab, "media_retry_count", Number.parseInt(value || "0", 10) || 0)}
+                      type="number"
+                      min="0"
+                      max="10"
+                      step="1"
+                      description="How many times play-media retries playback before surfacing the final failure."
+                    />
+                  </div>
+                  <BrowserRuntimeInput
+                    label="Media retry backoff (ms)"
+                    value={(activeBrowserRuntime.media_retry_backoff_ms || []).join(", ")}
+                    onChange={(value) => updateBrowserRuntimeIntegerList(browserSettingsTab, "media_retry_backoff_ms", value)}
+                    placeholder="1000, 2000, 4000"
+                    description="Comma-separated per-attempt backoff delays used between media playback retries."
+                  />
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    <ToggleRow
+                      label="Verify media playback"
+                      checked={!!activeBrowserRuntime.media_playback_verification_enabled}
+                      onChange={(value) => updateBrowserRuntime(browserSettingsTab, "media_playback_verification_enabled", value)}
+                      description="Wait for play or playing signals before reporting success so silent failures surface quickly."
+                    />
+                    <ToggleRow
+                      label="Detect media CORS errors"
+                      checked={!!activeBrowserRuntime.media_cors_patch_enabled}
+                      onChange={(value) => updateBrowserRuntime(browserSettingsTab, "media_cors_patch_enabled", value)}
+                      description="Collect extra cross-origin stream diagnostics and flag suspicious missing CORS headers in media capture results."
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </section>

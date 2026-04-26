@@ -29,13 +29,13 @@ Write-OwcDivider
 $startedAt = Get-Date
 
 Write-OwcStep "Stopping existing stack..."
-Invoke-OwcComposeChecked -Context $context -Arguments @("rm", "-f", "-s", $context.Service) | Out-Null
+Invoke-OwcComposeChecked -Context $context -Arguments (@("rm", "-f", "-s") + $context.StartServices) | Out-Null
 
-Write-OwcStep "Building application image..."
+Write-OwcStep "Building stack images..."
 Invoke-OwcBuild -Context $context -NoCache:(-not $useCache)
 
 Write-OwcStep "Starting stack..."
-Invoke-OwcComposeChecked -Context $context -Arguments @("up", "-d", "--remove-orphans", $context.Service) | Out-Null
+Invoke-OwcComposeChecked -Context $context -Arguments (@("up", "-d", "--remove-orphans") + $context.StartServices) | Out-Null
 
 Write-OwcStep "Pruning dangling images..."
 Invoke-DockerChecked -Arguments @("image", "prune", "-f") | Out-Null

@@ -30,16 +30,16 @@ if (Test-OwcServicePresent -Context $context) {
         }
 
         Write-OwcStep "Restarting stack..."
-        Invoke-OwcComposeChecked -Context $context -Arguments @("restart", $context.Service) | Out-Null
+        Invoke-OwcComposeChecked -Context $context -Arguments (@("restart") + $context.StartServices) | Out-Null
     }
     else {
         Write-OwcWarn "Stack exists but is not running (state: $serviceState). Starting it instead."
-        Invoke-OwcComposeChecked -Context $context -Arguments @("start", $context.Service) | Out-Null
+        Invoke-OwcComposeChecked -Context $context -Arguments (@("start") + $context.StartServices) | Out-Null
     }
 }
 else {
     Write-OwcWarn "Stack is not running. Starting it instead."
-    Invoke-OwcComposeChecked -Context $context -Arguments @("up", "-d", "--remove-orphans", $context.Service) | Out-Null
+    Invoke-OwcComposeChecked -Context $context -Arguments (@("up", "-d", "--remove-orphans") + $context.StartServices) | Out-Null
 }
 
 Write-OwcStep "Waiting for application health..."

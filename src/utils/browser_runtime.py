@@ -45,6 +45,13 @@ DEFAULT_BROWSER_RUNTIME: dict[str, dict[str, Any]] = {
         "stream_cors_patch_enabled": False,
         "stream_cors_include_credentials": False,
         "iframe_sandbox_patch_enabled": True,
+        "iframe_auto_recovery_enabled": True,
+        "iframe_recovery_timeout_ms": 20000,
+        "media_capture_timeout_ms": 30000,
+        "media_retry_count": 3,
+        "media_retry_backoff_ms": [1000, 2000, 4000],
+        "media_cors_patch_enabled": False,
+        "media_playback_verification_enabled": True,
     },
     "playwright": {
         "launch_timeout_ms": 45000,
@@ -73,6 +80,13 @@ DEFAULT_BROWSER_RUNTIME: dict[str, dict[str, Any]] = {
         "proxy_max_candidates": 25,
         "proxy_test_url": "https://api.ipify.org?format=json",
         "iframe_sandbox_patch_enabled": True,
+        "iframe_auto_recovery_enabled": True,
+        "iframe_recovery_timeout_ms": 20000,
+        "media_capture_timeout_ms": 30000,
+        "media_retry_count": 3,
+        "media_retry_backoff_ms": [1000, 2000, 4000],
+        "media_cors_patch_enabled": False,
+        "media_playback_verification_enabled": True,
     },
 }
 
@@ -187,6 +201,38 @@ def normalize_browser_runtime(value: Any) -> dict[str, dict[str, Any]]:
         current["iframe_sandbox_patch_enabled"] = _coerce_bool(
             raw.get("iframe_sandbox_patch_enabled"),
             current["iframe_sandbox_patch_enabled"],
+        )
+        current["iframe_auto_recovery_enabled"] = _coerce_bool(
+            raw.get("iframe_auto_recovery_enabled"),
+            current["iframe_auto_recovery_enabled"],
+        )
+        current["iframe_recovery_timeout_ms"] = _coerce_int(
+            raw.get("iframe_recovery_timeout_ms"),
+            current["iframe_recovery_timeout_ms"],
+            minimum=5000,
+        )
+        current["media_capture_timeout_ms"] = _coerce_int(
+            raw.get("media_capture_timeout_ms"),
+            current["media_capture_timeout_ms"],
+            minimum=5000,
+        )
+        current["media_retry_count"] = _coerce_int(
+            raw.get("media_retry_count"),
+            current["media_retry_count"],
+            minimum=0,
+        )
+        current["media_retry_backoff_ms"] = _coerce_int_list(
+            raw.get("media_retry_backoff_ms"),
+            fallback=current["media_retry_backoff_ms"],
+            minimum=0,
+        )
+        current["media_cors_patch_enabled"] = _coerce_bool(
+            raw.get("media_cors_patch_enabled"),
+            current["media_cors_patch_enabled"],
+        )
+        current["media_playback_verification_enabled"] = _coerce_bool(
+            raw.get("media_playback_verification_enabled"),
+            current["media_playback_verification_enabled"],
         )
         if browser == "puppeteer":
             current["ubol_enabled"] = _coerce_bool(raw.get("ubol_enabled"), current["ubol_enabled"])
@@ -308,3 +354,28 @@ def _coerce_string_list(value: Any, *, fallback: list[str] | None = None) -> lis
         seen.add(normalized)
         deduped.append(item)
     return deduped
+
+
+def _coerce_int_list(
+    value: Any,
+    *,
+    fallback: list[int] | None = None,
+    minimum: int = 0,
+) -> list[int]:
+    rows: list[Any] = []
+    if isinstance(value, str):
+        rows = [item.strip() for item in value.split(",")]
+    elif isinstance(value, (list, tuple, set)):
+        rows = list(value)
+    elif fallback is not None:
+        rows = list(fallback)
+
+    normalized: list[int] = []
+    for item in rows:
+        try:
+            parsed = int(item)
+        except (TypeError, ValueError):
+            continue
+        normalized.append(max(minimum, parsed))
+
+    return normalized or list(fallback or [])

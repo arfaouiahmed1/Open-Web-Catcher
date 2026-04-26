@@ -13,6 +13,7 @@ from src.models.enums import AgentType
 from src.models.schemas import ModelUsage, RunMetrics
 from src.utils.config import Settings
 from src.utils.instrumentation import (
+    estimate_usage_cost,
     resolve_default_dataset_name,
     resolve_model_pricing,
     resolve_model_pricing_config,
@@ -312,6 +313,15 @@ class RunObserver:
         )
         pricing = pricing or {}
         resolved_provider = str(pricing.get("provider") or provider or "").strip()
+        resolved_cache = cache_metrics or _extract_cache_metrics(
+            usage,
+            response_metadata=response_metadata,
+            additional_kwargs=additional_kwargs,
+        )
+        cache_hit = bool(resolved_cache.get("cache_hit", False))
+        cached_input_tokens = _to_int(resolved_cache.get("cached_input_tokens"))
+        new_input_tokens = _to_int(resolved_cache.get("new_input_tokens"))
+
         reported_costs = _extract_provider_reported_costs(
             usage,
             response_metadata=response_metadata,
@@ -325,16 +335,28 @@ class RunObserver:
                 "estimated_total_cost_usd",
             )
         )
-        costs = reported_costs
-        cost_source = "provider_reported" if has_reported_costs else "provider_unreported"
-        resolved_cache = cache_metrics or _extract_cache_metrics(
-            usage,
-            response_metadata=response_metadata,
-            additional_kwargs=additional_kwargs,
-        )
-        cache_hit = bool(resolved_cache.get("cache_hit", False))
-        cached_input_tokens = _to_int(resolved_cache.get("cached_input_tokens"))
-        new_input_tokens = _to_int(resolved_cache.get("new_input_tokens"))
+        if has_reported_costs:
+            costs = reported_costs
+            cost_source = "provider_reported"
+        else:
+            pricing_input = float(pricing.get("input_per_million", 0.0) or 0.0)
+            pricing_output = float(pricing.get("output_per_million", 0.0) or 0.0)
+            if pricing_input > 0.0 or pricing_output > 0.0:
+                billable_input_tokens = (
+                    max(new_input_tokens, 0)
+                    if cache_hit and new_input_tokens > 0
+                    else max(input_tokens, 0)
+                )
+                costs = estimate_usage_cost(
+                    billable_input_tokens,
+                    output_tokens,
+                    input_per_million=pricing_input,
+                    output_per_million=pricing_output,
+                )
+                cost_source = "provider_pricing_catalog"
+            else:
+                costs = reported_costs
+                cost_source = "provider_unreported"
 
         with self._state._lock:
             metrics = self._state.metrics

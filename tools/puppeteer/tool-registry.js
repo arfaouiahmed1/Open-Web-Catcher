@@ -372,11 +372,11 @@ const TOOL_SPECS = {
   ),
   capture_streams: spec(
     'Use after playback starts to discover stream URLs. Captures HLS/DASH/MP4 evidence from CDP, DOM, player objects, iframe src, and performance entries.',
-    { frame_path: 'root.0', duration_ms: 12000, player_iframe_hint: 'embed.example.com' },
+    { frame_path: 'root.0', duration_ms: 30000, player_iframe_hint: 'embed.example.com' },
     { ok: true, total_streams: 1, streams: [{ url: 'https://cdn.example.com/master.m3u8', protocol: 'hls' }], screenshot_url: 'https://res.cloudinary.com/...' },
     {
       frame_path: framePathSchema,
-      duration_ms: z.number().optional().default(12000),
+      duration_ms: z.number().optional().default(30000),
       player_iframe_hint: z.string().optional().default(''),
     },
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.capture_streams({ ...args, browserWsEndpoint }),
@@ -387,7 +387,7 @@ const TOOL_SPECS = {
     { success: true, finalUrl: 'https://example.com/watch', httpStatus: 200, screenshot_url: 'https://res.cloudinary.com/...' },
     {
       url: z.string().describe('Full URL to navigate to'),
-      wait_until: z.enum(['networkidle0', 'networkidle2', 'domcontentloaded', 'load']).optional().default('networkidle2'),
+      wait_until: z.enum(['networkidle', 'networkidle0', 'networkidle2', 'domcontentloaded', 'load']).optional().default('networkidle2'),
       timeout_ms: z.number().optional().default(30000),
     },
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.navigate({ ...args, browserWsEndpoint }),

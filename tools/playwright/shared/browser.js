@@ -26,6 +26,11 @@ import {
   normalizeProxyRuntimeConfig,
   shouldAllowSharedBrowserFallback,
 } from '../../shared/proxy-pool.js';
+import {
+  classifyChromeError,
+  classifyIframeFailure,
+  extractChromeNetErrorCode,
+} from '../../shared/error-codes.js';
 import { attachAdBlocker } from './adblocker.js';
 import { getBrowserRuntimeSettings } from './runtime-config.js';
 
@@ -115,6 +120,8 @@ const preparedContexts = new WeakSet();
 function runtimeSetting(key) {
   return getBrowserRuntimeSettings('playwright')?.[key];
 }
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ---------------------------------------------------------------------------
 // Utility helpers (identical to Puppeteer version)
@@ -271,6 +278,20 @@ function getIframeSandboxPatchEnabled() {
   );
 }
 
+function getIframeAutoRecoveryEnabled() {
+  return parseBoolean(
+    runtimeSetting('iframe_auto_recovery_enabled') ?? process.env.OWC_IFRAME_AUTO_RECOVERY_ENABLED,
+    true,
+  );
+}
+
+function getIframeRecoveryTimeoutMs() {
+  return Number.parseInt(
+    String(runtimeSetting('iframe_recovery_timeout_ms') ?? process.env.OWC_IFRAME_RECOVERY_TIMEOUT_MS ?? '20000'),
+    10,
+  );
+}
+
 function getExtraLaunchArgs() {
   const configured = runtimeSetting('extra_launch_args');
   if (!Array.isArray(configured)) return [];
@@ -366,13 +387,24 @@ function summarizeNetworkFailures(failures = []) {
     aborted: 0,
     iframe_or_player_related: 0,
     by_resource_type: {},
+    by_error_code: {},
+    transient_error_count: 0,
+    limited_error_count: 0,
+    permanent_error_count: 0,
+    unknown_error_count: 0,
   };
   for (const failure of failures) {
     const resourceType = String(failure.resource_type || 'other');
     summary.by_resource_type[resourceType] = (summary.by_resource_type[resourceType] || 0) + 1;
+    const errorCode = String(failure.error_code || '').trim();
+    if (errorCode) summary.by_error_code[errorCode] = (summary.by_error_code[errorCode] || 0) + 1;
     if (failure.blocked_by_client) summary.blocked_by_client += 1;
     if (failure.aborted) summary.aborted += 1;
     if (failure.iframe_or_player_related) summary.iframe_or_player_related += 1;
+    if (failure.error_category === 'transient') summary.transient_error_count += 1;
+    else if (failure.error_category === 'limited') summary.limited_error_count += 1;
+    else if (failure.error_category === 'permanent') summary.permanent_error_count += 1;
+    else summary.unknown_error_count += 1;
   }
   return summary;
 }
@@ -396,6 +428,16 @@ function getNetworkState(page) {
         error: null,
         disable_promise: null,
       },
+      iframeRecovery: {
+        attempted: false,
+        detection_reason: '',
+        patches_applied: [],
+        final_error: null,
+        recovery_attempts: 0,
+        success: false,
+        unrecoverable: false,
+        pending_promise: null,
+      },
     };
     pageNetworkState.set(page, state);
   }
@@ -404,9 +446,12 @@ function getNetworkState(page) {
 
 function recordRequestFailure(page, request) {
   const state = getNetworkState(page);
-  const failureText = normalizeFailureText(request.failure() || '');
+  const rawFailure = request.failure?.();
+  const failureText = normalizeFailureText(rawFailure?.errorText || rawFailure || '');
   const url = request.url() || '';
   const resourceType = request.resourceType() || 'other';
+  const errorCode = extractChromeNetErrorCode(failureText);
+  const chromeError = classifyChromeError({ message: failureText, url });
   const failure = {
     timestamp: Date.now(),
     url,
@@ -414,10 +459,21 @@ function recordRequestFailure(page, request) {
     resource_type: resourceType,
     frame_url: request.frame()?.url() || '',
     error_text: failureText,
+    error_code: errorCode || chromeError.error_code,
+    error_category: chromeError.error_category,
     blocked_by_client: failureText.includes('blocked_by_client') || failureText.includes('blockedbyclient'),
     aborted: failureText.includes('aborted'),
     iframe_or_player_related: isLikelyIframeOrPlayerRequest({ url, resourceType }),
   };
+  const iframeFailure = classifyIframeFailure({
+    errorText: failureText,
+    errorCode: failure.error_code,
+    resourceType,
+    blockedByClient: failure.blocked_by_client,
+    aborted: failure.aborted,
+  });
+  failure.iframe_failure_reason = iframeFailure.detection_reason;
+  failure.iframe_recoverable = iframeFailure.recoverable;
   state.failures.push(failure);
   while (state.failures.length > state.failuresLimit) state.failures.shift();
   return failure;
@@ -434,6 +490,60 @@ async function disableBlockingForPage(page) {
   } catch { return false; }
 }
 
+async function performIframeRecovery(page, failure) {
+  const state = getNetworkState(page);
+  const recovery = state.iframeRecovery;
+  const timeoutMs = Math.max(5000, getIframeRecoveryTimeoutMs() || 20000);
+
+  recovery.attempted = true;
+  recovery.detection_reason = failure.iframe_failure_reason || '';
+  recovery.patches_applied = [];
+  recovery.final_error = null;
+  recovery.recovery_attempts += 1;
+  recovery.success = false;
+  recovery.unrecoverable = false;
+
+  try {
+    if (recovery.detection_reason === 'x_frame_options' || recovery.detection_reason === 'csp') {
+      recovery.unrecoverable = true;
+      recovery.final_error = recovery.detection_reason === 'csp'
+        ? 'unrecoverable_content_security_policy'
+        : 'unrecoverable_x_frame_options';
+      return;
+    }
+
+    if (recovery.detection_reason === 'sandbox') {
+      recovery.patches_applied.push('relax_sandbox');
+      await page.evaluate(patchIframeSandboxFn).catch(() => {});
+      recovery.patches_applied.push('reload_with_retry');
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: timeoutMs });
+      recovery.success = true;
+      return;
+    }
+
+    if (recovery.detection_reason === 'cors') {
+      const disabled = await disableBlockingForPage(page);
+      recovery.patches_applied.push(disabled ? 'disable_blocking' : 'blocking_already_disabled');
+      recovery.patches_applied.push('reload_with_retry');
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: timeoutMs });
+      recovery.success = true;
+      return;
+    }
+
+    if (recovery.detection_reason === 'network') {
+      recovery.patches_applied.push('reload_with_retry');
+      await wait(1000);
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: timeoutMs });
+      recovery.success = true;
+      return;
+    }
+
+    recovery.final_error = 'no_recovery_strategy';
+  } catch (error) {
+    recovery.final_error = error?.message || String(error);
+  }
+}
+
 function attachNetworkDiagnostics(page) {
   if (pageNetworkListeners.has(page)) return;
   pageNetworkListeners.add(page);
@@ -442,43 +552,62 @@ function attachNetworkDiagnostics(page) {
     const failure = recordRequestFailure(page, request);
     const state = getNetworkState(page);
 
-    if (!getAdblockAutoRecoveryEnabled() || state.autoRecovery.attempted) return;
+    if (getAdblockAutoRecoveryEnabled() && !state.autoRecovery.attempted) {
+      const recoverableFailure = failure.iframe_or_player_related
+        && (failure.blocked_by_client || (getAdblockAutoRecoveryOnAbort() && failure.aborted));
 
-    const recoverableFailure = failure.iframe_or_player_related
-      && (failure.blocked_by_client || (getAdblockAutoRecoveryOnAbort() && failure.aborted));
+      if (recoverableFailure) {
+        state.autoRecovery.attempted = true;
+        state.autoRecovery.reason = failure.blocked_by_client
+          ? 'blocked_by_client_iframe_or_player_request'
+          : 'aborted_iframe_or_player_request';
 
-    if (!recoverableFailure) return;
+        state.autoRecovery.disable_promise = disableBlockingForPage(page)
+          .then(async (disabled) => {
+            state.autoRecovery.disabled_blocking = Boolean(disabled);
+            if (disabled) {
+              // Reload so the player can make its requests now that blocking is off.
+              await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+            }
+          })
+          .catch((error) => {
+            state.autoRecovery.error = error?.message || String(error);
+          })
+          .finally(() => {
+            state.autoRecovery.disable_promise = null;
+          });
+      }
+    }
 
-    state.autoRecovery.attempted = true;
-    state.autoRecovery.reason = failure.blocked_by_client
-      ? 'blocked_by_client_iframe_or_player_request'
-      : 'aborted_iframe_or_player_request';
+    if (!getIframeAutoRecoveryEnabled() || state.iframeRecovery.attempted || !failure.iframe_failure_reason) return;
+    if (failure.iframe_failure_reason === 'adblock') return;
 
-    state.autoRecovery.disable_promise = disableBlockingForPage(page)
-      .then(async (disabled) => {
-        state.autoRecovery.disabled_blocking = Boolean(disabled);
-        if (disabled) {
-          // Reload so the player can make its requests now that blocking is off.
-          await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
-        }
-      })
-      .catch((error) => {
-        state.autoRecovery.error = error?.message || String(error);
-      })
+    state.iframeRecovery.pending_promise = performIframeRecovery(page, failure)
       .finally(() => {
-        state.autoRecovery.disable_promise = null;
+        state.iframeRecovery.pending_promise = null;
       });
   });
 }
 
-export function getPageNetworkDiagnostics(page, { limit = 30 } = {}) {
+export function getPageNetworkDiagnostics(page, { limit = 10 } = {}) {
   const state = getNetworkState(page);
-  const cappedFailures = state.failures.slice(-Math.max(1, Number.parseInt(String(limit || 30), 10) || 30));
+  const cappedFailures = state.failures.slice(-Math.max(1, Number.parseInt(String(limit || 10), 10) || 10));
+  const summary = summarizeNetworkFailures(cappedFailures);
   const { disable_promise, ...publicRecovery } = state.autoRecovery;
+  const { pending_promise, ...publicIframeRecovery } = state.iframeRecovery;
   return {
     request_failures: cappedFailures,
-    request_failure_summary: summarizeNetworkFailures(cappedFailures),
+    request_failure_summary: summary,
+    failures_by_error_code: summary.by_error_code,
+    transient_error_count: summary.transient_error_count,
+    limited_error_count: summary.limited_error_count,
+    permanent_error_count: summary.permanent_error_count,
+    unknown_error_count: summary.unknown_error_count,
     auto_recovery: { ...publicRecovery },
+    iframe_recovery_attempted: Boolean(publicIframeRecovery.attempted),
+    iframe_recovery_reason: publicIframeRecovery.detection_reason || '',
+    iframe_recovery_success: Boolean(publicIframeRecovery.success),
+    iframe_recovery: { ...publicIframeRecovery },
   };
 }
 
@@ -509,12 +638,23 @@ export async function getIframeDiagnostics(page, { limit = 24 } = {}) {
     };
     return Array.from(document.querySelectorAll('iframe')).slice(0, innerLimit).map(classify);
   }, normalizedLimit).catch(() => []);
+  const state = getNetworkState(page);
+  const recovery = state.iframeRecovery;
+  const restrictiveSandboxFailedCount = state.failures
+    .filter((failure) => failure.iframe_failure_reason === 'sandbox')
+    .length;
 
   return {
     total: rows.length,
     cross_origin_count: rows.filter((r) => r.cross_origin).length,
     restrictive_sandbox_count: rows.filter((r) => r.restrictive_sandbox).length,
+    restrictive_sandbox_failed_count: restrictiveSandboxFailedCount,
     likely_player_count: rows.filter((r) => r.likely_player).length,
+    recovery_attempted: Boolean(recovery.attempted),
+    recovery_reason: recovery.detection_reason || '',
+    recovery_patches: [...(recovery.patches_applied || [])],
+    recovery_success: Boolean(recovery.success),
+    recovery_error: recovery.final_error,
     iframes: rows,
   };
 }
@@ -527,6 +667,9 @@ export async function retryNavigationAfterAutoRecovery(page, {
   const state = getNetworkState(page);
   if (state.autoRecovery.disable_promise) {
     await state.autoRecovery.disable_promise.catch(() => {});
+  }
+  if (state.iframeRecovery.pending_promise) {
+    await state.iframeRecovery.pending_promise.catch(() => {});
   }
 
   if (!getAdblockAutoRecoveryRetryEnabled()) {
@@ -545,7 +688,7 @@ export async function retryNavigationAfterAutoRecovery(page, {
     await page.goto(targetUrl, { waitUntil, timeout: timeoutMs });
     state.autoRecovery.retry_succeeded = true;
     return { attempted: true, succeeded: true, wait_until: waitUntil, target_url: targetUrl };
-  } catch {
+  } catch (error) {
     state.autoRecovery.retry_succeeded = false;
     state.autoRecovery.error = error?.message || String(error);
     return {

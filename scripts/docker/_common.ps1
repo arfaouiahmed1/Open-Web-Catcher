@@ -11,11 +11,19 @@ function Get-OwcContext {
 
     $image = if ($env:OWC_IMAGE) { $env:OWC_IMAGE } else { "open-web-catcher" }
     $toolsImage = if ($env:OWC_TOOLS_IMAGE) { $env:OWC_TOOLS_IMAGE } else { "open-web-catcher-tools" }
+    $toolsPlaywrightImage = if ($env:OWC_TOOLS_PW_IMAGE) { $env:OWC_TOOLS_PW_IMAGE } else { "open-web-catcher-tools-playwright" }
     $webImage = if ($env:OWC_WEB_IMAGE) { $env:OWC_WEB_IMAGE } else { "open-web-catcher-web" }
     $tag = if ($env:OWC_TAG) { $env:OWC_TAG } else { "latest" }
     $container = if ($env:OWC_CONTAINER) { $env:OWC_CONTAINER } else { "owc" }
     $toolsContainer = if ($env:OWC_TOOLS_CONTAINER) { $env:OWC_TOOLS_CONTAINER } else { "owc-tools" }
+    $toolsPlaywrightContainer = if ($env:OWC_TOOLS_PW_CONTAINER) { $env:OWC_TOOLS_PW_CONTAINER } else { "owc-tools-playwright" }
     $webContainer = if ($env:OWC_WEB_CONTAINER) { $env:OWC_WEB_CONTAINER } else { "owc-web" }
+    $toolService = "owc-tools"
+    $playwrightToolService = "owc-tools-playwright"
+    $service = "owc"
+    $webService = "owc-web"
+    $buildServices = @($toolService, $playwrightToolService, $service, $webService)
+    $startServices = @($toolService, $playwrightToolService, $service, $webService)
 
     [pscustomobject]@{
         ScriptDir = $scriptDir
@@ -23,17 +31,23 @@ function Get-OwcContext {
         ComposeFile = Join-Path $rootDir "docker-compose.yml"
         Image = $image
         ToolImage = $toolsImage
+        PlaywrightToolImage = $toolsPlaywrightImage
         WebImage = $webImage
         Tag = $tag
         ImageRef = "$image`:$tag"
         ToolImageRef = "$toolsImage`:$tag"
+        PlaywrightToolImageRef = "$toolsPlaywrightImage`:$tag"
         WebImageRef = "$webImage`:$tag"
         Container = $container
         ToolContainer = $toolsContainer
+        PlaywrightToolContainer = $toolsPlaywrightContainer
         WebContainer = $webContainer
-        Service = "owc"
-        ToolService = "owc-tools"
-        WebService = "owc-web"
+        Service = $service
+        ToolService = $toolService
+        PlaywrightToolService = $playwrightToolService
+        WebService = $webService
+        BuildServices = $buildServices
+        StartServices = $startServices
         EnvFile = Join-Path $rootDir ".env"
         ExampleEnvFile = Join-Path $rootDir ".env.example"
         DataDir = Join-Path $rootDir "data"
@@ -431,16 +445,17 @@ function Invoke-OwcBuild {
         [switch]$NoCache
     )
 
-    $buildArgs = @("build", "--progress", "plain")
+    $buildArgs = @("--progress", "plain", "build")
     if ($NoCache) {
         $buildArgs += "--no-cache"
     }
 
-    $buildArgs += @($Context.ToolService, $Context.Service, $Context.WebService)
+    $buildArgs += $Context.BuildServices
     Invoke-OwcComposeChecked -Context $Context -Arguments $buildArgs | Out-Null
 
     $modeLabel = if ($NoCache) { "without cache" } else { "with cache" }
-    Write-OwcSuccess "Built services '$($Context.ToolService)', '$($Context.Service)', and '$($Context.WebService)' ($modeLabel)."
+    $servicesLabel = (($Context.BuildServices | ForEach-Object { "'$_'" }) -join ", ")
+    Write-OwcSuccess "Built services $servicesLabel ($modeLabel)."
 }
 
 function Show-OwcEndpoints {

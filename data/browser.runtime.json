@@ -1,0 +1,102 @@
+{
+  "browser_engine": "puppeteer",
+  "browser_runtime": {
+    "puppeteer": {
+      "launch_timeout_ms": 45000,
+      "extra_launch_args": [],
+      "adblock_enabled": false,
+      "adblock_allowlist_hosts": [],
+      "adblock_excluded_categories": [
+        "nsfw",
+        "gambling"
+      ],
+      "adblock_auto_recovery_enabled": true,
+      "adblock_auto_recovery_on_abort": true,
+      "adblock_auto_recovery_retry": true,
+      "fingerprint_rotation_mode": "origin",
+      "fingerprint_fallback_strategy": "profile",
+      "fingerprint_rotation_interval_ms": 180000,
+      "fingerprint_rotation_max_uses": 6,
+      "fingerprint_recent_pool_size": 12,
+      "proxy_enabled": false,
+      "proxy_source_mode": "hybrid",
+      "proxy_source_order": [
+        "openproxylist-https",
+        "openproxylist-socks5",
+        "speedx-http",
+        "speedx-socks5"
+      ],
+      "proxy_custom_list": [],
+      "proxy_rotation_mode": "session",
+      "proxy_selection_strategy": "ordered",
+      "proxy_fallback_strategy": "direct",
+      "proxy_fetch_timeout_ms": 8000,
+      "proxy_validation_timeout_ms": 12000,
+      "proxy_cache_ttl_ms": 600000,
+      "proxy_max_candidates": 25,
+      "proxy_test_url": "https://api.ipify.org?format=json",
+      "ubol_enabled": true,
+      "stream_cors_patch_enabled": false,
+      "stream_cors_include_credentials": false,
+      "iframe_sandbox_patch_enabled": true,
+      "iframe_auto_recovery_enabled": true,
+      "iframe_recovery_timeout_ms": 20000,
+      "media_capture_timeout_ms": 30000,
+      "media_retry_count": 3,
+      "media_retry_backoff_ms": [
+        1000,
+        2000,
+        4000
+      ],
+      "media_cors_patch_enabled": false,
+      "media_playback_verification_enabled": true
+    },
+    "playwright": {
+      "launch_timeout_ms": 45000,
+      "extra_launch_args": [],
+      "adblock_enabled": true,
+      "adblock_allowlist_hosts": [],
+      "adblock_excluded_categories": [
+        "nsfw",
+        "gambling"
+      ],
+      "adblock_auto_recovery_enabled": true,
+      "adblock_auto_recovery_on_abort": true,
+      "adblock_auto_recovery_retry": true,
+      "fingerprint_rotation_mode": "origin",
+      "fingerprint_fallback_strategy": "profile",
+      "fingerprint_rotation_interval_ms": 180000,
+      "fingerprint_rotation_max_uses": 6,
+      "fingerprint_recent_pool_size": 12,
+      "proxy_enabled": false,
+      "proxy_source_mode": "hybrid",
+      "proxy_source_order": [
+        "openproxylist-https",
+        "openproxylist-socks5",
+        "speedx-http",
+        "speedx-socks5"
+      ],
+      "proxy_custom_list": [],
+      "proxy_rotation_mode": "session",
+      "proxy_selection_strategy": "ordered",
+      "proxy_fallback_strategy": "direct",
+      "proxy_fetch_timeout_ms": 8000,
+      "proxy_validation_timeout_ms": 12000,
+      "proxy_cache_ttl_ms": 600000,
+      "proxy_max_candidates": 25,
+      "proxy_test_url": "https://api.ipify.org?format=json",
+      "iframe_sandbox_patch_enabled": true,
+      "iframe_auto_recovery_enabled": true,
+      "iframe_recovery_timeout_ms": 20000,
+      "media_capture_timeout_ms": 30000,
+      "media_retry_count": 3,
+      "media_retry_backoff_ms": [
+        1000,
+        2000,
+        4000
+      ],
+      "media_cors_patch_enabled": false,
+      "media_playback_verification_enabled": true
+    }
+  }
+}

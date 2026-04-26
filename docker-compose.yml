@@ -22,10 +22,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.tools
+      args:
+        BUILDKIT_INLINE_CACHE: "1"
       cache_to:
         - type=inline
-      cache_from:
-        - ${OWC_TOOLS_IMAGE:-open-web-catcher-tools}:${OWC_TAG:-latest}
     container_name: ${OWC_TOOLS_CONTAINER:-owc-tools}
     restart: unless-stopped
     shm_size: "2gb"
@@ -65,10 +65,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.tools.playwright
+      args:
+        BUILDKIT_INLINE_CACHE: "1"
       cache_to:
         - type=inline
-      cache_from:
-        - ${OWC_TOOLS_PW_IMAGE:-open-web-catcher-tools-playwright}:${OWC_TAG:-latest}
     container_name: ${OWC_TOOLS_PW_CONTAINER:-owc-tools-playwright}
     restart: unless-stopped
     shm_size: "2gb"
@@ -98,10 +98,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: "1"
       cache_to:
         - type=inline
-      cache_from:
-        - ${OWC_IMAGE:-open-web-catcher}:${OWC_TAG:-latest}
     container_name: ${OWC_CONTAINER:-owc}
     restart: unless-stopped
     ports:
@@ -142,10 +142,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.web
+      args:
+        BUILDKIT_INLINE_CACHE: "1"
       cache_to:
         - type=inline
-      cache_from:
-        - ${OWC_WEB_IMAGE:-open-web-catcher-web}:${OWC_TAG:-latest}
     container_name: ${OWC_WEB_CONTAINER:-owc-web}
     restart: unless-stopped
     ports:

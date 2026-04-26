@@ -6,6 +6,7 @@ import {
   resolveFrame,
   withBrowserSession,
 } from '../shared/tool-runtime.js';
+import { getBrowserRuntimeSettings } from '../shared/runtime-config.js';
 
 const STREAM_PATTERNS = [
   { re: /\.m3u8(\?|$)/i, protocol: 'hls' },
@@ -19,9 +20,54 @@ const STREAM_PATTERNS = [
 const isStream = (url) => STREAM_PATTERNS.some(({ re }) => re.test(url));
 const getProtocol = (url) => STREAM_PATTERNS.find(({ re }) => re.test(url))?.protocol || 'unknown';
 
+function runtimeSetting(key) {
+  return getBrowserRuntimeSettings('playwright')?.[key];
+}
+
+function parseBoolean(value, fallback = false) {
+  if (value == null) return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(normalized);
+}
+
+function getMediaCaptureTimeoutMs(explicitDuration) {
+  if (Number.isFinite(explicitDuration) && explicitDuration > 0) return Math.floor(explicitDuration);
+  const configured = Number.parseInt(String(runtimeSetting('media_capture_timeout_ms') ?? '30000'), 10);
+  return Number.isFinite(configured) && configured > 0 ? configured : 30000;
+}
+
+function getMediaCorsDiagnosticsEnabled() {
+  return parseBoolean(runtimeSetting('media_cors_patch_enabled'), false);
+}
+
+function normalizeHeaders(headers = {}) {
+  const normalized = {};
+  for (const [key, value] of Object.entries(headers || {})) {
+    if (value == null) continue;
+    normalized[String(key).toLowerCase()] = String(value);
+  }
+  return normalized;
+}
+
+function toOrigin(urlLike, fallbackBase = '') {
+  try {
+    return new URL(String(urlLike || ''), fallbackBase || undefined).origin;
+  } catch {
+    return '';
+  }
+}
+
+function didPlaybackStart(mediaState = {}) {
+  return (mediaState.videos || []).some((video) =>
+    (!video.paused && (video.ready_state >= 2 || video.current_time > 0))
+    || Number(video.current_time || 0) > 0,
+  );
+}
+
 export async function captureStreams({
   frame_path = 'root',
-  duration_ms = 12000,
+  duration_ms,
   player_iframe_hint = '',
   browserWsEndpoint,
 } = {}) {
@@ -32,8 +78,12 @@ export async function captureStreams({
     }
 
     const targetFrame = frameState.frame;
+    const captureWindowMs = getMediaCaptureTimeoutMs(duration_ms);
+    const detectCorsFailures = getMediaCorsDiagnosticsEnabled();
     const streams = new Map();
     const evidence = [];
+    const corsFailures = [];
+    const corsFailureKeys = new Set();
 
     const add = (url, source_layer) => {
       if (!url || !isStream(url) || streams.has(url)) return;
@@ -45,108 +95,172 @@ export async function captureStreams({
       evidence.push({ url, source_layer });
     };
 
+    const addCorsFailure = ({ url, source_layer, reason, status = null, headers = {} }) => {
+      if (!detectCorsFailures || !url) return;
+      const normalizedHeaders = normalizeHeaders(headers);
+      const key = [url, source_layer, reason, status, normalizedHeaders['access-control-allow-origin'] || ''].join('|');
+      if (corsFailureKeys.has(key)) return;
+      corsFailureKeys.add(key);
+      corsFailures.push({
+        url,
+        source_layer,
+        reason,
+        status,
+        access_control_allow_origin: normalizedHeaders['access-control-allow-origin'] || '',
+      });
+    };
+
     const pageClient = await page.context().newCDPSession(page);
-    await pageClient.send('Network.enable');
-    pageClient.on('Network.requestWillBeSent', ({ request }) => add(request.url, 'page_cdp_request'));
-    pageClient.on('Network.responseReceived', ({ response }) => add(response.url, 'page_cdp_response'));
-    page.on('response', (response) => add(response.url(), 'page_response'));
+    let frameClient = null;
+    let pageResponseListener = null;
+    let requestFailedListener = null;
 
     let hintedFrame = null;
     if (player_iframe_hint) {
       hintedFrame = page.frames().find((frame) => frame.url().includes(player_iframe_hint));
     }
     const effectiveFrame = hintedFrame || targetFrame;
+    const pageOrigin = toOrigin(effectiveFrame.url(), page.url()) || toOrigin(page.url());
 
-    // Playwright CDP is page-scoped only (no frame-level CDP sessions).
-    // Use an additional page-level session and filter events by the effective frame's URL.
-    let frameClient = null;
-    const effectiveFrameUrl = effectiveFrame.url();
     try {
-      frameClient = await page.context().newCDPSession(page);
-      await frameClient.send('Network.enable');
-      frameClient.on('Network.requestWillBeSent', ({ request }) => {
-        if (!effectiveFrameUrl || request.url.startsWith(effectiveFrameUrl.replace(/\/[^/]*$/, ''))) {
-          add(request.url, 'frame_cdp_request');
+      await pageClient.send('Network.enable');
+      pageClient.on('Network.requestWillBeSent', ({ request }) => add(request.url, 'page_cdp_request'));
+      pageClient.on('Network.responseReceived', ({ response }) => {
+        add(response.url, 'page_cdp_response');
+        if (!detectCorsFailures || !isStream(response.url)) return;
+        const responseOrigin = toOrigin(response.url, effectiveFrame.url());
+        if (!responseOrigin || responseOrigin === pageOrigin) return;
+        const headers = normalizeHeaders(response.headers);
+        if (Number(response.status || 0) === 0) {
+          addCorsFailure({ url: response.url, source_layer: 'page_cdp_response', reason: 'status_0', status: response.status, headers });
+          return;
+        }
+        if (!headers['access-control-allow-origin']) {
+          addCorsFailure({ url: response.url, source_layer: 'page_cdp_response', reason: 'missing_acao_header', status: response.status, headers });
         }
       });
-      frameClient.on('Network.responseReceived', ({ response }) => {
-        if (!effectiveFrameUrl || response.url.startsWith(effectiveFrameUrl.replace(/\/[^/]*$/, ''))) {
-          add(response.url, 'frame_cdp_response');
+
+      pageResponseListener = (response) => add(response.url(), 'page_response');
+      page.on('response', pageResponseListener);
+
+      requestFailedListener = (request) => {
+        const requestUrl = request.url() || '';
+        if (!isStream(requestUrl) && request.resourceType() !== 'media') return;
+        const failureText = String(request.failure?.()?.errorText || request.failure?.() || '').toLowerCase();
+        if (!failureText) return;
+        if (failureText.includes('cors') || failureText.includes('cross-origin') || failureText.includes('blocked_by_response')) {
+          addCorsFailure({ url: requestUrl, source_layer: 'page_requestfailed', reason: failureText });
         }
-      });
-    } catch {
-      frameClient = null;
-    }
+      };
+      page.on('requestfailed', requestFailedListener);
 
-    await new Promise((resolve) => setTimeout(resolve, duration_ms));
-
-    const domUrls = await effectiveFrame.evaluate(() =>
-      Array.from(document.querySelectorAll('video, source'))
-        .map((node) => node.currentSrc || node.src || node.getAttribute('src') || '')
-        .filter(Boolean),
-    ).catch(() => []);
-    domUrls.forEach((url) => add(url, 'dom'));
-
-    const iframeUrls = await effectiveFrame.evaluate(() =>
-      Array.from(document.querySelectorAll('iframe'))
-        .map((node) => node.src || node.getAttribute('src') || '')
-        .filter(Boolean),
-    ).catch(() => []);
-    iframeUrls.forEach((url) => add(url, 'iframe_src'));
-
-    const jsUrls = await effectiveFrame.evaluate(() => {
-      const found = [];
+      // Playwright CDP is page-scoped only (no frame-level CDP sessions).
+      // Use an additional page-level session and filter events by the effective frame's URL.
+      const effectiveFrameUrl = effectiveFrame.url();
       try {
-        if (window.Hls?.instances) {
-          window.Hls.instances.forEach((instance) => instance.url && found.push(instance.url));
-        }
-        Object.values(window.videojs?.players || {}).forEach((player) => {
-          const source = player?.currentSrc?.();
-          if (source) found.push(source);
+        frameClient = await page.context().newCDPSession(page);
+        await frameClient.send('Network.enable');
+        frameClient.on('Network.requestWillBeSent', ({ request }) => {
+          if (!effectiveFrameUrl || request.url.startsWith(effectiveFrameUrl.replace(/\/[^/]*$/, ''))) {
+            add(request.url, 'frame_cdp_request');
+          }
         });
-        const jwItem = window.jwplayer?.()?.getPlaylistItem?.();
-        if (jwItem?.file) found.push(jwItem.file);
-        const raw = JSON.stringify(window.__streams__ || window.__playlist__ || {});
-        (raw.match(/https?:\/\/[^\s"']+\.(m3u8|mpd|mp4)[^\s"']*/gi) || []).forEach((url) => found.push(url));
+        frameClient.on('Network.responseReceived', ({ response }) => {
+          if (!effectiveFrameUrl || !response.url.startsWith(effectiveFrameUrl.replace(/\/[^/]*$/, ''))) {
+            return;
+          }
+          add(response.url, 'frame_cdp_response');
+          if (!detectCorsFailures || !isStream(response.url)) return;
+          const responseOrigin = toOrigin(response.url, effectiveFrame.url());
+          if (!responseOrigin || responseOrigin === pageOrigin) return;
+          const headers = normalizeHeaders(response.headers);
+          if (Number(response.status || 0) === 0) {
+            addCorsFailure({ url: response.url, source_layer: 'frame_cdp_response', reason: 'status_0', status: response.status, headers });
+            return;
+          }
+          if (!headers['access-control-allow-origin']) {
+            addCorsFailure({ url: response.url, source_layer: 'frame_cdp_response', reason: 'missing_acao_header', status: response.status, headers });
+          }
+        });
       } catch {
-        // ignore
+        frameClient = null;
       }
-      return found;
-    }).catch(() => []);
-    jsUrls.forEach((url) => add(url, 'js_player'));
 
-    const perfUrls = await effectiveFrame.evaluate(() => {
-      try {
-        return performance.getEntriesByType('resource').map((entry) => entry.name);
-      } catch {
-        return [];
+      await new Promise((resolve) => setTimeout(resolve, captureWindowMs));
+
+      const domUrls = await effectiveFrame.evaluate(() =>
+        Array.from(document.querySelectorAll('video, source'))
+          .map((node) => node.currentSrc || node.src || node.getAttribute('src') || '')
+          .filter(Boolean),
+      ).catch(() => []);
+      domUrls.forEach((url) => add(url, 'dom'));
+
+      const iframeUrls = await effectiveFrame.evaluate(() =>
+        Array.from(document.querySelectorAll('iframe'))
+          .map((node) => node.src || node.getAttribute('src') || '')
+          .filter(Boolean),
+      ).catch(() => []);
+      iframeUrls.forEach((url) => add(url, 'iframe_src'));
+
+      const jsUrls = await effectiveFrame.evaluate(() => {
+        const found = [];
+        try {
+          if (window.Hls?.instances) {
+            window.Hls.instances.forEach((instance) => instance.url && found.push(instance.url));
+          }
+          Object.values(window.videojs?.players || {}).forEach((player) => {
+            const source = player?.currentSrc?.();
+            if (source) found.push(source);
+          });
+          const jwItem = window.jwplayer?.()?.getPlaylistItem?.();
+          if (jwItem?.file) found.push(jwItem.file);
+          const raw = JSON.stringify(window.__streams__ || window.__playlist__ || {});
+          (raw.match(/https?:\/\/[^\s"']+\.(m3u8|mpd|mp4)[^\s"']*/gi) || []).forEach((url) => found.push(url));
+        } catch {
+          // ignore
+        }
+        return found;
+      }).catch(() => []);
+      jsUrls.forEach((url) => add(url, 'js_player'));
+
+      const perfUrls = await effectiveFrame.evaluate(() => {
+        try {
+          return performance.getEntriesByType('resource').map((entry) => entry.name);
+        } catch {
+          return [];
+        }
+      }).catch(() => []);
+      perfUrls.forEach((url) => add(url, 'performance'));
+
+      const media_state = await getMediaSummary(effectiveFrame);
+      const screenshot = await captureScreenshot(page, { mode: 'viewport' });
+
+      const result = Array.from(streams.values());
+      return buildEnvelope(page, {
+        frame_path,
+        screenshot,
+        data: {
+          duration_ms: captureWindowMs,
+          capture_window_ms: captureWindowMs,
+          player_iframe_hint,
+          evidence,
+          media_state,
+          playback_started: didPlaybackStart(media_state),
+          cors_failures_detected: corsFailures,
+          streams: result,
+          m3u8_urls: result.filter((entry) => entry.protocol === 'hls').map((entry) => entry.url),
+          mpd_urls: result.filter((entry) => entry.protocol === 'dash').map((entry) => entry.url),
+          mp4_urls: result.filter((entry) => ['mp4', 'webm'].includes(entry.protocol)).map((entry) => entry.url),
+          total_streams: result.length,
+        },
+      });
+    } finally {
+      if (pageResponseListener) page.off('response', pageResponseListener);
+      if (requestFailedListener) page.off('requestfailed', requestFailedListener);
+      await pageClient.detach().catch(() => {});
+      if (frameClient) {
+        await frameClient.detach().catch(() => {});
       }
-    }).catch(() => []);
-    perfUrls.forEach((url) => add(url, 'performance'));
-
-    const media_state = await getMediaSummary(effectiveFrame);
-    const screenshot = await captureScreenshot(page, { mode: 'viewport' });
-
-    await pageClient.detach().catch(() => {});
-    if (frameClient) {
-      await frameClient.detach().catch(() => {});
     }
-
-    const result = Array.from(streams.values());
-    return buildEnvelope(page, {
-      frame_path,
-      screenshot,
-      data: {
-        duration_ms,
-        player_iframe_hint,
-        evidence,
-        media_state,
-        streams: result,
-        m3u8_urls: result.filter((entry) => entry.protocol === 'hls').map((entry) => entry.url),
-        mpd_urls: result.filter((entry) => entry.protocol === 'dash').map((entry) => entry.url),
-        mp4_urls: result.filter((entry) => ['mp4', 'webm'].includes(entry.protocol)).map((entry) => entry.url),
-        total_streams: result.length,
-      },
-    });
   });
 }

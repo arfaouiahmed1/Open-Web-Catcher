@@ -18,12 +18,15 @@ Ensure-OwcDataDir -Context $context
 Write-OwcHeader "Open Web Catcher - Build"
 Write-OwcInfo "Compose file: $($context.ComposeFile)"
 Write-OwcInfo "Service: $($context.Service)"
+Write-OwcInfo "Tools service: $($context.ToolService)"
+Write-OwcInfo "Playwright tools service: $($context.PlaywrightToolService)"
 Write-OwcInfo "Web service: $($context.WebService)"
 Write-OwcInfo "Image: $($context.ImageRef)"
 Write-OwcInfo "Tools image: $($context.ToolImageRef)"
+Write-OwcInfo "Playwright tools image: $($context.PlaywrightToolImageRef)"
 Write-OwcInfo "Web image: $($context.WebImageRef)"
 
-$useCache = Resolve-OwcBuildUsesCache -NoCache:$NoCache -Yes:$Yes
+$useCache = Resolve-OwcBuildUsesCache -NoCache:$NoCache -Yes:$Yes -NoPrompt
 Write-OwcInfo "Mode: $(if ($useCache) { 'with cache' } else { 'without cache' })"
 Write-OwcDivider
 

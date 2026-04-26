@@ -1,7 +1,108 @@
-agent_model: gemini-2.5-flash
+agent_model: gemini-3.1-flash-lite-preview
+agent_model_config:
+  classification:
+    model: gemini-3.1-flash-lite-preview
+    provider: google
+  embedded:
+    model: gemini-3.1-flash-lite-preview
+    provider: google
+  hosting:
+    model: gemini-3.1-flash-lite-preview
+    provider: google
+  landing:
+    model: gemini-3.1-flash-lite-preview
+    provider: google
+  orchestrator:
+    model: gemini-2.5-flash
+    provider: google
 agent_timeout_seconds: 300
 browser_engine: playwright
+browser_runtime:
+  playwright:
+    adblock_allowlist_hosts: []
+    adblock_auto_recovery_enabled: true
+    adblock_auto_recovery_on_abort: true
+    adblock_auto_recovery_retry: true
+    adblock_enabled: true
+    adblock_excluded_categories:
+    - nsfw
+    - gambling
+    extra_launch_args: []
+    fingerprint_fallback_strategy: profile
+    fingerprint_recent_pool_size: 12
+    fingerprint_rotation_interval_ms: 180000
+    fingerprint_rotation_max_uses: 6
+    fingerprint_rotation_mode: origin
+    iframe_sandbox_patch_enabled: true
+    launch_timeout_ms: 45000
+    proxy_cache_ttl_ms: 600000
+    proxy_custom_list: []
+    proxy_enabled: false
+    proxy_fallback_strategy: direct
+    proxy_fetch_timeout_ms: 8000
+    proxy_max_candidates: 25
+    proxy_rotation_mode: session
+    proxy_selection_strategy: ordered
+    proxy_source_mode: hybrid
+    proxy_source_order:
+    - openproxylist-https
+    - openproxylist-socks5
+    - speedx-http
+    - speedx-socks5
+    proxy_test_url: https://api.ipify.org?format=json
+    proxy_validation_timeout_ms: 12000
+  puppeteer:
+    adblock_allowlist_hosts: []
+    adblock_auto_recovery_enabled: true
+    adblock_auto_recovery_on_abort: true
+    adblock_auto_recovery_retry: true
+    adblock_enabled: false
+    adblock_excluded_categories:
+    - nsfw
+    - gambling
+    extra_launch_args: []
+    fingerprint_fallback_strategy: profile
+    fingerprint_recent_pool_size: 12
+    fingerprint_rotation_interval_ms: 180000
+    fingerprint_rotation_max_uses: 6
+    fingerprint_rotation_mode: origin
+    iframe_sandbox_patch_enabled: true
+    launch_timeout_ms: 45000
+    proxy_cache_ttl_ms: 600000
+    proxy_custom_list: []
+    proxy_enabled: false
+    proxy_fallback_strategy: direct
+    proxy_fetch_timeout_ms: 8000
+    proxy_max_candidates: 25
+    proxy_rotation_mode: session
+    proxy_selection_strategy: ordered
+    proxy_source_mode: hybrid
+    proxy_source_order:
+    - openproxylist-https
+    - openproxylist-socks5
+    - speedx-http
+    - speedx-socks5
+    proxy_test_url: https://api.ipify.org?format=json
+    proxy_validation_timeout_ms: 12000
+    stream_cors_include_credentials: false
+    stream_cors_patch_enabled: false
+    ubol_enabled: true
 classification_max_tool_calls: 5
+deepeval_model: google/gemma-4-31b-it:free
+deepeval_provider: openrouter
+deepeval_temperature: 0.0
+disabled_tools_by_browser_profile:
+  playwright:
+    classification: []
+    embedded: []
+    hosting: []
+    landing: []
+  puppeteer:
+    classification: []
+    embedded: []
+    hosting: []
+    landing: []
+disabled_tools_by_profile: {}
 embedded_page_max_tool_calls: 20
 gemini_explicit_cache_enabled: true
 gemini_explicit_cache_refresh_lead_seconds: 120
@@ -11,6 +112,12 @@ hosting_page_max_tool_calls: 20
 ipinfo_token: ''
 landing_page_max_tool_calls: 50
 llm_provider: google
+llm_tuning:
+  agent_overrides: {}
+  model_overrides: {}
+  provider_defaults:
+    google:
+      temperature: 1
 log_file: data/logs/app.log
 log_level: INFO
 orchestrator_model: gemini-2.5-flash

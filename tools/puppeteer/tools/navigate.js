@@ -9,17 +9,33 @@ import {
   getPageNetworkDiagnostics,
   retryNavigationAfterAutoRecovery,
 } from '../shared/browser.js';
+import {
+  classifyChromeError,
+  isChromeErrorPage,
+  summarizeRetryAttempts,
+} from '../../shared/error-codes.js';
 import { screenshotFull } from '../shared/screenshot.js';
 import { detectAccessStateFromSignals } from '../shared/tool-runtime.js';
 
+function normalizePptrWaitUntil(value) {
+  if (value === 'networkidle') return 'networkidle2';
+  return value;
+}
+
 function buildWaitUntilCandidates(waitUntil) {
   const ordered = [
-    waitUntil,
+    normalizePptrWaitUntil(waitUntil),
     'networkidle2',
     'domcontentloaded',
     'load',
   ].filter(Boolean);
   return [...new Set(ordered)];
+}
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function buildChromeErrorPageMessage(finalUrl) {
+  return `Navigation landed on Chrome error page: ${finalUrl || 'chrome-error://chromewebdata/'}`;
 }
 
 async function readAccessState(page) {
@@ -43,42 +59,78 @@ async function attemptGotoWithFallbackWaits(page, {
   const waitCandidates = buildWaitUntilCandidates(wait_until);
   const attempts = [];
   let lastError = null;
+  let lastWaitUntil = waitCandidates[waitCandidates.length - 1] || wait_until;
 
   for (const candidateWaitUntil of waitCandidates) {
-    const attempt = {
-      wait_until: candidateWaitUntil,
-      timeout_ms,
-      http_status: null,
-      final_url: '',
-      error: null,
-      succeeded: false,
-    };
+    lastWaitUntil = candidateWaitUntil;
+    let retryCount = 0;
+    let retryDelayMsForAttempt = 0;
 
-    try {
-      const response = await page.goto(url, { waitUntil: candidateWaitUntil, timeout: timeout_ms });
-      attempt.http_status = response?.status?.() || null;
-      attempt.final_url = page.url();
-      attempt.succeeded = true;
-      attempts.push(attempt);
-      return {
-        ok: true,
-        attempts,
-        wait_until_used: candidateWaitUntil,
-        http_status: attempt.http_status,
+    while (true) {
+      const attempt = {
+        wait_until: candidateWaitUntil,
+        timeout_ms,
+        http_status: null,
+        final_url: '',
+        error: null,
+        error_code: null,
+        error_category: 'none',
+        retry_count: retryCount,
+        retry_delay_ms: retryDelayMsForAttempt,
+        chrome_error_page: false,
+        succeeded: false,
       };
-    } catch (error) {
-      attempt.error = error.message;
-      attempt.final_url = page.url();
-      attempts.push(attempt);
-      lastError = error;
+
+      try {
+        const response = await page.goto(url, { waitUntil: candidateWaitUntil, timeout: timeout_ms });
+        attempt.http_status = response?.status?.() || null;
+        attempt.final_url = page.url();
+        attempt.chrome_error_page = isChromeErrorPage(attempt.final_url);
+        if (attempt.chrome_error_page) {
+          throw new Error(buildChromeErrorPageMessage(attempt.final_url));
+        }
+        attempt.succeeded = true;
+        attempts.push(attempt);
+        return {
+          ok: true,
+          attempts,
+          wait_until_used: candidateWaitUntil,
+          http_status: attempt.http_status,
+          retry_statistics: summarizeRetryAttempts(attempts),
+        };
+      } catch (error) {
+        const classification = classifyChromeError({
+          message: error?.message || String(error),
+          url: page.url(),
+        });
+        attempt.error = error?.message || String(error);
+        attempt.final_url = page.url();
+        attempt.error_code = classification.error_code;
+        attempt.error_category = classification.error_category;
+        attempt.chrome_error_page = classification.is_chrome_error_page;
+        attempts.push(attempt);
+        lastError = error;
+
+        if (!classification.retryable || retryCount >= classification.max_retries) {
+          break;
+        }
+
+        const retryDelayMs = classification.retry_delays_ms?.[retryCount] ?? 0;
+        retryCount += 1;
+        retryDelayMsForAttempt = retryDelayMs;
+        if (retryDelayMs > 0) {
+          await wait(retryDelayMs);
+        }
+      }
     }
   }
 
   return {
     ok: false,
     attempts,
-    wait_until_used: waitCandidates[waitCandidates.length - 1] || wait_until,
+    wait_until_used: lastWaitUntil,
     error: lastError?.message || `Navigation to ${url} failed`,
+    retry_statistics: summarizeRetryAttempts(attempts),
   };
 }
 
@@ -121,6 +173,7 @@ export async function navigate({
 
     let success = false;
     let error = null;
+    let retry_statistics = summarizeRetryAttempts([]);
 
     try {
       const gotoResult = await attemptGotoWithFallbackWaits(page, {
@@ -132,6 +185,7 @@ export async function navigate({
       error = gotoResult.ok ? null : gotoResult.error;
       wait_until_used = gotoResult.wait_until_used || wait_until;
       goto_attempts = gotoResult.attempts || [];
+      retry_statistics = gotoResult.retry_statistics || summarizeRetryAttempts(goto_attempts);
       if (!httpStatus && gotoResult.http_status) {
         httpStatus = gotoResult.http_status;
       }
@@ -154,8 +208,14 @@ export async function navigate({
     const navigated = beforeUrl !== finalUrl;
     const title = await page.title().catch(() => '');
     const access_state = await readAccessState(page);
-    const network_diagnostics = getPageNetworkDiagnostics(page, { limit: 40 });
+    const network_diagnostics = getPageNetworkDiagnostics(page, { limit: 10 });
     const iframe_diagnostics = await getIframeDiagnostics(page, { limit: 24 });
+    const navigation_attempt_summary = {
+      ...retry_statistics,
+      wait_candidates_tried: [...new Set(goto_attempts.map((attempt) => attempt.wait_until).filter(Boolean))],
+      final_wait_until: wait_until_used,
+      succeeded: success,
+    };
 
     let screenshot_url = null;
     try {
@@ -194,6 +254,9 @@ export async function navigate({
       error,
       wait_until_used,
       goto_attempts,
+      attempts: goto_attempts,
+      retry_statistics,
+      navigation_attempt_summary,
       access_state,
       network_diagnostics,
       iframe_diagnostics,

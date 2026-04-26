@@ -220,6 +220,13 @@ def test_ui_config_update_normalizes_browser_runtime(client: TestClient, api_set
                         "proxy_cache_ttl_ms": 700000,
                         "proxy_max_candidates": 30,
                         "proxy_test_url": "https://example.com/ip",
+                        "iframe_auto_recovery_enabled": False,
+                        "iframe_recovery_timeout_ms": 26000,
+                        "media_capture_timeout_ms": 45000,
+                        "media_retry_count": 4,
+                        "media_retry_backoff_ms": [500, 1000, 2000],
+                        "media_cors_patch_enabled": True,
+                        "media_playback_verification_enabled": False,
                     }
                 }
             },
@@ -239,6 +246,13 @@ def test_ui_config_update_normalizes_browser_runtime(client: TestClient, api_set
     assert runtime["proxy_cache_ttl_ms"] == 700000
     assert runtime["proxy_max_candidates"] == 30
     assert runtime["proxy_test_url"] == "https://example.com/ip"
+    assert runtime["iframe_auto_recovery_enabled"] is False
+    assert runtime["iframe_recovery_timeout_ms"] == 26000
+    assert runtime["media_capture_timeout_ms"] == 45000
+    assert runtime["media_retry_count"] == 4
+    assert runtime["media_retry_backoff_ms"] == [500, 1000, 2000]
+    assert runtime["media_cors_patch_enabled"] is True
+    assert runtime["media_playback_verification_enabled"] is False
 
 
 def test_ui_provider_models_returns_catalog(client: TestClient):

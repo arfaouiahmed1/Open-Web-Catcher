@@ -78,3 +78,28 @@ def test_normalize_browser_runtime_falls_back_on_invalid_proxy_choices():
     assert runtime["proxy_validation_timeout_ms"] == 1000
     assert runtime["proxy_cache_ttl_ms"] == 1000
     assert runtime["proxy_max_candidates"] == 1
+
+
+def test_normalize_browser_runtime_accepts_media_and_iframe_recovery_controls():
+    payload = normalize_browser_runtime(
+        {
+            "playwright": {
+                "iframe_auto_recovery_enabled": False,
+                "iframe_recovery_timeout_ms": "25000",
+                "media_capture_timeout_ms": 45000,
+                "media_retry_count": 5,
+                "media_retry_backoff_ms": ["500", "1000", "bad", 2000],
+                "media_cors_patch_enabled": True,
+                "media_playback_verification_enabled": False,
+            }
+        }
+    )
+
+    runtime = payload["playwright"]
+    assert runtime["iframe_auto_recovery_enabled"] is False
+    assert runtime["iframe_recovery_timeout_ms"] == 25000
+    assert runtime["media_capture_timeout_ms"] == 45000
+    assert runtime["media_retry_count"] == 5
+    assert runtime["media_retry_backoff_ms"] == [500, 1000, 2000]
+    assert runtime["media_cors_patch_enabled"] is True
+    assert runtime["media_playback_verification_enabled"] is False

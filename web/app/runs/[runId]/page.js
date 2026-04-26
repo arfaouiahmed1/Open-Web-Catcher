@@ -15,6 +15,9 @@ import { ScreenshotGallery } from "@/components/browser-live-view";
 import { useRunViewSettings } from "@/components/run-view-settings";
 import { Badge } from "@/components/ui/badge";
 
+const EMPTY_OBJECT = {};
+const EMPTY_ARRAY = [];
+
 /* ── helpers ──────────────────────────────────────────────────────────────── */
 function statusTone(s) {
   if (s === "running")   return "signal";
@@ -121,6 +124,18 @@ export default function RunDetailPage() {
       .finally(() => setLoading(false));
   }, [runId]);
 
+  // Hooks must be called unconditionally before any early returns
+  const snapshot = payload?.snapshot ?? EMPTY_OBJECT;
+  const events   = payload?.events ?? EMPTY_ARRAY;
+  const screenshots = useMemo(() => {
+    const fromSnapshot = (snapshot.all_screenshots || []).filter(Boolean);
+    const fromEvents = events
+      .filter((e) => e?.details?.screenshot_url || e?.details?.result_full?.screenshot_url || e?.details_json?.screenshot_url || e?.details_json?.result_full?.screenshot_url)
+      .map((e) => e?.details?.screenshot_url || e?.details?.result_full?.screenshot_url || e?.details_json?.screenshot_url || e?.details_json?.result_full?.screenshot_url)
+      .filter(Boolean);
+    return [...new Set([...fromSnapshot, ...fromEvents])];
+  }, [snapshot, events]);
+
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center gap-3" style={{ color: "var(--mute)" }}>
@@ -139,40 +154,31 @@ export default function RunDetailPage() {
     );
   }
 
+  const isActiveTrace = Boolean(payload.active_trace);
+  const trace   = isActiveTrace ? payload.active_trace : null;
+  const metrics = trace?.metrics || {};
+
+  /* ── persisted run data ── */
+  const run       = payload.run || {};
+  const agentRuns = payload.agent_runs || [];
+  const llmCalls  = payload.llm_calls || [];
+  const toolCalls = payload.tool_calls || [];
+
   /* ── active in-memory run ── */
-  if (payload.active_trace) {
-    const trace   = payload.active_trace;
-    const metrics = trace.metrics || {};
+  if (isActiveTrace && trace) {
     return (
       <div className="space-y-5">
         <RunHeader runId={runId} title="Live Run" subtitle="Streaming from in-memory store" live />
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <KpiCard label="Events"     value={formatNumber((trace.events || []).length)} accent="signal" />
+          <KpiCard label="Tokens"     value={formatNumber((metrics.total_tokens_in || 0) + (metrics.total_tokens_out || 0))} accent="signal" />
           <KpiCard label="LLM Calls"  value={formatNumber(metrics.total_llm_calls || 0)} accent="violet" />
           <KpiCard label="Tool Calls" value={formatNumber(metrics.total_tool_calls || 0)} accent="sky" />
           <KpiCard label="Est. Cost"  value={formatCurrency(metrics.total_cost_usd ?? metrics.estimated_total_cost_usd ?? 0)} accent="mint" />
         </div>
-        <RunDetailLive runId={runId} activeTrace={trace} persistedEvents={trace.events || []} />
+        <RunDetailLive runId={runId} activeTrace={trace} persistedEvents={trace.events || []} metrics={metrics} />
       </div>
     );
   }
-
-  /* ── persisted run ── */
-  const run       = payload.run || {};
-  const snapshot  = payload.snapshot || {};
-  const agentRuns = payload.agent_runs || [];
-  const llmCalls  = payload.llm_calls || [];
-  const toolCalls = payload.tool_calls || [];
-  const events    = payload.events || [];
-
-  const screenshots = useMemo(() => {
-    const fromSnapshot = (snapshot.all_screenshots || []).filter(Boolean);
-    const fromEvents = events
-      .filter((e) => e?.details?.screenshot_url || e?.details?.result_full?.screenshot_url)
-      .map((e) => e?.details?.screenshot_url || e?.details?.result_full?.screenshot_url)
-      .filter(Boolean);
-    return [...new Set([...fromSnapshot, ...fromEvents])];
-  }, [snapshot, events]);
 
   const kpis = [
     { label: "Streams",     value: formatNumber(run.stream_count    || 0), accent: "signal", description: "Stream URLs found" },
@@ -214,7 +220,7 @@ export default function RunDetailPage() {
 
       {/* ── Live & Graph tab ── */}
       {tab === "live" && (
-        <RunDetailLive runId={runId} persistedEvents={events} />
+        <RunDetailLive runId={runId} persistedEvents={events} metrics={snapshot?.metrics || run || null} />
       )}
 
       {/* ── Data Tables tab ── */}
@@ -242,13 +248,6 @@ export default function RunDetailPage() {
               description="Prompt, token, and cost telemetry"
               columns={["seq", "provider", "model_name", "input_tokens", "output_tokens", "total_cost_usd", "cost_source"]}
               rows={llmCalls}
-              expand={settings.expandTables}
-            />
-            <ExpandableTable
-              title="Event Timeline"
-              description="Structured event feed for this run"
-              columns={["seq", "actor", "kind", "status", "message"]}
-              rows={events}
               expand={settings.expandTables}
             />
           </div>

@@ -2385,3 +2385,9 @@ def ui_database_table(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
     finally:
         session.close()
+
+
+# Dataset endpoints
+from src.api.datasets import router as datasets_router
+
+app.include_router(datasets_router)

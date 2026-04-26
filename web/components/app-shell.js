@@ -76,6 +76,14 @@ const ICONS = {
       <path d="M4 11v6c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5v-6" />
     </svg>
   ),
+  datasets: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="8" height="8" rx="1" />
+      <rect x="13" y="3" width="8" height="8" rx="1" />
+      <rect x="3" y="13" width="8" height="8" rx="1" />
+      <rect x="13" y="13" width="8" height="8" rx="1" />
+    </svg>
+  ),
   prompts: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
       <path d="M14 3v4a1 1 0 0 0 1 1h4" />
@@ -111,6 +119,7 @@ const NAV = [
   { href: "/runs", label: "Run History", key: "runs", section: "Inspect" },
   { href: "/providers", label: "Provider Intel", key: "providers", section: "Inspect" },
   { href: "/evaluations", label: "Evaluations", key: "evals", section: "Inspect" },
+  { href: "/datasets", label: "Datasets", key: "datasets", section: "Inspect" },
   { href: "/database", label: "Database", key: "database", section: "System" },
   { href: "/prompts", label: "Prompts", key: "prompts", section: "System" },
   { href: "/settings", label: "Settings", key: "settings", section: "System" },
