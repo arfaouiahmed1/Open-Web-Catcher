@@ -1895,6 +1895,9 @@ class ModelConfigRequest(BaseModel):
     disabled_tools_by_profile: dict | None = None
     disabled_tools_by_browser_profile: dict | None = None
     browser_runtime: dict | None = None
+    deepeval_provider: str | None = None
+    deepeval_model: str | None = None
+    deepeval_temperature: float | None = None
 
 
 class PricingSyncRequest(BaseModel):
@@ -1931,6 +1934,9 @@ def _ui_config_payload(
             legacy=getattr(settings, "disabled_tools_by_profile", {}),
         ),
         "browser_runtime": normalize_browser_runtime(getattr(settings, "browser_runtime", {})),
+        "deepeval_provider": getattr(settings, "deepeval_provider", "openai"),
+        "deepeval_model": getattr(settings, "deepeval_model", "gpt-4o"),
+        "deepeval_temperature": getattr(settings, "deepeval_temperature", 0.0),
         "api_keys": {
             "google": bool(settings.google_api_key),
             "openai": bool(settings.openai_api_key),
@@ -2020,6 +2026,12 @@ def ui_update_config(body: ModelConfigRequest):
         s.browser_runtime = normalize_browser_runtime(body.browser_runtime)
     else:
         s.browser_runtime = normalize_browser_runtime(getattr(s, "browser_runtime", {}))
+    if body.deepeval_provider is not None:
+        s.deepeval_provider = body.deepeval_provider
+    if body.deepeval_model is not None:
+        s.deepeval_model = body.deepeval_model
+    if body.deepeval_temperature is not None:
+        s.deepeval_temperature = max(0.0, float(body.deepeval_temperature))
     if body.agent_model_config is None:
         s.agent_model_config = normalize_agent_model_config(s, getattr(s, "agent_model_config", {}))
     persist_path = ""

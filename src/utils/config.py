@@ -122,6 +122,11 @@ class Settings(BaseSettings):
     disabled_tools_by_browser_profile: dict = Field(default_factory=dict)
     browser_runtime: dict = Field(default_factory=dict)
 
+    # DeepEval evaluation framework settings
+    deepeval_provider: str = "openai"
+    deepeval_model: str = "gpt-4o"
+    deepeval_temperature: float = 0.0
+
     @classmethod
     def from_yaml(
         cls,
@@ -186,6 +191,9 @@ class Settings(BaseSettings):
         existing["disabled_tools_by_profile"] = self.disabled_tools_by_profile
         existing["disabled_tools_by_browser_profile"] = self.disabled_tools_by_browser_profile
         existing["browser_runtime"] = self.browser_runtime
+        existing["deepeval_provider"] = self.deepeval_provider
+        existing["deepeval_model"] = self.deepeval_model
+        existing["deepeval_temperature"] = self.deepeval_temperature
 
         try:
             primary_path.parent.mkdir(parents=True, exist_ok=True)

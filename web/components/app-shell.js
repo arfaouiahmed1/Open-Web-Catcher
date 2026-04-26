@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { apiUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { NotificationBell } from "@/components/notification-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const ACTIVE_RUNS_POLL_MS = 8000;
@@ -117,19 +118,25 @@ const NAV = [
 
 const GROUPS = ["Run", "Inspect", "System"];
 
+const GROUP_META = {
+  Run:     { desc: "Execute & monitor" },
+  Inspect: { desc: "Browse & analyze" },
+  System:  { desc: "Configure" },
+};
+
 function NavLink({ item, active, badge, onClick }) {
   return (
     <Link
       href={item.href}
       onClick={onClick}
       className={cn(
-        "relative flex items-center gap-[11px] rounded-[10px] px-3 py-2 text-[13px] transition-all duration-150",
+        "group relative flex items-center gap-[11px] rounded-[10px] px-3 py-[7px] text-[13px] transition-all duration-150",
         active
           ? "owc-side-link-active bg-[color-mix(in_oklch,var(--signal)_10%,transparent)] text-[var(--ink)]"
           : "text-[var(--mute)] hover:bg-white/[0.04] hover:text-[var(--ink-dim)]"
       )}
     >
-      <span className={cn("h-3.5 w-3.5 shrink-0 transition-all duration-150", active ? "scale-110 text-[var(--signal)]" : "text-[var(--mute-2)]")}>
+      <span className={cn("h-3.5 w-3.5 shrink-0 transition-all duration-150", active ? "scale-110 text-[var(--signal)]" : "text-[var(--mute-2)] group-hover:text-[var(--mute)]")}>
         {ICONS[item.key]}
       </span>
       <span className="min-w-0 flex-1 overflow-hidden text-ellipsis">{item.label}</span>
@@ -143,10 +150,7 @@ function NavLink({ item, active, badge, onClick }) {
         >
           <span
             className="absolute inset-0 rounded-full"
-            style={{
-              animation: "ping-once 1.5s ease infinite",
-              background: "color-mix(in oklch, var(--signal) 25%, transparent)",
-            }}
+            style={{ animation: "ping-once 1.5s ease infinite", background: "color-mix(in oklch, var(--signal) 25%, transparent)" }}
           />
           {badge}
         </span>
@@ -180,7 +184,6 @@ export function AppShell({ children }) {
 
   useEffect(() => {
     let cancelled = false;
-
     async function poll() {
       try {
         const res = await fetch(apiUrl("/ui/overview"), { cache: "no-store" });
@@ -197,13 +200,9 @@ export function AppShell({ children }) {
         if (!cancelled) setConnected(false);
       }
     }
-
     poll();
     const timer = setInterval(poll, ACTIVE_RUNS_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
+    return () => { cancelled = true; clearInterval(timer); };
   }, []);
 
   const crumbs = pathToCrumbs(pathname);
@@ -214,6 +213,7 @@ export function AppShell({ children }) {
     <div style={{ display: "grid", gridTemplateColumns: "252px 1fr", minHeight: "100vh" }}>
       {sidebarOpen && <div className="fixed inset-0 z-20 bg-black/60 md:hidden" onClick={() => setSidebarOpen(false)} />}
 
+      {/* ── Sidebar ── */}
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-30 flex w-[252px] flex-col border-r md:static transition-transform duration-200",
@@ -221,24 +221,25 @@ export function AppShell({ children }) {
         )}
         style={{
           borderColor: "var(--line)",
-          background: "linear-gradient(180deg, color-mix(in oklch, var(--signal) 3%, var(--panel)) 0%, var(--panel) 32%)",
+          background: "linear-gradient(180deg, color-mix(in oklch, var(--signal) 4%, var(--panel)) 0%, var(--panel) 28%)",
         }}
       >
-        <div className="border-b px-5 py-5" style={{ borderColor: "var(--line)" }}>
+        {/* Logo */}
+        <div className="border-b px-5 py-4" style={{ borderColor: "var(--line)" }}>
           <div className="flex items-center gap-3">
             <div
-              className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
+              className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px]"
               style={{
                 background: "color-mix(in oklch, var(--signal) 14%, transparent)",
                 boxShadow: "inset 0 0 0 1px color-mix(in oklch, var(--signal) 32%, transparent), 0 4px 12px color-mix(in oklch, var(--signal) 18%, transparent)",
                 color: "var(--signal)",
               }}
             >
-              <LogoMark className="h-5 w-5" />
+              <LogoMark className="h-4.5 w-4.5" />
             </div>
             <div className="min-w-0">
-              <div className="text-[13px] font-semibold text-[var(--ink)]">Open Web Catcher</div>
-              <div className="mt-1 text-[11px] text-[var(--mute)]">Operator console</div>
+              <div className="text-[13px] font-semibold leading-tight text-[var(--ink)]">Open Web Catcher</div>
+              <div className="text-[10.5px] text-[var(--mute)]">Operator console</div>
             </div>
             <span
               className="ml-auto h-[7px] w-[7px] shrink-0 rounded-full"
@@ -252,18 +253,19 @@ export function AppShell({ children }) {
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 py-4">
+        {/* Nav */}
+        <nav className="flex-1 overflow-y-auto px-3 py-3">
           <NavLink item={topItem} active={isActive(topItem)} onClick={() => setSidebarOpen(false)} />
 
           {GROUPS.map((group) => {
             const items = NAV.filter((item) => item.section === group);
             return (
-              <div key={group} className="mt-5">
-                <div className="mb-2 flex items-center gap-2 px-3">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--mute-2)]">{group}</span>
+              <div key={group} className="mt-4">
+                <div className="mb-1.5 flex items-center gap-2 px-3">
+                  <span className="text-[9.5px] font-semibold uppercase tracking-[0.18em] text-[var(--mute-3)]">{group}</span>
                   <span className="h-px flex-1" style={{ background: "var(--line)" }} />
                 </div>
-                <div className="space-y-1">
+                <div className="space-y-px">
                   {items.map((item) => (
                     <NavLink
                       key={item.href}
@@ -279,29 +281,39 @@ export function AppShell({ children }) {
           })}
         </nav>
 
-        <div className="border-t px-4 py-3" style={{ borderColor: "var(--line)" }}>
+        {/* Bottom status */}
+        <div className="border-t px-4 py-2.5" style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.012)" }}>
           <div className="flex items-center justify-between text-[11px]">
-            <span className="inline-flex items-center gap-2 text-[var(--mute)]">
+            <span className="inline-flex items-center gap-1.5 text-[var(--mute)]">
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: connected ? "var(--mint)" : "var(--rose)" }} />
-              {connected ? "API connected" : "API offline"}
+              {connected ? "connected" : "offline"}
             </span>
-            <span className="font-mono text-[var(--mute-2)]">{activeRuns} live</span>
+            {activeRuns > 0 && (
+              <span
+                className="rounded-full px-2 py-0.5 font-mono text-[10px]"
+                style={{ color: "var(--signal)", background: "color-mix(in oklch, var(--signal) 12%, transparent)" }}
+              >
+                {activeRuns} live
+              </span>
+            )}
           </div>
         </div>
       </aside>
 
+      {/* ── Main area ── */}
       <div className="flex min-w-0 flex-col">
+        {/* Top bar */}
         <div
-          className="sticky top-0 z-10 flex items-center gap-3 border-b px-6 py-3.5"
+          className="sticky top-0 z-10 flex items-center gap-2 border-b px-6 py-3"
           style={{
             borderColor: "var(--line)",
-            background: "color-mix(in oklch, var(--bg) 90%, transparent)",
-            backdropFilter: "blur(14px)",
+            background: "color-mix(in oklch, var(--bg) 88%, transparent)",
+            backdropFilter: "blur(16px)",
           }}
         >
           <button
             type="button"
-            onClick={() => setSidebarOpen((value) => !value)}
+            onClick={() => setSidebarOpen((v) => !v)}
             className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors md:hidden"
             style={{ borderColor: "var(--line)", color: "var(--mute)" }}
             aria-label="Toggle sidebar"
@@ -321,19 +333,20 @@ export function AppShell({ children }) {
 
           <div className="flex-1" />
 
+          {/* Connection pill */}
           <span
             className="hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10.5px] sm:flex"
             style={{ borderColor: "var(--line)", color: "var(--mute)", background: "var(--card)" }}
           >
             <span
               className="h-1.5 w-1.5 rounded-full"
-              style={{
-                background: connected ? "var(--mint)" : "var(--rose)",
-                boxShadow: `0 0 6px ${connected ? "var(--mint)" : "var(--rose)"}`,
-              }}
+              style={{ background: connected ? "var(--mint)" : "var(--rose)", boxShadow: `0 0 6px ${connected ? "var(--mint)" : "var(--rose)"}` }}
             />
             <span style={{ color: "var(--ink-dim)" }}>{connected ? "connected" : "offline"}</span>
           </span>
+
+          {/* Notification bell */}
+          <NotificationBell />
 
           <ThemeToggle />
 
@@ -354,7 +367,7 @@ export function AppShell({ children }) {
         </div>
 
         <main className="flex-1 overflow-auto">
-          <div key={pathname} className="mx-auto max-w-[1320px] px-6 py-7 pb-20 animate-fade-up">
+          <div key={pathname} className="mx-auto max-w-[1340px] px-6 py-7 pb-20 animate-fade-up">
             {children}
           </div>
         </main>

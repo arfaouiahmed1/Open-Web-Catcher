@@ -19,6 +19,7 @@ import { useNotifPrefs } from "@/components/notification-provider";
 import { JsonViewer } from "@/components/json-viewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { HelpIcon } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -125,6 +126,7 @@ const BUILTIN_PROXY_SOURCE_OPTIONS = [
 const SETTINGS_TABS = [
   { id: "models", label: "Models & Provider" },
   { id: "browser", label: "Browser" },
+  { id: "evaluation", label: "Evaluation" },
   { id: "api-keys", label: "API Keys" },
   { id: "notifications", label: "Notifications" },
   { id: "mcp-tools", label: "MCP Tools" },
@@ -698,6 +700,9 @@ export default function SettingsPage() {
   const [geminiExplicitCacheRefreshLead, setGeminiExplicitCacheRefreshLead] = useState("120");
   const [toolCacheEnabled, setToolCacheEnabled] = useState(true);
   const [toolCacheStable, setToolCacheStable] = useState("2");
+  const [deepevalProvider, setDeepevalProvider] = useState("openai");
+  const [deepevalModel, setDeepevalModel] = useState("gpt-4o");
+  const [deepevalTemperature, setDeepevalTemperature] = useState("0");
   const [browserEngine, setBrowserEngine] = useState("puppeteer");
   const [browserSettingsTab, setBrowserSettingsTab] = useState("puppeteer");
   const [browserRuntime, setBrowserRuntime] = useState(cloneBrowserRuntime());
@@ -780,6 +785,9 @@ export default function SettingsPage() {
     setGeminiExplicitCacheRefreshLead(String(payload.gemini_explicit_cache_refresh_lead_seconds ?? 120));
     setToolCacheEnabled(Boolean(payload.tool_result_cache_enabled ?? true));
     setToolCacheStable(String(payload.tool_result_cache_min_identical_observations ?? 2));
+    setDeepevalProvider(payload.deepeval_provider || "openai");
+    setDeepevalModel(payload.deepeval_model || "gpt-4o");
+    setDeepevalTemperature(String(payload.deepeval_temperature ?? 0));
     setBrowserEngine(payload.browser_engine || "puppeteer");
     setBrowserSettingsTab(payload.browser_engine || "puppeteer");
     setBrowserRuntime(normalizeBrowserRuntime(payload.browser_runtime));
@@ -963,6 +971,9 @@ export default function SettingsPage() {
           browser_engine: browserEngine,
           disabled_tools_by_browser_profile: disabledToolsByBrowserProfile,
           browser_runtime: browserRuntime,
+          deepeval_provider: deepevalProvider,
+          deepeval_model: deepevalModel,
+          deepeval_temperature: Number.parseFloat(deepevalTemperature || "0") || 0,
         }),
       });
       const payload = await response.json();
@@ -1106,8 +1117,9 @@ export default function SettingsPage() {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
+                  <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
                     Fallback temperature
+                    <HelpIcon tip="Global temperature applied when no provider-specific or agent-specific override is set. 0 = deterministic, 1+ = creative." />
                   </label>
                   <input
                     value={fallbackTemperature}
@@ -1125,8 +1137,9 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
+                  <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
                     Tool cache stabilization threshold
+                    <HelpIcon tip="How many identical consecutive tool results must be seen before the response is cached. Higher = less aggressive caching." />
                   </label>
                   <input
                     value={toolCacheStable}
@@ -1174,11 +1187,13 @@ export default function SettingsPage() {
                   label="Enable provider prompt caching"
                   checked={providerCacheEnabled}
                   onChange={setProviderCacheEnabled}
+                  description="Hooks into provider-native caching (Anthropic cache_control, Gemini context caching). Reduces cost on repeated system prompts."
                 />
                 <ToggleRow
                   label="Enable deterministic tool result cache"
                   checked={toolCacheEnabled}
                   onChange={setToolCacheEnabled}
+                  description="Caches identical browser-tool responses across calls in the same session. Speeds up repeated DOM queries."
                 />
               </div>
 
@@ -1722,6 +1737,102 @@ export default function SettingsPage() {
                   />
                 ) : null}
               </div>
+            </div>
+          </section>
+        ) : null}
+
+        {activeTab === "evaluation" ? (
+          <section className="space-y-6">
+            <div>
+              <SectionHeader>DeepEval Configuration</SectionHeader>
+              <p className="mt-1.5 text-[13.5px] text-[var(--mute)]">
+                Configure the judge LLM used by DeepEval for metric evaluation (hallucination, answer relevancy, faithfulness, etc.).
+              </p>
+            </div>
+
+            <div
+              className="space-y-5 rounded-[14px] border p-4"
+              style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+            >
+              <div className="flex items-center gap-2">
+                <Settings2 className="h-3.5 w-3.5" style={{ color: "var(--signal)" }} />
+                <span className="text-[13.5px] font-medium text-[var(--ink)]">Judge model</span>
+              </div>
+              <p className="text-[12.5px] text-[var(--mute)]">
+                DeepEval uses a separate LLM to score your pipeline outputs. This model should be capable and accurate — GPT-4o or Claude Sonnet are recommended.
+              </p>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Select
+                  label="Provider"
+                  value={deepevalProvider}
+                  onChange={setDeepevalProvider}
+                  options={[
+                    { value: "openai",    label: "OpenAI",        description: "GPT-4o, GPT-4o-mini, etc." },
+                    { value: "anthropic", label: "Anthropic",     description: "Claude Opus, Sonnet, Haiku" },
+                    { value: "google",    label: "Google Gemini", description: "Gemini 2.5 Pro / Flash" },
+                    { value: "openrouter",label: "OpenRouter",    description: "Any model via OpenRouter" },
+                  ]}
+                  placeholder="Select provider"
+                />
+                <Input
+                  label="Model ID"
+                  value={deepevalModel}
+                  onChange={(e) => setDeepevalModel(e.target.value)}
+                  placeholder="gpt-4o"
+                  className="font-mono"
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
+                    Judge temperature
+                  </label>
+                  <input
+                    value={deepevalTemperature}
+                    onChange={(e) => setDeepevalTemperature(e.target.value)}
+                    type="number"
+                    min="0"
+                    max="2"
+                    step="0.05"
+                    className="h-11 w-full rounded-[12px] border px-3 text-[13px] focus:outline-none"
+                    style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)", color: "var(--ink-dim)" }}
+                  />
+                  <p className="text-[11px] text-[var(--mute)]">Lower is more deterministic. 0 is recommended for evaluation consistency.</p>
+                </div>
+              </div>
+            </div>
+
+            <div
+              className="rounded-[14px] border p-4"
+              style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.02)" }}
+            >
+              <div className="mb-3 text-[13px] font-medium text-[var(--ink)]">Quick-start commands</div>
+              <div className="space-y-2 font-mono text-[12px]" style={{ color: "var(--ink-dim)" }}>
+                {[
+                  "pip install deepeval",
+                  "deepeval login",
+                  "deepeval test run tests/test_model.py",
+                ].map((cmd) => (
+                  <div key={cmd} className="flex items-center gap-3 rounded-[8px] border px-3 py-2" style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)" }}>
+                    <span style={{ color: "var(--signal)", userSelect: "none" }}>$</span>
+                    <span>{cmd}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Button variant="accent" onClick={saveConfig} disabled={saving}>
+                {saving ? (
+                  <><span className="owc-spinner owc-spinner-sm" />Saving</>
+                ) : saved ? (
+                  <><Check className="mr-1.5 h-3.5 w-3.5" />Saved</>
+                ) : (
+                  <><Save className="mr-1.5 h-3.5 w-3.5" />Save evaluation config</>
+                )}
+              </Button>
             </div>
           </section>
         ) : null}
