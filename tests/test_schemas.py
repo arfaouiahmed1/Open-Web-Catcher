@@ -7,7 +7,9 @@ from src.models.enums import AgentType, Confidence, ExtractionStatus, PageType
 from src.models.schemas import (
     ClassificationResult,
     ExtractionResult,
+    MatchInfo,
     PipelineResult,
+    ServerResult,
     StreamURL,
 )
 
@@ -50,3 +52,26 @@ def test_pipeline_result_no_extraction():
     r = PipelineResult(run_id="abc", url="https://example.com")
     assert r.final_status == ExtractionStatus.FAILED
     assert r.streams == []
+
+
+def test_match_info_defaults_to_stream_extractor():
+    match = MatchInfo(url="https://example.com/watch/1")
+    assert match.route == "stream_extractor"
+
+
+def test_server_result_preserves_optional_evidence_fields():
+    server = ServerResult(
+        label="Server 1",
+        embedded_url_source="dom_iframe",
+        player_iframe_url="https://embed.example.com/player/1",
+        stream_urls=["https://cdn.example.com/master.m3u8"],
+        activation_attempts=1,
+        player_state="playing",
+        visual_confirmation="video playing",
+        extraction_method="cdp_network",
+        network_diagnostics=[{"url": "https://cdn.example.com/master.m3u8"}],
+        iframe_diagnostics=[{"url": "https://embed.example.com/player/1"}],
+    )
+    assert server.player_iframe_url == "https://embed.example.com/player/1"
+    assert server.embedded_url_source == "dom_iframe"
+    assert server.network_diagnostics[0]["url"] == "https://cdn.example.com/master.m3u8"

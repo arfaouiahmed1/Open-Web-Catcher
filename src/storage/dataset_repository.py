@@ -1,0 +1,551 @@
+"""Dataset persistence helpers backed by the operator-console database."""
+
+from __future__ import annotations
+
+import csv
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse, urlunparse
+
+from sqlalchemy.orm import Session
+
+from src.storage.models import DatasetBatchRecord, DatasetSiteRecord, DatasetSiteRunRecord
+
+LANGUAGES = ["arabic", "english", "spanish", "french", "portuguese", "other"]
+LABELS = ["piracy", "sports", "news", "entertainment", "unknown"]
+SUCCESS_FINAL_STATUSES = {"success", "partial"}
+FAILED_FINAL_STATUSES = {"failed", "cancelled"}
+TERMINAL_SITE_RUN_STATUSES = SUCCESS_FINAL_STATUSES | FAILED_FINAL_STATUSES
+
+
+def canonicalize_url(url: str) -> str:
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    scheme = parsed.scheme.lower()
+    netloc = parsed.netloc.lower()
+    path = parsed.path or "/"
+    if path != "/" and path.endswith("/"):
+        path = path[:-1]
+    normalized = parsed._replace(scheme=scheme, netloc=netloc, path=path, params="", fragment="")
+    return urlunparse((normalized.scheme, normalized.netloc, normalized.path, "", normalized.query, ""))
+
+
+def _serialize_model(row: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for column in row.__table__.columns:
+        value = getattr(row, column.name)
+        payload[column.name] = value.isoformat() if isinstance(value, datetime) else value
+    return payload
+
+
+class DatasetRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def ensure_seeded_from_csv(self, csv_path: Path) -> dict[str, Any]:
+        total = int(self._session.query(DatasetSiteRecord).count() or 0)
+        if total > 0:
+            return {"seeded": False, "inserted": 0, "updated": 0, "total": total}
+        imported = self.import_csv(csv_path, source="csv_seed")
+        imported["seeded"] = bool(imported.get("inserted") or imported.get("updated"))
+        return imported
+
+    def import_csv(self, csv_path: Path, *, source: str = "csv_import") -> dict[str, Any]:
+        if not csv_path.exists():
+            return {
+                "inserted": 0,
+                "updated": 0,
+                "total": int(self._session.query(DatasetSiteRecord).count() or 0),
+                "missing": True,
+                "csv_path": str(csv_path),
+            }
+
+        inserted = 0
+        updated = 0
+        with csv_path.open("r", encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle):
+                url = str(row.get("url", "") or "").strip()
+                canonical = canonicalize_url(url)
+                if not canonical:
+                    continue
+                site = self._session.query(DatasetSiteRecord).filter_by(canonical_url=canonical).first()
+                if site is None:
+                    site = DatasetSiteRecord(canonical_url=canonical)
+                    self._session.add(site)
+                    inserted += 1
+                else:
+                    updated += 1
+                site.url = url
+                site.source = str(row.get("source", "") or source or site.source or "csv_import")
+                site.language = str(row.get("language", "") or site.language or "")
+                site.label = str(row.get("label", "") or site.label or "")
+                notes = str(row.get("notes", "") or "").strip()
+                if notes:
+                    site.notes = notes
+
+        self._session.commit()
+        return {
+            "inserted": inserted,
+            "updated": updated,
+            "total": int(self._session.query(DatasetSiteRecord).count() or 0),
+            "missing": False,
+            "csv_path": str(csv_path),
+        }
+
+    def list_sites(
+        self,
+        *,
+        language: str = "",
+        label: str = "",
+        query: str = "",
+        limit: int = 0,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        site_query = self._session.query(DatasetSiteRecord)
+        if language:
+            site_query = site_query.filter(DatasetSiteRecord.language == language)
+        if label:
+            site_query = site_query.filter(DatasetSiteRecord.label == label)
+        rows = site_query.order_by(
+            DatasetSiteRecord.last_tested_at.desc().nullslast(),
+            DatasetSiteRecord.updated_at.desc(),
+            DatasetSiteRecord.id.asc(),
+        ).all()
+
+        search = str(query or "").strip().lower()
+        if search:
+            rows = [
+                row
+                for row in rows
+                if search in str(row.url or "").lower()
+                or search in str(row.canonical_url or "").lower()
+                or search in str(row.notes or "").lower()
+                or search in str(row.language or "").lower()
+                or search in str(row.label or "").lower()
+            ]
+
+        total = len(rows)
+        if offset:
+            rows = rows[offset:]
+        if limit:
+            rows = rows[:limit]
+        return {"total": total, "sites": [self._site_payload(row) for row in rows]}
+
+    def site_stats(self) -> dict[str, Any]:
+        rows = self._session.query(DatasetSiteRecord).all()
+        by_language: dict[str, int] = {}
+        by_label: dict[str, int] = {}
+        unlabeled = 0
+        recent_tested = 0
+        total_successes = 0
+        total_attempts = 0
+
+        for row in rows:
+            language = str(row.language or "")
+            label = str(row.label or "")
+            by_language[language or "unlabeled"] = by_language.get(language or "unlabeled", 0) + 1
+            by_label[label or "unlabeled"] = by_label.get(label or "unlabeled", 0) + 1
+            if not language or not label:
+                unlabeled += 1
+            if row.last_tested_at:
+                recent_tested += 1
+            total_successes += int(row.successful_runs or 0)
+            total_attempts += int(row.total_runs or 0)
+
+        success_rate = round((total_successes / total_attempts) * 100.0, 1) if total_attempts else 0.0
+        return {
+            "total": len(rows),
+            "unlabeled": unlabeled,
+            "tested": recent_tested,
+            "by_language": by_language,
+            "by_label": by_label,
+            "successful_runs": total_successes,
+            "total_runs": total_attempts,
+            "success_rate": success_rate,
+        }
+
+    def update_site(
+        self,
+        site_id: int,
+        *,
+        language: str | None = None,
+        label: str | None = None,
+        notes: str | None = None,
+    ) -> dict[str, Any]:
+        row = self._session.query(DatasetSiteRecord).filter_by(id=site_id).first()
+        if row is None:
+            raise ValueError("Site not found")
+        if language is not None:
+            row.language = str(language or "")
+        if label is not None:
+            row.label = str(label or "")
+        if notes is not None:
+            row.notes = str(notes or "")
+        self._session.commit()
+        self._session.refresh(row)
+        return self._site_payload(row)
+
+    def bulk_update(
+        self,
+        site_ids: list[int],
+        *,
+        language: str | None = None,
+        label: str | None = None,
+        notes: str | None = None,
+    ) -> int:
+        ids = [int(value) for value in site_ids if value is not None]
+        if not ids:
+            return 0
+        rows = self._session.query(DatasetSiteRecord).filter(DatasetSiteRecord.id.in_(ids)).all()
+        for row in rows:
+            if language is not None:
+                row.language = str(language or "")
+            if label is not None:
+                row.label = str(label or "")
+            if notes is not None:
+                row.notes = str(notes or "")
+        self._session.commit()
+        return len(rows)
+
+    def record_result(
+        self,
+        *,
+        url: str,
+        success: bool,
+        language: str = "",
+        label: str = "",
+        run_id: str = "",
+    ) -> dict[str, Any]:
+        batch = DatasetBatchRecord(
+            batch_id=str(uuid.uuid4()),
+            batch_name="Recorded result",
+            status="success" if success else "failed",
+            source="manual_record",
+            requested_count=1,
+            completed_count=1,
+            passed_count=1 if success else 0,
+            failed_count=0 if success else 1,
+            urls_json=[url],
+            started_at=datetime.utcnow(),
+            finished_at=datetime.utcnow(),
+        )
+        self._session.add(batch)
+        self._session.flush()
+
+        site = self._ensure_site(url=url, language=language, label=label, source="manual_record")
+        record = DatasetSiteRunRecord(
+            batch_id=batch.id,
+            site_id=site.id if site else None,
+            run_id=run_id or str(uuid.uuid4()),
+            url=url,
+            language=language,
+            label=label,
+            status="success" if success else "failed",
+            final_status="success" if success else "failed",
+            started_at=datetime.utcnow(),
+            finished_at=datetime.utcnow(),
+        )
+        self._session.add(record)
+        self._session.flush()
+        if site is not None:
+            self._refresh_site_metrics(site.id)
+        self._session.commit()
+        return self.get_batch(batch.batch_id)
+
+    def results_summary(self, *, language: str = "", label: str = "") -> dict[str, Any]:
+        rows = (
+            self._session.query(DatasetSiteRunRecord, DatasetSiteRecord)
+            .outerjoin(DatasetSiteRecord, DatasetSiteRecord.id == DatasetSiteRunRecord.site_id)
+            .order_by(DatasetSiteRunRecord.created_at.desc())
+            .all()
+        )
+        total = 0
+        successful = 0
+        partial = 0
+        failed = 0
+        by_language: dict[str, dict[str, Any]] = {}
+        by_label: dict[str, dict[str, Any]] = {}
+
+        for run_row, site_row in rows:
+            final_status = str(run_row.final_status or run_row.status or "").strip().lower()
+            if final_status not in TERMINAL_SITE_RUN_STATUSES:
+                continue
+            row_language = str(run_row.language or (site_row.language if site_row else "") or "")
+            row_label = str(run_row.label or (site_row.label if site_row else "") or "")
+            if language and row_language != language:
+                continue
+            if label and row_label != label:
+                continue
+
+            total += 1
+            ok = final_status in SUCCESS_FINAL_STATUSES
+            if final_status == "partial":
+                partial += 1
+            if ok:
+                successful += 1
+            else:
+                failed += 1
+
+            lang_bucket = by_language.setdefault(row_language, {"total": 0, "successful": 0, "partial": 0, "failed": 0})
+            label_bucket = by_label.setdefault(row_label, {"total": 0, "successful": 0, "partial": 0, "failed": 0})
+            for bucket in (lang_bucket, label_bucket):
+                bucket["total"] += 1
+                if ok:
+                    bucket["successful"] += 1
+                else:
+                    bucket["failed"] += 1
+                if final_status == "partial":
+                    bucket["partial"] += 1
+
+        for bucket in list(by_language.values()) + list(by_label.values()):
+            bucket["success_rate"] = round((bucket["successful"] / bucket["total"]) * 100.0, 1) if bucket["total"] else 0.0
+
+        return {
+            "total": total,
+            "successful": successful,
+            "partial": partial,
+            "failed": failed,
+            "success_rate": round((successful / total) * 100.0, 1) if total else 0.0,
+            "by_language": by_language,
+            "by_label": by_label,
+        }
+
+    def create_batch(
+        self,
+        *,
+        urls: list[str],
+        batch_name: str = "",
+        language_filter: str = "",
+        label_filter: str = "",
+        source: str = "dataset",
+    ) -> dict[str, Any]:
+        normalized_urls = [str(url or "").strip() for url in urls if str(url or "").strip()]
+        batch = DatasetBatchRecord(
+            batch_id=str(uuid.uuid4()),
+            batch_name=str(batch_name or "").strip(),
+            status="queued",
+            source=source,
+            language_filter=language_filter,
+            label_filter=label_filter,
+            requested_count=len(normalized_urls),
+            urls_json=normalized_urls,
+        )
+        self._session.add(batch)
+        self._session.flush()
+
+        run_specs: list[dict[str, Any]] = []
+        for url in normalized_urls:
+            site = self._find_site(url)
+            if site is None:
+                site = self._ensure_site(url=url, source="manual_batch")
+            run_id = str(uuid.uuid4())
+            row = DatasetSiteRunRecord(
+                batch_id=batch.id,
+                site_id=site.id if site else None,
+                run_id=run_id,
+                url=url,
+                language=str(site.language if site else ""),
+                label=str(site.label if site else ""),
+                status="queued",
+            )
+            self._session.add(row)
+            self._session.flush()
+            run_specs.append(
+                {
+                    "run_id": run_id,
+                    "url": url,
+                    "site_id": site.id if site else None,
+                    "batch_id": batch.batch_id,
+                    "site_run_id": row.id,
+                    "language": str(site.language if site else ""),
+                    "label": str(site.label if site else ""),
+                }
+            )
+
+        self._session.commit()
+        return {
+            "batch_id": batch.batch_id,
+            "requested_count": batch.requested_count,
+            "runs": run_specs,
+        }
+
+    def list_batches(self, *, limit: int = 20, offset: int = 0) -> dict[str, Any]:
+        query = self._session.query(DatasetBatchRecord)
+        total = int(query.count() or 0)
+        rows = (
+            query.order_by(DatasetBatchRecord.created_at.desc(), DatasetBatchRecord.id.desc())
+            .offset(max(offset, 0))
+            .limit(max(limit, 1))
+            .all()
+        )
+        return {
+            "total": total,
+            "batches": [self._batch_payload(row, include_runs=False) for row in rows],
+        }
+
+    def get_batch(self, batch_id: str) -> dict[str, Any]:
+        batch = self._session.query(DatasetBatchRecord).filter_by(batch_id=batch_id).first()
+        if batch is None:
+            raise ValueError("Batch not found")
+        return self._batch_payload(batch, include_runs=True)
+
+    def mark_site_run_running(self, run_id: str) -> None:
+        row = self._session.query(DatasetSiteRunRecord).filter_by(run_id=run_id).first()
+        if row is None:
+            return
+        now = datetime.utcnow()
+        row.status = "running"
+        row.started_at = row.started_at or now
+        batch = self._session.query(DatasetBatchRecord).filter_by(id=row.batch_id).first()
+        if batch is not None:
+            batch.status = "running"
+            batch.started_at = batch.started_at or now
+        self._session.commit()
+
+    def finalize_site_run(
+        self,
+        run_id: str,
+        *,
+        display_status: str,
+        result_json: dict[str, Any] | None = None,
+        error_text: str = "",
+    ) -> None:
+        row = self._session.query(DatasetSiteRunRecord).filter_by(run_id=run_id).first()
+        if row is None:
+            return
+
+        status = str(display_status or "").strip().lower() or "failed"
+        result_payload = result_json or {}
+        now = datetime.utcnow()
+        row.status = status
+        row.final_status = str(result_payload.get("final_status", "") or status)
+        row.error_text = error_text
+        row.started_at = row.started_at or now
+        if status in TERMINAL_SITE_RUN_STATUSES:
+            row.finished_at = now
+        row.stream_count = int(result_payload.get("stream_count") or len(result_payload.get("all_streams", []) or []))
+        row.total_cost_usd = float(
+            result_payload.get("total_cost_usd")
+            or result_payload.get("estimated_total_cost_usd")
+            or ((result_payload.get("metrics") or {}).get("estimated_total_cost_usd", 0.0))
+            or 0.0
+        )
+
+        if row.site_id is not None:
+            self._refresh_site_metrics(row.site_id)
+        self._refresh_batch_metrics(row.batch_id)
+        self._session.commit()
+
+    def _site_payload(self, row: DatasetSiteRecord) -> dict[str, Any]:
+        payload = _serialize_model(row)
+        payload["success_rate"] = round((float(row.successful_runs or 0) / float(row.total_runs or 1)) * 100.0, 1) if row.total_runs else 0.0
+        return payload
+
+    def _batch_payload(self, row: DatasetBatchRecord, *, include_runs: bool) -> dict[str, Any]:
+        payload = _serialize_model(row)
+        payload["success_rate"] = round((float(row.passed_count or 0) / float(row.completed_count or 1)) * 100.0, 1) if row.completed_count else 0.0
+        if include_runs:
+            runs = (
+                self._session.query(DatasetSiteRunRecord)
+                .filter_by(batch_id=row.id)
+                .order_by(DatasetSiteRunRecord.created_at.asc(), DatasetSiteRunRecord.id.asc())
+                .all()
+            )
+            payload["runs"] = [_serialize_model(item) for item in runs]
+        return payload
+
+    def _find_site(self, url: str) -> DatasetSiteRecord | None:
+        canonical = canonicalize_url(url)
+        if not canonical:
+            return None
+        return self._session.query(DatasetSiteRecord).filter_by(canonical_url=canonical).first()
+
+    def _ensure_site(
+        self,
+        *,
+        url: str,
+        language: str = "",
+        label: str = "",
+        source: str = "dataset",
+    ) -> DatasetSiteRecord | None:
+        canonical = canonicalize_url(url)
+        if not canonical:
+            return None
+        row = self._session.query(DatasetSiteRecord).filter_by(canonical_url=canonical).first()
+        if row is None:
+            row = DatasetSiteRecord(canonical_url=canonical)
+            self._session.add(row)
+            self._session.flush()
+        row.url = url
+        row.source = row.source or source
+        if language:
+            row.language = language
+        if label:
+            row.label = label
+        return row
+
+    def _refresh_site_metrics(self, site_id: int) -> None:
+        site = self._session.query(DatasetSiteRecord).filter_by(id=site_id).first()
+        if site is None:
+            return
+        rows = (
+            self._session.query(DatasetSiteRunRecord)
+            .filter_by(site_id=site_id)
+            .order_by(DatasetSiteRunRecord.finished_at.desc().nullslast(), DatasetSiteRunRecord.created_at.desc())
+            .all()
+        )
+        terminal_rows = [row for row in rows if str(row.final_status or row.status or "").strip().lower() in TERMINAL_SITE_RUN_STATUSES]
+        site.total_runs = len(terminal_rows)
+        site.successful_runs = len([row for row in terminal_rows if str(row.final_status or row.status or "").strip().lower() in SUCCESS_FINAL_STATUSES])
+        site.failed_runs = len([row for row in terminal_rows if str(row.final_status or row.status or "").strip().lower() in FAILED_FINAL_STATUSES])
+        site.last_tested_at = next((row.finished_at or row.created_at for row in terminal_rows if row.finished_at or row.created_at), None)
+        site.last_success_at = next(
+            (
+                row.finished_at or row.created_at
+                for row in terminal_rows
+                if str(row.final_status or row.status or "").strip().lower() in SUCCESS_FINAL_STATUSES
+            ),
+            None,
+        )
+
+    def _refresh_batch_metrics(self, batch_pk: int) -> None:
+        batch = self._session.query(DatasetBatchRecord).filter_by(id=batch_pk).first()
+        if batch is None:
+            return
+        rows = self._session.query(DatasetSiteRunRecord).filter_by(batch_id=batch_pk).all()
+        completed = [row for row in rows if str(row.final_status or row.status or "").strip().lower() in TERMINAL_SITE_RUN_STATUSES]
+        batch.requested_count = len(rows)
+        batch.completed_count = len(completed)
+        batch.passed_count = len([row for row in completed if str(row.final_status or row.status or "").strip().lower() in SUCCESS_FINAL_STATUSES])
+        batch.failed_count = len([row for row in completed if str(row.final_status or row.status or "").strip().lower() == "failed"])
+        batch.cancelled_count = len([row for row in completed if str(row.final_status or row.status or "").strip().lower() == "cancelled"])
+
+        if not rows:
+            batch.status = "queued"
+        elif any(str(row.status or "").strip().lower() == "running" for row in rows):
+            batch.status = "running"
+        elif any(str(row.status or "").strip().lower() == "queued" for row in rows):
+            batch.status = "queued"
+        elif batch.completed_count == batch.requested_count:
+            if batch.cancelled_count == batch.requested_count:
+                batch.status = "cancelled"
+            elif batch.passed_count == batch.requested_count:
+                batch.status = "success"
+            elif batch.passed_count > 0:
+                batch.status = "partial"
+            else:
+                batch.status = "failed"
+        else:
+            batch.status = "running"
+
+        if rows and batch.started_at is None:
+            batch.started_at = min((row.started_at or row.created_at) for row in rows if row.started_at or row.created_at)
+        if batch.completed_count == batch.requested_count and rows:
+            finished_values = [row.finished_at or row.created_at for row in completed if row.finished_at or row.created_at]
+            batch.finished_at = max(finished_values) if finished_values else datetime.utcnow()

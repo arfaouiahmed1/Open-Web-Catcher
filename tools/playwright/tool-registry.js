@@ -586,14 +586,14 @@ export function getToolSpec(toolName) {
   return specValue ? toPublicToolSpec(toolName, specValue) : null;
 }
 
-export function getToolDefinitions(browserWsEndpoint, toolImpls = DEFAULT_TOOL_IMPLS) {
+export function getToolDefinitions(browserWsEndpoint, toolImpls = DEFAULT_TOOL_IMPLS, browserProfile = '') {
   return Object.fromEntries(
     Object.entries(TOOL_SPECS).map(([name, specValue]) => [
       name,
       {
         ...toPublicToolSpec(name, specValue),
         schema: specValue.zodSchema,
-        handler: specValue.handlerFactory(browserWsEndpoint, toolImpls),
+        handler: (args) => specValue.handlerFactory(browserWsEndpoint, toolImpls)({ ...args, browserProfile }),
       },
     ]),
   );

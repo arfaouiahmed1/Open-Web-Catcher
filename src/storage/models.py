@@ -464,3 +464,64 @@ class EvaluationCaseResultRecord(Base):
     output_json: Mapped[dict] = mapped_column(JSON, default=dict)
     trace_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class DatasetSiteRecord(Base):
+    __tablename__ = "dataset_sites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    canonical_url: Mapped[str] = mapped_column(String(1024), unique=True, index=True)
+    url: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(32), default="csv_seed", index=True)
+    language: Mapped[str] = mapped_column(String(32), default="", index=True)
+    label: Mapped[str] = mapped_column(String(32), default="", index=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    total_runs: Mapped[int] = mapped_column(Integer, default=0)
+    successful_runs: Mapped[int] = mapped_column(Integer, default=0)
+    failed_runs: Mapped[int] = mapped_column(Integer, default=0)
+    last_tested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class DatasetBatchRecord(Base):
+    __tablename__ = "dataset_batches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    batch_name: Mapped[str] = mapped_column(String(128), default="", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    source: Mapped[str] = mapped_column(String(32), default="dataset", index=True)
+    language_filter: Mapped[str] = mapped_column(String(32), default="", index=True)
+    label_filter: Mapped[str] = mapped_column(String(32), default="", index=True)
+    requested_count: Mapped[int] = mapped_column(Integer, default=0)
+    completed_count: Mapped[int] = mapped_column(Integer, default=0)
+    passed_count: Mapped[int] = mapped_column(Integer, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0)
+    cancelled_count: Mapped[int] = mapped_column(Integer, default=0)
+    urls_json: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class DatasetSiteRunRecord(Base):
+    __tablename__ = "dataset_site_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("dataset_batches.id", ondelete="CASCADE"), index=True)
+    site_id: Mapped[int | None] = mapped_column(ForeignKey("dataset_sites.id", ondelete="SET NULL"), nullable=True, index=True)
+    run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    url: Mapped[str] = mapped_column(Text, default="")
+    language: Mapped[str] = mapped_column(String(32), default="", index=True)
+    label: Mapped[str] = mapped_column(String(32), default="", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    final_status: Mapped[str] = mapped_column(String(32), default="", index=True)
+    stream_count: Mapped[int] = mapped_column(Integer, default=0)
+    total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    error_text: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

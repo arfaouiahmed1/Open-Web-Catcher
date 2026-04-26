@@ -124,6 +124,27 @@ Expected result for current baseline:
 
 - all tests pass
 
+If you are running tests on the host instead of inside Docker, use the project virtualenv explicitly:
+
+```powershell
+.venv\Scripts\python.exe -m pytest tests/
+```
+
+If `pytest` is missing from `.venv`, reinstall the dev environment:
+
+```powershell
+uv venv .venv --python 3.11
+uv pip install --python .venv\Scripts\python.exe -e ".[dev]"
+```
+
+For the web console, verify both the production build and the Vitest suite:
+
+```powershell
+cd web
+npm run build
+npm test
+```
+
 ## 7) Known Non-Blocking Warnings
 
 ### Cloudinary key placeholder

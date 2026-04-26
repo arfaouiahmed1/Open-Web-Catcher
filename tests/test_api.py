@@ -19,7 +19,7 @@ from src.models.schemas import (
     PipelineResult,
     PricingConfig,
 )
-from src.utils.config import Settings
+from src.utils.config import Settings, build_browser_runtime_sync_status
 from src.utils.observability import ObservabilityStatus, run_registry
 
 
@@ -181,6 +181,7 @@ def test_ui_config_update_reports_persist_path(client: TestClient, api_settings:
     assert payload["llm_tuning"]["model_overrides"]["openai::gpt-4o-mini"]["max_tokens"] == 1024
     assert payload["config_persisted"] is True
     assert payload["config_persist_path"].replace("\\", "/").endswith("data/settings.runtime.yaml")
+    assert "browser_runtime_sync_status" in payload
 
 
 def test_ui_config_update_reports_persist_error(client: TestClient, api_settings: Settings):
@@ -220,6 +221,9 @@ def test_ui_config_update_normalizes_browser_runtime(client: TestClient, api_set
                         "proxy_cache_ttl_ms": 700000,
                         "proxy_max_candidates": 30,
                         "proxy_test_url": "https://example.com/ip",
+                        "streaming_safe_mode": "always",
+                        "media_proxy_strategy": "proxy_first",
+                        "asset_diagnostics_enabled": False,
                         "iframe_auto_recovery_enabled": False,
                         "iframe_recovery_timeout_ms": 26000,
                         "media_capture_timeout_ms": 45000,
@@ -246,6 +250,9 @@ def test_ui_config_update_normalizes_browser_runtime(client: TestClient, api_set
     assert runtime["proxy_cache_ttl_ms"] == 700000
     assert runtime["proxy_max_candidates"] == 30
     assert runtime["proxy_test_url"] == "https://example.com/ip"
+    assert runtime["streaming_safe_mode"] == "always"
+    assert runtime["media_proxy_strategy"] == "proxy_first"
+    assert runtime["asset_diagnostics_enabled"] is False
     assert runtime["iframe_auto_recovery_enabled"] is False
     assert runtime["iframe_recovery_timeout_ms"] == 26000
     assert runtime["media_capture_timeout_ms"] == 45000
@@ -253,6 +260,69 @@ def test_ui_config_update_normalizes_browser_runtime(client: TestClient, api_set
     assert runtime["media_retry_backoff_ms"] == [500, 1000, 2000]
     assert runtime["media_cors_patch_enabled"] is True
     assert runtime["media_playback_verification_enabled"] is False
+
+
+def test_browser_runtime_sync_status_reports_bridge_metadata(tmp_path: Path):
+    runtime_source = tmp_path / "settings.runtime.yaml"
+    runtime_source.write_text("browser_runtime: {}\n", encoding="utf-8")
+    bridge_path = tmp_path / "browser.runtime.json"
+    bridge_path.write_text(
+        json.dumps(
+            {
+                "runtime_sync": {
+                    "source_path": str(runtime_source),
+                    "bridge_path": str(bridge_path),
+                    "synced_at": "2026-04-26T12:00:00+00:00",
+                    "active_runtime_source": "runtime_yaml",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = build_browser_runtime_sync_status(
+        runtime_json_path=bridge_path,
+        yaml_path=tmp_path / "settings.yaml",
+        runtime_yaml_path=runtime_source,
+    )
+
+    assert status["bridge_exists"] is True
+    assert status["source_exists"] is True
+    assert status["active_runtime_source"] == "runtime_yaml"
+    assert status["synced_at"] == "2026-04-26T12:00:00+00:00"
+
+
+def test_ui_config_update_supports_partial_tab_saves(client: TestClient, api_settings: Settings):
+    api_settings.llm_provider = "openai"
+    api_settings.agent_model = "gpt-4o-mini"
+    api_settings.orchestrator_model = "gpt-4o"
+    api_settings.browser_engine = "puppeteer"
+    api_settings.deepeval_provider = "openai"
+    api_settings.deepeval_model = "gpt-4o"
+
+    with patch.object(api_settings.__class__, "save_yaml", return_value=Path("data/settings.runtime.yaml")), \
+         patch.object(api_settings.__class__, "save_browser_runtime_bridge", return_value=Path("data/browser.runtime.json")):
+        response = client.put(
+            "/ui/config",
+            json={
+                "browser_engine": "playwright",
+                "browser_runtime": {
+                    "playwright": {
+                        "launch_timeout_ms": 61000,
+                    }
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["browser_engine"] == "playwright"
+    assert payload["browser_runtime"]["playwright"]["launch_timeout_ms"] == 61000
+    assert payload["llm_provider"] == "openai"
+    assert payload["agent_model"] == "gpt-4o-mini"
+    assert payload["orchestrator_model"] == "gpt-4o"
+    assert payload["deepeval_provider"] == "openai"
+    assert payload["deepeval_model"] == "gpt-4o"
 
 
 def test_ui_provider_models_returns_catalog(client: TestClient):

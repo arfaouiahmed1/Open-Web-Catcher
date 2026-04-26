@@ -28,6 +28,8 @@ _AGENT_CONTRACT = """\
 - use navigation and page-inspection tools as needed, but stay within budget
 - respect the final JSON/output format defined in the base policy
 - do not fabricate hosting links; only return verified live-page findings
+- default downstream route is `stream_extractor`; use `embed_agent` only when the discovered URL is already a direct embedded/player URL
+- if no verified hosting or direct embedded targets remain, return an empty result and stop instead of inventing a next hop
 """
 
 
@@ -139,7 +141,7 @@ def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[st
         page_dict.setdefault("status", "unknown")
         page_dict.setdefault("scheduled_time", "")
         page_dict.setdefault("confidence", 85)
-        page_dict.setdefault("route", "embed_agent")
+        page_dict.setdefault("route", "stream_extractor")
         page_dict.setdefault("entry_point", source_url)
         if not isinstance(page_dict.get("iframes"), list):
             page_dict["iframes"] = []
@@ -243,7 +245,7 @@ def _augment_landing_output(
                 "servers": [],
                 "iframes": [],
                 "entry_point": source_url,
-                "route": "embed_agent",
+                "route": "stream_extractor",
                 "patterns": {
                     "url_pattern": candidate_pattern,
                 },

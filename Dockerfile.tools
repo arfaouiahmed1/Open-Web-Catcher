@@ -77,13 +77,13 @@ RUN --mount=type=cache,target=/root/.npm \
     && test -n "${CHROME_BIN}" \
     && ln -sf "${CHROME_BIN}" /usr/local/bin/google-chrome-stable \
     && ln -sf /usr/local/bin/google-chrome-stable /usr/local/bin/google-chrome \
-    && curl -fsSL https://api.github.com/repos/uBlockOrigin/uBOL-home/releases/latest -o /tmp/ubol-release.json \
-    && UBOL_ASSET_URL="$(node -e "const fs=require('fs'); const payload=JSON.parse(fs.readFileSync('/tmp/ubol-release.json','utf8')); const asset=(payload.assets||[]).find((entry)=>/chromium.*\\.zip$/i.test(String(entry.name||''))); if(!asset?.browser_download_url){console.error('No Chromium uBOL asset found in latest release'); process.exit(1);} process.stdout.write(asset.browser_download_url);")" \
+    && curl -fsSL 'https://api.github.com/repos/uBlockOrigin/uBOL-home/releases?per_page=10' -o /tmp/ubol-releases.json \
+    && UBOL_ASSET_URL="$(node -e "const fs=require('fs'); const releases=JSON.parse(fs.readFileSync('/tmp/ubol-releases.json','utf8')); const pick=(rows, includePrerelease)=>rows.filter((release)=>!release.draft && (includePrerelease || !release.prerelease)).flatMap((release)=>(release.assets||[]).map((asset)=>({ ...asset, release_tag: release.tag_name }))).find((asset)=>/chromium.*\\.zip$/i.test(String(asset.name||''))); const asset=pick(releases,false) || pick(releases,true); if(!asset?.browser_download_url){console.error('No Chromium uBOL asset found in recent releases'); process.exit(1);} process.stdout.write(asset.browser_download_url);")" \
     && test -n "${UBOL_ASSET_URL}" \
     && mkdir -p /app/tools/puppeteer/extensions/ubol \
     && curl -fsSL "${UBOL_ASSET_URL}" -o /tmp/ubol.zip \
     && unzip -q /tmp/ubol.zip -d /app/tools/puppeteer/extensions/ubol \
-    && rm -f /tmp/ubol.zip /tmp/ubol-release.json \
+    && rm -f /tmp/ubol.zip /tmp/ubol-releases.json \
     && test -f /app/tools/puppeteer/extensions/ubol/manifest.json \
     && test -f /app/tools/puppeteer/extensions/ubol/rulesets/ruleset-details.json
 

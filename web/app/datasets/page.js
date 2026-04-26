@@ -1,512 +1,28 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import {
-  BarChart3,
-  Check,
-  ChevronDown,
-  Database,
-  Filter,
-  Loader2,
-  Play,
-  RefreshCw,
-  Tag,
-  X,
-} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Database, Loader2, RefreshCw, Tag, UploadCloud } from "lucide-react";
+
 import { apiFetch } from "@/lib/api";
 import { formatPercent } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 
 const LANG_COLORS = {
-  arabic:     "var(--violet)",
-  english:    "var(--signal)",
-  spanish:    "var(--mint)",
-  french:     "var(--sky)",
+  arabic: "var(--violet)",
+  english: "var(--signal)",
+  spanish: "var(--mint)",
+  french: "var(--sky)",
   portuguese: "var(--amber, #f59e0b)",
-  other:      "var(--mute-2)",
-  "":         "var(--mute-3)",
+  other: "var(--mute-2)",
+  "": "var(--mute-3)",
 };
-
-function LangBadge({ lang }) {
-  return (
-    <span
-      className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-      style={{
-        color: LANG_COLORS[lang] || LANG_COLORS[""],
-        background: `color-mix(in oklch, ${LANG_COLORS[lang] || LANG_COLORS[""]} 14%, transparent)`,
-      }}
-    >
-      {lang || "unlabeled"}
-    </span>
-  );
-}
-
-function SuccessBar({ rate, total }) {
-  if (!total) return <span className="text-[11px]" style={{ color: "var(--mute-3)" }}>no runs</span>;
-  const color = rate >= 80 ? "var(--mint)" : rate >= 50 ? "var(--signal)" : "var(--rose)";
-  return (
-    <div className="flex items-center gap-2">
-      <div className="w-20 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
-        <div className="h-full rounded-full" style={{ width: `${rate}%`, background: color }} />
-      </div>
-      <span className="text-[11px] font-mono" style={{ color }}>{rate.toFixed(1)}%</span>
-    </div>
-  );
-}
-
-export default function DatasetsPage() {
-  const [meta, setMeta]       = useState({ languages: [], labels: [] });
-  const [stats, setStats]     = useState(null);
-  const [sites, setSites]     = useState([]);
-  const [total, setTotal]     = useState(0);
-  const [results, setResults] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage]       = useState(0);
-
-  // Filters
-  const [filterLang,  setFilterLang]  = useState("");
-  const [filterLabel, setFilterLabel] = useState("");
-
-  // Batch test state
-  const [batchLang,   setBatchLang]   = useState("");
-  const [batchLabel,  setBatchLabel]  = useState("");
-  const [batchLimit,  setBatchLimit]  = useState(20);
-  const [batchUrls,   setBatchUrls]   = useState("");  // newline-separated custom URLs
-  const [testing,     setTesting]     = useState(false);
-  const [testProg,    setTestProg]    = useState(0);
-  const [testTotal,   setTestTotal]   = useState(0);
-
-  // Selection for bulk label
-  const [selected, setSelected] = useState(new Set());
-  const [bulkLang, setBulkLang] = useState("");
-
-  const PAGE_SIZE = 50;
-
-  const loadMeta = useCallback(async () => {
-    const m = await apiFetch("/api/datasets/meta");
-    setMeta(m);
-  }, []);
-
-  const loadStats = useCallback(async () => {
-    const s = await apiFetch("/api/datasets/sites/stats");
-    setStats(s);
-  }, []);
-
-  const loadSites = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        offset: page * PAGE_SIZE,
-        limit: PAGE_SIZE,
-        ...(filterLang  ? { language: filterLang }  : {}),
-        ...(filterLabel ? { label:    filterLabel }  : {}),
-      });
-      const data = await apiFetch(`/api/datasets/sites?${params}`);
-      setSites(data.sites || []);
-      setTotal(data.total || 0);
-    } finally {
-      setLoading(false);
-    }
-  }, [page, filterLang, filterLabel]);
-
-  const loadResults = useCallback(async () => {
-    const r = await apiFetch("/api/datasets/results");
-    setResults(r);
-  }, []);
-
-  useEffect(() => {
-    loadMeta();
-    loadStats();
-    loadResults();
-  }, [loadMeta, loadStats, loadResults]);
-
-  useEffect(() => {
-    setPage(0);
-  }, [filterLang, filterLabel]);
-
-  useEffect(() => {
-    loadSites();
-  }, [loadSites]);
-
-  const handleLabelSite = async (siteId, language) => {
-    await apiFetch(`/api/datasets/sites/${siteId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ language }),
-    });
-    setSites((prev) => prev.map((s) => s.id == siteId ? { ...s, language } : s));
-    loadStats();
-  };
-
-  const handleBulkLabel = async () => {
-    if (!bulkLang || selected.size === 0) return;
-    await apiFetch("/api/datasets/sites/bulk-update", {
-      method: "POST",
-      body: JSON.stringify({ ids: [...selected].map(Number), language: bulkLang }),
-    });
-    setSelected(new Set());
-    setBulkLang("");
-    loadSites();
-    loadStats();
-  };
-
-  const toggleSelect = (id) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
-  const handleRunBatch = async () => {
-    // Build URL list from either custom input or filtered sites
-    let urls = [];
-    if (batchUrls.trim()) {
-      urls = batchUrls.split("\n").map((u) => u.trim()).filter(Boolean);
-    } else {
-      const params = new URLSearchParams({
-        limit: batchLimit,
-        ...(batchLang  ? { language: batchLang }  : {}),
-        ...(batchLabel ? { label:    batchLabel }  : {}),
-      });
-      const data = await apiFetch(`/api/datasets/sites?${params}`);
-      urls = (data.sites || []).map((s) => s.url);
-    }
-
-    if (!urls.length) return;
-    setTesting(true);
-    setTestProg(0);
-    setTestTotal(urls.length);
-
-    for (let i = 0; i < urls.length; i++) {
-      const url = urls[i];
-      try {
-        // Trigger a real run via the pipeline
-        const res = await apiFetch("/run", {
-          method: "POST",
-          body: JSON.stringify({ url }),
-        });
-        const success = res?.final_status === "success" || res?.metrics?.success;
-        // Find matching site for its lang/label
-        const matchSite = sites.find((s) => s.url === url);
-        await apiFetch(
-          `/api/datasets/results/record?url=${encodeURIComponent(url)}&success=${!!success}` +
-          `&language=${encodeURIComponent(matchSite?.language || batchLang || "")}` +
-          `&label=${encodeURIComponent(matchSite?.label || batchLabel || "")}`,
-          { method: "POST" }
-        );
-      } catch {
-        // Record failure
-        await apiFetch(
-          `/api/datasets/results/record?url=${encodeURIComponent(url)}&success=false` +
-          `&language=${encodeURIComponent(batchLang || "")}` +
-          `&label=${encodeURIComponent(batchLabel || "")}`,
-          { method: "POST" }
-        ).catch(() => {});
-      }
-      setTestProg(i + 1);
-    }
-
-    setTesting(false);
-    loadResults();
-    loadStats();
-  };
-
-  const totalPages = Math.ceil(total / PAGE_SIZE);
-
-  return (
-    <div className="space-y-6 p-6 max-w-[1400px]">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <Database size={22} style={{ color: "var(--signal)" }} />
-            <h1 className="text-2xl font-bold">Datasets</h1>
-          </div>
-          <p className="text-[13px]" style={{ color: "var(--mute-2)" }}>
-            {stats?.total ?? "…"} sites · label by language · run batch tests
-          </p>
-        </div>
-        <Button size="sm" variant="ghost" onClick={() => { loadSites(); loadStats(); loadResults(); }}>
-          <RefreshCw size={14} />
-        </Button>
-      </div>
-
-      {/* Stats row */}
-      {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatCard label="Total Sites"   value={stats.total} />
-          <StatCard label="Unlabeled"     value={stats.unlabeled} accent="warning" />
-          <StatCard label="Languages"     value={Object.keys(stats.by_language).filter((k) => k && k !== "unlabeled").length} />
-          <StatCard
-            label="Overall Success"
-            value={results ? `${results.success_rate.toFixed(1)}%` : "—"}
-            accent={results?.success_rate >= 80 ? "success" : results?.success_rate >= 50 ? "warning" : "danger"}
-          />
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Left: site table */}
-        <div className="xl:col-span-2 space-y-3">
-          {/* Filters + bulk actions */}
-          <div className="flex flex-wrap gap-2 items-center">
-            <Select
-              label="Language"
-              value={filterLang}
-              options={[{ value: "", label: "All languages" }, ...meta.languages.map((l) => ({ value: l, label: l }))]}
-              onChange={setFilterLang}
-            />
-            <Select
-              label="Label"
-              value={filterLabel}
-              options={[{ value: "", label: "All labels" }, ...meta.labels.map((l) => ({ value: l, label: l }))]}
-              onChange={setFilterLabel}
-            />
-            {selected.size > 0 && (
-              <div className="flex items-center gap-2 ml-auto">
-                <span className="text-[12px]" style={{ color: "var(--mute-2)" }}>{selected.size} selected</span>
-                <Select
-                  label="Set language"
-                  value={bulkLang}
-                  options={[{ value: "", label: "pick language…" }, ...meta.languages.map((l) => ({ value: l, label: l }))]}
-                  onChange={setBulkLang}
-                />
-                <Button size="sm" onClick={handleBulkLabel} disabled={!bulkLang}>
-                  <Tag size={13} className="mr-1" /> Apply
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-                  <X size={13} />
-                </Button>
-              </div>
-            )}
-          </div>
-
-          {/* Table */}
-          <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--border)" }}>
-            <table className="w-full text-[12px]">
-              <thead>
-                <tr style={{ borderBottom: "1px solid var(--border)", background: "rgba(255,255,255,0.02)" }}>
-                  <th className="px-3 py-2 text-left w-8">
-                    <input
-                      type="checkbox"
-                      checked={selected.size === sites.length && sites.length > 0}
-                      onChange={(e) => setSelected(e.target.checked ? new Set(sites.map((s) => s.id)) : new Set())}
-                    />
-                  </th>
-                  <th className="px-3 py-2 text-left" style={{ color: "var(--mute-2)" }}>URL</th>
-                  <th className="px-3 py-2 text-left w-32" style={{ color: "var(--mute-2)" }}>Language</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={3} className="py-8 text-center"><Loader2 className="animate-spin mx-auto" size={18} /></td></tr>
-                ) : sites.length === 0 ? (
-                  <tr><td colSpan={3} className="py-8 text-center" style={{ color: "var(--mute-3)" }}>No sites found</td></tr>
-                ) : sites.map((site) => (
-                  <tr
-                    key={site.id}
-                    style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}
-                    className="hover:bg-white/[0.02] transition-colors"
-                  >
-                    <td className="px-3 py-1.5">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(site.id)}
-                        onChange={() => toggleSelect(site.id)}
-                      />
-                    </td>
-                    <td className="px-3 py-1.5">
-                      <span className="font-mono truncate block max-w-[380px]" style={{ color: "var(--ink-dim)" }} title={site.url}>
-                        {site.url}
-                      </span>
-                    </td>
-                    <td className="px-3 py-1.5">
-                      <InlineSelect
-                        value={site.language}
-                        options={["", ...meta.languages]}
-                        onChange={(v) => handleLabelSite(site.id, v)}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          <div className="flex items-center justify-between text-[12px]" style={{ color: "var(--mute-2)" }}>
-            <span>{total} sites · page {page + 1} / {Math.max(totalPages, 1)}</span>
-            <div className="flex gap-2">
-              <Button size="sm" variant="ghost" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>Prev</Button>
-              <Button size="sm" variant="ghost" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>Next</Button>
-            </div>
-          </div>
-        </div>
-
-        {/* Right: batch test + results */}
-        <div className="space-y-4">
-          {/* Batch runner */}
-          <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: "var(--border)" }}>
-            <div className="flex items-center gap-2 mb-1">
-              <Play size={14} style={{ color: "var(--signal)" }} />
-              <span className="font-semibold text-[13px]">Batch Test</span>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[11px] uppercase tracking-wide" style={{ color: "var(--mute-3)" }}>Filter by language</label>
-              <Select
-                value={batchLang}
-                options={[{ value: "", label: "All" }, ...meta.languages.map((l) => ({ value: l, label: l }))]}
-                onChange={setBatchLang}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[11px] uppercase tracking-wide" style={{ color: "var(--mute-3)" }}>Filter by label</label>
-              <Select
-                value={batchLabel}
-                options={[{ value: "", label: "All" }, ...meta.labels.map((l) => ({ value: l, label: l }))]}
-                onChange={setBatchLabel}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[11px] uppercase tracking-wide" style={{ color: "var(--mute-3)" }}>Batch size (from dataset)</label>
-              <div className="flex gap-2">
-                {[10, 20, 50, 100].map((n) => (
-                  <button
-                    key={n}
-                    onClick={() => setBatchLimit(n)}
-                    className="flex-1 py-1 rounded text-[12px] font-medium transition-all"
-                    style={{
-                      background: batchLimit === n ? "color-mix(in oklch, var(--signal) 14%, transparent)" : "rgba(255,255,255,0.04)",
-                      border: `1px solid ${batchLimit === n ? "color-mix(in oklch, var(--signal) 30%, transparent)" : "transparent"}`,
-                      color: batchLimit === n ? "var(--signal)" : "var(--mute-2)",
-                    }}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[11px] uppercase tracking-wide" style={{ color: "var(--mute-3)" }}>
-                Or paste custom URLs (one per line)
-              </label>
-              <textarea
-                rows={4}
-                placeholder={"https://example.com\nhttps://other.com"}
-                value={batchUrls}
-                onChange={(e) => setBatchUrls(e.target.value)}
-                className="w-full rounded-lg border px-3 py-2 text-[12px] font-mono resize-none"
-                style={{
-                  background: "var(--surface)",
-                  borderColor: "var(--border)",
-                  color: "var(--ink)",
-                  outline: "none",
-                }}
-              />
-            </div>
-
-            {testing && (
-              <div className="space-y-1">
-                <div className="flex justify-between text-[11px]" style={{ color: "var(--mute-2)" }}>
-                  <span>Running…</span>
-                  <span>{testProg} / {testTotal}</span>
-                </div>
-                <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{ width: `${testTotal ? testProg / testTotal * 100 : 0}%`, background: "var(--signal)" }}
-                  />
-                </div>
-              </div>
-            )}
-
-            <Button className="w-full" onClick={handleRunBatch} disabled={testing}>
-              {testing ? <><Loader2 className="animate-spin mr-2" size={14} />Running…</> : <><BarChart3 size={14} className="mr-2" />Run Batch</>}
-            </Button>
-          </div>
-
-          {/* Results summary */}
-          {results && results.total > 0 && (
-            <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: "var(--border)" }}>
-              <span className="font-semibold text-[13px]">Results</span>
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <MiniStat label="Tested"  value={results.total} />
-                <MiniStat label="Passed"  value={results.successful} accent="success" />
-                <MiniStat label="Failed"  value={results.failed}     accent="danger" />
-              </div>
-              <SuccessBar rate={results.success_rate} total={results.total} />
-
-              {Object.keys(results.by_language).length > 0 && (
-                <div className="space-y-1.5">
-                  <div className="text-[10px] uppercase tracking-wide" style={{ color: "var(--mute-3)" }}>By language</div>
-                  {Object.entries(results.by_language).map(([lang, d]) => (
-                    <div key={lang} className="flex items-center justify-between gap-2">
-                      <LangBadge lang={lang} />
-                      <SuccessBar rate={d.success_rate} total={d.total} />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ── small components ────────────────────────────────────────────────────── */
-
-function StatCard({ label, value, accent }) {
-  const color = accent === "success" ? "var(--mint)" : accent === "warning" ? "var(--signal)" : accent === "danger" ? "var(--rose)" : "var(--ink)";
-  return (
-    <div className="rounded-xl border p-4" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
-      <div className="text-[10px] uppercase tracking-wide mb-1" style={{ color: "var(--mute-3)" }}>{label}</div>
-      <div className="text-2xl font-bold" style={{ color }}>{value}</div>
-    </div>
-  );
-}
-
-function MiniStat({ label, value, accent }) {
-  const color = accent === "success" ? "var(--mint)" : accent === "danger" ? "var(--rose)" : "var(--ink)";
-  return (
-    <div>
-      <div className="text-lg font-bold" style={{ color }}>{value}</div>
-      <div className="text-[10px]" style={{ color: "var(--mute-3)" }}>{label}</div>
-    </div>
-  );
-}
-
-function Select({ value, options, onChange, label }) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="rounded-lg border px-2 py-1 text-[12px]"
-      style={{
-        background: "var(--surface)",
-        borderColor: "var(--border)",
-        color: value ? "var(--ink)" : "var(--mute-2)",
-        outline: "none",
-      }}
-    >
-      {options.map((o) => (
-        <option key={o.value ?? o} value={o.value ?? o}>{(o.label ?? o) || "—"}</option>
-      ))}
-    </select>
-  );
-}
 
 function InlineSelect({ value, options, onChange }) {
   return (
     <select
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(event) => onChange(event.target.value)}
       className="rounded px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide"
       style={{
         background: `color-mix(in oklch, ${LANG_COLORS[value] || LANG_COLORS[""]} 12%, transparent)`,
@@ -516,11 +32,478 @@ function InlineSelect({ value, options, onChange }) {
         cursor: "pointer",
       }}
     >
-      {options.map((o) => (
-        <option key={o} value={o} style={{ background: "var(--bg)", color: "var(--ink)" }}>
-          {o || "unlabeled"}
+      {options.map((option) => (
+        <option key={option} value={option} style={{ background: "var(--bg)", color: "var(--ink)" }}>
+          {option || "unlabeled"}
         </option>
       ))}
     </select>
+  );
+}
+
+function StatCard({ label, value, accent }) {
+  const color = accent === "success" ? "var(--mint)" : accent === "warning" ? "var(--signal)" : accent === "danger" ? "var(--rose)" : "var(--ink)";
+  return (
+    <div className="rounded-[16px] border p-4" style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}>
+      <div className="text-[10px] uppercase tracking-[0.12em]" style={{ color: "var(--mute-3)" }}>{label}</div>
+      <div className="mt-1 text-2xl font-semibold" style={{ color }}>{value}</div>
+    </div>
+  );
+}
+
+function ProgressBar({ value, total }) {
+  const pct = total ? Math.round((value / total) * 100) : 0;
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-[11px]" style={{ color: "var(--mute-2)" }}>
+        <span>{value} / {total}</span>
+        <span>{pct}%</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--signal)" }} />
+      </div>
+    </div>
+  );
+}
+
+export default function DatasetsPage() {
+  const [meta, setMeta] = useState({ languages: [], labels: [] });
+  const [csvInfo, setCsvInfo] = useState({ path: "", exists: true });
+  const [stats, setStats] = useState(null);
+  const [results, setResults] = useState(null);
+  const [sites, setSites] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [activeBatch, setActiveBatch] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [selected, setSelected] = useState(new Set());
+  const [notice, setNotice] = useState("");
+
+  const [filterLang, setFilterLang] = useState("");
+  const [filterLabel, setFilterLabel] = useState("");
+  const [search, setSearch] = useState("");
+
+  const [bulkLang, setBulkLang] = useState("");
+  const [bulkLabel, setBulkLabel] = useState("");
+
+  const [batchLang, setBatchLang] = useState("");
+  const [batchLabel, setBatchLabel] = useState("");
+  const [batchLimit, setBatchLimit] = useState(20);
+  const [batchUrls, setBatchUrls] = useState("");
+  const [batchName, setBatchName] = useState("");
+
+  const PAGE_SIZE = 25;
+
+  const loadSummary = useCallback(async () => {
+    const [metaPayload, statsPayload, resultsPayload, batchPayload] = await Promise.all([
+      apiFetch("/api/datasets/meta"),
+      apiFetch("/api/datasets/sites/stats"),
+      apiFetch("/api/datasets/results"),
+      apiFetch("/api/datasets/batches?limit=1&offset=0"),
+    ]);
+    setMeta({ languages: metaPayload.languages || [], labels: metaPayload.labels || [] });
+    setCsvInfo(metaPayload.csv || { path: "", exists: true });
+    setStats(statsPayload);
+    setResults(resultsPayload);
+    const latestBatch = batchPayload?.batches?.[0] || null;
+    setActiveBatch((current) => current?.status === "running" || current?.status === "queued" ? current : latestBatch);
+  }, []);
+
+  const loadSites = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        offset: String(page * PAGE_SIZE),
+        limit: String(PAGE_SIZE),
+        language: filterLang,
+        label: filterLabel,
+        query: search,
+      });
+      const payload = await apiFetch(`/api/datasets/sites?${params.toString()}`);
+      setSites(payload.sites || []);
+      setTotal(payload.total || 0);
+    } finally {
+      setLoading(false);
+    }
+  }, [page, filterLang, filterLabel, search]);
+
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
+
+  useEffect(() => {
+    loadSites();
+  }, [loadSites]);
+
+  useEffect(() => {
+    if (!activeBatch?.batch_id) return undefined;
+    if (!["queued", "running"].includes(String(activeBatch.status || ""))) return undefined;
+    let alive = true;
+    const timer = setInterval(() => {
+      apiFetch(`/api/datasets/batches/${activeBatch.batch_id}`).then((payload) => {
+        if (!alive) return;
+        setActiveBatch(payload);
+        if (!["queued", "running"].includes(String(payload.status || ""))) {
+          loadSummary();
+          loadSites();
+        }
+      }).catch(() => {});
+    }, 2000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [activeBatch?.batch_id, activeBatch?.status, loadSites, loadSummary]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [filterLang, filterLabel, search]);
+
+  async function refreshAll() {
+    await Promise.all([loadSummary(), loadSites()]);
+  }
+
+  async function importCsv() {
+    setImporting(true);
+    try {
+      const payload = await apiFetch("/api/datasets/import", { method: "POST" });
+      setNotice(
+        `Imported ${payload.inserted || 0} new site${payload.inserted === 1 ? "" : "s"}, updated ${payload.updated || 0}, total ${payload.total || 0}.`,
+      );
+      await refreshAll();
+    } catch (error) {
+      setNotice(error?.message ? `Import failed: ${error.message}` : "Import failed.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function updateSite(siteId, patch) {
+    await apiFetch(`/api/datasets/sites/${siteId}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+    await Promise.all([loadSites(), loadSummary()]);
+  }
+
+  async function applyBulkUpdate() {
+    if (!selected.size || (!bulkLang && !bulkLabel)) return;
+    await apiFetch("/api/datasets/sites/bulk-update", {
+      method: "POST",
+      body: JSON.stringify({
+        ids: [...selected].map(Number),
+        language: bulkLang || null,
+        label: bulkLabel || null,
+      }),
+    });
+    setSelected(new Set());
+    setBulkLang("");
+    setBulkLabel("");
+    await Promise.all([loadSites(), loadSummary()]);
+  }
+
+  async function runBatch() {
+    const urls = batchUrls.split(/\r?\n/).map((row) => row.trim()).filter(Boolean);
+    const payload = await apiFetch("/api/datasets/batches", {
+      method: "POST",
+      body: JSON.stringify({
+        batch_name: batchName,
+        language: batchLang,
+        label: batchLabel,
+        limit: batchLimit,
+        urls,
+      }),
+    });
+    setActiveBatch(payload);
+    setBatchUrls("");
+    setBatchName("");
+    await refreshAll();
+  }
+
+  const totalPages = Math.ceil(total / PAGE_SIZE) || 1;
+  const selectedCount = selected.size;
+  const latestBatchRuns = activeBatch?.runs || [];
+  const lastBatchStatus = String(activeBatch?.status || "").toLowerCase();
+  const batchIsActive = lastBatchStatus === "queued" || lastBatchStatus === "running";
+  const batchPassed = activeBatch?.passed_count || 0;
+  const batchCompleted = activeBatch?.completed_count || 0;
+
+  const languageOptions = useMemo(
+    () => [{ value: "", label: "All languages" }, ...meta.languages.map((item) => ({ value: item, label: item }))],
+    [meta.languages],
+  );
+  const labelOptions = useMemo(
+    () => [{ value: "", label: "All labels" }, ...meta.labels.map((item) => ({ value: item, label: item }))],
+    [meta.labels],
+  );
+
+  return (
+    <div className="space-y-6 p-6 max-w-[1440px]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="mb-1 flex items-center gap-3">
+            <Database size={22} style={{ color: "var(--signal)" }} />
+            <h1 className="text-3xl font-semibold text-[var(--ink)]">Datasets</h1>
+          </div>
+          <p className="text-[13px]" style={{ color: "var(--mute-2)" }}>
+            {stats?.total ?? "..."} sites · Postgres-backed import, labels, and batch test runs
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="ghost" onClick={refreshAll}>
+            <RefreshCw size={14} className="mr-1.5" />
+            Refresh
+          </Button>
+          <Button size="sm" variant="accent" onClick={importCsv} disabled={importing}>
+            {importing ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <UploadCloud size={14} className="mr-1.5" />}
+            Import sites.csv
+          </Button>
+        </div>
+      </div>
+
+      {!csvInfo.exists ? (
+        <div
+          className="rounded-[14px] border px-4 py-3 text-[12px]"
+          style={{ borderColor: "color-mix(in oklch, var(--rose) 32%, transparent)", background: "color-mix(in oklch, var(--rose) 8%, transparent)", color: "var(--rose)" }}
+        >
+          Dataset CSV not found at {csvInfo.path || "datasets/sites.csv"}.
+        </div>
+      ) : null}
+
+      {notice ? (
+        <div
+          className="rounded-[14px] border px-4 py-3 text-[12px]"
+          style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)", color: notice.startsWith("Import failed") ? "var(--rose)" : "var(--ink-dim)" }}
+        >
+          {notice}
+        </div>
+      ) : null}
+
+      {stats ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <StatCard label="Total sites" value={stats.total} />
+          <StatCard label="Unlabeled" value={stats.unlabeled} accent="warning" />
+          <StatCard label="Tested" value={stats.tested || 0} />
+          <StatCard label="Recorded runs" value={stats.total_runs || 0} />
+          <StatCard label="Overall success" value={formatPercent((results?.success_rate || 0) / 100)} accent={results?.success_rate >= 70 ? "success" : "danger"} />
+        </div>
+      ) : null}
+
+      <div className="grid gap-6 xl:grid-cols-[1.4fr_0.9fr]">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search URL, notes, language, label..."
+              className="h-11 min-w-[260px] flex-1 rounded-[12px] border px-3 text-[13px]"
+              style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.12)", color: "var(--ink)" }}
+            />
+            <Select className="min-w-[220px]" value={filterLang} onChange={setFilterLang} options={languageOptions} />
+            <Select className="min-w-[220px]" value={filterLabel} onChange={setFilterLabel} options={labelOptions} />
+          </div>
+
+          {selectedCount ? (
+            <div
+              className="flex flex-wrap items-center gap-2 rounded-[14px] border px-4 py-3"
+              style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+            >
+              <span className="text-[12px]" style={{ color: "var(--mute-2)" }}>{selectedCount} selected</span>
+              <Select className="min-w-[200px]" value={bulkLang} onChange={setBulkLang} options={[{ value: "", label: "Leave language" }, ...languageOptions.slice(1)]} />
+              <Select className="min-w-[200px]" value={bulkLabel} onChange={setBulkLabel} options={[{ value: "", label: "Leave label" }, ...labelOptions.slice(1)]} />
+              <Button size="sm" onClick={applyBulkUpdate} disabled={!bulkLang && !bulkLabel}>
+                <Tag size={13} className="mr-1.5" />
+                Apply
+              </Button>
+            </div>
+          ) : null}
+
+          <div
+            className="rounded-[16px] border overflow-hidden"
+            style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+          >
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-[12px]">
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--line)", background: "rgba(255,255,255,0.02)" }}>
+                    <th className="px-3 py-2 text-left w-8">
+                      <input
+                        type="checkbox"
+                        checked={selected.size === sites.length && sites.length > 0}
+                        onChange={(event) => setSelected(event.target.checked ? new Set(sites.map((site) => site.id)) : new Set())}
+                      />
+                    </th>
+                    <th className="px-3 py-2 text-left" style={{ color: "var(--mute-2)" }}>URL</th>
+                    <th className="px-3 py-2 text-left w-36" style={{ color: "var(--mute-2)" }}>Language</th>
+                    <th className="px-3 py-2 text-left w-36" style={{ color: "var(--mute-2)" }}>Label</th>
+                    <th className="px-3 py-2 text-left w-28" style={{ color: "var(--mute-2)" }}>Last tested</th>
+                    <th className="px-3 py-2 text-left w-28" style={{ color: "var(--mute-2)" }}>Success</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr><td colSpan={6} className="py-10 text-center"><Loader2 className="mx-auto animate-spin" size={18} /></td></tr>
+                  ) : !sites.length ? (
+                    <tr><td colSpan={6} className="py-10 text-center" style={{ color: "var(--mute-3)" }}>No dataset sites matched these filters.</td></tr>
+                  ) : sites.map((site) => (
+                    <tr key={site.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }} className="transition-colors hover:bg-white/[0.02]">
+                      <td className="px-3 py-2">
+                        <input type="checkbox" checked={selected.has(site.id)} onChange={() => {
+                          setSelected((current) => {
+                            const next = new Set(current);
+                            next.has(site.id) ? next.delete(site.id) : next.add(site.id);
+                            return next;
+                          });
+                        }} />
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="max-w-[420px] truncate font-mono text-[11px]" style={{ color: "var(--ink-dim)" }} title={site.url}>
+                          {site.url}
+                        </div>
+                        {site.notes ? (
+                          <div className="mt-0.5 max-w-[420px] truncate text-[11px]" style={{ color: "var(--mute-2)" }} title={site.notes}>
+                            {site.notes}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2">
+                        <InlineSelect value={site.language || ""} options={["", ...meta.languages]} onChange={(value) => updateSite(site.id, { language: value })} />
+                      </td>
+                      <td className="px-3 py-2">
+                        <InlineSelect value={site.label || ""} options={["", ...meta.labels]} onChange={(value) => updateSite(site.id, { label: value })} />
+                      </td>
+                      <td className="px-3 py-2 text-[11px]" style={{ color: "var(--mute)" }}>
+                        {site.last_tested_at ? new Date(site.last_tested_at).toLocaleDateString() : "--"}
+                      </td>
+                      <td className="px-3 py-2 text-[11px] font-mono" style={{ color: Number(site.success_rate || 0) >= 70 ? "var(--mint)" : "var(--signal)" }}>
+                        {Number(site.success_rate || 0).toFixed(1)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between text-[12px]" style={{ color: "var(--mute-2)" }}>
+            <span>{total} sites · page {page + 1} / {totalPages}</span>
+            <div className="flex gap-2">
+              <Button size="sm" variant="ghost" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>Prev</Button>
+              <Button size="sm" variant="ghost" disabled={page >= totalPages - 1} onClick={() => setPage((value) => value + 1)}>Next</Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div
+            className="rounded-[16px] border p-4 space-y-3"
+            style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+          >
+            <div>
+              <div className="text-[13.5px] font-medium text-[var(--ink)]">Batch test</div>
+              <div className="mt-0.5 text-[12px]" style={{ color: "var(--mute)" }}>
+                Enqueue workflow runs from the DB-backed dataset or a pasted URL list.
+              </div>
+            </div>
+
+            <input
+              value={batchName}
+              onChange={(event) => setBatchName(event.target.value)}
+              placeholder="Batch name (optional)"
+              className="h-11 w-full rounded-[12px] border px-3 text-[13px]"
+              style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.12)", color: "var(--ink)" }}
+            />
+
+            <Select value={batchLang} onChange={setBatchLang} options={languageOptions} label="Filter by language" />
+            <Select value={batchLabel} onChange={setBatchLabel} options={labelOptions} label="Filter by label" />
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--mute-2)" }}>
+                Batch size from dataset
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                {[10, 20, 50, 100].map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setBatchLimit(value)}
+                    className="rounded-[10px] border py-2 text-[12px] font-medium transition-colors"
+                    style={{
+                      borderColor: batchLimit === value ? "color-mix(in oklch, var(--signal) 32%, transparent)" : "var(--line)",
+                      background: batchLimit === value ? "color-mix(in oklch, var(--signal) 12%, transparent)" : "transparent",
+                      color: batchLimit === value ? "var(--signal)" : "var(--mute-2)",
+                    }}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--mute-2)" }}>
+                Or paste custom URLs
+              </label>
+              <textarea
+                rows={5}
+                value={batchUrls}
+                onChange={(event) => setBatchUrls(event.target.value)}
+                placeholder={"https://example.com\nhttps://other.com"}
+                className="w-full rounded-[12px] border px-3 py-2 text-[12px] font-mono"
+                style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.12)", color: "var(--ink)" }}
+              />
+            </div>
+
+            <Button className="w-full" onClick={runBatch} disabled={batchIsActive}>
+              {batchIsActive ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Running batch...</> : "Run batch"}
+            </Button>
+          </div>
+
+          <div
+            className="rounded-[16px] border p-4 space-y-3"
+            style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-[13.5px] font-medium text-[var(--ink)]">Latest batch</div>
+                <div className="mt-0.5 text-[12px]" style={{ color: "var(--mute)" }}>
+                  {activeBatch?.batch_name || activeBatch?.batch_id || "No batch recorded yet"}
+                </div>
+              </div>
+              <div className="text-[12px] font-medium" style={{ color: batchIsActive ? "var(--signal)" : "var(--ink-dim)" }}>
+                {activeBatch?.status || "idle"}
+              </div>
+            </div>
+
+            {activeBatch ? (
+              <>
+                <ProgressBar value={batchCompleted} total={activeBatch.requested_count || 0} />
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <StatCard label="Passed" value={batchPassed} accent="success" />
+                  <StatCard label="Failed" value={activeBatch.failed_count || 0} accent="danger" />
+                  <StatCard label="Cancelled" value={activeBatch.cancelled_count || 0} accent="warning" />
+                </div>
+                {latestBatchRuns.length ? (
+                  <div className="max-h-[300px] space-y-2 overflow-auto rounded-[12px] border p-3" style={{ borderColor: "var(--line)" }}>
+                    {latestBatchRuns.map((row) => (
+                      <div key={row.run_id} className="rounded-[10px] border px-3 py-2" style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.02)" }}>
+                        <div className="truncate font-mono text-[11px]" style={{ color: "var(--ink-dim)" }}>{row.url}</div>
+                        <div className="mt-1 flex items-center justify-between text-[11px]">
+                          <span style={{ color: "var(--mute-2)" }}>{row.status || row.final_status || "queued"}</span>
+                          <span style={{ color: "var(--mute-2)" }}>{row.total_cost_usd ? `$${Number(row.total_cost_usd).toFixed(4)}` : "--"}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div className="text-[12px]" style={{ color: "var(--mute)" }}>No batch runs yet.</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

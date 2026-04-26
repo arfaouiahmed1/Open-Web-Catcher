@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import uuid
 from functools import partial
 from typing import Any, TypedDict
+from urllib.parse import urlparse
 
 from langgraph.graph import END, START, StateGraph
 
@@ -46,6 +48,10 @@ class HandoffContext(TypedDict, total=False):
     candidate_participants: str
     landing_route: str
     landing_iframes: list[str]
+    recovery_url: str
+    route_source: str
+    navigation_policy: str
+    required_evidence: list[str]
     source_hosting_url: str
     source_hosting_status: str
     source_hosting_decision: str
@@ -54,12 +60,35 @@ class HandoffContext(TypedDict, total=False):
     memory_hints: str
 
 
+_SAME_CONTENT_NAVIGATION_POLICY = (
+    "same-content okay: allow server/source URL changes only when the same event/player stays in focus; "
+    "treat ad redirects, unrelated pages, homepages, and off-target provider detours as drift and recover "
+    "to the assigned target URL"
+)
+_HOSTING_EVIDENCE_CHECKLIST = [
+    "verify the player works before extraction and after every server switch",
+    "record screenshot_url for each server attempt",
+    "record extracted m3u8/mpd/mp4 URLs for each server attempt",
+    "record embedded_url or player_iframe_url when present",
+    "record network_diagnostics and iframe_diagnostics",
+    "record confirmed player_state before concluding on a server",
+]
+_EMBEDDED_EVIDENCE_CHECKLIST = [
+    "stay on the assigned embedded URL and do not drift back into host-page exploration",
+    "record screenshot_url for each server/source attempt",
+    "record extracted m3u8/mpd/mp4 URLs for each server/source attempt",
+    "record embedded_url or player_iframe_url when present",
+    "record network_diagnostics and iframe_diagnostics",
+    "record confirmed player_state before concluding on a server/source",
+]
+
+
 def render_handoff(ctx: HandoffContext) -> str:
     """Serialize HandoffContext to a human-readable prompt string."""
     lines = ["ORCHESTRATOR HANDOFF"]
     if ctx.get("root_url"):
         lines.append(f"- root url: {ctx['root_url']}")
-    if ctx.get("target_url") and ctx.get("target_url") != ctx.get("root_url"):
+    if ctx.get("target_url"):
         target_label = str(ctx.get("target_label") or "target url")
         lines.append(f"- {target_label}: {ctx['target_url']}")
     if ctx.get("page_type"):
@@ -74,6 +103,14 @@ def render_handoff(ctx: HandoffContext) -> str:
         lines.append(f"- landing suggested route: {ctx['landing_route']}")
     if ctx.get("landing_iframes"):
         lines.append(f"- landing iframes to watch: {', '.join(ctx['landing_iframes'][:4])}")
+    if ctx.get("recovery_url"):
+        lines.append(f"- recovery url: {ctx['recovery_url']}")
+    if ctx.get("route_source"):
+        lines.append(f"- route source: {ctx['route_source']}")
+    if ctx.get("navigation_policy"):
+        lines.append(f"- navigation policy: {ctx['navigation_policy']}")
+    if ctx.get("required_evidence"):
+        lines.append(f"- required evidence: {', '.join(ctx['required_evidence'][:6])}")
     if ctx.get("source_hosting_url"):
         lines.append(f"- source hosting page: {ctx['source_hosting_url']}")
     if ctx.get("source_hosting_status"):
@@ -118,11 +155,61 @@ def _collect_embedded_urls(extraction: ExtractionResult) -> list[str]:
     for server in extraction.servers:
         if server.embedded_url:
             urls.append(server.embedded_url)
+        if server.player_iframe_url:
+            urls.append(server.player_iframe_url)
     for server in extraction.metadata.get("servers", []):
-        embedded_url = server.get("embedded_url")
-        if embedded_url:
-            urls.append(embedded_url)
+        for key in ("embedded_url", "player_iframe_url"):
+            candidate = str(server.get(key) or "").strip()
+            if candidate:
+                urls.append(candidate)
     return _dedupe_urls(urls)
+
+
+def _normalize_domain(url: str) -> str:
+    host = (urlparse(str(url or "").strip()).netloc or "").lower().strip()
+    return host[4:] if host.startswith("www.") else host
+
+
+def _same_site_or_subdomain(candidate_url: str, reference_url: str) -> bool:
+    candidate_domain = _normalize_domain(candidate_url)
+    reference_domain = _normalize_domain(reference_url)
+    if not candidate_domain or not reference_domain:
+        return False
+    return (
+        candidate_domain == reference_domain
+        or candidate_domain.endswith(f".{reference_domain}")
+        or reference_domain.endswith(f".{candidate_domain}")
+    )
+
+
+def _looks_like_direct_embed_url(url: str) -> bool:
+    parsed = urlparse(str(url or "").strip())
+    host = (parsed.netloc or "").lower()
+    path = (parsed.path or "").lower()
+    query = (parsed.query or "").lower()
+    embed_tokens = ("embed", "player", "iframe")
+    if any(token in host for token in embed_tokens):
+        return True
+    if any(token in path for token in ("/embed", "/player", "/iframe", "/e/")):
+        return True
+    return bool(re.search(r"(^|[?&])(embed|player|iframe)=", query))
+
+
+def _normalize_landing_route(route: str) -> str:
+    return "embed_agent" if str(route or "").strip().lower() == "embed_agent" else "stream_extractor"
+
+
+def _resolve_landing_match_route(match: MatchInfo, *, root_url: str) -> str:
+    route = _normalize_landing_route(match.route)
+    if route != "embed_agent":
+        return "stream_extractor"
+
+    reference_url = match.entry_point or root_url
+    if _same_site_or_subdomain(match.url, reference_url):
+        return "stream_extractor"
+    if not _looks_like_direct_embed_url(match.url):
+        return "stream_extractor"
+    return "embed_agent"
 
 
 def _truncate(value: Any, *, max_chars: int = 700) -> str:
@@ -186,7 +273,7 @@ def _build_landing_handoff(
         "root_url": state["url"],
         "page_type": classification.page_type.value if classification is not None else "unknown",
         "classification_reasoning": classification.reasoning if classification is not None else "",
-        "focus": "return clean hosting candidates (with route + iframe hints) and avoid duplicates",
+        "focus": "return clean hosting candidates, keep iframe-heavy watch pages on the hosting path, and use embed_agent only for direct embedded/player URLs",
         "memory_hints": memory_hint_text,
     }
     return render_handoff(ctx)
@@ -204,9 +291,13 @@ def _build_hosting_handoff(
         "root_url": state["url"],
         "target_url": target_url,
         "target_label": "target hosting candidate",
+        "recovery_url": target_url,
         "page_type": classification.page_type.value if classification is not None else "",
         "classification_reasoning": classification.reasoning if classification is not None else "",
-        "focus": "verify direct m3u8/mpd/mp4 first; look out for server switch tabs, player iframe URLs, cloudinary screenshots, and clean server labels; return embedded handoff only when needed",
+        "route_source": "landing/hosting routing contract: hosting-first for site watch pages",
+        "navigation_policy": _SAME_CONTENT_NAVIGATION_POLICY,
+        "required_evidence": _HOSTING_EVIDENCE_CHECKLIST,
+        "focus": "stay on the assigned hosting content, activate the player, handle blockers/ads/server switches, extract direct m3u8/mpd/mp4 when possible, and return embedded handoff only for explicit embedded/player URLs",
         "memory_hints": memory_hint_text,
     }
     if match is not None:
@@ -224,18 +315,28 @@ def _build_embedded_handoff(
     memory_hint_text: str,
 ) -> str:
     source_hosting = _latest_hosting_context_for_embedded(state.get("extraction_results", []), embedded_url=target_url)
+    match = _match_for_url(state.get("matches", []), target_url)
     ctx: HandoffContext = {
         "root_url": state["url"],
         "target_url": target_url,
         "target_label": "target embedded player",
-        "focus": "recover stream URLs from the embedded player; look out for iframe-local controls, activated server tabs, and screenshot evidence; keep server artifacts clean",
+        "recovery_url": target_url,
+        "route_source": "embedded-only routing: this target is already a direct embedded/player URL",
+        "navigation_policy": _SAME_CONTENT_NAVIGATION_POLICY,
+        "required_evidence": _EMBEDDED_EVIDENCE_CHECKLIST,
+        "focus": "work only on the assigned embedded player, handle iframe-local controls and server/source switches, and recover clean stream/evidence artifacts without drifting away",
         "memory_hints": memory_hint_text,
     }
+    if match is not None:
+        ctx["candidate_title"] = match.title or ""
+        ctx["candidate_participants"] = match.participants or ""
+        ctx["landing_route"] = match.route or ""
     if source_hosting is not None:
         ctx["source_hosting_url"] = source_hosting.url
         ctx["source_hosting_status"] = source_hosting.status.value
         ctx["source_hosting_decision"] = str(source_hosting.metadata.get("decision", "") or "").strip()
         ctx["source_streams_found"] = len(source_hosting.streams)
+        ctx["route_source"] = "hosting output: explicit embedded_url/player_iframe handoff"
     return render_handoff(ctx)
 
 
@@ -297,19 +398,22 @@ async def landing_page_node(
         except Exception:
             logger.warning("Skipping malformed landing-page match payload: %s", page)
 
-    pending_hosting_urls = _dedupe_urls([match.url for match in matches])
     pending_embedded_urls = list(state["pending_embedded_urls"])
+    pending_hosting_urls: list[str] = []
+    normalized_matches: list[MatchInfo] = []
 
-    if not pending_hosting_urls:
-        fallback_iframes = _dedupe_urls(
-            iframe
-            for match in matches
-            for iframe in (match.iframes or [])
-        )
-        if fallback_iframes:
-            pending_embedded_urls = _dedupe_urls([*pending_embedded_urls, *fallback_iframes])
+    for match in matches:
+        resolved_route = _resolve_landing_match_route(match, root_url=state["url"])
+        normalized_match = match.model_copy(update={"route": resolved_route}) if match.route != resolved_route else match
+        normalized_matches.append(normalized_match)
+        if resolved_route == "embed_agent":
+            pending_embedded_urls.append(normalized_match.url)
         else:
-            pending_hosting_urls = [state["url"]]
+            pending_hosting_urls.append(normalized_match.url)
+
+    matches = normalized_matches
+    pending_hosting_urls = _dedupe_urls(pending_hosting_urls)
+    pending_embedded_urls = _dedupe_urls(pending_embedded_urls)
 
     return {
         "matches": matches,
@@ -375,10 +479,23 @@ async def hosting_page_node(
 
         embedded_candidates = _collect_embedded_urls(extraction)
         needs_embed_followup = _requires_embedded_followup(extraction)
-        if needs_embed_followup and not embedded_candidates:
-            embedded_candidates = [target_url]
-        if needs_embed_followup:
+        if needs_embed_followup and embedded_candidates:
             pending_embedded_urls = _dedupe_urls([*pending_embedded_urls, *embedded_candidates])
+        elif needs_embed_followup:
+            logger.warning(
+                "Hosting result for %s requested embedded follow-up but returned no embedded/player URL",
+                target_url,
+            )
+            if observer is not None:
+                observer.emit(
+                    "embedded_handoff_missing",
+                    "Hosting result requested embedded follow-up without an explicit embedded target",
+                    status="warning",
+                    details={
+                        "hosting_url": target_url,
+                        "decision": str(extraction.metadata.get("decision", "") or "").strip(),
+                    },
+                )
 
     return {
         "pending_hosting_urls": [],
@@ -451,6 +568,8 @@ async def analyze_providers_node(
     settings: Settings,
 ) -> dict[str, Any]:
     stream_urls = [stream.url for stream in _collect_all_streams(state["extraction_results"])]
+    if not stream_urls:
+        return {"provider_analysis": []}
     payload = await IPInfoTool(ipinfo_token=settings.ipinfo_token)._arun(stream_urls=stream_urls)
     try:
         parsed = json.loads(payload)
@@ -461,6 +580,8 @@ async def analyze_providers_node(
 
 
 async def generate_takedown_emails_node(state: PipelineState) -> dict[str, Any]:
+    if not _collect_all_streams(state["extraction_results"]):
+        return {"takedown_emails": []}
     payload = await EmailTool()._arun(
         infringing_url=state["url"],
         provider_analysis=[provider.model_dump(mode="json") for provider in state["provider_analysis"]],
@@ -477,14 +598,14 @@ async def generate_takedown_emails_node(state: PipelineState) -> dict[str, Any]:
 def route_after_classification(state: PipelineState) -> str:
     classification = state["classification"]
     if classification is None:
-        return "landing_page"
+        return "analyze_providers"
     if classification.page_type == PageType.LANDING:
         return "landing_page"
     if classification.page_type == PageType.HOSTING:
         return "queue_root_hosting"
     if classification.page_type == PageType.EMBEDDED:
         return "queue_root_embedded"
-    return "landing_page"
+    return "analyze_providers"
 
 
 def route_after_landing(state: PipelineState) -> str:

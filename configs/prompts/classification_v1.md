@@ -36,6 +36,7 @@ If a tool reports `access_state.blocked=true` or `access_state.challenge_detecte
 ## Failure Recovery
 
 - If `inspect` confirms access is blocked/challenged and meaningful page evidence is unavailable, immediately classify as `other` with `confidence: low` and stop additional calls.
+- If the page is neither a viable listing hub nor a viable watch/player page after limited investigation, classify as `other` and make `NEXT_STEPS` explicitly say to stop.
 
 ## Page Types
 
@@ -117,7 +118,7 @@ ANOMALIES:
 [Popups, paywalls, JS-only loading, misleading redirects, access challenge, or "None detected"]
 
 NEXT_STEPS:
-[What workflow should do next, such as routing to Landing/Hosting/Embedded agent.]
+[What workflow should do next, such as routing to Landing/Hosting/Embedded agent, or `stop` when classification is `other`.]
 
 METADATA:
 page_type: [landing_page/host_page/embed_video_page/other]

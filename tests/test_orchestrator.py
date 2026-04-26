@@ -117,7 +117,7 @@ async def test_routing_to_landing_page(mock_classify, mock_landing, mock_hosting
     assert mock_hosting.await_count == 0
 
 
-def test_route_after_classification_unknown_falls_back_to_landing():
+def test_route_after_classification_unknown_stops_page_agent_routing():
     from src.agents.orchestrator import route_after_classification
 
     route = route_after_classification(
@@ -135,7 +135,7 @@ def test_route_after_classification_unknown_falls_back_to_landing():
         }
     )
 
-    assert route == "landing_page"
+    assert route == "analyze_providers"
 
 
 def test_route_after_hosting_prioritizes_embedded_on_failed_hosting():
@@ -194,6 +194,124 @@ def test_route_after_hosting_keeps_hosting_when_latest_is_successful():
 
 
 @pytest.mark.asyncio
+@patch("src.agents.landing_page.LandingPageAgent.run", new_callable=AsyncMock)
+async def test_landing_node_routes_same_site_watch_page_to_hosting_only(mock_landing_run, settings):
+    from src.agents.orchestrator import landing_page_node
+
+    mock_landing_run.return_value = ExtractionResult(
+        url="https://example.com",
+        page_type=PageType.LANDING,
+        status=ExtractionStatus.SUCCESS,
+        agent_type=AgentType.LANDING_PAGE,
+        metadata={
+            "hosting_pages": [
+                {
+                    "url": "https://example.com/watch/match-1",
+                    "title": "Match 1",
+                    "route": "embed_agent",
+                    "iframes": ["https://embed.example.com/player/1"],
+                    "entry_point": "https://example.com",
+                }
+            ]
+        },
+    )
+
+    state = {
+        "url": "https://example.com",
+        "run_id": "test-run",
+        "classification": _make_classification(PageType.LANDING),
+        "matches": [],
+        "extraction_results": [],
+        "pending_hosting_urls": [],
+        "pending_embedded_urls": [],
+        "provider_analysis": [],
+        "takedown_emails": [],
+        "error": "",
+    }
+
+    result = await landing_page_node(state, settings=settings, observer=None, memory=None)
+
+    assert result["pending_hosting_urls"] == ["https://example.com/watch/match-1"]
+    assert result["pending_embedded_urls"] == []
+    assert result["matches"][0].route == "stream_extractor"
+
+
+@pytest.mark.asyncio
+@patch("src.agents.landing_page.LandingPageAgent.run", new_callable=AsyncMock)
+async def test_landing_node_routes_direct_embed_url_to_embedded_only(mock_landing_run, settings):
+    from src.agents.orchestrator import landing_page_node
+
+    mock_landing_run.return_value = ExtractionResult(
+        url="https://example.com",
+        page_type=PageType.LANDING,
+        status=ExtractionStatus.SUCCESS,
+        agent_type=AgentType.LANDING_PAGE,
+        metadata={
+            "hosting_pages": [
+                {
+                    "url": "https://streamtape.example/e/abc123",
+                    "title": "Direct player",
+                    "route": "embed_agent",
+                    "entry_point": "https://example.com",
+                }
+            ]
+        },
+    )
+
+    state = {
+        "url": "https://example.com",
+        "run_id": "test-run",
+        "classification": _make_classification(PageType.LANDING),
+        "matches": [],
+        "extraction_results": [],
+        "pending_hosting_urls": [],
+        "pending_embedded_urls": [],
+        "provider_analysis": [],
+        "takedown_emails": [],
+        "error": "",
+    }
+
+    result = await landing_page_node(state, settings=settings, observer=None, memory=None)
+
+    assert result["pending_hosting_urls"] == []
+    assert result["pending_embedded_urls"] == ["https://streamtape.example/e/abc123"]
+    assert result["matches"][0].route == "embed_agent"
+
+
+@pytest.mark.asyncio
+@patch("src.agents.landing_page.LandingPageAgent.run", new_callable=AsyncMock)
+async def test_landing_node_does_not_fallback_to_root_hosting_when_no_matches(mock_landing_run, settings):
+    from src.agents.orchestrator import landing_page_node
+
+    mock_landing_run.return_value = ExtractionResult(
+        url="https://example.com",
+        page_type=PageType.LANDING,
+        status=ExtractionStatus.FAILED,
+        agent_type=AgentType.LANDING_PAGE,
+        metadata={"hosting_pages": []},
+    )
+
+    state = {
+        "url": "https://example.com",
+        "run_id": "test-run",
+        "classification": _make_classification(PageType.LANDING),
+        "matches": [],
+        "extraction_results": [],
+        "pending_hosting_urls": [],
+        "pending_embedded_urls": [],
+        "provider_analysis": [],
+        "takedown_emails": [],
+        "error": "",
+    }
+
+    result = await landing_page_node(state, settings=settings, observer=None, memory=None)
+
+    assert result["matches"] == []
+    assert result["pending_hosting_urls"] == []
+    assert result["pending_embedded_urls"] == []
+
+
+@pytest.mark.asyncio
 @patch("src.agents.hosting_page.HostingPageAgent.run", new_callable=AsyncMock)
 async def test_hosting_node_sends_orchestrator_handoff(mock_hosting_run, settings):
     from src.agents.orchestrator import hosting_page_node
@@ -231,4 +349,87 @@ async def test_hosting_node_sends_orchestrator_handoff(mock_hosting_run, setting
     handoff = mock_hosting_run.await_args.kwargs.get("orchestrator_handoff", "")
     assert "ORCHESTRATOR HANDOFF" in handoff
     assert "target hosting candidate: https://hosting.example.com/watch/1" in handoff
-    assert "look out for" in handoff.lower()
+    assert "recovery url: https://hosting.example.com/watch/1" in handoff
+    assert "navigation policy: same-content okay" in handoff
+    assert "required evidence:" in handoff
+
+
+@pytest.mark.asyncio
+@patch("src.agents.hosting_page.HostingPageAgent.run", new_callable=AsyncMock)
+async def test_hosting_node_does_not_fabricate_embedded_target_when_missing_url(mock_hosting_run, settings):
+    from src.agents.orchestrator import hosting_page_node
+
+    mock_hosting_run.return_value = ExtractionResult(
+        url="https://hosting.example.com/watch/1",
+        page_type=PageType.HOSTING,
+        status=ExtractionStatus.PARTIAL,
+        agent_type=AgentType.HOSTING_PAGE,
+        metadata={"decision": "needs_embed_agent", "servers": []},
+    )
+
+    state = {
+        "url": "https://example.com",
+        "run_id": "test-run",
+        "classification": _make_classification(PageType.LANDING),
+        "matches": [],
+        "extraction_results": [],
+        "pending_hosting_urls": ["https://hosting.example.com/watch/1"],
+        "pending_embedded_urls": [],
+        "provider_analysis": [],
+        "takedown_emails": [],
+        "error": "",
+    }
+
+    result = await hosting_page_node(state, settings=settings, observer=None, memory=None)
+
+    assert result["pending_embedded_urls"] == []
+    assert result["extraction_results"][0].url == "https://hosting.example.com/watch/1"
+    assert result["extraction_results"][0].metadata["decision"] == "needs_embed_agent"
+
+
+@pytest.mark.asyncio
+@patch("src.agents.orchestrator.IPInfoTool._arun", new_callable=AsyncMock)
+async def test_analyze_providers_node_skips_lookup_when_no_streams(mock_ipinfo, settings):
+    from src.agents.orchestrator import analyze_providers_node
+
+    state = {
+        "url": "https://example.com",
+        "run_id": "test-run",
+        "classification": _make_classification(PageType.UNKNOWN),
+        "matches": [],
+        "extraction_results": [],
+        "pending_hosting_urls": [],
+        "pending_embedded_urls": [],
+        "provider_analysis": [],
+        "takedown_emails": [],
+        "error": "",
+    }
+
+    result = await analyze_providers_node(state, settings=settings)
+
+    assert result == {"provider_analysis": []}
+    mock_ipinfo.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("src.agents.orchestrator.EmailTool._arun", new_callable=AsyncMock)
+async def test_generate_takedown_emails_node_skips_generation_when_no_streams(mock_email):
+    from src.agents.orchestrator import generate_takedown_emails_node
+
+    state = {
+        "url": "https://example.com",
+        "run_id": "test-run",
+        "classification": _make_classification(PageType.UNKNOWN),
+        "matches": [],
+        "extraction_results": [],
+        "pending_hosting_urls": [],
+        "pending_embedded_urls": [],
+        "provider_analysis": [],
+        "takedown_emails": [],
+        "error": "",
+    }
+
+    result = await generate_takedown_emails_node(state)
+
+    assert result == {"takedown_emails": []}
+    mock_email.assert_not_awaited()

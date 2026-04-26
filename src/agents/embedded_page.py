@@ -26,6 +26,9 @@ _AGENT_CONTRACT = """\
 - check server switches, player activation, and network evidence before concluding
 - respect the final JSON/output format from the base policy
 - use remembered site hints only as soft guidance
+- stay on the assigned embedded/player URL and recover from off-target drift
+- preserve screenshot, iframe/embed, network, and player-state evidence per server/source when available
+- if no playable stream is recovered after the allowed attempts, stop with the failure evidence and do not invent another downstream fallback
 """
 
 
@@ -97,6 +100,11 @@ class EmbeddedPageAgent:
                         objective="Extract streams from the embedded player.",
                         page_url=url,
                         page_type=AgentType.EMBEDDED_PAGE.value,
+                        anchor_url=url,
+                        navigation_policy=(
+                            "same-content okay: allow server/source URL changes only when the same player stays in focus; "
+                            "treat ad redirects, unrelated pages, homepages, and off-target provider detours as drift"
+                        ),
                     ),
                     runtime_context=build_runtime_context(
                         tool_profile="embedded",
@@ -137,6 +145,11 @@ class EmbeddedPageAgent:
                             objective="Extract streams from the embedded player.",
                             page_url=url,
                             page_type=AgentType.EMBEDDED_PAGE.value,
+                            anchor_url=url,
+                            navigation_policy=(
+                                "same-content okay: allow server/source URL changes only when the same player stays in focus; "
+                                "treat ad redirects, unrelated pages, homepages, and off-target provider detours as drift"
+                            ),
                         ),
                         bootstrap_url=url,
                         bootstrap_context_first=True,
@@ -149,7 +162,14 @@ class EmbeddedPageAgent:
                 streams = _collect_streams(normalized_output)
                 servers = _build_server_results(normalized_output.get("servers", []))
                 screenshots = [server.screenshot_url for server in servers if server.screenshot_url]
-                embedded_urls = [server.embedded_url for server in servers if server.embedded_url]
+                embedded_urls = _dedupe_urls(
+                    [
+                        candidate
+                        for server in servers
+                        for candidate in (server.embedded_url, server.player_iframe_url)
+                        if candidate
+                    ]
+                )
 
                 successful = int(normalized_output.get("successful_servers", 0) or 0)
                 status = (
@@ -230,6 +250,12 @@ def _normalize_url_list(value: Any) -> list[str]:
     return []
 
 
+def _normalize_diagnostics_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
 def _safe_int(value: Any, default: int = 0) -> int:
     try:
         return int(value)
@@ -242,7 +268,8 @@ def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any
     m3u8_urls = _normalize_url_list(server.get("m3u8_urls"))
     mpd_urls = _normalize_url_list(server.get("mpd_urls"))
     mp4_urls = _normalize_url_list(server.get("mp4_urls"))
-    for item in _normalize_url_list(server.get("stream_urls")):
+    raw_stream_urls = _normalize_url_list(server.get("stream_urls"))
+    for item in raw_stream_urls:
         protocol = _protocol_from_url(item)
         if protocol == "hls":
             m3u8_urls = _dedupe_urls([*m3u8_urls, item])
@@ -250,17 +277,21 @@ def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any
             mpd_urls = _dedupe_urls([*mpd_urls, item])
         elif protocol == "mp4":
             mp4_urls = _dedupe_urls([*mp4_urls, item])
+    stream_urls = _dedupe_urls([*raw_stream_urls, *m3u8_urls, *mpd_urls, *mp4_urls])
 
     primary_stream = str(server.get("primary_stream") or "").strip()
     if not primary_stream:
-        for candidate in [*m3u8_urls, *mpd_urls, *mp4_urls]:
+        for candidate in stream_urls:
             if candidate:
                 primary_stream = candidate
                 break
 
     status = str(server.get("status") or "").strip().lower()
+    embedded_url = str(server.get("embedded_url") or "").strip()
+    embedded_url_source = str(server.get("embedded_url_source") or "").strip()
+    player_iframe_url = str(server.get("player_iframe_url") or server.get("iframe_url") or "").strip()
     if not status:
-        status = "success" if (m3u8_urls or mpd_urls or mp4_urls) else "failed"
+        status = "success" if stream_urls else ("needs_embed_agent" if (embedded_url or player_iframe_url) else "failed")
 
     server_up_value = server.get("server_up")
     server_up = bool(server_up_value) if isinstance(server_up_value, bool) else status in {"success", "partial", "active"}
@@ -269,16 +300,22 @@ def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any
         "label": label,
         "server_up": server_up,
         "screenshot_url": str(server.get("screenshot_url") or "").strip(),
-        "embedded_url": str(server.get("embedded_url") or "").strip(),
+        "embedded_url": embedded_url,
+        "embedded_url_source": embedded_url_source,
+        "player_iframe_url": player_iframe_url,
         "m3u8_urls": m3u8_urls,
         "mpd_urls": mpd_urls,
         "mp4_urls": mp4_urls,
+        "stream_urls": stream_urls,
         "primary_stream": primary_stream,
         "status": status,
         "down_reason": str(server.get("down_reason") or "").strip(),
         "activation_attempts": _safe_int(server.get("activation_attempts"), 0),
         "player_state": str(server.get("player_state") or "").strip(),
         "extraction_method": str(server.get("extraction_method") or "").strip(),
+        "visual_confirmation": str(server.get("visual_confirmation") or "").strip(),
+        "network_diagnostics": _normalize_diagnostics_list(server.get("network_diagnostics")),
+        "iframe_diagnostics": _normalize_diagnostics_list(server.get("iframe_diagnostics")),
     }
 
 
@@ -348,11 +385,20 @@ def _build_server_results(servers: list[dict[str, Any]]) -> list[ServerResult]:
                 m3u8_urls=_normalize_url_list(server.get("m3u8_urls")),
                 mpd_urls=_normalize_url_list(server.get("mpd_urls")),
                 mp4_urls=_normalize_url_list(server.get("mp4_urls")),
+                stream_urls=_normalize_url_list(server.get("stream_urls")),
                 primary_stream=str(server.get("primary_stream") or "") or None,
                 screenshot_url=str(server.get("screenshot_url") or "") or None,
                 embedded_url=str(server.get("embedded_url") or "") or None,
+                embedded_url_source=str(server.get("embedded_url_source") or "") or None,
+                player_iframe_url=str(server.get("player_iframe_url") or "") or None,
                 status=str(server.get("status") or "failed"),
                 down_reason=str(server.get("down_reason") or "") or None,
+                activation_attempts=_safe_int(server.get("activation_attempts"), 0),
+                player_state=str(server.get("player_state") or "") or None,
+                visual_confirmation=str(server.get("visual_confirmation") or "") or None,
+                extraction_method=str(server.get("extraction_method") or "") or None,
+                network_diagnostics=_normalize_diagnostics_list(server.get("network_diagnostics")),
+                iframe_diagnostics=_normalize_diagnostics_list(server.get("iframe_diagnostics")),
             )
         )
     return result

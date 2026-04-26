@@ -31,8 +31,9 @@ import {
   classifyIframeFailure,
   extractChromeNetErrorCode,
 } from '../../shared/error-codes.js';
+import { computeBrowserPolicy } from '../../shared/browser-policy.js';
 import { attachAdBlocker } from './adblocker.js';
-import { getBrowserRuntimeSettings } from './runtime-config.js';
+import { getBrowserRuntimeSettings, getEffectiveRuntimeMetadata } from './runtime-config.js';
 
 const stealthPlugin = StealthPlugin();
 // fingerprint-injector controls userAgent — stealth's override contradicts it.
@@ -63,7 +64,6 @@ const FORCED_LANGUAGE = 'en-US,en;q=0.9';
 const DEFAULT_LAUNCH_ARGS = [
   '--no-sandbox',
   '--disable-dev-shm-usage',
-  '--remote-allow-origins=*',
 
   // ── Window / viewport ───────────────────────────────────────────────────────
   `--window-size=${FORCED_VIEWPORT.width},${FORCED_VIEWPORT.height}`,
@@ -71,25 +71,17 @@ const DEFAULT_LAUNCH_ARGS = [
   '--force-device-scale-factor=1',
 
   // ── Anti-bot ────────────────────────────────────────────────────────────────
-  '--disable-blink-features=AutomationControlled',
-  '--disable-infobars',
-  '--hide-crash-restore-bubble',
-  '--exclude-switches=enable-automation',
 
   // ── GPU / video decode ───────────────────────────────────────────────────────
   '--use-gl=swiftshader',
   '--use-angle=swiftshader-webgl',
   '--enable-webgl',
-  '--ignore-gpu-blocklist',
 
   // ── Media / autoplay ────────────────────────────────────────────────────────
   '--autoplay-policy=no-user-gesture-required',
-  '--use-fake-ui-for-media-stream',
-  '--mute-audio',
   // NOTE: IsolateOrigins and site-per-process intentionally omitted — they
   // break cross-origin iframe auth flows that video player embeds depend on.
   '--disable-features=UseChromeOSDirectVideoDecoder',
-  '--enable-features=NetworkService,NetworkServiceInProcess,OverlayScrollbar',
 
   // ── Stability ────────────────────────────────────────────────────────────────
   '--no-first-run',
@@ -97,20 +89,13 @@ const DEFAULT_LAUNCH_ARGS = [
   '--disable-background-timer-throttling',
   '--disable-backgrounding-occluded-windows',
   '--disable-renderer-backgrounding',
-  '--disable-ipc-flooding-protection',
-  '--disable-hang-monitor',
-  '--disable-popup-blocking',
-  '--disable-prompt-on-repost',
-  '--disable-sync',
-  '--metrics-recording-only',
-  '--password-store=basic',
-  '--use-mock-keychain',
 ];
 
 // Per-page state stored in WeakMaps (garbage collected with the page)
 const pageFingerprintState = new WeakMap();
 const pageCdps = new WeakMap();
 const pageNetworkState = new WeakMap();
+const pagePolicyState = new WeakMap();
 const pageNetworkListeners = new WeakSet();
 const recentlyUsedFingerprintSignatures = [];
 let chromeVersionPromise = null;
@@ -302,6 +287,46 @@ function getProxyRuntimeConfig() {
   return normalizeProxyRuntimeConfig(getBrowserRuntimeSettings('playwright') || {});
 }
 
+function getRuntimeSettings() {
+  return getBrowserRuntimeSettings('playwright') || {};
+}
+
+function buildEffectivePolicy({
+  browserProfile = '',
+  targetUrl = '',
+  currentUrl = '',
+  sharedConnection = false,
+  iframeUrls = [],
+  playerHints = [],
+} = {}) {
+  return computeBrowserPolicy({
+    browserId: 'playwright',
+    browserProfile,
+    runtimeSettings: getRuntimeSettings(),
+    targetUrl,
+    currentUrl,
+    iframeUrls,
+    playerHints,
+    sharedConnection,
+  });
+}
+
+function setPageEffectivePolicy(page, policy) {
+  pagePolicyState.set(page, policy);
+  const state = getNetworkState(page);
+  state.effectivePolicy = policy;
+  state.effectiveRuntime = getEffectiveRuntimeMetadata('playwright');
+}
+
+export function getPageEffectivePolicy(page) {
+  return pagePolicyState.get(page) || null;
+}
+
+export function getPageEffectiveRuntime(page) {
+  const state = getNetworkState(page);
+  return state.effectiveRuntime || getEffectiveRuntimeMetadata('playwright');
+}
+
 function clampPositiveInteger(value, fallback) {
   if (Number.isFinite(value) && value > 0) return Math.floor(value);
   return fallback;
@@ -419,6 +444,8 @@ function getNetworkState(page) {
     state = {
       failures: [],
       failuresLimit: 120,
+      effectivePolicy: null,
+      effectiveRuntime: null,
       autoRecovery: {
         attempted: false,
         disabled_blocking: false,
@@ -589,12 +616,83 @@ function attachNetworkDiagnostics(page) {
   });
 }
 
+function buildCriticalResourceFailures(failures = []) {
+  const buckets = new Map();
+  const normalized = Array.isArray(failures) ? failures : [];
+  const classifyFailure = (failure) => {
+    const url = String(failure?.url || '').toLowerCase();
+    const resourceType = String(failure?.resource_type || '').toLowerCase();
+    if (/\.m3u8(?:$|[?#])|\.mpd(?:$|[?#])|manifest|playlist/.test(url) || resourceType === 'media') return 'manifest_media';
+    if (resourceType === 'script') return 'script';
+    if (resourceType === 'stylesheet') return 'stylesheet';
+    if (resourceType === 'font') return 'font';
+    if (resourceType === 'sub_frame') return 'sub_frame';
+    return '';
+  };
+
+  for (const failure of normalized) {
+    const kind = classifyFailure(failure);
+    if (!kind || buckets.has(kind)) continue;
+    buckets.set(kind, {
+      kind,
+      url: failure.url || '',
+      host: (() => {
+        try {
+          return new URL(failure.url || '').hostname;
+        } catch {
+          return '';
+        }
+      })(),
+      resource_type: failure.resource_type || '',
+      http_status: failure.http_status || null,
+      error: failure.error_text || '',
+      error_code: failure.error_code || '',
+      error_category: failure.error_category || '',
+      blocked_by_client: Boolean(failure.blocked_by_client),
+      frame_url: failure.frame_url || '',
+      status_text: failure.status_text || '',
+    });
+  }
+
+  return Array.from(buckets.values());
+}
+
+function buildRenderGapSignals(failures = []) {
+  const normalized = Array.isArray(failures) ? failures : [];
+  const byType = (type) => normalized.filter((failure) => failure?.resource_type === type);
+  const blockedFailures = normalized.filter((failure) => failure?.blocked_by_client);
+  const manifestFailure = buildCriticalResourceFailures(normalized).find((failure) => failure.kind === 'manifest_media') || null;
+
+  return {
+    failed_script_count: byType('script').length,
+    failed_stylesheet_count: byType('stylesheet').length,
+    failed_font_count: byType('font').length,
+    failed_subframe_count: byType('sub_frame').length,
+    blocked_by_client_total: blockedFailures.length,
+    blocked_by_client_by_type: blockedFailures.reduce((acc, failure) => {
+      const key = failure.resource_type || 'other';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {}),
+    missing_player_supporting_assets: Boolean(
+      byType('script').some((failure) => /(player|videojs|jwplayer|hls)/i.test(`${failure.url || ''} ${failure.frame_url || ''}`))
+      || byType('stylesheet').length > 0
+      || byType('font').length > 0
+      || Boolean(manifestFailure),
+    ),
+    overlay_gate_possible: false,
+  };
+}
+
 export function getPageNetworkDiagnostics(page, { limit = 10 } = {}) {
   const state = getNetworkState(page);
   const cappedFailures = state.failures.slice(-Math.max(1, Number.parseInt(String(limit || 10), 10) || 10));
   const summary = summarizeNetworkFailures(cappedFailures);
   const { disable_promise, ...publicRecovery } = state.autoRecovery;
   const { pending_promise, ...publicIframeRecovery } = state.iframeRecovery;
+  const critical_resource_failures = buildCriticalResourceFailures(state.failures);
+  const render_gap_signals = buildRenderGapSignals(state.failures);
+  const manifest_failure = critical_resource_failures.find((failure) => failure.kind === 'manifest_media') || null;
   return {
     request_failures: cappedFailures,
     request_failure_summary: summary,
@@ -608,6 +706,11 @@ export function getPageNetworkDiagnostics(page, { limit = 10 } = {}) {
     iframe_recovery_reason: publicIframeRecovery.detection_reason || '',
     iframe_recovery_success: Boolean(publicIframeRecovery.success),
     iframe_recovery: { ...publicIframeRecovery },
+    effective_policy: state.effectivePolicy || null,
+    effective_runtime: state.effectiveRuntime || getEffectiveRuntimeMetadata('playwright'),
+    critical_resource_failures,
+    render_gap_signals,
+    manifest_failure,
   };
 }
 
@@ -1043,11 +1146,8 @@ async function createFingerprintedContext(browser, profile, synchronizedBundle =
   const context = await browser.newContext({
     viewport: FORCED_VIEWPORT,
     userAgent: profile.userAgent,
-    locale: 'en-US',
-    timezoneId: 'America/New_York',
+    locale: profile.language || 'en-US',
     extraHTTPHeaders: profile.headers,
-    bypassCSP: true,
-    colorScheme: 'dark',
   });
 
   // Apply fingerprint at context level (affects all pages including cross-origin iframes)
@@ -1202,6 +1302,8 @@ export async function connectBrowser(wsEndpoint = WS_ENDPOINT) {
     browser,
     context,
     userDataDir: null,
+    browserProfile: '',
+    launchPolicy: null,
     sharedConnection: true,
     ownsBrowser: false,
     ownsContext,
@@ -1213,18 +1315,19 @@ export async function connectBrowser(wsEndpoint = WS_ENDPOINT) {
  * Launch an isolated browser for one MCP session.
  * Returns { browser, context, userDataDir }.
  */
-export async function launchEphemeralBrowser(sessionId) {
+export async function launchEphemeralBrowser(sessionId, { browserProfile = '' } = {}) {
   const safeSessionId = String(sessionId || 'session').replace(/[^a-zA-Z0-9_-]/g, '_');
   const userDataDir = path.join(os.tmpdir(), `owc-pw-${safeSessionId}-${Date.now()}`);
   const launchTimeoutMs = getBrowserLaunchTimeoutMs();
   const launchTimeout = Number.isFinite(launchTimeoutMs) ? Math.max(0, launchTimeoutMs) : 45000;
   const launchArgs = [...DEFAULT_LAUNCH_ARGS, ...getExtraLaunchArgs()];
+  const launchPolicy = buildEffectivePolicy({ browserProfile });
   const proxyPlan = await getProxyCandidatePlan('playwright', getProxyRuntimeConfig());
   const attemptedErrors = [];
   let browser = null;
   let selectedProxy = null;
 
-  if (proxyPlan.enabled) {
+  if (proxyPlan.enabled && launchPolicy.use_proxy_on_first_attempt) {
     for (const candidate of proxyPlan.candidates) {
       try {
         browser = await launchBrowserAttempt({
@@ -1290,6 +1393,8 @@ export async function launchEphemeralBrowser(sessionId) {
     context,
     userDataDir,
     proxy: selectedProxy,
+    browserProfile,
+    launchPolicy,
     sharedConnection: false,
     ownsBrowser: true,
     ownsContext: true,
@@ -1333,9 +1438,12 @@ export async function closeEphemeralBrowser(session) {
 export async function getPage(session, {
   targetUrl = '',
   forceRotateFingerprint = false,
+  browserProfile = '',
 } = {}) {
   // Accept either a raw context or a { browser, context } session object
   const context = session?.context ?? session;
+  const sharedConnection = Boolean(session?.sharedConnection);
+  const effectiveBrowserProfile = browserProfile || session?.browserProfile || '';
 
   const pages = context.pages();
   const navigated = pages.filter((p) => p.url() !== 'about:blank' && p.url() !== 'about:newtab');
@@ -1346,10 +1454,23 @@ export async function getPage(session, {
   // Enforce viewport (context setting may be overridden by some sites)
   await page.setViewportSize(FORCED_VIEWPORT);
   attachNetworkDiagnostics(page);
+  const effectivePolicy = buildEffectivePolicy({
+    browserProfile: effectiveBrowserProfile,
+    targetUrl,
+    currentUrl: page.url(),
+    sharedConnection,
+  });
+  setPageEffectivePolicy(page, effectivePolicy);
 
   // Apply iframe sandbox patch to the live page as well (addInitScript covers future pages)
   if (getIframeSandboxPatchEnabled()) {
     await page.evaluate(patchIframeSandboxFn).catch(() => {});
+  }
+
+  if (effectivePolicy.page_blocking_disabled) {
+    await disableBlockingForPage(page).catch(() => {});
+  } else {
+    pageBlockingDisabled.delete(page);
   }
 
   return page;

@@ -17,7 +17,6 @@ import {
 
 import { useNotifPrefs } from "@/components/notification-provider";
 import { RunViewSettingsPanel, useRunViewSettings } from "@/components/run-view-settings";
-import { JsonViewer } from "@/components/json-viewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { HelpIcon } from "@/components/ui/tooltip";
@@ -25,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { apiFetch, apiUrl } from "@/lib/api";
+import { buildServerConfigDraft, getDirtyTabs, snapshotServerConfig } from "@/lib/settings-page";
 
 const PROVIDERS = [
   { id: "google", name: "Google Gemini", keyEnv: "GOOGLE_API_KEY" },
@@ -134,6 +134,48 @@ const SETTINGS_TABS = [
   { id: "mcp-tools", label: "MCP Tools" },
 ];
 
+const TAB_DETAILS = {
+  models: {
+    title: "Models and provider routing",
+    description: "Set provider defaults, per-agent model assignments, and caching behavior for the active runtime.",
+    storage: "server",
+    saveLabel: "Save model settings",
+  },
+  browser: {
+    title: "Browser runtime",
+    description: "Choose the default engine and tune fingerprints, proxies, launch flags, iframe recovery, and media capture behavior.",
+    storage: "server",
+    saveLabel: "Save browser settings",
+  },
+  evaluation: {
+    title: "Evaluation judge",
+    description: "Configure the separate judge model used for DeepEval scoring and offline evaluation runs.",
+    storage: "server",
+    saveLabel: "Save evaluation settings",
+  },
+  display: {
+    title: "Run detail display",
+    description: "Control what appears on run detail pages and how aggressively the UI refreshes in this browser.",
+    storage: "browser",
+  },
+  "api-keys": {
+    title: "API key status",
+    description: "See which providers are ready for live catalogs and runtime calls. This tab is informational only.",
+    storage: "readonly",
+  },
+  notifications: {
+    title: "Notifications",
+    description: "Choose which pipeline milestones trigger toast notifications in this browser.",
+    storage: "browser",
+  },
+  "mcp-tools": {
+    title: "MCP tool availability",
+    description: "Enable or disable browser tools independently for each profile and browser backend.",
+    storage: "server",
+    saveLabel: "Save MCP tool settings",
+  },
+};
+
 const NOTIF_EVENTS = [
   { key: "pipeline_started", label: "Pipeline started", note: "Fired when a new pipeline begins" },
   { key: "agent_started", label: "Agent transitions (started)", note: "Each agent activation" },
@@ -177,6 +219,9 @@ const DEFAULT_BROWSER_RUNTIME = {
     proxy_cache_ttl_ms: 600000,
     proxy_max_candidates: 25,
     proxy_test_url: "https://api.ipify.org?format=json",
+    streaming_safe_mode: "adaptive",
+    media_proxy_strategy: "direct_first",
+    asset_diagnostics_enabled: true,
     ubol_enabled: true,
     stream_cors_patch_enabled: false,
     stream_cors_include_credentials: false,
@@ -192,7 +237,7 @@ const DEFAULT_BROWSER_RUNTIME = {
   playwright: {
     launch_timeout_ms: 45000,
     extra_launch_args: [],
-    adblock_enabled: true,
+    adblock_enabled: false,
     adblock_allowlist_hosts: [],
     adblock_excluded_categories: ["nsfw", "gambling"],
     adblock_auto_recovery_enabled: true,
@@ -215,6 +260,9 @@ const DEFAULT_BROWSER_RUNTIME = {
     proxy_cache_ttl_ms: 600000,
     proxy_max_candidates: 25,
     proxy_test_url: "https://api.ipify.org?format=json",
+    streaming_safe_mode: "adaptive",
+    media_proxy_strategy: "direct_first",
+    asset_diagnostics_enabled: true,
     iframe_sandbox_patch_enabled: true,
     iframe_auto_recovery_enabled: true,
     iframe_recovery_timeout_ms: 20000,
@@ -461,7 +509,134 @@ function SectionHeader({ children }) {
   );
 }
 
-function SettingsTabBar({ active, onChange }) {
+function StatusPill({ tone = "neutral", children }) {
+  const styles = {
+    success: {
+      background: "color-mix(in oklch, var(--mint) 12%, transparent)",
+      borderColor: "color-mix(in oklch, var(--mint) 30%, transparent)",
+      color: "var(--mint)",
+    },
+    warning: {
+      background: "color-mix(in oklch, var(--signal) 12%, transparent)",
+      borderColor: "color-mix(in oklch, var(--signal) 30%, transparent)",
+      color: "var(--signal)",
+    },
+    info: {
+      background: "color-mix(in oklch, var(--sky) 12%, transparent)",
+      borderColor: "color-mix(in oklch, var(--sky) 30%, transparent)",
+      color: "var(--sky)",
+    },
+    neutral: {
+      background: "rgba(255,255,255,0.04)",
+      borderColor: "var(--line)",
+      color: "var(--mute)",
+    },
+  };
+
+  const style = styles[tone] || styles.neutral;
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium"
+      style={style}
+    >
+      {children}
+    </span>
+  );
+}
+
+function ErrorNotice({ message }) {
+  if (!message) return null;
+  return (
+    <div
+      className="flex items-start gap-2 rounded-[14px] border px-4 py-3 text-[13px]"
+      style={{
+        borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)",
+        background: "color-mix(in oklch, var(--rose) 10%, transparent)",
+        color: "var(--rose)",
+      }}
+    >
+      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+function SettingsTabHero({ tabId, dirty, saving, saved, onSave, otherDirtyCount = 0 }) {
+  const meta = TAB_DETAILS[tabId] || TAB_DETAILS.models;
+  const isServerTab = meta.storage === "server";
+  const isBrowserTab = meta.storage === "browser";
+  const tone = dirty ? "warning" : isServerTab ? "success" : isBrowserTab ? "info" : "neutral";
+  const statusLabel = dirty
+    ? "Unsaved changes"
+    : isServerTab
+      ? saved ? "Saved" : "Up to date"
+      : isBrowserTab
+        ? "Saved automatically"
+        : "Read only";
+
+  let helper = "";
+  if (isServerTab && dirty) {
+    helper = otherDirtyCount > 0
+      ? `Saving here only applies this tab. ${otherDirtyCount} other server tab${otherDirtyCount === 1 ? "" : "s"} still ha${otherDirtyCount === 1 ? "s" : "ve"} unsaved changes.`
+      : "Changes are applied immediately to the runtime and then persisted to configs/settings.yaml.";
+  } else if (isServerTab && otherDirtyCount > 0) {
+    helper = `${otherDirtyCount} other server tab${otherDirtyCount === 1 ? "" : "s"} still ha${otherDirtyCount === 1 ? "s" : "ve"} unsaved changes.`;
+  } else if (isBrowserTab) {
+    helper = "Preferences on this tab are stored locally in your browser as soon as you change them.";
+  } else {
+    helper = "This tab reports current status only and does not write configuration.";
+  }
+
+  return (
+    <div
+      className="rounded-[18px] border p-5"
+      style={{
+        borderColor: dirty
+          ? "color-mix(in oklch, var(--signal) 28%, var(--line))"
+          : "var(--line)",
+        background: "linear-gradient(180deg, color-mix(in oklch, var(--card) 78%, transparent), color-mix(in oklch, var(--panel) 92%, transparent))",
+        boxShadow: "var(--shadow-card)",
+      }}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <SectionHeader>{SETTINGS_TABS.find((tab) => tab.id === tabId)?.label || "Settings"}</SectionHeader>
+            <StatusPill tone={tone}>{statusLabel}</StatusPill>
+          </div>
+          <div>
+            <h2 className="text-[24px] font-semibold leading-tight text-[var(--ink)]">{meta.title}</h2>
+            <p className="mt-2 max-w-3xl text-[13.5px] leading-relaxed text-[var(--mute)]">{meta.description}</p>
+          </div>
+          <p className="text-[12px] text-[var(--mute)]">{helper}</p>
+        </div>
+
+        {isServerTab ? (
+          <Button variant="accent" onClick={onSave} disabled={saving || !dirty}>
+            {saving ? (
+              <>
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                Saving
+              </>
+            ) : saved && !dirty ? (
+              <>
+                <Check className="mr-1.5 h-3.5 w-3.5" />
+                Saved
+              </>
+            ) : (
+              <>
+                <Save className="mr-1.5 h-3.5 w-3.5" />
+                {meta.saveLabel}
+              </>
+            )}
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function SettingsTabBar({ active, onChange, dirtyTabs = {} }) {
   const ref = useRef(null);
   const [indicator, setIndicator] = useState({ left: 0, width: 0 });
 
@@ -497,10 +672,17 @@ function SettingsTabBar({ active, onChange }) {
           key={tab.id}
           type="button"
           onClick={() => onChange(tab.id)}
-          className="relative z-10 rounded-lg px-3.5 py-1.5 text-[12.5px] font-medium transition-colors duration-150"
+          className="relative z-10 flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-[12.5px] font-medium transition-colors duration-150"
           style={{ color: active === tab.id ? "var(--signal)" : "var(--mute)" }}
         >
           {tab.label}
+          {dirtyTabs[tab.id] ? (
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: "var(--signal)" }}
+              aria-label={`${tab.label} has unsaved changes`}
+            />
+          ) : null}
         </button>
       ))}
     </div>
@@ -720,6 +902,7 @@ export default function SettingsPage() {
   const { prefs: notifPrefs, setPrefs: setNotifPrefs } = useNotifPrefs();
 
   const [config, setConfig] = useState(null);
+  const [savedConfigSnapshot, setSavedConfigSnapshot] = useState(null);
   const [provider, setProvider] = useState("google");
   const [fallbackTemperature, setFallbackTemperature] = useState("0");
   const [llmTuning, setLlmTuning] = useState({ ...EMPTY_TUNING });
@@ -744,16 +927,31 @@ export default function SettingsPage() {
   const [providerCatalogs, setProviderCatalogs] = useState({});
   const [catalogLoading, setCatalogLoading] = useState("");
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [savedTab, setSavedTab] = useState("");
   const [configErr, setConfigErr] = useState("");
 
   const apiKeys = config?.api_keys || {};
   const activeProvider = PROVIDERS.find((item) => item.id === provider) || PROVIDERS[0];
   const activeCatalog = providerCatalogs[provider] || null;
   const activeBrowserRuntime = browserRuntime[browserSettingsTab] || DEFAULT_BROWSER_RUNTIME[browserSettingsTab];
+  const browserRuntimeSyncStatus = config?.browser_runtime_sync_status || null;
   const proxySourceReference = BUILTIN_PROXY_SOURCE_OPTIONS
     .map((item) => `${item.value}: ${item.label}`)
     .join(" | ");
+  const activePolicyPreview = useMemo(() => {
+    const mode = String(activeBrowserRuntime.streaming_safe_mode || "adaptive");
+    if (mode === "always") return "Streaming-safe";
+    if (mode === "never") return "Standard";
+    return ["hosting", "embedded"].includes(activeProfileTab) ? "Streaming-safe" : "Standard";
+  }, [activeBrowserRuntime.streaming_safe_mode, activeProfileTab]);
+  const safeStreamingDifferences = useMemo(() => {
+    const diffs = [];
+    if (activeBrowserRuntime.adblock_enabled) diffs.push("adblock enabled");
+    if (browserSettingsTab === "puppeteer" && activeBrowserRuntime.stream_cors_patch_enabled) diffs.push("stream CORS patch enabled");
+    if (activeBrowserRuntime.media_cors_patch_enabled) diffs.push("media CORS diagnostics patch enabled");
+    if (activeBrowserRuntime.proxy_enabled && activeBrowserRuntime.media_proxy_strategy === "proxy_first") diffs.push("proxy-first media strategy");
+    return diffs;
+  }, [activeBrowserRuntime, browserSettingsTab]);
 
   const modelOverrideTargets = useMemo(() => {
     const byModel = new Map();
@@ -775,6 +973,56 @@ export default function SettingsPage() {
     () => (activeCatalog?.hyperparameters || []).filter((field) => !field.model_patterns?.length),
     [activeCatalog]
   );
+
+  const serverDraft = useMemo(() => buildServerConfigDraft({
+    provider,
+    fallbackTemperature,
+    llmTuning,
+    agentModelConfig,
+    providerCacheEnabled,
+    geminiExplicitCacheEnabled,
+    geminiExplicitCacheTtl,
+    geminiExplicitCacheRefreshLead,
+    toolCacheEnabled,
+    toolCacheStable,
+    browserEngine,
+    browserRuntime,
+    disabledToolsByBrowserProfile,
+    deepevalProvider,
+    deepevalModel,
+    deepevalTemperature,
+  }), [
+    agentModelConfig,
+    browserEngine,
+    browserRuntime,
+    deepevalModel,
+    deepevalProvider,
+    deepevalTemperature,
+    disabledToolsByBrowserProfile,
+    fallbackTemperature,
+    geminiExplicitCacheEnabled,
+    geminiExplicitCacheRefreshLead,
+    geminiExplicitCacheTtl,
+    llmTuning,
+    provider,
+    providerCacheEnabled,
+    toolCacheEnabled,
+    toolCacheStable,
+  ]);
+
+  const dirtyTabs = useMemo(
+    () => getDirtyTabs(savedConfigSnapshot, serverDraft),
+    [savedConfigSnapshot, serverDraft]
+  );
+  const currentTabDirty = Boolean(dirtyTabs[activeTab]);
+  const otherDirtyCount = useMemo(
+    () => Object.entries(dirtyTabs).filter(([tabId, dirty]) => tabId !== activeTab && dirty).length,
+    [activeTab, dirtyTabs]
+  );
+
+  useEffect(() => {
+    if (savedTab && dirtyTabs[savedTab]) setSavedTab("");
+  }, [dirtyTabs, savedTab]);
 
   async function loadProviderCatalog(providerId, { force = false } = {}) {
     if (!providerId) return null;
@@ -805,6 +1053,7 @@ export default function SettingsPage() {
     );
 
     setConfig(payload);
+    setSavedConfigSnapshot(snapshotServerConfig(payload));
     setProvider(fallbackProvider);
     setFallbackTemperature(String(payload.gemini_temperature ?? "0"));
     setLlmTuning(normalizeTuning(payload.llm_tuning));
@@ -825,6 +1074,7 @@ export default function SettingsPage() {
       normalizeDisabledToolsByBrowserProfile(payload.disabled_tools_by_browser_profile, payload.disabled_tools_by_profile || {})
     );
     setActiveMcpBrowserTab(payload.browser_engine || "puppeteer");
+    setSavedTab("");
 
     const providersToLoad = [...new Set([
       fallbackProvider,
@@ -980,35 +1230,54 @@ export default function SettingsPage() {
     }));
   }
 
-  async function saveConfig() {
+  function buildSavePayloadForTab(tabId) {
+    switch (tabId) {
+      case "models":
+        return {
+          llm_provider: serverDraft.llm_provider,
+          agent_model: serverDraft.agent_model,
+          orchestrator_model: serverDraft.orchestrator_model,
+          gemini_temperature: serverDraft.gemini_temperature,
+          llm_tuning: serverDraft.llm_tuning,
+          agent_model_config: serverDraft.agent_model_config,
+          provider_cache_enabled: serverDraft.provider_cache_enabled,
+          gemini_explicit_cache_enabled: serverDraft.gemini_explicit_cache_enabled,
+          gemini_explicit_cache_ttl_seconds: serverDraft.gemini_explicit_cache_ttl_seconds,
+          gemini_explicit_cache_refresh_lead_seconds: serverDraft.gemini_explicit_cache_refresh_lead_seconds,
+          tool_result_cache_enabled: serverDraft.tool_result_cache_enabled,
+          tool_result_cache_min_identical_observations: serverDraft.tool_result_cache_min_identical_observations,
+        };
+      case "browser":
+        return {
+          browser_engine: serverDraft.browser_engine,
+          browser_runtime: serverDraft.browser_runtime,
+        };
+      case "evaluation":
+        return {
+          deepeval_provider: serverDraft.deepeval_provider,
+          deepeval_model: serverDraft.deepeval_model,
+          deepeval_temperature: serverDraft.deepeval_temperature,
+        };
+      case "mcp-tools":
+        return {
+          disabled_tools_by_browser_profile: serverDraft.disabled_tools_by_browser_profile,
+        };
+      default:
+        return null;
+    }
+  }
+
+  async function saveConfig(tabId = activeTab) {
+    const payloadToSave = buildSavePayloadForTab(tabId);
+    if (!payloadToSave) return;
+
     setSaving(true);
     setConfigErr("");
     try {
-      const classificationModel = agentModelConfig.classification?.model || "";
-      const orchestratorModel = agentModelConfig.orchestrator?.model || "";
       const response = await fetch(apiUrl("/ui/config"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          llm_provider: provider,
-          agent_model: classificationModel,
-          orchestrator_model: orchestratorModel,
-          gemini_temperature: Number.parseFloat(fallbackTemperature || "0") || 0,
-          llm_tuning: llmTuning,
-          agent_model_config: agentModelConfig,
-          provider_cache_enabled: providerCacheEnabled,
-          gemini_explicit_cache_enabled: geminiExplicitCacheEnabled,
-          gemini_explicit_cache_ttl_seconds: Number(geminiExplicitCacheTtl || 1800),
-          gemini_explicit_cache_refresh_lead_seconds: Number(geminiExplicitCacheRefreshLead || 120),
-          tool_result_cache_enabled: toolCacheEnabled,
-          tool_result_cache_min_identical_observations: Number(toolCacheStable || 2),
-          browser_engine: browserEngine,
-          disabled_tools_by_browser_profile: disabledToolsByBrowserProfile,
-          browser_runtime: browserRuntime,
-          deepeval_provider: deepevalProvider,
-          deepeval_model: deepevalModel,
-          deepeval_temperature: Number.parseFloat(deepevalTemperature || "0") || 0,
-        }),
+        body: JSON.stringify(payloadToSave),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || `Status ${response.status}`);
@@ -1016,8 +1285,10 @@ export default function SettingsPage() {
       if (payload.config_persisted === false) {
         setConfigErr(payload.config_persist_error || "Config updated in memory, but could not be persisted to disk.");
       }
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
+      setSavedTab(tabId);
+      setTimeout(() => {
+        setSavedTab((current) => (current === tabId ? "" : current));
+      }, 2500);
     } catch (error) {
       setConfigErr(error.message || "Could not save config.");
     } finally {
@@ -1032,17 +1303,46 @@ export default function SettingsPage() {
     });
     return counts;
   }, [agentModelConfig]);
+  const currentTabSaved = savedTab === activeTab && !currentTabDirty;
+  const showConfigError = Boolean(configErr) && (!config || TAB_DETAILS[activeTab]?.storage === "server");
 
   return (
-    <div className="space-y-8">
-      <div>
-        <span className="owc-eyebrow">settings - runtime config</span>
-        <h1 className="mt-2 text-3xl font-semibold text-[var(--ink)]">
-          Configuration
-        </h1>
+    <div className="space-y-6">
+      <div
+        className="rounded-[20px] border px-6 py-5"
+        style={{
+          borderColor: "var(--line)",
+          background: "linear-gradient(135deg, color-mix(in oklch, var(--card) 82%, transparent), color-mix(in oklch, var(--panel) 96%, transparent))",
+          boxShadow: "var(--shadow-card)",
+        }}
+      >
+        <span className="owc-eyebrow">settings workspace</span>
+        <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-semibold text-[var(--ink)]">Configuration</h1>
+            <p className="mt-2 max-w-3xl text-[13.5px] leading-relaxed text-[var(--mute)]">
+              Keep model routing, browser behavior, evaluation, and local console preferences in one place with clearer save states for each tab.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill tone="info">{providerCatalogs[provider] ? "Catalogs loaded" : "Loading catalogs"}</StatusPill>
+            <StatusPill tone={Object.values(dirtyTabs).some(Boolean) ? "warning" : "success"}>
+              {Object.values(dirtyTabs).some(Boolean) ? "Unsaved server tabs" : "Server tabs synced"}
+            </StatusPill>
+          </div>
+        </div>
       </div>
 
-      <SettingsTabBar active={activeTab} onChange={setActiveTab} />
+      <SettingsTabBar active={activeTab} onChange={setActiveTab} dirtyTabs={dirtyTabs} />
+      <SettingsTabHero
+        tabId={activeTab}
+        dirty={currentTabDirty}
+        saving={saving}
+        saved={currentTabSaved}
+        onSave={() => saveConfig(activeTab)}
+        otherDirtyCount={otherDirtyCount}
+      />
+      <ErrorNotice message={showConfigError ? configErr : ""} />
 
       <div key={activeTab} className="animate-fade-up space-y-8">
         {activeTab === "models" ? (
@@ -1383,43 +1683,6 @@ export default function SettingsPage() {
               })}
             </div>
 
-            {configErr ? (
-              <div
-                className="flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[13px]"
-                style={{
-                  borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)",
-                  background: "color-mix(in oklch, var(--rose) 10%, transparent)",
-                  color: "var(--rose)",
-                }}
-              >
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                {configErr}
-              </div>
-            ) : null}
-
-            <div className="flex items-center gap-3 pt-1">
-              <Button variant="accent" onClick={saveConfig} disabled={saving}>
-                {saving ? (
-                  <>
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    Saving
-                  </>
-                ) : saved ? (
-                  <>
-                    <Check className="mr-1.5 h-3.5 w-3.5" />
-                    Saved
-                  </>
-                ) : (
-                  <>
-                    <Save className="mr-1.5 h-3.5 w-3.5" />
-                    Apply config
-                  </>
-                )}
-              </Button>
-              <p className="text-[12px] text-[var(--mute)]">
-                Changes apply immediately in memory and persist to <code className="font-mono">configs/settings.yaml</code>.
-              </p>
-            </div>
           </section>
         ) : null}
 
@@ -1484,6 +1747,53 @@ export default function SettingsPage() {
                     : "Puppeteer fingerprints are now aligned to the actual launched Chrome version first, then fall back to official stable metadata only when the live version cannot be detected."}
                 </p>
               </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div
+                  className="rounded-[12px] border px-3 py-3 text-[12px]"
+                  style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.02)" }}
+                >
+                  <div className="font-medium text-[var(--ink)]">Runtime sync status</div>
+                  <p className="mt-1 text-[var(--mute)]">
+                    {browserRuntimeSyncStatus?.stale
+                      ? "The browser runtime bridge looks stale and should be regenerated before the next session."
+                      : "The browser runtime bridge is aligned with the API settings payload."}
+                  </p>
+                  <p className="mt-2 font-mono text-[11px] text-[var(--mute)]">
+                    source: {browserRuntimeSyncStatus?.active_runtime_source || "unknown"}
+                  </p>
+                  <p className="font-mono text-[11px] text-[var(--mute)]">
+                    synced_at: {browserRuntimeSyncStatus?.synced_at || "not recorded"}
+                  </p>
+                </div>
+                <div
+                  className="rounded-[12px] border px-3 py-3 text-[12px]"
+                  style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.02)" }}
+                >
+                  <div className="font-medium text-[var(--ink)]">Policy preview</div>
+                  <p className="mt-1 text-[var(--mute)]">
+                    Current preview for the selected MCP profile: <span className="font-medium text-[var(--ink)]">{activePolicyPreview}</span>
+                  </p>
+                  <p className="mt-2 text-[var(--mute)]">
+                    Streaming-safe mode disables heavy blocking on stream-like pages, starts direct-first by default, and keeps playback verification on.
+                  </p>
+                </div>
+              </div>
+
+              {safeStreamingDifferences.length ? (
+                <div
+                  className="rounded-[12px] border px-3 py-3 text-[12px]"
+                  style={{
+                    borderColor: "color-mix(in oklch, var(--signal) 30%, transparent)",
+                    background: "color-mix(in oklch, var(--signal) 8%, transparent)",
+                  }}
+                >
+                  <div className="font-medium text-[var(--ink)]">Differs from safe streaming defaults</div>
+                  <p className="mt-1 text-[var(--mute)]">
+                    This runtime still has: {safeStreamingDifferences.join(", ")}.
+                  </p>
+                </div>
+              ) : null}
 
               <SectionHeader>Fingerprint</SectionHeader>
               <div className="grid gap-4 sm:grid-cols-2">
@@ -1648,6 +1958,40 @@ export default function SettingsPage() {
                   min="1"
                   step="1"
                   description="Upper bound on how many proxies are loaded into the candidate pool at once."
+                />
+              </div>
+
+              <SectionHeader>Adaptive Streaming Policy</SectionHeader>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                <BrowserRuntimeSelect
+                  label="Streaming-safe mode"
+                  value={activeBrowserRuntime.streaming_safe_mode || "adaptive"}
+                  onChange={(value) => updateBrowserRuntime(browserSettingsTab, "streaming_safe_mode", value)}
+                  options={[
+                    { value: "adaptive", label: "Adaptive", description: "Use streaming-safe mode for hosting, embedded, and player-like pages." },
+                    { value: "always", label: "Always", description: "Always prefer the safer streaming policy for this browser." },
+                    { value: "never", label: "Never", description: "Keep the standard policy even on player-like pages." },
+                  ]}
+                  placeholder="Select policy mode"
+                  description="Controls when the runtime disables aggressive blockers and relaxes the first-attempt media policy."
+                />
+                <BrowserRuntimeSelect
+                  label="Media proxy strategy"
+                  value={activeBrowserRuntime.media_proxy_strategy || "direct_first"}
+                  onChange={(value) => updateBrowserRuntime(browserSettingsTab, "media_proxy_strategy", value)}
+                  options={[
+                    { value: "direct_first", label: "Direct first", description: "Try direct playback first, then allow proxy-only retries when diagnostics suggest it." },
+                    { value: "proxy_first", label: "Proxy first", description: "Start media-sensitive sessions on a validated proxy immediately." },
+                    { value: "direct_only", label: "Direct only", description: "Never promote media playback to a proxy retry automatically." },
+                  ]}
+                  placeholder="Select strategy"
+                  description="How isolated sessions should treat proxies on stream-like pages."
+                />
+                <ToggleRow
+                  label="Asset diagnostics"
+                  checked={!!activeBrowserRuntime.asset_diagnostics_enabled}
+                  onChange={(value) => updateBrowserRuntime(browserSettingsTab, "asset_diagnostics_enabled", value)}
+                  description="Return critical script, stylesheet, font, subframe, and manifest failure summaries to explain blank or degraded renders."
                 />
               </div>
 
@@ -1947,17 +2291,6 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              <Button variant="accent" onClick={saveConfig} disabled={saving}>
-                {saving ? (
-                  <><span className="owc-spinner owc-spinner-sm" />Saving</>
-                ) : saved ? (
-                  <><Check className="mr-1.5 h-3.5 w-3.5" />Saved</>
-                ) : (
-                  <><Save className="mr-1.5 h-3.5 w-3.5" />Save evaluation config</>
-                )}
-              </Button>
-            </div>
           </section>
         ) : null}
 
@@ -2160,12 +2493,6 @@ export default function SettingsPage() {
         ) : null}
       </div>
 
-      {config ? (
-        <section className="space-y-3">
-          <SectionHeader>Active Config</SectionHeader>
-          <JsonViewer label="Config" value={config} />
-        </section>
-      ) : null}
     </div>
   );
 }
@@ -2173,12 +2500,6 @@ export default function SettingsPage() {
 /* ── Display settings section ─────────────────────────────────────────────── */
 function DisplaySettingsSection() {
   const { settings, update, reset } = useRunViewSettings();
-  const [saved, setSaved] = useState(false);
-
-  function handleSave() {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1800);
-  }
 
   return (
     <section className="space-y-6">
@@ -2190,27 +2511,11 @@ function DisplaySettingsSection() {
       </div>
 
       <RunViewSettingsPanel settings={settings} update={update} reset={reset} />
+      {/*
 
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={handleSave}
-          className="flex items-center gap-2 rounded-lg px-4 py-2 text-[13px] font-medium transition-all"
-          style={{
-            background: saved
-              ? "color-mix(in oklch, var(--mint) 20%, transparent)"
-              : "color-mix(in oklch, var(--signal) 20%, transparent)",
-            border: `1px solid ${saved ? "color-mix(in oklch, var(--mint) 35%, transparent)" : "color-mix(in oklch, var(--signal) 35%, transparent)"}`,
-            color: saved ? "var(--mint)" : "var(--signal)",
-          }}
-        >
           {saved ? "✓ Saved to browser" : "Save display preferences"}
-        </button>
-        <span className="text-[11.5px]" style={{ color: "var(--mute-3)" }}>
           (Auto-saved on change — this confirms)
-        </span>
-      </div>
-
+      */}
       <div
         className="rounded-[12px] border p-4 space-y-2"
         style={{ borderColor: "var(--line)", background: "var(--card)" }}

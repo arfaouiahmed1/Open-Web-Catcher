@@ -84,6 +84,9 @@ def test_normalize_browser_runtime_accepts_media_and_iframe_recovery_controls():
     payload = normalize_browser_runtime(
         {
             "playwright": {
+                "streaming_safe_mode": "always",
+                "media_proxy_strategy": "proxy_first",
+                "asset_diagnostics_enabled": False,
                 "iframe_auto_recovery_enabled": False,
                 "iframe_recovery_timeout_ms": "25000",
                 "media_capture_timeout_ms": 45000,
@@ -96,6 +99,9 @@ def test_normalize_browser_runtime_accepts_media_and_iframe_recovery_controls():
     )
 
     runtime = payload["playwright"]
+    assert runtime["streaming_safe_mode"] == "always"
+    assert runtime["media_proxy_strategy"] == "proxy_first"
+    assert runtime["asset_diagnostics_enabled"] is False
     assert runtime["iframe_auto_recovery_enabled"] is False
     assert runtime["iframe_recovery_timeout_ms"] == 25000
     assert runtime["media_capture_timeout_ms"] == 45000
@@ -103,3 +109,19 @@ def test_normalize_browser_runtime_accepts_media_and_iframe_recovery_controls():
     assert runtime["media_retry_backoff_ms"] == [500, 1000, 2000]
     assert runtime["media_cors_patch_enabled"] is True
     assert runtime["media_playback_verification_enabled"] is False
+
+
+def test_normalize_browser_runtime_rejects_invalid_streaming_policy_choices():
+    payload = normalize_browser_runtime(
+        {
+            "puppeteer": {
+                "streaming_safe_mode": "mystery",
+                "media_proxy_strategy": "whatever",
+            }
+        }
+    )
+
+    runtime = payload["puppeteer"]
+    defaults = DEFAULT_BROWSER_RUNTIME["puppeteer"]
+    assert runtime["streaming_safe_mode"] == defaults["streaming_safe_mode"]
+    assert runtime["media_proxy_strategy"] == defaults["media_proxy_strategy"]

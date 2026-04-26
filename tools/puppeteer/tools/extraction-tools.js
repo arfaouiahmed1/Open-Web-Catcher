@@ -6,6 +6,7 @@ import {
   resolveFrame,
   withBrowserSession,
 } from '../shared/tool-runtime.js';
+import { getPageNetworkDiagnostics } from '../shared/browser.js';
 import { getBrowserRuntimeSettings } from '../shared/runtime-config.js';
 
 const STREAM_PATTERNS = [
@@ -70,6 +71,7 @@ export async function captureStreams({
   duration_ms,
   player_iframe_hint = '',
   browserWsEndpoint,
+  browserProfile = '',
 } = {}) {
   return withBrowserSession(browserWsEndpoint, async ({ page }) => {
     const frameState = await buildFrameState(page, frame_path);
@@ -84,6 +86,7 @@ export async function captureStreams({
     const evidence = [];
     const corsFailures = [];
     const corsFailureKeys = new Set();
+    let manifestResponse = null;
 
     const add = (url, source_layer) => {
       if (!url || !isStream(url) || streams.has(url)) return;
@@ -127,6 +130,13 @@ export async function captureStreams({
       pageClient.on('Network.requestWillBeSent', ({ request }) => add(request.url, 'page_cdp_request'));
       pageClient.on('Network.responseReceived', ({ response }) => {
         add(response.url, 'page_cdp_response');
+        if (!manifestResponse && isStream(response.url)) {
+          manifestResponse = {
+            url: response.url,
+            status: Number(response.status || 0) || null,
+            source_layer: 'page_cdp_response',
+          };
+        }
         if (!detectCorsFailures || !isStream(response.url)) return;
         const responseOrigin = toOrigin(response.url, effectiveFrame.url());
         if (!responseOrigin || responseOrigin === pageOrigin) return;
@@ -160,6 +170,13 @@ export async function captureStreams({
         frameClient.on('Network.requestWillBeSent', ({ request }) => add(request.url, 'frame_cdp_request'));
         frameClient.on('Network.responseReceived', ({ response }) => {
           add(response.url, 'frame_cdp_response');
+          if (!manifestResponse && isStream(response.url)) {
+            manifestResponse = {
+              url: response.url,
+              status: Number(response.status || 0) || null,
+              source_layer: 'frame_cdp_response',
+            };
+          }
           if (!detectCorsFailures || !isStream(response.url)) return;
           const responseOrigin = toOrigin(response.url, effectiveFrame.url());
           if (!responseOrigin || responseOrigin === pageOrigin) return;
@@ -224,7 +241,7 @@ export async function captureStreams({
 
       const media_state = await getMediaSummary(effectiveFrame);
       const screenshot = await captureScreenshot(page, { mode: 'viewport' });
-
+      const network_diagnostics = getPageNetworkDiagnostics(page, { limit: 12 });
       const result = Array.from(streams.values());
       return buildEnvelope(page, {
         frame_path,
@@ -237,6 +254,13 @@ export async function captureStreams({
           media_state,
           playback_started: didPlaybackStart(media_state),
           cors_failures_detected: corsFailures,
+          manifest_failure: network_diagnostics.manifest_failure,
+          manifest_response: manifestResponse,
+          effective_policy: network_diagnostics.effective_policy,
+          effective_runtime: network_diagnostics.effective_runtime,
+          critical_resource_failures: network_diagnostics.critical_resource_failures,
+          render_gap_signals: network_diagnostics.render_gap_signals,
+          network_diagnostics,
           streams: result,
           m3u8_urls: result.filter((entry) => entry.protocol === 'hls').map((entry) => entry.url),
           mpd_urls: result.filter((entry) => entry.protocol === 'dash').map((entry) => entry.url),
@@ -252,5 +276,5 @@ export async function captureStreams({
         await frameClient.detach().catch(() => {});
       }
     }
-  });
+  }, { browserProfile });
 }

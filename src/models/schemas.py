@@ -38,11 +38,20 @@ class ServerResult(BaseModel):
     m3u8_urls: list[str] = Field(default_factory=list)
     mpd_urls: list[str] = Field(default_factory=list)
     mp4_urls: list[str] = Field(default_factory=list)
+    stream_urls: list[str] = Field(default_factory=list)
     primary_stream: str | None = None
     screenshot_url: str | None = None     # Cloudinary URL
     embedded_url: str | None = None       # set when needs_embed_agent
+    embedded_url_source: str | None = None
+    player_iframe_url: str | None = None
     status: str = "failed"                # success / failed / needs_embed_agent
     down_reason: str | None = None
+    activation_attempts: int = 0
+    player_state: str | None = None
+    visual_confirmation: str | None = None
+    extraction_method: str | None = None
+    network_diagnostics: list[dict[str, Any]] = Field(default_factory=list)
+    iframe_diagnostics: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ExtractionResult(BaseModel):
@@ -73,7 +82,7 @@ class MatchInfo(BaseModel):
     status: str = "unknown"            # live / upcoming / replay / unknown
     scheduled_time: str | None = None
     confidence: int = 70               # 0-100
-    route: str = "embed_agent"         # embed_agent | stream_extractor
+    route: str = "stream_extractor"    # stream_extractor = hosting-first, embed_agent = direct embedded URL only
     iframes: list[str] = Field(default_factory=list)
     entry_point: str = ""
 

@@ -193,6 +193,145 @@ class RunRepository:
             "run_screenshots_deleted": int(screenshots_deleted or 0),
         }
 
+    def hard_delete_run(self, run_id: str) -> dict[str, int]:
+        deleted = {
+            "pipeline_runs_deleted": 0,
+            "run_snapshots_deleted": 0,
+            "agent_runs_deleted": 0,
+            "runtime_events_deleted": 0,
+            "run_model_usage_deleted": 0,
+            "run_streams_deleted": 0,
+            "run_screenshots_deleted": 0,
+            "provider_analyses_deleted": 0,
+            "takedown_emails_deleted": 0,
+            "llm_calls_deleted": 0,
+            "tool_calls_deleted": 0,
+            "agent_outputs_deleted": 0,
+            "prompt_compilations_deleted": 0,
+            "memory_hints_deleted": 0,
+            "legacy_runs_deleted": 0,
+            "background_jobs_deleted": 0,
+        }
+
+        txn = self._session.begin_nested() if self._session.in_transaction() else self._session.begin()
+        with txn:
+            pipeline = self._session.query(PipelineRunRecord).filter_by(run_id=run_id).first()
+            if pipeline is not None:
+                agent_run_ids = [
+                    int(value)
+                    for (value,) in self._session.query(AgentRunRecord.id)
+                    .filter(AgentRunRecord.pipeline_run_id == pipeline.id)
+                    .all()
+                ]
+                if agent_run_ids:
+                    deleted["memory_hints_deleted"] = int(
+                        self._session.query(MemoryHintUsedRecord)
+                        .filter(MemoryHintUsedRecord.agent_run_id.in_(agent_run_ids))
+                        .delete(synchronize_session=False)
+                        or 0
+                    )
+                    deleted["prompt_compilations_deleted"] = int(
+                        self._session.query(PromptCompilationRecord)
+                        .filter(PromptCompilationRecord.agent_run_id.in_(agent_run_ids))
+                        .delete(synchronize_session=False)
+                        or 0
+                    )
+                    deleted["llm_calls_deleted"] = int(
+                        self._session.query(LLMCallRecord)
+                        .filter(LLMCallRecord.agent_run_id.in_(agent_run_ids))
+                        .delete(synchronize_session=False)
+                        or 0
+                    )
+                    deleted["tool_calls_deleted"] = int(
+                        self._session.query(ToolCallRecord)
+                        .filter(ToolCallRecord.agent_run_id.in_(agent_run_ids))
+                        .delete(synchronize_session=False)
+                        or 0
+                    )
+                    deleted["agent_outputs_deleted"] = int(
+                        self._session.query(AgentOutputRecord)
+                        .filter(AgentOutputRecord.agent_run_id.in_(agent_run_ids))
+                        .delete(synchronize_session=False)
+                        or 0
+                    )
+                deleted["runtime_events_deleted"] = int(
+                    self._session.query(RuntimeEventRecord)
+                    .filter_by(pipeline_run_id=pipeline.id)
+                    .delete(synchronize_session=False)
+                    or 0
+                )
+                deleted["run_model_usage_deleted"] = int(
+                    self._session.query(RunModelUsageRecord)
+                    .filter_by(pipeline_run_id=pipeline.id)
+                    .delete(synchronize_session=False)
+                    or 0
+                )
+                deleted["run_streams_deleted"] = int(
+                    self._session.query(RunStreamRecord)
+                    .filter_by(pipeline_run_id=pipeline.id)
+                    .delete(synchronize_session=False)
+                    or 0
+                )
+                deleted["run_screenshots_deleted"] = int(
+                    self._session.query(RunScreenshotRecord)
+                    .filter_by(pipeline_run_id=pipeline.id)
+                    .delete(synchronize_session=False)
+                    or 0
+                )
+                deleted["provider_analyses_deleted"] = int(
+                    self._session.query(ProviderAnalysisRecord)
+                    .filter_by(pipeline_run_id=pipeline.id)
+                    .delete(synchronize_session=False)
+                    or 0
+                )
+                deleted["takedown_emails_deleted"] = int(
+                    self._session.query(TakedownEmailRecord)
+                    .filter_by(pipeline_run_id=pipeline.id)
+                    .delete(synchronize_session=False)
+                    or 0
+                )
+                deleted["agent_runs_deleted"] = int(
+                    self._session.query(AgentRunRecord)
+                    .filter_by(pipeline_run_id=pipeline.id)
+                    .delete(synchronize_session=False)
+                    or 0
+                )
+                deleted["run_snapshots_deleted"] = int(
+                    self._session.query(RunSnapshotRecord)
+                    .filter_by(pipeline_run_id=pipeline.id)
+                    .delete(synchronize_session=False)
+                    or 0
+                )
+                deleted["pipeline_runs_deleted"] = int(
+                    self._session.query(PipelineRunRecord)
+                    .filter_by(id=pipeline.id)
+                    .delete(synchronize_session=False)
+                    or 0
+                )
+            else:
+                deleted["run_snapshots_deleted"] = int(
+                    self._session.query(RunSnapshotRecord)
+                    .filter_by(run_id=run_id)
+                    .delete(synchronize_session=False)
+                    or 0
+                )
+
+            deleted["legacy_runs_deleted"] = int(
+                self._session.query(RunRecord)
+                .filter_by(run_id=run_id)
+                .delete(synchronize_session=False)
+                or 0
+            )
+            deleted["background_jobs_deleted"] = int(
+                self._session.query(BackgroundJobRecord)
+                .filter_by(run_id=run_id)
+                .delete(synchronize_session=False)
+                or 0
+            )
+
+        self._session.commit()
+        return deleted
+
     def get_by_run_id(self, run_id: str) -> RunRecord | None:
         return self._session.query(RunRecord).filter_by(run_id=run_id).first()
 

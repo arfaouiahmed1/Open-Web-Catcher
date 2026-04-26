@@ -106,6 +106,7 @@ async def test_landing_page_agent_success(mock_build_llm, mock_agent_tools, mock
     assert result.page_type == PageType.LANDING
     assert result.status == ExtractionStatus.SUCCESS
     assert result.metadata["hosting_pages"][0]["url"] == "https://hosting.example.com/video/1"
+    assert result.metadata["hosting_pages"][0]["route"] == "stream_extractor"
     _assert_agent_loop_contract(
         mock_agent_tools,
         mock_run_agent_loop,
@@ -243,7 +244,7 @@ async def test_hosting_page_agent_partial_when_embed_needed(mock_build_llm, mock
         tool_calls_made=4,
         payload={
             "streaming_urls": [],
-            "servers": [{"embedded_url": "https://embed.example.com/player"}],
+            "servers": [{"player_iframe_url": "https://embed.example.com/player"}],
             "decision": "needs_embed_agent",
         },
     )
@@ -316,7 +317,13 @@ async def test_hosting_page_agent_normalizes_servers_and_handoff(
                     "mp4_urls": ["https://cdn.example.com/live/fallback.mp4"],
                     "screenshot_url": "https://res.cloudinary.com/demo/image/upload/v1/host-server-1.png",
                     "embedded_url": "https://embed.example.com/player/abc",
+                    "embedded_url_source": "dom_iframe",
+                    "player_iframe_url": "https://embed.example.com/player/abc",
                     "status": "needs_embed_agent",
+                    "player_state": "playing",
+                    "visual_confirmation": "video playing",
+                    "network_diagnostics": [{"url": "https://cdn.example.com/live/master.m3u8"}],
+                    "iframe_diagnostics": [{"url": "https://embed.example.com/player/abc"}],
                 }
             ],
             "decision": "needs_embed_agent",
@@ -336,6 +343,11 @@ async def test_hosting_page_agent_normalizes_servers_and_handoff(
     assert result.servers[0].label == "Server 1"
     assert result.servers[0].m3u8_urls == ["https://cdn.example.com/live/master.m3u8"]
     assert result.servers[0].mp4_urls == ["https://cdn.example.com/live/fallback.mp4"]
+    assert result.servers[0].embedded_url_source == "dom_iframe"
+    assert result.servers[0].player_iframe_url == "https://embed.example.com/player/abc"
+    assert result.servers[0].player_state == "playing"
+    assert result.servers[0].network_diagnostics == [{"url": "https://cdn.example.com/live/master.m3u8"}]
+    assert result.servers[0].iframe_diagnostics == [{"url": "https://embed.example.com/player/abc"}]
     assert sorted(stream.url for stream in result.streams) == sorted(
         [
             "https://cdn.example.com/live/master.m3u8",
@@ -372,6 +384,12 @@ async def test_embedded_page_agent_normalizes_server_artifacts(
                     "mp4_urls": ["https://embed-cdn.example.com/live/fallback.mp4"],
                     "screenshot_url": "https://res.cloudinary.com/demo/image/upload/v1/embed-server-a.png",
                     "status": "success",
+                    "embedded_url_source": "frame_switch",
+                    "player_iframe_url": "https://embed.example.com/player",
+                    "player_state": "playing",
+                    "visual_confirmation": "video playing",
+                    "network_diagnostics": [{"url": "https://embed-cdn.example.com/live/master.m3u8"}],
+                    "iframe_diagnostics": [{"url": "https://embed.example.com/player"}],
                 }
             ],
             "successful_servers": 1,
@@ -384,6 +402,11 @@ async def test_embedded_page_agent_normalizes_server_artifacts(
     assert result.status == ExtractionStatus.SUCCESS
     assert len(result.servers) == 1
     assert result.servers[0].label == "Embed Server A"
+    assert result.servers[0].embedded_url_source == "frame_switch"
+    assert result.servers[0].player_iframe_url == "https://embed.example.com/player"
+    assert result.servers[0].player_state == "playing"
+    assert result.servers[0].network_diagnostics == [{"url": "https://embed-cdn.example.com/live/master.m3u8"}]
+    assert result.servers[0].iframe_diagnostics == [{"url": "https://embed.example.com/player"}]
     assert result.screenshots == ["https://res.cloudinary.com/demo/image/upload/v1/embed-server-a.png"]
     assert sorted(stream.url for stream in result.streams) == sorted(
         [

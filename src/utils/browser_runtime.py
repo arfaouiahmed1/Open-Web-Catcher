@@ -41,6 +41,9 @@ DEFAULT_BROWSER_RUNTIME: dict[str, dict[str, Any]] = {
         "proxy_cache_ttl_ms": 600000,
         "proxy_max_candidates": 25,
         "proxy_test_url": "https://api.ipify.org?format=json",
+        "streaming_safe_mode": "adaptive",
+        "media_proxy_strategy": "direct_first",
+        "asset_diagnostics_enabled": True,
         "ubol_enabled": True,
         "stream_cors_patch_enabled": False,
         "stream_cors_include_credentials": False,
@@ -56,7 +59,7 @@ DEFAULT_BROWSER_RUNTIME: dict[str, dict[str, Any]] = {
     "playwright": {
         "launch_timeout_ms": 45000,
         "extra_launch_args": [],
-        "adblock_enabled": True,
+        "adblock_enabled": False,
         "adblock_allowlist_hosts": [],
         "adblock_excluded_categories": ["nsfw", "gambling"],
         "adblock_auto_recovery_enabled": True,
@@ -79,6 +82,9 @@ DEFAULT_BROWSER_RUNTIME: dict[str, dict[str, Any]] = {
         "proxy_cache_ttl_ms": 600000,
         "proxy_max_candidates": 25,
         "proxy_test_url": "https://api.ipify.org?format=json",
+        "streaming_safe_mode": "adaptive",
+        "media_proxy_strategy": "direct_first",
+        "asset_diagnostics_enabled": True,
         "iframe_sandbox_patch_enabled": True,
         "iframe_auto_recovery_enabled": True,
         "iframe_recovery_timeout_ms": 20000,
@@ -197,6 +203,20 @@ def normalize_browser_runtime(value: Any) -> dict[str, dict[str, Any]]:
         current["proxy_test_url"] = _coerce_string(
             raw.get("proxy_test_url"),
             fallback=current["proxy_test_url"],
+        )
+        current["streaming_safe_mode"] = _coerce_choice(
+            raw.get("streaming_safe_mode"),
+            allowed={"adaptive", "always", "never"},
+            fallback=current["streaming_safe_mode"],
+        )
+        current["media_proxy_strategy"] = _coerce_choice(
+            raw.get("media_proxy_strategy"),
+            allowed={"direct_first", "proxy_first", "direct_only"},
+            fallback=current["media_proxy_strategy"],
+        )
+        current["asset_diagnostics_enabled"] = _coerce_bool(
+            raw.get("asset_diagnostics_enabled"),
+            current["asset_diagnostics_enabled"],
         )
         current["iframe_sandbox_patch_enabled"] = _coerce_bool(
             raw.get("iframe_sandbox_patch_enabled"),

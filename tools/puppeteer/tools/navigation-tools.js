@@ -134,6 +134,7 @@ export async function openUrl({
   retry_on_challenge = true,
   max_challenge_retries = 1,
   browserWsEndpoint,
+  browserProfile = '',
 } = {}) {
   return withBrowserSession(browserWsEndpoint, async ({ browser, page }) => {
     const tabs = trackNewTabs(browser);
@@ -263,13 +264,18 @@ export async function openUrl({
         http_status,
         redirect_chain,
         wait_fallback_used: navigation_attempts.some((entry) => entry.wait_until_used && entry.wait_until_used !== wait_until),
+        effective_policy: network_diagnostics.effective_policy,
+        effective_runtime: network_diagnostics.effective_runtime,
+        critical_resource_failures: network_diagnostics.critical_resource_failures,
+        render_gap_signals: network_diagnostics.render_gap_signals,
+        manifest_failure: network_diagnostics.manifest_failure,
         network_diagnostics,
         iframe_diagnostics,
         final_access_state,
         recovery_attempt,
       },
     });
-  }, { targetUrl: url });
+  }, { targetUrl: url, browserProfile });
 }
 
 export async function goBack({

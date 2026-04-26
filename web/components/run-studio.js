@@ -3,12 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Brain, Loader2, Play, Square } from "lucide-react";
 
-import { apiUrl } from "@/lib/api";
+import { apiFetch, apiUrl } from "@/lib/api";
+import { statusLabel, statusTone } from "@/lib/run-status";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { extractToolCalls, mergeTraceEvents, STAGE_LABELS } from "@/lib/run-trace";
+import { AgentOutputPanel } from "@/components/agent-output-panel";
 import { BrowserLiveView } from "@/components/browser-live-view";
 import { OrchestratorGraph } from "@/components/orchestrator-graph";
+import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
 import { ToolCallFeed } from "@/components/tool-call-feed";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 const AGENTS = ["classification", "landing", "hosting", "embedded"];
@@ -58,6 +62,7 @@ export function RunStudio({ mode = "workflow" }) {
   const [streamError, setStreamError] = useState("");
   const [isStarting, setIsStarting] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [runDetail, setRunDetail] = useState(null);
   const [promptPreview, setPromptPreview] = useState("");
   const [showPromptPreview, setShowPromptPreview] = useState(false);
 
@@ -73,6 +78,11 @@ export function RunStudio({ mode = "workflow" }) {
 
   useEffect(() => {
     if (!runId) return undefined;
+
+    let alive = true;
+    apiFetch(`/ui/runs/${runId}`).then((payload) => {
+      if (alive) setRunDetail(payload);
+    }).catch(() => {});
 
     setIsRunning(true);
     setStreamError("");
@@ -93,6 +103,9 @@ export function RunStudio({ mode = "workflow" }) {
         setTracePayload(payload);
         if (payload.completed) {
           setIsRunning(false);
+          apiFetch(`/ui/runs/${runId}`).then((detail) => {
+            if (alive) setRunDetail(detail);
+          }).catch(() => {});
           source.close();
         }
         if (payload.error) {
@@ -108,7 +121,10 @@ export function RunStudio({ mode = "workflow" }) {
       setIsRunning(false);
     };
 
-    return () => source.close();
+    return () => {
+      alive = false;
+      source.close();
+    };
   }, [runId]);
 
   async function startRun() {
@@ -116,6 +132,7 @@ export function RunStudio({ mode = "workflow" }) {
     setEvents([]);
     setMetrics(null);
     setTracePayload(null);
+    setRunDetail(null);
     setStreamError("");
     setRunId("");
     try {
@@ -130,7 +147,11 @@ export function RunStudio({ mode = "workflow" }) {
       if (!response.ok) {
         throw new Error(payload?.detail || `Start failed (${response.status})`);
       }
-      setRunId(payload.run_id || "");
+      const nextRunId = payload.run_id || "";
+      setRunId(nextRunId);
+      if (nextRunId && typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("owc:track-run", { detail: { runId: nextRunId } }));
+      }
     } catch (error) {
       setStreamError(error instanceof Error ? error.message : String(error || "Start failed"));
     } finally {
@@ -151,7 +172,11 @@ export function RunStudio({ mode = "workflow" }) {
   const totalTokens = Number(metrics?.total_tokens_in || 0) + Number(metrics?.total_tokens_out || 0);
   const cachedInputTokens = Number(metrics?.total_cached_input_tokens || 0);
   const totalInputTokens = Number(metrics?.total_tokens_in || 0);
-  const rootActor = tracePayload?.root_actor || (mode === "agent" ? agent : "orchestrator");
+  const rootActor = runDetail?.run?.root_actor || tracePayload?.root_actor || (mode === "agent" ? agent : "orchestrator");
+  const runStatus = runDetail?.run?.final_status || runDetail?.job?.display_status || tracePayload?.display_status || (isRunning ? "running" : "");
+  const stageRollups = runDetail?.stage_rollups || [];
+  const agentRollups = runDetail?.agent_rollups || [];
+  const parallelism = runDetail?.parallelism || null;
 
   return (
     <div className="space-y-5">
@@ -237,6 +262,7 @@ export function RunStudio({ mode = "workflow" }) {
         {runId ? (
           <div className="flex flex-wrap items-center gap-2 border-t pt-3" style={{ borderColor: "var(--line)" }}>
             <span className="font-mono text-[11px]" style={{ color: "var(--mute-3)" }}>{runId.slice(0, 12)}...</span>
+            {runStatus ? <Badge tone={statusTone(runStatus)}>{statusLabel(runStatus)}</Badge> : null}
             {isRunning ? (
               <span className="font-mono text-[11px]" style={{ color: "var(--signal)" }}>streaming</span>
             ) : null}
@@ -246,6 +272,7 @@ export function RunStudio({ mode = "workflow" }) {
               <StatPill label="cached/input" value={`${formatNumber(cachedInputTokens)} / ${formatNumber(totalInputTokens)}`} accent="var(--violet)" />
               <StatPill label="tokens" value={formatNumber(totalTokens)} accent="var(--signal)" />
               <StatPill label="cost" value={formatCurrency(metrics?.total_cost_usd ?? metrics?.estimated_total_cost_usd ?? 0)} accent="var(--mint)" />
+              <StatPill label="parallel" value={`${formatNumber(parallelism?.current_parallel_agents || 0)} / ${formatNumber(parallelism?.max_parallel_agents || 0)}`} accent="var(--signal)" />
             </div>
           </div>
         ) : null}
@@ -270,9 +297,18 @@ export function RunStudio({ mode = "workflow" }) {
           <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
             <div className="space-y-4">
               <OrchestratorGraph events={events} rootActor={rootActor} />
+              <RuntimeEventsPanel events={events} />
             </div>
             <ToolCallFeed toolCalls={toolCallRows} title="Tool Calls" />
           </div>
+          {(stageRollups.length || agentRollups.length) ? (
+            <AgentOutputPanel
+              title={mode === "workflow" ? "Workflow outputs" : "Agent output"}
+              stageRollups={stageRollups}
+              agentRollups={agentRollups}
+              parallelism={parallelism}
+            />
+          ) : null}
         </div>
       ) : null}
     </div>

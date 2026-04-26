@@ -135,6 +135,7 @@ class ShortTermMemory:
             "pagination_patterns": [],
             "selectors": [],
             "critical_links": [],
+            "iframe_urls": [],
             "stream_urls": [],
             "stream_hosts": [],
             "server_labels": [],
@@ -353,6 +354,8 @@ class ShortTermMemory:
         objective: str,
         page_url: str = "",
         page_type: str = "",
+        anchor_url: str = "",
+        navigation_policy: str = "",
         limit: int = 8,
     ) -> str:
         recent = list(self._entries)[-max(int(limit or 1), 1) :]
@@ -394,6 +397,10 @@ class ShortTermMemory:
                 else "`none yet`"
             ),
         ]
+        if anchor_url:
+            lines.append(f"- assigned anchor url: `{anchor_url}`")
+        if navigation_policy:
+            lines.append(f"- navigation policy: {navigation_policy}")
 
         if (page_type or self.page_type) == "landing_page":
             candidates = run_memory.get("hosting_candidate_urls", [])
@@ -412,6 +419,11 @@ class ShortTermMemory:
                 "- activated servers in this run: "
                 + (", ".join(f"`{item}`" for item in activated[:8]) if activated else "`none yet`")
             )
+            iframe_urls = run_memory.get("iframe_urls", [])
+            lines.append(
+                "- recent iframe/embed evidence: "
+                + (", ".join(f"`{item}`" for item in iframe_urls[:4]) if iframe_urls else "`none yet`")
+            )
 
         lines.append(f"- next best move: {next_best_move}")
         return "\n".join(lines)
@@ -423,6 +435,7 @@ class ShortTermMemory:
             "pagination_patterns": list(self._signals["pagination_patterns"]),
             "selectors": list(self._signals["selectors"]),
             "critical_links": list(self._signals["critical_links"]),
+            "iframe_urls": list(self._signals["iframe_urls"]),
             "stream_urls": list(self._signals["stream_urls"]),
             "stream_hosts": list(self._signals["stream_hosts"]),
             "server_labels": list(self._signals["server_labels"]),
@@ -449,6 +462,7 @@ class ShortTermMemory:
         return {
             **common,
             "hosting_candidate_urls": landing_specific["hosting_candidate_urls"],
+            "iframe_urls": common["iframe_urls"],
             "server_records": hosting_specific["server_records"],
             "server_screenshots": hosting_specific["server_screenshots"],
             "server_stream_urls": hosting_specific["server_stream_urls"],
@@ -472,6 +486,7 @@ class ShortTermMemory:
             "pagination_patterns": 140,
             "selectors": 160,
             "critical_links": 220,
+            "iframe_urls": 220,
             "stream_urls": 260,
             "stream_hosts": 120,
             "server_labels": 120,
@@ -493,6 +508,7 @@ class ShortTermMemory:
             base_limits.update(
                 {
                     "critical_links": 420,
+                    "iframe_urls": 420,
                     "stream_urls": 700,
                     "server_labels": 220,
                     "server_records": 320,
@@ -565,6 +581,8 @@ class ShortTermMemory:
             server_up = bool(server.get("server_up"))
             screenshot_url = str(server.get("screenshot_url") or "").strip()
             embedded_url = str(server.get("embedded_url") or "").strip()
+            embedded_url_source = str(server.get("embedded_url_source") or "").strip()
+            player_iframe_url = str(server.get("player_iframe_url") or "").strip()
             primary_stream = str(server.get("primary_stream") or "").strip()
 
             if label:
@@ -575,8 +593,14 @@ class ShortTermMemory:
                     screenshot_url,
                     max_items=self._signal_limit("server_screenshots"),
                 )
-            if embedded_url.startswith(("http://", "https://")):
-                self._capture_url(embedded_url)
+            for iframe_candidate in (embedded_url, player_iframe_url):
+                if iframe_candidate.startswith(("http://", "https://")):
+                    self._remember_signal(
+                        "iframe_urls",
+                        iframe_candidate,
+                        max_items=self._signal_limit("iframe_urls"),
+                    )
+                    self._capture_url(iframe_candidate)
 
             stream_urls: list[str] = []
             for field in ("m3u8_urls", "mpd_urls", "mp4_urls"):
@@ -620,6 +644,8 @@ class ShortTermMemory:
                 "stream_count": len(unique_streams),
                 "primary_stream": primary_stream,
                 "embedded_url": embedded_url,
+                "embedded_url_source": embedded_url_source,
+                "player_iframe_url": player_iframe_url,
                 "screenshot_url": screenshot_url,
             }
             self._remember_signal(

@@ -7,6 +7,7 @@ import {
   getPageNetworkDiagnostics,
   retryNavigationAfterAutoRecovery,
 } from '../shared/browser.js';
+import { shouldRetryWithProxy, shouldRetryWithoutBlocking } from '../../shared/browser-policy.js';
 import {
   classifyChromeError,
   isChromeErrorPage,
@@ -147,6 +148,7 @@ export async function navigate({
   wait_until = 'networkidle',
   timeout_ms = 30_000,
   browserWsEndpoint,
+  browserProfile = '',
 } = {}) {
   if (!url) throw new Error('url is required');
 
@@ -208,6 +210,17 @@ export async function navigate({
     const access_state = await readAccessState(page);
     const network_diagnostics = getPageNetworkDiagnostics(page, { limit: 10 });
     const iframe_diagnostics = await getIframeDiagnostics(page, { limit: 24 });
+    const retry_recommendations = {
+      retry_without_blocking: shouldRetryWithoutBlocking({
+        criticalResourceFailures: network_diagnostics.critical_resource_failures,
+        renderGapSignals: network_diagnostics.render_gap_signals,
+      }),
+      retry_with_proxy: shouldRetryWithProxy({
+        policy: network_diagnostics.effective_policy,
+        manifestFailure: network_diagnostics.manifest_failure,
+        criticalResourceFailures: network_diagnostics.critical_resource_failures,
+      }),
+    };
     const navigation_attempt_summary = {
       ...retry_statistics,
       wait_candidates_tried: [...new Set(goto_attempts.map((attempt) => attempt.wait_until).filter(Boolean))],
@@ -256,9 +269,15 @@ export async function navigate({
       retry_statistics,
       navigation_attempt_summary,
       access_state,
+      effective_policy: network_diagnostics.effective_policy,
+      effective_runtime: network_diagnostics.effective_runtime,
+      critical_resource_failures: network_diagnostics.critical_resource_failures,
+      render_gap_signals: network_diagnostics.render_gap_signals,
+      manifest_failure: network_diagnostics.manifest_failure,
+      retry_recommendations,
       network_diagnostics,
       iframe_diagnostics,
       recovery_attempt,
     };
-  }, { targetUrl: url });
+  }, { targetUrl: url, browserProfile });
 }

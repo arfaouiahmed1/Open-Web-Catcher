@@ -43,14 +43,20 @@ from src.models.schemas import (
     WorkflowRunRequest,
 )
 from src.storage.database import create_tables, get_session
+from src.storage.dataset_repository import DatasetRepository
 from src.storage.repositories import BackgroundJobRepository, RunRepository
 from src.storage.ui_repository import OperatorConsoleRepository
 from src.tools.mcp_client import REQUIRED_TOOLS_BY_PROFILE, agent_tools
 from src.utils.browser_runtime import normalize_browser_runtime, normalize_disabled_tools_by_browser_profile
-from src.utils.config import Settings
+from src.utils.config import Settings, build_browser_runtime_sync_status
 from src.utils.ipinfo import lookup_multiple
 from src.utils.logging import get_logger, setup_logging
 from src.utils.observability import get_observability_status, run_registry
+from src.utils.console_state import (
+    JOB_ACTIVE_STATUSES,
+    JOB_TERMINAL_STATUSES,
+    normalize_job_display_status,
+)
 from src.utils.provider_models import (
     ProviderModelCatalogError,
     get_provider_model_catalog,
@@ -155,6 +161,10 @@ def get_settings() -> Settings:
     global _settings
     if _settings is None:
         _settings = Settings.from_yaml()
+        try:
+            _settings.save_browser_runtime_bridge()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not refresh browser runtime bridge on startup: %s", exc)
     return _settings
 
 
@@ -619,6 +629,8 @@ async def _process_background_job() -> bool:
     try:
         repo = BackgroundJobRepository(session)
         job = repo.claim_next(lease_seconds=90)
+        if job is not None:
+            DatasetRepository(session).mark_site_run_running(job.run_id)
     finally:
         session.close()
 
@@ -649,12 +661,35 @@ async def _process_background_job() -> bool:
     session = get_session()
     try:
         repo = BackgroundJobRepository(session)
+        dataset_repo = DatasetRepository(session)
         if execution.get("ok"):
             repo.mark_succeeded(job.run_id, result_json=execution.get("result") or {})
+            result_payload = execution.get("result") or {}
+            dataset_repo.finalize_site_run(
+                job.run_id,
+                display_status=str(result_payload.get("final_status", "") or "success"),
+                result_json=result_payload,
+            )
         elif execution.get("cancelled"):
             repo.mark_cancelled(job.run_id, reason=str(execution.get("error", "Cancelled")))
+            dataset_repo.finalize_site_run(
+                job.run_id,
+                display_status="cancelled",
+                result_json=execution.get("result") or {},
+                error_text=str(execution.get("error", "Cancelled")),
+            )
         else:
-            repo.mark_failed(job.run_id, error_text=str(execution.get("error", "background_job_failed")))
+            failed_job = repo.mark_failed(job.run_id, error_text=str(execution.get("error", "background_job_failed")))
+            failed_status = normalize_job_display_status(str(failed_job.status or "")) if failed_job is not None else "failed"
+            if failed_status == "running":
+                dataset_repo.mark_site_run_running(job.run_id)
+            else:
+                dataset_repo.finalize_site_run(
+                    job.run_id,
+                    display_status=failed_status,
+                    result_json=execution.get("result") or {},
+                    error_text=str(execution.get("error", "background_job_failed")),
+                )
     finally:
         session.close()
     return True
@@ -759,6 +794,9 @@ def _active_trace_row(trace: Any) -> dict[str, Any]:
 
 def _background_job_row(job: Any) -> dict[str, Any]:
     display_status = _background_job_display_status(job)
+    started_at = getattr(job, "started_at", None)
+    finished_at = getattr(job, "finished_at", None)
+    created_at = getattr(job, "created_at", None)
     return {
         "run_id": job.run_id,
         "url": job.url,
@@ -778,25 +816,39 @@ def _background_job_row(job: Any) -> dict[str, Any]:
         "estimated_total_cost_usd": 0.0,
         "total_cost_usd": 0.0,
         "total_messages": 0,
-        "created_at": job.created_at.isoformat() if getattr(job, "created_at", None) else "",
+        "created_at": created_at.isoformat() if created_at else "",
+        "started_at": started_at.isoformat() if started_at else "",
+        "finished_at": finished_at.isoformat() if finished_at else "",
         "root_actor": job.actor,
         "job_type": job.job_type,
         "attempts": int(job.attempts or 0),
         "max_attempts": int(job.max_attempts or 0),
+        "job_state": display_status,
+        "job": _background_job_state(job),
+        "max_parallel_agents": 0,
     }
 
 
 def _background_job_display_status(job: Any) -> str:
-    status = str(getattr(job, "status", "") or "").strip().lower()
-    if status == "succeeded":
-        return "success"
-    if status in {"queued", "running", "retrying"}:
-        return "running"
-    if status == "cancelled":
-        return "cancelled"
-    if status == "dead_letter":
-        return "failed"
-    return status or "unknown"
+    return normalize_job_display_status(str(getattr(job, "status", "") or ""))
+
+
+def _background_job_state(job: Any) -> dict[str, Any]:
+    return {
+        "job_id": str(getattr(job, "job_id", "") or ""),
+        "run_id": str(getattr(job, "run_id", "") or ""),
+        "job_type": str(getattr(job, "job_type", "") or ""),
+        "actor": str(getattr(job, "actor", "") or ""),
+        "status": str(getattr(job, "status", "") or ""),
+        "display_status": _background_job_display_status(job),
+        "attempts": int(getattr(job, "attempts", 0) or 0),
+        "max_attempts": int(getattr(job, "max_attempts", 0) or 0),
+        "error_text": str(getattr(job, "error_text", "") or ""),
+        "created_at": getattr(job, "created_at", None).isoformat() if getattr(job, "created_at", None) else "",
+        "started_at": getattr(job, "started_at", None).isoformat() if getattr(job, "started_at", None) else "",
+        "finished_at": getattr(job, "finished_at", None).isoformat() if getattr(job, "finished_at", None) else "",
+        "heartbeat_at": getattr(job, "heartbeat_at", None).isoformat() if getattr(job, "heartbeat_at", None) else "",
+    }
 
 
 def _emit_failure_once(observer, kind: str, message: str) -> None:
@@ -1263,15 +1315,45 @@ async def _stream_trace(run_id: str, request: Request | None = None):
                         break
                     job = BackgroundJobRepository(session).get_by_run_id(run_id)
                     if job is not None:
+                        display_status = _background_job_display_status(job)
+                        synthetic_events: list[dict[str, Any]] = []
+                        if job.status in JOB_TERMINAL_STATUSES:
+                            event_kind = ""
+                            if display_status == "cancelled":
+                                event_kind = "run_cancelled"
+                            elif display_status in {"success", "partial"}:
+                                event_kind = "pipeline_finished" if str(job.job_type or "") == "workflow" else "agent_finished"
+                            elif display_status == "failed":
+                                event_kind = "pipeline_failed" if str(job.job_type or "") == "workflow" else "agent_failed"
+                            if event_kind:
+                                synthetic_events.append(
+                                    {
+                                        "seq": last_seq + 1,
+                                        "kind": event_kind,
+                                        "actor": str(job.actor or ""),
+                                        "status": "success" if display_status in {"success", "partial"} else "error",
+                                        "message": str(job.error_text or "") or display_status,
+                                        "timestamp": (job.finished_at or job.updated_at or job.created_at).isoformat(),
+                                        "details": {
+                                            "job_status": str(job.status or ""),
+                                            "display_status": display_status,
+                                            "error": str(job.error_text or ""),
+                                        },
+                                    }
+                                )
                         payload = {
                             "run_id": run_id,
-                            "events": [],
-                            "completed": job.status in {"succeeded", "failed", "dead_letter", "cancelled"},
+                            "events": synthetic_events,
+                            "completed": job.status in JOB_TERMINAL_STATUSES,
                             "cancel_requested": job.status == "cancelled",
                             "cancel_reason": job.error_text if job.status == "cancelled" else "",
                             "job_status": job.status,
+                            "display_status": display_status,
+                            "job": _background_job_state(job),
                             "source": "background_job",
                         }
+                        if synthetic_events:
+                            last_seq = int(synthetic_events[-1].get("seq", last_seq))
                         yield f"data: {json.dumps(payload, default=str)}\n\n"
                         if payload["completed"]:
                             break
@@ -1601,30 +1683,94 @@ def ui_overview(limit: int = 8):
         session.close()
 
 
+@app.get("/ui/events/recent")
+def ui_recent_runtime_events(limit: int = Query(30, ge=1, le=200)):
+    session = get_session()
+    try:
+        return {"events": OperatorConsoleRepository(session).list_recent_runtime_events(limit=limit)}
+    finally:
+        session.close()
+
+
 @app.get("/ui/runs")
 def ui_runs(
     limit: int = Query(25, ge=1, le=200),
     offset: int = Query(0, ge=0),
     status: str = "",
     page_type: str = "",
+    query: str = "",
+    actor: str = "",
 ):
     session = get_session()
     try:
         repo = OperatorConsoleRepository(session)
-        payload = repo.list_runs(limit=limit + offset + 200, offset=0, status=status, page_type=page_type)
+        persisted_status = "" if status == "queued" else status
+        payload = repo.list_runs(
+            limit=limit + offset + 400,
+            offset=0,
+            status=persisted_status,
+            page_type=page_type,
+            query=query,
+            actor="",
+        )
         jobs = BackgroundJobRepository(session).list_all(limit=400)
-        existing_run_ids = {str(row.get("run_id", "")) for row in payload.get("rows", [])}
+        job_map = {str(job.run_id or ""): job for job in jobs}
+        query_text = str(query or "").strip().lower()
+        actor_text = str(actor or "").strip().lower()
+
+        def matches_filters(row: dict[str, Any]) -> bool:
+            display_status = str(row.get("final_status", "") or row.get("status", "") or "").strip().lower()
+            if status and display_status != status:
+                return False
+            if actor_text and actor_text != str(row.get("root_actor", "") or "").strip().lower():
+                return False
+            if query_text:
+                haystack = " ".join(
+                    [
+                        str(row.get("run_id", "") or ""),
+                        str(row.get("url", "") or ""),
+                        str(row.get("page_type", "") or ""),
+                        str(row.get("final_status", "") or ""),
+                        str(row.get("failure_mode", "") or ""),
+                        str(row.get("root_actor", "") or ""),
+                        str(row.get("primary_provider", "") or ""),
+                        str(row.get("primary_model", "") or ""),
+                    ]
+                ).lower()
+                if query_text not in haystack:
+                    return False
+            return True
+
+        merged_rows = []
+        seen_run_ids: set[str] = set()
+        for row in payload.get("rows", []):
+            run_id = str(row.get("run_id", "") or "")
+            job = job_map.get(run_id)
+            if job is not None:
+                row = {
+                    **row,
+                    "status": _background_job_display_status(job),
+                    "final_status": _background_job_display_status(job),
+                    "job_state": _background_job_display_status(job),
+                    "job": _background_job_state(job),
+                    "root_actor": str(job.actor or row.get("root_actor", "") or ""),
+                }
+            if matches_filters(row):
+                merged_rows.append(row)
+            seen_run_ids.add(run_id)
+
         pending_rows = []
         for job in jobs:
-            if job.run_id in existing_run_ids:
+            if job.run_id in seen_run_ids:
                 continue
-            if status and _background_job_display_status(job) != status:
-                continue
-            pending_rows.append(_background_job_row(job))
-        rows = pending_rows + payload.get("rows", [])
+            pending_row = _background_job_row(job)
+            if matches_filters(pending_row):
+                pending_rows.append(pending_row)
+        rows = pending_rows + merged_rows
+        rows.sort(key=lambda row: str(row.get("created_at", "") or ""), reverse=True)
         sliced = rows[offset : offset + limit]
         return {
-            "total": int(payload.get("total", 0)) + len(pending_rows),
+            "total": len(rows),
             "rows": sliced,
         }
     finally:
@@ -1650,15 +1796,15 @@ def ui_run_detail(run_id: str):
                 "run": _background_job_row(job),
                 "snapshot": job.result_json or {},
                 "agent_runs": [],
+                "agent_outputs": [],
+                "agent_rollups": [],
+                "stage_rollups": [],
+                "parallelism": {"current_parallel_agents": 0, "max_parallel_agents": 0, "by_stage": []},
                 "tool_calls": [],
                 "llm_calls": [],
                 "events": [],
-                "job": {
-                    "status": job.status,
-                    "attempts": int(job.attempts or 0),
-                    "max_attempts": int(job.max_attempts or 0),
-                    "error_text": job.error_text,
-                },
+                "job": _background_job_state(job),
+                "job_state": _background_job_state(job),
             }
         return payload
     finally:
@@ -1693,6 +1839,27 @@ def ui_cancel_run(run_id: str):
     if not success:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found or already completed")
     return {"ok": True, "run_id": run_id}
+
+
+@app.delete("/ui/runs/{run_id}")
+def ui_delete_run(run_id: str):
+    active = run_registry.get(run_id)
+    if active is not None and not active.completed:
+        raise HTTPException(status_code=409, detail="Cancel this run before deleting it.")
+
+    session = get_session()
+    try:
+        job_repo = BackgroundJobRepository(session)
+        job = job_repo.get_by_run_id(run_id)
+        if job is not None and str(job.status or "") in JOB_ACTIVE_STATUSES:
+            raise HTTPException(status_code=409, detail="Cancel this run before deleting it.")
+        deleted = RunRepository(session).hard_delete_run(run_id)
+    finally:
+        session.close()
+
+    if not any(int(value or 0) > 0 for value in deleted.values()):
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    return {"ok": True, "run_id": run_id, "deleted": deleted}
 
 
 def _enqueue_background_job(
@@ -1857,9 +2024,37 @@ def ui_tool_reliability(limit: int = Query(500, ge=1, le=2000)):
 @app.post("/ui/providers/lookup")
 def ui_provider_lookup(req: ProviderLookupRequest):
     rows = _provider_lookup_urls(req.stream_urls, get_settings())
+    provider_counts: dict[str, int] = {}
+    country_counts: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        provider = str(row.get("provider", "") or "")
+        country = str(row.get("country", "") or "")
+        if provider:
+            provider_counts[provider] = provider_counts.get(provider, 0) + 1
+        if country:
+            entry = country_counts.setdefault(
+                country,
+                {
+                    "country": country,
+                    "country_code": str(row.get("country_code", "") or ""),
+                    "flag": str(row.get("flag", "") or ""),
+                    "count": 0,
+                },
+            )
+            entry["count"] += 1
+    top_countries = sorted(country_counts.values(), key=lambda item: (-int(item["count"]), item["country"]))
     return {
         "rows": rows,
         "stats": _provider_lookup_stats(rows),
+        "top_providers": [
+            {"provider": provider, "count": count}
+            for provider, count in sorted(provider_counts.items(), key=lambda item: (-int(item[1]), item[0]))[:8]
+        ],
+        "top_countries": top_countries[:8],
+        "country_map": {
+            "points": top_countries[:8],
+            "covered_country_codes": [row["country_code"] for row in top_countries if row.get("country_code")],
+        },
     }
 
 
@@ -1879,9 +2074,9 @@ def ui_provider_history(
 
 
 class ModelConfigRequest(BaseModel):
-    llm_provider: str = "google"
-    agent_model: str = ""
-    orchestrator_model: str = ""
+    llm_provider: str | None = None
+    agent_model: str | None = None
+    orchestrator_model: str | None = None
     gemini_temperature: float | None = None
     llm_tuning: dict | None = None
     agent_model_config: dict | None = None
@@ -1934,6 +2129,7 @@ def _ui_config_payload(
             legacy=getattr(settings, "disabled_tools_by_profile", {}),
         ),
         "browser_runtime": normalize_browser_runtime(getattr(settings, "browser_runtime", {})),
+        "browser_runtime_sync_status": build_browser_runtime_sync_status(),
         "deepeval_provider": getattr(settings, "deepeval_provider", "openai"),
         "deepeval_model": getattr(settings, "deepeval_model", "gpt-4o"),
         "deepeval_temperature": getattr(settings, "deepeval_temperature", 0.0),
@@ -2038,15 +2234,15 @@ def ui_update_config(body: ModelConfigRequest):
     persist_error = ""
     config_persisted = True
     try:
-        s.save_browser_runtime_bridge()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Could not persist browser runtime bridge: %s", exc)
-    try:
         persist_path = str(s.save_yaml())
     except Exception as exc:
         config_persisted = False
         persist_error = str(exc)
         logger.warning("Could not persist runtime settings: %s", exc)
+    try:
+        s.save_browser_runtime_bridge()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not persist browser runtime bridge: %s", exc)
 
     pricing_sync: dict[str, Any] = {}
     if s.provider_pricing_sync_enabled:

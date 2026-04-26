@@ -6,6 +6,7 @@ import {
   trackNewTabs,
   withBrowserSession,
 } from '../shared/tool-runtime.js';
+import { getPageNetworkDiagnostics } from '../shared/browser.js';
 import { getBrowserRuntimeSettings } from '../shared/runtime-config.js';
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -437,6 +438,80 @@ async function invokeMediaPlayback(frame, handle, { mute = false } = {}) {
   };
 }
 
+async function runPlaybackPreflight(frame) {
+  return frame.evaluate(() => {
+    const overlaySelectors = [
+      '[class*="cookie"]',
+      '[class*="consent"]',
+      '[class*="modal"]',
+      '[class*="overlay"]',
+      '[class*="popup"]',
+      '[class*="banner"]',
+      '[id*="cookie"]',
+      '[id*="consent"]',
+      '[role="dialog"]',
+    ];
+    const actionKeywords = ['accept', 'agree', 'continue', 'close', 'dismiss', 'skip', 'ok', 'allow', 'got it'];
+    const candidates = Array.from(document.querySelectorAll('button,[role="button"],a,input[type="button"],input[type="submit"]'));
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+    const visible = (node) => {
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0
+        && rect.height > 0
+        && style.display !== 'none'
+        && style.visibility !== 'hidden'
+        && style.opacity !== '0';
+    };
+    const overlays = Array.from(document.querySelectorAll(overlaySelectors.join(',')))
+      .filter(visible)
+      .slice(0, 12)
+      .map((node) => {
+        const rect = node.getBoundingClientRect();
+        return {
+          text: (node.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 160),
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+          covers_center: rect.left <= centerX && rect.right >= centerX && rect.top <= centerY && rect.bottom >= centerY,
+        };
+      });
+    const actions = [];
+
+    for (const node of candidates) {
+      if (!visible(node)) continue;
+      const label = `${node.innerText || node.textContent || node.getAttribute('aria-label') || node.value || ''}`.replace(/\s+/g, ' ').trim();
+      const normalized = label.toLowerCase();
+      if (!normalized || !actionKeywords.some((keyword) => normalized.includes(keyword))) continue;
+      const rect = node.getBoundingClientRect();
+      const overlapsCenter = rect.left <= centerX && rect.right >= centerX && rect.top <= centerY && rect.bottom >= centerY;
+      const nearOverlay = overlays.some((overlay) => overlay.covers_center);
+      if (!overlapsCenter && !nearOverlay) continue;
+      try {
+        node.click();
+        actions.push(label.slice(0, 120));
+      } catch {
+        // ignore
+      }
+      if (actions.length >= 4) break;
+    }
+
+    return {
+      overlays_detected: overlays.length,
+      overlays,
+      actions,
+      clicked: actions.length > 0,
+    };
+  }).catch(() => ({
+    overlays_detected: 0,
+    overlays: [],
+    actions: [],
+    clicked: false,
+  }));
+}
+
 export async function playMedia({
   frame_path = 'root',
   element_ref = '',
@@ -445,13 +520,14 @@ export async function playMedia({
   text = '',
   wait_ms = 1500,
   browserWsEndpoint,
+  browserProfile = '',
 } = {}) {
   const mediaRuntime = getMediaRuntimeConfig();
 
   return withBrowserSession(browserWsEndpoint, async ({ context, page }) => {
     const before = await capturePageSnapshot(page, frame_path);
     const tabs = trackNewTabs(context);
-    const resolved = await resolveElementTarget(page, { frame_path, element_ref, selector, xpath, text });
+    let resolved = await resolveElementTarget(page, { frame_path, element_ref, selector, xpath, text });
 
     if (!resolved.ok) {
       tabs.dispose();
@@ -466,6 +542,16 @@ export async function playMedia({
           resolution_attempts: resolved.resolution_attempts || [],
         },
       });
+    }
+
+    const preflight = await runPlaybackPreflight(resolved.frame);
+    if (preflight.clicked) {
+      await wait(350);
+      const refreshed = await resolveElementTarget(page, { frame_path, element_ref, selector, xpath, text });
+      if (refreshed.ok) {
+        await resolved.handle.dispose().catch(() => {});
+        resolved = refreshed;
+      }
     }
 
     const attempts = [];
@@ -531,6 +617,7 @@ export async function playMedia({
     }
 
     const after = await capturePageSnapshot(page, resolved.frame_path);
+    const network_diagnostics = getPageNetworkDiagnostics(page, { limit: 12 });
     const result = await buildEnvelope(page, {
       frame_path: resolved.frame_path,
       ok: playbackStarted || (!mediaRuntime.verify_playback && !finalError),
@@ -543,16 +630,23 @@ export async function playMedia({
         frame_fallback_applied: Boolean(resolved.frame_fallback_applied),
         frame_relocated: Boolean(resolved.frame_relocated),
         resolution_attempts: resolved.resolution_attempts || [],
+        preflight,
         playback_started: playbackStarted,
         playback_events: finalProbe.events || [],
         attempts,
         media_error_code: finalProbe.media_error_code,
         final_error: playbackStarted ? null : finalError,
+        effective_policy: network_diagnostics.effective_policy,
+        effective_runtime: network_diagnostics.effective_runtime,
+        critical_resource_failures: network_diagnostics.critical_resource_failures,
+        render_gap_signals: network_diagnostics.render_gap_signals,
+        manifest_failure: network_diagnostics.manifest_failure,
+        network_diagnostics,
       },
     });
     await resolved.handle.dispose().catch(() => {});
     return result;
-  });
+  }, { browserProfile });
 }
 
 export async function swipeRegion({

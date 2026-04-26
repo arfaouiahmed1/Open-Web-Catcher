@@ -4,11 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3001",
-    "build": "next build",
+    "build": "node ./scripts/next-build.mjs",
     "start": "next start -p 3001",
     "lint": "next lint",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --configLoader native --pool threads",
+    "test:watch": "vitest --configLoader native --pool threads"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.0",

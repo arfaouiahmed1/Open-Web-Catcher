@@ -124,8 +124,15 @@ docker compose up --build
 
 Backend tests:
 
-```bash
-pytest tests/
+```powershell
+.venv\Scripts\python.exe -m pytest tests/
+```
+
+If `.venv\Scripts\python.exe -m pytest` fails because `pytest` is missing, bootstrap the dev environment first:
+
+```powershell
+uv venv .venv --python 3.11
+uv pip install --python .venv\Scripts\python.exe -e ".[dev]"
 ```
 
 Web production build:
@@ -133,6 +140,13 @@ Web production build:
 ```bash
 cd web
 npm run build
+```
+
+Web test suite:
+
+```bash
+cd web
+npm test
 ```
 
 ## Documentation Map

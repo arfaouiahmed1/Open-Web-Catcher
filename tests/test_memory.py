@@ -49,6 +49,38 @@ def test_short_term_memory_builds_bounded_working_state():
     assert "next best move" in working_state
 
 
+def test_short_term_memory_working_state_surfaces_anchor_navigation_and_iframe_evidence():
+    memory = ShortTermMemory(k=6, page_type="hosting_page")
+
+    memory.ingest_tool_result(
+        "harvest",
+        {"player_iframe_url": "https://embed.example.com/player/1"},
+        {
+            "servers": [
+                {
+                    "label": "Server 1",
+                    "server_up": True,
+                    "player_state": "playing",
+                    "player_iframe_url": "https://embed.example.com/player/1",
+                }
+            ]
+        },
+    )
+
+    working_state = memory.working_state(
+        objective="Extract streams from the host page.",
+        page_url="https://example.com/watch/1",
+        page_type="hosting_page",
+        anchor_url="https://example.com/watch/1",
+        navigation_policy="same-content okay",
+    )
+
+    assert "assigned anchor url" in working_state
+    assert "same-content okay" in working_state
+    assert "recent iframe/embed evidence" in working_state
+    assert "https://embed.example.com/player/1" in working_state
+
+
 def test_long_term_memory_builds_site_hints_for_future_runs(tmp_path):
     memory = LongTermMemory(str(tmp_path / "site_memory.db"))
 

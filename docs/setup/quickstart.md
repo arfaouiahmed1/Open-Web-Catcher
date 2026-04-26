@@ -36,8 +36,15 @@ Use the console:
 
 Backend:
 
-```bash
-pytest tests/
+```powershell
+.venv\Scripts\python.exe -m pytest tests/
+```
+
+If the virtualenv does not exist yet, create it and install dev dependencies first:
+
+```powershell
+uv venv .venv --python 3.11
+uv pip install --python .venv\Scripts\python.exe -e ".[dev]"
 ```
 
 Web:
@@ -45,4 +52,5 @@ Web:
 ```bash
 cd web
 npm run build
+npm test
 ```

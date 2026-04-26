@@ -304,15 +304,23 @@ export function NotificationProvider({ children }) {
   useEffect(() => {
     let alive = true;
 
+    function onTrackRun(event) {
+      const runId = event?.detail?.runId;
+      if (!runId || trackedRuns.current.has(runId)) return;
+      trackedRuns.current.add(runId);
+      watchRun(runId);
+    }
+
     async function poll() {
       try {
-        const res = await fetch(apiUrl("/ui/overview"));
+        const res = await fetch(apiUrl("/ui/runs?limit=50&offset=0"));
         if (!res.ok || !alive) return;
         const data = await res.json();
-        const activeRuns = data?.active_runs || [];
+        const activeRuns = data?.rows || [];
         for (const run of activeRuns) {
+          const status = String(run?.final_status || run?.status || "").toLowerCase();
           const id = run.run_id;
-          if (id && !trackedRuns.current.has(id)) {
+          if (id && ["queued", "running"].includes(status) && !trackedRuns.current.has(id)) {
             trackedRuns.current.add(id);
             watchRun(id);
           }
@@ -320,11 +328,13 @@ export function NotificationProvider({ children }) {
       } catch { /* ignore */ }
     }
 
+    window.addEventListener("owc:track-run", onTrackRun);
     poll();
     const timer = setInterval(poll, 5000);
     return () => {
       alive = false;
       clearInterval(timer);
+      window.removeEventListener("owc:track-run", onTrackRun);
       for (const es of Object.values(streamRefs.current)) {
         try { es.close(); } catch {}
       }

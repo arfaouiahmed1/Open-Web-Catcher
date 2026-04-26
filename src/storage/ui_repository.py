@@ -17,6 +17,9 @@ from src.storage.models import (
     RunRecord,
     AgentOutputRecord,
     BackgroundJobRecord,
+    DatasetBatchRecord,
+    DatasetSiteRecord,
+    DatasetSiteRunRecord,
     EvaluationCaseRecord,
     EvaluationCaseResultRecord,
     EvaluationRunRecord,
@@ -38,6 +41,12 @@ from src.storage.models import (
     ToolCallRecord,
     ToolPlaygroundCallRecord,
 )
+from src.utils.console_state import (
+    country_code_from_value,
+    flag_emoji_from_country_code,
+    normalize_job_display_status,
+    normalize_run_display_status,
+)
 
 
 def _json_ready(value: Any) -> Any:
@@ -48,6 +57,46 @@ def _json_ready(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: _json_ready(item) for key, item in value.items()}
     return value
+
+
+def _max_concurrency(items: list[dict[str, Any]]) -> int:
+    timeline: list[tuple[datetime, int]] = []
+    for item in items:
+        started_at = item.get("started_at")
+        finished_at = item.get("finished_at")
+        status = str(item.get("status", "") or "").strip().lower()
+        if not isinstance(started_at, datetime):
+            continue
+        timeline.append((started_at, 1))
+        if isinstance(finished_at, datetime):
+            timeline.append((finished_at, -1))
+        elif status in {"running", "queued"}:
+            timeline.append((datetime.utcnow(), -1))
+    active = 0
+    peak = 0
+    for _, delta in sorted(timeline, key=lambda entry: (entry[0], -entry[1])):
+        active += delta
+        peak = max(peak, active)
+    return peak
+
+
+def _aggregate_agent_status(statuses: list[str]) -> str:
+    normalized = [str(value or "").strip().lower() for value in statuses if str(value or "").strip()]
+    if not normalized:
+        return "unknown"
+    if any(value == "running" for value in normalized):
+        return "running"
+    if any(value == "queued" for value in normalized):
+        return "queued"
+    if any(value == "failed" for value in normalized):
+        return "failed"
+    if any(value == "cancelled" for value in normalized):
+        return "cancelled"
+    if any(value == "partial" for value in normalized):
+        return "partial"
+    if all(value == "success" for value in normalized):
+        return "success"
+    return normalized[-1]
 
 
 class OperatorConsoleRepository:
@@ -75,6 +124,9 @@ class OperatorConsoleRepository:
         "evaluation_cases": EvaluationCaseRecord,
         "evaluation_runs": EvaluationRunRecord,
         "evaluation_case_results": EvaluationCaseResultRecord,
+        "dataset_sites": DatasetSiteRecord,
+        "dataset_batches": DatasetBatchRecord,
+        "dataset_site_runs": DatasetSiteRunRecord,
         "runs": RunRecord,
         "memory_hints_used": MemoryHintUsedRecord,
     }
@@ -237,6 +289,12 @@ class OperatorConsoleRepository:
             .limit(10)
             .all()
         )
+        unique_provider_count = int(
+            self._session.query(func.count(func.distinct(ProviderAnalysisRecord.provider)))
+            .filter(ProviderAnalysisRecord.provider != "")
+            .scalar()
+            or 0
+        )
 
         top_tool_rows = self._merged_top_tool_rows(limit=10)
 
@@ -253,6 +311,49 @@ class OperatorConsoleRepository:
                 4,
             ) if eval_runs else 0.0,
         }
+
+        background_totals = self._session.query(
+            func.coalesce(func.sum(case((BackgroundJobRecord.status == "queued", 1), else_=0)), 0),
+            func.coalesce(func.sum(case((BackgroundJobRecord.status.in_(["running", "retrying"]), 1), else_=0)), 0),
+            func.coalesce(func.sum(case(((BackgroundJobRecord.job_type == "workflow") & (BackgroundJobRecord.status.in_(["queued", "running", "retrying"])), 1), else_=0)), 0),
+            func.coalesce(func.sum(case(((BackgroundJobRecord.job_type == "agent") & (BackgroundJobRecord.status.in_(["queued", "running", "retrying"])), 1), else_=0)), 0),
+        ).one()
+        failed_window_count = int(
+            self._session.query(func.count(PipelineRunRecord.id))
+            .filter(PipelineRunRecord.final_status == "failed")
+            .filter(PipelineRunRecord.created_at >= datetime.utcnow() - timedelta(hours=24))
+            .scalar()
+            or 0
+        )
+
+        recent_parallelism = 0
+        recent_run_ids = [row.id for row in recent_runs]
+        if recent_run_ids:
+            recent_agent_rows = (
+                self._session.query(
+                    AgentRunRecord.pipeline_run_id,
+                    AgentRunRecord.status,
+                    AgentRunRecord.started_at,
+                    AgentRunRecord.finished_at,
+                )
+                .filter(AgentRunRecord.pipeline_run_id.in_(recent_run_ids))
+                .all()
+            )
+            grouped_parallelism: dict[int, list[dict[str, Any]]] = defaultdict(list)
+            for pipeline_run_id, agent_status, started_at, finished_at in recent_agent_rows:
+                grouped_parallelism[int(pipeline_run_id)].append(
+                    {
+                        "status": agent_status,
+                        "started_at": started_at,
+                        "finished_at": finished_at,
+                    }
+                )
+            recent_parallelism = max((_max_concurrency(items) for items in grouped_parallelism.values()), default=0)
+
+        active_traces = active_traces or []
+        active_workflows = len([trace for trace in active_traces if not bool(trace.get("completed")) and str(trace.get("root_actor", "") or "") == "orchestrator"])
+        active_agents = len([trace for trace in active_traces if not bool(trace.get("completed")) and str(trace.get("root_actor", "") or "") != "orchestrator"])
+        provider_coverage = round(unique_provider_count / total_provider_analyses, 4) if total_provider_analyses else 0.0
 
         return {
             "summary": {
@@ -287,7 +388,15 @@ class OperatorConsoleRepository:
                 "avg_streams_per_run": round(total_streams / rate_denominator, 3) if rate_denominator else 0.0,
                 "avg_emails_per_run": round(total_emails / rate_denominator, 3) if rate_denominator else 0.0,
                 "total_provider_analyses": total_provider_analyses,
-                "active_runs": len([trace for trace in (active_traces or []) if not bool(trace.get("completed"))]),
+                "active_runs": len([trace for trace in active_traces if not bool(trace.get("completed"))]),
+                "queued_jobs": int(background_totals[0] or 0),
+                "running_jobs": int(background_totals[1] or 0),
+                "running_workflows": active_workflows + int(background_totals[2] or 0),
+                "running_agent_invocations": active_agents + int(background_totals[3] or 0),
+                "recent_max_parallelism": recent_parallelism,
+                "failed_run_window_24h": failed_window_count,
+                "provider_coverage": provider_coverage,
+                "unique_providers": unique_provider_count,
             },
             "trend": trend_buckets,
             "model_breakdown": model_breakdown_rows,
@@ -312,7 +421,7 @@ class OperatorConsoleRepository:
             ],
             "recent_runs": [self._run_row(row) for row in recent_runs],
             "evaluation_summary": eval_summary,
-            "active_runs": active_traces or [],
+            "active_runs": active_traces,
         }
 
     def list_runs(
@@ -322,21 +431,19 @@ class OperatorConsoleRepository:
         offset: int = 0,
         status: str = "",
         page_type: str = "",
+        query: str = "",
+        actor: str = "",
     ) -> dict[str, Any]:
-        query = self._session.query(PipelineRunRecord)
+        query_obj = self._session.query(PipelineRunRecord)
         if status:
-            query = query.filter(PipelineRunRecord.final_status == status)
+            query_obj = query_obj.filter(PipelineRunRecord.final_status == status)
         if page_type:
-            query = query.filter(PipelineRunRecord.page_type == page_type)
-        total = query.count()
-        rows = (
-            query.order_by(PipelineRunRecord.created_at.desc())
-            .offset(max(offset, 0))
-            .limit(max(limit, 1))
-            .all()
-        )
+            query_obj = query_obj.filter(PipelineRunRecord.page_type == page_type)
+        rows = query_obj.order_by(PipelineRunRecord.created_at.desc()).all()
         run_ids = [row.id for row in rows]
         model_map: dict[int, tuple[str, str]] = {}
+        root_actor_map: dict[int, str] = {}
+        max_parallelism_map: dict[int, int] = {}
         if run_ids:
             max_calls_sq = (
                 self._session.query(
@@ -364,20 +471,76 @@ class OperatorConsoleRepository:
                 if d.pipeline_run_id not in model_map:
                     model_map[d.pipeline_run_id] = (d.provider, d.model_name)
 
+            agent_rows = (
+                self._session.query(
+                    AgentRunRecord.pipeline_run_id,
+                    AgentRunRecord.actor,
+                    AgentRunRecord.status,
+                    AgentRunRecord.started_at,
+                    AgentRunRecord.finished_at,
+                    AgentRunRecord.id,
+                )
+                .filter(AgentRunRecord.pipeline_run_id.in_(run_ids))
+                .order_by(AgentRunRecord.pipeline_run_id.asc(), AgentRunRecord.started_at.asc(), AgentRunRecord.id.asc())
+                .all()
+            )
+            agent_groups: dict[int, list[dict[str, Any]]] = defaultdict(list)
+            for pipeline_run_id, root_actor, agent_status, started_at, finished_at, _ in agent_rows:
+                pipeline_key = int(pipeline_run_id)
+                if pipeline_key not in root_actor_map:
+                    root_actor_map[pipeline_key] = str(root_actor or "")
+                agent_groups[pipeline_key].append(
+                    {
+                        "status": agent_status,
+                        "started_at": started_at,
+                        "finished_at": finished_at,
+                    }
+                )
+            max_parallelism_map = {
+                pipeline_run_id: _max_concurrency(items)
+                for pipeline_run_id, items in agent_groups.items()
+            }
+
         result_rows = []
+        query_text = str(query or "").strip().lower()
+        actor_text = str(actor or "").strip().lower()
         for row in rows:
-            r = self._run_row(row)
+            r = self._run_row(
+                row,
+                root_actor=root_actor_map.get(row.id, ""),
+                job_status="",
+                max_parallel_agents=max_parallelism_map.get(row.id, 0),
+            )
             provider, model_name = model_map.get(row.id, ("", ""))
             r["primary_provider"] = provider
             r["primary_model"] = model_name
+            haystack = " ".join(
+                [
+                    str(r.get("run_id", "") or ""),
+                    str(r.get("url", "") or ""),
+                    str(r.get("page_type", "") or ""),
+                    str(r.get("final_status", "") or ""),
+                    str(r.get("failure_mode", "") or ""),
+                    str(provider or ""),
+                    str(model_name or ""),
+                    str(r.get("root_actor", "") or ""),
+                ]
+            ).lower()
+            if query_text and query_text not in haystack:
+                continue
+            if actor_text and actor_text != str(r.get("root_actor", "") or "").strip().lower():
+                continue
             result_rows.append(r)
-        return {"total": total, "rows": result_rows}
+        total = len(result_rows)
+        sliced = result_rows[max(offset, 0) : max(offset, 0) + max(limit, 1)]
+        return {"total": total, "rows": sliced}
 
     def get_run_detail(self, run_id: str) -> dict[str, Any] | None:
         pipeline = self._session.query(PipelineRunRecord).filter_by(run_id=run_id).first()
         if pipeline is None:
             return None
         snapshot = self._session.query(RunSnapshotRecord).filter_by(run_id=run_id).first()
+        job = self._session.query(BackgroundJobRecord).filter_by(run_id=run_id).first()
         agent_runs = (
             self._session.query(AgentRunRecord)
             .filter_by(pipeline_run_id=pipeline.id)
@@ -404,13 +567,216 @@ class OperatorConsoleRepository:
             .order_by(RuntimeEventRecord.seq.asc())
             .all()
         )
+        outputs = (
+            self._session.query(AgentOutputRecord, AgentRunRecord)
+            .join(AgentRunRecord, AgentRunRecord.id == AgentOutputRecord.agent_run_id)
+            .filter(AgentRunRecord.pipeline_run_id == pipeline.id)
+            .order_by(AgentRunRecord.started_at.asc(), AgentRunRecord.id.asc())
+            .all()
+        )
+
+        output_map: dict[int, dict[str, Any]] = {}
+        agent_output_rows: list[dict[str, Any]] = []
+        for output_row, agent_row in outputs:
+            payload = self._serialize_model(output_row)
+            payload["agent_run_id"] = int(agent_row.id)
+            payload["actor"] = str(agent_row.actor or "")
+            payload["agent_type"] = str(agent_row.agent_type or "")
+            payload["invocation_index"] = int(agent_row.invocation_index or 0)
+            output_map[int(agent_row.id)] = payload
+            agent_output_rows.append(payload)
+
+        llm_by_agent: dict[int, list[LLMCallRecord]] = defaultdict(list)
+        for llm_call in llm_calls:
+            llm_by_agent[int(llm_call.agent_run_id)].append(llm_call)
+
+        tool_by_agent: dict[int, list[ToolCallRecord]] = defaultdict(list)
+        for tool_call in tool_calls:
+            tool_by_agent[int(tool_call.agent_run_id)].append(tool_call)
+
+        agent_rollups: list[dict[str, Any]] = []
+        stage_rollups: dict[str, dict[str, Any]] = {}
+        parallel_rows: list[dict[str, Any]] = []
+        parallel_by_stage: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        root_actor = str(agent_runs[0].actor or "") if agent_runs else ""
+
+        for agent_row in agent_runs:
+            agent_id = int(agent_row.id)
+            llm_rows = llm_by_agent.get(agent_id, [])
+            tool_rows = tool_by_agent.get(agent_id, [])
+            output_row = output_map.get(agent_id, {})
+            input_tokens = sum(int(item.input_tokens or 0) for item in llm_rows)
+            output_tokens = sum(int(item.output_tokens or 0) for item in llm_rows)
+            cached_input_tokens = sum(
+                int(((item.usage_metadata_json or {}).get("cached_input_tokens", 0)) or 0)
+                for item in llm_rows
+            )
+            new_input_tokens = sum(
+                int(
+                    ((item.usage_metadata_json or {}).get("new_input_tokens", max(int(item.input_tokens or 0) - int(((item.usage_metadata_json or {}).get("cached_input_tokens", 0)) or 0), 0)))
+                    or 0
+                )
+                for item in llm_rows
+            )
+            total_cost = sum(float(item.estimated_total_cost_usd or 0.0) for item in llm_rows)
+            stage_key = str(agent_row.agent_type or agent_row.actor or "unknown")
+            status_value = normalize_run_display_status(
+                str(agent_row.status or ""),
+                failure_mode="",
+                success=str(agent_row.status or "").strip().lower() == "success",
+            )
+            rollup = {
+                "agent_run_id": agent_id,
+                "actor": str(agent_row.actor or ""),
+                "agent_type": stage_key,
+                "status": status_value,
+                "started_at": _json_ready(agent_row.started_at),
+                "finished_at": _json_ready(agent_row.finished_at),
+                "duration_seconds": float(agent_row.duration_seconds or 0.0),
+                "tool_calls": len(tool_rows),
+                "tool_calls_made": int(agent_row.tool_calls_made or 0),
+                "llm_calls": len(llm_rows),
+                "llm_calls_made": int(agent_row.llm_calls_made or 0),
+                "invocation_index": int(agent_row.invocation_index or 0),
+                "input_tokens": input_tokens,
+                "cached_input_tokens": cached_input_tokens,
+                "new_input_tokens": new_input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": input_tokens + output_tokens,
+                "cost_usd": round(total_cost, 6),
+                "stream_count": int(output_row.get("stream_count", 0) or 0),
+                "embedded_url_count": int(output_row.get("embedded_url_count", 0) or 0),
+                "hosting_page_count": int(output_row.get("hosting_page_count", 0) or 0),
+                "output_summary": str(output_row.get("summary_text", "") or ""),
+                "raw_output": output_row.get("output_json", {}) or {},
+            }
+            agent_rollups.append(rollup)
+
+            stage_entry = stage_rollups.setdefault(
+                stage_key,
+                {
+                    "agent_type": stage_key,
+                    "actors": set(),
+                    "statuses": [],
+                    "started_values": [],
+                    "finished_values": [],
+                    "duration_seconds": 0.0,
+                    "tool_calls": 0,
+                    "llm_calls": 0,
+                    "input_tokens": 0,
+                    "cached_input_tokens": 0,
+                    "new_input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": 0,
+                    "cost_usd": 0.0,
+                    "invocations": 0,
+                    "stream_count": 0,
+                    "output_summaries": [],
+                },
+            )
+            stage_entry["actors"].add(str(agent_row.actor or ""))
+            stage_entry["statuses"].append(status_value)
+            if isinstance(agent_row.started_at, datetime):
+                stage_entry["started_values"].append(agent_row.started_at)
+            if isinstance(agent_row.finished_at, datetime):
+                stage_entry["finished_values"].append(agent_row.finished_at)
+            stage_entry["duration_seconds"] += float(agent_row.duration_seconds or 0.0)
+            stage_entry["tool_calls"] += len(tool_rows)
+            stage_entry["llm_calls"] += len(llm_rows)
+            stage_entry["input_tokens"] += input_tokens
+            stage_entry["cached_input_tokens"] += cached_input_tokens
+            stage_entry["new_input_tokens"] += new_input_tokens
+            stage_entry["output_tokens"] += output_tokens
+            stage_entry["total_tokens"] += input_tokens + output_tokens
+            stage_entry["cost_usd"] += total_cost
+            stage_entry["invocations"] += 1
+            stage_entry["stream_count"] += int(output_row.get("stream_count", 0) or 0)
+            if output_row.get("summary_text"):
+                stage_entry["output_summaries"].append(str(output_row.get("summary_text", "") or ""))
+
+            parallel_item = {
+                "status": status_value,
+                "started_at": agent_row.started_at,
+                "finished_at": agent_row.finished_at,
+            }
+            parallel_rows.append(parallel_item)
+            parallel_by_stage[stage_key].append(parallel_item)
+
+        stage_rollup_rows = []
+        for stage_key, values in stage_rollups.items():
+            stage_rollup_rows.append(
+                {
+                    "agent_type": stage_key,
+                    "actors": sorted([actor for actor in values["actors"] if actor]),
+                    "status": _aggregate_agent_status(values["statuses"]),
+                    "invocations": int(values["invocations"] or 0),
+                    "started_at": _json_ready(min(values["started_values"])) if values["started_values"] else "",
+                    "finished_at": _json_ready(max(values["finished_values"])) if values["finished_values"] else "",
+                    "duration_seconds": round(float(values["duration_seconds"] or 0.0), 3),
+                    "tool_calls": int(values["tool_calls"] or 0),
+                    "llm_calls": int(values["llm_calls"] or 0),
+                    "input_tokens": int(values["input_tokens"] or 0),
+                    "cached_input_tokens": int(values["cached_input_tokens"] or 0),
+                    "new_input_tokens": int(values["new_input_tokens"] or 0),
+                    "output_tokens": int(values["output_tokens"] or 0),
+                    "total_tokens": int(values["total_tokens"] or 0),
+                    "cost_usd": round(float(values["cost_usd"] or 0.0), 6),
+                    "stream_count": int(values["stream_count"] or 0),
+                    "output_summary": "\n".join(values["output_summaries"][:3]),
+                    "max_parallel_agents": _max_concurrency(parallel_by_stage.get(stage_key, [])),
+                    "active_parallel_agents": len(
+                        [
+                            item
+                            for item in parallel_by_stage.get(stage_key, [])
+                            if item.get("finished_at") is None and str(item.get("status", "") or "") in {"queued", "running"}
+                        ]
+                    ),
+                }
+            )
+
+        job_state = self._job_state_row(job)
+        run_payload = self._run_row(
+            pipeline,
+            root_actor=root_actor,
+            job_status=str(job.status or "") if job is not None else "",
+            max_parallel_agents=_max_concurrency(parallel_rows),
+        )
         return {
-            "run": self._run_row(pipeline),
+            "run": run_payload,
             "snapshot": snapshot.snapshot_json if snapshot else {},
             "agent_runs": [self._serialize_model(row) for row in agent_runs],
+            "agent_outputs": agent_output_rows,
+            "agent_rollups": agent_rollups,
+            "stage_rollups": stage_rollup_rows,
+            "parallelism": {
+                "current_parallel_agents": len(
+                    [
+                        item
+                        for item in parallel_rows
+                        if item.get("finished_at") is None and str(item.get("status", "") or "") in {"queued", "running"}
+                    ]
+                ),
+                "max_parallel_agents": _max_concurrency(parallel_rows),
+                "by_stage": [
+                    {
+                        "agent_type": stage_key,
+                        "current_parallel_agents": len(
+                            [
+                                item
+                                for item in items
+                                if item.get("finished_at") is None and str(item.get("status", "") or "") in {"queued", "running"}
+                            ]
+                        ),
+                        "max_parallel_agents": _max_concurrency(items),
+                    }
+                    for stage_key, items in parallel_by_stage.items()
+                ],
+            },
             "tool_calls": [self._serialize_model(row) for row in tool_calls],
             "llm_calls": [self._llm_row(row) for row in llm_calls],
             "events": [self._serialize_model(row) for row in events],
+            "job": job_state,
+            "job_state": job_state,
         }
 
     def ensure_default_evaluation_suites(self) -> list[EvaluationSuite]:
@@ -717,7 +1083,14 @@ class OperatorConsoleRepository:
             rows.append(row)
             self._session.add(row)
         self._session.commit()
-        return [self._serialize_model(row) for row in rows]
+        payloads = []
+        for row in rows:
+            payload = self._serialize_model(row)
+            code = country_code_from_value(str(row.country or ""))
+            payload["country_code"] = code
+            payload["flag"] = flag_emoji_from_country_code(code)
+            payloads.append(payload)
+        return payloads
 
     def get_provider_lookup_history(self, *, limit: int = 20, offset: int = 0) -> dict[str, Any]:
         query = self._session.query(ProviderLookupCheckRecord)
@@ -758,9 +1131,27 @@ class OperatorConsoleRepository:
             func.count(func.distinct(case((ProviderLookupCheckRecord.provider != "", ProviderLookupCheckRecord.provider), else_=None))),
             func.count(func.distinct(case((ProviderLookupCheckRecord.hostname != "", ProviderLookupCheckRecord.hostname), else_=None))),
         ).one()
+        serialized_rows = []
+        for row in rows:
+            payload = self._serialize_model(row)
+            code = country_code_from_value(str(row.country or ""))
+            payload["country_code"] = code
+            payload["flag"] = flag_emoji_from_country_code(code)
+            serialized_rows.append(payload)
+        top_country_rows = []
+        for country, count in top_countries:
+            code = country_code_from_value(str(country or ""))
+            top_country_rows.append(
+                {
+                    "country": country,
+                    "country_code": code,
+                    "flag": flag_emoji_from_country_code(code),
+                    "count": int(count or 0),
+                }
+            )
         return {
             "total": total,
-            "rows": [self._serialize_model(row) for row in rows],
+            "rows": serialized_rows,
             "summary": {
                 "total_checks": int(summary[0] or 0),
                 "resolved_ips": int(summary[1] or 0),
@@ -773,11 +1164,23 @@ class OperatorConsoleRepository:
                 {"provider": provider, "count": int(count or 0)}
                 for provider, count in top_providers
             ],
-            "top_countries": [
-                {"country": country, "count": int(count or 0)}
-                for country, count in top_countries
-            ],
+            "top_countries": top_country_rows,
+            "country_map": {
+                "points": top_country_rows,
+                "covered_country_codes": [row["country_code"] for row in top_country_rows if row.get("country_code")],
+            },
         }
+
+    def list_recent_runtime_events(self, *, limit: int = 30) -> list[dict[str, Any]]:
+        rows = (
+            self._session.query(RuntimeEventRecord)
+            .order_by(RuntimeEventRecord.created_at.desc(), RuntimeEventRecord.id.desc())
+            .limit(max(limit, 1))
+            .all()
+        )
+        payloads = [self._serialize_model(row) for row in rows]
+        payloads.reverse()
+        return payloads
 
     def list_database_table(self, table: str, *, limit: int = 50, offset: int = 0) -> dict[str, Any]:
         model = self.TABLE_MAP.get(table)
@@ -796,13 +1199,48 @@ class OperatorConsoleRepository:
             "total": total,
         }
 
-    def _run_row(self, row: PipelineRunRecord) -> dict[str, Any]:
+    def _job_state_row(self, row: BackgroundJobRecord | None) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        display_status = normalize_job_display_status(str(row.status or ""))
+        return {
+            "job_id": str(row.job_id or ""),
+            "run_id": str(row.run_id or ""),
+            "job_type": str(row.job_type or ""),
+            "actor": str(row.actor or ""),
+            "status": str(row.status or ""),
+            "display_status": display_status,
+            "attempts": int(row.attempts or 0),
+            "max_attempts": int(row.max_attempts or 0),
+            "error_text": str(row.error_text or ""),
+            "created_at": _json_ready(row.created_at),
+            "started_at": _json_ready(row.started_at),
+            "finished_at": _json_ready(row.finished_at),
+            "heartbeat_at": _json_ready(row.heartbeat_at),
+        }
+
+    def _run_row(
+        self,
+        row: PipelineRunRecord,
+        *,
+        root_actor: str = "",
+        job_status: str = "",
+        max_parallel_agents: int = 0,
+    ) -> dict[str, Any]:
         total_cost = float(row.estimated_total_cost_usd or 0.0)
+        display_status = normalize_run_display_status(
+            str(row.final_status or ""),
+            success=bool(row.success),
+            failure_mode=str(row.failure_mode or ""),
+            job_status=job_status,
+        )
         return {
             "run_id": row.run_id,
             "url": row.root_url,
             "page_type": row.page_type,
-            "final_status": row.final_status,
+            "status": display_status,
+            "final_status": display_status,
+            "persisted_final_status": row.final_status,
             "success": row.success,
             "stream_count": row.stream_count,
             "screenshot_count": row.screenshot_count,
@@ -817,6 +1255,11 @@ class OperatorConsoleRepository:
             "duration_seconds": float(row.duration_seconds or 0.0),
             "failure_mode": row.failure_mode or "",
             "top_level_page_type": row.top_level_page_type or "",
+            "root_actor": root_actor,
+            "started_at": _json_ready(row.started_at),
+            "finished_at": _json_ready(row.finished_at),
+            "job_state": normalize_job_display_status(job_status) if job_status else "",
+            "max_parallel_agents": int(max_parallel_agents or 0),
             "created_at": row.created_at.isoformat(),
         }
 

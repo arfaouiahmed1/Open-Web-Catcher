@@ -26,6 +26,10 @@ function readRuntimePayload() {
   }
 }
 
+export function getRuntimeConfigPayload() {
+  return readRuntimePayload();
+}
+
 export function getBrowserRuntimeSettings(browserId) {
   const payload = readRuntimePayload();
   const container = payload?.browser_runtime && typeof payload.browser_runtime === 'object'
@@ -33,4 +37,20 @@ export function getBrowserRuntimeSettings(browserId) {
     : payload;
   const settings = container?.[browserId];
   return settings && typeof settings === 'object' ? settings : {};
+}
+
+export function getRuntimeSyncStatus() {
+  const payload = readRuntimePayload();
+  const runtimeSync = payload?.runtime_sync;
+  return runtimeSync && typeof runtimeSync === 'object' ? runtimeSync : {};
+}
+
+export function getEffectiveRuntimeMetadata(browserId) {
+  const payload = readRuntimePayload();
+  return {
+    browser_engine: String(payload?.browser_engine || '').trim(),
+    browser_id: browserId,
+    runtime_sync: getRuntimeSyncStatus(),
+    settings: getBrowserRuntimeSettings(browserId),
+  };
 }

@@ -7,6 +7,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { apiUrl } from "@/lib/api";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/utils";
 import { KpiCard } from "@/components/kpi-card";
+import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
 
 const TABS = [
   { id: "overview", label: "Overview" },
@@ -210,6 +211,7 @@ function OverviewPageContent() {
   const [toolRel, setToolRel] = useState(null);
   const [agentRunsDb, setAgentRunsDb] = useState(null);
   const [failedData, setFailedData] = useState(null);
+  const [runtimeEvents, setRuntimeEvents] = useState([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -219,13 +221,15 @@ function OverviewPageContent() {
       apiFetch("/ui/tools/reliability?limit=20"),
       apiFetch("/ui/database/agent_runs?limit=300"),
       apiFetch("/ui/runs?status=failed&limit=12&offset=0"),
+      apiFetch("/ui/events/recent?limit=30"),
     ])
-      .then(([overviewRes, toolRes, agentRes, failedRes]) => {
+      .then(([overviewRes, toolRes, agentRes, failedRes, eventsRes]) => {
         if (!mounted) return;
         setOverview(overviewRes.status === "fulfilled" ? overviewRes.value : {});
         setToolRel(toolRes.status === "fulfilled" ? toolRes.value : {});
         setAgentRunsDb(agentRes.status === "fulfilled" ? agentRes.value : {});
         setFailedData(failedRes.status === "fulfilled" ? failedRes.value : {});
+        setRuntimeEvents(eventsRes.status === "fulfilled" ? (eventsRes.value?.events || []) : []);
         if (overviewRes.status !== "fulfilled") {
           setError("Could not load overview data.");
         }
@@ -316,6 +320,18 @@ function OverviewPageContent() {
     { label: "Cached input", value: formatNumber(summary.total_cached_input_tokens || 0), description: "Prompt cache tokens" },
     { label: "Tool success", value: formatPercent(summary.tool_success_rate || 0), description: "Observed tool call success", bar: (summary.tool_success_rate || 0) * 100, accent: "mint" },
     { label: "Active runs", value: formatNumber(activeRuns.length), description: "Currently streaming" },
+    { label: "Queued jobs", value: formatNumber(summary.queued_jobs || 0), description: "Jobs waiting in the queue" },
+    { label: "Running jobs", value: formatNumber(summary.running_jobs || 0), description: "Background jobs being processed" },
+    { label: "Running workflows", value: formatNumber(summary.running_workflows || 0), description: "Workflow jobs in flight" },
+    { label: "Running agents", value: formatNumber(summary.running_agent_invocations || 0), description: "Agent invocations in flight" },
+    { label: "Peak parallel", value: formatNumber(summary.recent_max_parallelism || 0), description: "Recent max agent concurrency" },
+    { label: "Failed 24h", value: formatNumber(summary.failed_run_window_24h || 0), description: "Failed runs in the last 24h" },
+    { label: "Provider coverage", value: formatPercent(summary.provider_coverage || 0), description: "Unique providers per provider analysis" },
+    { label: "Unique providers", value: formatNumber(summary.unique_providers || 0), description: "Distinct provider names observed" },
+    { label: "Stream yield", value: formatPercent(summary.stream_yield_rate || 0), description: "Runs that found streams" },
+    { label: "Email yield", value: formatPercent(summary.email_yield_rate || 0), description: "Runs that produced contacts" },
+    { label: "Streams found", value: formatNumber(summary.total_streams || 0), description: "Total stream URLs recorded" },
+    { label: "Emails drafted", value: formatNumber(summary.total_emails || 0), description: "Total takedown contacts recorded" },
   ];
 
   const colors = ["var(--signal)", "var(--violet)", "var(--mint)", "var(--sky)", "var(--rose)"];
@@ -426,6 +442,8 @@ function OverviewPageContent() {
               </div>
             </Panel>
           </div>
+
+          <RuntimeEventsPanel events={runtimeEvents} title="Recent events" />
         </div>
       ) : null}
 

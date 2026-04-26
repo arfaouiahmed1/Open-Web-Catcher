@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 
@@ -10,6 +11,58 @@ from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.utils.browser_runtime import normalize_browser_runtime
+
+
+def _resolve_runtime_source_path(
+    yaml_path: str | Path = "configs/settings.yaml",
+    runtime_yaml_path: str | Path = "data/settings.runtime.yaml",
+) -> Path:
+    runtime_path = Path(runtime_yaml_path)
+    if runtime_path.exists():
+        return runtime_path
+    return Path(yaml_path)
+
+
+def build_browser_runtime_sync_status(
+    *,
+    runtime_json_path: str | Path = "data/browser.runtime.json",
+    yaml_path: str | Path = "configs/settings.yaml",
+    runtime_yaml_path: str | Path = "data/settings.runtime.yaml",
+) -> dict:
+    bridge_path = Path(runtime_json_path)
+    source_path = _resolve_runtime_source_path(yaml_path=yaml_path, runtime_yaml_path=runtime_yaml_path)
+    bridge_exists = bridge_path.exists()
+    source_exists = source_path.exists()
+    bridge_payload = {}
+
+    if bridge_exists:
+        try:
+            bridge_payload = json.loads(bridge_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            bridge_payload = {}
+
+    runtime_sync = bridge_payload.get("runtime_sync", {}) if isinstance(bridge_payload, dict) else {}
+    source_mtime = source_path.stat().st_mtime if source_exists else None
+    bridge_mtime = bridge_path.stat().st_mtime if bridge_exists else None
+    stale = bool(
+        source_exists
+        and bridge_exists
+        and source_mtime is not None
+        and bridge_mtime is not None
+        and bridge_mtime + 0.001 < source_mtime
+    )
+
+    return {
+        "source_path": str(source_path.resolve()),
+        "bridge_path": str(bridge_path.resolve()),
+        "source_exists": source_exists,
+        "bridge_exists": bridge_exists,
+        "source_mtime": datetime.fromtimestamp(source_mtime, tz=timezone.utc).isoformat() if source_mtime else "",
+        "bridge_mtime": datetime.fromtimestamp(bridge_mtime, tz=timezone.utc).isoformat() if bridge_mtime else "",
+        "synced_at": str(runtime_sync.get("synced_at") or ""),
+        "active_runtime_source": "runtime_yaml" if source_path == Path(runtime_yaml_path) else "base_yaml",
+        "stale": stale,
+    }
 
 
 class Settings(BaseSettings):
@@ -216,6 +269,8 @@ class Settings(BaseSettings):
     def save_browser_runtime_bridge(
         self,
         runtime_json_path: str | Path = "data/browser.runtime.json",
+        yaml_path: str | Path = "configs/settings.yaml",
+        runtime_yaml_path: str | Path = "data/settings.runtime.yaml",
     ) -> Path:
         """Persist browser-runtime settings for Node-based MCP tool servers.
 
@@ -225,9 +280,17 @@ class Settings(BaseSettings):
         """
 
         target_path = Path(runtime_json_path)
+        source_path = _resolve_runtime_source_path(yaml_path=yaml_path, runtime_yaml_path=runtime_yaml_path)
+        synced_at = datetime.now(timezone.utc).isoformat()
         payload = {
             "browser_engine": self.browser_engine,
             "browser_runtime": normalize_browser_runtime(getattr(self, "browser_runtime", {})),
+            "runtime_sync": {
+                "source_path": str(source_path.resolve()),
+                "bridge_path": str(target_path.resolve()),
+                "synced_at": synced_at,
+                "active_runtime_source": "runtime_yaml" if source_path == Path(runtime_yaml_path) else "base_yaml",
+            },
         }
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_text(f"{json.dumps(payload, indent=2)}\n", encoding="utf-8")

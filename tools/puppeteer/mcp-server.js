@@ -25,7 +25,7 @@ function buildServer(profileName, browserWsEndpoint) {
     name: `owc-${profileName}`,
     version: '1.0.0',
   });
-  const allTools = getToolDefinitions(browserWsEndpoint);
+  const allTools = getToolDefinitions(browserWsEndpoint, undefined, profileName);
 
   for (const toolName of allowedTools) {
     const def = allTools[toolName];
@@ -115,7 +115,7 @@ app.get('/mcp/:profile/sse', async (req, res) => {
 
   if (BROWSER_MODE === 'isolated') {
     try {
-      browserSession = await launchEphemeralBrowser(transport.sessionId);
+      browserSession = await launchEphemeralBrowser(transport.sessionId, { browserProfile: profile });
       browserWsEndpoint = browserSession.wsEndpoint;
       console.log(`[MCP] Isolated browser started for ${transport.sessionId}: ${browserWsEndpoint}`);
     } catch (error) {
