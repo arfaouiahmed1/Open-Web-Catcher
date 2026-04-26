@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -701,7 +701,7 @@ function TuningFieldGrid({ fields, values, onChange }) {
     );
   }
 
-  const useSlider = (field) => {
+  const shouldUseSlider = (field) => {
     // Use sliders for temperature, top_p, and similar fractional fields
     const sliderKeys = ['temperature', 'top_p', 'top_k'];
     return sliderKeys.some(key => field.key.toLowerCase().includes(key)) && field.type !== 'enum';
@@ -728,7 +728,7 @@ function TuningFieldGrid({ fields, values, onChange }) {
           );
         }
 
-        if (useSlider(field)) {
+        if (shouldUseSlider(field)) {
           // Render slider with value display
           return (
             <div key={field.key} className="space-y-2">
@@ -890,7 +890,7 @@ function CostEstimator({ provider, model }) {
   const [costs, setCosts] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const fetchCosts = async () => {
+  const fetchCosts = useCallback(async () => {
     if (!provider || !model) return;
     setLoading(true);
     try {
@@ -903,12 +903,12 @@ function CostEstimator({ provider, model }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [provider, model, inputTokens, outputTokens, cachedTokens]);
 
   useEffect(() => {
     const timer = setTimeout(fetchCosts, 500);
     return () => clearTimeout(timer);
-  }, [provider, model, inputTokens, outputTokens, cachedTokens]);
+  }, [fetchCosts]);
 
   if (!provider || !model) {
     return null;
