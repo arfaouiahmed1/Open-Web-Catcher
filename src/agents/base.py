@@ -105,6 +105,57 @@ def _to_int(value: Any) -> int:
         return 0
 
 
+def _extract_text_from_content(content: Any) -> str:
+    """Extract plain text from an LLM content value (str or list of content blocks)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text", "")))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "\n".join(parts)
+    return str(content) if content is not None else ""
+
+
+def _extract_thinking_from_content(content: Any) -> str:
+    """Extract thinking/reasoning text from Anthropic or Gemini content blocks."""
+    if not isinstance(content, list):
+        return ""
+    parts = []
+    for block in content:
+        if isinstance(block, dict):
+            # Anthropic: {"type": "thinking", "thinking": "..."}
+            if block.get("type") == "thinking" and block.get("thinking"):
+                parts.append(str(block["thinking"]))
+            # Gemini: parts with thought=True
+            elif block.get("thought") and block.get("text"):
+                parts.append(str(block["text"]))
+    return "\n".join(parts)
+
+
+def _extract_thinking_tokens(usage: Any, response_metadata: Any = None) -> int:
+    """Extract thinking/reasoning token count from provider usage payloads."""
+    usage_dict = usage if isinstance(usage, dict) else getattr(usage, "__dict__", {})
+    # Anthropic: thinking_tokens in usage
+    val = usage_dict.get("thinking_tokens") or usage_dict.get("reasoning_tokens")
+    if val:
+        return _to_int(val)
+    # Gemini: thought_token_count in usage_metadata
+    val = usage_dict.get("thought_token_count") or usage_dict.get("thinking_token_count")
+    if val:
+        return _to_int(val)
+    # Fallback: check response_metadata
+    if response_metadata:
+        meta = response_metadata if isinstance(response_metadata, dict) else getattr(response_metadata, "__dict__", {})
+        for key in ("thinking_tokens", "reasoning_tokens", "thought_token_count"):
+            if meta.get(key):
+                return _to_int(meta[key])
+    return 0
+
+
 def _extract_cache_counters(payload: Any) -> tuple[int, int, int]:
     """Extract cache counters from provider usage payloads.
 
@@ -385,11 +436,15 @@ def build_llm(
 
     if provider == "anthropic":
         from langchain_anthropic import ChatAnthropic  # noqa: PLC0415
+        anthropic_kwargs: dict[str, Any] = _filter_llm_kwargs(tuning, {"top_p", "top_k", "max_tokens"})
+        if settings.thinking_enabled:
+            anthropic_kwargs["thinking"] = {"type": "enabled", "budget_tokens": settings.thinking_budget_tokens}
+            temp = 1.0  # extended thinking requires temperature=1.0
         return ChatAnthropic(
             model=model_name,
             api_key=settings.anthropic_api_key or None,
             temperature=temp,
-            **_filter_llm_kwargs(tuning, {"top_p", "top_k", "max_tokens"}),
+            **anthropic_kwargs,
         )
 
     if provider == "openrouter":
@@ -403,11 +458,14 @@ def build_llm(
         )
 
     # default: google / gemini
+    gemini_kwargs: dict[str, Any] = _filter_llm_kwargs(tuning, {"top_p", "top_k", "max_output_tokens"})
+    if settings.thinking_enabled:
+        gemini_kwargs["thinking_config"] = {"thinking_budget": settings.thinking_budget_tokens}
     return ChatGoogleGenerativeAI(
         model=model_name,
         google_api_key=settings.google_api_key,
         temperature=temp,
-        **_filter_llm_kwargs(tuning, {"top_p", "top_k", "max_output_tokens"}),
+        **gemini_kwargs,
         convert_system_message_to_human=True,
     )
 
@@ -775,8 +833,13 @@ async def run_agent_loop(
                     "response_metadata": _json_ready(getattr(response, "response_metadata", None)),
                     "additional_kwargs": _json_ready(getattr(response, "additional_kwargs", None)),
                     "response_class": type(response).__name__,
-                    "content_preview": (response.content or "")[:1200],
-                    "content_full": response.content or "",
+                    "content_preview": _extract_text_from_content(response.content)[:1200],
+                    "content_full": _extract_text_from_content(response.content),
+                    "thinking_content": _extract_thinking_from_content(response.content),
+                    "thinking_tokens": _extract_thinking_tokens(
+                        getattr(response, "usage_metadata", None),
+                        getattr(response, "response_metadata", None),
+                    ),
                     "prompt": prompt_meta,
                     "turn_context_preview": turn_context[:600],
                     "cache_hit": bool(cache_metrics.get("cache_hit", False)),
@@ -793,7 +856,7 @@ async def run_agent_loop(
             )
         if working_memory is not None and response.content:
             working_memory.record_observation(
-                str(response.content)[:500],
+                _extract_text_from_content(response.content)[:500],
                 source=f"{run_name}.llm",
             )
 
@@ -1081,8 +1144,13 @@ async def run_agent_loop(
                     "response_metadata": _json_ready(getattr(final, "response_metadata", None)),
                     "additional_kwargs": _json_ready(getattr(final, "additional_kwargs", None)),
                     "response_class": type(final).__name__,
-                    "content_preview": (final.content or "")[:1200],
-                    "content_full": final.content or "",
+                    "content_preview": _extract_text_from_content(final.content)[:1200],
+                    "content_full": _extract_text_from_content(final.content),
+                    "thinking_content": _extract_thinking_from_content(final.content),
+                    "thinking_tokens": _extract_thinking_tokens(
+                        getattr(final, "usage_metadata", None),
+                        getattr(final, "response_metadata", None),
+                    ),
                     "prompt": prompt_meta,
                     "phase": "budget_exhausted_final_answer",
                     "cache_hit": bool(final_cache_metrics.get("cache_hit", False)),
@@ -1166,12 +1234,7 @@ async def run_agent_loop(
             final_state = await compiled.ainvoke(initial_state)
             messages = list(final_state["messages"])
             final_ai = _last_ai_message(messages)
-            final_text = (
-                final_ai.content
-                if final_ai is not None and isinstance(final_ai.content, str)
-                else str(final_ai.content) if final_ai is not None
-                else ""
-            )
+            final_text = _extract_text_from_content(final_ai.content) if final_ai is not None else ""
             budget_was_exhausted = any(
                 isinstance(message, HumanMessage) and message.content == budget_exhausted_message
                 for message in messages[1:]

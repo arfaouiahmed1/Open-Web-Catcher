@@ -110,6 +110,23 @@ def resolve_model_pricing_config(settings: Settings) -> dict[str, dict[str, Any]
     return normalized
 
 
+# Maps preview/experimental model names to stable equivalents for pricing lookups.
+# Only used when no direct pricing entry exists for the model.
+_MODEL_PRICING_ALIASES: dict[str, str] = {
+    "gemini-3-flash-preview": "gemini-2.5-flash",
+    "gemini-3-flash-preview-05-20": "gemini-2.5-flash",
+    "gemini-3-pro-preview": "gemini-2.5-pro",
+    "gemini-3-pro-preview-05-06": "gemini-2.5-pro",
+    "gemini-2.5-flash-preview": "gemini-2.5-flash",
+    "gemini-2.5-flash-preview-04-17": "gemini-2.5-flash",
+    "gemini-2.5-pro-preview": "gemini-2.5-pro",
+    "gemini-2.5-pro-preview-05-06": "gemini-2.5-pro",
+    "gemini-2.0-flash-exp": "gemini-2.0-flash",
+    "gemini-2.0-flash-thinking-exp": "gemini-2.0-flash",
+    "gemini-exp-1206": "gemini-2.0-flash",
+}
+
+
 def resolve_model_pricing(settings: Settings, model_name: str, provider: str = "") -> dict[str, Any]:
     pricing = resolve_model_pricing_config(settings)
     model_key = (model_name or "").strip().lower()
@@ -159,6 +176,12 @@ def resolve_model_pricing(settings: Settings, model_name: str, provider: str = "
                 if any(model.startswith(normalized_key) or normalized_key.startswith(model) for model in model_candidates):
                     match = value
                     break
+
+    # Final fallback: resolve preview/experimental model aliases.
+    if not match and model_key in _MODEL_PRICING_ALIASES:
+        alias_key = _MODEL_PRICING_ALIASES[model_key]
+        composite_alias = f"{provider_key}::{alias_key}" if provider_key else ""
+        match = (pricing.get(composite_alias, {}) if composite_alias else {}) or pricing.get(alias_key, {})
 
     return {
         "provider": str(match.get("provider") or provider_key or "").strip(),

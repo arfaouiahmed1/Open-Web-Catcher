@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3001",
+    "dev": "next dev",
     "build": "node ./scripts/next-build.mjs",
-    "start": "next start -p 3001",
+    "start": "next start",
     "lint": "next lint",
     "test": "vitest run --configLoader native --pool threads",
     "test:watch": "vitest --configLoader native --pool threads"

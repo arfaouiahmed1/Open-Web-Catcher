@@ -1,14 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, PauseCircle, PlayCircle, Square, TimerReset } from "lucide-react";
 
 import { apiUrl } from "@/lib/api";
 import { formatCurrency, formatNumber } from "@/lib/utils";
-import { extractToolCalls, mergeTraceEvents } from "@/lib/run-trace";
+import { extractToolCalls } from "@/lib/run-trace";
 import { BrowserLiveView } from "@/components/browser-live-view";
 import { OrchestratorGraph } from "@/components/orchestrator-graph";
 import { ToolCallFeed } from "@/components/tool-call-feed";
+
+function _eventKey(e) {
+  // Stable dedup key: seq is canonical, fallback to composite
+  const seq = e?.seq;
+  if (seq != null) return String(seq);
+  return `${e?.timestamp ?? ""}-${e?.actor ?? ""}-${e?.kind ?? ""}-${e?.status ?? ""}`;
+}
+
+function _seedMap(events) {
+  const map = new Map();
+  for (const e of events) map.set(_eventKey(e), e);
+  return map;
+}
 
 function Metric({ label, value, accent, detail }) {
   return (
@@ -37,8 +50,10 @@ function TabButton({ active, onClick, children }) {
   );
 }
 
-export function RunDetailLive({ runId, activeTrace = null, persistedEvents = [], metrics = null }) {
-  const [events, setEvents] = useState(() => mergeTraceEvents([], activeTrace?.events || persistedEvents || []));
+export function RunDetailLive({ runId, activeTrace = null, persistedEvents = [], metrics = null, onMetricsChange = null }) {
+  // Map-based event store: O(1) dedup, no full-array copy on every SSE frame.
+  const eventMapRef = useRef(null);
+  const [eventVersion, setEventVersion] = useState(0);
   const [traceMetrics, setTraceMetrics] = useState(activeTrace?.metrics || metrics || null);
   const [liveStream, setLiveStream] = useState(Boolean(activeTrace));
   const [replayMs, setReplayMs] = useState(80);
@@ -47,8 +62,17 @@ export function RunDetailLive({ runId, activeTrace = null, persistedEvents = [],
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelError, setCancelError] = useState("");
 
+  // Seed the map from initial props
+  if (eventMapRef.current === null) {
+    eventMapRef.current = _seedMap(activeTrace?.events || persistedEvents || []);
+  }
+
+  // Re-seed when trace/persisted events change (e.g. navigation)
   useEffect(() => {
-    setEvents(mergeTraceEvents([], activeTrace?.events || persistedEvents || []));
+    const source = activeTrace?.events || persistedEvents || [];
+    const newMap = _seedMap(source);
+    eventMapRef.current = newMap;
+    setEventVersion((v) => v + 1);
   }, [activeTrace, persistedEvents]);
 
   useEffect(() => {
@@ -64,10 +88,20 @@ export function RunDetailLive({ runId, activeTrace = null, persistedEvents = [],
         const parsed = JSON.parse(payload.data || "{}");
         const incoming = Array.isArray(parsed?.events) ? parsed.events : [];
         if (incoming.length) {
-          setEvents((current) => mergeTraceEvents(current, incoming));
+          let changed = false;
+          const map = eventMapRef.current;
+          for (const e of incoming) {
+            const key = _eventKey(e);
+            if (!map.has(key)) {
+              map.set(key, e);
+              changed = true;
+            }
+          }
+          if (changed) setEventVersion((v) => v + 1);
         }
         if (parsed?.metrics && typeof parsed.metrics === "object") {
           setTraceMetrics(parsed.metrics);
+          if (onMetricsChange) onMetricsChange(parsed.metrics);
         }
       } catch {
         // ignore malformed frames
@@ -79,9 +113,12 @@ export function RunDetailLive({ runId, activeTrace = null, persistedEvents = [],
   async function replay() {
     if (!persistedEvents.length) return;
     setIsReplaying(true);
-    setEvents([]);
+    eventMapRef.current = new Map();
+    setEventVersion((v) => v + 1);
     for (const event of persistedEvents) {
-      setEvents((current) => [...current, event]);
+      const key = _eventKey(event);
+      eventMapRef.current.set(key, event);
+      setEventVersion((v) => v + 1);
       // eslint-disable-next-line no-await-in-loop
       await new Promise((resolve) => setTimeout(resolve, Math.max(20, replayMs)));
     }
@@ -104,6 +141,13 @@ export function RunDetailLive({ runId, activeTrace = null, persistedEvents = [],
       setIsCancelling(false);
     }
   }
+
+  // Sorted array derived only when eventVersion bumps — no O(n) clone on every SSE frame
+  const events = useMemo(
+    () => [...(eventMapRef.current?.values() ?? [])].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [eventVersion],
+  );
 
   const effectiveMetrics = traceMetrics || null;
   const totalTokens = Number(effectiveMetrics?.total_tokens_in || 0) + Number(effectiveMetrics?.total_tokens_out || 0);

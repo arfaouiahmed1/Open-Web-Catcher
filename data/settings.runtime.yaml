@@ -1,22 +1,22 @@
-agent_model: gemini-3.1-flash-lite-preview
+agent_model: gemini-3-flash-preview
 agent_model_config:
   classification:
-    model: gemini-3.1-flash-lite-preview
+    model: gemini-3-flash-preview
     provider: google
   embedded:
-    model: gemini-3.1-flash-lite-preview
+    model: gemini-3-flash-preview
     provider: google
   hosting:
-    model: gemini-3.1-flash-lite-preview
+    model: gemini-3-flash-preview
     provider: google
   landing:
-    model: gemini-3.1-flash-lite-preview
+    model: gemini-3-flash-preview
     provider: google
   orchestrator:
     model: gemini-2.5-flash
     provider: google
 agent_timeout_seconds: 300
-browser_engine: playwright
+browser_engine: puppeteer
 browser_runtime:
   playwright:
     adblock_allowlist_hosts: []
@@ -27,6 +27,7 @@ browser_runtime:
     adblock_excluded_categories:
     - nsfw
     - gambling
+    asset_diagnostics_enabled: true
     extra_launch_args: []
     fingerprint_fallback_strategy: profile
     fingerprint_recent_pool_size: 12
@@ -40,6 +41,7 @@ browser_runtime:
     media_capture_timeout_ms: 30000
     media_cors_patch_enabled: false
     media_playback_verification_enabled: true
+    media_proxy_strategy: direct_first
     media_retry_backoff_ms:
     - 1000
     - 2000
@@ -61,6 +63,7 @@ browser_runtime:
     - speedx-socks5
     proxy_test_url: https://api.ipify.org?format=json
     proxy_validation_timeout_ms: 12000
+    streaming_safe_mode: adaptive
   puppeteer:
     adblock_allowlist_hosts: []
     adblock_auto_recovery_enabled: true
@@ -70,6 +73,7 @@ browser_runtime:
     adblock_excluded_categories:
     - nsfw
     - gambling
+    asset_diagnostics_enabled: true
     extra_launch_args: []
     fingerprint_fallback_strategy: profile
     fingerprint_recent_pool_size: 12
@@ -83,6 +87,7 @@ browser_runtime:
     media_capture_timeout_ms: 30000
     media_cors_patch_enabled: true
     media_playback_verification_enabled: true
+    media_proxy_strategy: direct_first
     media_retry_backoff_ms:
     - 1000
     - 2000
@@ -106,6 +111,7 @@ browser_runtime:
     proxy_validation_timeout_ms: 12000
     stream_cors_include_credentials: false
     stream_cors_patch_enabled: false
+    streaming_safe_mode: adaptive
     ubol_enabled: true
 classification_max_tool_calls: 5
 deepeval_model: google/gemma-4-31b-it:free
@@ -118,10 +124,39 @@ disabled_tools_by_browser_profile:
     hosting: []
     landing: []
   puppeteer:
-    classification: []
-    embedded: []
-    hosting: []
-    landing: []
+    classification:
+    - open_url
+    - get_page_context
+    - get_frame_tree
+    - query_elements
+    - get_element_detail
+    - wait_for_page_state
+    embedded:
+    - get_frame_tree
+    - get_element_detail
+    - play_media
+    - get_media_state
+    - get_page_context
+    - query_elements
+    - open_url
+    hosting:
+    - get_page_context
+    - query_elements
+    - get_element_detail
+    - get_frame_tree
+    - wait_for_page_state
+    - scroll_to_element
+    - get_media_state
+    - play_media
+    landing:
+    - get_page_context
+    - query_elements
+    - get_element_detail
+    - get_frame_tree
+    - open_url
+    - wait_for_page_state
+    - play_media
+    - swipe_region
 disabled_tools_by_profile: {}
 embedded_page_max_tool_calls: 20
 gemini_explicit_cache_enabled: true
@@ -140,8 +175,11 @@ llm_tuning:
       temperature: 1
 log_file: data/logs/app.log
 log_level: INFO
+max_parallel_hosting_pages: 5
 orchestrator_model: gemini-2.5-flash
 provider_cache_enabled: true
+thinking_budget_tokens: 8000
+thinking_enabled: false
 tool_result_cache_enabled: true
 tool_result_cache_min_identical_observations: 2
 tool_timeout_seconds: 30

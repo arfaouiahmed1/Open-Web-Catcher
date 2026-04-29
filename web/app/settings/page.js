@@ -1074,6 +1074,9 @@ export default function SettingsPage() {
   const [geminiExplicitCacheRefreshLead, setGeminiExplicitCacheRefreshLead] = useState("120");
   const [toolCacheEnabled, setToolCacheEnabled] = useState(true);
   const [toolCacheStable, setToolCacheStable] = useState("2");
+  const [thinkingEnabled, setThinkingEnabled] = useState(false);
+  const [thinkingBudgetTokens, setThinkingBudgetTokens] = useState("8000");
+  const [maxParallelHostingPages, setMaxParallelHostingPages] = useState("5");
   const [deepevalProvider, setDeepevalProvider] = useState("openai");
   const [deepevalModel, setDeepevalModel] = useState("gpt-4o");
   const [deepevalTemperature, setDeepevalTemperature] = useState("0");
@@ -1146,6 +1149,9 @@ export default function SettingsPage() {
     geminiExplicitCacheRefreshLead,
     toolCacheEnabled,
     toolCacheStable,
+    thinkingEnabled,
+    thinkingBudgetTokens,
+    maxParallelHostingPages,
     browserEngine,
     browserRuntime,
     disabledToolsByBrowserProfile,
@@ -1165,8 +1171,11 @@ export default function SettingsPage() {
     geminiExplicitCacheRefreshLead,
     geminiExplicitCacheTtl,
     llmTuning,
+    maxParallelHostingPages,
     provider,
     providerCacheEnabled,
+    thinkingBudgetTokens,
+    thinkingEnabled,
     toolCacheEnabled,
     toolCacheStable,
   ]);
@@ -1225,6 +1234,9 @@ export default function SettingsPage() {
     setGeminiExplicitCacheRefreshLead(String(payload.gemini_explicit_cache_refresh_lead_seconds ?? 120));
     setToolCacheEnabled(Boolean(payload.tool_result_cache_enabled ?? true));
     setToolCacheStable(String(payload.tool_result_cache_min_identical_observations ?? 2));
+    setThinkingEnabled(Boolean(payload.thinking_enabled ?? false));
+    setThinkingBudgetTokens(String(payload.thinking_budget_tokens ?? 8000));
+    setMaxParallelHostingPages(String(payload.max_parallel_hosting_pages ?? 5));
     setDeepevalProvider(payload.deepeval_provider || "openai");
     setDeepevalModel(payload.deepeval_model || "gpt-4o");
     setDeepevalTemperature(String(payload.deepeval_temperature ?? 0));
@@ -1407,6 +1419,9 @@ export default function SettingsPage() {
           gemini_explicit_cache_refresh_lead_seconds: serverDraft.gemini_explicit_cache_refresh_lead_seconds,
           tool_result_cache_enabled: serverDraft.tool_result_cache_enabled,
           tool_result_cache_min_identical_observations: serverDraft.tool_result_cache_min_identical_observations,
+          thinking_enabled: serverDraft.thinking_enabled,
+          thinking_budget_tokens: serverDraft.thinking_budget_tokens,
+          max_parallel_hosting_pages: serverDraft.max_parallel_hosting_pages,
         };
       case "browser":
         return {
@@ -1764,6 +1779,71 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+
+              <div
+                className="space-y-4 rounded-[12px] border p-4"
+                style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.02)" }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[13px] font-medium text-[var(--ink)]">Extended Thinking</div>
+                    <p className="mt-0.5 text-[12px] text-[var(--mute)]">
+                      Enable model reasoning/thinking (Anthropic extended thinking, Gemini thinking budget). Increases token usage but improves reasoning quality.
+                    </p>
+                  </div>
+                  <ToggleRow
+                    label="Enabled"
+                    checked={thinkingEnabled}
+                    onChange={setThinkingEnabled}
+                  />
+                </div>
+                {thinkingEnabled ? (
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
+                      Thinking budget (tokens)
+                    </label>
+                    <input
+                      value={thinkingBudgetTokens}
+                      onChange={(event) => setThinkingBudgetTokens(event.target.value)}
+                      type="number"
+                      min="1000"
+                      max="32000"
+                      step="1000"
+                      className="h-11 w-full rounded-[12px] border px-3 text-[13px] focus:outline-none"
+                      style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)", color: "var(--ink-dim)" }}
+                    />
+                    <p className="text-[11px] text-[var(--mute)]">Max tokens the model can use for internal reasoning (1000–32000). Higher = deeper reasoning, more cost.</p>
+                  </div>
+                ) : null}
+              </div>
+
+              <div
+                className="space-y-4 rounded-[12px] border p-4"
+                style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.02)" }}
+              >
+                <div>
+                  <div className="text-[13px] font-medium text-[var(--ink)]">Parallelism</div>
+                  <p className="mt-0.5 text-[12px] text-[var(--mute)]">
+                    Controls how many hosting pages run simultaneously. Lower values reduce memory and browser load; higher values increase throughput.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
+                    Max parallel hosting pages
+                  </label>
+                  <input
+                    value={maxParallelHostingPages}
+                    onChange={(event) => setMaxParallelHostingPages(event.target.value)}
+                    type="number"
+                    min="1"
+                    max="20"
+                    step="1"
+                    className="h-11 w-full rounded-[12px] border px-3 text-[13px] focus:outline-none"
+                    style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)", color: "var(--ink-dim)" }}
+                  />
+                  <p className="text-[11px] text-[var(--mute)]">Default 5. Caps concurrent hosting-page and embedded-page agent executions.</p>
+                </div>
+              </div>
 
             <SectionHeader>Per-Agent Models</SectionHeader>
             <div className="grid gap-4 xl:grid-cols-2">

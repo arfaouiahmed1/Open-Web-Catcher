@@ -175,6 +175,11 @@ class Settings(BaseSettings):
     disabled_tools_by_browser_profile: dict = Field(default_factory=dict)
     browser_runtime: dict = Field(default_factory=dict)
 
+    max_parallel_hosting_pages: int = 5
+
+    thinking_enabled: bool = False
+    thinking_budget_tokens: int = 8000
+
     # DeepEval evaluation framework settings
     deepeval_provider: str = "openai"
     deepeval_model: str = "gpt-4o"
@@ -244,6 +249,9 @@ class Settings(BaseSettings):
         existing["disabled_tools_by_profile"] = self.disabled_tools_by_profile
         existing["disabled_tools_by_browser_profile"] = self.disabled_tools_by_browser_profile
         existing["browser_runtime"] = self.browser_runtime
+        existing["max_parallel_hosting_pages"] = self.max_parallel_hosting_pages
+        existing["thinking_enabled"] = self.thinking_enabled
+        existing["thinking_budget_tokens"] = self.thinking_budget_tokens
         existing["deepeval_provider"] = self.deepeval_provider
         existing["deepeval_model"] = self.deepeval_model
         existing["deepeval_temperature"] = self.deepeval_temperature

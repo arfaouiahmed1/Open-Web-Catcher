@@ -58,6 +58,7 @@ class HandoffContext(TypedDict, total=False):
     source_streams_found: int
     focus: str
     memory_hints: str
+    pattern_context: str
 
 
 _SAME_CONTENT_NAVIGATION_POLICY = (
@@ -121,6 +122,8 @@ def render_handoff(ctx: HandoffContext) -> str:
         lines.append(f"- source hosting already found streams: {ctx['source_streams_found']}")
     if ctx.get("focus"):
         lines.append(f"- focus: {ctx['focus']}")
+    if ctx.get("pattern_context"):
+        lines.append(f"- pattern context: {ctx['pattern_context']}")
     if ctx.get("memory_hints"):
         lines.append("- memory check: prior hints found for this domain; use as soft guidance")
         lines.append(_truncate(ctx["memory_hints"], max_chars=1200))
@@ -284,6 +287,7 @@ def _build_hosting_handoff(
     *,
     target_url: str,
     memory_hint_text: str,
+    pattern_context: str = "",
 ) -> str:
     classification = state.get("classification")
     match = _match_for_url(state.get("matches", []), target_url)
@@ -300,6 +304,8 @@ def _build_hosting_handoff(
         "focus": "stay on the assigned hosting content, activate the player, handle blockers/ads/server switches, extract direct m3u8/mpd/mp4 when possible, and return embedded handoff only for explicit embedded/player URLs",
         "memory_hints": memory_hint_text,
     }
+    if pattern_context:
+        ctx["pattern_context"] = pattern_context
     if match is not None:
         ctx["candidate_title"] = match.title or ""
         ctx["candidate_participants"] = match.participants or ""
@@ -435,24 +441,49 @@ async def hosting_page_node(
         return {}
 
     target_urls = _dedupe_urls(state["pending_hosting_urls"])
+    total_targets = len(target_urls)
+
+    # Derive pattern context from landing matches site_patterns
+    matches = state.get("matches", [])
+    site_url_pattern = ""
+    for m in matches:
+        if hasattr(m, "patterns") and isinstance(m.patterns, dict):
+            site_url_pattern = str(m.patterns.get("url_pattern") or "").strip()
+            if site_url_pattern:
+                break
+
+    sem = asyncio.Semaphore(settings.max_parallel_hosting_pages)
+
+    async def _guarded(coro: Any) -> Any:
+        async with sem:
+            return await coro
+
     tasks = []
-    for target_url in target_urls:
+    for idx, target_url in enumerate(target_urls):
         child = observer.child("hosting", AgentType.HOSTING_PAGE) if observer else None
         hosting_memory_hint = _memory_hint(
             memory,
             url=target_url,
             page_type=AgentType.HOSTING_PAGE.value,
         )
+        pattern_context = (
+            f"{idx + 1} of {total_targets} from pattern {site_url_pattern}"
+            if site_url_pattern
+            else f"{idx + 1} of {total_targets}"
+        )
         handoff = _build_hosting_handoff(
             state,
             target_url=target_url,
             memory_hint_text=hosting_memory_hint,
+            pattern_context=pattern_context,
         )
         tasks.append(
-            HostingPageAgent(settings).run(
-                url=target_url,
-                observer=child,
-                orchestrator_handoff=handoff,
+            _guarded(
+                HostingPageAgent(settings).run(
+                    url=target_url,
+                    observer=child,
+                    orchestrator_handoff=handoff,
+                )
             )
         )
 
@@ -518,6 +549,12 @@ async def embedded_page_node(
 
     target_urls = _dedupe_urls(state["pending_embedded_urls"])
     tasks = []
+    sem = asyncio.Semaphore(settings.max_parallel_hosting_pages)
+
+    async def _guarded(coro: Any) -> Any:
+        async with sem:
+            return await coro
+
     for target_url in target_urls:
         child = observer.child("embedded", AgentType.EMBEDDED_PAGE) if observer else None
         embedded_memory_hint = _memory_hint(
@@ -531,10 +568,12 @@ async def embedded_page_node(
             memory_hint_text=embedded_memory_hint,
         )
         tasks.append(
-            EmbeddedPageAgent(settings).run(
-                url=target_url,
-                observer=child,
-                orchestrator_handoff=handoff,
+            _guarded(
+                EmbeddedPageAgent(settings).run(
+                    url=target_url,
+                    observer=child,
+                    orchestrator_handoff=handoff,
+                )
             )
         )
 

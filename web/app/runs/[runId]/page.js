@@ -13,7 +13,7 @@ import { DataTable } from "@/components/data-table";
 import { JsonViewer } from "@/components/json-viewer";
 import { KpiCard } from "@/components/kpi-card";
 import { RunDetailLive } from "@/components/run-detail-live";
-import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
+import { LlmOutputPanel } from "@/components/llm-output-panel";
 import { ScreenshotGallery } from "@/components/browser-live-view";
 import { useRunViewSettings } from "@/components/run-view-settings";
 import { Badge } from "@/components/ui/badge";
@@ -174,6 +174,7 @@ export default function RunDetailPage() {
   const [isLoading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tab, setTab] = useState("live");
+  const [liveMetrics, setLiveMetrics] = useState(null);
   const { settings } = useRunViewSettings();
 
   useEffect(() => {
@@ -224,17 +225,18 @@ export default function RunDetailPage() {
   const metrics = trace?.metrics || {};
 
   if (isActiveTrace && trace) {
+    const km = liveMetrics || metrics;
     return (
       <div className="space-y-5">
         <RunHeader runId={runId} title="Live Run" subtitle="Streaming from the in-memory observer" live />
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <KpiCard label="Tokens" value={formatNumber((metrics.total_tokens_in || 0) + (metrics.total_tokens_out || 0))} accent="signal" />
-          <KpiCard label="LLM Calls" value={formatNumber(metrics.total_llm_calls || 0)} accent="violet" />
-          <KpiCard label="Tool Calls" value={formatNumber(metrics.total_tool_calls || 0)} accent="sky" />
-          <KpiCard label="Est. Cost" value={formatCurrency(metrics.total_cost_usd ?? metrics.estimated_total_cost_usd ?? 0)} accent="mint" />
+          <KpiCard label="Tokens" value={formatNumber((km.total_tokens_in || 0) + (km.total_tokens_out || 0))} accent="signal" />
+          <KpiCard label="LLM Calls" value={formatNumber(km.total_llm_calls || 0)} accent="violet" />
+          <KpiCard label="Tool Calls" value={formatNumber(km.total_tool_calls || 0)} accent="sky" />
+          <KpiCard label="Est. Cost" value={formatCurrency(km.total_cost_usd ?? km.estimated_total_cost_usd ?? 0)} accent="mint" />
         </div>
-        <RunDetailLive runId={runId} activeTrace={trace} persistedEvents={trace.events || []} metrics={metrics} />
-        <RuntimeEventsPanel events={trace.events || []} />
+        <RunDetailLive runId={runId} activeTrace={trace} persistedEvents={trace.events || []} metrics={metrics} onMetricsChange={setLiveMetrics} />
+        <LlmOutputPanel events={trace.events || []} />
       </div>
     );
   }
@@ -286,7 +288,7 @@ export default function RunDetailPage() {
       {tab === "live" ? (
         <div className="space-y-4">
           <RunDetailLive runId={runId} persistedEvents={events} metrics={snapshot?.metrics || run || null} />
-          <RuntimeEventsPanel events={events} />
+          <LlmOutputPanel events={events} />
         </div>
       ) : null}
 

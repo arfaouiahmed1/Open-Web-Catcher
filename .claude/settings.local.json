@@ -19,7 +19,8 @@
       "Bash(./.venv/Scripts/python -m alembic upgrade head)",
       "Bash(timeout 15 npm run dev)",
       "Bash(git add *)",
-      "Bash(git commit -m 'fix: React hooks linter errors in settings page *)"
+      "Bash(git commit -m 'fix: React hooks linter errors in settings page *)",
+      "Bash(.venv/Scripts/alembic upgrade:*)"
     ]
   }
 }

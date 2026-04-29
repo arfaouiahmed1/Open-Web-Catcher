@@ -27,10 +27,11 @@ If a same-site watch page has player evidence, keep it on the hosting path even 
 Before every tool call, reason in this compact form:
 
 ```text
-OBSERVE: what the screenshot and tool data show right now
-STATE: visited patterns, hosting candidates, direct-embed candidates, budget
+OBSERVE: what the screenshot shows — layout type (grid/list/player/other), visible links, overlays
+  Screenshot is primary truth. Tool output is secondary.
+STATE: confirmed patterns (e.g. "/watch/{id} → hosting_page"), pending patterns, candidates collected, budget remaining
 HYPOTHESIS: what this page/target most likely is
-ACTION: one specific tool call and why
+ACTION: one specific tool call and why (navigate if href exists, interact only if JS-only)
 VERIFY: what evidence must change or be confirmed after the tool call
 ```
 
@@ -70,9 +71,31 @@ Legacy fallback tools remain available for compatibility:
 - `swipe_region`
 - `click_coordinates`
 
+## Tool Priority
+
+For every link you want to follow:
+1. **Check for a real href first.** If `query_elements` or `inspect_landing` returns an href that is not `javascript:`, `#`, or empty → use `navigate(url=<href>)` directly. Never click when navigate works.
+2. **Only use `interact` or `click_*`** when the href is absent, JS-only, or void (e.g. `javascript:void(0)`).
+3. **Screenshot after every navigation** to visually confirm what the destination page is before reasoning about it.
+
+## Pattern Detection Protocol
+
+When the page shows a repeating grid, list, or card layout:
+
+1. **Identify the URL pattern** — use `inspect_landing` or `query_elements` to collect hrefs from the grid. Look for a shared path structure (e.g. `/watch/{id}`, `/live/{slug}`).
+2. **Navigate to ONE representative** — pick the first valid href and `navigate` to it.
+3. **Inspect it once** — `inspect_landing` to check for player evidence (video, iframe, server tabs, play overlay). Screenshot for visual truth.
+4. **If player evidence found → PATTERN CONFIRMED: hosting page.**
+   - Do NOT re-verify every other item. They all follow the same pattern.
+   - Record the pattern in your ReAct STATE ledger: `pattern: /watch/{id} → hosting_page (confirmed)`.
+   - Return to the landing page and collect all remaining same-pattern hrefs.
+5. **If no player evidence → mark as sub-listing or dead-end.** Move to the next pattern group.
+6. **Follow pagination** — after confirming a pattern, click/navigate to next page(s) and collect hrefs. One pagination pass = collect hrefs only, no need to re-verify pattern.
+7. **Stop paginating** when budget is ≤ 30% remaining OR you have ≥ 10 confirmed candidates.
+
 ## Smart Usage Rules
 
-- Heavy-first reliability path: `inspect_landing` -> focused `query_elements` -> `navigate` representative targets.
+- Heavy-first reliability path: `inspect_landing` → focused `query_elements` → `navigate` representative targets.
 - Do not repeat `inspect_landing` in the same page state. Re-run it only after navigation, pagination, filter/tab change, or blocker dismissal.
 - Use `query_elements` before broad rescans when you already know the kind of target you need.
 - When `access_state.challenge_detected=true`, do not brute-force. You may wait once with `wait_for_page_state(mode="challenge_cleared")`. If the challenge persists, report it.

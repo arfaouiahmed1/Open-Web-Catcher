@@ -10,7 +10,7 @@ import { extractToolCalls, mergeTraceEvents, STAGE_LABELS } from "@/lib/run-trac
 import { AgentOutputPanel } from "@/components/agent-output-panel";
 import { BrowserLiveView } from "@/components/browser-live-view";
 import { OrchestratorGraph } from "@/components/orchestrator-graph";
-import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
+import { LlmOutputPanel } from "@/components/llm-output-panel";
 import { ToolCallFeed } from "@/components/tool-call-feed";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -297,7 +297,7 @@ export function RunStudio({ mode = "workflow" }) {
           <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
             <div className="space-y-4">
               <OrchestratorGraph events={events} rootActor={rootActor} />
-              <RuntimeEventsPanel events={events} />
+              <LlmOutputPanel events={events} />
             </div>
             <ToolCallFeed toolCalls={toolCallRows} title="Tool Calls" />
           </div>
