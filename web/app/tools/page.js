@@ -1,10 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, RefreshCw, Wifi, WifiOff, Wrench, ZoomIn } from "lucide-react";
+import {
+  AlertCircle,
+  RefreshCw,
+  Wifi,
+  WifiOff,
+  Wrench,
+  ZoomIn,
+} from "lucide-react";
 
 import { apiFetch, apiUrl } from "@/lib/api";
-import { JsonViewer } from "@/components/json-viewer";
+import { StructuredDataCard } from "@/components/structured-data-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { HelpIcon } from "@/components/ui/tooltip";
@@ -44,9 +51,21 @@ const STARTER_TEMPLATES = {
 };
 
 const RELIABILITY_COLORS = {
-  high:   { border: "color-mix(in oklch, var(--mint) 35%, transparent)",   bg: "color-mix(in oklch, var(--mint) 10%, transparent)",   text: "var(--mint)" },
-  medium: { border: "color-mix(in oklch, var(--signal) 35%, transparent)", bg: "color-mix(in oklch, var(--signal) 10%, transparent)", text: "var(--signal)" },
-  low:    { border: "color-mix(in oklch, var(--rose) 35%, transparent)",   bg: "color-mix(in oklch, var(--rose) 10%, transparent)",   text: "var(--rose)" },
+  high: {
+    border: "color-mix(in oklch, var(--mint) 35%, transparent)",
+    bg: "color-mix(in oklch, var(--mint) 10%, transparent)",
+    text: "var(--mint)",
+  },
+  medium: {
+    border: "color-mix(in oklch, var(--signal) 35%, transparent)",
+    bg: "color-mix(in oklch, var(--signal) 10%, transparent)",
+    text: "var(--signal)",
+  },
+  low: {
+    border: "color-mix(in oklch, var(--rose) 35%, transparent)",
+    bg: "color-mix(in oklch, var(--rose) 10%, transparent)",
+    text: "var(--rose)",
+  },
 };
 
 function reliabilityBand(rate) {
@@ -56,17 +75,30 @@ function reliabilityBand(rate) {
 function collectScreenshot(value) {
   if (!value) return "";
   if (typeof value === "string") {
-    if (value.startsWith("http") || value.startsWith("data:image/")) return value;
-    try { return collectScreenshot(JSON.parse(value)); } catch { return ""; }
+    if (value.startsWith("http") || value.startsWith("data:image/"))
+      return value;
+    try {
+      return collectScreenshot(JSON.parse(value));
+    } catch {
+      return "";
+    }
   }
   if (Array.isArray(value)) {
-    for (const item of value) { const n = collectScreenshot(item); if (n) return n; }
+    for (const item of value) {
+      const n = collectScreenshot(item);
+      if (n) return n;
+    }
     return "";
   }
   if (typeof value === "object") {
-    if (typeof value.screenshot_url === "string" && value.screenshot_url) return value.screenshot_url;
-    if (Array.isArray(value.screenshot_urls) && value.screenshot_urls.length) return value.screenshot_urls[0];
-    for (const n of Object.values(value)) { const c = collectScreenshot(n); if (c) return c; }
+    if (typeof value.screenshot_url === "string" && value.screenshot_url)
+      return value.screenshot_url;
+    if (Array.isArray(value.screenshot_urls) && value.screenshot_urls.length)
+      return value.screenshot_urls[0];
+    for (const n of Object.values(value)) {
+      const c = collectScreenshot(n);
+      if (c) return c;
+    }
   }
   return "";
 }
@@ -79,17 +111,29 @@ function LivePreview({ src, autoRefresh, onManualRefresh, isRunning }) {
     return (
       <div
         className="flex flex-col items-center justify-center gap-3 rounded-[14px] border"
-        style={{ minHeight: 220, borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+        style={{
+          minHeight: 220,
+          borderColor: "var(--line)",
+          background: "var(--card)",
+          boxShadow: "var(--shadow-card)",
+        }}
       >
         {isRunning ? (
           <>
-            <span className="owc-spinner owc-spinner-lg" style={{ color: "var(--signal)" }} />
-            <span className="text-[12.5px]" style={{ color: "var(--mute)" }}>Running tool…</span>
+            <span
+              className="owc-spinner owc-spinner-lg"
+              style={{ color: "var(--signal)" }}
+            />
+            <span className="text-[12.5px]" style={{ color: "var(--mute)" }}>
+              Running tool…
+            </span>
           </>
         ) : (
           <>
             <Wifi className="h-8 w-8 opacity-20" />
-            <span className="text-[12.5px]" style={{ color: "var(--mute)" }}>No screenshot yet — run a tool to see the browser state</span>
+            <span className="text-[12.5px]" style={{ color: "var(--mute)" }}>
+              No screenshot yet — run a tool to see the browser state
+            </span>
           </>
         )}
       </div>
@@ -100,14 +144,41 @@ function LivePreview({ src, autoRefresh, onManualRefresh, isRunning }) {
     <>
       <div
         className="group relative overflow-hidden rounded-[14px] border"
-        style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+        style={{
+          borderColor: "var(--line)",
+          background: "var(--card)",
+          boxShadow: "var(--shadow-card)",
+        }}
       >
         {/* header bar */}
-        <div className="flex items-center justify-between border-b px-[18px] py-2.5" style={{ borderColor: "var(--line)" }}>
+        <div
+          className="flex items-center justify-between border-b px-[18px] py-2.5"
+          style={{ borderColor: "var(--line)" }}
+        >
           <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full" style={{ background: autoRefresh ? "var(--mint)" : "var(--mute-3)", animation: autoRefresh ? "breathe 1.6s ease-in-out infinite" : "none" }} />
-            <span className="text-[12.5px] font-medium" style={{ color: "var(--ink)" }}>Browser view</span>
-            {autoRefresh && <span className="font-mono text-[10.5px]" style={{ color: "var(--mint)" }}>live</span>}
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{
+                background: autoRefresh ? "var(--mint)" : "var(--mute-3)",
+                animation: autoRefresh
+                  ? "breathe 1.6s ease-in-out infinite"
+                  : "none",
+              }}
+            />
+            <span
+              className="text-[12.5px] font-medium"
+              style={{ color: "var(--ink)" }}
+            >
+              Browser view
+            </span>
+            {autoRefresh && (
+              <span
+                className="font-mono text-[10.5px]"
+                style={{ color: "var(--mint)" }}
+              >
+                live
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             <button
@@ -140,8 +211,14 @@ function LivePreview({ src, autoRefresh, onManualRefresh, isRunning }) {
             style={{ display: "block" }}
           />
           {isRunning && (
-            <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(5,8,15,0.55)" }}>
-              <span className="owc-spinner owc-spinner-lg" style={{ color: "var(--signal)" }} />
+            <div
+              className="absolute inset-0 flex items-center justify-center"
+              style={{ background: "rgba(5,8,15,0.55)" }}
+            >
+              <span
+                className="owc-spinner owc-spinner-lg"
+                style={{ color: "var(--signal)" }}
+              />
             </div>
           )}
         </div>
@@ -154,7 +231,11 @@ function LivePreview({ src, autoRefresh, onManualRefresh, isRunning }) {
           style={{ background: "rgba(0,0,0,0.88)" }}
           onClick={() => setZoomed(false)}
         >
-          <img src={src} alt="Browser screenshot fullscreen" className="max-h-full max-w-full rounded-[10px] object-contain shadow-2xl" />
+          <img
+            src={src}
+            alt="Browser screenshot fullscreen"
+            className="max-h-full max-w-full rounded-[10px] object-contain shadow-2xl"
+          />
         </div>
       )}
     </>
@@ -163,17 +244,45 @@ function LivePreview({ src, autoRefresh, onManualRefresh, isRunning }) {
 
 /* ── Reliability heatmap ── */
 function Heatmap({ rows }) {
-  if (!rows.length) return (
-    <div className="rounded-[14px] border p-4 text-[12.5px]" style={{ borderColor: "var(--line)", background: "var(--card)", color: "var(--mute)" }}>
-      No reliability data yet
-    </div>
-  );
+  if (!rows.length)
+    return (
+      <div
+        className="rounded-[14px] border p-4 text-[12.5px]"
+        style={{
+          borderColor: "var(--line)",
+          background: "var(--card)",
+          color: "var(--mute)",
+        }}
+      >
+        No reliability data yet
+      </div>
+    );
 
   return (
-    <div className="rounded-[14px] border overflow-hidden" style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}>
-      <div className="border-b px-[18px] py-3.5" style={{ borderColor: "var(--line)" }}>
-        <span className="text-[13.5px] font-medium" style={{ color: "var(--ink)" }}>Tool reliability</span>
-        <span className="ml-3 font-mono text-[11px]" style={{ color: "var(--mute)" }}>{rows.length} tools tracked</span>
+    <div
+      className="rounded-[14px] border overflow-hidden"
+      style={{
+        borderColor: "var(--line)",
+        background: "var(--card)",
+        boxShadow: "var(--shadow-card)",
+      }}
+    >
+      <div
+        className="border-b px-[18px] py-3.5"
+        style={{ borderColor: "var(--line)" }}
+      >
+        <span
+          className="text-[13.5px] font-medium"
+          style={{ color: "var(--ink)" }}
+        >
+          Tool reliability
+        </span>
+        <span
+          className="ml-3 font-mono text-[11px]"
+          style={{ color: "var(--mute)" }}
+        >
+          {rows.length} tools tracked
+        </span>
       </div>
       <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
         {rows.map((row) => {
@@ -186,17 +295,42 @@ function Heatmap({ rows }) {
               className="rounded-[10px] border px-3 py-2.5"
               style={{ borderColor: c.border, background: c.bg }}
             >
-              <div className="font-mono text-[12px]" style={{ color: "var(--ink)" }}>{row.tool_name}</div>
-              <div className="text-[11px]" style={{ color: "var(--mute)" }}>{row.profile}</div>
+              <div
+                className="font-mono text-[12px]"
+                style={{ color: "var(--ink)" }}
+              >
+                {row.tool_name}
+              </div>
+              <div className="text-[11px]" style={{ color: "var(--mute)" }}>
+                {row.profile}
+              </div>
               <div className="mt-1.5 flex items-center justify-between">
-                <span className="text-[12px] font-semibold" style={{ color: c.text }}>{(rate * 100).toFixed(0)}%</span>
-                <span className="text-[11px]" style={{ color: "var(--mute)" }}>{row.calls} calls</span>
+                <span
+                  className="text-[12px] font-semibold"
+                  style={{ color: c.text }}
+                >
+                  {(rate * 100).toFixed(0)}%
+                </span>
+                <span className="text-[11px]" style={{ color: "var(--mute)" }}>
+                  {row.calls} calls
+                </span>
               </div>
               {/* mini bar */}
-              <div className="mt-1.5 h-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-                <div className="h-1 rounded-full" style={{ width: `${rate * 100}%`, background: c.text }} />
+              <div
+                className="mt-1.5 h-1 overflow-hidden rounded-full"
+                style={{ background: "var(--line)" }}
+              >
+                <div
+                  className="h-1 rounded-full"
+                  style={{ width: `${rate * 100}%`, background: c.text }}
+                />
               </div>
-              <div className="mt-1 text-[10.5px]" style={{ color: "var(--mute)" }}>{Number(row.avg_duration_seconds || 0).toFixed(2)}s avg</div>
+              <div
+                className="mt-1 text-[10.5px]"
+                style={{ color: "var(--mute)" }}
+              >
+                {Number(row.avg_duration_seconds || 0).toFixed(2)}s avg
+              </div>
             </div>
           );
         })}
@@ -208,59 +342,129 @@ function Heatmap({ rows }) {
 /* ── History table ── */
 function HistoryTable({ rows, onSelect, selected }) {
   return (
-    <div className="rounded-[14px] border overflow-hidden" style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}>
-      <div className="border-b px-[18px] py-3.5" style={{ borderColor: "var(--line)" }}>
-        <span className="text-[13.5px] font-medium" style={{ color: "var(--ink)" }}>Tool history</span>
-        <span className="ml-3 font-mono text-[11px]" style={{ color: "var(--mute)" }}>{rows.length} calls</span>
+    <div
+      className="rounded-[14px] border overflow-hidden"
+      style={{
+        borderColor: "var(--line)",
+        background: "var(--card)",
+        boxShadow: "var(--shadow-card)",
+      }}
+    >
+      <div
+        className="border-b px-[18px] py-3.5"
+        style={{ borderColor: "var(--line)" }}
+      >
+        <span
+          className="text-[13.5px] font-medium"
+          style={{ color: "var(--ink)" }}
+        >
+          Tool history
+        </span>
+        <span
+          className="ml-3 font-mono text-[11px]"
+          style={{ color: "var(--mute)" }}
+        >
+          {rows.length} calls
+        </span>
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-full text-[12.5px]">
           <thead>
-            <tr className="border-b" style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.012)" }}>
+            <tr
+              className="border-b"
+              style={{
+                borderColor: "var(--line)",
+                background: "rgba(255,255,255,0.012)",
+              }}
+            >
               {["Tool", "Status", "Duration", "Origin", "Call ID"].map((h) => (
-                <th key={h} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] whitespace-nowrap" style={{ color: "var(--mute)" }}>{h}</th>
+                <th
+                  key={h}
+                  className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] whitespace-nowrap"
+                  style={{ color: "var(--mute)" }}
+                >
+                  {h}
+                </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.length ? rows.map((row) => {
-              const isSelected = selected?.call_id === row.call_id;
-              const ok = row.status === "success";
-              return (
-                <tr
-                  key={row.call_id}
-                  className="cursor-pointer border-b transition-colors"
-                  style={{
-                    borderColor: "var(--line)",
-                    background: isSelected
-                      ? "color-mix(in oklch, var(--signal) 8%, transparent)"
-                      : undefined,
-                  }}
-                  onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
-                  onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
-                  onClick={() => onSelect(isSelected ? null : row)}
-                >
-                  <td className="px-4 py-2.5 font-mono text-[12px]" style={{ color: "var(--sky)" }}>{row.tool_name}</td>
-                  <td className="px-4 py-2.5">
-                    <span
-                      className="rounded-full px-2 py-0.5 font-mono text-[10.5px]"
-                      style={{
-                        color: ok ? "var(--mint)" : "var(--rose)",
-                        background: ok ? "color-mix(in oklch, var(--mint) 12%, transparent)" : "color-mix(in oklch, var(--rose) 12%, transparent)",
-                      }}
+            {rows.length ? (
+              rows.map((row) => {
+                const isSelected = selected?.call_id === row.call_id;
+                const ok = row.status === "success";
+                return (
+                  <tr
+                    key={row.call_id}
+                    className="cursor-pointer border-b transition-colors"
+                    style={{
+                      borderColor: "var(--line)",
+                      background: isSelected
+                        ? "color-mix(in oklch, var(--signal) 8%, transparent)"
+                        : undefined,
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected)
+                        e.currentTarget.style.background =
+                          "rgba(255,255,255,0.02)";
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected)
+                        e.currentTarget.style.background = "transparent";
+                    }}
+                    onClick={() => onSelect(isSelected ? null : row)}
+                  >
+                    <td
+                      className="px-4 py-2.5 font-mono text-[12px]"
+                      style={{ color: "var(--sky)" }}
                     >
-                      {row.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 font-mono text-[11.5px] tabular-nums" style={{ color: "var(--mute)" }}>
-                    {Number(row.duration_seconds || 0).toFixed(2)}s
-                  </td>
-                  <td className="px-4 py-2.5 max-w-[160px] truncate text-[11.5px]" style={{ color: "var(--mute)" }} title={row.origin}>{row.origin || "—"}</td>
-                  <td className="px-4 py-2.5 font-mono text-[10.5px]" style={{ color: "var(--mute-2)" }}>{(row.call_id || "").slice(0, 12)}…</td>
-                </tr>
-              );
-            }) : (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-[12.5px]" style={{ color: "var(--mute)" }}>No history for this profile</td></tr>
+                      {row.tool_name}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span
+                        className="rounded-full px-2 py-0.5 font-mono text-[10.5px]"
+                        style={{
+                          color: ok ? "var(--mint)" : "var(--rose)",
+                          background: ok
+                            ? "color-mix(in oklch, var(--mint) 12%, transparent)"
+                            : "color-mix(in oklch, var(--rose) 12%, transparent)",
+                        }}
+                      >
+                        {row.status}
+                      </span>
+                    </td>
+                    <td
+                      className="px-4 py-2.5 font-mono text-[11.5px] tabular-nums"
+                      style={{ color: "var(--mute)" }}
+                    >
+                      {Number(row.duration_seconds || 0).toFixed(2)}s
+                    </td>
+                    <td
+                      className="px-4 py-2.5 max-w-[160px] truncate text-[11.5px]"
+                      style={{ color: "var(--mute)" }}
+                      title={row.origin}
+                    >
+                      {row.origin || "—"}
+                    </td>
+                    <td
+                      className="px-4 py-2.5 font-mono text-[10.5px]"
+                      style={{ color: "var(--mute-2)" }}
+                    >
+                      {(row.call_id || "").slice(0, 12)}…
+                    </td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td
+                  colSpan={5}
+                  className="px-4 py-8 text-center text-[12.5px]"
+                  style={{ color: "var(--mute)" }}
+                >
+                  No history for this profile
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
@@ -287,12 +491,16 @@ export default function ToolsPage() {
   const autoRefreshRef = useRef(null);
 
   async function loadHistory(p = profile) {
-    const payload = await apiFetch(`/ui/tools/history?profile=${encodeURIComponent(p)}`);
+    const payload = await apiFetch(
+      `/ui/tools/history?profile=${encodeURIComponent(p)}`,
+    );
     setHistory(payload);
   }
 
   async function loadToolNames(p = profile) {
-    const payload = await apiFetch(`/ui/tools/list?profile=${encodeURIComponent(p)}`);
+    const payload = await apiFetch(
+      `/ui/tools/list?profile=${encodeURIComponent(p)}`,
+    );
     setToolNames(payload?.tools || []);
   }
 
@@ -360,15 +568,22 @@ export default function ToolsPage() {
         const savedArgs = argsText;
         setToolName("screenshot");
         setArgsText("{}");
-        setTimeout(() => { setToolName(savedTool); setArgsText(savedArgs); }, 50);
+        setTimeout(() => {
+          setToolName(savedTool);
+          setArgsText(savedArgs);
+        }, 50);
       }
     }, 3000);
-    return () => { if (autoRefreshRef.current) clearInterval(autoRefreshRef.current); };
+    return () => {
+      if (autoRefreshRef.current) clearInterval(autoRefreshRef.current);
+    };
   }, [autoRefresh, isRunning]); // eslint-disable-line
 
   const lastScreenshot = useMemo(
-    () => collectScreenshot(result?.result) || collectScreenshot(selectedHistory?.result_json),
-    [result, selectedHistory]
+    () =>
+      collectScreenshot(result?.result) ||
+      collectScreenshot(selectedHistory?.result_json),
+    [result, selectedHistory],
   );
 
   const templates = STARTER_TEMPLATES[profile] || {};
@@ -376,42 +591,76 @@ export default function ToolsPage() {
 
   return (
     <div className="space-y-5">
-
       {/* page header */}
       <div>
         <span className="owc-eyebrow">tool playground · direct mcp calls</span>
-        <h1 className="mt-2 text-3xl font-semibold" style={{ color: "var(--ink)" }}>
+        <h1
+          className="mt-2 text-3xl font-semibold"
+          style={{ color: "var(--ink)" }}
+        >
           MCP Tool Workbench
         </h1>
-        <p className="mt-1.5 max-w-[62ch] text-[13.5px] leading-relaxed" style={{ color: "var(--mute)" }}>
-          Execute browser tools in isolation. See a live screenshot of the running Chrome instance, inspect results, and track reliability.
+        <p
+          className="mt-1.5 max-w-[62ch] text-[13.5px] leading-relaxed"
+          style={{ color: "var(--mute)" }}
+        >
+          Execute browser tools in isolation. See a live screenshot of the
+          running Chrome instance, inspect results, and track reliability.
         </p>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1fr_400px]">
         {/* ── Left: controls ── */}
         <div className="space-y-4">
-
           {/* Execute card */}
           <div
             className="rounded-[14px] border p-4 space-y-4"
-            style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+            style={{
+              borderColor: "var(--line)",
+              background: "var(--card)",
+              boxShadow: "var(--shadow-card)",
+            }}
           >
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <Wrench className="h-3.5 w-3.5" style={{ color: "var(--signal)" }} />
-                <span className="text-[13.5px] font-medium" style={{ color: "var(--ink)" }}>Execute tool</span>
+                <Wrench
+                  className="h-3.5 w-3.5"
+                  style={{ color: "var(--signal)" }}
+                />
+                <span
+                  className="text-[13.5px] font-medium"
+                  style={{ color: "var(--ink)" }}
+                >
+                  Execute tool
+                </span>
               </div>
-              <label className="flex cursor-pointer items-center gap-2 text-[12px]" style={{ color: autoRefresh ? "var(--mint)" : "var(--mute)" }}>
-                <span>{autoRefresh ? "Auto-refresh on" : "Auto-refresh off"}</span>
+              <label
+                className="flex cursor-pointer items-center gap-2 text-[12px]"
+                style={{ color: autoRefresh ? "var(--mint)" : "var(--mute)" }}
+              >
+                <span>
+                  {autoRefresh ? "Auto-refresh on" : "Auto-refresh off"}
+                </span>
                 <div
                   className="relative h-5 w-9 rounded-full transition-colors"
-                  style={{ background: autoRefresh ? "color-mix(in oklch, var(--mint) 55%, transparent)" : "var(--mute-3)" }}
+                  style={{
+                    background: autoRefresh
+                      ? "color-mix(in oklch, var(--mint) 55%, transparent)"
+                      : "var(--mute-3)",
+                  }}
                 >
-                  <input type="checkbox" className="sr-only" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={autoRefresh}
+                    onChange={(e) => setAutoRefresh(e.target.checked)}
+                  />
                   <span
                     className="absolute top-0.5 h-4 w-4 rounded-full transition-all"
-                    style={{ background: autoRefresh ? "var(--mint)" : "var(--mute-2)", left: autoRefresh ? "calc(100% - 18px)" : "2px" }}
+                    style={{
+                      background: autoRefresh ? "var(--mint)" : "var(--mute-2)",
+                      left: autoRefresh ? "calc(100% - 18px)" : "2px",
+                    }}
                   />
                 </div>
               </label>
@@ -419,7 +668,10 @@ export default function ToolsPage() {
 
             {/* Profile */}
             <div className="space-y-1.5">
-              <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--mute-2)" }}>
+              <label
+                className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                style={{ color: "var(--mute-2)" }}
+              >
                 Agent profile
                 <HelpIcon tip="Each profile maps to an agent type and exposes a different set of MCP tools." />
               </label>
@@ -429,9 +681,21 @@ export default function ToolsPage() {
                     key={p}
                     onClick={() => selectProfile(p)}
                     className="rounded-lg border px-3 py-1.5 text-[13px] transition-colors"
-                    style={profile === p
-                      ? { borderColor: "color-mix(in oklch, var(--signal) 55%, transparent)", background: "color-mix(in oklch, var(--signal) 9%, transparent)", color: "var(--ink)" }
-                      : { borderColor: "var(--line)", background: "var(--card-hi)", color: "var(--mute)" }}
+                    style={
+                      profile === p
+                        ? {
+                            borderColor:
+                              "color-mix(in oklch, var(--signal) 55%, transparent)",
+                            background:
+                              "color-mix(in oklch, var(--signal) 9%, transparent)",
+                            color: "var(--ink)",
+                          }
+                        : {
+                            borderColor: "var(--line)",
+                            background: "var(--card-hi)",
+                            color: "var(--mute)",
+                          }
+                    }
                   >
                     {p}
                   </button>
@@ -459,7 +723,9 @@ export default function ToolsPage() {
                   className="font-mono"
                 />
                 <datalist id="tool-name-options">
-                  {toolNames.map((name) => <option key={name} value={name} />)}
+                  {toolNames.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
                 </datalist>
               </div>
               <Select
@@ -467,11 +733,17 @@ export default function ToolsPage() {
                 value={templateName}
                 onChange={(value) => {
                   setTemplateName(value);
-                  if (templates[value]) { setToolName(value); setArgsText(templates[value]); }
+                  if (templates[value]) {
+                    setToolName(value);
+                    setArgsText(templates[value]);
+                  }
                 }}
                 options={[
                   { value: "", label: "Select template" },
-                  ...Object.keys(templates).map((name) => ({ value: name, label: name })),
+                  ...Object.keys(templates).map((name) => ({
+                    value: name,
+                    label: name,
+                  })),
                 ]}
               />
             </div>
@@ -487,7 +759,13 @@ export default function ToolsPage() {
             {error && (
               <div
                 className="flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[13px]"
-                style={{ borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)", background: "color-mix(in oklch, var(--rose) 10%, transparent)", color: "var(--rose)" }}
+                style={{
+                  borderColor:
+                    "color-mix(in oklch, var(--rose) 30%, transparent)",
+                  background:
+                    "color-mix(in oklch, var(--rose) 10%, transparent)",
+                  color: "var(--rose)",
+                }}
               >
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                 {error}
@@ -496,30 +774,69 @@ export default function ToolsPage() {
 
             <div className="flex gap-2">
               <Button variant="accent" onClick={callTool} disabled={isRunning}>
-                {isRunning ? <><span className="owc-spinner owc-spinner-sm" />Running…</> : "Call tool"}
+                {isRunning ? (
+                  <>
+                    <span className="owc-spinner owc-spinner-sm" />
+                    Running…
+                  </>
+                ) : (
+                  "Call tool"
+                )}
               </Button>
-              <Button variant="ghost" onClick={() => loadHistory(profile)} className="border border-[var(--line)]">
+              <Button
+                variant="ghost"
+                onClick={() => loadHistory(profile)}
+                className="border border-[var(--line)]"
+              >
                 Refresh history
               </Button>
             </div>
           </div>
 
           {/* History */}
-          <HistoryTable rows={history.rows || []} onSelect={setSelectedHistory} selected={selectedHistory} />
+          <HistoryTable
+            rows={history.rows || []}
+            onSelect={setSelectedHistory}
+            selected={selectedHistory}
+          />
 
           {/* History detail */}
           {selectedHistory && (
             <div
               className="rounded-[14px] border p-4"
-              style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+              style={{
+                borderColor: "var(--line)",
+                background: "var(--card)",
+                boxShadow: "var(--shadow-card)",
+              }}
             >
               <div className="mb-3 flex items-center">
-                <div className="text-[13.5px] font-medium" style={{ color: "var(--ink)" }}>History detail</div>
-                <button type="button" onClick={() => setSelectedHistory(null)} className="ml-auto text-[12px]" style={{ color: "var(--mute)" }}>Close ×</button>
+                <div
+                  className="text-[13.5px] font-medium"
+                  style={{ color: "var(--ink)" }}
+                >
+                  History detail
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedHistory(null)}
+                  className="ml-auto text-[12px]"
+                  style={{ color: "var(--mute)" }}
+                >
+                  Close ×
+                </button>
               </div>
               <div className="grid gap-4 xl:grid-cols-2">
-                <JsonViewer label="Input args" value={selectedHistory.args_json} />
-                <JsonViewer label="Output result" value={selectedHistory.result_json} />
+                <StructuredDataCard
+                  title="Input arguments"
+                  description="Structured arguments captured for this historical tool call."
+                  data={selectedHistory.args_json}
+                />
+                <StructuredDataCard
+                  title="Output summary"
+                  description="Structured result captured for this historical tool call."
+                  data={selectedHistory.result_json}
+                />
               </div>
             </div>
           )}
@@ -531,20 +848,29 @@ export default function ToolsPage() {
             src={lastScreenshot}
             autoRefresh={autoRefresh}
             onManualRefresh={() => {
-              const t = toolName; const a = argsText;
-              setToolName("screenshot"); setArgsText("{}");
-              setTimeout(() => { setToolName(t); setArgsText(a); callTool(); }, 0);
+              const t = toolName;
+              const a = argsText;
+              setToolName("screenshot");
+              setArgsText("{}");
+              setTimeout(() => {
+                setToolName(t);
+                setArgsText(a);
+                callTool();
+              }, 0);
             }}
             isRunning={isRunning}
           />
-          <JsonViewer label="Last result" value={result} />
+          <StructuredDataCard
+            title="Last result"
+            description="Structured summary of the latest tool response."
+            data={result}
+            emptyLabel="No tool result yet."
+          />
         </div>
       </div>
 
       {/* Reliability */}
-      {filteredReliability.length > 0 && (
-        <Heatmap rows={filteredReliability} />
-      )}
+      {filteredReliability.length > 0 && <Heatmap rows={filteredReliability} />}
     </div>
   );
 }

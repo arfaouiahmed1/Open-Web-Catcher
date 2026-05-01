@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, Database, RefreshCcw } from "lucide-react";
 
 import { apiFetch } from "@/lib/api";
 import { DataTable } from "@/components/data-table";
-import { JsonViewer } from "@/components/json-viewer";
+import { StructuredDataCard } from "@/components/structured-data-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -19,15 +19,31 @@ function TableCards({ entries = [], selected, onSelect }) {
           onClick={() => onSelect(entry.name)}
           type="button"
           className="rounded-[10px] border px-3 py-2.5 text-left transition-colors"
-          style={selected === entry.name
-            ? { borderColor: "color-mix(in oklch, var(--signal) 55%, transparent)", background: "color-mix(in oklch, var(--signal) 9%, transparent)" }
-            : { borderColor: "var(--line)", background: "var(--card)" }
+          style={
+            selected === entry.name
+              ? {
+                  borderColor:
+                    "color-mix(in oklch, var(--signal) 55%, transparent)",
+                  background:
+                    "color-mix(in oklch, var(--signal) 9%, transparent)",
+                }
+              : { borderColor: "var(--line)", background: "var(--card)" }
           }
-          onMouseEnter={(e) => { if (selected !== entry.name) e.currentTarget.style.borderColor = "var(--line-hi)"; }}
-          onMouseLeave={(e) => { if (selected !== entry.name) e.currentTarget.style.borderColor = "var(--line)"; }}
+          onMouseEnter={(e) => {
+            if (selected !== entry.name)
+              e.currentTarget.style.borderColor = "var(--line-hi)";
+          }}
+          onMouseLeave={(e) => {
+            if (selected !== entry.name)
+              e.currentTarget.style.borderColor = "var(--line)";
+          }}
         >
-          <div className="font-mono text-[12px] text-[var(--ink)]">{entry.name}</div>
-          <div className="mt-0.5 text-[11px] text-[var(--mute)]">{entry.row_count || 0} rows</div>
+          <div className="font-mono text-[12px] text-[var(--ink)]">
+            {entry.name}
+          </div>
+          <div className="mt-0.5 text-[11px] text-[var(--mute)]">
+            {entry.row_count || 0} rows
+          </div>
         </button>
       ))}
     </div>
@@ -52,27 +68,42 @@ export default function DatabasePage() {
     if (!table && t.length) setTable(t[0]);
   }
 
-  async function loadTableData(nextTable = table, nextLimit = limit, nextOffset = offset) {
+  async function loadTableData(
+    nextTable = table,
+    nextLimit = limit,
+    nextOffset = offset,
+  ) {
     if (!nextTable) return;
-    const p = await apiFetch(`/ui/database/${nextTable}?limit=${nextLimit}&offset=${nextOffset}`);
+    const p = await apiFetch(
+      `/ui/database/${nextTable}?limit=${nextLimit}&offset=${nextOffset}`,
+    );
     setPayload(p);
   }
 
-  useEffect(() => { loadTables(); }, []); // eslint-disable-line
-  useEffect(() => { loadTableData(table, limit, offset); }, [table, limit, offset]); // eslint-disable-line
+  useEffect(() => {
+    loadTables();
+  }, []); // eslint-disable-line
+  useEffect(() => {
+    loadTableData(table, limit, offset);
+  }, [table, limit, offset]); // eslint-disable-line
 
   useEffect(() => {
     if (!autoRefresh) return;
-    const timer = setInterval(() => { loadTables(); loadTableData(); }, 5000);
+    const timer = setInterval(() => {
+      loadTables();
+      loadTableData();
+    }, 5000);
     return () => clearInterval(timer);
   }, [autoRefresh, table, limit, offset]); // eslint-disable-line
 
   const total = payload.total || 0;
-  const tableSummary = useMemo(() => entries.find((item) => item.name === table) || null, [entries, table]);
+  const tableSummary = useMemo(
+    () => entries.find((item) => item.name === table) || null,
+    [entries, table],
+  );
 
   return (
     <div className="space-y-5">
-
       {/* page header */}
       <div>
         <span className="owc-eyebrow">database · postgres explorer</span>
@@ -80,22 +111,37 @@ export default function DatabasePage() {
           Data explorer
         </h1>
         <p className="mt-1.5 max-w-[62ch] text-[13.5px] leading-relaxed text-[var(--mute)]">
-          Read-only browse of runs, events, tools, evaluations, and memory with clean table-level summaries.
+          Read-only browse of runs, events, tools, evaluations, and memory with
+          clean table-level summaries.
         </p>
       </div>
 
-      <TableCards entries={entries} selected={table} onSelect={(name) => { setTable(name); setOffset(0); }} />
+      <TableCards
+        entries={entries}
+        selected={table}
+        onSelect={(name) => {
+          setTable(name);
+          setOffset(0);
+        }}
+      />
 
       {/* toolbar */}
       <div
         className="flex flex-wrap items-center gap-3 rounded-[14px] border px-4 py-3"
-        style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+        style={{
+          borderColor: "var(--line)",
+          background: "var(--card)",
+          boxShadow: "var(--shadow-card)",
+        }}
       >
         <Database className="h-3.5 w-3.5 shrink-0 text-[var(--mute)]" />
         <Select
           className="min-w-[220px]"
           value={table}
-          onChange={(value) => { setTable(value); setOffset(0); }}
+          onChange={(value) => {
+            setTable(value);
+            setOffset(0);
+          }}
           options={tables.map((item) => ({
             value: item,
             label: item,
@@ -106,16 +152,26 @@ export default function DatabasePage() {
           min="1"
           max="200"
           value={limit}
-          onChange={(e) => { setLimit(Math.min(Math.max(Number(e.target.value || 25), 1), 200)); setOffset(0); }}
+          onChange={(e) => {
+            setLimit(Math.min(Math.max(Number(e.target.value || 25), 1), 200));
+            setOffset(0);
+          }}
           className="w-24"
         />
         <button
           type="button"
           onClick={() => setAutoRefresh((v) => !v)}
           className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[12px] transition-colors"
-          style={autoRefresh
-            ? { borderColor: "color-mix(in oklch, var(--mint) 35%, transparent)", background: "color-mix(in oklch, var(--mint) 12%, transparent)", color: "var(--mint)" }
-            : { borderColor: "var(--line)", color: "var(--mute)" }
+          style={
+            autoRefresh
+              ? {
+                  borderColor:
+                    "color-mix(in oklch, var(--mint) 35%, transparent)",
+                  background:
+                    "color-mix(in oklch, var(--mint) 12%, transparent)",
+                  color: "var(--mint)",
+                }
+              : { borderColor: "var(--line)", color: "var(--mute)" }
           }
         >
           <RefreshCcw className="h-3 w-3" />
@@ -125,10 +181,20 @@ export default function DatabasePage() {
           {offset + 1}–{Math.min(offset + limit, total)} of {total}
           {tableSummary ? ` · ${tableSummary.row_count || 0} total` : ""}
         </span>
-        <Button variant="ghost" onClick={() => setOffset(Math.max(0, offset - limit))} disabled={offset === 0} className="border border-[var(--line)] h-8 px-2">
+        <Button
+          variant="ghost"
+          onClick={() => setOffset(Math.max(0, offset - limit))}
+          disabled={offset === 0}
+          className="border border-[var(--line)] h-8 px-2"
+        >
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <Button variant="ghost" onClick={() => setOffset(offset + limit)} disabled={offset + limit >= total} className="border border-[var(--line)] h-8 px-2">
+        <Button
+          variant="ghost"
+          onClick={() => setOffset(offset + limit)}
+          disabled={offset + limit >= total}
+          className="border border-[var(--line)] h-8 px-2"
+        >
           <ChevronRight className="h-4 w-4" />
         </Button>
       </div>
@@ -140,7 +206,19 @@ export default function DatabasePage() {
           columns={payload.columns || []}
           rows={payload.rows || []}
         />
-        <JsonViewer label="Raw payload" value={payload} />
+        <StructuredDataCard
+          title="Table summary"
+          description="Structured metadata for the selected database table view."
+          data={{
+            table: payload.table || table,
+            total_rows: total,
+            rows_shown: payload.rows?.length || 0,
+            column_count: payload.columns?.length || 0,
+            offset,
+            limit,
+            selected_table_total: tableSummary?.row_count || 0,
+          }}
+        />
       </div>
     </div>
   );

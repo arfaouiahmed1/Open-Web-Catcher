@@ -6,14 +6,13 @@ import { Settings2, X } from "lucide-react";
 const STORAGE_KEY = "owc_run_view_settings";
 
 const DEFAULTS = {
-  autoScroll:      true,
-  showLiveView:    true,
+  autoScroll: true,
+  showLiveView: true,
   showScreenshots: true,
-  expandTables:    false,
+  expandTables: false,
   showEventStream: true,
-  showJsonViewers: true,
-  liveRefreshMs:   2500,
-  eventLimit:      120,
+  liveRefreshMs: 2500,
+  eventLimit: 120,
 };
 
 export function useRunViewSettings() {
@@ -23,20 +22,30 @@ export function useRunViewSettings() {
     try {
       const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
       setSettings({ ...DEFAULTS, ...stored });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const update = useCallback((key, value) => {
     setSettings((prev) => {
       const next = { ...prev, [key]: value };
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
       return next;
     });
   }, []);
 
   const reset = useCallback(() => {
     setSettings(DEFAULTS);
-    try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   return { settings, update, reset };
@@ -47,9 +56,17 @@ function SettingToggle({ label, description, value, onChange }) {
   return (
     <div className="flex items-center justify-between gap-4 py-2.5">
       <div className="min-w-0 flex-1">
-        <div className="text-[12.5px] font-medium" style={{ color: "var(--ink)" }}>{label}</div>
+        <div
+          className="text-[12.5px] font-medium"
+          style={{ color: "var(--ink)" }}
+        >
+          {label}
+        </div>
         {description && (
-          <div className="mt-0.5 text-[11px] leading-snug" style={{ color: "var(--mute)" }}>
+          <div
+            className="mt-0.5 text-[11px] leading-snug"
+            style={{ color: "var(--mute)" }}
+          >
             {description}
           </div>
         )}
@@ -67,7 +84,9 @@ function SettingToggle({ label, description, value, onChange }) {
             ? "color-mix(in oklch, var(--signal) 80%, transparent)"
             : "color-mix(in oklch, var(--mute-3) 60%, transparent)",
           border: `1px solid ${value ? "color-mix(in oklch, var(--signal) 50%, transparent)" : "var(--line)"}`,
-          boxShadow: value ? "0 0 8px color-mix(in oklch, var(--signal) 30%, transparent)" : "none",
+          boxShadow: value
+            ? "0 0 8px color-mix(in oklch, var(--signal) 30%, transparent)"
+            : "none",
         }}
       >
         <span
@@ -87,13 +106,29 @@ function SettingToggle({ label, description, value, onChange }) {
 }
 
 /* ── Number input row ────────────────────────────────────────────────────── */
-function SettingNumber({ label, description, value, onChange, min, max, step, unit }) {
+function SettingNumber({
+  label,
+  description,
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  unit,
+}) {
   return (
     <div className="flex items-center justify-between gap-4 py-2.5">
       <div className="min-w-0 flex-1">
-        <div className="text-[12.5px] font-medium" style={{ color: "var(--ink)" }}>{label}</div>
+        <div
+          className="text-[12.5px] font-medium"
+          style={{ color: "var(--ink)" }}
+        >
+          {label}
+        </div>
         {description && (
-          <div className="mt-0.5 text-[11px]" style={{ color: "var(--mute)" }}>{description}</div>
+          <div className="mt-0.5 text-[11px]" style={{ color: "var(--mute)" }}>
+            {description}
+          </div>
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
@@ -112,7 +147,9 @@ function SettingNumber({ label, description, value, onChange, min, max, step, un
           }}
         />
         {unit && (
-          <span className="text-[10.5px]" style={{ color: "var(--mute-3)" }}>{unit}</span>
+          <span className="text-[10.5px]" style={{ color: "var(--mute-3)" }}>
+            {unit}
+          </span>
         )}
       </div>
     </div>
@@ -124,7 +161,11 @@ export function RunViewSettingsPanel({ settings, update, reset, onClose }) {
   return (
     <div
       className="overflow-hidden rounded-[14px] border"
-      style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+      style={{
+        borderColor: "var(--line)",
+        background: "var(--card)",
+        boxShadow: "var(--shadow-card)",
+      }}
     >
       {/* header */}
       <div
@@ -132,8 +173,14 @@ export function RunViewSettingsPanel({ settings, update, reset, onClose }) {
         style={{ borderColor: "var(--line)" }}
       >
         <div className="flex items-center gap-2">
-          <Settings2 className="h-3.5 w-3.5" style={{ color: "var(--signal)" }} />
-          <span className="text-[13px] font-semibold" style={{ color: "var(--ink)" }}>
+          <Settings2
+            className="h-3.5 w-3.5"
+            style={{ color: "var(--signal)" }}
+          />
+          <span
+            className="text-[13px] font-semibold"
+            style={{ color: "var(--ink)" }}
+          >
             Run View Settings
           </span>
         </div>
@@ -155,7 +202,9 @@ export function RunViewSettingsPanel({ settings, update, reset, onClose }) {
               className="rounded p-1 transition-colors"
               style={{ color: "var(--mute-2)" }}
               onMouseEnter={(e) => (e.currentTarget.style.color = "var(--ink)")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--mute-2)")}
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.color = "var(--mute-2)")
+              }
             >
               <X className="h-4 w-4" />
             </button>
@@ -167,7 +216,10 @@ export function RunViewSettingsPanel({ settings, update, reset, onClose }) {
       <div className="divide-y px-4" style={{ divideColor: "var(--line)" }}>
         {/* View panels section */}
         <div className="py-2">
-          <div className="pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--mute-3)" }}>
+          <div
+            className="pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
+            style={{ color: "var(--mute-3)" }}
+          >
             View Panels
           </div>
           <SettingToggle
@@ -188,17 +240,14 @@ export function RunViewSettingsPanel({ settings, update, reset, onClose }) {
             value={settings.showEventStream}
             onChange={(v) => update("showEventStream", v)}
           />
-          <SettingToggle
-            label="JSON Viewers"
-            description="Show snapshot and raw payload JSON viewers"
-            value={settings.showJsonViewers}
-            onChange={(v) => update("showJsonViewers", v)}
-          />
         </div>
 
         {/* Behavior section */}
         <div className="py-2">
-          <div className="pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--mute-3)" }}>
+          <div
+            className="pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
+            style={{ color: "var(--mute-3)" }}
+          >
             Behavior
           </div>
           <SettingToggle
@@ -217,7 +266,10 @@ export function RunViewSettingsPanel({ settings, update, reset, onClose }) {
 
         {/* Performance section */}
         <div className="py-2">
-          <div className="pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--mute-3)" }}>
+          <div
+            className="pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
+            style={{ color: "var(--mute-3)" }}
+          >
             Performance
           </div>
           <SettingNumber
@@ -258,8 +310,12 @@ export function RunViewSettingsButton({ settings, update, reset }) {
         title="View settings"
         className="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11.5px] transition-all"
         style={{
-          borderColor: open ? "color-mix(in oklch, var(--signal) 35%, transparent)" : "var(--line)",
-          background: open ? "color-mix(in oklch, var(--signal) 10%, transparent)" : "transparent",
+          borderColor: open
+            ? "color-mix(in oklch, var(--signal) 35%, transparent)"
+            : "var(--line)",
+          background: open
+            ? "color-mix(in oklch, var(--signal) 10%, transparent)"
+            : "transparent",
           color: open ? "var(--signal)" : "var(--mute)",
         }}
       >
@@ -270,10 +326,7 @@ export function RunViewSettingsButton({ settings, update, reset }) {
       {open && (
         <>
           {/* backdrop */}
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setOpen(false)}
-          />
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           {/* flyout */}
           <div className="absolute right-0 top-full z-50 mt-2 w-80">
             <RunViewSettingsPanel

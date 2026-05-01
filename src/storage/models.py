@@ -185,6 +185,7 @@ class LLMCallRecord(Base):
     cache_mode: Mapped[str] = mapped_column(String(32), default="")
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    context_window: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     estimated_input_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     estimated_output_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     estimated_total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)

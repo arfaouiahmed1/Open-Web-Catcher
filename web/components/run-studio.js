@@ -6,11 +6,17 @@ import { Brain, Loader2, Play, Square } from "lucide-react";
 import { apiFetch, apiUrl } from "@/lib/api";
 import { statusLabel, statusTone } from "@/lib/run-status";
 import { formatCurrency, formatNumber } from "@/lib/utils";
-import { extractToolCalls, mergeTraceEvents, STAGE_LABELS } from "@/lib/run-trace";
+import {
+  extractToolCalls,
+  mergeTraceEvents,
+  STAGE_LABELS,
+} from "@/lib/run-trace";
 import { AgentOutputPanel } from "@/components/agent-output-panel";
 import { BrowserLiveView } from "@/components/browser-live-view";
 import { OrchestratorGraph } from "@/components/orchestrator-graph";
 import { LlmOutputPanel } from "@/components/llm-output-panel";
+import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
+import { TimelinePanel } from "@/components/timeline-panel";
 import { ToolCallFeed } from "@/components/tool-call-feed";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,8 +36,12 @@ function SelectorButton({ active, onClick, children }) {
       onClick={onClick}
       className="rounded-[12px] border px-3 py-2 text-left text-[12px] font-medium transition-colors"
       style={{
-        borderColor: active ? "color-mix(in oklch, var(--signal) 34%, transparent)" : "var(--line)",
-        background: active ? "color-mix(in oklch, var(--signal) 12%, transparent)" : "var(--card)",
+        borderColor: active
+          ? "color-mix(in oklch, var(--signal) 34%, transparent)"
+          : "var(--line)",
+        background: active
+          ? "color-mix(in oklch, var(--signal) 12%, transparent)"
+          : "var(--card)",
         color: active ? "var(--signal)" : "var(--ink-dim)",
       }}
     >
@@ -47,7 +57,9 @@ function StatPill({ label, value, accent = "var(--ink-dim)" }) {
       style={{ borderColor: "var(--line)", background: "var(--card)" }}
     >
       <span style={{ color: "var(--mute-2)" }}>{label}</span>
-      <span className="ml-2 font-mono font-semibold" style={{ color: accent }}>{value}</span>
+      <span className="ml-2 font-mono font-semibold" style={{ color: accent }}>
+        {value}
+      </span>
     </div>
   );
 }
@@ -80,9 +92,11 @@ export function RunStudio({ mode = "workflow" }) {
     if (!runId) return undefined;
 
     let alive = true;
-    apiFetch(`/ui/runs/${runId}`).then((payload) => {
-      if (alive) setRunDetail(payload);
-    }).catch(() => {});
+    apiFetch(`/ui/runs/${runId}`)
+      .then((payload) => {
+        if (alive) setRunDetail(payload);
+      })
+      .catch(() => {});
 
     setIsRunning(true);
     setStreamError("");
@@ -93,7 +107,9 @@ export function RunStudio({ mode = "workflow" }) {
         const payload = JSON.parse(message.data || "{}");
         if (!payload || typeof payload !== "object") return;
 
-        const incomingEvents = Array.isArray(payload.events) ? payload.events : [];
+        const incomingEvents = Array.isArray(payload.events)
+          ? payload.events
+          : [];
         if (incomingEvents.length) {
           setEvents((current) => mergeTraceEvents(current, incomingEvents));
         }
@@ -103,16 +119,22 @@ export function RunStudio({ mode = "workflow" }) {
         setTracePayload(payload);
         if (payload.completed) {
           setIsRunning(false);
-          apiFetch(`/ui/runs/${runId}`).then((detail) => {
-            if (alive) setRunDetail(detail);
-          }).catch(() => {});
+          apiFetch(`/ui/runs/${runId}`)
+            .then((detail) => {
+              if (alive) setRunDetail(detail);
+            })
+            .catch(() => {});
           source.close();
         }
         if (payload.error) {
           setStreamError(`Stream error: ${payload.error}`);
         }
       } catch (error) {
-        setStreamError(error instanceof Error ? error.message : String(error || "Live stream failed"));
+        setStreamError(
+          error instanceof Error
+            ? error.message
+            : String(error || "Live stream failed"),
+        );
       }
     };
 
@@ -136,7 +158,8 @@ export function RunStudio({ mode = "workflow" }) {
     setStreamError("");
     setRunId("");
     try {
-      const endpoint = mode === "workflow" ? "/ui/workflows/run" : "/ui/agents/test";
+      const endpoint =
+        mode === "workflow" ? "/ui/workflows/run" : "/ui/agents/test";
       const body = mode === "workflow" ? { url } : { url, agent };
       const response = await fetch(apiUrl(endpoint), {
         method: "POST",
@@ -150,10 +173,16 @@ export function RunStudio({ mode = "workflow" }) {
       const nextRunId = payload.run_id || "";
       setRunId(nextRunId);
       if (nextRunId && typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("owc:track-run", { detail: { runId: nextRunId } }));
+        window.dispatchEvent(
+          new CustomEvent("owc:track-run", { detail: { runId: nextRunId } }),
+        );
       }
     } catch (error) {
-      setStreamError(error instanceof Error ? error.message : String(error || "Start failed"));
+      setStreamError(
+        error instanceof Error
+          ? error.message
+          : String(error || "Start failed"),
+      );
     } finally {
       setIsStarting(false);
     }
@@ -164,16 +193,29 @@ export function RunStudio({ mode = "workflow" }) {
     try {
       await fetch(apiUrl(`/ui/runs/${runId}/cancel`), { method: "POST" });
     } catch (error) {
-      setStreamError(error instanceof Error ? error.message : String(error || "Cancel failed"));
+      setStreamError(
+        error instanceof Error
+          ? error.message
+          : String(error || "Cancel failed"),
+      );
     }
   }
 
   const toolCallRows = useMemo(() => extractToolCalls(events), [events]);
-  const totalTokens = Number(metrics?.total_tokens_in || 0) + Number(metrics?.total_tokens_out || 0);
+  const totalTokens =
+    Number(metrics?.total_tokens_in || 0) +
+    Number(metrics?.total_tokens_out || 0);
   const cachedInputTokens = Number(metrics?.total_cached_input_tokens || 0);
   const totalInputTokens = Number(metrics?.total_tokens_in || 0);
-  const rootActor = runDetail?.run?.root_actor || tracePayload?.root_actor || (mode === "agent" ? agent : "orchestrator");
-  const runStatus = runDetail?.run?.final_status || runDetail?.job?.display_status || tracePayload?.display_status || (isRunning ? "running" : "");
+  const rootActor =
+    runDetail?.run?.root_actor ||
+    tracePayload?.root_actor ||
+    (mode === "agent" ? agent : "orchestrator");
+  const runStatus =
+    runDetail?.run?.final_status ||
+    runDetail?.job?.display_status ||
+    tracePayload?.display_status ||
+    (isRunning ? "running" : "");
   const stageRollups = runDetail?.stage_rollups || [];
   const agentRollups = runDetail?.agent_rollups || [];
   const parallelism = runDetail?.parallelism || null;
@@ -181,7 +223,9 @@ export function RunStudio({ mode = "workflow" }) {
   return (
     <div className="space-y-5">
       <div>
-        <span className="owc-eyebrow">{mode === "workflow" ? "workflow studio" : "agent studio"}</span>
+        <span className="owc-eyebrow">
+          {mode === "workflow" ? "workflow studio" : "agent studio"}
+        </span>
         <h1 className="mt-2 text-3xl font-semibold text-[var(--ink)]">
           {mode === "workflow" ? "Live pipeline" : "Single-agent test"}
         </h1>
@@ -194,25 +238,45 @@ export function RunStudio({ mode = "workflow" }) {
 
       <div
         className="space-y-4 rounded-[14px] border p-4"
-        style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+        style={{
+          borderColor: "var(--line)",
+          background: "var(--card)",
+          boxShadow: "var(--shadow-card)",
+        }}
       >
         {mode === "agent" ? (
           <div className="space-y-2">
-            <label className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--mute-2)" }}>
+            <label
+              className="text-[10px] font-semibold uppercase tracking-[0.14em]"
+              style={{ color: "var(--mute-2)" }}
+            >
               Agent
             </label>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {AGENTS.map((value) => (
-                <SelectorButton key={value} active={agent === value} onClick={() => setAgent(value)}>
+                <SelectorButton
+                  key={value}
+                  active={agent === value}
+                  onClick={() => setAgent(value)}
+                >
                   <div>{STAGE_LABELS[value]}</div>
-                  <div className="mt-1 text-[11px]" style={{ color: "var(--mute-2)" }}>
+                  <div
+                    className="mt-1 text-[11px]"
+                    style={{ color: "var(--mute-2)" }}
+                  >
                     {value}
                   </div>
                 </SelectorButton>
               ))}
             </div>
 
-            <div className="overflow-hidden rounded-[12px] border" style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.12)" }}>
+            <div
+              className="overflow-hidden rounded-[12px] border"
+              style={{
+                borderColor: "var(--line)",
+                background: "rgba(0,0,0,0.12)",
+              }}
+            >
               <button
                 type="button"
                 onClick={() => setShowPromptPreview((value) => !value)}
@@ -223,7 +287,13 @@ export function RunStudio({ mode = "workflow" }) {
                 Prompt preview
               </button>
               {showPromptPreview ? (
-                <pre className="max-h-64 overflow-auto border-t px-3 py-3 text-[11px] whitespace-pre-wrap" style={{ borderColor: "var(--line)", color: "var(--ink-dim)" }}>
+                <pre
+                  className="max-h-64 overflow-auto border-t px-3 py-3 text-[11px] whitespace-pre-wrap"
+                  style={{
+                    borderColor: "var(--line)",
+                    color: "var(--ink-dim)",
+                  }}
+                >
                   {promptPreview || "No prompt preview available."}
                 </pre>
               ) : null}
@@ -232,7 +302,10 @@ export function RunStudio({ mode = "workflow" }) {
         ) : null}
 
         <div>
-          <label className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--mute-2)" }}>
+          <label
+            className="text-[10px] font-semibold uppercase tracking-[0.14em]"
+            style={{ color: "var(--mute-2)" }}
+          >
             Target URL
           </label>
           <div className="mt-2 flex flex-wrap gap-2">
@@ -240,18 +313,39 @@ export function RunStudio({ mode = "workflow" }) {
               value={url}
               onChange={(event) => setUrl(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && url && !isStarting && !isRunning) startRun();
+                if (event.key === "Enter" && url && !isStarting && !isRunning)
+                  startRun();
               }}
               placeholder="https://streaming-site.example.com/watch/123"
               className="min-w-[280px] flex-1 rounded-[12px] border px-3 py-2 text-[13px]"
-              style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.12)", color: "var(--ink)" }}
+              style={{
+                borderColor: "var(--line)",
+                background: "rgba(0,0,0,0.12)",
+                color: "var(--ink)",
+              }}
             />
-            <Button variant="accent" onClick={startRun} disabled={!url || isStarting || isRunning}>
-              {isStarting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}
-              {isStarting ? "Starting" : mode === "workflow" ? "Run pipeline" : "Run agent"}
+            <Button
+              variant="accent"
+              onClick={startRun}
+              disabled={!url || isStarting || isRunning}
+            >
+              {isStarting ? (
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              ) : (
+                <Play className="mr-1.5 h-4 w-4" />
+              )}
+              {isStarting
+                ? "Starting"
+                : mode === "workflow"
+                  ? "Run pipeline"
+                  : "Run agent"}
             </Button>
             {isRunning ? (
-              <Button variant="ghost" onClick={cancelRun} className="border border-[var(--line)]">
+              <Button
+                variant="ghost"
+                onClick={cancelRun}
+                className="border border-[var(--line)]"
+              >
                 <Square className="mr-1.5 h-3.5 w-3.5" />
                 Stop
               </Button>
@@ -260,48 +354,146 @@ export function RunStudio({ mode = "workflow" }) {
         </div>
 
         {runId ? (
-          <div className="flex flex-wrap items-center gap-2 border-t pt-3" style={{ borderColor: "var(--line)" }}>
-            <span className="font-mono text-[11px]" style={{ color: "var(--mute-3)" }}>{runId.slice(0, 12)}...</span>
-            {runStatus ? <Badge tone={statusTone(runStatus)}>{statusLabel(runStatus)}</Badge> : null}
+          <div
+            className="flex flex-wrap items-center gap-2 border-t pt-3"
+            style={{ borderColor: "var(--line)" }}
+          >
+            <span
+              className="font-mono text-[11px]"
+              style={{ color: "var(--mute-3)" }}
+            >
+              {runId.slice(0, 12)}...
+            </span>
+            {runStatus ? (
+              <Badge tone={statusTone(runStatus)}>
+                {statusLabel(runStatus)}
+              </Badge>
+            ) : null}
             {isRunning ? (
-              <span className="font-mono text-[11px]" style={{ color: "var(--signal)" }}>streaming</span>
+              <span
+                className="font-mono text-[11px]"
+                style={{ color: "var(--signal)" }}
+              >
+                streaming
+              </span>
             ) : null}
             <div className="ml-auto flex flex-wrap gap-2">
-              <StatPill label="tools" value={formatNumber(toolCallRows.length)} accent="var(--sky)" />
-              <StatPill label="llm" value={formatNumber(metrics?.total_llm_calls || 0)} accent="var(--violet)" />
-              <StatPill label="cached/input" value={`${formatNumber(cachedInputTokens)} / ${formatNumber(totalInputTokens)}`} accent="var(--violet)" />
-              <StatPill label="tokens" value={formatNumber(totalTokens)} accent="var(--signal)" />
-              <StatPill label="cost" value={formatCurrency(metrics?.total_cost_usd ?? metrics?.estimated_total_cost_usd ?? 0)} accent="var(--mint)" />
-              <StatPill label="parallel" value={`${formatNumber(parallelism?.current_parallel_agents || 0)} / ${formatNumber(parallelism?.max_parallel_agents || 0)}`} accent="var(--signal)" />
+              <StatPill
+                label="tools"
+                value={formatNumber(toolCallRows.length)}
+                accent="var(--sky)"
+              />
+              <StatPill
+                label="llm"
+                value={formatNumber(metrics?.total_llm_calls || 0)}
+                accent="var(--violet)"
+              />
+              <StatPill
+                label="cached/input"
+                value={`${formatNumber(cachedInputTokens)} / ${formatNumber(totalInputTokens)}`}
+                accent="var(--violet)"
+              />
+              <StatPill
+                label="tokens"
+                value={formatNumber(totalTokens)}
+                accent="var(--signal)"
+              />
+              <StatPill
+                label="cost"
+                value={formatCurrency(
+                  metrics?.total_cost_usd ??
+                    metrics?.estimated_total_cost_usd ??
+                    0,
+                )}
+                accent="var(--mint)"
+              />
+              <StatPill
+                label="parallel"
+                value={`${formatNumber(parallelism?.current_parallel_agents || 0)} / ${formatNumber(parallelism?.max_parallel_agents || 0)}`}
+                accent="var(--signal)"
+              />
             </div>
           </div>
         ) : null}
 
         {streamError ? (
           <div
-            className="rounded-[12px] border px-3 py-2 text-[12px]"
+            className="rounded-[12px] border px-4 py-3 animate-fade-up"
             style={{
-              borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)",
-              background: "color-mix(in oklch, var(--rose) 8%, transparent)",
-              color: "var(--rose)",
+              borderColor: "color-mix(in oklch, var(--rose) 35%, transparent)",
+              background: "color-mix(in oklch, var(--rose) 10%, transparent)",
             }}
           >
-            {streamError}
+            <div className="flex items-start gap-3">
+              <span
+                className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
+                style={{
+                  background:
+                    "color-mix(in oklch, var(--rose) 20%, transparent)",
+                  color: "var(--rose)",
+                }}
+              >
+                <svg viewBox="0 0 12 12" width="10" height="10" fill="none">
+                  <path
+                    d="M6 1L11 10H1L6 1Z"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                    strokeLinejoin="round"
+                  />
+                  <line
+                    x1="6"
+                    y1="4.5"
+                    x2="6"
+                    y2="7"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                    strokeLinecap="round"
+                  />
+                  <circle cx="6" cy="8.5" r="0.6" fill="currentColor" />
+                </svg>
+              </span>
+              <div>
+                <div
+                  className="text-[12.5px] font-semibold"
+                  style={{ color: "var(--rose)" }}
+                >
+                  Run failed
+                </div>
+                <div
+                  className="mt-0.5 font-mono text-[11px]"
+                  style={{
+                    color:
+                      "color-mix(in oklch, var(--rose) 80%, var(--ink-dim))",
+                  }}
+                >
+                  {streamError}
+                </div>
+              </div>
+            </div>
           </div>
         ) : null}
       </div>
 
       {runId || events.length ? (
         <div className="space-y-4">
-          <BrowserLiveView runId={runId} events={events} autoRefresh={isRunning} />
-          <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
+          <BrowserLiveView
+            runId={runId}
+            events={events}
+            autoRefresh={isRunning}
+          />
+          {events.length > 2 && <TimelinePanel events={events} />}
+          <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
             <div className="space-y-4">
               <OrchestratorGraph events={events} rootActor={rootActor} />
               <LlmOutputPanel events={events} />
             </div>
-            <ToolCallFeed toolCalls={toolCallRows} title="Tool Calls" />
+            <ToolCallFeed
+              toolCalls={toolCallRows}
+              title="Tool Calls"
+              maxHeight={520}
+            />
           </div>
-          {(stageRollups.length || agentRollups.length) ? (
+          {stageRollups.length || agentRollups.length ? (
             <AgentOutputPanel
               title={mode === "workflow" ? "Workflow outputs" : "Agent output"}
               stageRollups={stageRollups}
@@ -309,6 +501,9 @@ export function RunStudio({ mode = "workflow" }) {
               parallelism={parallelism}
             />
           ) : null}
+          {events.length > 0 && (
+            <RuntimeEventsPanel events={events} title="Event Stream" />
+          )}
         </div>
       ) : null}
     </div>

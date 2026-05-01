@@ -14,10 +14,13 @@ function fmtHeader(key) {
 
 function StatusPill({ value }) {
   const s = String(value).toLowerCase();
-  const cls =
-    ["success", "passed", "ok"].includes(s) ? "ok"   :
-    ["failed", "error", "fail"].includes(s)  ? "err"  :
-    ["partial", "warning"].includes(s)       ? "warn" : null;
+  const cls = ["success", "passed", "ok"].includes(s)
+    ? "ok"
+    : ["failed", "error", "fail"].includes(s)
+      ? "err"
+      : ["partial", "warning"].includes(s)
+        ? "warn"
+        : null;
 
   if (!cls) return <span>{value}</span>;
   return (
@@ -33,9 +36,11 @@ function fmtCell(key, value) {
     return <span style={{ color: "var(--mute-3)" }}>—</span>;
   }
   if (typeof value === "boolean") {
-    return value
-      ? <span style={{ color: "var(--mint)" }}>Yes</span>
-      : <span style={{ color: "var(--mute-3)" }}>No</span>;
+    return value ? (
+      <span style={{ color: "var(--mint)" }}>Yes</span>
+    ) : (
+      <span style={{ color: "var(--mute-3)" }}>No</span>
+    );
   }
   if (typeof value === "object") {
     return (
@@ -47,14 +52,29 @@ function fmtCell(key, value) {
   const str = String(value);
 
   /* status pills */
-  if (["success","passed","ok","failed","error","fail","partial","warning"].includes(str.toLowerCase())) {
+  if (
+    [
+      "success",
+      "passed",
+      "ok",
+      "failed",
+      "error",
+      "fail",
+      "partial",
+      "warning",
+    ].includes(str.toLowerCase())
+  ) {
     return <StatusPill value={str} />;
   }
 
   /* truncate long strings */
   if (str.length > 60) {
     return (
-      <span className="mono text-xs" style={{ color: "var(--mute)" }} title={str}>
+      <span
+        className="mono text-xs"
+        style={{ color: "var(--mute)" }}
+        title={str}
+      >
         {str.slice(0, 60)}&hellip;
       </span>
     );
@@ -69,15 +89,29 @@ function fmtCell(key, value) {
   return str;
 }
 
-export function DataTable({ title, description, columns, rows, onRowClick, className }) {
+export function DataTable({
+  title,
+  description,
+  columns,
+  rows,
+  onRowClick,
+  className,
+}) {
   return (
     <div
-      className={cn("overflow-hidden rounded-[14px] border border-[var(--line)]", className)}
+      className={cn(
+        "overflow-hidden rounded-[14px] border border-[var(--line)]",
+        className,
+      )}
       style={{ background: "var(--card)", boxShadow: "var(--shadow-card)" }}
     >
       {(title || description) && (
         <div className="flex items-center gap-2.5 border-b border-[var(--line)] px-[18px] py-3.5">
-          {title && <div className="text-[13.5px] font-medium text-[var(--ink)]">{title}</div>}
+          {title && (
+            <div className="text-[13.5px] font-medium text-[var(--ink)]">
+              {title}
+            </div>
+          )}
           {description && (
             <div className="text-[12px] text-[var(--mute)]">{description}</div>
           )}
@@ -94,7 +128,7 @@ export function DataTable({ title, description, columns, rows, onRowClick, class
                 <th
                   key={col}
                   className="whitespace-nowrap border-b border-[var(--line)] px-4 py-2.5 text-left text-[10.5px] font-medium uppercase tracking-[0.1em]"
-                  style={{ color: "var(--mute)", background: "rgba(255,255,255,0.012)" }}
+                  style={{ color: "var(--mute)", background: "var(--card)" }}
                 >
                   {fmtHeader(col)}
                 </th>
@@ -109,12 +143,15 @@ export function DataTable({ title, description, columns, rows, onRowClick, class
                   onClick={() => onRowClick?.(row)}
                   className={cn(
                     "border-b border-[var(--line)] transition-colors last:border-b-0",
-                    onRowClick && "cursor-pointer hover:bg-white/[0.018]"
+                    onRowClick && "cursor-pointer hover:bg-white/[0.018]",
                   )}
                   style={{ color: "var(--ink-dim)" }}
                 >
                   {columns.map((col) => (
-                    <td key={col} className="whitespace-nowrap px-4 py-[11px] align-middle">
+                    <td
+                      key={col}
+                      className="whitespace-nowrap px-4 py-[11px] align-middle"
+                    >
                       {fmtCell(col, row[col])}
                     </td>
                   ))}

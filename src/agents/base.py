@@ -16,7 +16,7 @@ from langgraph.graph.message import add_messages
 
 from src.agents.cache import GeminiCacheManager, ToolResultCache
 from src.utils.config import Settings
-from src.utils.provider_models import resolve_agent_model_selection, resolve_llm_tuning
+from src.utils.provider_models import resolve_agent_model_selection, resolve_llm_tuning, resolve_model_context_window
 from src.utils.logging import get_logger
 from src.utils.observability import RunObserver
 from src.utils.instrumentation import (
@@ -286,6 +286,11 @@ def _build_provider_cache_invoke_kwargs(
             "prompt_cache_key": cache_key,
         }
 
+    if provider == "nvidia":
+        # NVIDIA NIM implicit caching is server-managed for identical prefixes.
+        # No invoke kwarg needed — cache activity signalled via _provider_cache_active_for_run.
+        return {}
+
     if provider == "anthropic":
         ttl = str(prompt_metadata.get("provider_cache_ttl", "") or "").strip().lower()
         cache_control: dict[str, Any] = {"type": "ephemeral"}
@@ -331,6 +336,10 @@ def _provider_cache_active_for_run(
     if provider == "google_genai":
         # Gemini 2.5+ implicit caching is provider-managed and active by default
         # for sufficiently large shared prefixes.
+        return True
+
+    if provider == "nvidia":
+        # NIM implicit caching is server-managed for identical prefixes — always active.
         return True
 
     return bool(provider_cache_invoke_kwargs)
@@ -398,6 +407,7 @@ _PROVIDER_CANONICAL = {
     "openai": "openai",
     "anthropic": "anthropic",
     "openrouter": "openrouter",
+    "nvidia": "nvidia",
 }
 
 _gemini_cache_manager = GeminiCacheManager()
@@ -457,6 +467,27 @@ def build_llm(
             **_filter_llm_kwargs(tuning, {"top_p", "top_k", "max_tokens"}),
         )
 
+    if provider == "nvidia":
+        from langchain_openai import ChatOpenAI  # noqa: PLC0415
+        enable_thinking = tuning.pop("enable_thinking", None)
+        clear_thinking = tuning.pop("clear_thinking", None)
+        nvidia_extra: dict[str, Any] = {}
+        if enable_thinking is not None or clear_thinking is not None:
+            chat_tmpl: dict[str, Any] = {}
+            if enable_thinking is not None:
+                chat_tmpl["enable_thinking"] = bool(enable_thinking)
+            if clear_thinking is not None:
+                chat_tmpl["clear_thinking"] = bool(clear_thinking)
+            nvidia_extra["model_kwargs"] = {"extra_body": {"chat_template_kwargs": chat_tmpl}}
+        return ChatOpenAI(
+            model=model_name,
+            api_key=settings.nvidia_api_key or None,
+            base_url=settings.nvidia_base_url,
+            temperature=temp,
+            **nvidia_extra,
+            **_filter_llm_kwargs(tuning, {"top_p", "max_tokens"}),
+        )
+
     # default: google / gemini
     gemini_kwargs: dict[str, Any] = _filter_llm_kwargs(tuning, {"top_p", "top_k", "max_output_tokens"})
     if settings.thinking_enabled:
@@ -505,6 +536,7 @@ async def run_agent_loop(
     provider = _PROVIDER_CANONICAL.get(
         (settings.llm_provider or "google").lower(), "google_genai"
     )
+    model_context_window = resolve_model_context_window(model_name, provider)
     google_explicit_cache_compatible = True
     gemini_cached_content_source = "none"
     if provider == "google_genai":
@@ -829,6 +861,7 @@ async def run_agent_loop(
                     "message_count": message_count + 1,
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
+                    "context_window": model_context_window,
                     "usage_metadata": _json_ready(getattr(response, "usage_metadata", None)),
                     "response_metadata": _json_ready(getattr(response, "response_metadata", None)),
                     "additional_kwargs": _json_ready(getattr(response, "additional_kwargs", None)),
@@ -1140,6 +1173,7 @@ async def run_agent_loop(
                     "message_count": len(state["messages"]) + 1,
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
+                    "context_window": model_context_window,
                     "usage_metadata": _json_ready(getattr(final, "usage_metadata", None)),
                     "response_metadata": _json_ready(getattr(final, "response_metadata", None)),
                     "additional_kwargs": _json_ready(getattr(final, "additional_kwargs", None)),

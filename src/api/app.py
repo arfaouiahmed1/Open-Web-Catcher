@@ -6,6 +6,7 @@ import asyncio
 import importlib.util
 import json
 import os
+import time as _time
 import uuid
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
@@ -20,11 +21,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.evaluation.deepeval_bridge import EXPECTED_TOOLS_BY_PROFILE
+from src.agents.base import RunCancelledError
 from src.evaluation.datasets import build_dataset_examples, export_dataset_examples
+from src.evaluation.deepeval_bridge import EXPECTED_TOOLS_BY_PROFILE
 from src.evaluation.scoring import evaluate_case_artifact
 from src.evaluation.tracing import setup_tracing_from_settings
-from src.agents.base import RunCancelledError
 from src.models.schemas import (
     AgentTestRequest,
     ClassificationResult,
@@ -47,16 +48,19 @@ from src.storage.dataset_repository import DatasetRepository
 from src.storage.repositories import BackgroundJobRepository, RunRepository
 from src.storage.ui_repository import OperatorConsoleRepository
 from src.tools.mcp_client import REQUIRED_TOOLS_BY_PROFILE, agent_tools
-from src.utils.browser_runtime import normalize_browser_runtime, normalize_disabled_tools_by_browser_profile
+from src.utils.browser_runtime import (
+    normalize_browser_runtime,
+    normalize_disabled_tools_by_browser_profile,
+)
 from src.utils.config import Settings, build_browser_runtime_sync_status
-from src.utils.ipinfo import lookup_multiple
-from src.utils.logging import get_logger, setup_logging
-from src.utils.observability import get_observability_status, run_registry
 from src.utils.console_state import (
     JOB_ACTIVE_STATUSES,
     JOB_TERMINAL_STATUSES,
     normalize_job_display_status,
 )
+from src.utils.ipinfo import lookup_multiple
+from src.utils.logging import get_logger, setup_logging
+from src.utils.observability import get_observability_status, run_registry
 from src.utils.provider_models import (
     ProviderModelCatalogError,
     get_provider_model_catalog,
@@ -70,6 +74,32 @@ from src.utils.service_health import probe_browser, probe_mcp
 logger = get_logger(__name__)
 
 _settings: Settings | None = None
+
+# ── Simple in-memory TTL cache for expensive read endpoints ──────────────
+_TTL_CACHE: dict[str, tuple[float, Any]] = {}
+_OVERVIEW_CACHE_TTL_SECONDS = 6.0  # overview is polled every 5–8 s; cache for 6 s
+_SSE_KEEPALIVE_SECONDS = 20.0  # send SSE `: heartbeat` comment every 20 s
+
+
+def _cache_get(key: str, ttl: float) -> Any | None:
+    entry = _TTL_CACHE.get(key)
+    if entry is None:
+        return None
+    ts, value = entry
+    if _time.monotonic() - ts > ttl:
+        _TTL_CACHE.pop(key, None)
+        return None
+    return value
+
+
+def _cache_set(key: str, value: Any) -> None:
+    _TTL_CACHE[key] = (_time.monotonic(), value)
+
+
+def _cache_bust(prefix: str) -> None:
+    for key in list(_TTL_CACHE.keys()):
+        if key.startswith(prefix):
+            _TTL_CACHE.pop(key, None)
 
 
 @dataclass
@@ -236,10 +266,14 @@ async def _get_playground_tools(profile: str, settings: Settings) -> list[Any]:
         return surviving.tools
 
 
-async def _invoke_named_tool(tools: list[Any], profile: str, tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+async def _invoke_named_tool(
+    tools: list[Any], profile: str, tool_name: str, args: dict[str, Any]
+) -> dict[str, Any]:
     tool = next((item for item in tools if item.name == tool_name), None)
     if tool is None:
-        raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found for profile '{profile}'")
+        raise HTTPException(
+            status_code=404, detail=f"Tool '{tool_name}' not found for profile '{profile}'"
+        )
 
     result = await tool.ainvoke(args)
     if isinstance(result, str):
@@ -280,9 +314,13 @@ def _normalize_manual_batch_urls(values: list[str], *, max_urls: int = 40) -> li
         normalized.append(url)
 
     if not normalized:
-        raise HTTPException(status_code=400, detail="Provide at least one website URL for the manual batch.")
+        raise HTTPException(
+            status_code=400, detail="Provide at least one website URL for the manual batch."
+        )
     if len(normalized) > max_urls:
-        raise HTTPException(status_code=400, detail=f"Manual batches are limited to {max_urls} websites per run.")
+        raise HTTPException(
+            status_code=400, detail=f"Manual batches are limited to {max_urls} websites per run."
+        )
     return normalized
 
 
@@ -399,13 +437,19 @@ async def _execute_evaluation_case(
             )
             from src.agents.orchestrator import run_pipeline as _run_pipeline
 
-            result = await _run_pipeline(url=case.input.get("url", ""), settings=settings, observer=observer)
+            result = await _run_pipeline(
+                url=case.input.get("url", ""), settings=settings, observer=observer
+            )
             await _persist_pipeline_result(result)
             artifact = result.model_dump(mode="json")
             trace_model = observer.trace()
             trace_payload = trace_model.model_dump(mode="json")
-            latency_ms = (trace_model.metrics.total_duration_seconds if trace_model.metrics else 0.0) * 1000.0
-            total_cost = trace_model.metrics.estimated_total_cost_usd if trace_model.metrics else 0.0
+            latency_ms = (
+                trace_model.metrics.total_duration_seconds if trace_model.metrics else 0.0
+            ) * 1000.0
+            total_cost = (
+                trace_model.metrics.estimated_total_cost_usd if trace_model.metrics else 0.0
+            )
         elif case.target_type == "agent":
             agent_name = case.input.get("agent", "classification")
             observer = run_registry.create(
@@ -419,8 +463,12 @@ async def _execute_evaluation_case(
             artifact = result.model_dump(mode="json") if hasattr(result, "model_dump") else {}
             trace_model = observer.trace()
             trace_payload = trace_model.model_dump(mode="json")
-            latency_ms = (trace_model.metrics.total_duration_seconds if trace_model.metrics else 0.0) * 1000.0
-            total_cost = trace_model.metrics.estimated_total_cost_usd if trace_model.metrics else 0.0
+            latency_ms = (
+                trace_model.metrics.total_duration_seconds if trace_model.metrics else 0.0
+            ) * 1000.0
+            total_cost = (
+                trace_model.metrics.estimated_total_cost_usd if trace_model.metrics else 0.0
+            )
         elif case.target_type == "tool":
             artifact = {
                 "result": (
@@ -452,8 +500,12 @@ async def _execute_evaluation_case(
                 trace_model = None
             if trace_model is not None:
                 trace_payload = trace_model.model_dump(mode="json")
-                latency_ms = (trace_model.metrics.total_duration_seconds if trace_model.metrics else 0.0) * 1000.0
-                total_cost = trace_model.metrics.estimated_total_cost_usd if trace_model.metrics else 0.0
+                latency_ms = (
+                    trace_model.metrics.total_duration_seconds if trace_model.metrics else 0.0
+                ) * 1000.0
+                total_cost = (
+                    trace_model.metrics.estimated_total_cost_usd if trace_model.metrics else 0.0
+                )
 
         logger.exception(
             "Evaluation case execution failed | eval_run=%s | case=%s | target_type=%s | mode=%s",
@@ -475,7 +527,9 @@ async def _execute_evaluation_case(
 def _deepeval_lab_payload(settings: Settings) -> dict[str, Any]:
     deepeval_available = importlib.util.find_spec("deepeval") is not None
     openai_available = importlib.util.find_spec("openai") is not None
-    openrouter_api_key_configured = bool(os.environ.get("OPENROUTER_API_KEY") or settings.openrouter_api_key)
+    openrouter_api_key_configured = bool(
+        os.environ.get("OPENROUTER_API_KEY") or settings.openrouter_api_key
+    )
     warnings: list[str] = []
 
     if not deepeval_available:
@@ -483,7 +537,9 @@ def _deepeval_lab_payload(settings: Settings) -> dict[str, Any]:
     if not openai_available:
         warnings.append("The openai package used by the OpenRouter judge is not installed.")
     if not openrouter_api_key_configured:
-        warnings.append("OPENROUTER_API_KEY is not configured, so the LLM-judge metrics cannot run.")
+        warnings.append(
+            "OPENROUTER_API_KEY is not configured, so the LLM-judge metrics cannot run."
+        )
 
     return {
         "ready": deepeval_available and openai_available and openrouter_api_key_configured,
@@ -570,7 +626,9 @@ def _sync_provider_pricing_to_db(
         settings,
         provider=effective_provider,
         timeout_seconds=max(1, int(settings.provider_pricing_timeout_seconds)),
-        max_models=max_models if max_models is not None else max(1, int(settings.provider_pricing_max_models)),
+        max_models=max_models
+        if max_models is not None
+        else max(1, int(settings.provider_pricing_max_models)),
     )
 
     session = get_session()
@@ -679,8 +737,14 @@ async def _process_background_job() -> bool:
                 error_text=str(execution.get("error", "Cancelled")),
             )
         else:
-            failed_job = repo.mark_failed(job.run_id, error_text=str(execution.get("error", "background_job_failed")))
-            failed_status = normalize_job_display_status(str(failed_job.status or "")) if failed_job is not None else "failed"
+            failed_job = repo.mark_failed(
+                job.run_id, error_text=str(execution.get("error", "background_job_failed"))
+            )
+            failed_status = (
+                normalize_job_display_status(str(failed_job.status or ""))
+                if failed_job is not None
+                else "failed"
+            )
             if failed_status == "running":
                 dataset_repo.mark_site_run_running(job.run_id)
             else:
@@ -718,7 +782,9 @@ async def lifespan(app: FastAPI):
     cleanup = {"runtime_events_deleted": 0, "run_screenshots_deleted": 0}
     session = get_session()
     try:
-        cleanup = RunRepository(session).cleanup_old_artifacts(retention_days=settings.background_job_retention_days)
+        cleanup = RunRepository(session).cleanup_old_artifacts(
+            retention_days=settings.background_job_retention_days
+        )
     except Exception as exc:  # noqa: BLE001
         logger.debug("Skipping startup artifact cleanup: %s", exc)
     finally:
@@ -768,7 +834,9 @@ def _active_trace_row(trace: Any) -> dict[str, Any]:
     total_tokens_out = int(metrics.total_tokens_out or 0) if metrics else 0
     status = "running"
     if trace.completed:
-        if trace.cancel_requested or str((metrics.failure_mode if metrics else "") or "").lower() in {"runcancellederror", "cancelled", "canceled"}:
+        if trace.cancel_requested or str(
+            (metrics.failure_mode if metrics else "") or ""
+        ).lower() in {"runcancellederror", "cancelled", "canceled"}:
             status = "cancelled"
         else:
             status = "success" if (metrics and metrics.success) else "failed"
@@ -844,10 +912,18 @@ def _background_job_state(job: Any) -> dict[str, Any]:
         "attempts": int(getattr(job, "attempts", 0) or 0),
         "max_attempts": int(getattr(job, "max_attempts", 0) or 0),
         "error_text": str(getattr(job, "error_text", "") or ""),
-        "created_at": getattr(job, "created_at", None).isoformat() if getattr(job, "created_at", None) else "",
-        "started_at": getattr(job, "started_at", None).isoformat() if getattr(job, "started_at", None) else "",
-        "finished_at": getattr(job, "finished_at", None).isoformat() if getattr(job, "finished_at", None) else "",
-        "heartbeat_at": getattr(job, "heartbeat_at", None).isoformat() if getattr(job, "heartbeat_at", None) else "",
+        "created_at": getattr(job, "created_at", None).isoformat()
+        if getattr(job, "created_at", None)
+        else "",
+        "started_at": getattr(job, "started_at", None).isoformat()
+        if getattr(job, "started_at", None)
+        else "",
+        "finished_at": getattr(job, "finished_at", None).isoformat()
+        if getattr(job, "finished_at", None)
+        else "",
+        "heartbeat_at": getattr(job, "heartbeat_at", None).isoformat()
+        if getattr(job, "heartbeat_at", None)
+        else "",
     }
 
 
@@ -913,7 +989,9 @@ def _persist_trace_snapshot(run_id: str, *, root_actor: str, url: str) -> None:
         return
     session = get_session()
     try:
-        RunRepository(session).save_trace_snapshot(run_id=run_id, root_actor=root_actor, url=url, trace=trace)
+        RunRepository(session).save_trace_snapshot(
+            run_id=run_id, root_actor=root_actor, url=url, trace=trace
+        )
         BackgroundJobRepository(session).heartbeat(run_id)
     except SQLAlchemyError as exc:
         logger.debug("Skipping trace snapshot persistence for run_id=%s: %s", run_id, exc)
@@ -980,7 +1058,9 @@ async def _background_workflow(run_id: str, url: str) -> dict[str, Any]:
         observability=get_observability_status(settings),
     )
     observer.set_url(url)
-    persist_task = asyncio.create_task(_trace_persist_loop(run_id, root_actor="orchestrator", url=url))
+    persist_task = asyncio.create_task(
+        _trace_persist_loop(run_id, root_actor="orchestrator", url=url)
+    )
     try:
         timeout_seconds = max(1, int(settings.agent_timeout_seconds))
         result = await asyncio.wait_for(
@@ -994,7 +1074,11 @@ async def _background_workflow(run_id: str, url: str) -> dict[str, Any]:
         _emit_failure_once(observer, "pipeline_failed", message)
         observer.finish(success=False, failure_mode="TimeoutError")
         _persist_trace_snapshot(run_id, root_actor="orchestrator", url=url)
-        logger.error("Background workflow timed out: run_id=%s timeout=%ss", run_id, max(1, int(settings.agent_timeout_seconds)))
+        logger.error(
+            "Background workflow timed out: run_id=%s timeout=%ss",
+            run_id,
+            max(1, int(settings.agent_timeout_seconds)),
+        )
         return {"ok": False, "error": message}
     except RunCancelledError as exc:
         observer.finish(success=False, failure_mode="cancelled")
@@ -1010,7 +1094,9 @@ async def _background_workflow(run_id: str, url: str) -> dict[str, Any]:
         persist_task.cancel()
 
 
-async def _background_agent(run_id: str, agent: str, url: str, prompt_override: str = "") -> dict[str, Any]:
+async def _background_agent(
+    run_id: str, agent: str, url: str, prompt_override: str = ""
+) -> dict[str, Any]:
     settings = get_settings()
     observer = run_registry.create(
         run_id=run_id,
@@ -1036,7 +1122,10 @@ async def _background_agent(run_id: str, agent: str, url: str, prompt_override: 
             failure_mode = "" if success else result.status.value
         observer.finish(success=success, failure_mode=failure_mode)
         _persist_trace_snapshot(run_id, root_actor=agent, url=url)
-        return {"ok": success, "result": result.model_dump(mode="json") if hasattr(result, "model_dump") else {}}
+        return {
+            "ok": success,
+            "result": result.model_dump(mode="json") if hasattr(result, "model_dump") else {},
+        }
     except asyncio.TimeoutError:
         message = f"Agent timed out after {max(1, int(settings.agent_timeout_seconds))}s"
         _emit_failure_once(observer, "agent_failed", message)
@@ -1247,7 +1336,9 @@ def _provider_lookup_urls(stream_urls: list[str], settings: Settings) -> list[di
     cleaned = [item.strip() for item in stream_urls if item and item.strip()]
     if not cleaned:
         raise HTTPException(status_code=400, detail="At least one stream URL is required")
-    results = lookup_multiple(cleaned, ipinfo_token=settings.ipinfo_token, deduplicate_by_provider=False)
+    results = lookup_multiple(
+        cleaned, ipinfo_token=settings.ipinfo_token, deduplicate_by_provider=False
+    )
     session = get_session()
     try:
         repo = OperatorConsoleRepository(session)
@@ -1265,7 +1356,8 @@ def _background_job_health() -> dict[str, Any]:
         running = sum(1 for row in rows if row.status == "running")
         return {
             "healthy": True,
-            "worker_running": _background_worker_task is not None and not _background_worker_task.done(),
+            "worker_running": _background_worker_task is not None
+            and not _background_worker_task.done(),
             "queued": queued,
             "running": running,
             "queue_lag": queued,
@@ -1273,7 +1365,8 @@ def _background_job_health() -> dict[str, Any]:
     except Exception:
         return {
             "healthy": False,
-            "worker_running": _background_worker_task is not None and not _background_worker_task.done(),
+            "worker_running": _background_worker_task is not None
+            and not _background_worker_task.done(),
             "queued": 0,
             "running": 0,
             "queue_lag": 0,
@@ -1285,6 +1378,7 @@ def _background_job_health() -> dict[str, Any]:
 async def _stream_trace(run_id: str, request: Request | None = None):
     last_seq = 0
     first_tick = True
+    _sse_keepalive_last = [_time.monotonic()]
     try:
         while True:
             if request is not None and await request.is_disconnected():
@@ -1302,7 +1396,9 @@ async def _stream_trace(run_id: str, request: Request | None = None):
                     if db_events:
                         payload = {
                             "run_id": run_id,
-                            "events": [event for event in db_events if int(event.get("seq", 0)) > last_seq],
+                            "events": [
+                                event for event in db_events if int(event.get("seq", 0)) > last_seq
+                            ],
                             "metrics": None,
                             "completed": True,
                             "cancel_requested": False,
@@ -1322,18 +1418,30 @@ async def _stream_trace(run_id: str, request: Request | None = None):
                             if display_status == "cancelled":
                                 event_kind = "run_cancelled"
                             elif display_status in {"success", "partial"}:
-                                event_kind = "pipeline_finished" if str(job.job_type or "") == "workflow" else "agent_finished"
+                                event_kind = (
+                                    "pipeline_finished"
+                                    if str(job.job_type or "") == "workflow"
+                                    else "agent_finished"
+                                )
                             elif display_status == "failed":
-                                event_kind = "pipeline_failed" if str(job.job_type or "") == "workflow" else "agent_failed"
+                                event_kind = (
+                                    "pipeline_failed"
+                                    if str(job.job_type or "") == "workflow"
+                                    else "agent_failed"
+                                )
                             if event_kind:
                                 synthetic_events.append(
                                     {
                                         "seq": last_seq + 1,
                                         "kind": event_kind,
                                         "actor": str(job.actor or ""),
-                                        "status": "success" if display_status in {"success", "partial"} else "error",
+                                        "status": "success"
+                                        if display_status in {"success", "partial"}
+                                        else "error",
                                         "message": str(job.error_text or "") or display_status,
-                                        "timestamp": (job.finished_at or job.updated_at or job.created_at).isoformat(),
+                                        "timestamp": (
+                                            job.finished_at or job.updated_at or job.created_at
+                                        ).isoformat(),
                                         "details": {
                                             "job_status": str(job.status or ""),
                                             "display_status": display_status,
@@ -1362,11 +1470,18 @@ async def _stream_trace(run_id: str, request: Request | None = None):
                 finally:
                     session.close()
 
-                payload = {"run_id": run_id, "events": [], "completed": True, "error": "run_not_found"}
+                payload = {
+                    "run_id": run_id,
+                    "events": [],
+                    "completed": True,
+                    "error": "run_not_found",
+                }
                 yield f"data: {json.dumps(payload, default=str)}\n\n"
                 break
 
-            new_events = [event.model_dump(mode="json") for event in trace.events if event.seq > last_seq]
+            new_events = [
+                event.model_dump(mode="json") for event in trace.events if event.seq > last_seq
+            ]
             if first_tick or new_events or trace.completed:
                 if new_events:
                     last_seq = new_events[-1]["seq"]
@@ -1385,12 +1500,18 @@ async def _stream_trace(run_id: str, request: Request | None = None):
             if trace.completed:
                 break
             await asyncio.sleep(0.8)
+            # Emit a keep-alive comment every _SSE_KEEPALIVE_SECONDS to prevent proxy timeouts
+            if _time.monotonic() - _sse_keepalive_last[0] > _SSE_KEEPALIVE_SECONDS:
+                yield ": heartbeat\n\n"
+                _sse_keepalive_last[0] = _time.monotonic()
     except (asyncio.CancelledError, GeneratorExit):
         # Client disconnected; terminate stream silently to avoid noisy
         # ExceptionGroup/TaskGroup traces from the ASGI response task group.
         return
     except Exception as exc:
-        logger.warning("Run stream terminated unexpectedly", extra={"run_id": run_id, "error": str(exc)})
+        logger.warning(
+            "Run stream terminated unexpectedly", extra={"run_id": run_id, "error": str(exc)}
+        )
         if request is not None:
             with suppress(Exception):
                 if await request.is_disconnected():
@@ -1430,7 +1551,11 @@ def health():
         "agent_model": settings.agent_model,
         "browser_ws_endpoint": settings.browser_ws_endpoint,
         "mcp_server_url": settings.mcp_server_url,
-        "dependencies": {"browser": browser_status, "mcp": mcp_status, "background_jobs": background_status},
+        "dependencies": {
+            "browser": browser_status,
+            "mcp": mcp_status,
+            "background_jobs": background_status,
+        },
         "observability": get_observability_status(settings).model_dump(),
     }
 
@@ -1488,10 +1613,16 @@ def list_runs(limit: int = 50):
                 "tool_calls": r.tool_calls,
                 "tokens_in": r.tokens_in,
                 "tokens_out": r.tokens_out,
-                "estimated_total_cost_usd": ((r.result_json or {}).get("metrics") or {}).get("estimated_total_cost_usd", 0.0),
-                "total_cost_usd": ((r.result_json or {}).get("metrics") or {}).get("estimated_total_cost_usd", 0.0),
+                "estimated_total_cost_usd": ((r.result_json or {}).get("metrics") or {}).get(
+                    "estimated_total_cost_usd", 0.0
+                ),
+                "total_cost_usd": ((r.result_json or {}).get("metrics") or {}).get(
+                    "estimated_total_cost_usd", 0.0
+                ),
                 "llm_calls": ((r.result_json or {}).get("metrics") or {}).get("total_llm_calls", 0),
-                "message_count": ((r.result_json or {}).get("metrics") or {}).get("total_messages", 0),
+                "message_count": ((r.result_json or {}).get("metrics") or {}).get(
+                    "total_messages", 0
+                ),
                 "created_at": r.created_at.isoformat(),
             }
             for r in records
@@ -1570,7 +1701,9 @@ def get_run_prompt_compilations(run_id: str):
         repo = RunRepository(session)
         rows = repo.list_prompt_compilations(run_id)
         if not rows:
-            raise HTTPException(status_code=404, detail=f"No prompt compilations found for '{run_id}'")
+            raise HTTPException(
+                status_code=404, detail=f"No prompt compilations found for '{run_id}'"
+            )
         return {"run_id": run_id, "prompts": rows}
     finally:
         session.close()
@@ -1648,7 +1781,9 @@ def export_dataset(req: DatasetExportRequest):
             except Exception as exc:
                 logger.warning("Skipping run '%s' during dataset export: %s", record.run_id, exc)
         examples = build_dataset_examples(results)
-        export_path = export_dataset_examples(examples, settings=settings, dataset_name=req.dataset_name, path=req.path or None)
+        export_path = export_dataset_examples(
+            examples, settings=settings, dataset_name=req.dataset_name, path=req.path or None
+        )
         return {
             "dataset_name": req.dataset_name or settings.default_dataset_name,
             "example_count": len(examples),
@@ -1674,11 +1809,19 @@ def observability(limit: int = 10):
 
 @app.get("/ui/overview", response_model=OperatorOverview)
 def ui_overview(limit: int = 8):
+    active = [_active_trace_row(trace) for trace in run_registry.list_recent(limit=limit)]
+    # Fast path: return cached overview if fresh enough
+    cache_key = f"overview:{len(active)}"
+    cached = _cache_get(cache_key, _OVERVIEW_CACHE_TTL_SECONDS)
+    if cached is not None:
+        # Always inject fresh active-trace data even on cache hit
+        return {**cached, "active_runs": active}
     session = get_session()
     try:
         repo = OperatorConsoleRepository(session)
-        active = [_active_trace_row(trace) for trace in run_registry.list_recent(limit=limit)]
-        return repo.get_overview(active_traces=active, limit=limit)
+        result = repo.get_overview(active_traces=active, limit=limit)
+        _cache_set(cache_key, result)
+        return result
     finally:
         session.close()
 
@@ -1687,7 +1830,9 @@ def ui_overview(limit: int = 8):
 def ui_recent_runtime_events(limit: int = Query(30, ge=1, le=200)):
     session = get_session()
     try:
-        return {"events": OperatorConsoleRepository(session).list_recent_runtime_events(limit=limit)}
+        return {
+            "events": OperatorConsoleRepository(session).list_recent_runtime_events(limit=limit)
+        }
     finally:
         session.close()
 
@@ -1719,7 +1864,9 @@ def ui_runs(
         actor_text = str(actor or "").strip().lower()
 
         def matches_filters(row: dict[str, Any]) -> bool:
-            display_status = str(row.get("final_status", "") or row.get("status", "") or "").strip().lower()
+            display_status = (
+                str(row.get("final_status", "") or row.get("status", "") or "").strip().lower()
+            )
             if status and display_status != status:
                 return False
             if actor_text and actor_text != str(row.get("root_actor", "") or "").strip().lower():
@@ -1799,7 +1946,11 @@ def ui_run_detail(run_id: str):
                 "agent_outputs": [],
                 "agent_rollups": [],
                 "stage_rollups": [],
-                "parallelism": {"current_parallel_agents": 0, "max_parallel_agents": 0, "by_stage": []},
+                "parallelism": {
+                    "current_parallel_agents": 0,
+                    "max_parallel_agents": 0,
+                    "by_stage": [],
+                },
                 "tool_calls": [],
                 "llm_calls": [],
                 "events": [],
@@ -1826,7 +1977,9 @@ async def ui_run_stream(run_id: str, request: Request):
 
 @app.post("/ui/runs/{run_id}/cancel")
 def ui_cancel_run(run_id: str):
-    success = run_registry.request_cancel(run_id, reason="Cancelled from the Next.js operator console.")
+    success = run_registry.request_cancel(
+        run_id, reason="Cancelled from the Next.js operator console."
+    )
     session = get_session()
     try:
         job_repo = BackgroundJobRepository(session)
@@ -1837,7 +1990,10 @@ def ui_cancel_run(run_id: str):
     finally:
         session.close()
     if not success:
-        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found or already completed")
+        raise HTTPException(
+            status_code=404, detail=f"Run '{run_id}' not found or already completed"
+        )
+    _cache_bust("overview")
     return {"ok": True, "run_id": run_id}
 
 
@@ -1890,7 +2046,9 @@ def _enqueue_background_job(
             "idempotency_key": record.idempotency_key or "",
         }
     except SQLAlchemyError as exc:
-        logger.warning("Background job table unavailable; falling back to in-memory task execution: %s", exc)
+        logger.warning(
+            "Background job table unavailable; falling back to in-memory task execution: %s", exc
+        )
         if job_type == "workflow":
             asyncio.create_task(_background_workflow(run_id, url))
         else:
@@ -1918,6 +2076,7 @@ def _enqueue_background_job(
 async def ui_workflow_run(req: WorkflowRunRequest):
     run_id = str(uuid.uuid4())
     key = (req.idempotency_key or "").strip()
+    _cache_bust("overview")
     return _enqueue_background_job(
         run_id=run_id,
         job_type="workflow",
@@ -1963,12 +2122,7 @@ def ui_tools_list(profile: str = Query("", description="agent profile")):
     if normalized:
         names = sorted(REQUIRED_TOOLS_BY_PROFILE[normalized])
         return {"profile": normalized, "tools": names, "count": len(names)}
-    return {
-        "profiles": {
-            key: sorted(value)
-            for key, value in REQUIRED_TOOLS_BY_PROFILE.items()
-        }
-    }
+    return {"profiles": {key: sorted(value) for key, value in REQUIRED_TOOLS_BY_PROFILE.items()}}
 
 
 @app.get("/ui/tools/history")
@@ -1981,7 +2135,9 @@ def ui_tool_history(
     session = get_session()
     try:
         repo = OperatorConsoleRepository(session)
-        payload = repo.list_tool_playground_calls(limit=limit, offset=offset, profile=profile, origin=origin)
+        payload = repo.list_tool_playground_calls(
+            limit=limit, offset=offset, profile=profile, origin=origin
+        )
         payload["limit"] = limit
         payload["offset"] = offset
         return payload
@@ -2002,7 +2158,17 @@ def ui_tool_reliability(limit: int = Query(500, ge=1, le=2000)):
             if not tool or not profile:
                 continue
             key = (tool, profile)
-            item = stats.setdefault(key, {"tool_name": tool, "profile": profile, "calls": 0, "successes": 0, "errors": 0, "avg_duration_seconds": 0.0})
+            item = stats.setdefault(
+                key,
+                {
+                    "tool_name": tool,
+                    "profile": profile,
+                    "calls": 0,
+                    "successes": 0,
+                    "errors": 0,
+                    "avg_duration_seconds": 0.0,
+                },
+            )
             item["calls"] += 1
             if row.get("status") == "success":
                 item["successes"] += 1
@@ -2042,18 +2208,24 @@ def ui_provider_lookup(req: ProviderLookupRequest):
                 },
             )
             entry["count"] += 1
-    top_countries = sorted(country_counts.values(), key=lambda item: (-int(item["count"]), item["country"]))
+    top_countries = sorted(
+        country_counts.values(), key=lambda item: (-int(item["count"]), item["country"])
+    )
     return {
         "rows": rows,
         "stats": _provider_lookup_stats(rows),
         "top_providers": [
             {"provider": provider, "count": count}
-            for provider, count in sorted(provider_counts.items(), key=lambda item: (-int(item[1]), item[0]))[:8]
+            for provider, count in sorted(
+                provider_counts.items(), key=lambda item: (-int(item[1]), item[0])
+            )[:8]
         ],
         "top_countries": top_countries[:8],
         "country_map": {
             "points": top_countries[:8],
-            "covered_country_codes": [row["country_code"] for row in top_countries if row.get("country_code")],
+            "covered_country_codes": [
+                row["country_code"] for row in top_countries if row.get("country_code")
+            ],
         },
     }
 
@@ -2065,7 +2237,9 @@ def ui_provider_history(
 ):
     session = get_session()
     try:
-        payload = OperatorConsoleRepository(session).get_provider_lookup_history(limit=limit, offset=offset)
+        payload = OperatorConsoleRepository(session).get_provider_lookup_history(
+            limit=limit, offset=offset
+        )
         payload["limit"] = limit
         payload["offset"] = offset
         return payload
@@ -2113,7 +2287,9 @@ def _ui_config_payload(
         "orchestrator_model": settings.orchestrator_model,
         "gemini_temperature": settings.gemini_temperature,
         "llm_tuning": normalize_llm_tuning(getattr(settings, "llm_tuning", {})),
-        "agent_model_config": normalize_agent_model_config(settings, getattr(settings, "agent_model_config", {})),
+        "agent_model_config": normalize_agent_model_config(
+            settings, getattr(settings, "agent_model_config", {})
+        ),
         "provider_cache_enabled": settings.provider_cache_enabled,
         "gemini_explicit_cache_enabled": settings.gemini_explicit_cache_enabled,
         "gemini_explicit_cache_ttl_seconds": settings.gemini_explicit_cache_ttl_seconds,
@@ -2138,6 +2314,7 @@ def _ui_config_payload(
             "openai": bool(settings.openai_api_key),
             "anthropic": bool(settings.anthropic_api_key),
             "openrouter": bool(settings.openrouter_api_key),
+            "nvidia": bool(settings.nvidia_api_key),
         },
     }
     if config_persisted is not None:
@@ -2154,7 +2331,9 @@ def ui_get_config():
 
 
 @app.get("/ui/providers/models")
-def ui_provider_models(provider: str = Query(..., min_length=2), max_models: int = Query(default=200, ge=1, le=1000)):
+def ui_provider_models(
+    provider: str = Query(..., min_length=2), max_models: int = Query(default=200, ge=1, le=1000)
+):
     """Return provider-backed model catalog and tuning metadata."""
     try:
         return get_provider_model_catalog(get_settings(), provider=provider, max_models=max_models)
@@ -2203,7 +2382,8 @@ def ui_update_config(body: ModelConfigRequest):
     if body.browser_engine in ("puppeteer", "playwright"):
         s.browser_engine = body.browser_engine
         s.mcp_server_url = (
-            s.mcp_server_url_playwright if body.browser_engine == "playwright"
+            s.mcp_server_url_playwright
+            if body.browser_engine == "playwright"
             else s.mcp_server_url_puppeteer
         )
     if body.disabled_tools_by_profile is not None:
@@ -2211,7 +2391,9 @@ def ui_update_config(body: ModelConfigRequest):
     if body.disabled_tools_by_browser_profile is not None:
         s.disabled_tools_by_browser_profile = normalize_disabled_tools_by_browser_profile(
             body.disabled_tools_by_browser_profile,
-            legacy=body.disabled_tools_by_profile if body.disabled_tools_by_profile is not None else s.disabled_tools_by_profile,
+            legacy=body.disabled_tools_by_profile
+            if body.disabled_tools_by_profile is not None
+            else s.disabled_tools_by_profile,
         )
     else:
         s.disabled_tools_by_browser_profile = normalize_disabled_tools_by_browser_profile(
@@ -2307,7 +2489,9 @@ def ui_sync_pricing(req: PricingSyncRequest):
             for item in providers:
                 if item == "openrouter" and not (settings.openrouter_api_key or "").strip():
                     continue
-                results.append(_sync_provider_pricing_to_db(settings, provider=item, max_models=max_models))
+                results.append(
+                    _sync_provider_pricing_to_db(settings, provider=item, max_models=max_models)
+                )
             return {
                 "provider": "all",
                 "results": results,
@@ -2404,7 +2588,9 @@ def ui_evaluation_suites():
     try:
         repo = OperatorConsoleRepository(session)
         repo.ensure_default_evaluation_suites()
-        return {"suites": [suite.model_dump(mode="json") for suite in repo.list_evaluation_suites()]}
+        return {
+            "suites": [suite.model_dump(mode="json") for suite in repo.list_evaluation_suites()]
+        }
     finally:
         session.close()
 
@@ -2448,14 +2634,18 @@ async def ui_evaluation_run(req: EvaluationRunRequest):
             suite_source = "manual_batch"
         else:
             suites = repo.ensure_default_evaluation_suites()
-            suite = next((item for item in suites if item.id == req.suite_id), suites[0] if suites else None)
+            suite = next(
+                (item for item in suites if item.id == req.suite_id), suites[0] if suites else None
+            )
             suite_source = "saved_suite"
             if suite is None:
                 raise HTTPException(status_code=404, detail="No evaluation suites available")
 
         run_id = str(uuid.uuid4())
         run_name = str(req.batch_name or "").strip() or suite.name
-        repo.create_evaluation_run(suite.id, run_name, requested_mode if requested_mode != "hybrid" else suite.mode, run_id)
+        repo.create_evaluation_run(
+            suite.id, run_name, requested_mode if requested_mode != "hybrid" else suite.mode, run_id
+        )
 
         case_results: list[EvaluationCaseResult] = []
         for case in [item for item in suite.cases if item.active]:
@@ -2538,7 +2728,7 @@ def ui_run_latest_screenshot(run_id: str):
         try:
             detail = OperatorConsoleRepository(session).get_run_detail(run_id)
             if detail:
-                screenshots = ((detail.get("snapshot") or {}).get("all_screenshots") or [])
+                screenshots = (detail.get("snapshot") or {}).get("all_screenshots") or []
                 if screenshots:
                     return {
                         "run_id": run_id,
@@ -2580,13 +2770,15 @@ def ui_run_latest_screenshot(run_id: str):
 
 
 @app.get("/ui/browser/screenshot")
-async def ui_browser_live_screenshot(profile: str = Query("landing", description="Agent profile for MCP session")):
+async def ui_browser_live_screenshot(
+    profile: str = Query("landing", description="Agent profile for MCP session"),
+):
     """Capture a live screenshot of the current browser session via the MCP tool server."""
     try:
         result = await _call_mcp_tool(profile, "screenshot", {}, reuse_playground_session=True)
         # Check for base64 image content in MCP response format
         content_list = result.get("content", []) if isinstance(result, dict) else []
-        for item in (content_list if isinstance(content_list, list) else []):
+        for item in content_list if isinstance(content_list, list) else []:
             if isinstance(item, dict) and item.get("type") == "image":
                 data = item.get("data", "")
                 mime = item.get("mimeType", "image/jpeg")

@@ -5,13 +5,29 @@ import { Layers3, Waypoints } from "lucide-react";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { statusLabel, statusTone } from "@/lib/run-status";
 import { Badge } from "@/components/ui/badge";
-import { JsonViewer } from "@/components/json-viewer";
+import { StructuredDataCard } from "@/components/structured-data-card";
 
 function Metric({ label, value }) {
   return (
-    <div className="rounded-[10px] border px-3 py-2" style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.02)" }}>
-      <div className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--mute-3)" }}>{label}</div>
-      <div className="mt-1 font-mono text-[12px]" style={{ color: "var(--ink-dim)" }}>{value}</div>
+    <div
+      className="rounded-[10px] border px-3 py-2"
+      style={{
+        borderColor: "var(--line)",
+        background: "rgba(255,255,255,0.02)",
+      }}
+    >
+      <div
+        className="text-[10px] font-semibold uppercase tracking-[0.12em]"
+        style={{ color: "var(--mute-3)" }}
+      >
+        {label}
+      </div>
+      <div
+        className="mt-1 font-mono text-[12px]"
+        style={{ color: "var(--ink-dim)" }}
+      >
+        {value}
+      </div>
     </div>
   );
 }
@@ -20,11 +36,18 @@ function StageCard({ row }) {
   return (
     <div
       className="rounded-[14px] border p-4"
-      style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+      style={{
+        borderColor: "var(--line)",
+        background: "var(--card)",
+        boxShadow: "var(--shadow-card)",
+      }}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--signal)" }}>
+          <div
+            className="text-[11px] font-semibold uppercase tracking-[0.12em]"
+            style={{ color: "var(--signal)" }}
+          >
             {row.agent_type}
           </div>
           <div className="mt-1 text-[13px] font-medium text-[var(--ink)]">
@@ -35,8 +58,14 @@ function StageCard({ row }) {
       </div>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Invocations" value={formatNumber(row.invocations || 0)} />
-        <Metric label="Parallel" value={`${formatNumber(row.active_parallel_agents || 0)} live / ${formatNumber(row.max_parallel_agents || 0)} peak`} />
+        <Metric
+          label="Invocations"
+          value={formatNumber(row.invocations || 0)}
+        />
+        <Metric
+          label="Parallel"
+          value={`${formatNumber(row.active_parallel_agents || 0)} live / ${formatNumber(row.max_parallel_agents || 0)} peak`}
+        />
         <Metric label="Tokens" value={formatNumber(row.total_tokens || 0)} />
         <Metric label="Cost" value={formatCurrency(row.cost_usd || 0)} />
       </div>
@@ -44,7 +73,11 @@ function StageCard({ row }) {
       {row.output_summary ? (
         <div
           className="mt-3 rounded-[10px] border px-3 py-2.5 text-[12px] leading-relaxed"
-          style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.12)", color: "var(--ink-dim)" }}
+          style={{
+            borderColor: "var(--line)",
+            background: "rgba(0,0,0,0.12)",
+            color: "var(--ink-dim)",
+          }}
         >
           {row.output_summary}
         </div>
@@ -57,11 +90,18 @@ function AgentCard({ row }) {
   return (
     <div
       className="rounded-[14px] border p-4"
-      style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+      style={{
+        borderColor: "var(--line)",
+        background: "var(--card)",
+        boxShadow: "var(--shadow-card)",
+      }}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="font-mono text-[11px]" style={{ color: "var(--mute-2)" }}>
+          <div
+            className="font-mono text-[11px]"
+            style={{ color: "var(--mute-2)" }}
+          >
             #{row.invocation_index || 0}
           </div>
           <div className="mt-1 text-[13px] font-medium text-[var(--ink)]">
@@ -84,7 +124,11 @@ function AgentCard({ row }) {
       {row.output_summary ? (
         <div
           className="mt-3 rounded-[10px] border px-3 py-2.5 text-[12px] leading-relaxed"
-          style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.12)", color: "var(--ink-dim)" }}
+          style={{
+            borderColor: "var(--line)",
+            background: "rgba(0,0,0,0.12)",
+            color: "var(--ink-dim)",
+          }}
         >
           {row.output_summary}
         </div>
@@ -92,19 +136,33 @@ function AgentCard({ row }) {
 
       {row.raw_output && Object.keys(row.raw_output).length > 0 ? (
         <div className="mt-3">
-          <JsonViewer label={`${row.actor || row.agent_type} output`} value={row.raw_output} />
+          <StructuredDataCard
+            title={`${row.actor || row.agent_type} output summary`}
+            description="Structured output fields captured for this agent run."
+            data={row.raw_output}
+            limit={6}
+          />
         </div>
       ) : null}
     </div>
   );
 }
 
-export function AgentOutputPanel({ stageRollups = [], agentRollups = [], parallelism = null, title = "Agent outputs" }) {
+export function AgentOutputPanel({
+  stageRollups = [],
+  agentRollups = [],
+  parallelism = null,
+  title = "Agent outputs",
+}) {
   if (!stageRollups.length && !agentRollups.length) {
     return (
       <div
         className="rounded-[14px] border px-5 py-10 text-center"
-        style={{ borderColor: "var(--line)", background: "var(--card)", color: "var(--mute)" }}
+        style={{
+          borderColor: "var(--line)",
+          background: "var(--card)",
+          color: "var(--mute)",
+        }}
       >
         No agent output recorded yet.
       </div>
@@ -115,20 +173,38 @@ export function AgentOutputPanel({ stageRollups = [], agentRollups = [], paralle
     <div className="space-y-4">
       <div
         className="rounded-[14px] border p-4"
-        style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+        style={{
+          borderColor: "var(--line)",
+          background: "var(--card)",
+          boxShadow: "var(--shadow-card)",
+        }}
       >
         <div className="flex flex-wrap items-center gap-3">
           <div>
-            <div className="text-[13.5px] font-medium text-[var(--ink)]">{title}</div>
-            <div className="mt-0.5 text-[12px]" style={{ color: "var(--mute)" }}>
+            <div className="text-[13.5px] font-medium text-[var(--ink)]">
+              {title}
+            </div>
+            <div
+              className="mt-0.5 text-[12px]"
+              style={{ color: "var(--mute)" }}
+            >
               Stage output, per-agent tokens, and concurrent execution rollups.
             </div>
           </div>
           <div className="ml-auto flex flex-wrap gap-2">
             <Metric label="Stages" value={formatNumber(stageRollups.length)} />
-            <Metric label="Agent runs" value={formatNumber(agentRollups.length)} />
-            <Metric label="Live parallel" value={formatNumber(parallelism?.current_parallel_agents || 0)} />
-            <Metric label="Peak parallel" value={formatNumber(parallelism?.max_parallel_agents || 0)} />
+            <Metric
+              label="Agent runs"
+              value={formatNumber(agentRollups.length)}
+            />
+            <Metric
+              label="Live parallel"
+              value={formatNumber(parallelism?.current_parallel_agents || 0)}
+            />
+            <Metric
+              label="Peak parallel"
+              value={formatNumber(parallelism?.max_parallel_agents || 0)}
+            />
           </div>
         </div>
       </div>
@@ -141,7 +217,10 @@ export function AgentOutputPanel({ stageRollups = [], agentRollups = [], paralle
           </div>
           <div className="grid gap-3 xl:grid-cols-2">
             {stageRollups.map((row) => (
-              <StageCard key={`${row.agent_type}-${row.started_at || row.invocations}`} row={row} />
+              <StageCard
+                key={`${row.agent_type}-${row.started_at || row.invocations}`}
+                row={row}
+              />
             ))}
           </div>
         </div>
@@ -155,7 +234,10 @@ export function AgentOutputPanel({ stageRollups = [], agentRollups = [], paralle
           </div>
           <div className="space-y-3">
             {agentRollups.map((row) => (
-              <AgentCard key={`${row.agent_run_id}-${row.invocation_index}`} row={row} />
+              <AgentCard
+                key={`${row.agent_run_id}-${row.invocation_index}`}
+                row={row}
+              />
             ))}
           </div>
         </div>

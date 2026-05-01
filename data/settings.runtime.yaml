@@ -1,20 +1,20 @@
-agent_model: gemini-3-flash-preview
+agent_model: google/gemma-4-31b-it:free
 agent_model_config:
   classification:
-    model: gemini-3-flash-preview
-    provider: google
+    model: google/gemma-4-31b-it:free
+    provider: openrouter
   embedded:
-    model: gemini-3-flash-preview
-    provider: google
+    model: google/gemma-4-31b-it:free
+    provider: nvidia
   hosting:
-    model: gemini-3-flash-preview
-    provider: google
+    model: google/gemma-4-31b-it:free
+    provider: nvidia
   landing:
-    model: gemini-3-flash-preview
-    provider: google
+    model: google/gemma-4-31b-it:free
+    provider: nvidia
   orchestrator:
-    model: gemini-2.5-flash
-    provider: google
+    model: google/gemma-4-31b-it:free
+    provider: nvidia
 agent_timeout_seconds: 300
 browser_engine: puppeteer
 browser_runtime:
@@ -166,7 +166,7 @@ gemini_temperature: 1.0
 hosting_page_max_tool_calls: 20
 ipinfo_token: ''
 landing_page_max_tool_calls: 50
-llm_provider: google
+llm_provider: openrouter
 llm_tuning:
   agent_overrides: {}
   model_overrides: {}
@@ -176,7 +176,7 @@ llm_tuning:
 log_file: data/logs/app.log
 log_level: INFO
 max_parallel_hosting_pages: 5
-orchestrator_model: gemini-2.5-flash
+orchestrator_model: google/gemma-4-31b-it:free
 provider_cache_enabled: true
 thinking_budget_tokens: 8000
 thinking_enabled: false

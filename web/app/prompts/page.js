@@ -6,7 +6,7 @@ import { Play, Save } from "lucide-react";
 import { apiFetch, apiUrl } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { JsonViewer } from "@/components/json-viewer";
+import { StructuredDataCard } from "@/components/structured-data-card";
 import { Textarea } from "@/components/ui/textarea";
 
 function diffLines(original, edited) {
@@ -22,13 +22,13 @@ function diffLines(original, edited) {
 }
 
 export default function PromptsPage() {
-  const [prompts, setPrompts]             = useState([]);
-  const [selected, setSelected]           = useState("");
+  const [prompts, setPrompts] = useState([]);
+  const [selected, setSelected] = useState("");
   const [initialContent, setInitialContent] = useState("");
-  const [content, setContent]             = useState("");
-  const [url, setUrl]                     = useState("");
-  const [testRun, setTestRun]             = useState(null);
-  const [status, setStatus]               = useState("");
+  const [content, setContent] = useState("");
+  const [url, setUrl] = useState("");
+  const [testRun, setTestRun] = useState(null);
+  const [status, setStatus] = useState("");
 
   useEffect(() => {
     apiFetch("/ui/prompts").then((payload) => {
@@ -48,7 +48,10 @@ export default function PromptsPage() {
     });
   }, [selected]);
 
-  const changes = useMemo(() => diffLines(initialContent, content), [initialContent, content]);
+  const changes = useMemo(
+    () => diffLines(initialContent, content),
+    [initialContent, content],
+  );
 
   async function savePrompt() {
     setStatus("Saving...");
@@ -58,7 +61,10 @@ export default function PromptsPage() {
       body: JSON.stringify({ content }),
     });
     const payload = await response.json();
-    if (!response.ok) { setStatus(payload?.detail || "Save failed"); return; }
+    if (!response.ok) {
+      setStatus(payload?.detail || "Save failed");
+      return;
+    }
     setInitialContent(content);
     setStatus("Saved");
   }
@@ -72,14 +78,16 @@ export default function PromptsPage() {
       body: JSON.stringify({ agent, url, content }),
     });
     const payload = await response.json();
-    if (!response.ok) { setStatus(payload?.detail || "Prompt test failed"); return; }
+    if (!response.ok) {
+      setStatus(payload?.detail || "Prompt test failed");
+      return;
+    }
     setTestRun(payload);
     setStatus("Test run started");
   }
 
   return (
     <div className="space-y-5">
-
       {/* page header */}
       <div>
         <span className="owc-eyebrow">prompts · system prompt studio</span>
@@ -95,10 +103,19 @@ export default function PromptsPage() {
         {/* file list */}
         <div
           className="rounded-[14px] border overflow-hidden"
-          style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+          style={{
+            borderColor: "var(--line)",
+            background: "var(--card)",
+            boxShadow: "var(--shadow-card)",
+          }}
         >
-          <div className="border-b px-[18px] py-3.5" style={{ borderColor: "var(--line)" }}>
-            <span className="text-[13.5px] font-medium text-[var(--ink)]">Prompt files</span>
+          <div
+            className="border-b px-[18px] py-3.5"
+            style={{ borderColor: "var(--line)" }}
+          >
+            <span className="text-[13.5px] font-medium text-[var(--ink)]">
+              Prompt files
+            </span>
           </div>
           <div className="divide-y" style={{ borderColor: "var(--line)" }}>
             {prompts.map((row) => (
@@ -107,15 +124,29 @@ export default function PromptsPage() {
                 type="button"
                 onClick={() => setSelected(row.name)}
                 className="w-full px-4 py-3 text-left transition-colors"
-                style={selected === row.name
-                  ? { background: "color-mix(in oklch, var(--signal) 9%, transparent)", color: "var(--ink)" }
-                  : { color: "var(--ink-dim)" }
+                style={
+                  selected === row.name
+                    ? {
+                        background:
+                          "color-mix(in oklch, var(--signal) 9%, transparent)",
+                        color: "var(--ink)",
+                      }
+                    : { color: "var(--ink-dim)" }
                 }
-                onMouseEnter={(e) => { if (selected !== row.name) e.currentTarget.style.background = "rgba(255,255,255,0.025)"; }}
-                onMouseLeave={(e) => { if (selected !== row.name) e.currentTarget.style.background = "transparent"; }}
+                onMouseEnter={(e) => {
+                  if (selected !== row.name)
+                    e.currentTarget.style.background =
+                      "rgba(255,255,255,0.025)";
+                }}
+                onMouseLeave={(e) => {
+                  if (selected !== row.name)
+                    e.currentTarget.style.background = "transparent";
+                }}
               >
                 <div className="font-mono text-[12px]">{row.name}</div>
-                <div className="mt-0.5 text-[11px] text-[var(--mute)]">{row.size_bytes} bytes</div>
+                <div className="mt-0.5 text-[11px] text-[var(--mute)]">
+                  {row.size_bytes} bytes
+                </div>
               </button>
             ))}
           </div>
@@ -125,10 +156,16 @@ export default function PromptsPage() {
           {/* editor card */}
           <div
             className="rounded-[14px] border p-4 space-y-3"
-            style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+            style={{
+              borderColor: "var(--line)",
+              background: "var(--card)",
+              boxShadow: "var(--shadow-card)",
+            }}
           >
             <div className="flex items-center gap-2">
-              <div className="text-[13.5px] font-medium text-[var(--ink)]">{selected || "Select a prompt"}</div>
+              <div className="text-[13.5px] font-medium text-[var(--ink)]">
+                {selected || "Select a prompt"}
+              </div>
               <div className="ml-auto text-[12px] text-[var(--mute)]">
                 {changes.length} changed line{changes.length !== 1 ? "s" : ""}
               </div>
@@ -140,8 +177,13 @@ export default function PromptsPage() {
               mono
             />
             <div className="flex flex-wrap gap-2">
-              <Button variant="accent" onClick={savePrompt} disabled={!selected}>
-                <Save className="mr-1.5 h-3.5 w-3.5" />Save
+              <Button
+                variant="accent"
+                onClick={savePrompt}
+                disabled={!selected}
+              >
+                <Save className="mr-1.5 h-3.5 w-3.5" />
+                Save
               </Button>
               <Input
                 value={url}
@@ -149,37 +191,70 @@ export default function PromptsPage() {
                 placeholder="https://example.com/watch/123"
                 className="min-w-[280px] flex-1"
               />
-              <Button variant="ghost" onClick={testPrompt} disabled={!selected || !url} className="border border-[var(--line)]">
-                <Play className="mr-1.5 h-3.5 w-3.5" />Test
+              <Button
+                variant="ghost"
+                onClick={testPrompt}
+                disabled={!selected || !url}
+                className="border border-[var(--line)]"
+              >
+                <Play className="mr-1.5 h-3.5 w-3.5" />
+                Test
               </Button>
             </div>
-            {status && <div className="text-[12px] text-[var(--mute)]">{status}</div>}
+            {status && (
+              <div className="text-[12px] text-[var(--mute)]">{status}</div>
+            )}
           </div>
 
           <div className="grid gap-4 xl:grid-cols-2">
             {/* diff viewer */}
             <div
               className="rounded-[14px] border overflow-hidden"
-              style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
+              style={{
+                borderColor: "var(--line)",
+                background: "var(--card)",
+                boxShadow: "var(--shadow-card)",
+              }}
             >
-              <div className="border-b px-[18px] py-3.5" style={{ borderColor: "var(--line)" }}>
-                <span className="text-[13.5px] font-medium text-[var(--ink)]">Diff</span>
+              <div
+                className="border-b px-[18px] py-3.5"
+                style={{ borderColor: "var(--line)" }}
+              >
+                <span className="text-[13.5px] font-medium text-[var(--ink)]">
+                  Diff
+                </span>
               </div>
               <div className="max-h-72 overflow-auto p-3 space-y-1 font-mono text-[11px]">
-                {changes.length ? changes.map((row) => (
-                  <div
-                    key={row.line}
-                    className="rounded-[8px] border p-2"
-                    style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.2)" }}
-                  >
-                    <div className="text-[var(--mute)]">line {row.line}</div>
-                    <div style={{ color: "var(--rose)" }}>- {row.before || "∅"}</div>
-                    <div style={{ color: "var(--mint)" }}>+ {row.after || "∅"}</div>
-                  </div>
-                )) : <div className="text-[var(--mute-2)] p-1">No changes</div>}
+                {changes.length ? (
+                  changes.map((row) => (
+                    <div
+                      key={row.line}
+                      className="rounded-[8px] border p-2"
+                      style={{
+                        borderColor: "var(--line)",
+                        background: "rgba(0,0,0,0.2)",
+                      }}
+                    >
+                      <div className="text-[var(--mute)]">line {row.line}</div>
+                      <div style={{ color: "var(--rose)" }}>
+                        - {row.before || "∅"}
+                      </div>
+                      <div style={{ color: "var(--mint)" }}>
+                        + {row.after || "∅"}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-[var(--mute-2)] p-1">No changes</div>
+                )}
               </div>
             </div>
-            <JsonViewer label="Last test run" value={testRun} />
+            <StructuredDataCard
+              title="Last test run"
+              description="Structured prompt test metadata returned by the backend."
+              data={testRun}
+              emptyLabel="No prompt test has been run yet."
+            />
           </div>
         </div>
       </div>
