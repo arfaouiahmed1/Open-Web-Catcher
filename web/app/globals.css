@@ -4,8 +4,8 @@
 
 /* ── OWC design tokens ── */
 :root {
-    --radius: 10px;
-    --radius-lg: 14px;
+    --radius: 0.5rem;
+    --radius-lg: 0.75rem;
 
     /* accents stay consistent across themes */
     --signal: oklch(0.76 0.13 64);
@@ -26,6 +26,26 @@
 :root,
 .dark {
     color-scheme: dark;
+
+    /* shadcn/ui semantic tokens */
+    --background: var(--bg);
+    --foreground: var(--ink-dim);
+    --card-foreground: var(--ink);
+    --popover: var(--panel);
+    --popover-foreground: var(--ink-dim);
+    --primary: var(--signal);
+    --primary-foreground: #0d0a04;
+    --secondary: var(--card-hi);
+    --secondary-foreground: var(--ink);
+    --muted: var(--panel-2);
+    --muted-foreground: var(--mute);
+    --accent: color-mix(in oklch, var(--signal) 12%, transparent);
+    --accent-foreground: var(--ink);
+    --destructive: var(--rose);
+    --destructive-foreground: #0d0a04;
+    --border: var(--line);
+    --input: var(--line-hi);
+    --ring: var(--signal);
 
     /* surfaces */
     --bg: #05080f;
@@ -67,6 +87,26 @@
 
 .light {
     color-scheme: light;
+
+    /* shadcn/ui semantic tokens */
+    --background: var(--bg);
+    --foreground: var(--ink-dim);
+    --card-foreground: var(--ink);
+    --popover: var(--panel);
+    --popover-foreground: var(--ink-dim);
+    --primary: var(--signal);
+    --primary-foreground: #0d0a04;
+    --secondary: var(--card-hi);
+    --secondary-foreground: var(--ink);
+    --muted: var(--panel-2);
+    --muted-foreground: var(--mute);
+    --accent: color-mix(in oklch, var(--signal) 14%, transparent);
+    --accent-foreground: var(--ink);
+    --destructive: var(--rose);
+    --destructive-foreground: #0d0a04;
+    --border: var(--line);
+    --input: var(--line-hi);
+    --ring: var(--signal);
 
     /* surfaces — crisp ice-blue tones */
     --bg: #f0f4fc;
@@ -114,8 +154,8 @@ html,
 body {
     margin: 0;
     min-height: 100%;
-    background: var(--bg);
-    color: var(--ink-dim);
+    background: var(--background);
+    color: var(--foreground);
     font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
     font-feature-settings: "ss01", "cv11", "tnum";
     -webkit-font-smoothing: antialiased;
@@ -129,7 +169,7 @@ body {
 body {
     font-size: 14px;
     line-height: 1.5;
-    background: var(--bg-layer-1), var(--bg-layer-2), var(--bg);
+    background: var(--bg-layer-1), var(--bg-layer-2), var(--background);
 }
 
 a {
@@ -166,7 +206,7 @@ samp {
 }
 
 :focus-visible {
-    outline: 2px solid var(--signal);
+    outline: 2px solid var(--ring);
     outline-offset: 2px;
     border-radius: 6px;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 
 function fmtHeader(key) {
   return key
@@ -14,37 +15,37 @@ function fmtHeader(key) {
 
 function StatusPill({ value }) {
   const s = String(value).toLowerCase();
-  const cls = ["success", "passed", "ok"].includes(s)
-    ? "ok"
+  const tone = ["success", "passed", "ok"].includes(s)
+    ? "success"
     : ["failed", "error", "fail"].includes(s)
-      ? "err"
+      ? "danger"
       : ["partial", "warning"].includes(s)
-        ? "warn"
+        ? "warning"
         : null;
 
-  if (!cls) return <span>{value}</span>;
+  if (!tone) return <span>{value}</span>;
   return (
-    <span className={`owc-pill ${cls}`}>
-      <span className="dot" />
+    <Badge tone={tone} className="gap-1 px-2 py-0.5 text-[10.5px]">
+      <span className="h-1.5 w-1.5 rounded-full bg-current" />
       {s === "success" || s === "passed" ? "ok" : s}
-    </span>
+    </Badge>
   );
 }
 
 function fmtCell(key, value) {
   if (value === null || value === undefined) {
-    return <span style={{ color: "var(--mute-3)" }}>—</span>;
+    return <span className="text-muted-foreground">—</span>;
   }
   if (typeof value === "boolean") {
     return value ? (
-      <span style={{ color: "var(--mint)" }}>Yes</span>
+      <span className="text-[var(--mint)]">Yes</span>
     ) : (
-      <span style={{ color: "var(--mute-3)" }}>No</span>
+      <span className="text-muted-foreground">No</span>
     );
   }
   if (typeof value === "object") {
     return (
-      <span className="mono text-[12px]" style={{ color: "var(--mute)" }}>
+      <span className="mono text-[12px] text-muted-foreground">
         {JSON.stringify(value)}
       </span>
     );
@@ -71,8 +72,7 @@ function fmtCell(key, value) {
   if (str.length > 60) {
     return (
       <span
-        className="mono text-xs"
-        style={{ color: "var(--mute)" }}
+        className="mono text-xs text-muted-foreground"
         title={str}
       >
         {str.slice(0, 60)}&hellip;
@@ -81,7 +81,7 @@ function fmtCell(key, value) {
   }
   if ((key.includes("id") || key.includes("_id")) && str.length > 14) {
     return (
-      <span className="mono text-[11.5px]" style={{ color: "var(--ink-dim)" }}>
+      <span className="mono text-[11.5px] text-foreground">
         {str.slice(0, 12)}&hellip;
       </span>
     );
@@ -100,35 +100,33 @@ export function DataTable({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-[14px] border border-[var(--line)]",
+        "overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm",
         className,
       )}
-      style={{ background: "var(--card)", boxShadow: "var(--shadow-card)" }}
     >
       {(title || description) && (
-        <div className="flex items-center gap-2.5 border-b border-[var(--line)] px-[18px] py-3.5">
+        <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
           {title && (
-            <div className="text-[13.5px] font-medium text-[var(--ink)]">
+            <div className="text-sm font-medium text-foreground">
               {title}
             </div>
           )}
           {description && (
-            <div className="text-[12px] text-[var(--mute)]">{description}</div>
+            <div className="text-sm text-muted-foreground">{description}</div>
           )}
         </div>
       )}
       <div className="overflow-x-auto">
         <table
-          className="min-w-full border-collapse"
-          style={{ borderSpacing: 0, fontSize: "13px" }}
+          className="min-w-full border-collapse text-sm"
+          style={{ borderSpacing: 0 }}
         >
           <thead>
             <tr>
               {columns.map((col) => (
                 <th
                   key={col}
-                  className="whitespace-nowrap border-b border-[var(--line)] px-4 py-2.5 text-left text-[10.5px] font-medium uppercase tracking-[0.1em]"
-                  style={{ color: "var(--mute)", background: "var(--card)" }}
+                  className="whitespace-nowrap border-b border-border bg-muted/50 px-4 py-2.5 text-left text-[10.5px] font-medium uppercase tracking-[0.1em] text-muted-foreground"
                 >
                   {fmtHeader(col)}
                 </th>
@@ -142,15 +140,14 @@ export function DataTable({
                   key={i}
                   onClick={() => onRowClick?.(row)}
                   className={cn(
-                    "border-b border-[var(--line)] transition-colors last:border-b-0",
-                    onRowClick && "cursor-pointer hover:bg-white/[0.018]",
+                    "border-b border-border transition-colors last:border-b-0",
+                    onRowClick && "cursor-pointer hover:bg-accent/50",
                   )}
-                  style={{ color: "var(--ink-dim)" }}
                 >
                   {columns.map((col) => (
                     <td
                       key={col}
-                      className="whitespace-nowrap px-4 py-[11px] align-middle"
+                      className="whitespace-nowrap px-4 py-3 align-middle text-foreground"
                     >
                       {fmtCell(col, row[col])}
                     </td>
@@ -161,8 +158,7 @@ export function DataTable({
               <tr>
                 <td
                   colSpan={columns.length}
-                  className="px-4 py-10 text-center text-sm"
-                  style={{ color: "var(--mute-3)" }}
+                    className="px-4 py-10 text-center text-sm text-muted-foreground"
                 >
                   No data yet
                 </td>

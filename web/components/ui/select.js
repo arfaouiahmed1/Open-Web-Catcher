@@ -1,33 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Search } from "lucide-react";
+import * as SelectPrimitive from "@radix-ui/react-select";
+import { Check, ChevronDown, ChevronUp } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
 
-function useDismissibleLayer(open, onClose, triggerRef, panelRef) {
-  useEffect(() => {
-    if (!open) return undefined;
-
-    function onPointerDown(event) {
-      const trigger = triggerRef.current;
-      const panel = panelRef.current;
-      if (trigger?.contains(event.target) || panel?.contains(event.target)) return;
-      onClose();
-    }
-
-    function onKeyDown(event) {
-      if (event.key === "Escape") onClose();
-    }
-
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open, onClose, panelRef, triggerRef]);
-}
+const EMPTY_VALUE = "__owc_empty__";
 
 export function Select({
   className,
@@ -37,172 +16,94 @@ export function Select({
   options = [],
   placeholder = "Select",
   emptyMessage = "No options available",
-  searchable = false,
-  searchPlaceholder = "Search options",
   disabled = false,
 }) {
-  const triggerRef = useRef(null);
-  const panelRef = useRef(null);
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-
-  const selected = useMemo(
-    () => options.find((option) => option.value === value) || null,
-    [options, value]
-  );
-
-  const filteredOptions = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return options;
-    return options.filter((option) => {
-      const haystack = [
-        option.label,
-        option.value,
-        option.description,
-        option.meta,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(needle);
-    });
-  }, [options, query]);
-
-  useDismissibleLayer(open, () => setOpen(false), triggerRef, panelRef);
-
-  useEffect(() => {
-    if (!open) setQuery("");
-  }, [open]);
+  const selected = options.find((option) => option.value === value) || null;
+  const normalizedValue =
+    value === "" ? EMPTY_VALUE : value === undefined || value === null ? undefined : value;
 
   return (
     <div className={cn(label ? "space-y-1.5" : undefined, className)}>
-      {label && (
-        <label className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-2)]">
-          {label}
-        </label>
-      )}
+      {label ? <Label>{label}</Label> : null}
 
-      <div className="relative">
-        <button
-          ref={triggerRef}
-          type="button"
-          disabled={disabled}
-          onClick={() => setOpen((current) => !current)}
-          className={cn(
-            "flex h-11 w-full items-center justify-between rounded-[12px] border px-3 text-left transition-colors",
-            "disabled:cursor-not-allowed disabled:opacity-50"
-          )}
-          style={{
-            borderColor: open ? "color-mix(in oklch, var(--signal) 35%, transparent)" : "var(--line)",
-            background: "rgba(0,0,0,0.2)",
-            color: selected ? "var(--ink)" : "var(--mute)",
-          }}
-        >
-          <span className="min-w-0">
+      <SelectPrimitive.Root
+        value={normalizedValue}
+        disabled={disabled}
+        onValueChange={(nextValue) => {
+          const resolvedValue = nextValue === EMPTY_VALUE ? "" : nextValue;
+          const option = options.find((item) => item.value === resolvedValue) || null;
+          onChange?.(resolvedValue, option);
+        }}
+      >
+        <SelectPrimitive.Trigger className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-left text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50">
+          <SelectPrimitive.Value placeholder={placeholder}>
             {selected ? (
-              <span className="block truncate text-[13px] font-medium">{selected.label}</span>
-            ) : (
-              <span className="block truncate text-[13px]">{placeholder}</span>
-            )}
-            {selected?.description && (
-              <span className="mt-0.5 block truncate text-[11px] text-[var(--mute)]">
-                {selected.description}
+              <span className="min-w-0">
+                <span className="block truncate font-medium text-foreground">
+                  {selected.label}
+                </span>
+                {selected.description ? (
+                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                    {selected.description}
+                  </span>
+                ) : null}
               </span>
-            )}
-          </span>
-          <ChevronDown
-            className={cn("h-4 w-4 shrink-0 transition-transform", open && "rotate-180")}
-            style={{ color: "var(--mute)" }}
-          />
-        </button>
-
-        {open && (
-          <div
-            ref={panelRef}
-            className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-[14px] border"
-            style={{
-              borderColor: "var(--line-hi)",
-              background: "color-mix(in oklch, var(--panel) 92%, transparent)",
-              boxShadow: "var(--shadow-card)",
-              backdropFilter: "blur(18px)",
-            }}
+            ) : null}
+          </SelectPrimitive.Value>
+          <SelectPrimitive.Icon asChild>
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </SelectPrimitive.Icon>
+        </SelectPrimitive.Trigger>
+        <SelectPrimitive.Portal>
+          <SelectPrimitive.Content
+            position="popper"
+            className="z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-md"
           >
-            {searchable && (
-              <div className="border-b p-2.5" style={{ borderColor: "var(--line)" }}>
-                <div
-                  className="flex items-center gap-2 rounded-[10px] border px-2.5"
-                  style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.02)" }}
-                >
-                  <Search className="h-3.5 w-3.5" style={{ color: "var(--mute)" }} />
-                  <input
-                    autoFocus
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder={searchPlaceholder}
-                    className="h-9 w-full bg-transparent text-[13px] text-[var(--ink)] placeholder:text-[var(--mute)] focus:outline-none"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="max-h-72 overflow-y-auto p-1.5">
-              {filteredOptions.length ? (
-                filteredOptions.map((option) => {
-                  const active = option.value === value;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => {
-                        onChange?.(option.value, option);
-                        setOpen(false);
-                      }}
-                      className="flex w-full items-start gap-2 rounded-[10px] px-3 py-2 text-left transition-colors"
-                      style={{
-                        background: active
-                          ? "color-mix(in oklch, var(--signal) 12%, transparent)"
-                          : "transparent",
-                        color: active ? "var(--ink)" : "var(--ink-dim)",
-                      }}
-                    >
-                      <span
-                        className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
-                        style={{
-                          borderColor: active
-                            ? "color-mix(in oklch, var(--signal) 30%, transparent)"
-                            : "var(--line)",
-                          background: active
-                            ? "color-mix(in oklch, var(--signal) 16%, transparent)"
-                            : "transparent",
-                        }}
-                      >
-                        {active && <Check className="h-3 w-3" style={{ color: "var(--signal)" }} />}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium">{option.label}</span>
-                        {option.description && (
-                          <span className="mt-0.5 block text-[11px] text-[var(--mute)]">
-                            {option.description}
-                          </span>
-                        )}
-                        {option.meta && (
-                          <span className="mt-1 block font-mono text-[10px] text-[var(--mute-2)]">
-                            {option.meta}
-                          </span>
-                        )}
-                      </span>
-                    </button>
-                  );
-                })
+            <SelectPrimitive.ScrollUpButton className="flex cursor-default items-center justify-center py-1">
+              <ChevronUp className="h-4 w-4" />
+            </SelectPrimitive.ScrollUpButton>
+            <SelectPrimitive.Viewport className="p-1">
+              {options.length ? (
+                options.map((option) => (
+                  <SelectPrimitive.Item
+                    key={option.value || EMPTY_VALUE}
+                    value={option.value === "" ? EMPTY_VALUE : option.value}
+                    className="relative flex w-full cursor-default select-none items-start gap-2 rounded-sm py-2 pl-8 pr-3 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+                  >
+                    <span className="absolute left-2 top-2.5 flex h-4 w-4 items-center justify-center">
+                      <SelectPrimitive.ItemIndicator>
+                        <Check className="h-3.5 w-3.5 text-primary" />
+                      </SelectPrimitive.ItemIndicator>
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <SelectPrimitive.ItemText className="block truncate font-medium">
+                        {option.label}
+                      </SelectPrimitive.ItemText>
+                      {option.description ? (
+                        <span className="mt-0.5 block text-xs text-muted-foreground">
+                          {option.description}
+                        </span>
+                      ) : null}
+                      {option.meta ? (
+                        <span className="mt-1 block font-mono text-[10px] text-muted-foreground">
+                          {option.meta}
+                        </span>
+                      ) : null}
+                    </span>
+                  </SelectPrimitive.Item>
+                ))
               ) : (
-                <div className="px-3 py-6 text-center text-[12px] text-[var(--mute)]">
+                <div className="px-3 py-6 text-center text-sm text-muted-foreground">
                   {emptyMessage}
                 </div>
               )}
-            </div>
-          </div>
-        )}
-      </div>
+            </SelectPrimitive.Viewport>
+            <SelectPrimitive.ScrollDownButton className="flex cursor-default items-center justify-center py-1">
+              <ChevronDown className="h-4 w-4" />
+            </SelectPrimitive.ScrollDownButton>
+          </SelectPrimitive.Content>
+        </SelectPrimitive.Portal>
+      </SelectPrimitive.Root>
     </div>
   );
 }

@@ -18,6 +18,7 @@ This documentation matches the current product state:
 - [Data Flow](./architecture/data-flow.md)
 - [Agents](./architecture/agents.md)
 - [MCP Server](./architecture/mcp-server.md)
+- [Frontend Console](./architecture/frontend-console.md)
 - [Implementation Deep Dive (2026-04-09)](./architecture/implementation-deep-dive-2026-04-09.md)
 
 ## Setup

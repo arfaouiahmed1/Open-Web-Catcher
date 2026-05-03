@@ -6,14 +6,28 @@ The operator console lives in [`web/`](../../web) and is served on port `3001`.
 
 - `/` overview dashboard
 - `/live` live workflow studio
-- `/agents` agent lab
+- `/agents` redirect to `/live`
 - `/tools` tool playground
 - `/providers` provider intel
 - `/runs` runs explorer
 - `/runs/[runId]` run detail
 - `/evaluations` evaluation lab
 - `/database` database explorer
-- `/settings` pricing settings
+- `/datasets` Postgres-backed dataset management and batch runs
+- `/prompts` prompt management
+- `/settings` runtime and pricing settings
+
+## Frontend Structure
+
+The console is now organized around thin route entrypoints and feature-owned component folders:
+
+- `web/app/**/page.js` contains route entrypoints only
+- `web/components/console/layout` contains shared shell modules
+- `web/components/console/common` contains reusable page-level building blocks
+- `web/components/console/<feature>` contains route-owned UI and helpers
+- `web/components/ui` contains shadcn-style primitives and Radix wrappers
+
+See [Frontend Console](../architecture/frontend-console.md) for the maintainer-facing module guide.
 
 ## Design Model
 

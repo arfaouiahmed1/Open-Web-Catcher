@@ -21,6 +21,10 @@ import { OrchestratorGraph } from "@/components/orchestrator-graph";
 import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
 import { TimelinePanel } from "@/components/timeline-panel";
 import { ToolCallFeed } from "@/components/tool-call-feed";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 function eventKey(event) {
   const seq = event?.seq;
@@ -32,38 +36,6 @@ function seedMap(events) {
   const map = new Map();
   for (const event of events) map.set(eventKey(event), event);
   return map;
-}
-
-function TabButton({ active, onClick, children, count, accent = "var(--violet)" }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="rounded-full border px-3 py-1 text-[11px] font-medium transition-colors"
-      style={{
-        borderColor: active
-          ? "color-mix(in oklch, var(--signal) 36%, transparent)"
-          : "var(--line)",
-        background: active
-          ? "color-mix(in oklch, var(--signal) 14%, transparent)"
-          : "transparent",
-        color: active ? "var(--signal)" : "var(--mute-2)",
-      }}
-    >
-      {children}
-      {count != null && count > 0 ? (
-        <span
-          className="ml-1 rounded-full px-1.5 py-0.5 font-mono text-[9px]"
-          style={{
-            background: `color-mix(in oklch, ${accent} 15%, transparent)`,
-            color: accent,
-          }}
-        >
-          {count}
-        </span>
-      ) : null}
-    </button>
-  );
 }
 
 function ActivityBanner({ state }) {
@@ -307,20 +279,12 @@ export function RunDetailLive({
           boxShadow: "var(--shadow-card)",
         }}
       >
-        <button
+        <Button
           type="button"
           onClick={() => setLiveStream((value) => !value)}
           disabled={!runId}
-          className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] font-medium disabled:opacity-45"
-          style={{
-            borderColor: liveStream
-              ? "color-mix(in oklch, var(--rose) 35%, transparent)"
-              : "var(--line)",
-            background: liveStream
-              ? "color-mix(in oklch, var(--rose) 12%, transparent)"
-              : "transparent",
-            color: liveStream ? "var(--rose)" : "var(--mute-2)",
-          }}
+          variant={liveStream ? "danger" : "outline"}
+          size="sm"
         >
           {liveStream ? (
             <PauseCircle className="h-4 w-4" />
@@ -328,14 +292,14 @@ export function RunDetailLive({
             <PlayCircle className="h-4 w-4" />
           )}
           {liveStream ? "Streaming" : "Paused"}
-        </button>
+        </Button>
 
-        <button
+        <Button
           type="button"
           onClick={replay}
           disabled={isReplaying || !persistedEvents.length}
-          className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] font-medium disabled:opacity-45"
-          style={{ borderColor: "var(--line)", color: "var(--mute-2)" }}
+          variant="outline"
+          size="sm"
         >
           {isReplaying ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -343,44 +307,32 @@ export function RunDetailLive({
             <TimerReset className="h-4 w-4" />
           )}
           {isReplaying ? "Replaying" : "Replay"}
-        </button>
+        </Button>
 
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px]" style={{ color: "var(--mute-3)" }}>
+          <span className="text-xs text-muted-foreground">
             Speed
           </span>
-          <input
+          <Input
             type="number"
             min="20"
             step="10"
             value={replayMs}
             onChange={(event) => setReplayMs(Number(event.target.value || 80))}
-            className="w-16 rounded-lg border px-2 py-1 text-[11px] text-right"
-            style={{
-              borderColor: "var(--line)",
-              background: "var(--card)",
-              color: "var(--ink-dim)",
-            }}
+            className="w-20 text-right"
           />
-          <span
-            className="font-mono text-[10px]"
-            style={{ color: "var(--mute-3)" }}
-          >
+          <span className="font-mono text-[10px] text-muted-foreground">
             ms
           </span>
         </div>
 
         {runId && isLive ? (
-          <button
+          <Button
             type="button"
             onClick={cancelRun}
             disabled={isCancelling}
-            className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] font-medium disabled:opacity-45"
-            style={{
-              borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)",
-              background: "color-mix(in oklch, var(--rose) 8%, transparent)",
-              color: "var(--rose)",
-            }}
+            variant="danger"
+            size="sm"
           >
             {isCancelling ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -388,30 +340,30 @@ export function RunDetailLive({
               <Square className="h-3.5 w-3.5" />
             )}
             Stop run
-          </button>
+          </Button>
         ) : null}
 
-        <div className="ml-auto flex items-center gap-2">
-          <TabButton active={tab === "graph"} onClick={() => setTab("graph")}>
-            Graph
-          </TabButton>
-          <TabButton
-            active={tab === "tools"}
-            onClick={() => setTab("tools")}
-            count={toolCallRows.length}
-            accent="var(--sky)"
-          >
-            Tool calls
-          </TabButton>
-          <TabButton
-            active={tab === "events"}
-            onClick={() => setTab("events")}
-            count={events.length}
-            accent="var(--violet)"
-          >
-            Events
-          </TabButton>
-        </div>
+        <Tabs className="ml-auto" value={tab} onValueChange={setTab}>
+          <TabsList>
+            <TabsTrigger value="graph">Graph</TabsTrigger>
+            <TabsTrigger value="tools">
+              Tool calls
+              {toolCallRows.length > 0 ? (
+                <Badge tone="signal" className="ml-1 px-1.5 py-0 text-[10px]">
+                  {toolCallRows.length}
+                </Badge>
+              ) : null}
+            </TabsTrigger>
+            <TabsTrigger value="events">
+              Events
+              {events.length > 0 ? (
+                <Badge tone="violet" className="ml-1 px-1.5 py-0 text-[10px]">
+                  {events.length}
+                </Badge>
+              ) : null}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       <ActivityBanner state={runState} />
@@ -452,23 +404,25 @@ export function RunDetailLive({
         <BrowserLiveView runId={runId} events={events} autoRefresh={isLive} />
       ) : null}
 
-      {tab === "events" ? (
+      <TabsContent value="events">
         <RuntimeEventsPanel events={events} title="Event Stream" />
-      ) : tab === "tools" ? (
+      </TabsContent>
+
+      <TabsContent value="tools">
         <ToolCallFeed toolCalls={toolCallRows} title="Tool Calls" />
-      ) : (
-        <div className="space-y-4">
-          {events.length > 2 && <TimelinePanel events={events} />}
-          <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
-            <OrchestratorGraph events={events} rootActor={rootActor} />
-            <ToolCallFeed
-              toolCalls={toolCallRows}
-              title="Tool Calls"
-              maxHeight={480}
-            />
-          </div>
+      </TabsContent>
+
+      <TabsContent value="graph" className="space-y-4">
+        {events.length > 2 && <TimelinePanel events={events} />}
+        <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
+          <OrchestratorGraph events={events} rootActor={rootActor} />
+          <ToolCallFeed
+            toolCalls={toolCallRows}
+            title="Tool Calls"
+            maxHeight={480}
+          />
         </div>
-      )}
+      </TabsContent>
     </div>
   );
 }

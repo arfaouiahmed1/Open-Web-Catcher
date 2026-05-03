@@ -2,24 +2,26 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
-const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 rounded-lg text-[12.5px] font-medium transition-colors focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40",
+export const buttonVariants = cva(
+  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        default:   "border border-[var(--line)] bg-[var(--card)] text-[var(--ink-dim)] hover:border-[var(--line-hi)] hover:bg-[var(--card-hi)] hover:text-[var(--ink)]",
-        accent:    "bg-[var(--signal)] text-[#0d0a04] font-semibold hover:brightness-110",
-        success:   "bg-[var(--mint)] text-[#0d0a04] hover:brightness-105",
-        ghost:     "bg-transparent text-[var(--mute)] hover:bg-white/[0.03] hover:text-[var(--ink-dim)]",
-        danger:    "border border-[var(--rose)]/20 bg-[var(--rose)]/10 text-[var(--rose)] hover:bg-[var(--rose)]/20",
-        secondary: "border border-[var(--line)] bg-white/[0.02] text-[var(--ink-dim)] hover:bg-[var(--card-hi)]",
-        outline:   "border border-[var(--line-hi)] text-[var(--ink-dim)] hover:bg-[var(--card)]",
+        default:   "border border-input bg-background text-foreground shadow-sm hover:bg-accent hover:text-accent-foreground",
+        accent:    "bg-primary text-primary-foreground shadow-sm hover:opacity-90",
+        success:   "bg-[var(--mint)] text-[#0d0a04] shadow-sm hover:brightness-95",
+        ghost:     "hover:bg-accent hover:text-accent-foreground",
+        danger:    "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
+        secondary: "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80",
+        outline:   "border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground",
+        link:      "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-8 px-3 py-1.5",
-        sm:      "h-7 px-2.5 text-[11.5px]",
-        lg:      "h-10 px-5",
-        icon:    "h-8 w-8 p-0",
+        default: "h-9 px-4 py-2",
+        sm:      "h-8 rounded-md px-3 text-xs",
+        lg:      "h-10 rounded-md px-6",
+        icon:    "h-9 w-9",
+        "icon-sm": "h-8 w-8",
       },
     },
     defaultVariants: { variant: "default", size: "default" },

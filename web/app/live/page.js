@@ -1,5 +1,5 @@
-import { RunLauncher } from "@/components/run-launcher";
+import { LivePage } from "@/components/console/live/live-page";
 
-export default function LivePage() {
-  return <RunLauncher defaultMode="workflow" />;
+export default function Page() {
+  return <LivePage />;
 }

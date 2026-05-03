@@ -1,90 +1,52 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 
-export function Tooltip({ content, children, side = "top", maxWidth = 260 }) {
-  const [visible, setVisible] = useState(false);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-  const triggerRef = useRef(null);
-  const tooltipRef = useRef(null);
+import { cn } from "@/lib/utils";
 
-  function recalc() {
-    if (!triggerRef.current || !tooltipRef.current) return;
-    const tr = triggerRef.current.getBoundingClientRect();
-    const tt = tooltipRef.current.getBoundingClientRect();
-    const gap = 7;
-    let top = 0;
-    let left = 0;
-    if (side === "top") {
-      top = tr.top - tt.height - gap;
-      left = tr.left + tr.width / 2 - tt.width / 2;
-    } else if (side === "bottom") {
-      top = tr.bottom + gap;
-      left = tr.left + tr.width / 2 - tt.width / 2;
-    } else if (side === "left") {
-      top = tr.top + tr.height / 2 - tt.height / 2;
-      left = tr.left - tt.width - gap;
-    } else {
-      top = tr.top + tr.height / 2 - tt.height / 2;
-      left = tr.right + gap;
-    }
-    left = Math.max(6, Math.min(left, window.innerWidth - tt.width - 6));
-    top = Math.max(6, Math.min(top, window.innerHeight - tt.height - 6));
-    setPos({ top: top + window.scrollY, left: left + window.scrollX });
-  }
+export function TooltipProvider({ delayDuration = 150, ...props }) {
+  return <TooltipPrimitive.Provider delayDuration={delayDuration} {...props} />;
+}
 
-  useEffect(() => {
-    if (visible) recalc();
-  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+export const Tooltip = TooltipPrimitive.Root;
+export const TooltipTrigger = TooltipPrimitive.Trigger;
 
+export function TooltipContent({
+  className,
+  sideOffset = 6,
+  maxWidth = 260,
+  ...props
+}) {
   return (
-    <>
-      <span
-        ref={triggerRef}
-        onMouseEnter={() => setVisible(true)}
-        onMouseLeave={() => setVisible(false)}
-        onFocus={() => setVisible(true)}
-        onBlur={() => setVisible(false)}
-        className="inline-flex"
-      >
-        {children}
-      </span>
-      {visible && (
-        <div
-          ref={tooltipRef}
-          role="tooltip"
-          className="pointer-events-none fixed z-[9999] rounded-[9px] border px-2.5 py-1.5 text-[11.5px] leading-snug shadow-xl"
-          style={{
-            top: pos.top,
-            left: pos.left,
-            maxWidth,
-            background: "var(--panel-2, var(--panel))",
-            borderColor: "var(--line-hi)",
-            color: "var(--ink-dim)",
-            transition: "opacity 120ms ease",
-          }}
-        >
-          {content}
-        </div>
-      )}
-    </>
+    <TooltipPrimitive.Portal>
+      <TooltipPrimitive.Content
+        sideOffset={sideOffset}
+        className={cn(
+          "z-50 overflow-hidden rounded-md border border-border bg-popover px-3 py-1.5 text-sm text-popover-foreground shadow-md",
+          className,
+        )}
+        style={{ maxWidth }}
+        {...props}
+      />
+    </TooltipPrimitive.Portal>
   );
 }
 
 export function HelpIcon({ tip, side = "top" }) {
   return (
-    <Tooltip content={tip} side={side}>
-      <span
-        className="inline-flex h-4 w-4 cursor-default items-center justify-center rounded-full border text-[9px] font-bold"
-        style={{
-          borderColor: "var(--mute-3)",
-          color: "var(--mute-2)",
-          background: "color-mix(in oklch, var(--mute-2) 8%, transparent)",
-        }}
-        tabIndex={0}
-      >
-        ?
-      </span>
-    </Tooltip>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-input bg-muted text-[9px] font-bold text-muted-foreground"
+            aria-label="Help"
+          >
+            ?
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side={side}>{tip}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
