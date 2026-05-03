@@ -7,6 +7,45 @@ export const STAGE_LABELS = {
   embedded: "Embedded",
 };
 
+const LLM_TERMINAL_KINDS = new Set([
+  "llm_response",
+  "llm_error",
+  "llm_timeout",
+  "llm_rate_limited",
+]);
+
+const RUN_FAILURE_KINDS = new Set([
+  "pipeline_failed",
+  "agent_failed",
+  "llm_error",
+  "llm_timeout",
+  "llm_rate_limited",
+]);
+
+function seqNumber(event) {
+  return Number(event?.seq || 0);
+}
+
+function normalizeStageName(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return STAGE_ORDER.find((stage) => normalized.includes(stage)) || normalized;
+}
+
+function latestEvent(events, predicate) {
+  return [...events].reverse().find((event) => predicate(event));
+}
+
+function eventErrorMessage(event) {
+  const details = event?.details || {};
+  return (
+    details.error_preview ||
+    details.error ||
+    details.cancel_reason ||
+    event?.message ||
+    ""
+  );
+}
+
 export function normalizeTraceEvent(event) {
   if (!event || typeof event !== "object") return null;
   return {
@@ -91,6 +130,35 @@ export function actorToStage(actor) {
   const normalized = String(actor || "").trim().toLowerCase();
   if (!normalized) return "";
   return STAGE_ORDER.find((stage) => normalized.includes(stage)) || "";
+}
+
+export function extractLlmResponses(events = []) {
+  return (Array.isArray(events) ? events : [])
+    .map((rawEvent) => normalizeTraceEvent(rawEvent))
+    .filter((event) => event?.kind === "llm_response")
+    .map((event) => {
+      const details = event.details || {};
+      return {
+        key: `llm-${event.seq || event.timestamp || Math.random()}`,
+        seq: seqNumber(event),
+        actor: String(event.actor || ""),
+        stage: actorToStage(event.actor),
+        provider: String(details.provider || ""),
+        model_name: String(details.model_name || ""),
+        input_tokens: Number(details.input_tokens || 0),
+        output_tokens: Number(details.output_tokens || 0),
+        context_window: Number(details.context_window || 0),
+        estimated_total_cost_usd: Number(
+          details.estimated_total_cost_usd || 0,
+        ),
+        usage_metadata_json: {
+          cached_input_tokens: Number(details.cached_input_tokens || 0),
+          new_input_tokens: Number(details.new_input_tokens || 0),
+        },
+        timestamp: event.timestamp || "",
+        event,
+      };
+    });
 }
 
 function isScreenshotValue(value) {
@@ -291,6 +359,7 @@ function stageStatus(events) {
 
 export function buildStageView(events = []) {
   const toolCalls = extractToolCalls(events);
+  const llmCalls = extractLlmResponses(events);
   const stageMap = Object.fromEntries(
     STAGE_ORDER.map((stage) => [stage, {
       stage,
@@ -303,6 +372,13 @@ export function buildStageView(events = []) {
       frames: [],
       latestFrame: null,
       latestEventSeq: 0,
+      pendingToolCount: 0,
+      pendingLlmCount: 0,
+      livePhase: "idle",
+      liveLabel: "waiting",
+      latestFailure: null,
+      latestLlm: null,
+      latestTool: null,
     }])
   );
 
@@ -319,6 +395,8 @@ export function buildStageView(events = []) {
   for (const call of toolCalls) {
     if (!call?.stage || !stageMap[call.stage]) continue;
     stageMap[call.stage].toolCalls.push(call);
+    if (call.status === "running") stageMap[call.stage].pendingToolCount += 1;
+    stageMap[call.stage].latestTool = call;
     for (const screenshot of call.screenshots || []) {
       const frame = {
         url: screenshot,
@@ -334,11 +412,59 @@ export function buildStageView(events = []) {
     }
   }
 
+  for (const call of llmCalls) {
+    if (!call?.stage || !stageMap[call.stage]) continue;
+    stageMap[call.stage].latestLlm = call;
+  }
+
   const stages = STAGE_ORDER.map((stage) => {
     const entry = stageMap[stage];
+    const stageEvents = entry.events;
+    const lastFailure = latestEvent(stageEvents, (event) =>
+      RUN_FAILURE_KINDS.has(event?.kind) ||
+      ((event?.kind === "tool_call_finished" || event?.kind === "tool_call_started") &&
+        ["error", "failed", "fail"].includes(String(event?.status || event?.details?.status || "").toLowerCase()))
+    ) || null;
+    const lastLlmStart = latestEvent(
+      stageEvents,
+      (event) => event?.kind === "llm_turn_started",
+    );
+    const lastLlmTerminal = latestEvent(stageEvents, (event) =>
+      LLM_TERMINAL_KINDS.has(event?.kind),
+    );
+    const pendingLlmCount =
+      lastLlmStart && (!lastLlmTerminal || seqNumber(lastLlmStart) > seqNumber(lastLlmTerminal))
+        ? 1
+        : 0;
+    const status = stageStatus(stageEvents);
+    let livePhase = "idle";
+    let liveLabel = "waiting";
+    if (lastFailure) {
+      livePhase = "failed";
+      liveLabel = "failed";
+    } else if (pendingLlmCount > 0) {
+      livePhase = "llm";
+      liveLabel = "model running";
+    } else if (entry.pendingToolCount > 0) {
+      livePhase = "tool";
+      liveLabel = entry.pendingToolCount > 1 ? "tools running" : "tool running";
+    } else if (status === "done") {
+      livePhase = "done";
+      liveLabel = "done";
+    } else if (status === "cancelled") {
+      livePhase = "cancelled";
+      liveLabel = "cancelled";
+    } else if (status === "running" || status === "active") {
+      livePhase = "running";
+      liveLabel = "working";
+    }
     return {
       ...entry,
-      status: stageStatus(entry.events),
+      status,
+      pendingLlmCount,
+      livePhase,
+      liveLabel,
+      latestFailure: lastFailure,
       frames: entry.frames.sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0)),
     };
   });
@@ -349,4 +475,230 @@ export function buildStageView(events = []) {
   const autoStage = actorToStage(lastActiveEvent?.actor) || stages.find((stage) => stage.status === "running")?.stage || "classification";
 
   return { stages, toolCalls, autoStage };
+}
+
+export function buildContextWindowGroups({
+  events = [],
+  llmCalls = [],
+  agentRuns = [],
+  active = false,
+} = {}) {
+  if (active) {
+    const liveCalls = extractLlmResponses(events);
+    const stageStatusMap = new Map(
+      buildStageView(events).stages.map((stage) => [stage.stage, stage.status]),
+    );
+    return STAGE_ORDER.map((stage, index) => {
+      const rows = liveCalls.filter((call) => call.stage === stage);
+      if (!rows.length) return null;
+      return {
+        key: stage,
+        order: index,
+        label: STAGE_LABELS[stage],
+        stage,
+        status: stageStatusMap.get(stage) || "idle",
+        llmCalls: rows,
+      };
+    }).filter(Boolean);
+  }
+
+  const agentMap = new Map(
+    (agentRuns || []).map((row) => [
+      Number(row?.id || 0),
+      {
+        actor: String(row?.actor || ""),
+        stage: normalizeStageName(row?.agent_type || row?.actor || ""),
+        invocationIndex: Number(row?.invocation_index || 0),
+        status: String(row?.status || ""),
+      },
+    ]),
+  );
+
+  const groups = new Map();
+  for (const row of llmCalls || []) {
+    const agentRunId = Number(row?.agent_run_id || 0);
+    const agent = agentMap.get(agentRunId);
+    const stage = agent?.stage || actorToStage(row?.actor) || "unknown";
+    const key = agentRunId > 0 ? `agent-${agentRunId}` : `${stage}-${row?.model_name || "model"}`;
+    if (!groups.has(key)) {
+      const labelBase = STAGE_LABELS[stage] || stage || "Agent";
+      const label =
+        agent?.invocationIndex > 0 ? `${labelBase} ${agent.invocationIndex}` : labelBase;
+      groups.set(key, {
+        key,
+        order: STAGE_ORDER.indexOf(stage),
+        label,
+        stage,
+        status: agent?.status || "",
+        llmCalls: [],
+      });
+    }
+    groups.get(key).llmCalls.push(row);
+  }
+
+  return [...groups.values()].sort((a, b) => {
+    const stageDelta = Number(a.order || 999) - Number(b.order || 999);
+    if (stageDelta !== 0) return stageDelta;
+    return a.label.localeCompare(b.label);
+  });
+}
+
+export function summarizeRunState(events = []) {
+  const normalized = (Array.isArray(events) ? events : [])
+    .map((event) => normalizeTraceEvent(event))
+    .filter(Boolean);
+  if (!normalized.length) {
+    return {
+      status: "idle",
+      active: null,
+      lastCompleted: null,
+      failure: null,
+      terminal: null,
+    };
+  }
+
+  const toolCalls = extractToolCalls(normalized);
+  const pendingTool = [...toolCalls].reverse().find((call) => call.status === "running") || null;
+  const llmResponses = extractLlmResponses(normalized);
+  const lastLlmStart = latestEvent(
+    normalized,
+    (event) => event.kind === "llm_turn_started",
+  );
+  const lastLlmTerminal = latestEvent(normalized, (event) =>
+    LLM_TERMINAL_KINDS.has(event.kind),
+  );
+  const llmRunning =
+    lastLlmStart &&
+    (!lastLlmTerminal || seqNumber(lastLlmStart) > seqNumber(lastLlmTerminal));
+  const failureEvent =
+    latestEvent(normalized, (event) => RUN_FAILURE_KINDS.has(event.kind)) ||
+    latestEvent(
+      normalized,
+      (event) =>
+        event.kind === "tool_call_finished" &&
+        ["error", "failed", "fail"].includes(
+          String(event?.details?.status || event?.status || "").toLowerCase(),
+        ),
+    ) ||
+    null;
+  const terminal =
+    latestEvent(normalized, (event) =>
+      ["pipeline_finished", "agent_finished", "pipeline_failed", "agent_failed", "run_cancelled", "cancel_requested"].includes(event.kind),
+    ) || null;
+  const lastCompleted =
+    latestEvent(normalized, (event) =>
+      ["llm_response", "tool_call_finished", "agent_finished", "pipeline_finished"].includes(event.kind),
+    ) || null;
+
+  let active = null;
+  let status = "running";
+  if (failureEvent) {
+    status = "failed";
+  } else if (terminal?.kind === "run_cancelled" || terminal?.kind === "cancel_requested") {
+    status = "cancelled";
+  } else if (
+    terminal?.kind === "pipeline_finished" ||
+    terminal?.kind === "agent_finished"
+  ) {
+    status = "completed";
+  }
+
+  if (failureEvent) {
+    active = {
+      type: "failed",
+      stage: actorToStage(failureEvent.actor),
+      actor: String(failureEvent.actor || ""),
+      title: "Run failed",
+      message: eventErrorMessage(failureEvent),
+      event: failureEvent,
+    };
+  } else if (llmRunning) {
+    const details = lastLlmStart?.details || {};
+    active = {
+      type: "llm",
+      stage: actorToStage(lastLlmStart.actor),
+      actor: String(lastLlmStart.actor || ""),
+      title: "Model running",
+      message: [
+        details.provider ? String(details.provider) : "",
+        details.model_name ? String(details.model_name) : "",
+      ]
+        .filter(Boolean)
+        .join(" / "),
+      event: lastLlmStart,
+    };
+  } else if (pendingTool) {
+    active = {
+      type: "tool",
+      stage: pendingTool.stage,
+      actor: String(pendingTool.actor || ""),
+      title: "Tool running",
+      message: [pendingTool.toolName, pendingTool.target].filter(Boolean).join(" · "),
+      event: pendingTool.startedEvent,
+    };
+  } else if (
+    terminal?.kind === "pipeline_finished" ||
+    terminal?.kind === "agent_finished"
+  ) {
+    active = {
+      type: "done",
+      stage: actorToStage(terminal.actor),
+      actor: String(terminal.actor || ""),
+      title: "Run finished",
+      message: terminal.message || "Execution completed.",
+      event: terminal,
+    };
+  }
+
+  let completedSummary = null;
+  if (lastCompleted) {
+    if (lastCompleted.kind === "llm_response") {
+      const details = lastCompleted.details || {};
+      completedSummary = {
+        type: "llm_response",
+        stage: actorToStage(lastCompleted.actor),
+        actor: String(lastCompleted.actor || ""),
+        title: "Model responded",
+        message:
+          Number(details.output_tokens || 0) > 0
+            ? `${details.model_name || "model"} · ${Number(details.output_tokens || 0).toLocaleString()} out`
+            : `${details.model_name || "model"} responded`,
+      };
+    } else if (lastCompleted.kind === "tool_call_finished") {
+      completedSummary = {
+        type: "tool_finished",
+        stage: actorToStage(lastCompleted.actor),
+        actor: String(lastCompleted.actor || ""),
+        title: "Tool finished",
+        message: [lastCompleted.details?.tool_name, lastCompleted.details?.status]
+          .filter(Boolean)
+          .join(" · "),
+      };
+    } else {
+      completedSummary = {
+        type: "stage_finished",
+        stage: actorToStage(lastCompleted.actor),
+        actor: String(lastCompleted.actor || ""),
+        title: "Stage finished",
+        message: lastCompleted.message || "",
+      };
+    }
+  }
+
+  return {
+    status,
+    active,
+    lastCompleted: completedSummary,
+    failure: failureEvent
+      ? {
+          stage: actorToStage(failureEvent.actor),
+          actor: String(failureEvent.actor || ""),
+          message: eventErrorMessage(failureEvent),
+          kind: failureEvent.kind,
+          event: failureEvent,
+        }
+      : null,
+    terminal,
+    llmCalls: llmResponses,
+  };
 }

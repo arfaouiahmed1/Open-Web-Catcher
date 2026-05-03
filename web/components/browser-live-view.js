@@ -35,9 +35,21 @@ function StageButton({
   autoSelected,
   disabled,
   count,
+  status,
+  phase,
   onClick,
 }) {
   const color = stageTone(stage);
+  const tone =
+    phase === "failed"
+      ? "var(--rose)"
+      : phase === "done"
+        ? "var(--mint)"
+        : phase === "llm"
+          ? "var(--violet)"
+          : phase === "tool"
+            ? "var(--signal)"
+            : color;
   return (
     <button
       type="button"
@@ -46,12 +58,12 @@ function StageButton({
       className="rounded-full border px-3 py-1 text-[11px] font-medium transition-colors disabled:opacity-45"
       style={{
         borderColor: active
-          ? `color-mix(in oklch, ${color} 40%, transparent)`
+          ? `color-mix(in oklch, ${tone} 40%, transparent)`
           : "var(--line)",
         background: active
-          ? `color-mix(in oklch, ${color} 14%, transparent)`
+          ? `color-mix(in oklch, ${tone} 14%, transparent)`
           : "transparent",
-        color: active ? color : "var(--mute-2)",
+        color: active ? tone : "var(--mute-2)",
       }}
     >
       {STAGE_LABELS[stage]}
@@ -63,6 +75,14 @@ function StageButton({
       </span>
       {autoSelected && active ? (
         <span className="ml-1.5 font-mono text-[9px]">AUTO</span>
+      ) : null}
+      {status ? (
+        <span
+          className="ml-1.5 hidden font-mono text-[9px] md:inline"
+          style={{ color: active ? tone : "var(--mute-3)" }}
+        >
+          {status}
+        </span>
       ) : null}
     </button>
   );
@@ -202,8 +222,9 @@ export function BrowserLiveView({
     availableFrames.find((frame) => frame.url === selectedFrameUrl) ||
     latestFrame;
   const activeUrl = activeFrame?.url || (!anyFrames ? fallbackScreenshot : "");
-  const statusLabel = selectedStageData?.status || "idle";
+  const statusLabel = selectedStageData?.liveLabel || selectedStageData?.status || "idle";
   const stageColor = stageTone(selectedStage);
+  const frameCount = availableFrames.length || (fallbackScreenshot ? 1 : 0);
 
   return (
     <div
@@ -322,6 +343,8 @@ export function BrowserLiveView({
               count={stageData?.frames?.length || 0}
               active={selectedStage === stage}
               autoSelected={!manualMode && autoStage === stage}
+              status={stageData?.liveLabel || stageData?.status || "idle"}
+              phase={stageData?.livePhase || stageData?.status || "idle"}
               disabled={false}
               onClick={() => {
                 setManualMode(true);
@@ -434,11 +457,7 @@ export function BrowserLiveView({
           className="font-mono text-[10px]"
           style={{ color: "var(--mute-3)" }}
         >
-          {formatNumber(availableFrames.length || (fallbackScreenshot ? 1 : 0))}{" "}
-          frame
-          {(availableFrames.length || fallbackScreenshot ? 1 : 0) === 1
-            ? ""
-            : "s"}
+          {formatNumber(frameCount)} frame{frameCount === 1 ? "" : "s"}
         </span>
         {activeUrl ? (
           <a

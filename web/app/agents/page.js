@@ -1,5 +1,5 @@
-import { RunStudio } from "@/components/run-studio";
+import { redirect } from "next/navigation";
 
 export default function AgentsPage() {
-  return <RunStudio mode="agent" />;
+  redirect("/live");
 }

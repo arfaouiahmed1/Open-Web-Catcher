@@ -157,8 +157,8 @@ def _fetch_openrouter_pricing(
     for row in rows:
         if not isinstance(row, dict):
             continue
-        model_name = str(row.get("id") or "").strip()
-        if not model_name:
+        model_id = str(row.get("id") or "").strip()
+        if not model_id:
             continue
 
         pricing = row.get("pricing", {})
@@ -167,21 +167,58 @@ def _fetch_openrouter_pricing(
 
         input_per_million = _to_per_million(pricing.get("prompt"))
         output_per_million = _to_per_million(pricing.get("completion"))
+        cached_input_per_million = _to_per_million(pricing.get("input_cache_read"))
+        cache_write_per_million = _to_per_million(pricing.get("input_cache_write"))
         if input_per_million == 0.0 and output_per_million == 0.0:
             continue
+
+        try:
+            context_window = int(row.get("context_length") or 0)
+        except (TypeError, ValueError):
+            context_window = 0
 
         results.append(
             PricingConfig(
                 provider="openrouter",
-                model_name=model_name,
+                model_name=model_id,
                 input_per_million=input_per_million,
                 output_per_million=output_per_million,
+                cached_input_per_million=cached_input_per_million,
+                cache_write_per_million=cache_write_per_million,
+                context_window=context_window,
                 active=True,
                 notes="Synced from OpenRouter /models API",
             )
         )
 
-    return _dedupe_configs(results, max_models=max_models)
+        if "/" in model_id:
+            vendor, native_model = model_id.split("/", 1)
+            vendor = vendor.lstrip("~").strip()
+            native_provider = _normalize_provider(vendor)
+            if native_provider in {"anthropic", "openai", "google"} and native_model:
+                results.append(
+                    PricingConfig(
+                        provider=native_provider,
+                        model_name=native_model,
+                        input_per_million=input_per_million,
+                        output_per_million=output_per_million,
+                        cached_input_per_million=cached_input_per_million,
+                        cache_write_per_million=cache_write_per_million,
+                        context_window=context_window,
+                        active=True,
+                        notes="Mirrored from OpenRouter /models API",
+                    )
+                )
+
+    primary = [r for r in results if r.provider == "openrouter"]
+    mirrors = [r for r in results if r.provider != "openrouter"]
+    deduped_primary = _dedupe_configs(primary, max_models=max_models)
+    kept_ids = {r.model_name for r in deduped_primary}
+    surviving_mirrors = [
+        r for r in mirrors if any(r.model_name == mid.split("/", 1)[-1] for mid in kept_ids)
+    ]
+    deduped_mirrors = _dedupe_configs(surviving_mirrors, max_models=0)
+    return deduped_primary + deduped_mirrors
 
 
 def _parse_openai_pricing(text: str, *, max_models: int) -> list[PricingConfig]:

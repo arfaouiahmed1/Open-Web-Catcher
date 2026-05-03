@@ -2,63 +2,39 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
+  CheckCircle2,
+  Cpu,
   Loader2,
   PauseCircle,
   PlayCircle,
   Square,
   TimerReset,
+  Wrench,
+  XCircle,
 } from "lucide-react";
 
 import { apiUrl } from "@/lib/api";
-import { formatCurrency, formatNumber } from "@/lib/utils";
-import { extractToolCalls } from "@/lib/run-trace";
+import { extractToolCalls, summarizeRunState } from "@/lib/run-trace";
 import { BrowserLiveView } from "@/components/browser-live-view";
 import { OrchestratorGraph } from "@/components/orchestrator-graph";
 import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
 import { TimelinePanel } from "@/components/timeline-panel";
 import { ToolCallFeed } from "@/components/tool-call-feed";
 
-function _eventKey(e) {
-  // Stable dedup key: seq is canonical, fallback to composite
-  const seq = e?.seq;
+function eventKey(event) {
+  const seq = event?.seq;
   if (seq != null) return String(seq);
-  return `${e?.timestamp ?? ""}-${e?.actor ?? ""}-${e?.kind ?? ""}-${e?.status ?? ""}`;
+  return `${event?.timestamp ?? ""}-${event?.actor ?? ""}-${event?.kind ?? ""}-${event?.status ?? ""}`;
 }
 
-function _seedMap(events) {
+function seedMap(events) {
   const map = new Map();
-  for (const e of events) map.set(_eventKey(e), e);
+  for (const event of events) map.set(eventKey(event), event);
   return map;
 }
 
-function Metric({ label, value, accent, detail }) {
-  return (
-    <div className="flex items-baseline gap-2">
-      <span
-        className="font-mono text-[16px] font-semibold"
-        style={{ color: accent }}
-      >
-        {value}
-      </span>
-      <span
-        className="text-[10px] uppercase tracking-[0.12em]"
-        style={{ color: "var(--mute-2)" }}
-      >
-        {label}
-      </span>
-      {detail ? (
-        <span
-          className="font-mono text-[10px]"
-          style={{ color: "var(--mute-3)" }}
-        >
-          {detail}
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
-function TabButton({ active, onClick, children }) {
+function TabButton({ active, onClick, children, count, accent = "var(--violet)" }) {
   return (
     <button
       type="button"
@@ -75,7 +51,114 @@ function TabButton({ active, onClick, children }) {
       }}
     >
       {children}
+      {count != null && count > 0 ? (
+        <span
+          className="ml-1 rounded-full px-1.5 py-0.5 font-mono text-[9px]"
+          style={{
+            background: `color-mix(in oklch, ${accent} 15%, transparent)`,
+            color: accent,
+          }}
+        >
+          {count}
+        </span>
+      ) : null}
     </button>
+  );
+}
+
+function ActivityBanner({ state }) {
+  if (!state?.active && !state?.lastCompleted) return null;
+
+  const active = state.active;
+  const recent = state.lastCompleted;
+  let icon = CheckCircle2;
+  let tone = "var(--mint)";
+  let title = "";
+  let detail = "";
+
+  if (active?.type === "failed") {
+    icon = XCircle;
+    tone = "var(--rose)";
+    title = active.title;
+    detail = active.message || "The latest trace event reports a failure.";
+  } else if (active?.type === "llm") {
+    icon = Cpu;
+    tone = "var(--violet)";
+    title = active.title;
+    detail = active.message || "Waiting for the model to respond.";
+  } else if (active?.type === "tool") {
+    icon = Wrench;
+    tone = "var(--signal)";
+    title = active.title;
+    detail = active.message || "Waiting for the tool call to finish.";
+  } else if (active?.type === "done") {
+    icon = CheckCircle2;
+    tone = "var(--mint)";
+    title = active.title;
+    detail = active.message || "The run has completed.";
+  } else if (recent) {
+    title = recent.title;
+    detail = recent.message;
+  }
+
+  const Icon = icon;
+
+  return (
+    <div
+      className="flex flex-wrap items-start gap-3 rounded-[12px] border px-3 py-3"
+      style={{
+        borderColor: `color-mix(in oklch, ${tone} 30%, transparent)`,
+        background: `color-mix(in oklch, ${tone} 8%, transparent)`,
+      }}
+    >
+      <span
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+        style={{
+          background: `color-mix(in oklch, ${tone} 16%, transparent)`,
+          color: tone,
+        }}
+      >
+        {active?.type === "llm" || active?.type === "tool" ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Icon className="h-4 w-4" />
+        )}
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[12px] font-semibold" style={{ color: tone }}>
+            {title || "Live activity"}
+          </span>
+          {active?.stage ? (
+            <span
+              className="rounded-full px-2 py-0.5 font-mono text-[9.5px]"
+              style={{
+                background: "rgba(0,0,0,0.12)",
+                color: "var(--ink-dim)",
+              }}
+            >
+              {active.stage}
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-1 text-[12px] leading-relaxed" style={{ color: "var(--ink-dim)" }}>
+          {detail || "Watching the latest run event."}
+        </div>
+      </div>
+
+      {recent && active?.type !== "failed" ? (
+        <div className="min-w-[210px] rounded-[10px] border px-3 py-2 text-[11px]" style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.08)" }}>
+          <div style={{ color: "var(--mute-3)" }}>Last completed</div>
+          <div className="mt-1 font-medium" style={{ color: "var(--ink-dim)" }}>
+            {recent.title}
+          </div>
+          <div className="mt-0.5" style={{ color: "var(--mute-2)" }}>
+            {recent.message || "No recent completion details."}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -85,41 +168,36 @@ export function RunDetailLive({
   persistedEvents = [],
   metrics = null,
   onMetricsChange = null,
+  defaultStreaming = null,
+  rootActor: rootActorOverride = "",
 }) {
-  // Map-based event store: O(1) dedup, no full-array copy on every SSE frame.
   const eventMapRef = useRef(null);
+  const expectedCloseRef = useRef(false);
   const [eventVersion, setEventVersion] = useState(0);
-  const [traceMetrics, setTraceMetrics] = useState(
-    activeTrace?.metrics || metrics || null,
+  const [liveStream, setLiveStream] = useState(
+    defaultStreaming != null ? defaultStreaming : Boolean(activeTrace),
   );
-  const [liveStream, setLiveStream] = useState(Boolean(activeTrace));
   const [replayMs, setReplayMs] = useState(80);
   const [isReplaying, setIsReplaying] = useState(false);
   const [tab, setTab] = useState("graph");
   const [isCancelling, setIsCancelling] = useState(false);
-  const [cancelError, setCancelError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [streamError, setStreamError] = useState("");
 
-  // Seed the map from initial props
   if (eventMapRef.current === null) {
-    eventMapRef.current = _seedMap(
-      activeTrace?.events || persistedEvents || [],
-    );
+    eventMapRef.current = seedMap(activeTrace?.events || persistedEvents || []);
   }
 
-  // Re-seed when trace/persisted events change (e.g. navigation)
   useEffect(() => {
     const source = activeTrace?.events || persistedEvents || [];
-    const newMap = _seedMap(source);
-    eventMapRef.current = newMap;
+    eventMapRef.current = seedMap(source);
     setEventVersion((v) => v + 1);
   }, [activeTrace, persistedEvents]);
 
   useEffect(() => {
-    setTraceMetrics(activeTrace?.metrics || metrics || null);
-  }, [activeTrace, metrics]);
-
-  useEffect(() => {
     if (!liveStream || !runId) return undefined;
+    setStreamError("");
+    expectedCloseRef.current = false;
 
     const source = new EventSource(apiUrl(`/ui/runs/${runId}/stream`));
     source.onmessage = (payload) => {
@@ -129,25 +207,40 @@ export function RunDetailLive({
         if (incoming.length) {
           let changed = false;
           const map = eventMapRef.current;
-          for (const e of incoming) {
-            const key = _eventKey(e);
+          for (const event of incoming) {
+            const key = eventKey(event);
             if (!map.has(key)) {
-              map.set(key, e);
+              map.set(key, event);
               changed = true;
             }
           }
           if (changed) setEventVersion((v) => v + 1);
         }
         if (parsed?.metrics && typeof parsed.metrics === "object") {
-          setTraceMetrics(parsed.metrics);
           if (onMetricsChange) onMetricsChange(parsed.metrics);
         }
-      } catch {
-        // ignore malformed frames
+        if (parsed?.error) {
+          setStreamError(String(parsed.error));
+        }
+        if (parsed?.completed) {
+          expectedCloseRef.current = true;
+          setLiveStream(false);
+          source.close();
+        }
+      } catch (e) {
+        setStreamError(e instanceof Error ? e.message : "Stream parse error");
       }
     };
-    return () => source.close();
-  }, [liveStream, runId]);
+    source.onerror = () => {
+      if (expectedCloseRef.current) return;
+      setStreamError("Stream connection lost");
+      source.close();
+    };
+    return () => {
+      expectedCloseRef.current = true;
+      source.close();
+    };
+  }, [liveStream, runId, onMetricsChange]);
 
   async function replay() {
     if (!persistedEvents.length) return;
@@ -155,8 +248,7 @@ export function RunDetailLive({
     eventMapRef.current = new Map();
     setEventVersion((v) => v + 1);
     for (const event of persistedEvents) {
-      const key = _eventKey(event);
-      eventMapRef.current.set(key, event);
+      eventMapRef.current.set(eventKey(event), event);
       setEventVersion((v) => v + 1);
       // eslint-disable-next-line no-await-in-loop
       await new Promise((resolve) =>
@@ -169,7 +261,7 @@ export function RunDetailLive({
   async function cancelRun() {
     if (!runId || isCancelling) return;
     setIsCancelling(true);
-    setCancelError("");
+    setActionError("");
     try {
       const response = await fetch(apiUrl(`/ui/runs/${runId}/cancel`), {
         method: "POST",
@@ -179,17 +271,14 @@ export function RunDetailLive({
         throw new Error(message || `Cancel failed (${response.status})`);
       }
     } catch (error) {
-      setCancelError(
-        error instanceof Error
-          ? error.message
-          : String(error || "Cancel failed"),
+      setActionError(
+        error instanceof Error ? error.message : "Cancel failed",
       );
     } finally {
       setIsCancelling(false);
     }
   }
 
-  // Sorted array derived only when eventVersion bumps — no O(n) clone on every SSE frame
   const events = useMemo(
     () =>
       [...(eventMapRef.current?.values() ?? [])].sort(
@@ -199,21 +288,10 @@ export function RunDetailLive({
     [eventVersion],
   );
 
-  const effectiveMetrics = traceMetrics || null;
-  const totalTokens =
-    Number(effectiveMetrics?.total_tokens_in || 0) +
-    Number(effectiveMetrics?.total_tokens_out || 0);
-  const cachedInputTokens = Number(
-    effectiveMetrics?.total_cached_input_tokens || 0,
-  );
-  const totalInputTokens = Number(effectiveMetrics?.total_tokens_in || 0);
   const toolCallRows = useMemo(() => extractToolCalls(events), [events]);
-  const toolCalls = Math.max(
-    toolCallRows.length,
-    Number(effectiveMetrics?.total_tool_calls || 0),
-  );
-  const llmCalls = Number(effectiveMetrics?.total_llm_calls || 0);
+  const runState = useMemo(() => summarizeRunState(events), [events]);
   const rootActor =
+    rootActorOverride ||
     activeTrace?.root_actor ||
     events.find((event) => event?.actor)?.actor ||
     "orchestrator";
@@ -232,7 +310,8 @@ export function RunDetailLive({
         <button
           type="button"
           onClick={() => setLiveStream((value) => !value)}
-          className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] font-medium"
+          disabled={!runId}
+          className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] font-medium disabled:opacity-45"
           style={{
             borderColor: liveStream
               ? "color-mix(in oklch, var(--rose) 35%, transparent)"
@@ -291,7 +370,7 @@ export function RunDetailLive({
           </span>
         </div>
 
-        {runId ? (
+        {runId && isLive ? (
           <button
             type="button"
             onClick={cancelRun}
@@ -312,104 +391,59 @@ export function RunDetailLive({
           </button>
         ) : null}
 
-        <span
-          className="ml-auto font-mono text-[10px]"
-          style={{ color: "var(--mute-3)" }}
-        >
-          {formatNumber(toolCalls)} tool calls
-        </span>
-
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2">
           <TabButton active={tab === "graph"} onClick={() => setTab("graph")}>
             Graph
           </TabButton>
-          <TabButton active={tab === "tools"} onClick={() => setTab("tools")}>
+          <TabButton
+            active={tab === "tools"}
+            onClick={() => setTab("tools")}
+            count={toolCallRows.length}
+            accent="var(--sky)"
+          >
             Tool calls
-            {toolCallRows.length > 0 && (
-              <span
-                className="ml-1 rounded-full px-1.5 py-0.5 font-mono text-[9px]"
-                style={{
-                  background:
-                    "color-mix(in oklch, var(--sky) 15%, transparent)",
-                  color: "var(--sky)",
-                }}
-              >
-                {toolCallRows.length}
-              </span>
-            )}
           </TabButton>
-          <TabButton active={tab === "events"} onClick={() => setTab("events")}>
+          <TabButton
+            active={tab === "events"}
+            onClick={() => setTab("events")}
+            count={events.length}
+            accent="var(--violet)"
+          >
             Events
-            {events.length > 0 && (
-              <span
-                className="ml-1 rounded-full px-1.5 py-0.5 font-mono text-[9px]"
-                style={{
-                  background:
-                    "color-mix(in oklch, var(--violet) 15%, transparent)",
-                  color: "var(--violet)",
-                }}
-              >
-                {events.length}
-              </span>
-            )}
           </TabButton>
         </div>
       </div>
 
-      {cancelError ? (
+      <ActivityBanner state={runState} />
+
+      {actionError || streamError ? (
         <div
-          className="rounded-[12px] border px-3 py-2 text-[12px]"
+          className="flex items-start gap-2 rounded-[12px] border px-3 py-2 text-[12px]"
           style={{
             borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)",
             background: "color-mix(in oklch, var(--rose) 8%, transparent)",
             color: "var(--rose)",
           }}
         >
-          {cancelError}
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <div className="font-mono text-[11.5px]">
+            {actionError || streamError}
+          </div>
         </div>
       ) : null}
 
-      {effectiveMetrics ? (
+      {!actionError && !streamError && runState?.failure?.message ? (
         <div
-          className="rounded-[12px] border px-4 py-3"
+          className="flex items-start gap-2 rounded-[12px] border px-3 py-2 text-[12px]"
           style={{
-            borderColor: "var(--line)",
-            background: "var(--card)",
-            boxShadow: "var(--shadow-card)",
+            borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)",
+            background: "color-mix(in oklch, var(--rose) 8%, transparent)",
+            color: "var(--rose)",
           }}
         >
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-            <Metric
-              label="Tools"
-              value={formatNumber(toolCalls)}
-              accent="var(--sky)"
-            />
-            <Metric
-              label="LLM"
-              value={formatNumber(llmCalls)}
-              accent="var(--violet)"
-            />
-            <Metric
-              label="Tokens"
-              value={formatNumber(totalTokens)}
-              accent="var(--signal)"
-              detail={formatNumber(totalInputTokens)}
-            />
-            <Metric
-              label="Cached / input"
-              value={formatNumber(cachedInputTokens)}
-              accent="var(--violet)"
-              detail={`${formatNumber(totalInputTokens || 0)} in`}
-            />
-            <Metric
-              label="Cost"
-              value={formatCurrency(
-                effectiveMetrics.total_cost_usd ??
-                  effectiveMetrics.estimated_total_cost_usd ??
-                  0,
-              )}
-              accent="var(--mint)"
-            />
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <div className="font-mono text-[11.5px]">
+            {runState.failure.message}
           </div>
         </div>
       ) : null}

@@ -5,6 +5,8 @@ services:
     image: postgres:16-alpine
     container_name: postgres
     restart: unless-stopped
+    init: true
+    stop_grace_period: 20s
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-owc}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-owc}
@@ -35,6 +37,8 @@ services:
         - type=inline
     container_name: ${OWC_TOOLS_CONTAINER:-owc-tools}
     restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
     shm_size: "2gb"
     ports:
       - "3000:3000"
@@ -85,6 +89,8 @@ services:
         - type=inline
     container_name: ${OWC_TOOLS_PW_CONTAINER:-owc-tools-playwright}
     restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
     shm_size: "2gb"
     ports:
       - "3002:3001"
@@ -125,6 +131,8 @@ services:
         - type=inline
     container_name: ${OWC_CONTAINER:-owc}
     restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
     ports:
       - "8000:8000"
     env_file:
@@ -176,6 +184,8 @@ services:
         - type=inline
     container_name: ${OWC_WEB_CONTAINER:-owc-web}
     restart: unless-stopped
+    init: true
+    stop_grace_period: 20s
     ports:
       - "3001:3001"
     environment:

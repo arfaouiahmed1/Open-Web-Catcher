@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { ChevronLeft, ExternalLink } from "lucide-react";
 
 import { apiFetch } from "@/lib/api";
-import { formatCurrency, formatNumber } from "@/lib/utils";
+import { formatNumber } from "@/lib/utils";
 import { statusLabel, statusTone as runStatusTone } from "@/lib/run-status";
 import { AgentOutputPanel } from "@/components/agent-output-panel";
 import { DataTable } from "@/components/data-table";
@@ -16,7 +16,14 @@ import { LlmOutputPanel } from "@/components/llm-output-panel";
 import { TimelinePanel } from "@/components/timeline-panel";
 import { ScreenshotGallery } from "@/components/browser-live-view";
 import { useRunViewSettings } from "@/components/run-view-settings";
+import { CostEstimateCard } from "@/components/cost-estimate-card";
+import { ContextWindowMeter } from "@/components/context-window-meter";
+import { synthCallsFromModelUsage } from "@/lib/pricing";
 import { Badge } from "@/components/ui/badge";
+import {
+  buildContextWindowGroups,
+  summarizeRunState,
+} from "@/lib/run-trace";
 
 const EMPTY_OBJECT = {};
 const EMPTY_ARRAY = [];
@@ -38,14 +45,6 @@ function dur(seconds) {
 
 function RunMeta({ run, jobState, parallelism }) {
   const items = [
-    {
-      label: "Status",
-      value: (
-        <Badge tone={runStatusTone(run.final_status)}>
-          {statusLabel(run.final_status)}
-        </Badge>
-      ),
-    },
     { label: "Root actor", value: run.root_actor || jobState?.actor || "--" },
     { label: "Page type", value: run.page_type || "--" },
     { label: "Duration", value: dur(run.duration_seconds) },
@@ -92,15 +91,8 @@ function RunMeta({ run, jobState, parallelism }) {
   );
 }
 
-function ExpandableTable({
-  title,
-  description,
-  columns,
-  rows,
-  defaultExpand = false,
-  expand,
-}) {
-  const showAll = expand ?? defaultExpand;
+function ExpandableTable({ title, description, columns, rows, expand }) {
+  const showAll = expand;
   const displayed = showAll ? rows : rows.slice(0, 8);
   return (
     <DataTable
@@ -186,9 +178,7 @@ function RunHeader({ runId, url, run, title, subtitle, live }) {
               </span>
             ) : null}
           </div>
-          <span className="owc-eyebrow mt-1">
-            run detail · {live ? "in-memory" : "persisted"}
-          </span>
+          <span className="owc-eyebrow mt-1">run detail</span>
           <h1
             className="mt-1 font-mono text-xl font-semibold"
             style={{ color: "var(--ink)" }}
@@ -219,10 +209,7 @@ function RunHeader({ runId, url, run, title, subtitle, live }) {
           ) : null}
         </div>
         {run?.final_status ? (
-          <Badge
-            tone={runStatusTone(run.final_status)}
-            className="mt-1 shrink-0"
-          >
+          <Badge tone={runStatusTone(run.final_status)} className="mt-1 shrink-0">
             {statusLabel(run.final_status)}
           </Badge>
         ) : null}
@@ -238,6 +225,7 @@ export default function RunDetailPage() {
   const [error, setError] = useState("");
   const [tab, setTab] = useState("live");
   const [liveMetrics, setLiveMetrics] = useState(null);
+  const [liveLlmCalls, setLiveLlmCalls] = useState(null);
   const { settings } = useRunViewSettings();
 
   useEffect(() => {
@@ -250,8 +238,40 @@ export default function RunDetailPage() {
       .finally(() => setLoading(false));
   }, [runId]);
 
+  useEffect(() => {
+    if (!payload?.active_trace) return undefined;
+    const id = setInterval(() => {
+      apiFetch(`/ui/runs/${runId}`)
+        .then((next) => {
+          setPayload(next);
+          if (!next?.active_trace) clearInterval(id);
+        })
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(id);
+  }, [payload?.active_trace, runId]);
+
+  const isActiveTrace = Boolean(payload?.active_trace);
+  const trace = isActiveTrace ? payload.active_trace : null;
   const snapshot = payload?.snapshot ?? EMPTY_OBJECT;
   const events = payload?.events ?? EMPTY_ARRAY;
+  const persistedLlmCalls = payload?.llm_calls ?? EMPTY_ARRAY;
+  const liveMetricsSafe = liveMetrics || trace?.metrics || EMPTY_OBJECT;
+  const agentRuns = payload?.agent_runs ?? EMPTY_ARRAY;
+  const traceEvents = trace?.events || EMPTY_ARRAY;
+  const runEvents = isActiveTrace ? traceEvents : events;
+  const runState = useMemo(() => summarizeRunState(runEvents), [runEvents]);
+  const contextGroups = useMemo(
+    () =>
+      buildContextWindowGroups({
+        events: runEvents,
+        llmCalls: persistedLlmCalls,
+        agentRuns,
+        active: isActiveTrace,
+      }),
+    [agentRuns, isActiveTrace, persistedLlmCalls, runEvents],
+  );
+
   const screenshots = useMemo(() => {
     const fromSnapshot = (snapshot.all_screenshots || []).filter(Boolean);
     const fromEvents = events
@@ -265,6 +285,15 @@ export default function RunDetailPage() {
       .filter(Boolean);
     return [...new Set([...fromSnapshot, ...fromEvents])];
   }, [snapshot, events]);
+
+  const llmCalls = useMemo(() => {
+    if (isActiveTrace) {
+      const synth = synthCallsFromModelUsage(liveMetricsSafe.model_usage);
+      if (synth.length) return synth;
+      if (Array.isArray(liveLlmCalls) && liveLlmCalls.length) return liveLlmCalls;
+    }
+    return persistedLlmCalls;
+  }, [isActiveTrace, liveMetricsSafe, liveLlmCalls, persistedLlmCalls]);
 
   if (isLoading) {
     return (
@@ -301,101 +330,48 @@ export default function RunDetailPage() {
     );
   }
 
-  const isActiveTrace = Boolean(payload.active_trace);
-  const trace = isActiveTrace ? payload.active_trace : null;
-  const metrics = trace?.metrics || {};
-
-  if (isActiveTrace && trace) {
-    const km = liveMetrics || metrics;
-    return (
-      <div className="space-y-5">
-        <RunHeader
-          runId={runId}
-          title="Live Run"
-          subtitle="Streaming from the in-memory observer"
-          live
-        />
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <KpiCard
-            label="Tokens"
-            value={formatNumber(
-              (km.total_tokens_in || 0) + (km.total_tokens_out || 0),
-            )}
-            accent="signal"
-          />
-          <KpiCard
-            label="LLM Calls"
-            value={formatNumber(km.total_llm_calls || 0)}
-            accent="violet"
-          />
-          <KpiCard
-            label="Tool Calls"
-            value={formatNumber(km.total_tool_calls || 0)}
-            accent="sky"
-          />
-          <KpiCard
-            label="Est. Cost"
-            value={formatCurrency(
-              km.total_cost_usd ?? km.estimated_total_cost_usd ?? 0,
-            )}
-            accent="mint"
-          />
-        </div>
-        <RunDetailLive
-          runId={runId}
-          activeTrace={trace}
-          persistedEvents={trace.events || []}
-          metrics={metrics}
-          onMetricsChange={setLiveMetrics}
-        />
-        <LlmOutputPanel events={trace.events || []} />
-      </div>
-    );
-  }
-
-  const run = payload.run || {};
-  const agentRuns = payload.agent_runs || [];
-  const agentOutputs = payload.agent_outputs || [];
-  const agentRollups = payload.agent_rollups || [];
-  const stageRollups = payload.stage_rollups || [];
+  const run = payload.run || EMPTY_OBJECT;
+  const agentOutputs = payload.agent_outputs || EMPTY_ARRAY;
+  const agentRollups = payload.agent_rollups || EMPTY_ARRAY;
+  const stageRollups = payload.stage_rollups || EMPTY_ARRAY;
   const parallelism = payload.parallelism || {
     current_parallel_agents: 0,
     max_parallel_agents: 0,
   };
-  const llmCalls = payload.llm_calls || [];
-  const toolCalls = payload.tool_calls || [];
+  const toolCalls = payload.tool_calls || EMPTY_ARRAY;
   const jobState = payload.job_state || payload.job || null;
+
+  const llmCallCount = isActiveTrace
+    ? Number(liveMetricsSafe.total_llm_calls || llmCalls.length || 0)
+    : Number(run.total_llm_calls || llmCalls.length || 0);
+  const toolCallCount = isActiveTrace
+    ? Number(liveMetricsSafe.total_tool_calls || 0)
+    : Number(run.total_tool_calls || toolCalls.length || 0);
+  const tokensIn = isActiveTrace
+    ? Number(liveMetricsSafe.total_tokens_in || 0)
+    : Number(run.total_tokens_in || 0);
+  const tokensOut = isActiveTrace
+    ? Number(liveMetricsSafe.total_tokens_out || 0)
+    : Number(run.total_tokens_out || 0);
 
   const kpis = [
     {
-      label: "Streams",
-      value: formatNumber(run.stream_count || 0),
-      accent: "signal",
-      description: "Stream URLs found",
-    },
-    {
-      label: "Screenshots",
-      value: formatNumber(run.screenshot_count || 0),
-      accent: "sky",
-      description: "Captures taken",
-    },
-    {
-      label: "Emails",
-      value: formatNumber(run.email_count || 0),
-      accent: "violet",
-      description: "Abuse contacts",
-    },
-    {
       label: "LLM Calls",
-      value: formatNumber(run.total_llm_calls || 0),
+      value: formatNumber(llmCallCount),
       accent: "violet",
       description: "Model completions",
     },
     {
       label: "Tool Calls",
-      value: formatNumber(run.total_tool_calls || 0),
+      value: formatNumber(toolCallCount),
       accent: "sky",
       description: "MCP tool calls",
+    },
+    {
+      label: "Tokens",
+      value: formatNumber(tokensIn + tokensOut),
+      accent: "signal",
+      description: `${formatNumber(tokensIn)} in / ${formatNumber(tokensOut)} out`,
     },
     {
       label: "Parallel",
@@ -404,24 +380,45 @@ export default function RunDetailPage() {
       description: "Live / peak agents",
     },
     {
-      label: "Total Cost",
-      value: formatCurrency(
-        run.total_cost_usd ?? run.estimated_total_cost_usd ?? 0,
-      ),
-      accent: "mint",
-      description: "Estimated USD",
+      label: "Screenshots",
+      value: formatNumber(run.screenshot_count || screenshots.length || 0),
+      accent: "sky",
+      description: "Captures taken",
+    },
+    {
+      label: "Streams",
+      value: formatNumber(run.stream_count || 0),
+      accent: "signal",
+      description: "Stream URLs found",
     },
   ];
 
   return (
     <div className="space-y-5">
-      <RunHeader runId={runId} url={run.url} run={run} />
+      <RunHeader
+        runId={runId}
+        url={run.url || trace?.metrics?.url}
+        run={run}
+        live={isActiveTrace}
+        subtitle={isActiveTrace ? "Streaming from in-memory observer" : null}
+      />
       <RunMeta run={run} jobState={jobState} parallelism={parallelism} />
 
-      <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-7">
+      <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
         {kpis.map((kpi) => (
           <KpiCard key={kpi.label} {...kpi} />
         ))}
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <ContextWindowMeter
+          llmCalls={llmCalls}
+          primaryModel={run.primary_model}
+          primaryProvider={run.primary_provider}
+          groups={contextGroups}
+          focusKey={runState?.active?.stage || ""}
+        />
+        <CostEstimateCard llmCalls={llmCalls} />
       </div>
 
       <div
@@ -445,7 +442,7 @@ export default function RunDetailPage() {
         <Tab
           active={tab === "data"}
           onClick={() => setTab("data")}
-          count={agentRuns.length + toolCalls.length + llmCalls.length}
+          count={agentRuns.length + toolCalls.length + persistedLlmCalls.length}
         >
           Tables
         </Tab>
@@ -464,11 +461,19 @@ export default function RunDetailPage() {
         <div className="space-y-4">
           <RunDetailLive
             runId={runId}
-            persistedEvents={events}
-            metrics={snapshot?.metrics || run || null}
+            activeTrace={trace}
+            persistedEvents={isActiveTrace ? traceEvents : events}
+            defaultStreaming={isActiveTrace}
+            rootActor={run.root_actor || trace?.root_actor || ""}
+            onMetricsChange={(next) => {
+              setLiveMetrics(next);
+              if (Array.isArray(next?.llm_calls)) setLiveLlmCalls(next.llm_calls);
+            }}
           />
-          {events.length > 2 && <TimelinePanel events={events} />}
-          <LlmOutputPanel events={events} />
+          {!isActiveTrace && events.length > 2 ? (
+            <TimelinePanel events={events} />
+          ) : null}
+          <LlmOutputPanel events={isActiveTrace ? traceEvents : events} />
         </div>
       ) : null}
 
@@ -528,7 +533,7 @@ export default function RunDetailPage() {
                 "total_cost_usd",
                 "cost_source",
               ]}
-              rows={llmCalls}
+              rows={persistedLlmCalls}
               expand={settings.expandTables}
             />
             <ExpandableTable

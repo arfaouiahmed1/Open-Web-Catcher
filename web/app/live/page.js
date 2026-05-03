@@ -1,5 +1,5 @@
-import { RunStudio } from "@/components/run-studio";
+import { RunLauncher } from "@/components/run-launcher";
 
 export default function LivePage() {
-  return <RunStudio mode="workflow" />;
+  return <RunLauncher defaultMode="workflow" />;
 }

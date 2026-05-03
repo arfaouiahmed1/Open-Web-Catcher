@@ -115,6 +115,7 @@ _PLAYGROUND_SESSION_TTL_SECONDS = 15 * 60
 _playground_tool_sessions: dict[str, _PlaygroundToolSession] = {}
 _playground_tool_session_lock = asyncio.Lock()
 _background_worker_task: asyncio.Task | None = None
+_active_run_tasks: dict[str, asyncio.Task] = {}
 
 
 class ClassifyRequest(BaseModel):
@@ -231,6 +232,28 @@ async def _cleanup_expired_playground_tool_sessions() -> None:
 
     for profile in profiles_to_close:
         await _close_playground_tool_session(profile)
+
+
+def _track_run_task(run_id: str, task: asyncio.Task) -> asyncio.Task:
+    _active_run_tasks[run_id] = task
+
+    def _cleanup(completed_task: asyncio.Task) -> None:
+        current = _active_run_tasks.get(run_id)
+        if current is completed_task:
+            _active_run_tasks.pop(run_id, None)
+
+    task.add_done_callback(_cleanup)
+    return task
+
+
+async def _cancel_active_run_task(run_id: str) -> bool:
+    task = _active_run_tasks.get(run_id)
+    if task is None or task.done():
+        return False
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+    return True
 
 
 async def _get_playground_tools(profile: str, settings: Settings) -> list[Any]:
@@ -572,6 +595,9 @@ def _merged_pricing_config(settings: Settings, config: PricingConfig) -> dict[st
         "provider": config.provider,
         "input_per_million": config.input_per_million,
         "output_per_million": config.output_per_million,
+        "cached_input_per_million": config.cached_input_per_million,
+        "cache_write_per_million": config.cache_write_per_million,
+        "context_window": int(config.context_window or 0),
     }
     model_key = str(config.model_name or "").strip()
     provider_key = str(config.provider or "").strip().lower()
@@ -603,6 +629,9 @@ def _refresh_pricing_from_db(settings: Settings) -> None:
                 "provider": config.provider,
                 "input_per_million": config.input_per_million,
                 "output_per_million": config.output_per_million,
+                "cached_input_per_million": config.cached_input_per_million,
+                "cache_write_per_million": config.cache_write_per_million,
+                "context_window": int(config.context_window or 0),
             }
             model_key = str(config.model_name or "").strip()
             provider_key = str(config.provider or "").strip().lower()
@@ -704,14 +733,22 @@ async def _process_background_job() -> bool:
         observer.set_url(job.url or "")
 
     if job.job_type == "workflow":
-        execution = await _background_workflow(job.run_id, job.url)
+        execution = await _track_run_task(
+            job.run_id,
+            asyncio.create_task(_background_workflow(job.run_id, job.url)),
+        )
     elif job.job_type == "agent":
         payload = job.payload_json or {}
-        execution = await _background_agent(
+        execution = await _track_run_task(
             job.run_id,
-            str(payload.get("agent", "") or job.actor or "classification"),
-            job.url,
-            prompt_override=str(payload.get("prompt_override", "") or ""),
+            asyncio.create_task(
+                _background_agent(
+                    job.run_id,
+                    str(payload.get("agent", "") or job.actor or "classification"),
+                    job.url,
+                    prompt_override=str(payload.get("prompt_override", "") or ""),
+                )
+            ),
         )
     else:
         execution = {"ok": False, "error": f"Unsupported job type '{job.job_type}'"}
@@ -805,6 +842,8 @@ async def lifespan(app: FastAPI):
         with suppress(asyncio.CancelledError):
             await _background_worker_task
         _background_worker_task = None
+    for run_id in list(_active_run_tasks.keys()):
+        await _cancel_active_run_task(run_id)
     await _close_all_playground_tool_sessions()
     logger.info("Open Web Catcher API shutting down")
 
@@ -935,6 +974,15 @@ def _emit_failure_once(observer, kind: str, message: str) -> None:
         if last.kind == kind and last.message == message:
             return
     observer.emit(kind, message, status="error")
+
+
+def _emit_cancel_once(observer, message: str) -> None:
+    trace = run_registry.get(observer.run_id)
+    if trace is not None and trace.events:
+        last = trace.events[-1]
+        if last.kind in {"run_cancelled", "cancel_requested"} and last.message == message:
+            return
+    observer.emit("run_cancelled", message, status="cancelled")
 
 
 async def _run_selected_agent(agent_key: str, url: str, observer):
@@ -1081,9 +1129,16 @@ async def _background_workflow(run_id: str, url: str) -> dict[str, Any]:
         )
         return {"ok": False, "error": message}
     except RunCancelledError as exc:
+        _emit_cancel_once(observer, str(exc) or "Run cancelled.")
         observer.finish(success=False, failure_mode="cancelled")
         _persist_trace_snapshot(run_id, root_actor="orchestrator", url=url)
         return {"ok": False, "cancelled": True, "error": str(exc)}
+    except asyncio.CancelledError:
+        message = "Run cancelled while the workflow was still active."
+        _emit_cancel_once(observer, message)
+        observer.finish(success=False, failure_mode="cancelled")
+        _persist_trace_snapshot(run_id, root_actor="orchestrator", url=url)
+        return {"ok": False, "cancelled": True, "error": message}
     except Exception as exc:
         _emit_failure_once(observer, "pipeline_failed", str(exc))
         observer.finish(success=False, failure_mode=type(exc).__name__)
@@ -1092,6 +1147,8 @@ async def _background_workflow(run_id: str, url: str) -> dict[str, Any]:
         return {"ok": False, "error": str(exc)}
     finally:
         persist_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await persist_task
 
 
 async def _background_agent(
@@ -1139,9 +1196,16 @@ async def _background_agent(
         )
         return {"ok": False, "error": message}
     except RunCancelledError as exc:
+        _emit_cancel_once(observer, str(exc) or "Run cancelled.")
         observer.finish(success=False, failure_mode="cancelled")
         _persist_trace_snapshot(run_id, root_actor=agent, url=url)
         return {"ok": False, "cancelled": True, "error": str(exc)}
+    except asyncio.CancelledError:
+        message = f"Run cancelled while the {agent} agent was still active."
+        _emit_cancel_once(observer, message)
+        observer.finish(success=False, failure_mode="cancelled")
+        _persist_trace_snapshot(run_id, root_actor=agent, url=url)
+        return {"ok": False, "cancelled": True, "error": message}
     except Exception as exc:
         _emit_failure_once(observer, "agent_failed", str(exc))
         observer.finish(success=False, failure_mode=type(exc).__name__)
@@ -1150,6 +1214,8 @@ async def _background_agent(
         return {"ok": False, "error": str(exc)}
     finally:
         persist_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await persist_task
 
 
 async def _call_mcp_tool(
@@ -1976,17 +2042,20 @@ async def ui_run_stream(run_id: str, request: Request):
 
 
 @app.post("/ui/runs/{run_id}/cancel")
-def ui_cancel_run(run_id: str):
-    success = run_registry.request_cancel(
-        run_id, reason="Cancelled from the Next.js operator console."
-    )
+async def ui_cancel_run(run_id: str):
+    reason = "Cancelled from the Next.js operator console."
+    success = run_registry.request_cancel(run_id, reason=reason)
+    if await _cancel_active_run_task(run_id):
+        success = True
     session = get_session()
     try:
         job_repo = BackgroundJobRepository(session)
         job = job_repo.get_by_run_id(run_id)
         if job is not None:
-            job_repo.mark_cancelled(run_id, reason="Cancelled from the Next.js operator console.")
+            job_repo.mark_cancelled(run_id, reason=reason)
             success = True
+    except SQLAlchemyError as exc:
+        logger.debug("Skipping background-job cancellation persistence for %s: %s", run_id, exc)
     finally:
         session.close()
     if not success:
@@ -1995,6 +2064,30 @@ def ui_cancel_run(run_id: str):
         )
     _cache_bust("overview")
     return {"ok": True, "run_id": run_id}
+
+
+@app.post("/ui/runs/cancel-active")
+async def ui_cancel_active_runs():
+    reason = "Bulk-cancelled from the Next.js operator console."
+    run_ids: list[str] = []
+    session = get_session()
+    try:
+        job_repo = BackgroundJobRepository(session)
+        run_ids = [str(item.run_id) for item in job_repo.list_active(limit=500) if item.run_id]
+        for run_id in run_ids:
+            job_repo.mark_cancelled(run_id, reason=reason)
+    except SQLAlchemyError as exc:
+        logger.debug("Skipping bulk cancellation persistence because the job table is unavailable: %s", exc)
+    finally:
+        session.close()
+
+    run_ids = list(dict.fromkeys([*run_ids, *_active_run_tasks.keys()]))
+    for run_id in run_ids:
+        run_registry.request_cancel(run_id, reason=reason)
+        await _cancel_active_run_task(run_id)
+
+    _cache_bust("overview")
+    return {"ok": True, "cancelled": len(run_ids), "run_ids": run_ids}
 
 
 @app.delete("/ui/runs/{run_id}")
@@ -2050,14 +2143,17 @@ def _enqueue_background_job(
             "Background job table unavailable; falling back to in-memory task execution: %s", exc
         )
         if job_type == "workflow":
-            asyncio.create_task(_background_workflow(run_id, url))
+            _track_run_task(run_id, asyncio.create_task(_background_workflow(run_id, url)))
         else:
-            asyncio.create_task(
-                _background_agent(
-                    run_id,
-                    str((payload or {}).get("agent", "") or actor),
-                    url,
-                    prompt_override=str((payload or {}).get("prompt_override", "") or ""),
+            _track_run_task(
+                run_id,
+                asyncio.create_task(
+                    _background_agent(
+                        run_id,
+                        str((payload or {}).get("agent", "") or actor),
+                        url,
+                        prompt_override=str((payload or {}).get("prompt_override", "") or ""),
+                    )
                 )
             )
         return {

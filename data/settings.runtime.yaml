@@ -1,20 +1,20 @@
-agent_model: google/gemma-4-31b-it:free
+agent_model: z-ai/glm-4.5-air:free
 agent_model_config:
   classification:
-    model: google/gemma-4-31b-it:free
+    model: z-ai/glm-4.5-air:free
     provider: openrouter
   embedded:
-    model: google/gemma-4-31b-it:free
-    provider: nvidia
+    model: z-ai/glm-4.5-air:free
+    provider: openrouter
   hosting:
-    model: google/gemma-4-31b-it:free
-    provider: nvidia
+    model: z-ai/glm-4.5-air:free
+    provider: openrouter
   landing:
-    model: google/gemma-4-31b-it:free
-    provider: nvidia
+    model: z-ai/glm-4.5-air:free
+    provider: openrouter
   orchestrator:
-    model: google/gemma-4-31b-it:free
-    provider: nvidia
+    model: z-ai/glm-4.5-air:free
+    provider: openrouter
 agent_timeout_seconds: 300
 browser_engine: puppeteer
 browser_runtime:
@@ -176,7 +176,7 @@ llm_tuning:
 log_file: data/logs/app.log
 log_level: INFO
 max_parallel_hosting_pages: 5
-orchestrator_model: google/gemma-4-31b-it:free
+orchestrator_model: z-ai/glm-4.5-air:free
 provider_cache_enabled: true
 thinking_budget_tokens: 8000
 thinking_enabled: false

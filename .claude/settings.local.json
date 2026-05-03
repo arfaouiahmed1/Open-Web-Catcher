@@ -20,7 +20,14 @@
       "Bash(timeout 15 npm run dev)",
       "Bash(git add *)",
       "Bash(git commit -m 'fix: React hooks linter errors in settings page *)",
-      "Bash(.venv/Scripts/alembic upgrade:*)"
+      "Bash(.venv/Scripts/alembic upgrade:*)",
+      "Bash(curl -s http://localhost:3001/api/proxy/ui/pricing)",
+      "Bash(curl -s http://localhost:8000/ui/pricing)",
+      "Bash(npx next *)",
+      "Bash(alembic upgrade *)",
+      "Bash(uv run *)",
+      "Bash(curl -s -X POST http://localhost:8000/ui/pricing/sync -H \"Content-Type: application/json\" -d '{\"provider\":\"openrouter\"}')",
+      "Bash(python -c \"import sys,json; d=json.loads\\(sys.stdin.read\\(\\)\\); rows=d['stored']; anth=[r for r in rows if r['provider']=='anthropic'][:3]; print\\(json.dumps\\(anth, indent=2\\)\\)\")"
     ]
   }
 }

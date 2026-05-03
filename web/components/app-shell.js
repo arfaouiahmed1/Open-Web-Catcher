@@ -249,7 +249,6 @@ const NAV = [
     section: "Run",
     badge: true,
   },
-  { href: "/agents", label: "Agent Lab", key: "agent", section: "Run" },
   { href: "/tools", label: "Tool Playground", key: "tools", section: "Run" },
   { href: "/runs", label: "Run History", key: "runs", section: "Inspect" },
   {
@@ -365,7 +364,6 @@ function pathToCrumbs(pathname) {
   const map = {
     "/": ["overview"],
     "/live": ["run", "live-pipeline"],
-    "/agents": ["run", "agent-lab"],
     "/tools": ["run", "tool-playground"],
     "/runs": ["inspect", "runs"],
     "/providers": ["inspect", "provider-intel"],

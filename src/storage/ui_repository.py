@@ -158,6 +158,9 @@ class OperatorConsoleRepository:
                 model_name=row.model_name,
                 input_per_million=row.input_per_million,
                 output_per_million=row.output_per_million,
+                cached_input_per_million=getattr(row, "cached_input_per_million", 0.0) or 0.0,
+                cache_write_per_million=getattr(row, "cache_write_per_million", 0.0) or 0.0,
+                context_window=int(getattr(row, "context_window", 0) or 0),
                 active=row.active,
                 notes=row.notes,
             )
@@ -175,6 +178,9 @@ class OperatorConsoleRepository:
             self._session.add(row)
         row.input_per_million = config.input_per_million
         row.output_per_million = config.output_per_million
+        row.cached_input_per_million = config.cached_input_per_million
+        row.cache_write_per_million = config.cache_write_per_million
+        row.context_window = int(config.context_window or 0)
         row.active = config.active
         row.notes = config.notes
         self._session.commit()
@@ -206,6 +212,9 @@ class OperatorConsoleRepository:
                 row_map[key] = row
             row.input_per_million = config.input_per_million
             row.output_per_million = config.output_per_million
+            row.cached_input_per_million = config.cached_input_per_million
+            row.cache_write_per_million = config.cache_write_per_million
+            row.context_window = int(config.context_window or 0)
             row.active = config.active
             row.notes = config.notes
 

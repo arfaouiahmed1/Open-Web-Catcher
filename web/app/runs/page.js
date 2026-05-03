@@ -164,6 +164,7 @@ export default function RunsPage() {
   const [selected, setSelected] = useState([]);
   const [reloadTick, setReloadTick] = useState(0);
   const [busyRunId, setBusyRunId] = useState("");
+  const [isBulkCancelling, setIsBulkCancelling] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -213,6 +214,21 @@ export default function RunsPage() {
       setReloadTick((value) => value + 1);
     } finally {
       setBusyRunId("");
+    }
+  }
+
+  async function cancelActiveRuns() {
+    const confirmed = window.confirm(
+      "Cancel all queued and running runs? Active MCP sessions will be torn down.",
+    );
+    if (!confirmed) return;
+    setIsBulkCancelling(true);
+    try {
+      await fetch(apiUrl("/ui/runs/cancel-active"), { method: "POST" });
+      setSelected([]);
+      setReloadTick((value) => value + 1);
+    } finally {
+      setIsBulkCancelling(false);
     }
   }
 
@@ -323,6 +339,16 @@ export default function RunsPage() {
             className="border border-[var(--line)]"
           >
             Failed
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={cancelActiveRuns}
+            disabled={isBulkCancelling}
+            className="border border-[var(--line)]"
+          >
+            <XCircle className="mr-1.5 h-3.5 w-3.5" />
+            {isBulkCancelling ? "Cancelling active..." : "Cancel active runs"}
           </Button>
           <Button
             variant="ghost"

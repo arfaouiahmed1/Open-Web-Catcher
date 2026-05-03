@@ -194,6 +194,9 @@ class PricingConfig(BaseModel):
     model_name: str
     input_per_million: float = 0.0
     output_per_million: float = 0.0
+    cached_input_per_million: float = 0.0
+    cache_write_per_million: float = 0.0
+    context_window: int = 0
     active: bool = True
     notes: str = ""
 
