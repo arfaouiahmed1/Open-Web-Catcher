@@ -5,6 +5,7 @@ import { Camera, ChevronDown, ExternalLink, Wrench } from "lucide-react";
 
 import { formatNumber, safeJson } from "@/lib/utils";
 import { STAGE_LABELS } from "@/lib/run-trace";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 function toneForStatus(status) {
   const normalized = String(status || "").toLowerCase();
@@ -33,16 +34,11 @@ function JsonBlock({ label, value }) {
   const text = useMemo(() => safeJson(value), [value]);
   return (
     <div>
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--mute-3)" }}>
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
         {label}
       </div>
       <pre
-        className="max-h-52 overflow-auto rounded-[10px] border p-2 text-[11px] whitespace-pre-wrap break-words"
-        style={{
-          borderColor: "var(--line)",
-          background: "rgba(0,0,0,0.18)",
-          color: "var(--ink-dim)",
-        }}
+        className="max-h-52 overflow-auto rounded-lg border border-border bg-muted/20 p-2 text-[11px] whitespace-pre-wrap break-words text-foreground/80"
       >
         {text}
       </pre>
@@ -58,13 +54,7 @@ function ToolCallRow({ call }) {
   const hasDetails = Boolean((call.args && Object.keys(call.args).length) || call.result || (call.screenshots || []).length);
 
   return (
-    <div
-      className="rounded-[12px] border"
-      style={{
-        borderColor: tone.border,
-        background: tone.bg,
-      }}
-    >
+    <Card className="overflow-hidden shadow-card" style={{ borderColor: tone.border, background: tone.bg }}>
       <button
         type="button"
         onClick={() => hasDetails && setExpanded((value) => !value)}
@@ -72,11 +62,8 @@ function ToolCallRow({ call }) {
         disabled={!hasDetails}
       >
         <div
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]"
-          style={{
-            background: "color-mix(in oklch, var(--card) 72%, transparent)",
-            color: tone.text,
-          }}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background/70"
+          style={{ color: tone.text }}
         >
           <Wrench className="h-4 w-4" />
         </div>
@@ -87,16 +74,12 @@ function ToolCallRow({ call }) {
               {stageLabel}
             </span>
             <span
-              className="rounded-full px-2 py-0.5 font-mono text-[10px]"
-              style={{
-                background: "rgba(0,0,0,0.18)",
-                color: "var(--ink-dim)",
-              }}
+              className="rounded-full border border-border bg-muted/40 px-2 py-0.5 font-mono text-[10px] text-foreground/80"
             >
               {call.toolName}
             </span>
             {call.startSeq ? (
-              <span className="font-mono text-[10px]" style={{ color: "var(--mute-3)" }}>
+              <span className="font-mono text-[10px] text-muted-foreground/60">
                 #{call.startSeq}
               </span>
             ) : null}
@@ -106,12 +89,12 @@ function ToolCallRow({ call }) {
           </div>
 
           {call.target ? (
-            <div className="mt-1 truncate font-mono text-[11px]" style={{ color: "var(--mute-2)" }} title={call.target}>
+            <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground" title={call.target}>
               {call.target}
             </div>
           ) : null}
 
-          <div className="mt-1 flex flex-wrap items-center gap-3 font-mono text-[10px]" style={{ color: "var(--mute-3)" }}>
+          <div className="mt-1 flex flex-wrap items-center gap-3 font-mono text-[10px] text-muted-foreground/60">
             {call.durationSeconds ? <span>{Number(call.durationSeconds).toFixed(2)}s</span> : null}
             {(call.screenshots || []).length ? <span>{formatNumber(call.screenshots.length)} shot{call.screenshots.length === 1 ? "" : "s"}</span> : null}
           </div>
@@ -121,7 +104,7 @@ function ToolCallRow({ call }) {
           <ChevronDown
             className="mt-0.5 h-4 w-4 shrink-0 transition-transform"
             style={{
-              color: "var(--mute-3)",
+              color: "var(--muted-foreground)",
               transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
             }}
           />
@@ -129,13 +112,13 @@ function ToolCallRow({ call }) {
       </button>
 
       {expanded ? (
-        <div className="space-y-3 border-t px-3 pb-3 pt-3" style={{ borderColor: "var(--line)" }}>
+        <div className="space-y-3 border-t border-border px-3 pb-3 pt-3">
           {activeScreenshot ? (
-            <div className="overflow-hidden rounded-[12px] border" style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.24)" }}>
+            <div className="overflow-hidden rounded-lg border border-border bg-muted/20">
               <img src={activeScreenshot} alt={`${call.toolName} screenshot`} className="max-h-64 w-full object-cover" />
-              <div className="flex items-center gap-2 border-t px-2.5 py-1.5" style={{ borderColor: "var(--line)" }}>
-                <span className="truncate font-mono text-[10px]" style={{ color: "var(--mute-2)" }}>{activeScreenshot}</span>
-                <a href={activeScreenshot} target="_blank" rel="noreferrer" className="ml-auto shrink-0" style={{ color: "var(--mute)" }}>
+              <div className="flex items-center gap-2 border-t border-border px-2.5 py-1.5">
+                <span className="truncate font-mono text-[10px] text-muted-foreground">{activeScreenshot}</span>
+                <a href={activeScreenshot} target="_blank" rel="noreferrer" className="ml-auto shrink-0 text-muted-foreground">
                   <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               </div>
@@ -149,11 +132,10 @@ function ToolCallRow({ call }) {
                   key={`${url}-${index}`}
                   type="button"
                   onClick={() => setActiveScreenshot((current) => (current === url ? "" : url))}
-                  className="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium"
+                  className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[10px] font-medium"
                   style={{
-                    borderColor: "var(--line)",
-                    background: activeScreenshot === url ? "color-mix(in oklch, var(--signal) 16%, transparent)" : "rgba(0,0,0,0.18)",
-                    color: activeScreenshot === url ? "var(--signal)" : "var(--mute-2)",
+                    background: activeScreenshot === url ? "color-mix(in oklch, var(--signal) 16%, transparent)" : "var(--background)",
+                    color: activeScreenshot === url ? "var(--signal)" : "var(--muted-foreground)",
                   }}
                 >
                   <Camera className="h-3 w-3" />
@@ -167,39 +149,32 @@ function ToolCallRow({ call }) {
           {call.result ? <JsonBlock label="Result" value={call.result} /> : null}
         </div>
       ) : null}
-    </div>
+    </Card>
   );
 }
 
 export function ToolCallFeed({ toolCalls = [], title = "Tool Calls", emptyLabel = "Tool calls will appear here.", maxHeight = 540 }) {
   return (
-    <div
-      className="overflow-hidden rounded-[14px] border"
-      style={{
-        borderColor: "var(--line)",
-        background: "var(--card)",
-        boxShadow: "var(--shadow-card)",
-      }}
-    >
-      <div className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: "var(--line)" }}>
-        <Wrench className="h-4 w-4" style={{ color: "var(--signal)" }} />
-        <span className="text-[12px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--signal)" }}>
+    <Card className="overflow-hidden shadow-card">
+      <CardHeader className="flex-row items-center gap-2 space-y-0 border-b border-border px-4 py-3">
+        <Wrench className="h-4 w-4 text-primary" />
+        <CardTitle className="text-[12px] font-semibold uppercase tracking-[0.12em] text-primary">
           {title}
-        </span>
-        <span className="ml-auto font-mono text-[10px]" style={{ color: "var(--mute-3)" }}>
+        </CardTitle>
+        <span className="ml-auto font-mono text-[10px] text-muted-foreground/60">
           {formatNumber(toolCalls.length)}
         </span>
-      </div>
+      </CardHeader>
 
-      <div className="space-y-2 overflow-y-auto p-3" style={{ maxHeight }}>
+      <CardContent className="space-y-2 overflow-y-auto p-3" style={{ maxHeight }}>
         {toolCalls.length ? (
           toolCalls.map((call) => <ToolCallRow key={call.key} call={call} />)
         ) : (
-          <div className="flex h-36 items-center justify-center text-[12px]" style={{ color: "var(--mute-3)" }}>
+          <div className="flex h-36 items-center justify-center text-sm text-muted-foreground/60">
             {emptyLabel}
           </div>
         )}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

@@ -9,7 +9,7 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        /* shadcn/ui semantic tokens */
+        /* ── shadcn/ui semantic tokens ── */
         background: "var(--background)",
         foreground: "var(--foreground)",
         card: {
@@ -40,60 +40,53 @@ module.exports = {
           DEFAULT: "var(--destructive)",
           foreground: "var(--destructive-foreground)",
         },
-        border: "var(--border)",
-        input: "var(--input)",
-        ring: "var(--ring)",
+        border:  "var(--border)",
+        input:   "var(--input)",
+        ring:    "var(--ring)",
 
-        /* surfaces */
-        bg:       "#05080f",
-        panel:    "#0a1220",
-        "panel-2":"#0f1828",
-        ink:      "#060c16",   /* kept for compat */
-        surface:  "#0a1220",   /* kept for compat */
+        sidebar: {
+          DEFAULT: "var(--sidebar)",
+          foreground: "var(--sidebar-foreground)",
+          primary: "var(--sidebar-primary)",
+          "primary-foreground": "var(--sidebar-primary-foreground)",
+          accent: "var(--sidebar-accent)",
+          "accent-foreground": "var(--sidebar-accent-foreground)",
+          border: "var(--sidebar-border)",
+          ring: "var(--sidebar-ring)",
+        },
 
-        /* text */
-        "ink-text": "#f2f5fa",
-        "ink-dim":  "#c4cbd8",
-        mute:       "#7a8699",
-        "mute-2":   "#515d70",
-        "mute-3":   "#2f3746",
+        chart: {
+          1: "var(--chart-1)",
+          2: "var(--chart-2)",
+          3: "var(--chart-3)",
+          4: "var(--chart-4)",
+          5: "var(--chart-5)",
+        },
 
-        /* accents — warm amber signal replaces stock blue */
-        signal:  "oklch(0.76 0.13 64)",   /* warm amber — primary */
-        mint:    "oklch(0.78 0.13 170)",  /* green */
-        violet:  "oklch(0.72 0.14 300)",  /* purple */
-        rose:    "oklch(0.70 0.15 20)",   /* red */
-        sky:     "oklch(0.76 0.12 240)",  /* blue */
-
-        /* backwards-compat aliases */
-        surge:  "oklch(0.78 0.13 170)",   /* = mint */
-        spark:  "oklch(0.76 0.13 64)",    /* = signal */
-        ember:  "oklch(0.70 0.15 20)",    /* = rose */
-        muted:  "#515d70",
-
-        border: "rgba(255,255,255,0.07)",
+        /* ── OWC accent palette (charts / status) ── */
+        signal:  "oklch(0.76 0.13 64)",
+        mint:    "oklch(0.78 0.13 170)",
+        violet:  "oklch(0.72 0.14 300)",
+        rose:    "oklch(0.70 0.15 20)",
+        sky:     "oklch(0.76 0.12 240)",
       },
       fontFamily: {
-        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
-        mono: ["var(--font-mono)", "ui-monospace", "monospace"],
+        sans: ["var(--font-geist-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["var(--font-geist-mono)", "ui-monospace", "monospace"],
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
-        card: "10px",
-        "card-lg": "14px",
       },
       boxShadow: {
-        card: "0 1px 0 rgba(255,255,255,0.04) inset, 0 10px 30px -18px rgba(0,0,0,0.9)",
-        glow: "0 0 0 1px color-mix(in oklch, oklch(0.76 0.13 64) 40%, transparent), 0 10px 30px -10px color-mix(in oklch, oklch(0.76 0.13 64) 35%, transparent)",
+        card: "var(--shadow-card)",
+        glow: "var(--shadow-glow)",
       },
       animation: {
         breathe:          "breathe 2.4s ease-in-out infinite",
         "pulse-ring":     "pulse-ring 1.8s ease-out infinite",
         scan:             "scan 2.4s linear infinite",
-        tput:             "tput 1.4s ease-in-out infinite",
-        wave:             "wave 1.1s ease-in-out infinite",
         "fade-up":        "fade-up 220ms ease both",
         "slide-in-right": "slide-in-right 180ms ease both",
         "glow-pulse":     "glow-pulse 2s ease-in-out infinite",
@@ -117,14 +110,6 @@ module.exports = {
           "0%":   { transform: "translateX(-100%)" },
           "100%": { transform: "translateX(100%)" },
         },
-        tput: {
-          "0%, 100%": { height: "10%", background: "var(--mute-3)" },
-          "50%":      { height: "90%", background: "var(--signal)" },
-        },
-        wave: {
-          "0%, 100%": { height: "20%" },
-          "50%":      { height: "100%" },
-        },
         "fade-up": {
           from: { opacity: "0", transform: "translateY(10px)" },
           to:   { opacity: "1", transform: "translateY(0)" },
@@ -134,8 +119,8 @@ module.exports = {
           to:   { opacity: "1", transform: "translateX(0)" },
         },
         "glow-pulse": {
-          "0%, 100%": { boxShadow: "0 0 0 0 transparent, 0 0 0 2px color-mix(in oklch, var(--signal) 40%, transparent)" },
-          "50%":      { boxShadow: "0 0 0 4px transparent, 0 0 0 2px color-mix(in oklch, var(--signal) 70%, transparent)" },
+          "0%, 100%": { boxShadow: "0 0 0 2px color-mix(in oklch, var(--signal) 40%, transparent)" },
+          "50%":      { boxShadow: "0 0 0 2px color-mix(in oklch, var(--signal) 70%, transparent)" },
         },
         "agent-arrive": {
           from: { opacity: "0", transform: "scale(0.88)" },

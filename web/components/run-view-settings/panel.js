@@ -9,9 +9,9 @@ import { SettingNumber, SettingToggle } from "@/components/run-view-settings/con
 export function RunViewSettingsPanel({ settings, update, reset, onClose }) {
   return (
     <Card className="overflow-hidden">
-      <CardHeader className="flex flex-row items-center justify-between gap-3 border-b border-border p-4 space-y-0">
+      <CardHeader className="flex flex-row items-center justify-between gap-3 border-b border-border p-4">
         <div className="flex items-center gap-2">
-          <Settings2 className="h-3.5 w-3.5 text-primary" />
+          <Settings2 className="text-primary" />
           <CardTitle className="text-[13px]">Run View Settings</CardTitle>
         </div>
         <div className="flex items-center gap-2">
@@ -34,7 +34,7 @@ export function RunViewSettingsPanel({ settings, update, reset, onClose }) {
 
       <CardContent className="divide-y divide-border px-4 py-0">
         <div className="py-2">
-          <div className="pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-3)]">
+          <div className="pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             View Panels
           </div>
           <SettingToggle
@@ -58,7 +58,7 @@ export function RunViewSettingsPanel({ settings, update, reset, onClose }) {
         </div>
 
         <div className="py-2">
-          <div className="pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-3)]">
+          <div className="pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             Behavior
           </div>
           <SettingToggle
@@ -76,7 +76,7 @@ export function RunViewSettingsPanel({ settings, update, reset, onClose }) {
         </div>
 
         <div className="py-2">
-          <div className="pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--mute-3)]">
+          <div className="pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             Performance
           </div>
           <SettingNumber

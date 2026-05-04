@@ -3,6 +3,7 @@
 import { CheckCircle2, Clock3, Loader2, XCircle } from "lucide-react";
 
 import { buildStageView, STAGE_LABELS, STAGE_ORDER } from "@/lib/run-trace";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 function statusTone(status) {
   if (status === "running")
@@ -189,39 +190,20 @@ export function OrchestratorGraph({ events = [], rootActor = "orchestrator" }) {
   const totalToolCalls = stageView.toolCalls.length;
 
   return (
-    <div
-      className="overflow-hidden rounded-[14px] border"
-      style={{
-        borderColor: "var(--line)",
-        background: "var(--card)",
-        boxShadow: "var(--shadow-card)",
-      }}
-    >
-      <div
-        className="flex items-center gap-3 border-b px-4 py-3"
-        style={{ borderColor: "var(--line)" }}
-      >
-        <span
-          className="text-[12px] font-semibold uppercase tracking-[0.12em]"
-          style={{ color: "var(--signal)" }}
-        >
+    <Card className="overflow-hidden shadow-card">
+      <CardHeader className="flex-row items-center gap-3 space-y-0 border-b border-border px-4 py-3">
+        <span className="text-[12px] font-semibold uppercase tracking-[0.12em] text-primary">
           Orchestrator Graph
         </span>
-        <span
-          className="rounded-full px-2 py-0.5 font-mono text-[10px]"
-          style={{ background: "var(--line)", color: "var(--mute-2)" }}
-        >
+        <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
           {rootActor}
         </span>
-        <span
-          className="ml-auto font-mono text-[10px]"
-          style={{ color: "var(--mute-3)" }}
-        >
+        <span className="ml-auto font-mono text-[10px] text-muted-foreground/60">
           {totalToolCalls} tool calls
         </span>
-      </div>
+      </CardHeader>
 
-      <div className="overflow-x-auto px-4 py-5">
+      <CardContent className="overflow-x-auto px-4 py-5">
         <div className="flex min-w-[920px] items-stretch">
           {STAGE_ORDER.map((stageName, index) => {
             const stage = stages.find((item) => item.stage === stageName);
@@ -244,7 +226,7 @@ export function OrchestratorGraph({ events = [], rootActor = "orchestrator" }) {
             );
           })}
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

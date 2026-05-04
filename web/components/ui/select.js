@@ -23,8 +23,8 @@ export function Select({
     value === "" ? EMPTY_VALUE : value === undefined || value === null ? undefined : value;
 
   return (
-    <div className={cn(label ? "space-y-1.5" : undefined, className)}>
-      {label ? <Label>{label}</Label> : null}
+    <div className={cn(label ? "space-y-2" : undefined, className)}>
+      {label ? <Label className="text-sm font-semibold">{label}</Label> : null}
 
       <SelectPrimitive.Root
         value={normalizedValue}
@@ -35,7 +35,7 @@ export function Select({
           onChange?.(resolvedValue, option);
         }}
       >
-        <SelectPrimitive.Trigger className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-left text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50">
+        <SelectPrimitive.Trigger className="flex h-10 w-full items-center justify-between rounded-lg border border-border bg-background px-3.5 py-2.5 text-left text-sm font-medium shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 transition-colors hover:border-input">
           <SelectPrimitive.Value placeholder={placeholder}>
             {selected ? (
               <span className="min-w-0">
@@ -43,7 +43,7 @@ export function Select({
                   {selected.label}
                 </span>
                 {selected.description ? (
-                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                  <span className="mt-1 block truncate text-xs text-muted-foreground">
                     {selected.description}
                   </span>
                 ) : null}
@@ -62,17 +62,17 @@ export function Select({
             <SelectPrimitive.ScrollUpButton className="flex cursor-default items-center justify-center py-1">
               <ChevronUp className="h-4 w-4" />
             </SelectPrimitive.ScrollUpButton>
-            <SelectPrimitive.Viewport className="p-1">
+            <SelectPrimitive.Viewport className="p-1.5">
               {options.length ? (
                 options.map((option) => (
                   <SelectPrimitive.Item
                     key={option.value || EMPTY_VALUE}
                     value={option.value === "" ? EMPTY_VALUE : option.value}
-                    className="relative flex w-full cursor-default select-none items-start gap-2 rounded-sm py-2 pl-8 pr-3 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+                    className="relative flex w-full cursor-default select-none items-start gap-2.5 rounded-md py-2.5 pl-9 pr-3 text-sm font-medium outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 transition-colors"
                   >
-                    <span className="absolute left-2 top-2.5 flex h-4 w-4 items-center justify-center">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 flex h-4 w-4 items-center justify-center">
                       <SelectPrimitive.ItemIndicator>
-                        <Check className="h-3.5 w-3.5 text-primary" />
+                        <Check className="h-4 w-4 text-primary" />
                       </SelectPrimitive.ItemIndicator>
                     </span>
                     <span className="min-w-0 flex-1">
@@ -80,12 +80,12 @@ export function Select({
                         {option.label}
                       </SelectPrimitive.ItemText>
                       {option.description ? (
-                        <span className="mt-0.5 block text-xs text-muted-foreground">
+                        <span className="mt-1 block text-xs text-muted-foreground">
                           {option.description}
                         </span>
                       ) : null}
                       {option.meta ? (
-                        <span className="mt-1 block font-mono text-[10px] text-muted-foreground">
+                        <span className="mt-1.5 block font-mono text-[11px] text-muted-foreground">
                           {option.meta}
                         </span>
                       ) : null}
@@ -93,7 +93,7 @@ export function Select({
                   </SelectPrimitive.Item>
                 ))
               ) : (
-                <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                <div className="px-3 py-8 text-center text-sm text-muted-foreground">
                   {emptyMessage}
                 </div>
               )}

@@ -115,34 +115,59 @@ export const ICONS = {
   ),
 };
 
-export const NAV_ITEMS = [
-  { href: "/", label: "Overview", key: "overview", section: null },
-  { href: "/live", label: "Live Pipeline", key: "live", section: "Run", badge: true },
-  { href: "/tools", label: "Tool Playground", key: "tools", section: "Run" },
-  { href: "/runs", label: "Run History", key: "runs", section: "Inspect" },
-  { href: "/providers", label: "Provider Intel", key: "providers", section: "Inspect" },
-  { href: "/evaluations", label: "Evaluations", key: "evals", section: "Inspect" },
-  { href: "/datasets", label: "Datasets", key: "datasets", section: "Inspect" },
-  { href: "/database", label: "Database", key: "database", section: "System" },
-  { href: "/prompts", label: "Prompts", key: "prompts", section: "System" },
-  { href: "/settings", label: "Settings", key: "settings", section: "System" },
+const DASHBOARD_TABS = [
+  { href: "/?tab=overview", label: "Overview" },
+  { href: "/?tab=costs", label: "Costs" },
+  { href: "/?tab=tokens", label: "Tokens" },
+  { href: "/?tab=tools", label: "Tools" },
+  { href: "/?tab=agents", label: "Agents" },
 ];
 
-export const NAV_GROUPS = ["Run", "Inspect", "System"];
+const LIVE_PIPELINE_TABS = [
+  { href: "/live?mode=workflow", label: "Workflow" },
+  { href: "/live?mode=agent", label: "Single agent" },
+];
+
+const SETTINGS_TABS = [
+  { href: "/settings?tab=models", label: "Models & Providers" },
+  { href: "/settings?tab=browser", label: "Browser" },
+  { href: "/settings?tab=display", label: "Display" },
+  { href: "/settings?tab=api-keys", label: "API Keys" },
+  { href: "/settings?tab=notifications", label: "Notifications" },
+  { href: "/settings?tab=mcp-tools", label: "MCP Tools" },
+];
+
+export const NAV_ITEMS = [
+  { href: "/", label: "Dashboard", key: "overview", section: null, children: DASHBOARD_TABS },
+  {
+    href: "/live",
+    label: "Live Pipeline",
+    key: "live",
+    section: "Agents",
+    badge: true,
+    children: LIVE_PIPELINE_TABS,
+  },
+  { href: "/runs", label: "View Results", key: "runs", section: "Agents" },
+  { href: "/providers", label: "Providers", key: "providers", section: "Config" },
+  {
+    href: "/settings",
+    label: "Settings",
+    key: "settings",
+    section: "Config",
+    children: SETTINGS_TABS,
+  },
+];
+
+export const NAV_GROUPS = ["Agents", "Config"];
 
 export function pathToCrumbs(pathname) {
   const map = {
-    "/": ["overview"],
-    "/live": ["run", "live-pipeline"],
-    "/tools": ["run", "tool-playground"],
-    "/runs": ["inspect", "runs"],
-    "/providers": ["inspect", "provider-intel"],
-    "/evaluations": ["inspect", "evaluations"],
-    "/datasets": ["inspect", "datasets"],
-    "/database": ["system", "database"],
-    "/prompts": ["system", "prompts"],
-    "/settings": ["system", "settings"],
+    "/": ["dashboard"],
+    "/live": ["agents", "live-pipeline"],
+    "/runs": ["agents", "view-results"],
+    "/providers": ["config", "providers"],
+    "/settings": ["config", "settings"],
   };
   const base = `/${pathname.split("/")[1] || ""}`;
-  return map[base] || ["overview"];
+  return map[base] || ["dashboard"];
 }

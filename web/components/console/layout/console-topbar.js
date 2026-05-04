@@ -36,7 +36,7 @@ export function ConsoleTopbar({ pathname, connected, onMenuClick }) {
           <span key={crumb} className="flex items-center gap-1">
             <span style={{ color: "var(--mute-3)" }}>/</span>
             <span style={{ color: index === crumbs.length - 1 ? "var(--ink-dim)" : "var(--mute-2)" }}>
-              {crumb}
+              {crumb.replace(/-/g, " ")}
             </span>
           </span>
         ))}

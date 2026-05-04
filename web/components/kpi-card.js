@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 /* ── count-up hook ── */
 function useCountUp(target, duration = 650) {
@@ -33,7 +35,7 @@ function useCountUp(target, duration = 650) {
   return display;
 }
 
-/* ── enhanced sparkline ── */
+/* ── sparkline ── */
 function Sparkline({ data, color = "var(--signal)", live = false }) {
   const gradId = useRef(`sg-${Math.random().toString(36).slice(2)}`).current;
   if (!data || data.length < 2) return null;
@@ -54,30 +56,26 @@ function Sparkline({ data, color = "var(--signal)", live = false }) {
 
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}
-      className="absolute right-3 top-3 opacity-95" aria-hidden>
+      className="absolute right-3 top-3 opacity-70" aria-hidden>
       <defs>
         <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor={color} stopOpacity="0.25" />
-          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+          <stop offset="0%"   stopColor={color} stopOpacity="0.2" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
       <path d={area} fill={`url(#${gradId})`} />
-      <path d={line}  fill="none" stroke={color} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d={line} fill="none" stroke={color} strokeWidth="1.4"
+        strokeLinecap="round" strokeLinejoin="round" />
       {live && (
-        <>
-          <circle cx={last.x} cy={last.y} r="2.5" fill={color} />
-          <circle cx={last.x} cy={last.y} r="5"   fill={color} opacity="0"
-            style={{ animation: "ping-once 1.5s ease infinite" }} />
-        </>
+        <circle cx={last.x} cy={last.y} r="2.5" fill={color} />
       )}
     </svg>
   );
 }
 
-/* ── animated bar ── */
+/* ── progress bar ── */
 function AnimBar({ pct, color }) {
   const barRef = useRef(null);
-
   useEffect(() => {
     if (!barRef.current) return;
     barRef.current.style.width = "0%";
@@ -88,15 +86,27 @@ function AnimBar({ pct, color }) {
   }, [pct]);
 
   return (
-    <div className="mt-3 h-[3px] overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
+    <div className="mt-3 h-[3px] overflow-hidden rounded-full bg-muted">
       <span
         ref={barRef}
-        className="block h-full rounded-full"
-        style={{ width: "0%", background: color, transition: "width 600ms cubic-bezier(0.4,0,0.2,1)" }}
+        className="block h-full rounded-full transition-all duration-700"
+        style={{ width: "0%", background: color }}
       />
     </div>
   );
 }
+
+const ACCENT_MAP = {
+  signal:  "var(--signal)",
+  mint:    "var(--mint)",
+  rose:    "var(--rose)",
+  sky:     "var(--sky)",
+  violet:  "var(--violet)",
+  warning: "var(--signal)",
+  accent:  "var(--signal)",
+  success: "var(--mint)",
+  danger:  "var(--rose)",
+};
 
 /* ── main export ── */
 export function KpiCard({
@@ -117,7 +127,6 @@ export function KpiCard({
   const prevValue = useRef(value);
   const numRef    = useRef(null);
 
-  /* count-pop on value change */
   useEffect(() => {
     if (prevValue.current !== value && numRef.current) {
       numRef.current.style.animation = "none";
@@ -128,12 +137,7 @@ export function KpiCard({
     prevValue.current = value;
   }, [value]);
 
-  const ACCENT_MAP = {
-    signal: "var(--signal)", mint: "var(--mint)", rose: "var(--rose)",
-    sky: "var(--sky)", violet: "var(--violet)", warning: "var(--signal)",
-    accent: "var(--signal)", success: "var(--mint)", danger: "var(--rose)",
-  };
-  const valColor = ACCENT_MAP[accent] || accent || "var(--ink)";
+  const valColor = ACCENT_MAP[accent] || accent || "var(--foreground)";
   const resolvedBarColor = barColor || ACCENT_MAP[accent] || "var(--signal)";
 
   const displayValue = isNumeric
@@ -141,51 +145,47 @@ export function KpiCard({
     : value;
 
   return (
-    <div
-      className="relative overflow-hidden rounded-[12px] border p-[14px_16px] transition-shadow hover:shadow-[0_0_0_1px_color-mix(in_oklch,var(--signal)_18%,transparent)] animate-fade-up"
-      style={{ background: "var(--card)", boxShadow: "var(--shadow-card)", border: "1px solid var(--line)" }}
-    >
-      {sparkData && <Sparkline data={sparkData} color={valColor} live={live} />}
+    <Card className="relative overflow-hidden transition-shadow hover:shadow-md animate-fade-up">
+      <CardContent className="p-4">
+        {sparkData && <Sparkline data={sparkData} color={valColor} live={live} />}
 
-      {/* label row */}
-      <div className="flex items-center gap-2">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.15em]" style={{ color: "var(--mute)" }}>
-          {label}
-        </div>
-        {live && (
-          <span
-            className="h-[5px] w-[5px] rounded-full shrink-0"
-            style={{ background: "var(--rose)", animation: "breathe 1.4s ease-in-out infinite" }}
-            title="Live updating"
-          />
-        )}
-      </div>
-
-      {/* value */}
-      <div
-        ref={numRef}
-        className="mt-2 owc-stat-num text-[26px] leading-none"
-        style={{ color: valColor }}
-      >
-        {displayValue}
-      </div>
-
-      {description && (
-        <div className="mt-1.5 text-[11px] leading-snug" style={{ color: "var(--mute-2)" }}>{description}</div>
-      )}
-
-      {bar != null && <AnimBar pct={bar} color={resolvedBarColor} />}
-
-      {delta && (
-        <div
-          className={cn(
-            "mt-2.5 inline-flex items-center gap-1 font-mono text-[10.5px]",
-            deltaDir === "down" ? "text-[var(--rose)]" : "text-[var(--mint)]"
+        <div className="flex items-center gap-2">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+            {label}
+          </p>
+          {live && (
+            <span
+              className="h-[5px] w-[5px] rounded-full shrink-0"
+              style={{ background: "var(--rose)", animation: "breathe 1.4s ease-in-out infinite" }}
+            />
           )}
-        >
-          {deltaDir === "down" ? "↓" : "↑"} {delta}
         </div>
-      )}
-    </div>
+
+        <div
+          ref={numRef}
+          className="mt-2 owc-stat-num text-[26px] leading-none font-semibold"
+          style={{ color: valColor }}
+        >
+          {displayValue}
+        </div>
+
+        {description && (
+          <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground/70">
+            {description}
+          </p>
+        )}
+
+        {bar != null && <AnimBar pct={bar} color={resolvedBarColor} />}
+
+        {delta && (
+          <div className={cn(
+            "mt-2.5 inline-flex items-center gap-1 font-mono text-[10.5px]",
+            deltaDir === "down" ? "text-rose-400" : "text-emerald-400"
+          )}>
+            {deltaDir === "down" ? "↓" : "↑"} {delta}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

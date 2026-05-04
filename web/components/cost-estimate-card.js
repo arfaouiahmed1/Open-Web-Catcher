@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { estimateRunCost, loadPricing } from "@/lib/pricing";
 
 function Bar({ label, value, total, color }) {
   const pct = total > 0 ? Math.max(0, Math.min(1, value / total)) * 100 : 0;
   return (
-    <div className="space-y-1">
+    <div className="flex flex-col gap-1">
       <div className="flex items-baseline justify-between gap-2 text-[11px]">
         <span style={{ color: "var(--mute-2)" }}>{label}</span>
         <span className="font-mono" style={{ color: "var(--ink-dim)" }}>
@@ -75,38 +76,25 @@ export function CostEstimateCard({ llmCalls = [], compact = false }) {
   }
 
   return (
-    <div
-      className="rounded-[12px] border p-4"
-      style={{
-        borderColor: "var(--line)",
-        background: "var(--card)",
-        boxShadow: "var(--shadow-card)",
-      }}
-    >
-      <div className="flex items-baseline justify-between gap-3">
+    <Card>
+      <CardHeader className="flex flex-row items-baseline justify-between gap-3 p-4">
         <div>
-          <span
-            className="text-[10px] font-semibold uppercase tracking-[0.14em]"
-            style={{ color: "var(--mute-2)" }}
-          >
+          <CardTitle className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             Estimated Cost
-          </span>
-          <div
-            className="mt-0.5 font-mono text-2xl font-semibold"
-            style={{ color: "var(--mint)" }}
-          >
+          </CardTitle>
+          <div className="mt-0.5 font-mono text-2xl font-semibold" style={{ color: "var(--mint)" }}>
             {formatCurrency(totals.total)}
           </div>
         </div>
-        <div className="text-right text-[10px]" style={{ color: "var(--mute-3)" }}>
+        <div className="text-right text-[10px] text-muted-foreground">
           <div>
             {formatNumber(totals.calls)} call{totals.calls === 1 ? "" : "s"}
           </div>
           <div>{coverage}% priced</div>
         </div>
-      </div>
+      </CardHeader>
 
-      <div className="mt-3 space-y-2">
+      <CardContent className="flex flex-col gap-2 p-4 pt-0">
         <Bar
           label="Input (new)"
           value={totals.input}
@@ -133,7 +121,7 @@ export function CostEstimateCard({ llmCalls = [], compact = false }) {
           total={totals.total}
           color="var(--mint)"
         />
-      </div>
+      </CardContent>
 
       {pricingMap && pricingMap.size === 0 ? (
         <div
@@ -146,6 +134,6 @@ export function CostEstimateCard({ llmCalls = [], compact = false }) {
           No pricing data loaded. Sync pricing in settings.
         </div>
       ) : null}
-    </div>
+    </Card>
   );
 }

@@ -16,7 +16,7 @@ import {
 
 import { apiUrl } from "@/lib/api";
 import { extractToolCalls, summarizeRunState } from "@/lib/run-trace";
-import { BrowserLiveView } from "@/components/browser-live-view";
+import { BrowserLiveView } from "@/components/console/run-detail/browser-live-view";
 import { OrchestratorGraph } from "@/components/orchestrator-graph";
 import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
 import { TimelinePanel } from "@/components/timeline-panel";
@@ -24,6 +24,7 @@ import { ToolCallFeed } from "@/components/tool-call-feed";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 function eventKey(event) {
@@ -270,15 +271,16 @@ export function RunDetailLive({
   const isLive = liveStream && !isReplaying;
 
   return (
-    <div className="space-y-4">
-      <div
+    <Card className="overflow-hidden shadow-card">
+      <CardHeader className="px-4 py-4">
+        <div
         className="flex flex-wrap items-center gap-2 rounded-[12px] border px-3 py-2.5"
         style={{
           borderColor: "var(--line)",
           background: "var(--card)",
           boxShadow: "var(--shadow-card)",
         }}
-      >
+        >
         <Button
           type="button"
           onClick={() => setLiveStream((value) => !value)}
@@ -364,65 +366,68 @@ export function RunDetailLive({
             </TabsTrigger>
           </TabsList>
         </Tabs>
-      </div>
+        </div>
+      </CardHeader>
 
-      <ActivityBanner state={runState} />
+      <CardContent className="space-y-4 px-4 pb-4 pt-0">
+        <ActivityBanner state={runState} />
 
-      {actionError || streamError ? (
-        <div
-          className="flex items-start gap-2 rounded-[12px] border px-3 py-2 text-[12px]"
-          style={{
-            borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)",
-            background: "color-mix(in oklch, var(--rose) 8%, transparent)",
-            color: "var(--rose)",
-          }}
-        >
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <div className="font-mono text-[11.5px]">
-            {actionError || streamError}
+        {actionError || streamError ? (
+          <div
+            className="flex items-start gap-2 rounded-[12px] border px-3 py-2 text-[12px]"
+            style={{
+              borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)",
+              background: "color-mix(in oklch, var(--rose) 8%, transparent)",
+              color: "var(--rose)",
+            }}
+          >
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <div className="font-mono text-[11.5px]">
+              {actionError || streamError}
+            </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
 
-      {!actionError && !streamError && runState?.failure?.message ? (
-        <div
-          className="flex items-start gap-2 rounded-[12px] border px-3 py-2 text-[12px]"
-          style={{
-            borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)",
-            background: "color-mix(in oklch, var(--rose) 8%, transparent)",
-            color: "var(--rose)",
-          }}
-        >
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <div className="font-mono text-[11.5px]">
-            {runState.failure.message}
+        {!actionError && !streamError && runState?.failure?.message ? (
+          <div
+            className="flex items-start gap-2 rounded-[12px] border px-3 py-2 text-[12px]"
+            style={{
+              borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)",
+              background: "color-mix(in oklch, var(--rose) 8%, transparent)",
+              color: "var(--rose)",
+            }}
+          >
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <div className="font-mono text-[11.5px]">
+              {runState.failure.message}
+            </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
 
-      {runId ? (
-        <BrowserLiveView runId={runId} events={events} autoRefresh={isLive} />
-      ) : null}
+        {runId ? (
+          <BrowserLiveView runId={runId} events={events} autoRefresh={isLive} />
+        ) : null}
 
-      <TabsContent value="events">
-        <RuntimeEventsPanel events={events} title="Event Stream" />
-      </TabsContent>
+        <TabsContent value="events">
+          <RuntimeEventsPanel events={events} title="Event Stream" />
+        </TabsContent>
 
-      <TabsContent value="tools">
-        <ToolCallFeed toolCalls={toolCallRows} title="Tool Calls" />
-      </TabsContent>
+        <TabsContent value="tools">
+          <ToolCallFeed toolCalls={toolCallRows} title="Tool Calls" />
+        </TabsContent>
 
-      <TabsContent value="graph" className="space-y-4">
-        {events.length > 2 && <TimelinePanel events={events} />}
-        <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
-          <OrchestratorGraph events={events} rootActor={rootActor} />
-          <ToolCallFeed
-            toolCalls={toolCallRows}
-            title="Tool Calls"
-            maxHeight={480}
-          />
-        </div>
-      </TabsContent>
-    </div>
+        <TabsContent value="graph" className="space-y-4">
+          {events.length > 2 && <TimelinePanel events={events} />}
+          <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
+            <OrchestratorGraph events={events} rootActor={rootActor} />
+            <ToolCallFeed
+              toolCalls={toolCallRows}
+              title="Tool Calls"
+              maxHeight={480}
+            />
+          </div>
+        </TabsContent>
+      </CardContent>
+    </Card>
   );
 }

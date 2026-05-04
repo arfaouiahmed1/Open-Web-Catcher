@@ -1,15 +1,28 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Bot, CircleDollarSign, Coins, Cpu, LayoutGrid } from "lucide-react";
+import { Bot, CircleDollarSign, Coins, Cpu, LayoutGrid, Loader2 } from "lucide-react";
 
 import { apiUrl } from "@/lib/api";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/utils";
 import { KpiCard } from "@/components/kpi-card";
-import { DashboardPersistencePanel } from "@/components/dashboard-persistence-panel";
+import { DashboardPersistencePanel } from "@/components/dashboard";
 import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -261,81 +274,93 @@ function RadialGauge({
   );
 }
 
+function AreaTrendCard({ title, description, data = [], series = [], height = 220 }) {
+  const config = Object.fromEntries(
+    series.map((item) => [item.key, { label: item.label, color: item.color }]),
+  );
+
+  return (
+    <Card>
+      <CardHeader className="border-b">
+        <CardTitle className="text-sm">{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="p-5">
+        <ChartContainer config={config} className="w-full" style={{ height }}>
+          <AreaChart data={data} margin={{ top: 6, right: 10, left: 0, bottom: 0 }}>
+            <defs>
+              {series.map((item) => (
+                <linearGradient key={item.key} id={`fill-${item.key}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={`var(--color-${item.key})`} stopOpacity={0.35} />
+                  <stop offset="95%" stopColor={`var(--color-${item.key})`} stopOpacity={0.04} />
+                </linearGradient>
+              ))}
+            </defs>
+            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+            <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} minTickGap={28} />
+            <YAxis tickLine={false} axisLine={false} width={34} />
+            <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
+            <ChartLegend content={<ChartLegendContent />} />
+            {series.map((item) => (
+              <Area
+                key={item.key}
+                dataKey={item.key}
+                type="natural"
+                fill={`url(#fill-${item.key})`}
+                stroke={`var(--color-${item.key})`}
+                strokeWidth={2}
+                stackId={item.stackId}
+              />
+            ))}
+          </AreaChart>
+        </ChartContainer>
+      </CardContent>
+    </Card>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    LAYOUT PRIMITIVES
 ═══════════════════════════════════════════════════════════════════════════ */
 
 function Panel({ children, className = "" }) {
   return (
-    <div
-      className={`overflow-hidden rounded-[14px] border ${className}`}
-      style={{
-        borderColor: "var(--line)",
-        background: "var(--card)",
-        boxShadow: "var(--shadow-card)",
-      }}
-    >
+    <Card className={`overflow-hidden ${className}`}>
       {children}
-    </div>
+    </Card>
   );
 }
 
 function PanelHead({ title, sub, aside, accent = "var(--signal)" }) {
   return (
-    <div
-      className="flex items-center gap-3 border-b px-4 py-3"
-      style={{ borderColor: "var(--line)" }}
-    >
-      <span className="h-3 w-0.5 rounded-full" style={{ background: accent }} />
-      <div>
-        <div
-          className="text-[13px] font-semibold"
-          style={{ color: "var(--ink)" }}
-        >
-          {title}
-        </div>
-        {sub && (
-          <div className="text-[11px]" style={{ color: "var(--mute)" }}>
-            {sub}
-          </div>
-        )}
+    <CardHeader className="flex-row items-center gap-3 space-y-0 border-b px-4 py-3">
+      <span className="h-3 w-0.5 rounded-full shrink-0" style={{ background: accent }} />
+      <div className="flex-1 min-w-0">
+        <CardTitle className="text-[13px] font-semibold">{title}</CardTitle>
+        {sub && <CardDescription className="text-[11px]">{sub}</CardDescription>}
       </div>
-      {aside && <div className="ml-auto">{aside}</div>}
-    </div>
+      {aside && <div className="ml-auto shrink-0">{aside}</div>}
+    </CardHeader>
   );
 }
 
-/** Polished tab bar with icons. */
+/** Shadcn tab bar with icons. */
 function TabBar({ active, onChange }) {
   return (
-    <div
-      className="flex gap-1 rounded-[14px] border p-1"
-      style={{ borderColor: "var(--line)", background: "var(--card)" }}
-    >
-      {TABS.map(({ id, label, Icon }) => {
-        const isActive = active === id;
-        return (
-          <button
+    <Tabs value={active} onValueChange={onChange}>
+      <TabsList className="h-auto w-full justify-start gap-1 p-1">
+        {TABS.map(({ id, label, Icon }) => (
+          <TabsTrigger
             key={id}
-            type="button"
-            onClick={() => onChange(id)}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-[10px] px-3 py-2 text-[12px] font-medium transition-all"
-            style={{
-              background: isActive
-                ? "color-mix(in oklch, var(--signal) 13%, transparent)"
-                : "transparent",
-              border: isActive
-                ? "1px solid color-mix(in oklch, var(--signal) 26%, transparent)"
-                : "1px solid transparent",
-              color: isActive ? "var(--signal)" : "var(--mute)",
-            }}
+            value={id}
+            className="flex-1 gap-1.5 text-[12px]"
           >
             <Icon className="h-3.5 w-3.5 shrink-0" />
             <span className="hidden sm:inline">{label}</span>
-          </button>
-        );
-      })}
-    </div>
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
   );
 }
 
@@ -349,16 +374,10 @@ function DonutLegend({ segments }) {
             className="h-2 w-2 shrink-0 rounded-sm"
             style={{ background: seg.color }}
           />
-          <span
-            className="min-w-0 flex-1 truncate"
-            style={{ color: "var(--ink-dim)" }}
-          >
+          <span className="min-w-0 flex-1 truncate text-foreground/80">
             {seg.label}
           </span>
-          <span
-            className="font-mono text-[10.5px] tabular-nums"
-            style={{ color: "var(--mute)" }}
-          >
+          <span className="font-mono text-[10.5px] tabular-nums text-muted-foreground">
             {seg.formatted || formatPercent(seg.pct || 0)}
           </span>
         </div>
@@ -370,47 +389,28 @@ function DonutLegend({ segments }) {
 /** Horizontal bar row used across tabs. */
 function HBarRow({ label, value, share, color, sub, rank }) {
   return (
-    <div
-      className="border-b px-4 py-2.5 last:border-0"
-      style={{ borderColor: "var(--line)" }}
-    >
+    <div className="border-b px-4 py-2.5 last:border-0">
       <div className="flex items-center gap-2">
         {rank != null && (
-          <span
-            className="w-4 shrink-0 font-mono text-[10px] text-right"
-            style={{ color: "var(--mute-3)" }}
-          >
+          <span className="w-4 shrink-0 font-mono text-[10px] text-right text-muted-foreground/50">
             {rank}
           </span>
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <span
-              className="truncate text-[12px]"
-              style={{ color: "var(--ink)" }}
-              title={label}
-            >
+            <span className="truncate text-[12px] text-foreground" title={label}>
               {label}
             </span>
-            <span
-              className="shrink-0 font-mono text-[11px] tabular-nums"
-              style={{ color: "var(--ink-dim)" }}
-            >
+            <span className="shrink-0 font-mono text-[11px] tabular-nums text-foreground/70">
               {value}
             </span>
           </div>
           {sub && (
-            <div
-              className="mt-0.5 font-mono text-[10px]"
-              style={{ color: "var(--mute-2)" }}
-            >
+            <div className="mt-0.5 font-mono text-[10px] text-muted-foreground/60">
               {sub}
             </div>
           )}
-          <div
-            className="mt-1.5 h-[3px] overflow-hidden rounded-full"
-            style={{ background: "var(--line)" }}
-          >
+          <div className="mt-1.5 h-[3px] overflow-hidden rounded-full bg-border">
             <div
               className="h-full rounded-full transition-all"
               style={{ width: `${Math.max(share, 0)}%`, background: color }}
@@ -425,12 +425,9 @@ function HBarRow({ label, value, share, color, sub, rank }) {
 /* Mini section label */
 function SectionLabel({ children }) {
   return (
-    <div
-      className="text-[9.5px] font-semibold uppercase tracking-[0.16em] mb-3"
-      style={{ color: "var(--mute-3)" }}
-    >
+    <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] mb-3 text-muted-foreground/60">
       {children}
-    </div>
+    </p>
   );
 }
 
@@ -483,35 +480,21 @@ function StatusStrip({ summary, activeRuns }) {
       {items.map(({ label, value, color, live }) => (
         <div
           key={label}
-          className="flex items-center gap-2 rounded-[10px] border px-3 py-1.5"
-          style={{ borderColor: "var(--line)", background: "var(--card)" }}
+          className="flex items-center gap-2 rounded-lg border bg-card px-3 py-1.5"
         >
           {live && (
             <span className="relative flex h-[6px] w-[6px] shrink-0">
               <span
-                className="absolute inset-0 rounded-full"
-                style={{
-                  background: color,
-                  animation: "ping 1.6s ease-in-out infinite",
-                  opacity: 0.5,
-                }}
+                className="absolute inset-0 rounded-full opacity-50"
+                style={{ background: color, animation: "ping 1.6s ease-in-out infinite" }}
               />
-              <span
-                className="relative h-[6px] w-[6px] rounded-full"
-                style={{ background: color }}
-              />
+              <span className="relative h-[6px] w-[6px] rounded-full" style={{ background: color }} />
             </span>
           )}
-          <span
-            className="font-mono text-[14px] font-semibold tabular-nums"
-            style={{ color }}
-          >
+          <span className="font-mono text-[14px] font-semibold tabular-nums" style={{ color }}>
             {formatNumber(value)}
           </span>
-          <span
-            className="text-[10px] uppercase tracking-[0.12em]"
-            style={{ color: "var(--mute-2)" }}
-          >
+          <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground/60">
             {label}
           </span>
         </div>
@@ -522,49 +505,27 @@ function StatusStrip({ summary, activeRuns }) {
 
 function ActiveRunRow({ run }) {
   return (
-    <div
-      className="grid items-center gap-3 border-b px-4 py-3 last:border-0"
-      style={{ borderColor: "var(--line)", gridTemplateColumns: "1fr auto" }}
-    >
+    <div className="grid items-center gap-3 border-b px-4 py-3 last:border-0"
+      style={{ gridTemplateColumns: "1fr auto" }}>
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <Link
-            href={`/runs/${run.run_id}`}
-            className="font-mono text-[11px]"
-            style={{ color: "var(--signal)" }}
-          >
+          <Link href={`/runs/${run.run_id}`} className="font-mono text-[11px] text-primary hover:underline">
             {run.run_id?.slice(0, 12) || "run"}
           </Link>
-          <span
-            className="rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]"
-            style={{
-              background: "color-mix(in oklch, var(--violet) 14%, transparent)",
-              color: "var(--violet)",
-            }}
-          >
+          <Badge tone="violet" className="text-[9px] px-1.5 py-0">
             {run.root_actor || "running"}
-          </span>
+          </Badge>
         </div>
-        <div
-          className="mt-1 truncate font-mono text-[10px]"
-          style={{ color: "var(--mute)" }}
-          title={run.url}
-        >
+        <div className="mt-1 truncate font-mono text-[10px] text-muted-foreground" title={run.url}>
           {run.url || "-"}
         </div>
       </div>
       <div className="text-right">
-        <div className="font-mono text-[12px]" style={{ color: "var(--ink)" }}>
-          {formatCurrency(
-            run.total_cost_usd ?? run.estimated_total_cost_usd ?? 0,
-          )}
+        <div className="font-mono text-[12px] text-foreground">
+          {formatCurrency(run.total_cost_usd ?? run.estimated_total_cost_usd ?? 0)}
         </div>
-        <div
-          className="font-mono text-[10px]"
-          style={{ color: "var(--mute-2)" }}
-        >
-          {formatNumber(run.total_llm_calls || 0)} llm /{" "}
-          {formatNumber(run.total_tool_calls || 0)} tools
+        <div className="font-mono text-[10px] text-muted-foreground/60">
+          {formatNumber(run.total_llm_calls || 0)} llm / {formatNumber(run.total_tool_calls || 0)} tools
         </div>
       </div>
     </div>
@@ -573,36 +534,20 @@ function ActiveRunRow({ run }) {
 
 function FailedRunRow({ row }) {
   return (
-    <div
-      className="grid items-center gap-3 border-b px-4 py-2.5 last:border-0"
-      style={{
-        borderColor: "var(--line)",
-        gridTemplateColumns: "1fr auto auto",
-      }}
-    >
+    <div className="grid items-center gap-3 border-b px-4 py-2.5 last:border-0"
+      style={{ gridTemplateColumns: "1fr auto auto" }}>
       <div className="min-w-0">
-        <div
-          className="truncate font-mono text-[11px]"
-          style={{ color: "var(--ink-dim)" }}
-          title={row.url}
-        >
+        <div className="truncate font-mono text-[11px] text-foreground/80" title={row.url}>
           {row.url}
         </div>
-        <div
-          className="mt-0.5 truncate font-mono text-[10px]"
-          style={{ color: "var(--mute-2)" }}
-        >
+        <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground/60">
           {row.failure_mode || row.final_status || "failed"}
         </div>
       </div>
-      <div className="font-mono text-[10px]" style={{ color: "var(--mute-2)" }}>
+      <div className="font-mono text-[10px] text-muted-foreground/60">
         {row.page_type || "-"}
       </div>
-      <Link
-        href={`/runs/${row.run_id}`}
-        className="font-mono text-[10px]"
-        style={{ color: "var(--signal)" }}
-      >
+      <Link href={`/runs/${row.run_id}`} className="font-mono text-[10px] text-primary hover:underline">
         open
       </Link>
     </div>
@@ -616,33 +561,17 @@ function ToolReliabilityRow({ row }) {
   return (
     <div
       className="grid items-center gap-3 border-b px-4 py-2.5 last:border-0"
-      style={{
-        borderColor: "var(--line)",
-        gridTemplateColumns: "1fr 68px 100px 64px",
-      }}
+      style={{ gridTemplateColumns: "1fr 68px 100px 64px" }}
     >
-      <div
-        className="min-w-0 font-mono text-[11px] truncate"
-        style={{ color: "var(--ink-dim)" }}
-        title={row.tool_name}
-      >
+      <div className="min-w-0 font-mono text-[11px] truncate text-foreground/80" title={row.tool_name}>
         {row.tool_name}
       </div>
-      <div
-        className="font-mono text-[11px] text-right"
-        style={{ color: "var(--mute)" }}
-      >
+      <div className="font-mono text-[11px] text-right text-muted-foreground">
         {formatNumber(row.calls || 0)}
       </div>
       <div className="flex items-center gap-2">
-        <div
-          className="h-1.5 flex-1 overflow-hidden rounded-full"
-          style={{ background: "var(--line)" }}
-        >
-          <div
-            className="h-full rounded-full"
-            style={{ width: `${rate * 100}%`, background: color }}
-          />
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-border">
+          <div className="h-full rounded-full" style={{ width: `${rate * 100}%`, background: color }} />
         </div>
         <span
           className="font-mono text-[10px] w-8 text-right"
@@ -828,26 +757,16 @@ function OverviewPageContent() {
   if (!overview) {
     return (
       <div className="space-y-6">
-        <div>
-          <span className="owc-eyebrow">operator console</span>
-          <h1
-            className="mt-2 text-3xl font-semibold"
-            style={{ color: "var(--ink)" }}
-          >
-            Operator Dashboard
-          </h1>
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">Loading pipeline telemetry…</p>
         </div>
-        <Panel>
-          <div className="flex items-center justify-center gap-3 px-4 py-16">
-            <span
-              className="owc-spinner owc-spinner-lg"
-              style={{ color: "var(--signal)" }}
-            />
-            <span className="text-[13px]" style={{ color: "var(--mute)" }}>
-              Loading overview…
-            </span>
-          </div>
-        </Panel>
+        <Card>
+          <CardContent className="flex items-center justify-center gap-3 py-16">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <span className="text-sm text-muted-foreground">Loading overview…</span>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -1184,60 +1103,29 @@ function OverviewPageContent() {
 
   /* ── render ──────────────────────────────────────────────────────────── */
   return (
-    <div className="space-y-7">
+    <div className="space-y-6">
       {/* ── page header ── */}
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <span className="owc-eyebrow">operator console · live</span>
-          <h1
-            className="mt-2 text-[28px] font-semibold leading-tight"
-            style={{ color: "var(--ink)" }}
-          >
-            Operator Dashboard
-          </h1>
-          <p
-            className="mt-1 max-w-[56ch] text-[13px] leading-relaxed"
-            style={{ color: "var(--mute)" }}
-          >
-            Real-time run, tool, token and cost telemetry from the pipeline
-            database.
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            Real-time run, tool, token and cost telemetry from the pipeline database.
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
-          <Link
-            href="/runs"
-            className="rounded-[10px] border px-3 py-1.5 text-[12px] transition-colors hover:border-[var(--line-hi)]"
-            style={{
-              borderColor: "var(--line)",
-              background: "var(--card)",
-              color: "var(--ink-dim)",
-            }}
-          >
-            All runs
-          </Link>
-          <Link
-            href="/live"
-            className="rounded-[10px] px-3 py-1.5 text-[12px] font-semibold"
-            style={{
-              background: "var(--signal)",
-              color: "#0d0a04",
-              boxShadow: "var(--shadow-glow)",
-            }}
-          >
-            New pipeline
-          </Link>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/runs">All runs</Link>
+          </Button>
+          <Button variant="accent" size="sm" asChild>
+            <Link href="/live">New pipeline</Link>
+          </Button>
         </div>
       </div>
 
       {error && (
-        <Panel>
-          <div
-            className="px-4 py-3 text-[12px]"
-            style={{ color: "var(--rose)" }}
-          >
-            {error}
-          </div>
-        </Panel>
+        <Card>
+          <CardContent className="py-3 text-sm text-destructive">{error}</CardContent>
+        </Card>
       )}
 
       <TabBar active={tab} onChange={setTab} />
@@ -1309,16 +1197,10 @@ function OverviewPageContent() {
                   return (
                     <div key={key} className="p-4">
                       <div className="flex items-center justify-between mb-2">
-                        <div
-                          className="text-[10px] font-semibold uppercase tracking-[0.14em]"
-                          style={{ color: "var(--mute-3)" }}
-                        >
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/50">
                           {label}
                         </div>
-                        <div
-                          className="font-mono text-[12px] font-semibold"
-                          style={{ color }}
-                        >
+                        <div className="font-mono text-[12px] font-semibold" style={{ color }}>
                           {fmt(last)}
                         </div>
                       </div>
@@ -1330,6 +1212,23 @@ function OverviewPageContent() {
             </Panel>
           )}
 
+          {trend.length > 2 && (
+            <AreaTrendCard
+              title="Run throughput and LLM load"
+              description="Overlay of total runs and LLM calls across the same periods."
+              data={trend.map((r) => ({
+                date: r.date || "",
+                runs: Number(r.runs || 0),
+                llm_calls: Number(r.llm_calls || 0),
+              }))}
+              series={[
+                { key: "runs", label: "Runs", color: "var(--chart-1)" },
+                { key: "llm_calls", label: "LLM Calls", color: "var(--chart-2)" },
+              ]}
+              height={210}
+            />
+          )}
+
           {/* Active + recent runs */}
           <div className="grid gap-5 xl:grid-cols-[340px_1fr]">
             <Panel>
@@ -1339,8 +1238,7 @@ function OverviewPageContent() {
                 accent="var(--violet)"
                 aside={
                   <span
-                    className="font-mono text-[10px]"
-                    style={{ color: "var(--mute-2)" }}
+                    className="font-mono text-[10px] text-muted-foreground/60"
                   >
                     {formatNumber(activeRuns.length)} live
                   </span>
@@ -1351,10 +1249,7 @@ function OverviewPageContent() {
                   .slice(0, 6)
                   .map((row) => <ActiveRunRow key={row.run_id} run={row} />)
               ) : (
-                <div
-                  className="px-4 py-10 text-center font-mono text-[12px]"
-                  style={{ color: "var(--mute-3)" }}
-                >
+                <div className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40">
                   No active runs
                 </div>
               )}
@@ -1367,95 +1262,49 @@ function OverviewPageContent() {
                 accent="var(--mint)"
               />
               <Table className="min-w-full text-[12px]">
-                  <TableHeader className="bg-[var(--card)]">
-                    <TableRow
-                      className="border-[var(--line)] hover:bg-transparent"
-                    >
-                      {[
-                        "Run",
-                        "Status",
-                        "Streams",
-                        "Tokens",
-                        "Cost",
-                        "Duration",
-                      ].map((h) => (
-                        <TableHead
-                          key={h}
-                          className="px-4 py-2 text-left font-mono text-[10px] uppercase tracking-[0.12em]"
-                          style={{ color: "var(--mute-2)" }}
-                        >
-                          {h}
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {recentRuns.length ? (
-                      recentRuns.slice(0, 8).map((row) => (
-                        <TableRow
-                          key={row.run_id}
-                          className="border-[var(--line)]"
-                        >
-                          <TableCell className="px-4 py-2.5">
-                            <Link
-                              href={`/runs/${row.run_id}`}
-                              className="font-mono text-[11px]"
-                              style={{ color: "var(--signal)" }}
-                            >
-                              {row.run_id?.slice(0, 12)}
-                            </Link>
-                          </TableCell>
-                          <TableCell
-                            className="px-4 py-2.5 font-mono text-[10px]"
-                            style={{ color: "var(--mute-2)" }}
-                          >
-                            {row.final_status || "-"}
-                          </TableCell>
-                          <TableCell
-                            className="px-4 py-2.5 font-mono text-[11px]"
-                            style={{ color: "var(--ink-dim)" }}
-                          >
-                            {formatNumber(row.stream_count || 0)}
-                          </TableCell>
-                          <TableCell
-                            className="px-4 py-2.5 font-mono text-[11px]"
-                            style={{ color: "var(--ink-dim)" }}
-                          >
-                            {formatNumber(
-                              (row.total_tokens_in || 0) +
-                              (row.total_tokens_out || 0),
-                            )}
-                          </TableCell>
-                          <TableCell
-                            className="px-4 py-2.5 font-mono text-[11px]"
-                            style={{ color: "var(--ink-dim)" }}
-                          >
-                            {formatCurrency(
-                              row.total_cost_usd ??
-                                row.estimated_total_cost_usd ??
-                                0,
-                            )}
-                          </TableCell>
-                          <TableCell
-                            className="px-4 py-2.5 font-mono text-[11px]"
-                            style={{ color: "var(--mute)" }}
-                          >
-                            {Number(row.duration_seconds || 0).toFixed(1)}s
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    ) : (
-                      <TableRow className="border-[var(--line)] hover:bg-transparent">
-                        <TableCell
-                          colSpan={6}
-                          className="px-4 py-10 text-center font-mono text-[12px]"
-                          style={{ color: "var(--mute-3)" }}
-                        >
-                          No runs yet
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    {["Run", "Status", "Streams", "Tokens", "Cost", "Duration"].map((h) => (
+                      <TableHead key={h} className="px-4 py-2 text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/60">
+                        {h}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {recentRuns.length ? (
+                    recentRuns.slice(0, 8).map((row) => (
+                      <TableRow key={row.run_id}>
+                        <TableCell className="px-4 py-2.5">
+                          <Link href={`/runs/${row.run_id}`} className="font-mono text-[11px] text-primary hover:underline">
+                            {row.run_id?.slice(0, 12)}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="px-4 py-2.5 font-mono text-[10px] text-muted-foreground">
+                          {row.final_status || "-"}
+                        </TableCell>
+                        <TableCell className="px-4 py-2.5 font-mono text-[11px] text-foreground/70">
+                          {formatNumber(row.stream_count || 0)}
+                        </TableCell>
+                        <TableCell className="px-4 py-2.5 font-mono text-[11px] text-foreground/70">
+                          {formatNumber((row.total_tokens_in || 0) + (row.total_tokens_out || 0))}
+                        </TableCell>
+                        <TableCell className="px-4 py-2.5 font-mono text-[11px] text-foreground/70">
+                          {formatCurrency(row.total_cost_usd ?? row.estimated_total_cost_usd ?? 0)}
+                        </TableCell>
+                        <TableCell className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">
+                          {Number(row.duration_seconds || 0).toFixed(1)}s
                         </TableCell>
                       </TableRow>
-                    )}
-                  </TableBody>
+                    ))
+                  ) : (
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell colSpan={6} className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40">
+                        No runs yet
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
               </Table>
             </Panel>
           </div>
@@ -1498,8 +1347,7 @@ function OverviewPageContent() {
               </div>
               {providerDonutSegs.length === 0 && (
                 <div
-                  className="px-4 pb-6 text-center font-mono text-[12px]"
-                  style={{ color: "var(--mute-3)" }}
+                  className="px-4 pb-6 text-center font-mono text-[12px] text-muted-foreground/40"
                 >
                   No cost data yet
                 </div>
@@ -1529,8 +1377,7 @@ function OverviewPageContent() {
                   ))
               ) : (
                 <div
-                  className="px-4 py-10 text-center font-mono text-[12px]"
-                  style={{ color: "var(--mute-3)" }}
+                  className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40"
                 >
                   No model cost data
                 </div>
@@ -1538,8 +1385,21 @@ function OverviewPageContent() {
             </Panel>
           </div>
 
-          {/* Cost trend */}
           {trend.length > 2 && (
+            <AreaTrendCard
+              title="Cost trend"
+              description="Daily cost over the last 7 periods."
+              data={trend.map((r) => ({
+                date: r.date || "",
+                cost_usd: Number(r.cost_usd || 0),
+              }))}
+              series={[{ key: "cost_usd", label: "Cost", color: "var(--chart-1)" }]}
+              height={180}
+            />
+          )}
+
+          {/* Legacy cost area (hidden) */}
+          {false && (
             <Panel>
               <PanelHead
                 title="Cost trend"
@@ -1548,12 +1408,11 @@ function OverviewPageContent() {
               />
               <div className="p-5">
                 <div className="flex items-center justify-between mb-3">
-                  <div className="text-[11px]" style={{ color: "var(--mute)" }}>
+                  <div className="text-[11px] text-muted-foreground">
                     {trend.length} periods
                   </div>
                   <div
-                    className="font-mono text-[13px] font-semibold"
-                    style={{ color: "var(--signal)" }}
+                    className="font-mono text-[13px] font-semibold text-primary"
                   >
                     {formatCurrency(summary.total_cost_usd || 0)} total
                   </div>
@@ -1564,8 +1423,7 @@ function OverviewPageContent() {
                   height={96}
                 />
                 <div
-                  className="mt-3 flex justify-between font-mono text-[9.5px]"
-                  style={{ color: "var(--mute-3)" }}
+                  className="mt-3 flex justify-between font-mono text-[9.5px] text-muted-foreground/40"
                 >
                   <span>{trend.at(0)?.date || "oldest"}</span>
                   <span>{trend.at(-1)?.date || "latest"}</span>
@@ -1574,29 +1432,17 @@ function OverviewPageContent() {
             </Panel>
           )}
 
-          {/* LLM calls bar chart */}
           {trend.length > 2 && (
-            <Panel>
-              <PanelHead
-                title="LLM calls over time"
-                sub="Volume of model invocations per period"
-                accent="var(--violet)"
-              />
-              <div className="p-5">
-                <TrendBars
-                  rawValues={trend.map((r) => Number(r.llm_calls || 0))}
-                  color="var(--violet)"
-                  height={72}
-                />
-                <div
-                  className="mt-2 flex justify-between font-mono text-[9.5px]"
-                  style={{ color: "var(--mute-3)" }}
-                >
-                  <span>earliest</span>
-                  <span>latest</span>
-                </div>
-              </div>
-            </Panel>
+            <AreaTrendCard
+              title="LLM calls over time"
+              description="Volume of model invocations per period."
+              data={trend.map((r) => ({
+                date: r.date || "",
+                llm_calls: Number(r.llm_calls || 0),
+              }))}
+              series={[{ key: "llm_calls", label: "LLM Calls", color: "var(--chart-2)" }]}
+              height={180}
+            />
           )}
         </div>
       )}
@@ -1637,8 +1483,7 @@ function OverviewPageContent() {
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span
-                        className="text-[10px] font-semibold uppercase tracking-[0.12em]"
-                        style={{ color: "var(--mute-3)" }}
+                        className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/40"
                       >
                         Cache hit rate
                       </span>
@@ -1672,8 +1517,7 @@ function OverviewPageContent() {
                 accent="var(--sky)"
                 aside={
                   <div
-                    className="flex gap-3 font-mono text-[10px]"
-                    style={{ color: "var(--mute-2)" }}
+                    className="flex gap-3 font-mono text-[10px] text-muted-foreground/60"
                   >
                     <span className="flex items-center gap-1">
                       <span
@@ -1720,15 +1564,13 @@ function OverviewPageContent() {
                     >
                       <div className="min-w-0">
                         <div
-                          className="truncate font-mono text-[10.5px]"
-                          style={{ color: "var(--ink-dim)" }}
+                          className="truncate font-mono text-[10.5px] text-foreground/80"
                           title={row.label}
                         >
                           {row.label}
                         </div>
                         <div
-                          className="font-mono text-[10px]"
-                          style={{ color: "var(--mute-3)" }}
+                          className="font-mono text-[10px] text-muted-foreground/40"
                         >
                           {formatNumber(total)} tok
                         </div>
@@ -1754,8 +1596,7 @@ function OverviewPageContent() {
                         )}
                       </div>
                       <div
-                        className="font-mono text-[11px]"
-                        style={{ color: "var(--ink-dim)" }}
+                        className="font-mono text-[11px] text-foreground/80"
                       >
                         {formatCurrency(row.cost_usd || 0)}
                       </div>
@@ -1764,8 +1605,7 @@ function OverviewPageContent() {
                 })
               ) : (
                 <div
-                  className="px-4 py-10 text-center font-mono text-[12px]"
-                  style={{ color: "var(--mute-3)" }}
+                  className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40"
                 >
                   No token usage yet
                 </div>
@@ -1780,8 +1620,7 @@ function OverviewPageContent() {
                   }}
                 >
                   <span
-                    className="font-mono text-[10px] uppercase tracking-[0.12em]"
-                    style={{ color: "var(--mute)" }}
+                    className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground"
                   >
                     Totals
                   </span>
@@ -1804,8 +1643,7 @@ function OverviewPageContent() {
                     {formatNumber(outTotal)} out
                   </span>
                   <span
-                    className="font-mono text-[11px]"
-                    style={{ color: "var(--ink-dim)" }}
+                    className="font-mono text-[11px] text-foreground/80"
                   >
                     {formatCurrency(summary.total_cost_usd || 0)}
                   </span>
@@ -1814,29 +1652,17 @@ function OverviewPageContent() {
             </Panel>
           </div>
 
-          {/* Token trend line */}
           {trend.length > 2 && (
-            <Panel>
-              <PanelHead
-                title="Token volume trend"
-                sub="Total tokens consumed per period"
-                accent="var(--sky)"
-              />
-              <div className="p-5">
-                <AreaLine
-                  data={trend.map((r) => Number(r.tokens || 0))}
-                  color="var(--sky)"
-                  height={88}
-                />
-                <div
-                  className="mt-3 flex justify-between font-mono text-[9.5px]"
-                  style={{ color: "var(--mute-3)" }}
-                >
-                  <span>earliest</span>
-                  <span>latest</span>
-                </div>
-              </div>
-            </Panel>
+            <AreaTrendCard
+              title="Token volume trend"
+              description="Total tokens consumed per period."
+              data={trend.map((r) => ({
+                date: r.date || "",
+                tokens: Number(r.tokens || 0),
+              }))}
+              series={[{ key: "tokens", label: "Tokens", color: "var(--chart-3)" }]}
+              height={190}
+            />
           )}
         </div>
       )}
@@ -1876,8 +1702,7 @@ function OverviewPageContent() {
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span
-                        className="text-[10px] font-semibold uppercase tracking-[0.12em]"
-                        style={{ color: "var(--mute-3)" }}
+                        className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/40"
                       >
                         Success rate
                       </span>
@@ -1917,8 +1742,7 @@ function OverviewPageContent() {
                 {["tool", "calls", "success", "avg"].map((h) => (
                   <div
                     key={h}
-                    className="font-mono text-[10px] uppercase tracking-[0.12em] first:text-left text-right"
-                    style={{ color: "var(--mute-2)" }}
+                    className="font-mono text-[10px] uppercase tracking-[0.12em] first:text-left text-right text-muted-foreground/60"
                   >
                     {h}
                   </div>
@@ -1932,8 +1756,7 @@ function OverviewPageContent() {
                   ))
               ) : (
                 <div
-                  className="px-4 py-10 text-center font-mono text-[12px]"
-                  style={{ color: "var(--mute-3)" }}
+                  className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40"
                 >
                   No tool calls recorded yet
                 </div>
@@ -1956,8 +1779,7 @@ function OverviewPageContent() {
                   height={72}
                 />
                 <div
-                  className="mt-2 flex justify-between font-mono text-[9.5px]"
-                  style={{ color: "var(--mute-3)" }}
+                  className="mt-2 flex justify-between font-mono text-[9.5px] text-muted-foreground/40"
                 >
                   <span>earliest</span>
                   <span>latest</span>
@@ -1999,14 +1821,12 @@ function OverviewPageContent() {
                       >
                         <div className="flex items-center justify-between">
                           <div
-                            className="text-[13px] font-semibold"
-                            style={{ color: "var(--ink)" }}
+                            className="text-[13px] font-semibold text-foreground"
                           >
                             {row.actor}
                           </div>
                           <span
-                            className="font-mono text-[11px]"
-                            style={{ color: "var(--mute-2)" }}
+                            className="font-mono text-[11px] text-muted-foreground/60"
                           >
                             {formatNumber(row.total)} runs
                           </span>
@@ -2058,8 +1878,7 @@ function OverviewPageContent() {
                               {value}
                             </div>
                             <div
-                              className="text-[9px] uppercase tracking-[0.12em] mt-0.5"
-                              style={{ color: "var(--mute-3)" }}
+                              className="text-[9px] uppercase tracking-[0.12em] mt-0.5 text-muted-foreground/40"
                             >
                               {label}
                             </div>
@@ -2072,8 +1891,7 @@ function OverviewPageContent() {
               ) : (
                 <Panel className="sm:col-span-2">
                   <div
-                    className="px-4 py-10 text-center font-mono text-[12px]"
-                    style={{ color: "var(--mute-3)" }}
+                    className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40"
                   >
                     No agent runs recorded yet
                   </div>
@@ -2118,8 +1936,7 @@ function OverviewPageContent() {
               ))
             ) : (
               <div
-                className="px-4 py-10 text-center font-mono text-[12px]"
-                style={{ color: "var(--mute-3)" }}
+                className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40"
               >
                 No failed runs recorded
               </div>
@@ -2136,13 +1953,8 @@ export function OverviewPage() {
     <Suspense
       fallback={
         <div className="flex items-center justify-center gap-3 py-20">
-          <span
-            className="owc-spinner owc-spinner-lg"
-            style={{ color: "var(--signal)" }}
-          />
-          <span className="text-[13px]" style={{ color: "var(--mute)" }}>
-            Loading dashboard…
-          </span>
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          <span className="text-sm text-muted-foreground">Loading dashboard…</span>
         </div>
       }
     >
@@ -2150,3 +1962,4 @@ export function OverviewPage() {
     </Suspense>
   );
 }
+

@@ -27,127 +27,167 @@
 .dark {
     color-scheme: dark;
 
-    /* shadcn/ui semantic tokens */
-    --background: var(--bg);
-    --foreground: var(--ink-dim);
-    --card-foreground: var(--ink);
-    --popover: var(--panel);
-    --popover-foreground: var(--ink-dim);
-    --primary: var(--signal);
-    --primary-foreground: #0d0a04;
-    --secondary: var(--card-hi);
+    /* ── surfaces (zinc dark, shadcn parity) ── */
+    --bg:      #09090b;   /* zinc-950 */
+    --panel:   #09090b;   /* zinc-950 — sidebar = bg */
+    --panel-2: #18181b;   /* zinc-900 — muted/secondary surface */
+    --card:    #09090b;   /* zinc-950 — card = bg, border defines */
+    --card-hi: #18181b;   /* zinc-900 — elevated */
+    --line:    #1f1f23;   /* subtle border, between zinc-900/800 */
+    --line-hi: #27272a;   /* zinc-800 */
+
+    /* ── text (zinc) ── */
+    --ink:     #fafafa;   /* zinc-50 */
+    --ink-dim: #e4e4e7;   /* zinc-200 */
+    --mute:    #a1a1aa;   /* zinc-400 */
+    --mute-2:  #71717a;   /* zinc-500 */
+    --mute-3:  #3f3f46;   /* zinc-700 */
+
+    /* ── shadcn semantic tokens ── */
+    --background:          var(--bg);
+    --foreground:          var(--ink);
+    --card-foreground:     var(--ink);
+    --popover:             #18181b;
+    --popover-foreground:  var(--ink);
+    --primary:             var(--signal);
+    --primary-foreground:  #09090b;
+    --secondary:           var(--panel-2);
     --secondary-foreground: var(--ink);
-    --muted: var(--panel-2);
-    --muted-foreground: var(--mute);
-    --accent: color-mix(in oklch, var(--signal) 12%, transparent);
-    --accent-foreground: var(--ink);
-    --destructive: var(--rose);
-    --destructive-foreground: #0d0a04;
-    --border: var(--line);
-    --input: var(--line-hi);
-    --ring: var(--signal);
+    --muted:               var(--panel-2);
+    --muted-foreground:    var(--mute);
+    --accent:              var(--panel-2);
+    --accent-foreground:   var(--ink);
+    --destructive:         var(--rose);
+    --destructive-foreground: var(--ink);
+    --border:              var(--line);
+    --input:               var(--line);
+    --ring:                var(--signal);
 
-    /* surfaces */
-    --bg: #05080f;
-    --panel: #0a1220;
-    --panel-2: #0f1828;
-    --card: rgba(255, 255, 255, 0.028);
-    --card-hi: rgba(255, 255, 255, 0.05);
-    --line: rgba(255, 255, 255, 0.07);
-    --line-hi: rgba(255, 255, 255, 0.13);
+    /* sidebar tokens */
+    --sidebar:             #09090b;
+    --sidebar-foreground:  var(--ink);
+    --sidebar-primary:     var(--signal);
+    --sidebar-primary-foreground: #09090b;
+    --sidebar-accent:      var(--panel-2);
+    --sidebar-accent-foreground: var(--ink);
+    --sidebar-border:      var(--line);
+    --sidebar-ring:        var(--signal);
 
-    /* text */
-    --ink: #f2f5fa;
-    --ink-dim: #c4cbd8;
-    --mute: #7a8699;
-    --mute-2: #515d70;
-    --mute-3: #2f3746;
+    /* chart palette */
+    --chart-1: oklch(0.76 0.13 64);
+    --chart-2: oklch(0.78 0.13 170);
+    --chart-3: oklch(0.72 0.14 300);
+    --chart-4: oklch(0.76 0.12 240);
+    --chart-5: oklch(0.70 0.15 20);
 
+    /* ── atmosphere ── */
     --bg-layer-1: radial-gradient(
-        1200px 600px at 20% -5%,
-        color-mix(in oklch, var(--signal) 9%, transparent) 0%,
-        transparent 60%
+        1200px 600px at 15% -10%,
+        color-mix(in oklch, var(--signal) 6%, transparent) 0%,
+        transparent 55%
     );
     --bg-layer-2: radial-gradient(
         900px 500px at 100% 0%,
-        color-mix(in oklch, var(--violet) 8%, transparent) 0%,
-        transparent 60%
+        color-mix(in oklch, var(--violet) 5%, transparent) 0%,
+        transparent 55%
     );
 
-    --scrollbar-thumb: rgba(255, 255, 255, 0.08);
-    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.18);
+    --scrollbar-thumb: #3f3f46;
+    --scrollbar-thumb-hover: #52525b;
 
     --shadow-card:
-        0 1px 0 rgba(255, 255, 255, 0.04) inset,
-        0 10px 30px -18px rgba(0, 0, 0, 0.9);
+        0 0 0 1px #27272a,
+        0 4px 16px -4px rgba(0, 0, 0, 0.6);
     --shadow-glow:
         0 0 0 1px color-mix(in oklch, var(--signal) 40%, transparent),
-        0 10px 30px -10px color-mix(in oklch, var(--signal) 35%, transparent);
+        0 8px 24px -8px color-mix(in oklch, var(--signal) 30%, transparent);
 }
 
 .light {
     color-scheme: light;
 
-    /* shadcn/ui semantic tokens */
-    --background: var(--bg);
-    --foreground: var(--ink-dim);
-    --card-foreground: var(--ink);
-    --popover: var(--panel);
-    --popover-foreground: var(--ink-dim);
-    --primary: var(--signal);
-    --primary-foreground: #0d0a04;
-    --secondary: var(--card-hi);
+    /* ── surfaces (zinc light) ── */
+    --bg:      #ffffff;
+    --panel:   #ffffff;
+    --panel-2: #f4f4f5;   /* zinc-100 */
+    --card:    #ffffff;
+    --card-hi: #f4f4f5;   /* zinc-100 */
+    --line:    #e4e4e7;   /* zinc-200 */
+    --line-hi: #d4d4d8;   /* zinc-300 */
+
+    /* ── text (zinc) ── */
+    --ink:     #09090b;   /* zinc-950 */
+    --ink-dim: #18181b;   /* zinc-900 */
+    --mute:    #71717a;   /* zinc-500 */
+    --mute-2:  #a1a1aa;   /* zinc-400 */
+    --mute-3:  #d4d4d8;   /* zinc-300 */
+
+    /* ── shadcn semantic tokens ── */
+    --background:          var(--bg);
+    --foreground:          var(--ink);
+    --card-foreground:     var(--ink);
+    --popover:             #ffffff;
+    --popover-foreground:  var(--ink);
+    --primary:             var(--signal);
+    --primary-foreground:  #ffffff;
+    --secondary:           var(--panel-2);
     --secondary-foreground: var(--ink);
-    --muted: var(--panel-2);
-    --muted-foreground: var(--mute);
-    --accent: color-mix(in oklch, var(--signal) 14%, transparent);
-    --accent-foreground: var(--ink);
-    --destructive: var(--rose);
-    --destructive-foreground: #0d0a04;
-    --border: var(--line);
-    --input: var(--line-hi);
-    --ring: var(--signal);
+    --muted:               var(--panel-2);
+    --muted-foreground:    var(--mute);
+    --accent:              var(--panel-2);
+    --accent-foreground:   var(--ink);
+    --destructive:         var(--rose);
+    --destructive-foreground: #ffffff;
+    --border:              var(--line);
+    --input:               var(--line);
+    --ring:                var(--signal);
 
-    /* surfaces — crisp ice-blue tones */
-    --bg: #f0f4fc;
-    --panel: #ffffff;
-    --panel-2: #e8eef8;
-    --card: rgba(255, 255, 255, 0.92);
-    --card-hi: rgba(255, 255, 255, 1);
-    --line: rgba(15, 26, 60, 0.1);
-    --line-hi: rgba(15, 26, 60, 0.2);
+    /* sidebar tokens */
+    --sidebar:             #ffffff;
+    --sidebar-foreground:  var(--ink);
+    --sidebar-primary:     var(--signal);
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent:      var(--panel-2);
+    --sidebar-accent-foreground: var(--ink);
+    --sidebar-border:      var(--line);
+    --sidebar-ring:        var(--signal);
 
-    /* text */
-    --ink: #0a1224;
-    --ink-dim: #1c2d48;
-    --mute: #4a5d7a;
-    --mute-2: #6b7f9e;
-    --mute-3: #9aadc5;
+    --chart-1: oklch(0.76 0.13 64);
+    --chart-2: oklch(0.78 0.13 170);
+    --chart-3: oklch(0.72 0.14 300);
+    --chart-4: oklch(0.76 0.12 240);
+    --chart-5: oklch(0.70 0.15 20);
 
     --bg-layer-1: radial-gradient(
         1000px 520px at 5% -15%,
-        color-mix(in oklch, var(--signal) 18%, transparent) 0%,
-        transparent 62%
+        color-mix(in oklch, var(--signal) 10%, transparent) 0%,
+        transparent 60%
     );
     --bg-layer-2: radial-gradient(
         1100px 620px at 100% 0%,
-        color-mix(in oklch, var(--sky) 16%, transparent) 0%,
-        transparent 60%
+        color-mix(in oklch, var(--sky) 8%, transparent) 0%,
+        transparent 58%
     );
 
-    --scrollbar-thumb: rgba(12, 26, 60, 0.14);
-    --scrollbar-thumb-hover: rgba(12, 26, 60, 0.28);
+    --scrollbar-thumb: #d4d4d8;
+    --scrollbar-thumb-hover: #a1a1aa;
 
     --shadow-card:
-        0 1px 0 rgba(255, 255, 255, 1) inset,
-        0 4px 16px -4px rgba(15, 26, 60, 0.12), 0 1px 3px rgba(15, 26, 60, 0.06);
+        0 0 0 1px #e4e4e7,
+        0 2px 8px -2px rgba(0, 0, 0, 0.08);
     --shadow-glow:
         0 0 0 1px color-mix(in oklch, var(--signal) 35%, transparent),
-        0 10px 28px -14px color-mix(in oklch, var(--signal) 30%, transparent);
+        0 8px 24px -8px color-mix(in oklch, var(--signal) 25%, transparent);
 }
 
 * {
     box-sizing: border-box;
+}
+
+*,
+::before,
+::after {
+    border-color: var(--border);
 }
 
 html,
@@ -156,8 +196,8 @@ body {
     min-height: 100%;
     background: var(--background);
     color: var(--foreground);
-    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
-    font-feature-settings: "ss01", "cv11", "tnum";
+    font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01", "cv11", "tnum";
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
 }
@@ -185,7 +225,7 @@ pre,
 .mono,
 kbd,
 samp {
-    font-family: var(--font-mono), ui-monospace, monospace;
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
     font-feature-settings: "ss01", "zero";
 }
 

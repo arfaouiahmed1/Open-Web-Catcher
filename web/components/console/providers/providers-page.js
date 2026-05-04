@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertCircle, Globe, Search, Server, Shield, Wifi } from "lucide-react";
+import { AlertCircle, Globe, Loader2, Search, Server, Shield, Wifi } from "lucide-react";
 
 import { apiFetch, apiUrl } from "@/lib/api";
 import { formatNumber } from "@/lib/utils";
 import { KpiCard } from "@/components/kpi-card";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -23,7 +24,7 @@ function BarChart({ rows, valueKey = "count", labelKey = "provider", color = "va
   const visible = (rows || []).slice(0, maxBars);
   if (!visible.length) {
     return (
-      <div className="flex h-32 items-center justify-center text-[12.5px]" style={{ color: "var(--mute)" }}>{emptyMsg}</div>
+      <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">{emptyMsg}</div>
     );
   }
   const max = Math.max(...visible.map((row) => Number(row[valueKey] || 0)), 1);
@@ -34,21 +35,16 @@ function BarChart({ rows, valueKey = "count", labelKey = "provider", color = "va
         const pct = (value / max) * 100;
         return (
           <div key={`${row[labelKey]}-${index}`} className="flex items-center gap-3">
-            <div className="w-32 shrink-0 truncate text-right text-[12px]" style={{ color: "var(--ink-dim)" }} title={row[labelKey]}>
+            <div className="w-32 shrink-0 truncate text-right text-[12px] text-foreground/70" title={row[labelKey]}>
               {renderLabel ? renderLabel(row) : (row[labelKey] || "--")}
             </div>
-            <div className="relative flex-1 overflow-hidden rounded-full" style={{ height: 8, background: "var(--line)" }}>
+            <div className="relative flex-1 overflow-hidden rounded-full bg-border" style={{ height: 8 }}>
               <div
-                className="absolute inset-y-0 left-0 rounded-full"
-                style={{
-                  width: `${pct}%`,
-                  background: color,
-                  boxShadow: `0 0 8px color-mix(in oklch, ${color} 40%, transparent)`,
-                  transition: "width 500ms cubic-bezier(0.4,0,0.2,1)",
-                }}
+                className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
+                style={{ width: `${pct}%`, background: color }}
               />
             </div>
-            <div className="w-10 shrink-0 font-mono text-[11px] tabular-nums" style={{ color: "var(--mute)" }}>{value}</div>
+            <div className="w-10 shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">{value}</div>
           </div>
         );
       })}
@@ -58,29 +54,29 @@ function BarChart({ rows, valueKey = "count", labelKey = "provider", color = "va
 
 function StatBadge({ label, value, color }) {
   return (
-    <div className="flex flex-col gap-1 rounded-[10px] border px-3 py-2.5" style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.15)" }}>
-      <span className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--mute-2)" }}>{label}</span>
-      <span className="text-[18px] font-semibold tabular-nums" style={{ color: color || "var(--ink)" }}>{value}</span>
+    <div className="flex flex-col gap-1 rounded-lg border bg-card px-3 py-2.5">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">{label}</span>
+      <span className="text-[18px] font-semibold tabular-nums" style={{ color: color || "var(--foreground)" }}>{value}</span>
     </div>
   );
 }
 
 function LookupRow({ row, even }) {
   return (
-    <TableRow style={{ background: even ? "rgba(255,255,255,0.012)" : "transparent" }}>
-      <TableCell className="px-4 py-2.5 font-mono text-[11px] max-w-[220px] truncate" style={{ color: "var(--sky)" }} title={row.stream_url}>
+    <TableRow>
+      <TableCell className="px-4 py-2.5 font-mono text-[11px] max-w-[220px] truncate text-sky-400" title={row.stream_url}>
         {row.stream_url?.replace(/^https?:\/\//, "")}
       </TableCell>
-      <TableCell className="px-4 py-2.5 font-mono text-[11.5px]" style={{ color: "var(--ink-dim)" }}>{row.ip || "--"}</TableCell>
-      <TableCell className="px-4 py-2.5 text-[12px]" style={{ color: "var(--ink-dim)" }}>{row.provider || "--"}</TableCell>
-      <TableCell className="px-4 py-2.5 text-[12px]" style={{ color: "var(--mute)" }}>{row.org || "--"}</TableCell>
-      <TableCell className="px-4 py-2.5 text-[12px]" style={{ color: "var(--mute)" }}>
+      <TableCell className="px-4 py-2.5 font-mono text-[11.5px] text-foreground/80">{row.ip || "--"}</TableCell>
+      <TableCell className="px-4 py-2.5 text-[12px] text-foreground/80">{row.provider || "--"}</TableCell>
+      <TableCell className="px-4 py-2.5 text-[12px] text-muted-foreground">{row.org || "--"}</TableCell>
+      <TableCell className="px-4 py-2.5 text-[12px] text-muted-foreground">
         <span className="inline-flex items-center gap-2">
           <span>{row.flag || "🌐"}</span>
           <span>{row.country_code || row.country || "--"}</span>
         </span>
       </TableCell>
-      <TableCell className="px-4 py-2.5 text-[11.5px] font-mono" style={{ color: row.abuse_email ? "var(--signal)" : "var(--mute-3)" }}>
+      <TableCell className={`px-4 py-2.5 text-[11.5px] font-mono ${row.abuse_email ? "text-primary" : "text-muted-foreground/40"}`}>
         {row.abuse_email || "--"}
       </TableCell>
     </TableRow>
@@ -90,7 +86,7 @@ function LookupRow({ row, even }) {
 function CountryMap({ points = [] }) {
   if (!points.length) {
     return (
-      <div className="flex h-40 items-center justify-center text-[12px]" style={{ color: "var(--mute)" }}>
+      <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
         No country history yet
       </div>
     );
@@ -99,15 +95,11 @@ function CountryMap({ points = [] }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       {points.map((point) => (
-        <div
-          key={`${point.country_code}-${point.country}`}
-          className="rounded-[14px] border px-3 py-3 text-center"
-          style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.02)" }}
-        >
+        <div key={`${point.country_code}-${point.country}`} className="rounded-xl border bg-card px-3 py-3 text-center">
           <div className="text-2xl">{point.flag || "🌐"}</div>
-          <div className="mt-1 text-[12px] font-medium text-[var(--ink)]">{point.country_code || point.country}</div>
-          <div className="mt-0.5 text-[11px]" style={{ color: "var(--mute)" }}>{formatNumber(point.count || 0)} checks</div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,0.05)" }}>
+          <div className="mt-1 text-[12px] font-medium text-foreground">{point.country_code || point.country}</div>
+          <div className="mt-0.5 text-[11px] text-muted-foreground">{formatNumber(point.count || 0)} checks</div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
             <div className="h-full rounded-full" style={{ width: `${(Number(point.count || 0) / total) * 100}%`, background: "var(--sky)" }} />
           </div>
         </div>
@@ -181,10 +173,9 @@ export function ProvidersPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <span className="owc-eyebrow">provider intel · stream resolution</span>
-        <h1 className="mt-2 text-3xl font-semibold text-[var(--ink)]">Stream URL Intelligence</h1>
-        <p className="mt-1.5 max-w-[62ch] text-[13.5px] leading-relaxed text-[var(--mute)]">
+      <div className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Stream URL Intelligence</h1>
+        <p className="max-w-[62ch] text-sm leading-relaxed text-muted-foreground">
           Resolve stream URLs to IP, hosting provider, country, and abuse contacts, then visualize provider and country coverage from the DB-backed lookup history.
         </p>
       </div>
@@ -194,153 +185,146 @@ export function ProvidersPage() {
       </div>
 
       {stats.total_urls > 0 ? (
-        <div
-          className="grid gap-3 sm:grid-cols-4 rounded-[14px] border p-4"
-          style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
-        >
-          <StatBadge label="Resolve rate" value={`${resolveRate}%`} color={resolveRate > 80 ? "var(--mint)" : resolveRate > 50 ? "var(--signal)" : "var(--rose)"} />
-          <StatBadge label="Provider match rate" value={`${matchRate}%`} color={matchRate > 60 ? "var(--mint)" : "var(--signal)"} />
-          <StatBadge label="Unique providers" value={formatNumber(stats.unique_providers || topProviders.length)} color="var(--sky)" />
-          <StatBadge label="Countries" value={formatNumber(stats.unique_countries || topCountries.length)} color="var(--violet)" />
-        </div>
+        <Card>
+          <CardContent className="grid gap-3 sm:grid-cols-4 p-4">
+            <StatBadge label="Resolve rate" value={`${resolveRate}%`} color={resolveRate > 80 ? "var(--mint)" : resolveRate > 50 ? "var(--signal)" : "var(--rose)"} />
+            <StatBadge label="Provider match rate" value={`${matchRate}%`} color={matchRate > 60 ? "var(--mint)" : "var(--signal)"} />
+            <StatBadge label="Unique providers" value={formatNumber(stats.unique_providers || topProviders.length)} color="var(--sky)" />
+            <StatBadge label="Countries" value={formatNumber(stats.unique_countries || topCountries.length)} color="var(--violet)" />
+          </CardContent>
+        </Card>
       ) : null}
 
-      <div
-        className="rounded-[14px] border p-4 space-y-3"
-        style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
-      >
-        <div className="flex items-center gap-2">
-          <Search className="h-3.5 w-3.5" style={{ color: "var(--signal)" }} />
-          <span className="text-[13.5px] font-medium text-[var(--ink)]">Manual lookup</span>
-          <span className="ml-2 rounded-full border px-2 py-0.5 font-mono text-[10.5px]" style={{ borderColor: "var(--line)", color: "var(--mute)" }}>
-            secondary tool
-          </span>
-        </div>
-        <Textarea
-          value={urlsText}
-          onChange={(event) => setUrlsText(event.target.value)}
-          className="min-h-[120px]"
-          placeholder="https://cdn.example.com/live/master.m3u8"
-          mono
-        />
-        {error ? (
-          <div
-            className="flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[13px]"
-            style={{ borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)", background: "color-mix(in oklch, var(--rose) 10%, transparent)", color: "var(--rose)" }}
-          >
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            {error}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Search className="h-3.5 w-3.5 text-primary" />
+            <CardTitle className="text-sm font-medium">Manual lookup</CardTitle>
+            <span className="ml-1 rounded-full border px-2 py-0.5 font-mono text-[10.5px] text-muted-foreground">
+              secondary tool
+            </span>
           </div>
-        ) : null}
-        <div className="flex gap-2">
-          <Button variant="accent" onClick={runLookup} disabled={isLoading}>
-            {isLoading ? <><span className="owc-spinner owc-spinner-sm" />Resolving...</> : "Run lookup"}
-          </Button>
-          <Button variant="ghost" onClick={loadHistory} className="border border-[var(--line)]">
-            Refresh history
-          </Button>
-        </div>
-      </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Textarea
+            value={urlsText}
+            onChange={(event) => setUrlsText(event.target.value)}
+            className="min-h-[120px]"
+            placeholder="https://cdn.example.com/live/master.m3u8"
+            mono
+          />
+          {error ? (
+            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              {error}
+            </div>
+          ) : null}
+          <div className="flex gap-2">
+            <Button variant="accent" onClick={runLookup} disabled={isLoading}>
+              {isLoading ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Resolving...</> : "Run lookup"}
+            </Button>
+            <Button variant="outline" onClick={loadHistory}>
+              Refresh history
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {(topProviders.length > 0 || topCountries.length > 0) ? (
         <div className="grid gap-5 xl:grid-cols-2">
-          <div
-            className="rounded-[14px] border p-4 space-y-4"
-            style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-[13.5px] font-medium text-[var(--ink)]">Provider distribution</div>
-                <div className="mt-0.5 text-[12px]" style={{ color: "var(--mute)" }}>Hosting / CDN frequency across all checked URLs</div>
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm">Provider distribution</CardTitle>
+                  <CardDescription>Hosting / CDN frequency across all checked URLs</CardDescription>
+                </div>
+                <span className="font-mono text-[11px] text-muted-foreground">{topProviders.length} providers</span>
               </div>
-              <span className="font-mono text-[11px]" style={{ color: "var(--mute)" }}>{topProviders.length} providers</span>
-            </div>
-            <BarChart rows={topProviders} valueKey="count" labelKey="provider" color="var(--signal)" maxBars={12} />
-          </div>
+            </CardHeader>
+            <CardContent>
+              <BarChart rows={topProviders} valueKey="count" labelKey="provider" color="var(--signal)" maxBars={12} />
+            </CardContent>
+          </Card>
 
-          <div
-            className="rounded-[14px] border p-4 space-y-4"
-            style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-[13.5px] font-medium text-[var(--ink)]">Country distribution</div>
-                <div className="mt-0.5 text-[12px]" style={{ color: "var(--mute)" }}>Flags and country codes from resolved IP history</div>
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm">Country distribution</CardTitle>
+                  <CardDescription>Flags and country codes from resolved IP history</CardDescription>
+                </div>
+                <span className="font-mono text-[11px] text-muted-foreground">{topCountries.length} countries</span>
               </div>
-              <span className="font-mono text-[11px]" style={{ color: "var(--mute)" }}>{topCountries.length} countries</span>
-            </div>
-            <BarChart
-              rows={topCountries}
-              valueKey="count"
-              labelKey="country"
-              color="var(--sky)"
-              maxBars={12}
-              renderLabel={(row) => `${row.flag || "🌐"} ${row.country_code || row.country || "--"}`}
-            />
-          </div>
+            </CardHeader>
+            <CardContent>
+              <BarChart
+                rows={topCountries}
+                valueKey="count"
+                labelKey="country"
+                color="var(--sky)"
+                maxBars={12}
+                renderLabel={(row) => `${row.flag || "🌐"} ${row.country_code || row.country || "--"}`}
+              />
+            </CardContent>
+          </Card>
         </div>
       ) : null}
 
-      <div
-        className="rounded-[14px] border p-4 space-y-4"
-        style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
-      >
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-[13.5px] font-medium text-[var(--ink)]">Country map</div>
-            <div className="mt-0.5 text-[12px]" style={{ color: "var(--mute)" }}>Rounded country badges from stored lookup history</div>
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-sm">Country map</CardTitle>
+              <CardDescription>Country badges from stored lookup history</CardDescription>
+            </div>
+            <span className="font-mono text-[11px] text-muted-foreground">{countryMap.length} points</span>
           </div>
-          <span className="font-mono text-[11px]" style={{ color: "var(--mute)" }}>{countryMap.length} points</span>
-        </div>
-        <CountryMap points={countryMap} />
-      </div>
+        </CardHeader>
+        <CardContent>
+          <CountryMap points={countryMap} />
+        </CardContent>
+      </Card>
 
       {displayRows.length > 0 ? (
-        <div
-          className="rounded-[14px] border overflow-hidden"
-          style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
-        >
-          <div className="flex items-center justify-between border-b px-[18px] py-3.5" style={{ borderColor: "var(--line)" }}>
-            <div>
-              <span className="text-[13.5px] font-medium text-[var(--ink)]">
+        <Card className="overflow-hidden">
+          <CardHeader className="flex-row items-center justify-between space-y-0 border-b px-4 py-3">
+            <div className="flex items-center gap-3">
+              <CardTitle className="text-sm">
                 {result ? "Latest lookup results" : "Lookup history"}
-              </span>
-              <span className="ml-3 font-mono text-[11px]" style={{ color: "var(--mute)" }}>{displayRows.length} entries</span>
+              </CardTitle>
+              <span className="font-mono text-[11px] text-muted-foreground">{displayRows.length} entries</span>
             </div>
             {result ? (
-              <button
-                type="button"
-                onClick={() => setResult(null)}
-                className="text-[11.5px] transition-colors"
-                style={{ color: "var(--mute)" }}
-              >
+              <Button variant="ghost" size="sm" onClick={() => setResult(null)}>
                 Show history
-              </button>
+              </Button>
             ) : null}
-          </div>
+          </CardHeader>
           <Table className="min-w-full text-[12.5px]">
-              <TableHeader className="bg-white/[0.012]">
-                <TableRow className="border-[var(--line)] hover:bg-transparent">
-                  {["URL", "IP", "Provider", "Org", "Country", "Abuse contact"].map((header) => (
-                    <TableHead key={header} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] whitespace-nowrap" style={{ color: "var(--mute)" }}>{header}</TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {displayRows.map((row, index) => (
-                  <LookupRow key={`${row.stream_url}-${index}`} row={row} even={index % 2 === 0} />
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                {["URL", "IP", "Provider", "Org", "Country", "Abuse contact"].map((header) => (
+                  <TableHead key={header} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] whitespace-nowrap text-muted-foreground/60">
+                    {header}
+                  </TableHead>
                 ))}
-              </TableBody>
-            </Table>
-        </div>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {displayRows.map((row, index) => (
+                <LookupRow key={`${row.stream_url}-${index}`} row={row} even={index % 2 === 0} />
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
       ) : !isLoading ? (
-        <div
-          className="flex flex-col items-center gap-3 rounded-[14px] border py-16"
-          style={{ borderColor: "var(--line)", background: "var(--card)", color: "var(--mute)" }}
-        >
-          <Wifi className="h-8 w-8 opacity-30" />
-          <div className="text-[13px]">Paste stream URLs above and run a lookup to see results here.</div>
-        </div>
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
+            <Wifi className="h-8 w-8 opacity-30" />
+            <p className="text-sm">Paste stream URLs above and run a lookup to see results here.</p>
+          </CardContent>
+        </Card>
       ) : null}
     </div>
   );

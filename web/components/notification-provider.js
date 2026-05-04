@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   createContext,
@@ -336,7 +336,7 @@ function Toast({ id, color, iconName, text, runId, onDismiss }) {
       <button
         type="button"
         onClick={dismiss}
-        className="mt-0.5 shrink-0 rounded-full p-1 transition-colors hover:bg-white/10"
+        className="mt-0.5 shrink-0 rounded-full p-1 transition-colors hover:bg-muted/30"
         style={{ color: "var(--mute-2)" }}
         aria-label="Dismiss"
       >
@@ -454,7 +454,7 @@ export function NotificationBell() {
               <button
                 type="button"
                 onClick={clearHistory}
-                className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors hover:bg-white/6"
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors hover:bg-muted/30"
                 style={{ color: "var(--mute)" }}
               >
                 <XCircle className="h-3 w-3" />
@@ -615,7 +615,7 @@ function HistoryRow({ item, onNavigate }) {
       <Link
         href={`/runs/${item.runId}`}
         onClick={onNavigate}
-        className="block hover:bg-white/[0.03]"
+        className="block hover:bg-muted/30"
       >
         {rowContent}
       </Link>

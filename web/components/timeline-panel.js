@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 function toMs(value) {
   const parsed = new Date(value || "").getTime();
   return Number.isFinite(parsed) ? parsed : 0;
@@ -102,49 +104,43 @@ export function TimelinePanel({ events = [], onSelectEvent }) {
 
   if (!rows.length) {
     return (
-      <div
-        className="overflow-hidden rounded-[14px] border"
-        style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
-      >
-        <div className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: "var(--line)" }}>
+      <Card className="overflow-hidden shadow-card">
+        <CardHeader className="flex-row items-center gap-2 space-y-0 border-b border-border px-4 py-3">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ color: "var(--mute-2)" }}>
             <path d="M1 6h10M6 1v10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity="0.5"/>
             <rect x="2" y="4" width="8" height="4" rx="1" stroke="currentColor" strokeWidth="1" opacity="0.3"/>
           </svg>
-          <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--mute-2)" }}>
+          <CardTitle className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
             Execution Timeline
-          </span>
-        </div>
-        <EmptySkeleton />
-        <div className="px-4 pb-4 text-center text-[11px]" style={{ color: "var(--mute-3)" }}>
-          Timeline appears when events stream in
-        </div>
-      </div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <EmptySkeleton />
+          <div className="px-4 pb-4 text-center text-[11px] text-muted-foreground/60">
+            Timeline appears when events stream in
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div
-      className="overflow-hidden rounded-[14px] border animate-fade-up"
-      style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
-    >
-      {/* header */}
-      <div className="flex items-center gap-3 border-b px-4 py-3" style={{ borderColor: "var(--line)" }}>
+    <Card className="overflow-hidden animate-fade-up shadow-card">
+      <CardHeader className="flex-row items-center gap-3 space-y-0 border-b border-border px-4 py-3">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ color: "var(--signal)", flexShrink: 0 }}>
           <path d="M1 6h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
           <circle cx="3.5" cy="6" r="1.5" fill="currentColor"/>
           <circle cx="8.5" cy="6" r="1.5" fill="currentColor"/>
         </svg>
-        <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--ink-dim)" }}>
+        <CardTitle className="text-[11px] font-semibold uppercase tracking-wide text-foreground">
           Execution Timeline
-        </span>
-        <span className="ml-auto font-mono text-[9.5px]" style={{ color: "var(--mute-2)" }}>
+        </CardTitle>
+        <span className="ml-auto font-mono text-[9.5px] text-muted-foreground">
           total {durLabel(totalMs)}
         </span>
-      </div>
+      </CardHeader>
 
-      {/* rows */}
-      <div className="p-4 space-y-2">
+      <CardContent className="space-y-2 p-4">
         {rows.map((row) => {
           const start   = row.start ?? min;
           const end     = row.end   ?? max;
@@ -156,21 +152,18 @@ export function TimelinePanel({ events = [], onSelectEvent }) {
           return (
             <div
               key={row.actor}
-              className="group flex items-center gap-3 rounded-lg px-2 py-1.5 -mx-2 transition-colors"
+              className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors"
               style={{ cursor: "default" }}
               onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.025)"; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             >
               {/* label */}
-              <div
-                className="w-24 shrink-0 font-mono text-[10px] truncate text-right"
-                style={{ color }}
-              >
+              <div className="w-24 shrink-0 truncate font-mono text-[10px] text-right" style={{ color }}>
                 {row.actor}
               </div>
 
               {/* bar track */}
-              <div className="relative flex-1 h-9 rounded-lg overflow-visible" style={{ background: "rgba(255,255,255,0.04)" }}>
+              <div className="relative flex-1 overflow-visible rounded-lg h-9 bg-muted/30">
                 {/* duration bar */}
                 <Tooltip label={`${row.actor} · ${durLabel(durMs)}`}>
                   <button
@@ -226,32 +219,25 @@ export function TimelinePanel({ events = [], onSelectEvent }) {
               </div>
 
               {/* duration label */}
-              <div
-                className="w-12 shrink-0 font-mono text-[9.5px] text-right opacity-0 transition-opacity group-hover:opacity-100"
-                style={{ color: "var(--mute-2)" }}
-              >
+              <div className="w-12 shrink-0 text-right font-mono text-[9.5px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
                 {durLabel(durMs)}
               </div>
             </div>
           );
         })}
-      </div>
+      </CardContent>
 
-      {/* legend */}
-      <div
-        className="flex items-center gap-4 border-t px-4 py-2.5"
-        style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.01)" }}
-      >
-        <span className="text-[9.5px] uppercase tracking-wide" style={{ color: "var(--mute-3)" }}>Legend</span>
-        <span className="flex items-center gap-1.5 text-[9.5px]" style={{ color: "var(--sky)" }}>
-          <span className="inline-block w-3 h-[3px] rounded-full" style={{ background: "var(--sky)" }} />
+      <div className="flex items-center gap-4 border-t border-border px-4 py-2.5 bg-muted/20">
+        <span className="text-[9.5px] uppercase tracking-wide text-muted-foreground/60">Legend</span>
+        <span className="flex items-center gap-1.5 text-[9.5px] text-sky-400">
+          <span className="inline-block h-[3px] w-3 rounded-full bg-sky-400" />
           Tool call
         </span>
-        <span className="flex items-center gap-1.5 text-[9.5px]" style={{ color: "var(--violet)" }}>
-          <span className="inline-block w-3 h-[3px] rounded-full" style={{ background: "var(--violet)" }} />
+        <span className="flex items-center gap-1.5 text-[9.5px] text-violet-400">
+          <span className="inline-block h-[3px] w-3 rounded-full bg-violet-400" />
           LLM call
         </span>
       </div>
-    </div>
+    </Card>
   );
 }

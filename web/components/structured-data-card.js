@@ -2,6 +2,8 @@
 
 import { useMemo } from "react";
 
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+
 function isPrimitive(value) {
   return value == null || ["string", "number", "boolean"].includes(typeof value);
 }
@@ -19,8 +21,7 @@ function formatValue(value) {
 function PrimitivePill({ children }) {
   return (
     <span
-      className="inline-flex max-w-full items-center rounded-[8px] border px-2 py-1 text-[11px]"
-      style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.03)", color: "var(--ink-dim)" }}
+      className="inline-flex max-w-full items-center rounded-md border border-border bg-muted/40 px-2 py-1 text-[11px] text-muted-foreground/80"
     >
       <span className="truncate">{children}</span>
     </span>
@@ -34,13 +35,12 @@ function KeyValueGrid({ entries = [] }) {
       {entries.map(([key, value]) => (
         <div
           key={key}
-          className="rounded-[10px] border px-3 py-2.5"
-          style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.02)" }}
+          className="rounded-lg border border-border bg-muted/20 px-3 py-2.5"
         >
-          <div className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--mute-3)" }}>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
             {String(key).replace(/_/g, " ")}
           </div>
-          <div className="mt-1 break-words text-[12px] leading-relaxed" style={{ color: "var(--ink-dim)" }}>
+          <div className="mt-1 break-words text-[12px] leading-relaxed text-foreground/80">
             {formatValue(value)}
           </div>
         </div>
@@ -56,7 +56,7 @@ function ObjectSection({ label, value, limit }) {
   return (
     <div className="space-y-3">
       {label ? (
-        <div className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--mute-2)" }}>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
           {label}
         </div>
       ) : null}
@@ -66,10 +66,9 @@ function ObjectSection({ label, value, limit }) {
           {nestedEntries.map(([key, nested]) => (
             <div
               key={key}
-              className="rounded-[12px] border p-3"
-              style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.015)" }}
+              className="rounded-lg border border-border bg-muted/20 p-3"
             >
-              <div className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--mute-3)" }}>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
                 {String(key).replace(/_/g, " ")}
               </div>
               {Array.isArray(nested) ? (
@@ -102,20 +101,17 @@ export function StructuredDataCard({ title, description, data, limit = 8, emptyL
   }, [normalized]);
 
   return (
-    <div
-      className="overflow-hidden rounded-[14px] border"
-      style={{ borderColor: "var(--line)", background: "var(--card)", boxShadow: "var(--shadow-card)" }}
-    >
+    <Card className="overflow-hidden shadow-card">
       {(title || description) ? (
-        <div className="border-b px-4 py-3.5" style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.02)" }}>
-          {title ? <div className="text-[13.5px] font-semibold" style={{ color: "var(--ink)" }}>{title}</div> : null}
-          {description ? <div className="mt-0.5 text-[11.5px]" style={{ color: "var(--mute)" }}>{description}</div> : null}
-        </div>
+        <CardHeader className="space-y-1 border-b border-border px-4 py-3.5">
+          {title ? <CardTitle className="text-sm font-semibold">{title}</CardTitle> : null}
+          {description ? <CardDescription className="text-xs">{description}</CardDescription> : null}
+        </CardHeader>
       ) : null}
 
-      <div className="p-4">
+      <CardContent className="p-4">
         {isEmpty ? (
-          <div className="rounded-[10px] border border-dashed px-4 py-6 text-center text-[12px]" style={{ borderColor: "var(--line)", color: "var(--mute)" }}>
+          <div className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
             {emptyLabel}
           </div>
         ) : Array.isArray(normalized) ? (
@@ -128,11 +124,11 @@ export function StructuredDataCard({ title, description, data, limit = 8, emptyL
             </div>
           </div>
         ) : isPrimitive(normalized) ? (
-          <div className="text-[12.5px]" style={{ color: "var(--ink-dim)" }}>{formatValue(normalized)}</div>
+          <div className="text-[12.5px] text-foreground/80">{formatValue(normalized)}</div>
         ) : (
           <ObjectSection value={normalized} limit={limit} />
         )}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo } from "react";
 import ReactFlow, { Background, Controls, MarkerType } from "reactflow";
@@ -35,7 +35,7 @@ function statusStyle(status) {
   if (status === "succeeded") return "border border-emerald-500/35 bg-emerald-500/10";
   if (status === "failed") return "border border-ember/35 bg-ember/10";
   if (status === "connecting") return "border border-sky-400/35 bg-sky-400/10";
-  return "border border-white/12 bg-white/[0.04]";
+  return "border border-border bg-muted/30";
 }
 
 function StatusIcon({ status }) {
@@ -47,13 +47,13 @@ function StatusIcon({ status }) {
 
 function ActorNode({ data }) {
   return (
-    <div className={`min-w-[200px] rounded-2xl px-4 py-3 text-white ${statusStyle(data.status)}`}>
+    <div className={`min-w-[200px] rounded-2xl px-4 py-3 text-foreground ${statusStyle(data.status)}`}>
       <div className="mb-1.5 flex items-center gap-2">
         <div className="text-sm font-semibold">{data.label}</div>
         <div className="ml-auto"><StatusIcon status={data.status} /></div>
       </div>
-      <div className="text-xs text-slate-400">{data.count} event{data.count !== 1 ? "s" : ""}</div>
-      <div className="mt-1 text-xs text-slate-500">{data.latest || "Waiting"}</div>
+      <div className="text-xs text-muted-foreground">{data.count} event{data.count !== 1 ? "s" : ""}</div>
+      <div className="mt-1 text-xs text-muted-foreground">{data.latest || "Waiting"}</div>
     </div>
   );
 }

@@ -1,12 +1,19 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
+  Bell,
+  BookOpen,
   Check,
   CheckCircle2,
+  Cpu,
+  Globe,
   Key,
+  Layers,
   Loader2,
+  Monitor,
   RefreshCw,
   Save,
   Settings2,
@@ -15,6 +22,7 @@ import {
   Wrench,
 } from "lucide-react";
 
+import { cn } from "@/lib/utils";
 import { useNotifPrefs } from "@/components/notification-provider";
 import {
   RunViewSettingsPanel,
@@ -22,11 +30,14 @@ import {
 } from "@/components/run-view-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { HelpIcon } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { apiFetch, apiUrl } from "@/lib/api";
 import {
@@ -303,9 +314,8 @@ const BUILTIN_PROXY_SOURCE_OPTIONS = [
 ];
 
 const SETTINGS_TABS = [
-  { id: "models", label: "Models & Provider" },
+  { id: "models", label: "Models & Providers" },
   { id: "browser", label: "Browser" },
-  { id: "evaluation", label: "Evaluation" },
   { id: "display", label: "Display" },
   { id: "api-keys", label: "API Keys" },
   { id: "notifications", label: "Notifications" },
@@ -314,36 +324,29 @@ const SETTINGS_TABS = [
 
 const TAB_DETAILS = {
   models: {
-    title: "Models and provider routing",
+    title: "Models & Providers",
     description:
       "Set provider defaults, per-agent model assignments, and caching behavior for the active runtime.",
     storage: "server",
     saveLabel: "Save model settings",
   },
   browser: {
-    title: "Browser runtime",
+    title: "Browser Runtime",
     description:
       "Choose the default engine and tune fingerprints, proxies, launch flags, iframe recovery, and media capture behavior.",
     storage: "server",
     saveLabel: "Save browser settings",
   },
-  evaluation: {
-    title: "Evaluation judge",
-    description:
-      "Configure the separate judge model used for DeepEval scoring and offline evaluation runs.",
-    storage: "server",
-    saveLabel: "Save evaluation settings",
-  },
   display: {
-    title: "Run detail display",
+    title: "Run Display",
     description:
       "Control what appears on run detail pages and how aggressively the UI refreshes in this browser.",
     storage: "browser",
   },
   "api-keys": {
-    title: "API key status",
+    title: "API Keys",
     description:
-      "See which providers are ready for live catalogs and runtime calls. This tab is informational only.",
+      "See which providers are configured and ready for runtime calls. Informational only.",
     storage: "readonly",
   },
   notifications: {
@@ -353,9 +356,9 @@ const TAB_DETAILS = {
     storage: "browser",
   },
   "mcp-tools": {
-    title: "MCP tool availability",
+    title: "MCP Tool Availability",
     description:
-      "Enable or disable browser tools independently for each profile and browser backend.",
+      "Enable or disable browser tools independently for each agent profile and browser backend.",
     storage: "server",
     saveLabel: "Save MCP tool settings",
   },
@@ -766,84 +769,40 @@ function providerOptionRows() {
 }
 
 function KeyStatus({ set }) {
-  return set ? (
-    <span
-      className="flex items-center gap-1 text-[12px]"
-      style={{ color: "var(--mint)" }}
-    >
-      <CheckCircle2 className="h-3 w-3" />
-      set
-    </span>
-  ) : (
-    <span className="flex items-center gap-1 text-[12px] text-[var(--mute)]">
-      <AlertCircle className="h-3 w-3" />
-      not set
-    </span>
+  return (
+    <Badge tone={set ? "success" : "default"} className="gap-1 text-[11px]">
+      {set ? <CheckCircle2 className="size-3" /> : <AlertCircle className="size-3" />}
+      {set ? "set" : "not set"}
+    </Badge>
   );
 }
 
 function SectionHeader({ children }) {
   return (
-    <div className="flex items-center gap-3 pt-1">
-      <h2
-        className="shrink-0 text-[10.5px] font-bold uppercase tracking-[0.18em]"
-        style={{ color: "var(--mute-2)" }}
-      >
+    <div className="flex items-center gap-3">
+      <h2 className="shrink-0 text-xs font-bold uppercase tracking-widest text-muted-foreground">
         {children}
       </h2>
-      <div className="h-px flex-1" style={{ background: "var(--line)" }} />
+      <Separator className="flex-1" />
     </div>
   );
 }
 
 function StatusPill({ tone = "neutral", children }) {
-  const styles = {
-    success: {
-      background: "color-mix(in oklch, var(--mint) 12%, transparent)",
-      borderColor: "color-mix(in oklch, var(--mint) 30%, transparent)",
-      color: "var(--mint)",
-    },
-    warning: {
-      background: "color-mix(in oklch, var(--signal) 12%, transparent)",
-      borderColor: "color-mix(in oklch, var(--signal) 30%, transparent)",
-      color: "var(--signal)",
-    },
-    info: {
-      background: "color-mix(in oklch, var(--sky) 12%, transparent)",
-      borderColor: "color-mix(in oklch, var(--sky) 30%, transparent)",
-      color: "var(--sky)",
-    },
-    neutral: {
-      background: "rgba(255,255,255,0.04)",
-      borderColor: "var(--line)",
-      color: "var(--mute)",
-    },
-  };
-
-  const style = styles[tone] || styles.neutral;
+  const mappedTone = tone === "success" ? "success" : tone === "warning" ? "warning" : tone === "info" ? "signal" : "default";
   return (
-    <span
-      className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium"
-      style={style}
-    >
+    <Badge tone={mappedTone} className="px-2.5 py-1 text-[11px] font-medium">
       {children}
-    </span>
+    </Badge>
   );
 }
 
 function ErrorNotice({ message }) {
   if (!message) return null;
   return (
-    <div
-      className="flex items-start gap-2 rounded-[14px] border px-4 py-3 text-[13px]"
-      style={{
-        borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)",
-        background: "color-mix(in oklch, var(--rose) 10%, transparent)",
-        color: "var(--rose)",
-      }}
-    >
-      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-      <span>{message}</span>
+    <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-[13px] text-destructive">
+      <AlertCircle className="mt-0.5 size-4 shrink-0" />
+      <span className="leading-relaxed">{message}</span>
     </div>
   );
 }
@@ -861,57 +820,27 @@ function SettingsTabHero({
   const isBrowserTab = meta.storage === "browser";
 
   return (
-    <div
-      className="flex flex-wrap items-start justify-between gap-4 pb-6"
-      style={{ borderBottom: "1px solid var(--line)" }}
-    >
-      <div className="space-y-1.5 max-w-2xl">
+    <div className="flex flex-wrap items-start justify-between gap-4 border-b pb-6">
+      <div className="max-w-2xl space-y-1.5">
         <div className="flex flex-wrap items-center gap-2">
-          <h1
-            className="text-[21px] font-semibold tracking-tight"
-            style={{ color: "var(--ink)" }}
-          >
-            {meta.title}
-          </h1>
+          <h1 className="text-[21px] font-semibold tracking-tight text-foreground">{meta.title}</h1>
           {dirty ? (
-            <span
-              className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-              style={{
-                background:
-                  "color-mix(in oklch, var(--signal) 14%, transparent)",
-                color: "var(--signal)",
-                border:
-                  "1px solid color-mix(in oklch, var(--signal) 25%, transparent)",
-              }}
-            >
-              Unsaved
-            </span>
+            <Badge tone="warning" className="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">Unsaved</Badge>
           ) : isServerTab && saved ? (
-            <span
-              className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-              style={{
-                background: "color-mix(in oklch, var(--mint) 12%, transparent)",
-                color: "var(--mint)",
-              }}
-            >
-              <Check className="h-3 w-3" />
+            <Badge tone="success" className="gap-1 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+              <Check className="size-3" />
               Saved
-            </span>
+            </Badge>
           ) : null}
         </div>
-        <p
-          className="text-[13.5px] leading-relaxed"
-          style={{ color: "var(--mute)" }}
-        >
-          {meta.description}
-        </p>
+        <p className="text-sm leading-relaxed text-muted-foreground">{meta.description}</p>
         {isBrowserTab ? (
-          <p className="text-[11.5px]" style={{ color: "var(--mute-2)" }}>
+          <p className="text-[11.5px] text-muted-foreground">
             Preferences saved automatically to your browser.
           </p>
         ) : null}
         {isServerTab && dirty && otherDirtyCount > 0 ? (
-          <p className="text-[11.5px]" style={{ color: "var(--signal)" }}>
+          <p className="text-[11.5px] text-primary">
             {otherDirtyCount} other tab{otherDirtyCount === 1 ? "" : "s"} also
             have unsaved changes.
           </p>
@@ -943,67 +872,43 @@ function SettingsTabHero({
 }
 
 function SettingsTabBar({ active, onChange, dirtyTabs = {} }) {
-  const ICONS = {
-    models: "◈",
-    browser: "⬡",
-    evaluation: "◎",
-    display: "▣",
-    "api-keys": "◇",
-    notifications: "◉",
-    "mcp-tools": "⬢",
+  const TAB_ICONS = {
+    models: Cpu,
+    browser: Globe,
+    display: Monitor,
+    "api-keys": Key,
+    notifications: Bell,
+    "mcp-tools": Layers,
   };
 
   return (
-    <nav className="space-y-0.5">
-      <div
-        className="px-3 pb-4 mb-1"
-        style={{ borderBottom: "1px solid var(--line)" }}
-      >
-        <div
-          className="text-[10px] font-bold uppercase tracking-[0.2em]"
-          style={{ color: "var(--mute-3)" }}
-        >
-          Configuration
-        </div>
+    <nav className="flex flex-col gap-1">
+      <div className="mb-1 border-b px-2 pb-3 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+        Configuration
       </div>
       {SETTINGS_TABS.map((tab) => {
         const isActive = active === tab.id;
         const isDirty = dirtyTabs[tab.id];
+        const Icon = TAB_ICONS[tab.id];
         return (
-          <button
+          <Button
             key={tab.id}
             type="button"
             onClick={() => onChange(tab.id)}
-            className="group w-full flex items-center justify-between gap-2 rounded-[10px] px-3 py-2 text-left text-[13px] font-medium transition-all duration-150"
-            style={
-              isActive
-                ? {
-                    background:
-                      "color-mix(in oklch, var(--signal) 11%, transparent)",
-                    color: "var(--signal)",
-                    border:
-                      "1px solid color-mix(in oklch, var(--signal) 20%, transparent)",
-                  }
-                : {
-                    color: "var(--mute)",
-                    border: "1px solid transparent",
-                  }
-            }
+            variant={isActive ? "secondary" : "ghost"}
+            className={cn(
+              "w-full justify-between rounded-[10px] px-3 py-2 text-left text-[13px] font-medium",
+              isActive ? "border border-border text-foreground" : "text-muted-foreground",
+            )}
           >
             <span className="flex items-center gap-2.5">
-              <span className="text-[11px] font-mono opacity-60">
-                {ICONS[tab.id]}
-              </span>
+              {Icon ? <Icon className="size-[14px] shrink-0" /> : null}
               {tab.label}
             </span>
             {isDirty ? (
-              <span
-                className="h-1.5 w-1.5 shrink-0 rounded-full"
-                style={{ background: "var(--signal)" }}
-                aria-label={`${tab.label} has unsaved changes`}
-              />
+              <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-label={`${tab.label} has unsaved changes`} />
             ) : null}
-          </button>
+          </Button>
         );
       })}
     </nav>
@@ -1077,7 +982,7 @@ function TuningFieldGrid({ fields, values, onChange }) {
             min={field.min}
             max={field.max}
             step={field.step || "any"}
-            className="h-11 border-[var(--line)] bg-black/20 text-[13px] text-[var(--ink-dim)]"
+            className="h-11 border-[var(--line)] bg-muted/50 text-[13px] text-[var(--ink-dim)]"
             value={value}
             onChange={(event) =>
               onChange(field, parseFieldValue(field, event.target.value))
@@ -1099,87 +1004,53 @@ function TuningCard({
   clearLabel,
 }) {
   return (
-    <div
-      className="rounded-[12px] border p-4 space-y-4"
-      style={{
-        borderColor: "var(--line)",
-        background: "var(--card)",
-      }}
-    >
+    <Card className="rounded-[12px] border">
+      <CardContent className="flex flex-col gap-4 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div
-            className="text-[13px] font-semibold"
-            style={{ color: "var(--ink)" }}
-          >
-            {title}
-          </div>
-          {description ? (
-            <p className="mt-0.5 text-[12px]" style={{ color: "var(--mute)" }}>
-              {description}
-            </p>
-          ) : null}
+          <div className="text-[13px] font-semibold text-foreground">{title}</div>
+          {description ? <p className="mt-0.5 text-[12px] text-muted-foreground">{description}</p> : null}
         </div>
         {onClear ? (
-          <button
+          <Button
             type="button"
             onClick={onClear}
-            className="rounded-[8px] border px-2.5 py-1 text-[11px] transition-colors hover:opacity-80"
-            style={{ borderColor: "var(--line)", color: "var(--mute)" }}
+            variant="outline"
+            size="sm"
+            className="h-7 px-2.5 text-[11px]"
           >
             {clearLabel || "Clear"}
-          </button>
+          </Button>
         ) : null}
       </div>
       <TuningFieldGrid fields={fields} values={values} onChange={onChange} />
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
 function MiniSegment({ options, active, onChange }) {
   return (
-    <div
-      className="flex gap-1.5 rounded-[12px] p-1.5"
-      style={{
-        background: "rgba(255,255,255,0.03)",
-        border: "1px solid var(--line)",
-        width: "fit-content",
-      }}
-    >
+    <div className="flex w-fit gap-1.5 rounded-[12px] border bg-muted/30 p-1.5">
       {options.map((option) => {
         const isActive = option.id === active;
         return (
-          <button
+          <Button
             key={option.id}
             type="button"
             onClick={() => onChange(option.id)}
-            className="flex items-center gap-1.5 rounded-[8px] px-3 py-1.5 text-[12.5px] font-medium transition-all duration-150"
-            style={
-              isActive
-                ? {
-                    background:
-                      "color-mix(in oklch, var(--signal) 14%, transparent)",
-                    color: "var(--signal)",
-                    border:
-                      "1px solid color-mix(in oklch, var(--signal) 28%, transparent)",
-                  }
-                : { color: "var(--mute)", border: "1px solid transparent" }
-            }
+            variant={isActive ? "secondary" : "ghost"}
+            size="sm"
+            className={cn(
+              "h-auto rounded-[8px] px-3 py-1.5 text-[12.5px] font-medium",
+              isActive ? "border border-border text-foreground" : "text-muted-foreground",
+            )}
           >
             {option.label}
             {option.badge ? (
-              <span
-                className="rounded-full px-1.5 py-0.5 text-[9px] font-bold"
-                style={{
-                  background:
-                    "color-mix(in oklch, var(--rose) 20%, transparent)",
-                  color: "var(--rose)",
-                }}
-              >
-                {option.badge}
-              </span>
+              <Badge tone="danger" className="px-1.5 py-0.5 text-[9px] font-bold">{option.badge}</Badge>
             ) : null}
-          </button>
+          </Button>
         );
       })}
     </div>
@@ -1188,42 +1059,28 @@ function MiniSegment({ options, active, onChange }) {
 
 function FieldNote({ children }) {
   if (!children) return null;
-  return <p className="text-[11px] text-[var(--mute)]">{children}</p>;
+  return <p className="text-[11px] text-muted-foreground">{children}</p>;
 }
 
 function ToggleRow({ label, checked, onChange, description = "" }) {
   return (
     <div
-      className="flex items-start gap-3 rounded-[12px] px-4 py-3"
-      style={{
-        border: `1px solid ${checked ? "color-mix(in oklch, var(--signal) 22%, var(--line))" : "var(--line)"}`,
-        background: checked
-          ? "color-mix(in oklch, var(--signal) 5%, rgba(255,255,255,0.01))"
-          : "rgba(255,255,255,0.015)",
-        transition: "background 0.18s, border-color 0.18s",
-      }}
+      className={cn(
+        "flex items-start gap-3 rounded-lg border bg-card px-4 py-3 transition-colors",
+        checked ? "border-primary/30 bg-primary/5" : ""
+      )}
     >
       <Switch
         checked={checked}
         onCheckedChange={onChange}
-        className="mt-0.5 data-[state=checked]:bg-[var(--signal)] data-[state=unchecked]:bg-[color:var(--line-hi)]"
+        className="mt-0.5 data-[state=checked]:bg-primary data-[state=unchecked]:bg-muted"
       />
-      <span className="min-w-0 flex-1 space-y-0.5">
-        <span
-          className="block text-[13px] font-medium leading-snug"
-          style={{ color: "var(--ink)" }}
-        >
-          {label}
-        </span>
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <p className="text-sm font-medium leading-snug text-foreground">{label}</p>
         {description ? (
-          <span
-            className="block text-[11px] leading-relaxed"
-            style={{ color: "var(--mute)" }}
-          >
-            {description}
-          </span>
+          <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
         ) : null}
-      </span>
+      </div>
     </div>
   );
 }
@@ -1260,16 +1117,9 @@ function CostEstimator({ provider, model }) {
   }
 
   return (
-    <div
-      className="space-y-4 rounded-[14px] border p-4"
-      style={{
-        borderColor: "var(--line)",
-        background: "rgba(255,255,255,0.02)",
-      }}
-    >
-      <div className="text-[13px] font-medium text-[var(--ink)]">
-        Estimated Cost
-      </div>
+    <Card className="rounded-[14px] border">
+      <CardContent className="flex flex-col gap-4 p-4">
+      <div className="text-[13px] font-medium text-foreground">Estimated Cost</div>
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Input
@@ -1279,7 +1129,7 @@ function CostEstimator({ provider, model }) {
           step="100"
           value={inputTokens}
           onChange={(e) => setInputTokens(parseInt(e.target.value, 10) || 0)}
-          className="h-9 border-[var(--line)] bg-black/20 text-[12px] text-[var(--ink-dim)]"
+          className="h-9 border-[var(--line)] bg-muted/50 text-[12px] text-[var(--ink-dim)]"
         />
 
         <Input
@@ -1289,7 +1139,7 @@ function CostEstimator({ provider, model }) {
           step="100"
           value={outputTokens}
           onChange={(e) => setOutputTokens(parseInt(e.target.value, 10) || 0)}
-          className="h-9 border-[var(--line)] bg-black/20 text-[12px] text-[var(--ink-dim)]"
+          className="h-9 border-[var(--line)] bg-muted/50 text-[12px] text-[var(--ink-dim)]"
         />
 
         <Input
@@ -1299,98 +1149,58 @@ function CostEstimator({ provider, model }) {
           step="100"
           value={cachedTokens}
           onChange={(e) => setCachedTokens(parseInt(e.target.value, 10) || 0)}
-          className="h-9 border-[var(--line)] bg-black/20 text-[12px] text-[var(--ink-dim)]"
+          className="h-9 border-[var(--line)] bg-muted/50 text-[12px] text-[var(--ink-dim)]"
         />
       </div>
 
       {costs ? (
-        <div
-          className="grid gap-2 rounded-[10px] border p-3"
-          style={{
-            borderColor: "var(--line)",
-            background: "rgba(255,255,255,0.01)",
-          }}
-        >
+        <div className="grid gap-2 rounded-[10px] border bg-muted/20 p-3">
           <div className="flex items-center justify-between text-[12px]">
-            <span style={{ color: "var(--mute)" }}>Input cost</span>
-            <span style={{ color: "var(--ink-dim)", fontFamily: "monospace" }}>
+            <span className="text-muted-foreground">Input cost</span>
+            <span className="font-mono text-foreground">
               ${costs.input_cost_usd.toFixed(6)}
             </span>
           </div>
           <div className="flex items-center justify-between text-[12px]">
-            <span style={{ color: "var(--mute)" }}>Output cost</span>
-            <span style={{ color: "var(--ink-dim)", fontFamily: "monospace" }}>
+            <span className="text-muted-foreground">Output cost</span>
+            <span className="font-mono text-foreground">
               ${costs.output_cost_usd.toFixed(6)}
             </span>
           </div>
-          <div className="border-t border-[var(--line)]" />
+          <Separator />
           <div className="flex items-center justify-between text-[12px] font-medium">
-            <span style={{ color: "var(--ink)" }}>Total</span>
-            <span
-              style={{
-                color: "var(--signal)",
-                fontFamily: "monospace",
-                fontSize: "14px",
-              }}
-            >
+            <span className="text-foreground">Total</span>
+            <span className="font-mono text-sm text-primary">
               ${costs.total_cost_usd.toFixed(6)}
             </span>
           </div>
           {costs.pricing_source &&
             costs.pricing_source !== "no_pricing_available" && (
-              <p className="mt-2 text-[10px]" style={{ color: "var(--mute)" }}>
+              <p className="mt-2 text-[10px] text-muted-foreground">
                 Pricing: {costs.pricing_source}
               </p>
             )}
           {costs.pricing_source === "no_pricing_available" && (
-            <p className="mt-2 text-[10px]" style={{ color: "var(--rose)" }}>
+            <p className="mt-2 text-[10px] text-destructive">
               No pricing available for this model
             </p>
           )}
         </div>
       ) : null}
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
 function FieldGroup({ title, description, children, accent = null }) {
-  const accentBorder = accent
-    ? `color-mix(in oklch, ${accent} 22%, var(--line))`
-    : "var(--line)";
-  const accentBg = accent
-    ? `color-mix(in oklch, ${accent} 6%, rgba(255,255,255,0.02))`
-    : "rgba(255,255,255,0.02)";
   return (
-    <div
-      className="overflow-hidden rounded-[16px] border"
-      style={{ borderColor: accentBorder, background: "var(--card)" }}
-    >
-      <div
-        className="border-b px-5 py-4"
-        style={{
-          borderColor: accentBorder,
-          background: accentBg,
-          ...(accent
-            ? {
-                borderLeft: `3px solid color-mix(in oklch, ${accent} 55%, transparent)`,
-              }
-            : {}),
-        }}
-      >
-        <div
-          className="text-[13.5px] font-semibold"
-          style={{ color: "var(--ink)" }}
-        >
-          {title}
-        </div>
-        {description ? (
-          <p className="mt-0.5 text-[12px]" style={{ color: "var(--mute)" }}>
-            {description}
-          </p>
-        ) : null}
+    <Card className="overflow-hidden rounded-lg border">
+      <div className={cn("border-b bg-muted/10 px-5 py-4", accent && "border-l-4")}>
+        <div className="text-sm font-semibold text-foreground">{title}</div>
+        {description ? <p className="mt-1 text-xs text-muted-foreground">{description}</p> : null}
       </div>
-      <div className="space-y-4 p-5">{children}</div>
-    </div>
+      <CardContent className="flex flex-col gap-4 p-5">{children}</CardContent>
+    </Card>
   );
 }
 
@@ -1416,7 +1226,7 @@ function BrowserRuntimeInput({
       max={max}
       step={step}
       placeholder={placeholder}
-      className="h-9 border-[var(--line-hi)] bg-white/3 text-[12.5px] text-[var(--ink)]"
+      className="h-9 border-[var(--line-hi)] bg-muted/30 text-[12.5px] text-[var(--ink)]"
     />
   );
 }
@@ -1480,8 +1290,26 @@ function BrowserRuntimeSelect({
 }
 
 export function SettingsPage() {
-  const [activeTab, setActiveTab] = useState("models");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const { prefs: notifPrefs, setPrefs: setNotifPrefs } = useNotifPrefs();
+
+  const requestedTab = searchParams.get("tab") || "models";
+  const activeTab = SETTINGS_TABS.some((tab) => tab.id === requestedTab)
+    ? requestedTab
+    : "models";
+
+  function setActiveTab(nextTab) {
+    if (nextTab === activeTab) return;
+
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextTab === "models") params.delete("tab");
+    else params.set("tab", nextTab);
+
+    const query = params.toString();
+    router.push(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
+  }
 
   const [config, setConfig] = useState(null);
   const [savedConfigSnapshot, setSavedConfigSnapshot] = useState(null);
@@ -1982,68 +1810,40 @@ export function SettingsPage() {
     Boolean(configErr) &&
     (!config || TAB_DETAILS[activeTab]?.storage === "server");
 
+  const hasDirty = Object.values(dirtyTabs).some(Boolean);
+
   return (
-    <div className="flex gap-10 items-start">
-      {/* ── LEFT SIDEBAR NAV ───────────────────────────────────── */}
-      <div className="w-[188px] shrink-0 sticky top-6 self-start">
-        <SettingsTabBar
-          active={activeTab}
-          onChange={setActiveTab}
-          dirtyTabs={dirtyTabs}
-        />
-        <div
-          className="mt-5 px-3 space-y-1.5"
-          style={{ borderTop: "1px solid var(--line)", paddingTop: "16px" }}
-        >
-          <div
-            className="flex items-center gap-1.5 rounded-[8px] px-2.5 py-1.5 text-[11px] font-medium"
-            style={{
-              background: providerCatalogs[provider]
-                ? "color-mix(in oklch, var(--sky) 10%, transparent)"
-                : "rgba(255,255,255,0.03)",
-              color: providerCatalogs[provider] ? "var(--sky)" : "var(--mute)",
-            }}
-          >
-            <span
-              className="h-1.5 w-1.5 rounded-full"
-              style={{
-                background: providerCatalogs[provider]
-                  ? "var(--sky)"
-                  : "var(--mute-3)",
-                flexShrink: 0,
-              }}
-            />
-            {providerCatalogs[provider] ? "Catalogs loaded" : "Loading…"}
-          </div>
-          <div
-            className="flex items-center gap-1.5 rounded-[8px] px-2.5 py-1.5 text-[11px] font-medium"
-            style={{
-              background: Object.values(dirtyTabs).some(Boolean)
-                ? "color-mix(in oklch, var(--signal) 10%, transparent)"
-                : "color-mix(in oklch, var(--mint) 8%, transparent)",
-              color: Object.values(dirtyTabs).some(Boolean)
-                ? "var(--signal)"
-                : "var(--mint)",
-            }}
-          >
-            <span
-              className="h-1.5 w-1.5 rounded-full"
-              style={{
-                background: Object.values(dirtyTabs).some(Boolean)
-                  ? "var(--signal)"
-                  : "var(--mint)",
-                flexShrink: 0,
-              }}
-            />
-            {Object.values(dirtyTabs).some(Boolean)
-              ? "Unsaved changes"
-              : "All synced"}
-          </div>
-        </div>
+    <div className="space-y-6">
+      <div className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+          Settings
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Configure providers, browser runtime, display preferences, and more.
+        </p>
       </div>
+    <div className="flex items-start gap-6">
+      {/* ── LEFT SIDEBAR NAV ───────────────────────────────────── */}
+      <Card className="sticky top-6 hidden w-56 shrink-0 self-start overflow-hidden lg:block">
+        <CardContent className="px-3 pb-2 pt-3">
+          <SettingsTabBar
+            active={activeTab}
+            onChange={setActiveTab}
+            dirtyTabs={dirtyTabs}
+          />
+        </CardContent>
+        <div className="flex flex-col gap-2 border-t px-3 py-3">
+          <Badge tone={providerCatalogs[provider] ? "signal" : "default"} className="justify-center rounded-lg px-2.5 py-1.5 text-xs">
+            {providerCatalogs[provider] ? "Catalogs loaded" : "Loading..."}
+          </Badge>
+          <Badge tone={hasDirty ? "warning" : "success"} className="justify-center rounded-lg px-2.5 py-1.5 text-xs">
+            {hasDirty ? "Unsaved changes" : "All synced"}
+          </Badge>
+        </div>
+      </Card>
 
       {/* ── RIGHT CONTENT ─────────────────────────────────────── */}
-      <div className="flex-1 min-w-0 space-y-7">
+      <div className="flex-1 min-w-0 space-y-6">
         <SettingsTabHero
           tabId={activeTab}
           dirty={currentTabDirty}
@@ -2057,148 +1857,76 @@ export function SettingsPage() {
         <div key={activeTab} className="animate-fade-up space-y-8">
           {activeTab === "models" ? (
             <section className="space-y-4">
-              <SectionHeader>Provider Defaults</SectionHeader>
+              <Tabs defaultValue="providers" className="w-full">
+                <TabsList className="h-auto w-full justify-start gap-1 p-1">
+                  <TabsTrigger value="providers">Providers</TabsTrigger>
+                  <TabsTrigger value="agents">Agent Models</TabsTrigger>
+                </TabsList>
 
-              <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                <TabsContent value="providers" className="space-y-4">
+                  <SectionHeader>Provider Defaults</SectionHeader>
+
+                  <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                 {PROVIDERS.map((item) => {
                   const isActive = provider === item.id;
                   const usage = providerCardUsage[item.id] || 0;
                   const hasKey = !!apiKeys[item.id];
-                  const accentColor = isActive
-                    ? item.color || "var(--signal)"
-                    : "var(--line)";
                   return (
-                    <button
+                    <Card
                       key={item.id}
-                      type="button"
-                      onClick={() => selectProvider(item)}
-                      className="group w-full rounded-[12px] border p-3 text-left transition-all duration-150"
-                      style={
-                        isActive
-                          ? {
-                              borderColor: `color-mix(in oklch, ${item.color || "var(--signal)"} 40%, transparent)`,
-                              background: `color-mix(in oklch, ${item.color || "var(--signal)"} 7%, transparent)`,
-                              boxShadow: `0 0 0 1px color-mix(in oklch, ${item.color || "var(--signal)"} 18%, transparent)`,
-                            }
-                          : {
-                              borderColor: "var(--line)",
-                              background: "var(--card)",
-                            }
-                      }
+                      className={cn(
+                        "rounded-[12px] border transition-colors",
+                        isActive ? "border-primary bg-primary/5" : "border-border bg-card",
+                      )}
                     >
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => selectProvider(item)}
+                        className="h-auto w-full justify-start rounded-[12px] p-3 text-left"
+                      >
                       {/* Header row */}
                       <div className="flex items-start justify-between gap-1.5">
                         <div className="flex items-center gap-1.5">
-                          <span
-                            className="h-2 w-2 shrink-0 rounded-full"
-                            style={{
-                              background: isActive
-                                ? item.color || "var(--signal)"
-                                : hasKey
-                                  ? "var(--mint)"
-                                  : "var(--mute-3)",
-                            }}
-                          />
-                          <span
-                            className="text-[12.5px] font-semibold leading-snug"
-                            style={{
-                              color: isActive
-                                ? item.color || "var(--signal)"
-                                : "var(--ink)",
-                            }}
-                          >
-                            {item.name}
-                          </span>
+                          <span className={cn("size-2 shrink-0 rounded-full", hasKey ? "bg-emerald-500" : "bg-muted-foreground/50")} />
+                          <span className={cn("text-[12.5px] font-semibold leading-snug", isActive ? "text-primary" : "text-foreground")}>{item.name}</span>
                         </div>
                         {!hasKey && (
-                          <span
-                            className="rounded px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide"
-                            style={{
-                              background: "rgba(255,255,255,0.04)",
-                              color: "var(--mute-3)",
-                              border: "1px solid var(--line)",
-                            }}
-                          >
+                          <Badge tone="default" className="px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide">
                             no key
-                          </span>
+                          </Badge>
                         )}
                         {hasKey && (
-                          <span
-                            className="text-[10px]"
-                            style={{ color: "var(--mint)" }}
-                          >
-                            ✓
-                          </span>
+                          <Badge tone="success" className="px-1 py-0.5 text-[9px]">set</Badge>
                         )}
                       </div>
 
-                      {/* Env key */}
-                      <div
-                        className="mt-1 font-mono text-[9.5px] truncate"
-                        style={{ color: "var(--mute-3)" }}
-                      >
-                        {item.keyEnv}
-                      </div>
-
-                      {/* Feature tags */}
-                      {item.features && item.features.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {item.features.slice(0, 3).map((feat) => (
-                            <span
-                              key={feat}
-                              className="rounded px-1.5 py-0.5 text-[9px] font-medium"
-                              style={{
-                                background: isActive
-                                  ? `color-mix(in oklch, ${item.color || "var(--signal)"} 12%, transparent)`
-                                  : "rgba(255,255,255,0.04)",
-                                color: isActive
-                                  ? `color-mix(in oklch, ${item.color || "var(--signal)"} 80%, var(--mute))`
-                                  : "var(--mute-2)",
-                                border: `1px solid ${isActive ? `color-mix(in oklch, ${item.color || "var(--signal)"} 20%, transparent)` : "var(--line)"}`,
-                              }}
-                            >
-                              {feat}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+             
 
                       {/* Usage */}
                       {usage > 0 && (
                         <div className="mt-2 flex items-center gap-1">
-                          <span
-                            className="h-1 w-1 rounded-full"
-                            style={{ background: "var(--mint)" }}
-                          />
-                          <span
-                            className="text-[10px]"
-                            style={{ color: "var(--mint)" }}
-                          >
+                          <span className="size-1 rounded-full bg-emerald-500" />
+                          <span className="text-[10px] text-emerald-500">
                             {usage} agent{usage !== 1 ? "s" : ""}
                           </span>
                         </div>
                       )}
-                    </button>
+                      </Button>
+                    </Card>
                   );
                 })}
-              </div>
+                  </div>
 
-              <FieldGroup
-                title={`Provider defaults — ${activeProvider.name}`}
-                description="Hyperparameters applied to every model from this provider unless overridden."
-                accent="var(--signal)"
-              >
+                  <FieldGroup
+                    title={`Provider defaults — ${activeProvider.name}`}
+                    description="Hyperparameters applied to every model from this provider unless overridden."
+                    accent="var(--signal)"
+                  >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div />
                   <div className="flex items-center gap-2">
-                    {activeCatalog ? (
-                      <span
-                        className={`owc-pill ${sourceTone(activeCatalog.source)}`}
-                      >
-                        <span className="dot" />
-                        {sourceLabel(activeCatalog.source)}
-                      </span>
-                    ) : null}
+                    {activeCatalog ? <Badge tone={sourceTone(activeCatalog.source) === "ok" ? "success" : "warning"}>{sourceLabel(activeCatalog.source)}</Badge> : null}
                     <Button
                       variant="secondary"
                       size="sm"
@@ -2223,48 +1951,21 @@ export function SettingsPage() {
                 </div>
 
                 {!apiKeys[provider] ? (
-                  <div
-                    className="flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[12.5px]"
-                    style={{
-                      borderColor:
-                        "color-mix(in oklch, var(--signal) 35%, transparent)",
-                      background:
-                        "color-mix(in oklch, var(--signal) 10%, transparent)",
-                      color: "var(--signal)",
-                    }}
-                  >
-                    <Key className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <div className="flex items-start gap-2 rounded-lg border border-primary/35 bg-primary/10 px-3 py-2.5 text-sm text-primary">
+                    <Key className="mt-0.5 size-4 shrink-0" />
                     <span>
-                      <strong>{activeProvider.keyEnv}</strong> is not set. Live
-                      model loading may fall back to cached or bundled lists
-                      until the key is available.
+                      <strong>{activeProvider.keyEnv}</strong> not set. Live model loading may fall back to cached lists.
                     </span>
                   </div>
                 ) : null}
 
-                {activeCatalog?.error ? (
-                  <div
-                    className="rounded-lg border px-3 py-2.5 text-[12px]"
-                    style={{
-                      borderColor:
-                        "color-mix(in oklch, var(--signal) 35%, transparent)",
-                      background:
-                        "color-mix(in oklch, var(--signal) 8%, transparent)",
-                      color: "var(--ink-dim)",
-                    }}
-                  >
-                    {activeCatalog.error}
-                  </div>
-                ) : null}
+                {activeCatalog?.error ? <div className="rounded-lg border border-destructive/35 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">{activeCatalog.error}</div> : null}
 
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-6 sm:grid-cols-2">
                   <div>
-                    <div className="mb-2 flex items-center gap-1.5">
-                      <span
-                        className="text-[10px] font-semibold uppercase tracking-[0.14em]"
-                        style={{ color: "var(--mute-2)" }}
-                      >
-                        Fallback temperature
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                        Fallback Temperature
                       </span>
                       <HelpIcon tip="Global temperature applied when no provider-specific or agent-specific override is set. 0 = deterministic, 1+ = creative." />
                     </div>
@@ -2278,12 +1979,9 @@ export function SettingsPage() {
                     />
                   </div>
                   <div>
-                    <div className="mb-2 flex items-center gap-1.5">
-                      <span
-                        className="text-[10px] font-semibold uppercase tracking-[0.14em]"
-                        style={{ color: "var(--mute-2)" }}
-                      >
-                        Tool cache stabilization
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                        Tool Cache Stabilization
                       </span>
                       <HelpIcon tip="How many identical consecutive tool results must be seen before the response is cached. Higher = less aggressive caching." />
                     </div>
@@ -2344,13 +2042,13 @@ export function SettingsPage() {
                     description="Caches identical browser-tool responses within the same session. Speeds up repeated DOM queries."
                   />
                 </div>
-              </FieldGroup>
+                  </FieldGroup>
 
-              <FieldGroup
-                title="Gemini Explicit Cache"
-                description="Server-side cached context for Gemini models — reduces latency and cost on repeated system prompts."
-                accent="var(--violet)"
-              >
+                  <FieldGroup
+                    title="Gemini Explicit Cache"
+                    description="Server-side cached context for Gemini models — reduces latency and cost on repeated system prompts."
+                    accent="var(--violet)"
+                  >
                 <ToggleRow
                   label="Enabled"
                   checked={geminiExplicitCacheEnabled}
@@ -2377,13 +2075,13 @@ export function SettingsPage() {
                     description="Seconds before expiry when the runtime pre-warms a new cache entry."
                   />
                 </div>
-              </FieldGroup>
+                  </FieldGroup>
 
-              <FieldGroup
-                title="Extended Thinking"
-                description="Enable model reasoning (Anthropic extended thinking, Gemini thinking budget). Increases token usage but improves reasoning quality."
-                accent="var(--sky)"
-              >
+                  <FieldGroup
+                    title="Extended Thinking"
+                    description="Enable model reasoning (Anthropic extended thinking, Gemini thinking budget). Increases token usage but improves reasoning quality."
+                    accent="var(--sky)"
+                  >
                 <ToggleRow
                   label="Enable thinking"
                   checked={thinkingEnabled}
@@ -2404,13 +2102,13 @@ export function SettingsPage() {
                     />
                   </div>
                 ) : null}
-              </FieldGroup>
+                  </FieldGroup>
 
-              <FieldGroup
-                title="Parallelism"
-                description="Controls how many hosting pages run simultaneously. Lower reduces memory load; higher increases throughput."
-                accent="var(--mint)"
-              >
+                  <FieldGroup
+                    title="Parallelism"
+                    description="Controls how many hosting pages run simultaneously. Lower reduces memory load; higher increases throughput."
+                    accent="var(--mint)"
+                  >
                 <div className="max-w-sm">
                   <BrowserRuntimeInput
                     label="Max parallel hosting pages"
@@ -2423,10 +2121,12 @@ export function SettingsPage() {
                     description="Default 5. Caps concurrent hosting-page and embedded-page agent executions."
                   />
                 </div>
-              </FieldGroup>
+                  </FieldGroup>
+                </TabsContent>
 
-              <SectionHeader>Per-Agent Models</SectionHeader>
-              <div className="grid gap-4 xl:grid-cols-2">
+                <TabsContent value="agents" className="space-y-4">
+                  <SectionHeader>Per-Agent Models</SectionHeader>
+                  <div className="grid gap-4 lg:grid-cols-2">
                 {AGENT_SLOTS.map((slot) => {
                   const selection = agentModelConfig[slot.id] || {
                     provider,
@@ -2456,24 +2156,14 @@ export function SettingsPage() {
                   return (
                     <div
                       key={slot.id}
-                      className="space-y-4 rounded-[14px] border p-5"
-                      style={{
-                        borderColor: "var(--line)",
-                        background: "var(--card)",
-                      }}
+                      className="space-y-4 rounded-lg border border-border bg-card p-5"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <div
-                            className="text-[14px] font-semibold"
-                            style={{ color: "var(--ink)" }}
-                          >
+                          <div className="text-base font-semibold text-foreground">
                             {slot.label}
                           </div>
-                          <div
-                            className="mt-0.5 text-[11.5px]"
-                            style={{ color: "var(--mute)" }}
-                          >
+                          <div className="mt-1 text-xs text-muted-foreground">
                             {slot.note}
                           </div>
                         </div>
@@ -2547,16 +2237,10 @@ export function SettingsPage() {
                     </div>
                   );
                 })}
-              </div>
+                  </div>
+                </TabsContent>
 
-              <SectionHeader>Cost Calculator</SectionHeader>
-              <p className="text-[13.5px] text-[var(--mute)]">
-                Estimate API costs based on token usage for the default model.
-              </p>
-              <CostEstimator
-                provider={provider}
-                model={agentModelConfig.orchestrator?.model || ""}
-              />
+              </Tabs>
             </section>
           ) : null}
 
@@ -3680,7 +3364,7 @@ export function SettingsPage() {
                     onChange={(e) => setDeepevalModel(e.target.value)}
                     placeholder="gpt-4o"
                     description="Exact model ID passed to the judge provider."
-                    className="h-10 border-[var(--line-hi)] bg-white/3 font-mono text-[13px] text-[var(--ink)]"
+                    className="h-10 border-[var(--line-hi)] bg-muted/30 font-mono text-[13px] text-[var(--ink)]"
                   />
 
                   <div className="space-y-2">
@@ -4014,59 +3698,39 @@ export function SettingsPage() {
 
           {activeTab === "api-keys" ? (
             <section className="space-y-4">
-              <SectionHeader>API Key Status</SectionHeader>
-              <p className="text-[13px]" style={{ color: "var(--mute)" }}>
-                Keys are loaded from environment variables at server start. Add
-                them to your{" "}
-                <code
-                  className="font-mono text-[12px] rounded px-1 py-0.5"
-                  style={{
-                    background: "rgba(255,255,255,0.06)",
-                    color: "var(--ink-dim)",
-                  }}
-                >
-                  .env
-                </code>{" "}
-                file and rebuild to activate a provider.
-              </p>
-              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              <div>
+                <h2 className="text-base font-semibold text-foreground">API Key Status</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Keys are loaded from environment variables at server start. Add them to your{" "}
+                  <code className="rounded border bg-muted px-1 py-0.5 font-mono text-xs text-foreground">
+                    .env
+                  </code>{" "}
+                  file and rebuild to activate a provider.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {PROVIDERS.map((item) => {
                   const hasKey = !!apiKeys[item.id];
                   return (
                     <div
                       key={item.id}
-                      className="flex items-start gap-3 rounded-[12px] border p-3.5"
-                      style={{
-                        borderColor: hasKey
-                          ? `color-mix(in oklch, ${item.color || "var(--mint)"} 22%, var(--line))`
-                          : "var(--line)",
-                        background: hasKey
-                          ? `color-mix(in oklch, ${item.color || "var(--mint)"} 5%, transparent)`
-                          : "var(--card)",
-                      }}
+                      className={cn(
+                        "flex items-start gap-3 rounded-lg border bg-card p-4 transition-colors",
+                        hasKey ? "border-mint/30" : ""
+                      )}
                     >
                       <span
-                        className="mt-0.5 h-2 w-2 shrink-0 rounded-full"
+                        className="mt-1 h-2 w-2 shrink-0 rounded-full"
                         style={{
-                          background: hasKey
-                            ? item.color || "var(--mint)"
-                            : "var(--mute-3)",
+                          background: hasKey ? (item.color || "var(--mint)") : "var(--mute-3)",
                         }}
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
-                          <div
-                            className="text-[13px] font-semibold"
-                            style={{ color: "var(--ink)" }}
-                          >
-                            {item.name}
-                          </div>
+                          <div className="text-sm font-medium text-foreground">{item.name}</div>
                           <KeyStatus set={hasKey} />
                         </div>
-                        <div
-                          className="mt-0.5 font-mono text-[10px]"
-                          style={{ color: "var(--mute-3)" }}
-                        >
+                        <div className="mt-0.5 font-mono text-[10px] text-muted-foreground/60">
                           {item.keyEnv}
                         </div>
                         {item.features && item.features.length > 0 && (
@@ -4074,12 +3738,7 @@ export function SettingsPage() {
                             {item.features.map((feat) => (
                               <span
                                 key={feat}
-                                className="rounded px-1.5 py-0.5 text-[9px] font-medium"
-                                style={{
-                                  background: "rgba(255,255,255,0.04)",
-                                  color: "var(--mute-2)",
-                                  border: "1px solid var(--line)",
-                                }}
+                                className="rounded border bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground"
                               >
                                 {feat}
                               </span>
@@ -4098,20 +3757,20 @@ export function SettingsPage() {
 
           {activeTab === "notifications" ? (
             <section className="space-y-4">
-              <SectionHeader>Notification Preferences</SectionHeader>
-              <p className="text-[13.5px]" style={{ color: "var(--mute)" }}>
-                Choose which pipeline events trigger toast notifications. Tool
-                call events are never notified.
-              </p>
+              <div>
+                <h2 className="text-base font-semibold text-foreground">Notification Preferences</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Choose which pipeline events trigger toast notifications. Tool call events are
+                  never notified.
+                </p>
+              </div>
               <div className="space-y-2">
                 {NOTIF_EVENTS.map(({ key, label, note }) => (
                   <ToggleRow
                     key={key}
                     label={label}
                     checked={!!notifPrefs[key]}
-                    onChange={(checked) =>
-                      setNotifPrefs({ ...notifPrefs, [key]: checked })
-                    }
+                    onChange={(checked) => setNotifPrefs({ ...notifPrefs, [key]: checked })}
                     description={note}
                   />
                 ))}
@@ -4120,6 +3779,7 @@ export function SettingsPage() {
           ) : null}
         </div>
       </div>
+    </div>
     </div>
   );
 }
@@ -4133,7 +3793,7 @@ function DisplaySettingsSection() {
       <div>
         <SectionHeader>Run View Display</SectionHeader>
         <p
-          className="mt-1 text-[13.5px] leading-relaxed"
+          className="mt-1 text-sm leading-relaxed"
           style={{ color: "var(--mute)" }}
         >
           Control what panels and behaviors appear on the run detail pages.

@@ -1,24 +1,184 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
 import { apiUrl } from "@/lib/api";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
-import { ConsoleSidebar } from "@/components/console/layout/console-sidebar";
-import { ConsoleTopbar } from "@/components/console/layout/console-topbar";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarSeparator,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
+import { ThemeToggle } from "@/components/theme-toggle";
+import {
+  GROUP_COLORS,
+  ICONS,
+  LogoMark,
+  NAV_GROUPS,
+  NAV_ITEMS,
+} from "@/components/console/layout/navigation-config";
 
 const ACTIVE_RUNS_POLL_MS = 8000;
 
+function isActiveLink(item, pathname) {
+  if (item.href === "/") return pathname === "/";
+  return pathname === item.href || pathname.startsWith(`${item.href}/`);
+}
+
+function isActiveNavItem(item, pathname, searchParams) {
+  const [path, queryString] = item.href.split("?");
+  const matchesPath =
+    path === "/"
+      ? pathname === "/"
+      : pathname === path || pathname.startsWith(`${path}/`);
+
+  if (!matchesPath) return false;
+  if (!queryString) return true;
+
+  const expected = new URLSearchParams(queryString);
+  for (const [key, value] of expected.entries()) {
+    if (searchParams.get(key) !== value) return false;
+  }
+
+  return true;
+}
+
+function NavChildList({ items, pathname, searchParams }) {
+  if (!items?.length) return null;
+
+  return (
+    <div className="ml-4 space-y-1 border-l border-sidebar-border/60 pl-3 group-data-[collapsible=icon]:hidden">
+      {items.map((item) => {
+        const active = isActiveNavItem(item, pathname, searchParams);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            aria-current={active ? "page" : undefined}
+            className={cn(
+              "block rounded-md px-2.5 py-1.5 text-[11.5px] font-medium leading-tight transition-colors",
+              active
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            )}
+          >
+            {item.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+function SidebarNavigation({ pathname, activeRuns, connected }) {
+  const searchParams = useSearchParams();
+  const topItem = NAV_ITEMS.find((item) => item.section === null);
+
+  return (
+    <SidebarContent>
+      <SidebarGroup>
+        <SidebarGroupContent>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <div className="space-y-1">
+                <SidebarMenuButton
+                  asChild
+                  isActive={isActiveNavItem(topItem, pathname, searchParams)}
+                >
+                  <Link href={topItem.href}>
+                    <span className="size-4 shrink-0">{ICONS[topItem.key]}</span>
+                    <span>{topItem.label}</span>
+                  </Link>
+                </SidebarMenuButton>
+                <NavChildList
+                  items={topItem.children}
+                  pathname={pathname}
+                  searchParams={searchParams}
+                />
+              </div>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroupContent>
+      </SidebarGroup>
+
+      {NAV_GROUPS.map((group) => {
+        const items = NAV_ITEMS.filter((item) => item.section === group);
+        return (
+          <SidebarGroup key={group}>
+            <SidebarGroupLabel>{group}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {items.map((item) => {
+                  const active = isActiveNavItem(item, pathname, searchParams);
+                  const childActive = item.children?.some((child) =>
+                    isActiveNavItem(child, pathname, searchParams),
+                  );
+                  const showBadge = item.badge && activeRuns > 0;
+                  return (
+                    <SidebarMenuItem key={item.href}>
+                      <div className="space-y-1">
+                        <div className="relative">
+                          <SidebarMenuButton asChild isActive={active || childActive}>
+                            <Link href={item.href}>
+                              <span className="size-4 shrink-0">{ICONS[item.key]}</span>
+                              <span>{item.label}</span>
+                            </Link>
+                          </SidebarMenuButton>
+                          {showBadge ? (
+                            <SidebarMenuBadge className="bg-primary text-primary-foreground">
+                              {activeRuns}
+                            </SidebarMenuBadge>
+                          ) : null}
+                        </div>
+                        <NavChildList
+                          items={item.children}
+                          pathname={pathname}
+                          searchParams={searchParams}
+                        />
+                      </div>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        );
+      })}
+    </SidebarContent>
+  );
+}
+
 export function AppShell({ children }) {
   const pathname = usePathname();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeRuns, setActiveRuns] = useState(0);
   const [connected, setConnected] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-
     async function poll() {
       try {
         const res = await fetch(apiUrl("/ui/overview"), { cache: "no-store" });
@@ -37,54 +197,129 @@ export function AppShell({ children }) {
         if (!cancelled) setConnected(false);
       }
     }
-
     poll();
     const timer = setInterval(poll, ACTIVE_RUNS_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
+    return () => { cancelled = true; clearInterval(timer); };
   }, []);
 
+  const currentSectionKey = pathname.split("/")[1] || "dashboard";
+  const currentSection =
+    {
+      dashboard: "dashboard",
+      live: "live pipeline",
+      runs: "view results",
+      providers: "providers",
+      settings: "settings",
+    }[currentSectionKey] || currentSectionKey.replace(/-/g, " ");
+
   return (
-    <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-      <div className="grid min-h-screen md:grid-cols-[240px_1fr]">
-        <aside className="hidden md:sticky md:top-0 md:block md:h-screen">
-          <ConsoleSidebar
-            pathname={pathname}
-            activeRuns={activeRuns}
-            connected={connected}
-          />
-        </aside>
-
-        <SheetContent
-          side="left"
-          className="w-[240px] border-r p-0 md:hidden"
-        >
-          <ConsoleSidebar
-            pathname={pathname}
-            activeRuns={activeRuns}
-            connected={connected}
-            onNavigate={() => setSidebarOpen(false)}
-          />
-        </SheetContent>
-
-        <div className="flex min-w-0 flex-col">
-          <ConsoleTopbar
-            pathname={pathname}
-            connected={connected}
-            onMenuClick={() => setSidebarOpen(true)}
-          />
-          <main className="flex-1 overflow-auto">
-            <div
-              key={pathname}
-              className="mx-auto max-w-[1340px] px-6 py-7 pb-20 animate-fade-up"
+    <SidebarProvider>
+      <Sidebar collapsible="icon">
+        <SidebarHeader>
+          <Link href="/" className="flex items-center gap-2 px-2 py-1.5">
+            <span
+              className="flex size-7 shrink-0 items-center justify-center rounded-md text-primary"
+              style={{
+                background: "color-mix(in oklch, var(--signal) 13%, transparent)",
+                boxShadow: "inset 0 0 0 1px color-mix(in oklch, var(--signal) 26%, transparent)",
+              }}
             >
-              {children}
+              <LogoMark className="size-3.5" />
+            </span>
+            <div className="flex min-w-0 flex-col leading-tight group-data-[collapsible=icon]:hidden">
+              <span className="text-sm font-semibold text-sidebar-foreground">OWC</span>
+              <span className="text-[10px] text-sidebar-foreground/50">Operator Console</span>
             </div>
-          </main>
-        </div>
-      </div>
-    </Sheet>
+            <span
+              className="ml-auto size-1.5 shrink-0 rounded-full group-data-[collapsible=icon]:hidden"
+              style={{
+                background: connected ? "var(--mint)" : "var(--rose)",
+                animation: "breathe 2s ease-in-out infinite",
+              }}
+              title={connected ? "API connected" : "API unreachable"}
+            />
+          </Link>
+        </SidebarHeader>
+
+        <SidebarSeparator />
+
+        <Suspense fallback={<div className="flex-1" />}>
+          <SidebarNavigation
+            pathname={pathname}
+            activeRuns={activeRuns}
+            connected={connected}
+          />
+        </Suspense>
+
+        <SidebarFooter>
+          <Button asChild variant="accent" size="sm" className="w-full justify-center gap-2 group-data-[collapsible=icon]:hidden">
+            <Link href="/live">
+              <span className="size-3.5">{ICONS.play}</span>
+              New Run
+            </Link>
+          </Button>
+
+          <div className="flex items-center justify-between gap-2 px-1 group-data-[collapsible=icon]:hidden">
+            <div className="flex items-center gap-1.5">
+              <span
+                className="size-1.5 shrink-0 rounded-full"
+                style={{ background: connected ? "var(--mint)" : "var(--rose)" }}
+              />
+              <span className="text-[10.5px] font-medium text-sidebar-foreground/60">
+                {connected ? "live" : "offline"}
+              </span>
+            </div>
+            <ThemeToggle />
+          </div>
+        </SidebarFooter>
+      </Sidebar>
+
+      <SidebarInset>
+        <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background/90 px-4 backdrop-blur">
+          <SidebarTrigger />
+          <Separator orientation="vertical" className="mx-1 h-4" />
+          <Breadcrumb className="hidden sm:flex">
+            <BreadcrumbList className="text-xs">
+              <BreadcrumbItem>
+                <span>Console</span>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage className="capitalize">{currentSection}</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+          <Badge tone="default" className="sm:hidden">
+            {currentSection}
+          </Badge>
+          <div className="ml-auto flex items-center gap-2">
+            {activeRuns > 0 ? (
+              <Badge tone="signal" className="gap-1.5 px-2 py-0.5 text-[10px]">
+                <span className="relative flex h-[6px] w-[6px] shrink-0">
+                  <span
+                    className="absolute inset-0 rounded-full opacity-55"
+                    style={{ background: "var(--signal)", animation: "ping 1.6s ease-in-out infinite" }}
+                  />
+                  <span className="relative h-[6px] w-[6px] rounded-full bg-primary" />
+                </span>
+                {activeRuns} live
+              </Badge>
+            ) : null}
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-auto">
+          <div
+            key={pathname}
+            className={cn(
+              "mx-auto w-full px-6 py-6 pb-20 animate-fade-up",
+              "max-w-[1400px]",
+            )}
+          >
+            {children}
+          </div>
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

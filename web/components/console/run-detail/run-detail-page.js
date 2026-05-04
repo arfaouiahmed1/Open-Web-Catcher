@@ -11,15 +11,15 @@ import { statusLabel, statusTone as runStatusTone } from "@/lib/run-status";
 import { AgentOutputPanel } from "@/components/agent-output-panel";
 import { DataTable } from "@/components/data-table";
 import { KpiCard } from "@/components/kpi-card";
-import { RunDetailLive } from "@/components/run-detail-live";
-import { LlmOutputPanel } from "@/components/llm-output-panel";
+import { RunDetailLive } from "@/components/console/run-detail/run-detail-live";
+import { LlmOutputPanel } from "@/components/dashboard";
 import { TimelinePanel } from "@/components/timeline-panel";
-import { ScreenshotGallery } from "@/components/browser-live-view";
+import { ScreenshotGallery } from "@/components/console/run-detail/browser-live-view";
 import { useRunViewSettings } from "@/components/run-view-settings";
-import { CostEstimateCard } from "@/components/cost-estimate-card";
-import { ContextWindowMeter } from "@/components/context-window-meter";
+import { CostEstimateCard, ContextWindowMeter } from "@/components/dashboard";
 import { synthCallsFromModelUsage } from "@/lib/pricing";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   buildContextWindowGroups,
@@ -127,79 +127,93 @@ function ExpandableTable({ title, description, columns, rows, expand }) {
   );
 }
 
-function RunHeader({ runId, url, run, title, subtitle, live }) {
+function RunHeader({
+  runId,
+  url,
+  run,
+  title,
+  subtitle,
+  live,
+  jobState = null,
+  parallelism = null,
+}) {
   return (
-    <div>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <Link
-              href="/runs"
-              className="flex items-center gap-1 text-[11px] transition-colors"
-              style={{ color: "var(--mute-2)" }}
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-              Runs
-            </Link>
-            {live ? (
-              <span
-                className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
-                style={{
-                  background:
-                    "color-mix(in oklch, var(--rose) 14%, transparent)",
-                  border:
-                    "1px solid color-mix(in oklch, var(--rose) 30%, transparent)",
-                  color: "var(--rose)",
-                }}
+    <Card className="overflow-hidden shadow-card">
+      <CardHeader className="border-b px-4 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Link
+                href="/runs"
+                className="flex items-center gap-1 text-[11px] transition-colors"
+                style={{ color: "var(--mute-2)" }}
               >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                Runs
+              </Link>
+              {live ? (
                 <span
-                  className="h-1.5 w-1.5 rounded-full"
+                  className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
                   style={{
-                    background: "var(--rose)",
-                    animation: "breathe 1.2s ease-in-out infinite",
+                    background:
+                      "color-mix(in oklch, var(--rose) 14%, transparent)",
+                    border:
+                      "1px solid color-mix(in oklch, var(--rose) 30%, transparent)",
+                    color: "var(--rose)",
                   }}
-                />
-                Live
-              </span>
-            ) : null}
-          </div>
-          <span className="owc-eyebrow mt-1">run detail</span>
-          <h1
-            className="mt-1 font-mono text-xl font-semibold"
-            style={{ color: "var(--ink)" }}
-          >
-            {title || (runId ? `${runId.slice(0, 18)}...` : "Run")}
-          </h1>
-          {url || subtitle ? (
-            <div className="mt-0.5 flex items-center gap-1.5">
-              <p
-                className="max-w-xl truncate text-[12px]"
-                style={{ color: "var(--mute)" }}
-                title={url}
-              >
-                {subtitle || url}
-              </p>
-              {url ? (
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="shrink-0"
-                  style={{ color: "var(--mute-3)" }}
                 >
-                  <ExternalLink className="h-3 w-3" />
-                </a>
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{
+                      background: "var(--rose)",
+                      animation: "breathe 1.2s ease-in-out infinite",
+                    }}
+                  />
+                  Live
+                </span>
               ) : null}
             </div>
+            <span className="owc-eyebrow mt-1">run detail</span>
+            <h1
+              className="mt-1 font-mono text-xl font-semibold"
+              style={{ color: "var(--ink)" }}
+            >
+              {title || (runId ? `${runId.slice(0, 18)}...` : "Run")}
+            </h1>
+            {url || subtitle ? (
+              <div className="mt-0.5 flex items-center gap-1.5">
+                <p
+                  className="max-w-xl truncate text-[12px]"
+                  style={{ color: "var(--mute)" }}
+                  title={url}
+                >
+                  {subtitle || url}
+                </p>
+                {url ? (
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0"
+                    style={{ color: "var(--mute-3)" }}
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+          {run?.final_status ? (
+            <Badge tone={runStatusTone(run.final_status)} className="mt-1 shrink-0">
+              {statusLabel(run.final_status)}
+            </Badge>
           ) : null}
         </div>
-        {run?.final_status ? (
-          <Badge tone={runStatusTone(run.final_status)} className="mt-1 shrink-0">
-            {statusLabel(run.final_status)}
-          </Badge>
-        ) : null}
-      </div>
-    </div>
+      </CardHeader>
+      <CardContent className="px-4 py-4 pt-0">
+        <RunMeta run={run} jobState={jobState} parallelism={parallelism} />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -385,9 +399,10 @@ export function RunDetailPage() {
         url={run.url || trace?.metrics?.url}
         run={run}
         live={isActiveTrace}
+        jobState={jobState}
+        parallelism={parallelism}
         subtitle={isActiveTrace ? "Streaming from in-memory observer" : null}
       />
-      <RunMeta run={run} jobState={jobState} parallelism={parallelism} />
 
       <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
         {kpis.map((kpi) => (

@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 function fmtHeader(key) {
   return key
@@ -98,25 +99,22 @@ export function DataTable({
   className,
 }) {
   return (
-    <div
+    <Card
       className={cn(
-        "overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm",
+        "overflow-hidden text-card-foreground shadow-sm",
         className,
       )}
     >
       {(title || description) && (
-        <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
-          {title && (
-            <div className="text-sm font-medium text-foreground">
-              {title}
-            </div>
-          )}
-          {description && (
-            <div className="text-sm text-muted-foreground">{description}</div>
-          )}
-        </div>
+        <CardHeader className="space-y-1 border-b border-border px-4 py-3">
+          {title ? <CardTitle className="text-sm font-medium">{title}</CardTitle> : null}
+          {description ? (
+            <CardDescription className="text-sm">{description}</CardDescription>
+          ) : null}
+        </CardHeader>
       )}
-      <div className="overflow-x-auto">
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
         <table
           className="min-w-full border-collapse text-sm"
           style={{ borderSpacing: 0 }}
@@ -166,7 +164,8 @@ export function DataTable({
             )}
           </tbody>
         </table>
-      </div>
-    </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

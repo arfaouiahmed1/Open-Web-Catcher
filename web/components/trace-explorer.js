@@ -1,7 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StructuredDataCard } from "@/components/structured-data-card";
 import { safeJson } from "@/lib/utils";
 
@@ -70,9 +71,11 @@ export function TraceExplorer({ events = [] }) {
 
   if (!steps.length) {
     return (
-      <div className="rounded-xl border border-white/8 bg-white/[0.03] p-4 text-xs text-slate-700">
-        Trace explorer is available when trace events are present.
-      </div>
+      <Card>
+        <CardContent className="p-4 text-xs text-muted-foreground/60">
+          Trace explorer is available when trace events are present.
+        </CardContent>
+      </Card>
     );
   }
 
@@ -87,78 +90,85 @@ export function TraceExplorer({ events = [] }) {
   );
 
   return (
-    <div className="rounded-xl border border-white/8 bg-white/[0.03] overflow-hidden">
-      <div className="grid xl:grid-cols-[260px_1fr]">
-        <div className="border-r border-white/6 max-h-[520px] overflow-auto">
-          <div className="px-3 py-2 text-xs font-semibold text-white border-b border-white/6">
-            Steps
+    <Card className="overflow-hidden shadow-card">
+      <CardHeader className="border-b border-border px-4 py-3">
+        <CardTitle className="text-sm font-medium">Trace explorer</CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="grid xl:grid-cols-[260px_1fr]">
+          <div className="max-h-[520px] overflow-auto border-r border-border bg-muted/20">
+            <div className="border-b border-border px-3 py-2 text-xs font-semibold text-foreground">
+              Steps
+            </div>
+            {steps.map((step, idx) => (
+              <div
+                key={`${step.seq}-${idx}`}
+                className={`border-b border-border px-3 py-2 text-xs ${idx === selected ? "bg-primary/10" : ""}`}
+              >
+                <button
+                  type="button"
+                  className="w-full text-left"
+                  onClick={() => setSelected(idx)}
+                >
+                  <div className="font-medium text-foreground">
+                    #{step.seq} {step.kind}
+                  </div>
+                  <div className="text-muted-foreground/70">{step.actor || "unknown"}</div>
+                </button>
+                <button
+                  type="button"
+                  className="mt-1 text-[11px] text-muted-foreground hover:text-foreground"
+                  onClick={() => setCompare(compare === idx ? null : idx)}
+                >
+                  {compare === idx ? "clear compare" : "compare"}
+                </button>
+              </div>
+            ))}
           </div>
-          {steps.map((step, idx) => (
-            <div
-              key={`${step.seq}-${idx}`}
-              className={`border-b border-white/4 px-3 py-2 text-xs ${idx === selected ? "bg-signal/10" : ""}`}
-            >
-              <button
-                type="button"
-                className="w-full text-left"
-                onClick={() => setSelected(idx)}
-              >
-                <div className="font-medium text-slate-200">
-                  #{step.seq} {step.kind}
-                </div>
-                <div className="text-slate-600">{step.actor || "unknown"}</div>
-              </button>
-              <button
-                type="button"
-                className="mt-1 text-[11px] text-slate-500 hover:text-white"
-                onClick={() => setCompare(compare === idx ? null : idx)}
-              >
-                {compare === idx ? "clear compare" : "compare"}
-              </button>
-            </div>
-          ))}
-        </div>
-        <div className="space-y-4 p-4">
-          {screenshot && (
-            <img
-              src={screenshot}
-              alt="Trace screenshot"
-              className="h-48 w-full rounded border border-white/10 object-cover"
+          <div className="space-y-4 p-4">
+            {screenshot && (
+              <div className="overflow-hidden rounded-lg border border-border">
+                <img
+                  src={screenshot}
+                  alt="Trace screenshot"
+                  className="h-48 w-full object-cover"
+                />
+              </div>
+            )}
+            <StructuredDataCard
+              title="Selected step details"
+              description="Structured trace fields for the current step."
+              data={active}
+              limit={6}
             />
-          )}
-          <StructuredDataCard
-            title="Selected step details"
-            description="Structured trace fields for the current step."
-            data={active}
-            limit={6}
-          />
-          {compareEvent && (
-            <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-              <div className="mb-2 text-xs font-semibold text-white">
-                Step diff
-              </div>
-              <div className="max-h-52 overflow-auto space-y-1 text-xs font-mono">
-                {diffs.length ? (
-                  diffs.map((row) => (
-                    <div
-                      key={row.line}
-                      className="rounded border border-white/6 p-2"
-                    >
-                      <div className="text-slate-600">line {row.line}</div>
-                      <div className="text-red-300">- {row.before || "∅"}</div>
-                      <div className="text-emerald-300">
-                        + {row.after || "∅"}
+            {compareEvent && (
+              <div className="rounded-lg border border-border bg-muted/50 p-3">
+                <div className="mb-2 text-xs font-semibold text-foreground">
+                  Step diff
+                </div>
+                <div className="max-h-52 overflow-auto space-y-1 text-xs font-mono">
+                  {diffs.length ? (
+                    diffs.map((row) => (
+                      <div
+                        key={row.line}
+                        className="rounded border border-border p-2"
+                      >
+                        <div className="text-muted-foreground/70">line {row.line}</div>
+                        <div className="text-rose-400">- {row.before || "∅"}</div>
+                        <div className="text-emerald-400">
+                          + {row.after || "∅"}
+                        </div>
                       </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-slate-600">No differences</div>
-                )}
+                    ))
+                  ) : (
+                    <div className="text-muted-foreground/70">No differences</div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

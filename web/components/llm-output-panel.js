@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { normalizeTraceEvent } from "@/lib/run-trace";
 
@@ -59,14 +61,11 @@ function ClassificationBadge({ text }) {
   return (
     <div className="mt-2 flex flex-wrap gap-2">
       {parsed.page_type ? (
-        <span
-          className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-          style={{
-            background: `color-mix(in oklch, ${TYPE_COLOR[parsed.page_type] || "var(--mute-2)"} 14%, transparent)`,
-            border: `1px solid color-mix(in oklch, ${TYPE_COLOR[parsed.page_type] || "var(--mute-2)"} 28%, transparent)`,
-            color: TYPE_COLOR[parsed.page_type] || "var(--mute-2)",
-          }}
-        >
+        <span className="rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide" style={{
+          background: `color-mix(in oklch, ${TYPE_COLOR[parsed.page_type] || "var(--mute-2)"} 14%, transparent)`,
+          borderColor: `color-mix(in oklch, ${TYPE_COLOR[parsed.page_type] || "var(--mute-2)"} 28%, transparent)`,
+          color: TYPE_COLOR[parsed.page_type] || "var(--mute-2)",
+        }}>
           {parsed.page_type}
         </span>
       ) : null}
@@ -151,16 +150,9 @@ function LlmCallCard({ event, index }) {
               </span>
             ) : null}
             {toolCalls > 0 ? (
-              <span
-                className="rounded-full px-1.5 py-0.5 text-[9.5px] font-medium"
-                style={{
-                  background:
-                    "color-mix(in oklch, var(--sky) 12%, transparent)",
-                  color: "var(--sky)",
-                }}
-              >
+              <Badge tone="default" className="px-1.5 py-0.5 text-[9.5px] font-medium text-sky-400">
                 {toolCalls} tool{toolCalls !== 1 ? "s" : ""}
-              </span>
+              </Badge>
             ) : null}
           </div>
           {!expanded && text ? (
@@ -347,43 +339,24 @@ export function LlmOutputPanel({ events = [], title = "LLM Output" }) {
   }, [events]);
 
   return (
-    <div
-      className="rounded-[14px] border overflow-hidden"
-      style={{
-        borderColor: "var(--line)",
-        background: "var(--card)",
-        boxShadow: "var(--shadow-card)",
-      }}
-    >
-      <div
-        className="flex items-center justify-between border-b px-4 py-3"
-        style={{ borderColor: "var(--line)" }}
-      >
+    <Card className="overflow-hidden">
+      <CardHeader className="flex flex-row items-center justify-between border-b px-4 py-3">
         <div>
-          <div className="text-[13.5px] font-medium text-[var(--ink)]">
-            {title}
-          </div>
-          <div className="mt-0.5 text-[12px]" style={{ color: "var(--mute)" }}>
+          <CardTitle className="text-[13.5px] font-medium">{title}</CardTitle>
+          <CardDescription className="mt-0.5 text-[12px]">
             Live LLM reasoning and classification output per call
-          </div>
+          </CardDescription>
         </div>
-        <span
-          className="font-mono text-[11px]"
-          style={{ color: "var(--mute)" }}
-        >
+        <span className="font-mono text-[11px] text-muted-foreground">
           {formatNumber(llmEvents.length)} calls
         </span>
-      </div>
+      </CardHeader>
 
       {!llmEvents.length ? (
-        <div
-          className="px-4 py-10 text-center text-[12px]"
-          style={{ color: "var(--mute)" }}
-        >
-          No LLM calls recorded yet.
-        </div>
+        <CardContent className="px-4 py-10 text-center text-[12px] text-muted-foreground">No LLM calls recorded yet.</CardContent>
       ) : (
-        <div className="max-h-[640px] overflow-auto space-y-2 p-3">
+        <CardContent className="max-h-[640px] overflow-auto p-3">
+          <div className="flex flex-col gap-2">
           {llmEvents.map((event, index) => (
             <LlmCallCard
               key={`${event.seq || index}-${event.actor || "llm"}`}
@@ -391,8 +364,9 @@ export function LlmOutputPanel({ events = [], title = "LLM Output" }) {
               index={index}
             />
           ))}
-        </div>
+          </div>
+        </CardContent>
       )}
-    </div>
+    </Card>
   );
 }
