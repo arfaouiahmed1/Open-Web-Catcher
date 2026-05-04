@@ -9,6 +9,7 @@ import { apiFetch } from "@/lib/api";
 import { formatNumber } from "@/lib/utils";
 import { statusLabel, statusTone as runStatusTone } from "@/lib/run-status";
 import { AgentOutputPanel } from "@/components/agent-output-panel";
+import { StreamProviderTab } from "@/components/console/run-detail/stream-provider-tab";
 import { DataTable } from "@/components/data-table";
 import { KpiCard } from "@/components/kpi-card";
 import { RunDetailLive } from "@/components/console/run-detail/run-detail-live";
@@ -449,6 +450,9 @@ export function RunDetailPage() {
                 </Badge>
               </TabsTrigger>
             ) : null}
+            {run.stream_count > 0 || run.url ? (
+              <TabsTrigger value="providers">Provider Intel</TabsTrigger>
+            ) : null}
           </TabsList>
         </div>
 
@@ -551,6 +555,10 @@ export function RunDetailPage() {
 
         <TabsContent value="screenshots">
           <ScreenshotGallery screenshots={screenshots} />
+        </TabsContent>
+
+        <TabsContent value="providers">
+          <StreamProviderTab runId={runId} runUrl={run.url} />
         </TabsContent>
       </Tabs>
     </div>

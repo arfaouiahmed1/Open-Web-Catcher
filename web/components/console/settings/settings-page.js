@@ -55,6 +55,13 @@ const PROVIDERS = [
     features: ["caching", "thinking", "grounding", "vision"],
   },
   {
+    id: "google-vertex",
+    name: "Google Vertex AI",
+    keyEnv: "GOOGLE_VERTEX_API_KEY",
+    color: "var(--sky)",
+    features: ["caching", "thinking", "grounding", "vision", "enterprise"],
+  },
+  {
     id: "openai",
     name: "OpenAI",
     keyEnv: "OPENAI_API_KEY",
@@ -262,6 +269,41 @@ const PROFILE_LABELS = {
   landing: "Landing Page",
   hosting: "Hosting Page",
   embedded: "Embedded Page",
+};
+
+const MCP_TOOL_META = {
+  navigate: { label: "navigate", desc: "Load a URL in the browser tab", category: "Navigation" },
+  inspect: { label: "inspect", desc: "Read the current page DOM structure", category: "Inspection" },
+  inspect_landing: { label: "inspect_landing", desc: "Read DOM for landing-page analysis", category: "Inspection" },
+  inspect_hosting: { label: "inspect_hosting", desc: "Read DOM for hosting-page extraction", category: "Inspection" },
+  inspect_embedded: { label: "inspect_embedded", desc: "Read DOM for embedded-player detection", category: "Inspection" },
+  interact: { label: "interact", desc: "Generic page interaction dispatcher", category: "Interaction" },
+  screenshot: { label: "screenshot", desc: "Capture a browser screenshot", category: "Inspection" },
+  memory_lookup: { label: "memory_lookup", desc: "Retrieve data from agent memory store", category: "Memory" },
+  memory_update: { label: "memory_update", desc: "Write data to agent memory store", category: "Memory" },
+  open_url: { label: "open_url", desc: "Open a URL in a new or existing tab", category: "Navigation" },
+  get_page_context: { label: "get_page_context", desc: "Return page title, URL, and meta tags", category: "Inspection" },
+  get_frame_tree: { label: "get_frame_tree", desc: "List all frames and iframes on the page", category: "Inspection" },
+  query_elements: { label: "query_elements", desc: "CSS/XPath element query with counts", category: "Inspection" },
+  get_element_detail: { label: "get_element_detail", desc: "Deep detail on a single DOM element", category: "Inspection" },
+  scroll_page: { label: "scroll_page", desc: "Scroll the page by amount or to element", category: "Navigation" },
+  scroll_to_element: { label: "scroll_to_element", desc: "Scroll until an element is in view", category: "Navigation" },
+  go_back: { label: "go_back", desc: "Navigate to previous page in history", category: "Navigation" },
+  wait_for_page_state: { label: "wait_for_page_state", desc: "Wait for load/networkidle/selector", category: "Navigation" },
+  click_element: { label: "click_element", desc: "Click a DOM element by selector", category: "Interaction" },
+  click_css: { label: "click_css", desc: "Click by CSS selector", category: "Interaction" },
+  click_text: { label: "click_text", desc: "Click element matching visible text", category: "Interaction" },
+  click_xpath: { label: "click_xpath", desc: "Click element matching XPath expression", category: "Interaction" },
+  click_checkbox: { label: "click_checkbox", desc: "Toggle a checkbox element", category: "Interaction" },
+  click_radio: { label: "click_radio", desc: "Select a radio button", category: "Interaction" },
+  click_coordinates: { label: "click_coordinates", desc: "Click at (x, y) pixel coordinates", category: "Interaction" },
+  type_into: { label: "type_into", desc: "Type text into an input or textarea", category: "Interaction" },
+  select_option: { label: "select_option", desc: "Choose an option from a <select>", category: "Interaction" },
+  play_media: { label: "play_media", desc: "Start playback of a media element", category: "Media" },
+  swipe_region: { label: "swipe_region", desc: "Swipe gesture over a screen region", category: "Interaction" },
+  harvest: { label: "harvest", desc: "Extract structured media data from page", category: "Media" },
+  get_media_state: { label: "get_media_state", desc: "Read playback state of a media element", category: "Media" },
+  capture_streams: { label: "capture_streams", desc: "Intercept and record network media streams", category: "Media" },
 };
 
 const BROWSER_OPTIONS = [
@@ -764,7 +806,6 @@ function providerOptionRows() {
   return PROVIDERS.map((provider) => ({
     value: provider.id,
     label: provider.name,
-    description: provider.keyEnv,
   }));
 }
 
@@ -2138,12 +2179,11 @@ export function SettingsPage() {
                     (slotCatalog?.models || []).map((model) => ({
                       value: model.id,
                       label: model.label || model.id,
-                      description: model.description || "",
-                      meta: model.context_window
-                        ? `context ${model.context_window}`
-                        : "",
                     })),
                     selection.model,
+                  );
+                  const selectedModelMeta = (slotCatalog?.models || []).find(
+                    (m) => m.id === selection.model,
                   );
                   const slotFields = (
                     slotCatalog?.hyperparameters || []
@@ -2177,36 +2217,68 @@ export function SettingsPage() {
                         ) : null}
                       </div>
 
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <Select
-                          label="Provider"
-                          value={selection.provider}
-                          onChange={(next) =>
-                            updateAgentProvider(slot.id, next)
-                          }
-                          options={providerOptionRows()}
-                          placeholder="Select provider"
-                        />
-                        <Select
-                          label="Model"
-                          value={selection.model}
-                          onChange={(next) => updateAgentModel(slot.id, next)}
-                          options={slotOptions}
-                          searchable
-                          placeholder="Select model"
-                          emptyMessage="No models available for this provider"
-                        />
-                      </div>
+                      <div className="space-y-4">
+                        {/* Provider — label only, no key shown */}
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            Provider
+                          </label>
+                          <div className="relative">
+                            <Select
+                              value={selection.provider}
+                              onChange={(next) =>
+                                updateAgentProvider(slot.id, next)
+                              }
+                              options={providerOptionRows()}
+                              placeholder="Select provider"
+                            />
+                          </div>
+                        </div>
 
-                      <Input
-                        label="Custom model ID"
-                        value={selection.model}
-                        onChange={(event) =>
-                          updateAgentModel(slot.id, event.target.value)
-                        }
-                        placeholder="Manual model name"
-                        className="h-11 font-mono"
-                      />
+                        {/* Model */}
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            Model
+                          </label>
+                          <Select
+                            value={selection.model}
+                            onChange={(next) => updateAgentModel(slot.id, next)}
+                            options={slotOptions}
+                            searchable
+                            placeholder="Select model"
+                            emptyMessage="No models available for this provider"
+                          />
+                        </div>
+
+                        {/* Selected model detail */}
+                        {selectedModelMeta && (selectedModelMeta.description || selectedModelMeta.context_window) ? (
+                          <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-[11.5px]">
+                            {selectedModelMeta.description ? (
+                              <p className="text-muted-foreground">{selectedModelMeta.description}</p>
+                            ) : null}
+                            {selectedModelMeta.context_window ? (
+                              <p className="mt-0.5 font-mono text-[10.5px] text-muted-foreground/70">
+                                {selectedModelMeta.context_window.toLocaleString()} token context
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+
+                        {/* Custom model ID — optional */}
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            Custom model ID <span className="font-normal text-muted-foreground/60">(optional)</span>
+                          </label>
+                          <Input
+                            value={selection.model}
+                            onChange={(event) =>
+                              updateAgentModel(slot.id, event.target.value)
+                            }
+                            placeholder="Manual model name"
+                            className="h-10 font-mono text-[12px]"
+                          />
+                        </div>
+                      </div>
 
                       {slotCatalog?.error ? (
                         <div
@@ -3572,126 +3644,94 @@ export function SettingsPage() {
                   boxShadow: "var(--shadow-card)",
                 }}
               >
-                <div className="mb-3 flex items-center justify-between">
+                {/* Header row */}
+                <div className="mb-4 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Wrench
-                      className="h-3.5 w-3.5"
-                      style={{ color: "var(--signal)" }}
-                    />
-                    <span
-                      className="text-[13px] font-medium"
-                      style={{ color: "var(--ink)" }}
-                    >
-                      {
-                        BROWSER_OPTIONS.find(
-                          (item) => item.id === activeMcpBrowserTab,
-                        )?.name
-                      }{" "}
-                      - {PROFILE_LABELS[activeProfileTab]}
+                    <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-[13px] font-semibold text-foreground">
+                      {BROWSER_OPTIONS.find((item) => item.id === activeMcpBrowserTab)?.name}
+                      {" · "}
+                      {PROFILE_LABELS[activeProfileTab]}
                     </span>
-                    <span
-                      className="font-mono text-[11px]"
-                      style={{ color: "var(--mute)" }}
-                    >
-                      {MCP_TOOLS_BY_PROFILE[activeProfileTab].length -
-                        activeBrowserTools().length}
+                    <Badge tone="default" className="font-mono text-[10px]">
+                      {MCP_TOOLS_BY_PROFILE[activeProfileTab].length - activeBrowserTools().length}
                       {" / "}
                       {MCP_TOOLS_BY_PROFILE[activeProfileTab].length} enabled
-                    </span>
+                    </Badge>
                   </div>
-                  <div className="flex gap-2">
-                    <button
+                  <div className="flex gap-1.5">
+                    <Button
                       type="button"
-                      className="rounded-lg px-2.5 py-1 text-[11px] transition-colors"
-                      style={{
-                        color: "var(--mint)",
-                        border:
-                          "1px solid color-mix(in oklch, var(--mint) 25%, transparent)",
-                        background:
-                          "color-mix(in oklch, var(--mint) 8%, transparent)",
-                      }}
-                      onClick={() =>
-                        setDisabledToolsForCurrentBrowserProfile([])
-                      }
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2.5 text-[11px] text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10"
+                      onClick={() => setDisabledToolsForCurrentBrowserProfile([])}
                     >
                       Enable all
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
-                      className="rounded-lg px-2.5 py-1 text-[11px] transition-colors"
-                      style={{
-                        color: "var(--mute)",
-                        border: "1px solid var(--line)",
-                      }}
-                      onClick={() =>
-                        setDisabledToolsForCurrentBrowserProfile(
-                          MCP_TOOLS_BY_PROFILE[activeProfileTab],
-                        )
-                      }
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2.5 text-[11px]"
+                      onClick={() => setDisabledToolsForCurrentBrowserProfile(MCP_TOOLS_BY_PROFILE[activeProfileTab])}
                     >
                       Disable all
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  {MCP_TOOLS_BY_PROFILE[activeProfileTab].map((toolName) => {
-                    const disabled = activeBrowserTools().includes(toolName);
+                {/* Grouped tool list */}
+                {(() => {
+                  const tools = MCP_TOOLS_BY_PROFILE[activeProfileTab];
+                  const categories = [...new Set(tools.map((t) => MCP_TOOL_META[t]?.category || "Other"))];
+                  return categories.map((cat) => {
+                    const catTools = tools.filter((t) => (MCP_TOOL_META[t]?.category || "Other") === cat);
                     return (
-                      <button
-                        key={toolName}
-                        type="button"
-                        onClick={() => {
-                          const currentDisabled = activeBrowserTools();
-                          const nextDisabled = disabled
-                            ? currentDisabled.filter(
-                                (item) => item !== toolName,
-                              )
-                            : [...currentDisabled, toolName];
-                          setDisabledToolsForCurrentBrowserProfile(
-                            nextDisabled,
-                          );
-                        }}
-                        className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-[11px] transition-all duration-150"
-                        style={
-                          disabled
-                            ? {
-                                background: "rgba(255,255,255,0.02)",
-                                color: "var(--mute-3)",
-                                border: "1px solid var(--line)",
-                                textDecoration: "line-through",
-                                opacity: 0.55,
-                              }
-                            : {
-                                background:
-                                  "color-mix(in oklch, var(--sky) 10%, transparent)",
-                                color: "var(--sky)",
-                                border:
-                                  "1px solid color-mix(in oklch, var(--sky) 25%, transparent)",
-                              }
-                        }
-                      >
-                        {disabled ? (
-                          <ToggleLeft
-                            className="h-3 w-3 shrink-0"
-                            style={{ color: "var(--mute-3)" }}
-                          />
-                        ) : (
-                          <ToggleRight className="h-3 w-3 shrink-0" />
-                        )}
-                        {toolName}
-                      </button>
+                      <div key={cat} className="mb-3">
+                        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+                          {cat}
+                        </div>
+                        <div className="divide-y divide-border/40 rounded-lg border border-border/60">
+                          {catTools.map((toolName) => {
+                            const isDisabled = activeBrowserTools().includes(toolName);
+                            const meta = MCP_TOOL_META[toolName];
+                            return (
+                              <div
+                                key={toolName}
+                                className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-muted/30"
+                              >
+                                <Switch
+                                  checked={!isDisabled}
+                                  onCheckedChange={(checked) => {
+                                    const currentDisabled = activeBrowserTools();
+                                    const nextDisabled = checked
+                                      ? currentDisabled.filter((item) => item !== toolName)
+                                      : [...currentDisabled, toolName];
+                                    setDisabledToolsForCurrentBrowserProfile(nextDisabled);
+                                  }}
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <span className={cn(
+                                    "font-mono text-[12px] font-medium",
+                                    isDisabled ? "text-muted-foreground/50 line-through" : "text-foreground"
+                                  )}>
+                                    {toolName}
+                                  </span>
+                                  {meta?.desc ? (
+                                    <span className="ml-2 text-[11px] text-muted-foreground/70">
+                                      — {meta.desc}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     );
-                  })}
-                </div>
-
-                <p
-                  className="mt-3 text-[11.5px]"
-                  style={{ color: "var(--mute)" }}
-                >
-                  Tool visibility is now tracked independently for Puppeteer and
-                  Playwright.
-                </p>
+                  });
+                })()}
               </div>
             </section>
           ) : null}

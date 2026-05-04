@@ -16,7 +16,9 @@ import {
 
 import { apiUrl } from "@/lib/api";
 import { extractToolCalls, summarizeRunState } from "@/lib/run-trace";
+import { AgentTodoPanel } from "@/components/agent-todo-panel";
 import { BrowserLiveView } from "@/components/console/run-detail/browser-live-view";
+import { OrchestratorDecisionFeed } from "@/components/orchestrator-decision-feed";
 import { OrchestratorGraph } from "@/components/orchestrator-graph";
 import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
 import { TimelinePanel } from "@/components/timeline-panel";
@@ -348,6 +350,17 @@ export function RunDetailLive({
         <Tabs className="ml-auto" value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="graph">Graph</TabsTrigger>
+            <TabsTrigger value="decisions">
+              Decisions
+            </TabsTrigger>
+            <TabsTrigger value="tasks">
+              Tasks
+              {events.filter(e => e.kind === "tool_call_started").length > 0 ? (
+                <Badge tone="violet" className="ml-1 px-1.5 py-0 text-[10px]">
+                  {events.filter(e => e.kind === "tool_call_started").length}
+                </Badge>
+              ) : null}
+            </TabsTrigger>
             <TabsTrigger value="tools">
               Tool calls
               {toolCallRows.length > 0 ? (
@@ -359,7 +372,7 @@ export function RunDetailLive({
             <TabsTrigger value="events">
               Events
               {events.length > 0 ? (
-                <Badge tone="violet" className="ml-1 px-1.5 py-0 text-[10px]">
+                <Badge tone="default" className="ml-1 px-1.5 py-0 text-[10px]">
                   {events.length}
                 </Badge>
               ) : null}
@@ -414,6 +427,14 @@ export function RunDetailLive({
 
         <TabsContent value="tools">
           <ToolCallFeed toolCalls={toolCallRows} title="Tool Calls" />
+        </TabsContent>
+
+        <TabsContent value="decisions">
+          <OrchestratorDecisionFeed events={events} isStreaming={isLive} />
+        </TabsContent>
+
+        <TabsContent value="tasks">
+          <AgentTodoPanel events={events} isStreaming={isLive} />
         </TabsContent>
 
         <TabsContent value="graph" className="space-y-4">

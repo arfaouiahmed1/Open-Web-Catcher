@@ -35,7 +35,7 @@ export function RunViewSettingsPanel({ settings, update, reset, onClose }) {
       <CardContent className="divide-y divide-border px-4 py-0">
         <div className="py-2">
           <div className="pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            View Panels
+            Panels
           </div>
           <SettingToggle
             label="Browser Live View"
@@ -54,6 +54,48 @@ export function RunViewSettingsPanel({ settings, update, reset, onClose }) {
             description="Show the live event feed panel"
             value={settings.showEventStream}
             onChange={(v) => update("showEventStream", v)}
+          />
+        </div>
+
+        <div className="py-2">
+          <div className="pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            Display
+          </div>
+          <SettingToggle
+            label="Show Timestamps"
+            description="Show event timestamps in the event stream"
+            value={settings.showTimestamps}
+            onChange={(v) => update("showTimestamps", v)}
+          />
+          <SettingToggle
+            label="Show Tool Arguments"
+            description="Show tool call input arguments in the tool feed"
+            value={settings.showToolArgs}
+            onChange={(v) => update("showToolArgs", v)}
+          />
+          <SettingToggle
+            label="Compact Events"
+            description="Reduce event row height for higher information density"
+            value={settings.compactEvents}
+            onChange={(v) => update("compactEvents", v)}
+          />
+          <SettingToggle
+            label="Graph Node Labels"
+            description="Show labels on orchestrator graph nodes"
+            value={settings.showGraphLabels}
+            onChange={(v) => update("showGraphLabels", v)}
+          />
+          <SettingToggle
+            label="Cost Estimate"
+            description="Show token usage and cost estimate in the run header"
+            value={settings.showCostEstimate}
+            onChange={(v) => update("showCostEstimate", v)}
+          />
+          <SettingToggle
+            label="Highlight Errors"
+            description="Visually emphasize failed events and errors in the stream"
+            value={settings.highlightErrors}
+            onChange={(v) => update("highlightErrors", v)}
           />
         </div>
 

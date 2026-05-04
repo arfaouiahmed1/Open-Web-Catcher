@@ -20,6 +20,11 @@ PROVIDER_METADATA: dict[str, dict[str, str]] = {
         "name": "Google Gemini",
         "key_env": "GOOGLE_API_KEY",
     },
+    "google-vertex": {
+        "id": "google-vertex",
+        "name": "Google Vertex AI",
+        "key_env": "GOOGLE_VERTEX_API_KEY",
+    },
     "openai": {
         "id": "openai",
         "name": "OpenAI",
@@ -49,6 +54,11 @@ FALLBACK_MODELS: dict[str, list[dict[str, Any]]] = {
         {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "description": "Balanced quality and speed."},
         {"id": "gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash-Lite", "description": "Lower-cost Gemini option."},
         {"id": "gemini-2.0-flash", "label": "Gemini 2.0 Flash", "description": "Fast Gemini model."},
+    ],
+    "google-vertex": [
+        {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "description": "Most capable Gemini via Vertex AI."},
+        {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "description": "Balanced Gemini via Vertex AI."},
+        {"id": "gemini-2.0-flash", "label": "Gemini 2.0 Flash", "description": "Fast Gemini via Vertex AI."},
     ],
     "openai": [
         {"id": "gpt-5", "label": "gpt-5", "description": "Reasoning-capable flagship model."},
@@ -80,6 +90,42 @@ FALLBACK_MODELS: dict[str, list[dict[str, Any]]] = {
 
 PROVIDER_TUNING_FIELDS: dict[str, list[dict[str, Any]]] = {
     "google": [
+        {
+            "key": "temperature",
+            "label": "Temperature",
+            "type": "number",
+            "min": 0,
+            "max": 2,
+            "step": 0.1,
+            "description": "Controls response randomness.",
+        },
+        {
+            "key": "top_p",
+            "label": "Top P",
+            "type": "number",
+            "min": 0,
+            "max": 1,
+            "step": 0.01,
+            "description": "Nucleus sampling cutoff.",
+        },
+        {
+            "key": "top_k",
+            "label": "Top K",
+            "type": "integer",
+            "min": 1,
+            "step": 1,
+            "description": "Token candidate count for sampling.",
+        },
+        {
+            "key": "max_output_tokens",
+            "label": "Max Output Tokens",
+            "type": "integer",
+            "min": 1,
+            "step": 1,
+            "description": "Maximum tokens generated in a response.",
+        },
+    ],
+    "google-vertex": [
         {
             "key": "temperature",
             "label": "Temperature",
@@ -442,6 +488,8 @@ def fetch_provider_models(settings: Settings, provider: str, max_models: int = 2
 
     if normalized_provider == "google":
         return _fetch_google_models(settings, limit)
+    if normalized_provider == "google-vertex":
+        return _fetch_google_vertex_models(settings, limit)
     if normalized_provider == "openai":
         return _fetch_openai_models(settings, limit)
     if normalized_provider == "anthropic":
@@ -470,6 +518,49 @@ def _fetch_google_models(settings: Settings, max_models: int) -> list[dict[str, 
             params=params,
             timeout_seconds=settings.provider_pricing_timeout_seconds,
             provider="google",
+        )
+        for item in payload.get("models", []) or []:
+            actions = item.get("supportedGenerationMethods") or item.get("supportedActions") or []
+            if actions and "generateContent" not in actions:
+                continue
+            model_id = str(item.get("baseModelId") or item.get("name") or "").strip()
+            if model_id.startswith("models/"):
+                model_id = model_id.split("/", 1)[1]
+            if not model_id:
+                continue
+            rows.append(
+                {
+                    "id": model_id,
+                    "label": str(item.get("displayName") or model_id).strip(),
+                    "description": str(item.get("description") or "").strip(),
+                    "context_window": item.get("inputTokenLimit"),
+                    "output_limit": item.get("outputTokenLimit"),
+                }
+            )
+            if len(rows) >= max_models:
+                break
+        page_token = str(payload.get("nextPageToken") or "").strip()
+        if not page_token:
+            break
+    return _dedupe_models(rows)
+
+
+def _fetch_google_vertex_models(settings: Settings, max_models: int) -> list[dict[str, Any]]:
+    api_key = (settings.google_vertex_api_key or "").strip()
+    if not api_key:
+        raise ProviderModelCatalogError("GOOGLE_VERTEX_API_KEY is missing.")
+
+    rows: list[dict[str, Any]] = []
+    page_token = ""
+    while len(rows) < max_models:
+        params: dict[str, Any] = {"key": api_key, "pageSize": min(1000, max_models)}
+        if page_token:
+            params["pageToken"] = page_token
+        payload = _request_json(
+            "https://generativelanguage.googleapis.com/v1beta/models",
+            params=params,
+            timeout_seconds=settings.provider_pricing_timeout_seconds,
+            provider="google-vertex",
         )
         for item in payload.get("models", []) or []:
             actions = item.get("supportedGenerationMethods") or item.get("supportedActions") or []
@@ -664,6 +755,8 @@ def _provider_api_key(settings: Settings, provider: str) -> str:
     normalized_provider = (provider or "").strip().lower()
     if normalized_provider == "google":
         return str(settings.google_api_key or "").strip()
+    if normalized_provider == "google-vertex":
+        return str(settings.google_vertex_api_key or "").strip()
     if normalized_provider == "openai":
         return str(settings.openai_api_key or "").strip()
     if normalized_provider == "anthropic":

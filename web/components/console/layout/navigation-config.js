@@ -148,7 +148,7 @@ export const NAV_ITEMS = [
     children: LIVE_PIPELINE_TABS,
   },
   { href: "/runs", label: "View Results", key: "runs", section: "Agents" },
-  { href: "/providers", label: "Providers", key: "providers", section: "Config" },
+  { href: "/providers", label: "Provider Results", key: "providers", section: "Agents" },
   {
     href: "/settings",
     label: "Settings",

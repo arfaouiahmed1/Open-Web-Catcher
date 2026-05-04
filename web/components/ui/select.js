@@ -38,15 +38,8 @@ export function Select({
         <SelectPrimitive.Trigger className="flex h-10 w-full items-center justify-between rounded-lg border border-border bg-background px-3.5 py-2.5 text-left text-sm font-medium shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 transition-colors hover:border-input">
           <SelectPrimitive.Value placeholder={placeholder}>
             {selected ? (
-              <span className="min-w-0">
-                <span className="block truncate font-medium text-foreground">
-                  {selected.label}
-                </span>
-                {selected.description ? (
-                  <span className="mt-1 block truncate text-xs text-muted-foreground">
-                    {selected.description}
-                  </span>
-                ) : null}
+              <span className="block truncate font-medium text-foreground">
+                {selected.label}
               </span>
             ) : null}
           </SelectPrimitive.Value>

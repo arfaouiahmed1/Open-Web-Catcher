@@ -345,7 +345,7 @@ function PanelHead({ title, sub, aside, accent = "var(--signal)" }) {
 }
 
 /** Shadcn tab bar with icons. */
-function TabBar({ active, onChange }) {
+function TabBar({ active, onChange, agentPolling }) {
   return (
     <Tabs value={active} onValueChange={onChange}>
       <TabsList className="h-auto w-full justify-start gap-1 p-1">
@@ -357,6 +357,18 @@ function TabBar({ active, onChange }) {
           >
             <Icon className="h-3.5 w-3.5 shrink-0" />
             <span className="hidden sm:inline">{label}</span>
+            {id === "agents" && agentPolling && (
+              <span
+                className="relative ml-0.5 flex h-[6px] w-[6px] shrink-0"
+                title="Auto-refreshing"
+              >
+                <span
+                  className="absolute inset-0 rounded-full opacity-60"
+                  style={{ background: "var(--signal)", animation: "ping 1.6s ease-in-out infinite" }}
+                />
+                <span className="relative h-[6px] w-[6px] rounded-full" style={{ background: "var(--signal)" }} />
+              </span>
+            )}
           </TabsTrigger>
         ))}
       </TabsList>
@@ -594,6 +606,8 @@ function ToolReliabilityRow({ row }) {
    MAIN PAGE
 ═══════════════════════════════════════════════════════════════════════════ */
 
+const AGENT_POLL_MS = 30_000;
+
 function OverviewPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -607,6 +621,7 @@ function OverviewPageContent() {
   const [runtimeEvents, setRuntimeEvents] = useState([]);
   const [dbTables, setDbTables] = useState([]);
   const [error, setError] = useState("");
+  const [agentPolling, setAgentPolling] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -657,6 +672,28 @@ function OverviewPageContent() {
       mounted = false;
     };
   }, []);
+
+  // Poll agent data when on the agents tab
+  useEffect(() => {
+    if (tab !== "agents") { setAgentPolling(false); return; }
+    setAgentPolling(true);
+    let mounted = true;
+    function refreshAgents() {
+      Promise.allSettled([
+        apiFetch("/ui/database/agent_runs?limit=300"),
+        apiFetch("/ui/runs?status=failed&limit=12&offset=0"),
+        apiFetch("/ui/overview"),
+      ]).then(([agentRes, failedRes, overviewRes]) => {
+        if (!mounted) return;
+        if (agentRes.status === "fulfilled") setAgentRunsDb(agentRes.value);
+        if (failedRes.status === "fulfilled") setFailedData(failedRes.value);
+        if (overviewRes.status === "fulfilled") setOverview(overviewRes.value);
+      });
+    }
+    refreshAgents();
+    const timer = setInterval(refreshAgents, AGENT_POLL_MS);
+    return () => { mounted = false; clearInterval(timer); setAgentPolling(false); };
+  }, [tab]);
 
   function setTab(next) {
     const p = new URLSearchParams(searchParams.toString());
@@ -1128,7 +1165,7 @@ function OverviewPageContent() {
         </Card>
       )}
 
-      <TabBar active={tab} onChange={setTab} />
+      <TabBar active={tab} onChange={setTab} agentPolling={agentPolling} />
 
       {/* ════════════════════════════════════════════════════════════════════
           OVERVIEW TAB

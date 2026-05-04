@@ -404,6 +404,7 @@ def fetch_provider_pricing(
     - OpenAI: provider pricing documentation.
     - Anthropic: provider pricing documentation.
     - Google Gemini: provider pricing documentation.
+    - Google Vertex AI: same pricing as Gemini.
     """
     normalized = _normalize_provider(provider)
     effective_max_models = max(1, int(max_models))
@@ -425,13 +426,17 @@ def fetch_provider_pricing(
             timeout_seconds=effective_timeout,
             max_models=effective_max_models,
         )
-    if normalized == "google":
+    if normalized in {"google", "google_vertex", "google-vertex"}:
         return _fetch_google_pricing(
             timeout_seconds=effective_timeout,
             max_models=effective_max_models,
         )
+    if normalized == "nvidia":
+        raise NotImplementedError(
+            "Provider pricing sync for NVIDIA NIM is not yet supported. Pricing must be configured manually."
+        )
 
     raise NotImplementedError(
-        "Provider pricing sync supports: google, openai, anthropic, openrouter "
+        "Provider pricing sync supports: google, google-vertex, openai, anthropic, openrouter "
         f"(got '{normalized or 'unknown'}')."
     )

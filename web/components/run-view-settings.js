@@ -15,6 +15,12 @@ const DEFAULTS = {
   showEventStream: true,
   liveRefreshMs: 2500,
   eventLimit: 120,
+  showTimestamps: true,
+  showToolArgs: true,
+  compactEvents: false,
+  showGraphLabels: true,
+  showCostEstimate: true,
+  highlightErrors: true,
 };
 
 export function useRunViewSettings() {

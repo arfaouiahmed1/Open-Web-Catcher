@@ -6,6 +6,7 @@ import { Suspense, useEffect, useState } from "react";
 
 import { apiUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { NotificationBell } from "@/components/notification-provider";
 import { Badge } from "@/components/ui/badge";
 import {
   Breadcrumb,
@@ -71,7 +72,7 @@ function NavChildList({ items, pathname, searchParams }) {
   if (!items?.length) return null;
 
   return (
-    <div className="ml-4 space-y-1 border-l border-sidebar-border/60 pl-3 group-data-[collapsible=icon]:hidden">
+    <div className="ml-4 space-y-0.5 border-l border-sidebar-border/60 pl-3 group-data-[collapsible=icon]:hidden">
       {items.map((item) => {
         const active = isActiveNavItem(item, pathname, searchParams);
         return (
@@ -83,7 +84,7 @@ function NavChildList({ items, pathname, searchParams }) {
               "block rounded-md px-2.5 py-1.5 text-[11.5px] font-medium leading-tight transition-colors",
               active
                 ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                : "text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                : "text-sidebar-foreground/55 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
             )}
           >
             {item.label}
@@ -94,9 +95,14 @@ function NavChildList({ items, pathname, searchParams }) {
   );
 }
 
-function SidebarNavigation({ pathname, activeRuns, connected }) {
+function SidebarNavigation({ pathname, activeRuns }) {
   const searchParams = useSearchParams();
   const topItem = NAV_ITEMS.find((item) => item.section === null);
+  // Navigate parent to its first child tab so the correct tab pre-selects
+  const topHref = topItem.children?.[0]?.href ?? topItem.href;
+  const topActive =
+    isActiveNavItem(topItem, pathname, searchParams) ||
+    (topItem.children?.some((c) => isActiveNavItem(c, pathname, searchParams)) ?? false);
 
   return (
     <SidebarContent>
@@ -105,11 +111,8 @@ function SidebarNavigation({ pathname, activeRuns, connected }) {
           <SidebarMenu>
             <SidebarMenuItem>
               <div className="space-y-1">
-                <SidebarMenuButton
-                  asChild
-                  isActive={isActiveNavItem(topItem, pathname, searchParams)}
-                >
-                  <Link href={topItem.href}>
+                <SidebarMenuButton asChild isActive={topActive} tooltip={topItem.label}>
+                  <Link href={topHref}>
                     <span className="size-4 shrink-0">{ICONS[topItem.key]}</span>
                     <span>{topItem.label}</span>
                   </Link>
@@ -136,14 +139,20 @@ function SidebarNavigation({ pathname, activeRuns, connected }) {
                   const active = isActiveNavItem(item, pathname, searchParams);
                   const childActive = item.children?.some((child) =>
                     isActiveNavItem(child, pathname, searchParams),
-                  );
+                  ) ?? false;
                   const showBadge = item.badge && activeRuns > 0;
+                  // Navigate to first child so tab pre-selects
+                  const navHref = item.children?.[0]?.href ?? item.href;
                   return (
                     <SidebarMenuItem key={item.href}>
                       <div className="space-y-1">
                         <div className="relative">
-                          <SidebarMenuButton asChild isActive={active || childActive}>
-                            <Link href={item.href}>
+                          <SidebarMenuButton
+                            asChild
+                            isActive={active || childActive}
+                            tooltip={item.label}
+                          >
+                            <Link href={navHref}>
                               <span className="size-4 shrink-0">{ICONS[item.key]}</span>
                               <span>{item.label}</span>
                             </Link>
@@ -247,7 +256,6 @@ export function AppShell({ children }) {
           <SidebarNavigation
             pathname={pathname}
             activeRuns={activeRuns}
-            connected={connected}
           />
         </Suspense>
 
@@ -305,6 +313,7 @@ export function AppShell({ children }) {
                 {activeRuns} live
               </Badge>
             ) : null}
+            <NotificationBell />
           </div>
         </header>
 
