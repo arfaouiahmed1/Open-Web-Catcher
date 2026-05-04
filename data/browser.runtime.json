@@ -108,7 +108,7 @@
   "runtime_sync": {
     "source_path": "/app/data/settings.runtime.yaml",
     "bridge_path": "/app/data/browser.runtime.json",
-    "synced_at": "2026-05-04T19:36:38.357819+00:00",
+    "synced_at": "2026-05-04T20:00:46.317288+00:00",
     "active_runtime_source": "runtime_yaml"
   }
 }

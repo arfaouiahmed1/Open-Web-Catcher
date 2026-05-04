@@ -1,5 +1,63 @@
 Set-StrictMode -Version Latest
 
+$global:OwcReservedHostPorts = @{}
+
+function Test-OwcTcpPortAvailable {
+    param([Parameter(Mandatory = $true)][int]$Port)
+
+    try {
+        $connections = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue
+        if ($connections) {
+            return $false
+        }
+
+        return $true
+    }
+    catch {
+        $listenerMatch = netstat -ano 2>$null | Select-String -Pattern ":$Port\s+.*LISTENING" | Select-Object -First 1
+        return [string]::IsNullOrWhiteSpace([string]$listenerMatch)
+    }
+}
+
+function Resolve-OwcHostPort {
+    param([Parameter(Mandatory = $true)][int]$PreferredPort)
+
+    $explicitPort = $null
+    if ($env:OWC_TOOLS_HOST_PORT -and $PreferredPort -eq 3000) {
+        $explicitPort = [int]$env:OWC_TOOLS_HOST_PORT
+    }
+    elseif ($env:OWC_WEB_HOST_PORT -and $PreferredPort -eq 3001) {
+        $explicitPort = [int]$env:OWC_WEB_HOST_PORT
+    }
+    elseif ($env:OWC_TOOLS_PW_HOST_PORT -and $PreferredPort -eq 3002) {
+        $explicitPort = [int]$env:OWC_TOOLS_PW_HOST_PORT
+    }
+    elseif ($env:OWC_TOOLS_DEBUG_HOST_PORT -and $PreferredPort -eq 9222) {
+        $explicitPort = [int]$env:OWC_TOOLS_DEBUG_HOST_PORT
+    }
+    elseif ($env:OWC_TOOLS_PW_DEBUG_HOST_PORT -and $PreferredPort -eq 9223) {
+        $explicitPort = [int]$env:OWC_TOOLS_PW_DEBUG_HOST_PORT
+    }
+
+    if ($null -ne $explicitPort -and (Test-OwcTcpPortAvailable -Port $explicitPort) -and -not $global:OwcReservedHostPorts.ContainsKey($explicitPort)) {
+        $global:OwcReservedHostPorts[$explicitPort] = $true
+        return $explicitPort
+    }
+
+    for ($port = $PreferredPort; $port -lt ($PreferredPort + 100); $port++) {
+        if ($global:OwcReservedHostPorts.ContainsKey($port)) {
+            continue
+        }
+
+        if (Test-OwcTcpPortAvailable -Port $port) {
+            $global:OwcReservedHostPorts[$port] = $true
+            return $port
+        }
+    }
+
+    throw "No free host port was found starting at $PreferredPort. Set the matching OWC_*_HOST_PORT environment variable manually and retry."
+}
+
 function Get-OwcContext {
     param(
         [Parameter(Mandatory = $true)]
@@ -18,6 +76,11 @@ function Get-OwcContext {
     $toolsContainer = if ($env:OWC_TOOLS_CONTAINER) { $env:OWC_TOOLS_CONTAINER } else { "owc-tools" }
     $toolsPlaywrightContainer = if ($env:OWC_TOOLS_PW_CONTAINER) { $env:OWC_TOOLS_PW_CONTAINER } else { "owc-tools-playwright" }
     $webContainer = if ($env:OWC_WEB_CONTAINER) { $env:OWC_WEB_CONTAINER } else { "owc-web" }
+    $toolsHostPort = Resolve-OwcHostPort -PreferredPort 3000
+    $webHostPort = Resolve-OwcHostPort -PreferredPort 3001
+    $playwrightToolsHostPort = Resolve-OwcHostPort -PreferredPort 3002
+    $toolsDebugHostPort = Resolve-OwcHostPort -PreferredPort 9222
+    $playwrightToolsDebugHostPort = Resolve-OwcHostPort -PreferredPort 9223
     $toolService = "owc-tools"
     $playwrightToolService = "owc-tools-playwright"
     $service = "owc"
@@ -46,6 +109,11 @@ function Get-OwcContext {
         ToolService = $toolService
         PlaywrightToolService = $playwrightToolService
         WebService = $webService
+        ToolsHostPort = $toolsHostPort
+        WebHostPort = $webHostPort
+        PlaywrightToolsHostPort = $playwrightToolsHostPort
+        ToolsDebugHostPort = $toolsDebugHostPort
+        PlaywrightToolsDebugHostPort = $playwrightToolsDebugHostPort
         BuildServices = $buildServices
         StartServices = $startServices
         EnvFile = Join-Path $rootDir ".env"
@@ -55,8 +123,8 @@ function Get-OwcContext {
         Dockerfile = Join-Path $rootDir "Dockerfile"
         HealthUrl = "http://localhost:8000/health"
         ApiUrl = "http://localhost:8000"
-        ConsoleUrl = "http://localhost:3001"
-        McpUrl = "http://localhost:3000"
+        ConsoleUrl = "http://localhost:$webHostPort"
+        McpUrl = "http://localhost:$toolsHostPort"
     }
 }
 

@@ -19,6 +19,25 @@ Assert-DockerAvailable
 Ensure-OwcDataDir -Context $context
 Ensure-OwcEnvFile -Context $context -Yes:$Yes
 
+if (-not $env:OWC_TOOLS_HOST_PORT) {
+    $env:OWC_TOOLS_HOST_PORT = "$($context.ToolsHostPort)"
+}
+if (-not $env:OWC_WEB_HOST_PORT) {
+    $env:OWC_WEB_HOST_PORT = "$($context.WebHostPort)"
+}
+if (-not $env:UI_CORS_ORIGINS) {
+    $env:UI_CORS_ORIGINS = "http://localhost:$($context.WebHostPort),http://127.0.0.1:$($context.WebHostPort)"
+}
+if (-not $env:OWC_TOOLS_PW_HOST_PORT) {
+    $env:OWC_TOOLS_PW_HOST_PORT = "$($context.PlaywrightToolsHostPort)"
+}
+if (-not $env:OWC_TOOLS_DEBUG_HOST_PORT) {
+    $env:OWC_TOOLS_DEBUG_HOST_PORT = "$($context.ToolsDebugHostPort)"
+}
+if (-not $env:OWC_TOOLS_PW_DEBUG_HOST_PORT) {
+    $env:OWC_TOOLS_PW_DEBUG_HOST_PORT = "$($context.PlaywrightToolsDebugHostPort)"
+}
+
 Write-OwcHeader "Open Web Catcher - Start"
 Write-OwcInfo "Compose file: $($context.ComposeFile)"
 Write-OwcInfo "Service: $($context.Service)"
@@ -29,6 +48,8 @@ Write-OwcInfo "Container: $($context.Container)"
 Write-OwcInfo "Tools container: $($context.ToolContainer)"
 Write-OwcInfo "Playwright tools container: $($context.PlaywrightToolContainer)"
 Write-OwcInfo "Web container: $($context.WebContainer)"
+Write-OwcInfo "MCP tools host port: $($context.ToolsHostPort)"
+Write-OwcInfo "Web host port: $($context.WebHostPort)"
 
 $needsBuild = $Build -or `
     -not (Test-OwcImageExists -ImageRef $context.ImageRef) -or `
