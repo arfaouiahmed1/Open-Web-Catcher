@@ -3,14 +3,15 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Bot, CircleDollarSign, Coins, Cpu, LayoutGrid, Loader2 } from "lucide-react";
+import { Bot, CircleDollarSign, Coins, Cpu, Globe2, LayoutGrid, Loader2 } from "lucide-react";
 
 import { apiUrl } from "@/lib/api";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/utils";
+import { estimateCallCost, loadPricing, synthCallsFromModelUsage } from "@/lib/pricing";
 import { KpiCard } from "@/components/kpi-card";
 import { DashboardPersistencePanel } from "@/components/dashboard";
 import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -37,6 +38,7 @@ const TABS = [
   { id: "overview", label: "Overview", Icon: LayoutGrid },
   { id: "costs", label: "Costs", Icon: CircleDollarSign },
   { id: "tokens", label: "Tokens", Icon: Coins },
+  { id: "providers", label: "Providers", Icon: Globe2 },
   { id: "tools", label: "Tools", Icon: Cpu },
   { id: "agents", label: "Agents", Icon: Bot },
 ];
@@ -52,10 +54,22 @@ const PALETTE = [
   "var(--rose)",
 ];
 
-async function apiFetch(path) {
-  const res = await fetch(apiUrl(path), { cache: "no-store" });
-  if (!res.ok) throw new Error(`${res.status}`);
-  return res.json();
+async function apiFetch(path, options = {}) {
+  const { timeoutMs = 10_000, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(apiUrl(path), {
+      ...fetchOptions,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`${res.status}`);
+    return res.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -155,14 +169,16 @@ function DonutChart({
   const cx = size / 2;
   const cy = size / 2;
   const circ = 2 * Math.PI * r;
-  const total = segments.reduce((s, g) => s + Math.max(0, g.value), 0) || 1;
+  const positiveSegments = segments.filter((seg) => Number(seg.value || 0) > 0);
+  const total = positiveSegments.reduce((s, g) => s + Math.max(0, Number(g.value || 0)), 0);
+  const gap = positiveSegments.length > 1 ? Math.min(4, circ * 0.012) : 0;
 
   let dashOffset = circ * 0.25; // start at top
-  const arcs = segments.map((seg) => {
-    const pct = Math.max(0, seg.value) / total;
-    const dash = pct * circ;
+  const arcs = positiveSegments.map((seg) => {
+    const pct = Math.max(0, Number(seg.value || 0)) / (total || 1);
+    const dash = Math.max(0, pct * circ - gap);
     const arc = { ...seg, dash, gap: circ - dash, offset: -dashOffset };
-    dashOffset -= dash;
+    dashOffset -= pct * circ;
     return arc;
   });
 
@@ -188,23 +204,20 @@ function DonutChart({
           strokeWidth={thickness}
         />
         {/* segments */}
-        {arcs.map(
-          (arc, i) =>
-            arc.dash > 0.5 && (
-              <circle
-                key={i}
-                cx={cx}
-                cy={cy}
-                r={r}
-                fill="none"
-                stroke={arc.color}
-                strokeWidth={thickness}
-                strokeDasharray={`${arc.dash} ${circ - arc.dash}`}
-                strokeDashoffset={arc.offset}
-                strokeLinecap="butt"
-              />
-            ),
-        )}
+        {arcs.map((arc, i) => (
+          <circle
+            key={`${arc.label}-${i}`}
+            cx={cx}
+            cy={cy}
+            r={r}
+            fill="none"
+            stroke={arc.color}
+            strokeWidth={thickness}
+            strokeDasharray={`${arc.dash} ${circ - arc.dash}`}
+            strokeDashoffset={arc.offset}
+            strokeLinecap={positiveSegments.length > 1 ? "round" : "butt"}
+          />
+        ))}
       </svg>
       {label && (
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
@@ -274,10 +287,34 @@ function RadialGauge({
   );
 }
 
+function formatCompactNumber(value) {
+  const n = Number(value || 0);
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}b`;
+  if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
+  if (abs >= 1_000) return `${Math.round(n / 1_000)}k`;
+  return `${Math.round(n)}`;
+}
+
+function chartMax(data = [], series = []) {
+  let max = 0;
+  for (const row of data) {
+    const stacks = {};
+    for (const item of series) {
+      const value = Number(row?.[item.key] || 0);
+      max = Math.max(max, value);
+      if (item.stackId) stacks[item.stackId] = (stacks[item.stackId] || 0) + value;
+    }
+    for (const value of Object.values(stacks)) max = Math.max(max, Number(value || 0));
+  }
+  return max;
+}
+
 function AreaTrendCard({ title, description, data = [], series = [], height = 220 }) {
   const config = Object.fromEntries(
     series.map((item) => [item.key, { label: item.label, color: item.color }]),
   );
+  const maxValue = chartMax(data, series);
 
   return (
     <Card>
@@ -287,7 +324,7 @@ function AreaTrendCard({ title, description, data = [], series = [], height = 22
       </CardHeader>
       <CardContent className="p-5">
         <ChartContainer config={config} className="w-full" style={{ height }}>
-          <AreaChart data={data} margin={{ top: 6, right: 10, left: 0, bottom: 0 }}>
+          <AreaChart data={data} margin={{ top: 6, right: 16, left: 8, bottom: 0 }}>
             <defs>
               {series.map((item) => (
                 <linearGradient key={item.key} id={`fill-${item.key}`} x1="0" y1="0" x2="0" y2="1">
@@ -298,14 +335,21 @@ function AreaTrendCard({ title, description, data = [], series = [], height = 22
             </defs>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} minTickGap={28} />
-            <YAxis tickLine={false} axisLine={false} width={34} />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              width={56}
+              tickFormatter={formatCompactNumber}
+              domain={[0, maxValue <= 1 ? 1 : "dataMax"]}
+              allowDecimals={maxValue <= 10}
+            />
             <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
             <ChartLegend content={<ChartLegendContent />} />
             {series.map((item) => (
               <Area
                 key={item.key}
                 dataKey={item.key}
-                type="natural"
+                type="monotone"
                 fill={`url(#fill-${item.key})`}
                 stroke={`var(--color-${item.key})`}
                 strokeWidth={2}
@@ -316,6 +360,78 @@ function AreaTrendCard({ title, description, data = [], series = [], height = 22
         </ChartContainer>
       </CardContent>
     </Card>
+  );
+}
+
+function BarTrendCard({ title, description, data = [], series = [], height = 220 }) {
+  const config = Object.fromEntries(
+    series.map((item) => [item.key, { label: item.label, color: item.color }]),
+  );
+  const maxValue = chartMax(data, series);
+
+  return (
+    <Card>
+      <CardHeader className="border-b">
+        <CardTitle className="text-sm">{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="p-5">
+        <ChartContainer config={config} className="w-full" style={{ height }}>
+          <BarChart data={data} margin={{ top: 6, right: 16, left: 8, bottom: 0 }}>
+            <CartesianGrid vertical={false} strokeDasharray="3 3" />
+            <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} minTickGap={28} />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              width={56}
+              tickFormatter={formatCompactNumber}
+              domain={[0, maxValue <= 1 ? 1 : "dataMax"]}
+              allowDecimals={maxValue <= 10}
+            />
+            <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
+            <ChartLegend content={<ChartLegendContent />} />
+            {series.map((item) => (
+              <Bar
+                key={item.key}
+                dataKey={item.key}
+                fill={`var(--color-${item.key})`}
+                radius={[4, 4, 0, 0]}
+                stackId={item.stackId}
+              />
+            ))}
+          </BarChart>
+        </ChartContainer>
+      </CardContent>
+    </Card>
+  );
+}
+
+function MiniPieChart({ data = [], size = 180 }) {
+  const positive = data.filter((entry) => Number(entry.value || 0) > 0);
+  if (!positive.length) {
+    return (
+      <div className="flex h-44 items-center justify-center text-[12px] text-muted-foreground/50">
+        No distribution data
+      </div>
+    );
+  }
+  return (
+    <PieChart width={size} height={size}>
+      <Pie
+        data={positive}
+        dataKey="value"
+        nameKey="label"
+        cx="50%"
+        cy="50%"
+        innerRadius={Math.round(size * 0.28)}
+        outerRadius={Math.round(size * 0.43)}
+        paddingAngle={3}
+      >
+        {positive.map((entry, index) => (
+          <Cell key={`${entry.label}-${index}`} fill={entry.color} />
+        ))}
+      </Pie>
+    </PieChart>
   );
 }
 
@@ -602,6 +718,52 @@ function ToolReliabilityRow({ row }) {
   );
 }
 
+function urlHost(value) {
+  try {
+    return new URL(String(value || "")).hostname;
+  } catch {
+    return String(value || "").replace(/^https?:\/\//, "").split("/")[0] || "-";
+  }
+}
+
+function ProviderWorkflowRow({ row }) {
+  const url = row.url || row.stream_url || "";
+  return (
+    <TableRow>
+      <TableCell className="max-w-[260px] px-4 py-2.5">
+        {url ? (
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="block truncate font-mono text-[11px] text-primary hover:underline"
+            title={url}
+          >
+            {url.replace(/^https?:\/\//, "")}
+          </a>
+        ) : (
+          <span className="font-mono text-[11px] text-muted-foreground/50">-</span>
+        )}
+      </TableCell>
+      <TableCell className="px-4 py-2.5 text-[12px] text-foreground/80">
+        {row.provider || row.org || "unresolved"}
+      </TableCell>
+      <TableCell className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">
+        {row.hostname || urlHost(url)}
+      </TableCell>
+      <TableCell className="px-4 py-2.5 text-[12px] text-muted-foreground">
+        {row.country || "-"}
+      </TableCell>
+      <TableCell className="px-4 py-2.5 font-mono text-[11px] text-primary">
+        {row.abuse_email || "-"}
+      </TableCell>
+      <TableCell className="px-4 py-2.5 font-mono text-[10px] text-muted-foreground/60">
+        {row.pipeline_run_id ? `#${row.pipeline_run_id}` : "-"}
+      </TableCell>
+    </TableRow>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    MAIN PAGE
 ═══════════════════════════════════════════════════════════════════════════ */
@@ -617,6 +779,9 @@ function OverviewPageContent() {
   const [overview, setOverview] = useState(null);
   const [toolRel, setToolRel] = useState(null);
   const [agentRunsDb, setAgentRunsDb] = useState(null);
+  const [providerAnalysisDb, setProviderAnalysisDb] = useState(null);
+  const [runStreamsDb, setRunStreamsDb] = useState(null);
+  const [pricingMap, setPricingMap] = useState(null);
   const [failedData, setFailedData] = useState(null);
   const [runtimeEvents, setRuntimeEvents] = useState([]);
   const [dbTables, setDbTables] = useState([]);
@@ -629,18 +794,24 @@ function OverviewPageContent() {
       apiFetch("/ui/overview"),
       apiFetch("/ui/tools/reliability?limit=20"),
       apiFetch("/ui/database/agent_runs?limit=300"),
+      apiFetch("/ui/database/provider_analyses?limit=300"),
+      apiFetch("/ui/database/run_streams?limit=300"),
       apiFetch("/ui/runs?status=failed&limit=12&offset=0"),
       apiFetch("/ui/events/recent?limit=30"),
       apiFetch("/ui/database/tables"),
+      loadPricing(),
     ])
       .then(
         ([
           overviewRes,
           toolRes,
           agentRes,
+          providerRes,
+          streamRes,
           failedRes,
           eventsRes,
           dbTablesRes,
+          pricingRes,
         ]) => {
           if (!mounted) return;
           setOverview(
@@ -648,6 +819,12 @@ function OverviewPageContent() {
           );
           setToolRel(toolRes.status === "fulfilled" ? toolRes.value : {});
           setAgentRunsDb(agentRes.status === "fulfilled" ? agentRes.value : {});
+          setProviderAnalysisDb(
+            providerRes.status === "fulfilled" ? providerRes.value : {},
+          );
+          setRunStreamsDb(
+            streamRes.status === "fulfilled" ? streamRes.value : {},
+          );
           setFailedData(
             failedRes.status === "fulfilled" ? failedRes.value : {},
           );
@@ -660,6 +837,9 @@ function OverviewPageContent() {
             dbTablesRes.status === "fulfilled"
               ? dbTablesRes.value?.entries || []
               : [],
+          );
+          setPricingMap(
+            pricingRes.status === "fulfilled" ? pricingRes.value : new Map(),
           );
           if (overviewRes.status !== "fulfilled")
             setError("Could not load overview data.");
@@ -703,14 +883,94 @@ function OverviewPageContent() {
 
   /* ── derived data ────────────────────────────────────────────────────── */
   const summary = overview?.summary ?? EMPTY_OBJECT;
-  const trend = overview?.trend ?? EMPTY_ARRAY;
-  const modelRows = overview?.model_breakdown ?? EMPTY_ARRAY;
+  const rawTrend = overview?.trend ?? EMPTY_ARRAY;
+  const rawModelRows = overview?.model_breakdown ?? EMPTY_ARRAY;
+  const providerAnalysisRows = providerAnalysisDb?.rows ?? EMPTY_ARRAY;
+  const workflowStreamRows = runStreamsDb?.rows ?? EMPTY_ARRAY;
   const toolRows = toolRel?.rows ?? overview?.top_tools ?? EMPTY_ARRAY;
   const activeRuns = (overview?.active_runs ?? EMPTY_ARRAY).filter(
     (r) => !r.completed,
   );
   const recentRuns = overview?.recent_runs ?? EMPTY_ARRAY;
   const failedRuns = failedData?.rows ?? EMPTY_ARRAY;
+
+  const modelRows = useMemo(() => {
+    const syntheticCalls = synthCallsFromModelUsage(rawModelRows);
+    const byKey = new Map(
+      syntheticCalls.map((call) => [
+        `${call.provider || ""}::${call.model_name || ""}`,
+        call,
+      ]),
+    );
+    return rawModelRows
+      .map((row) => {
+        const key = `${row.provider || ""}::${row.model_name || ""}`;
+        const estimated = estimateCallCost(byKey.get(key) || row, pricingMap);
+        const loggedTotal = Number(
+          row.cost_usd ?? row.estimated_total_cost_usd ?? row.total_cost_usd ?? 0,
+        );
+        const useEstimate = loggedTotal <= 0 && Number(estimated.total || 0) > 0;
+        const totalCost = useEstimate ? Number(estimated.total || 0) : loggedTotal;
+        return {
+          ...row,
+          calls: Number(row.calls || row.llm_calls || 0),
+          tokens:
+            Number(row.tokens || 0) ||
+            Number(row.input_tokens || 0) + Number(row.output_tokens || 0),
+          cost_usd: totalCost,
+          estimated_input_cost_usd: useEstimate
+            ? Number(estimated.input || 0)
+            : Number(row.estimated_input_cost_usd || 0),
+          estimated_cached_input_cost_usd: useEstimate
+            ? Number(estimated.cached || 0)
+            : Number(row.estimated_cached_input_cost_usd || 0),
+          estimated_cache_write_cost_usd: useEstimate
+            ? Number(estimated.cacheWrite || 0)
+            : Number(row.estimated_cache_write_cost_usd || 0),
+          estimated_output_cost_usd: useEstimate
+            ? Number(estimated.output || 0)
+            : Number(row.estimated_output_cost_usd || 0),
+          cost_source: useEstimate
+            ? estimated.source
+            : row.cost_source || (loggedTotal > 0 ? "recorded" : estimated.source),
+          pricing_available: Boolean(estimated.pricing),
+        };
+      })
+      .sort((a, b) => {
+        const costDelta = Number(b.cost_usd || 0) - Number(a.cost_usd || 0);
+        if (Math.abs(costDelta) > 0.000001) return costDelta;
+        const tokenDelta = Number(b.tokens || 0) - Number(a.tokens || 0);
+        if (tokenDelta) return tokenDelta;
+        return String(a.label || a.model_name || "").localeCompare(
+          String(b.label || b.model_name || ""),
+        );
+      });
+  }, [rawModelRows, pricingMap]);
+
+  const computedModelCost = modelRows.reduce((s, r) => s + Number(r.cost_usd || 0), 0);
+  const recordedTotalCost = Number(summary.total_cost_usd || 0);
+  const effectiveTotalCost = recordedTotalCost > 0 ? recordedTotalCost : computedModelCost;
+  const effectiveAvgCost =
+    summary.terminal_runs || summary.total_runs
+      ? effectiveTotalCost / Number(summary.terminal_runs || summary.total_runs || 1)
+      : 0;
+  const costSourceLabel =
+    recordedTotalCost > 0
+      ? "Recorded model spend"
+      : computedModelCost > 0
+        ? "Token-priced estimate"
+        : "No pricing configured";
+
+  const trend = useMemo(() => {
+    const totalTrendCost = rawTrend.reduce((s, r) => s + Number(r.cost_usd || 0), 0);
+    if (totalTrendCost > 0 || effectiveTotalCost <= 0) return rawTrend;
+    const totalTrendTokens = rawTrend.reduce((s, r) => s + Number(r.tokens || 0), 0);
+    if (totalTrendTokens <= 0) return rawTrend;
+    return rawTrend.map((row) => ({
+      ...row,
+      cost_usd: (effectiveTotalCost * Number(row.tokens || 0)) / totalTrendTokens,
+    }));
+  }, [rawTrend, effectiveTotalCost]);
 
   const tokenRows = useMemo(
     () =>
@@ -731,8 +991,7 @@ function OverviewPageContent() {
     [modelRows],
   );
 
-  const totalModelCost =
-    modelRows.reduce((s, r) => s + Number(r.cost_usd || 0), 0) || 1;
+  const totalModelCost = computedModelCost || modelRows.reduce((s, r) => s + Number(r.tokens || 0), 0) || 1;
   const totalTokensAll = Number(summary.total_tokens || 0) || 1;
   const newInTotal = Number(summary.total_new_input_tokens || 0);
   const cachedInTotal = Number(summary.total_cached_input_tokens || 0);
@@ -748,21 +1007,40 @@ function OverviewPageContent() {
         modelRows.reduce((acc, row) => {
           const k = String(row.provider || "unknown");
           if (!acc[k])
-            acc[k] = { provider: k, cost_usd: 0, calls: 0, tokens: 0 };
+            acc[k] = {
+              provider: k,
+              cost_usd: 0,
+              input_cost_usd: 0,
+              cached_cost_usd: 0,
+              output_cost_usd: 0,
+              calls: 0,
+              tokens: 0,
+            };
           acc[k].cost_usd += Number(row.cost_usd || 0);
+          acc[k].input_cost_usd += Number(row.estimated_input_cost_usd || 0);
+          acc[k].cached_cost_usd += Number(row.estimated_cached_input_cost_usd || 0);
+          acc[k].output_cost_usd += Number(row.estimated_output_cost_usd || 0);
           acc[k].calls += Number(row.calls || 0);
           acc[k].tokens += Number(row.tokens || 0);
           return acc;
         }, {}),
-      ).sort((a, b) => b.cost_usd - a.cost_usd),
+      ).sort((a, b) => {
+        const costDelta = b.cost_usd - a.cost_usd;
+        if (Math.abs(costDelta) > 0.000001) return costDelta;
+        return b.tokens - a.tokens;
+      }),
     [modelRows],
   );
 
-  const totalProviderCost =
-    providerCostRows.reduce((s, r) => s + Number(r.cost_usd || 0), 0) || 1;
+  const totalProviderCost = providerCostRows.reduce((s, r) => s + Number(r.cost_usd || 0), 0);
+  const totalProviderTokens = providerCostRows.reduce((s, r) => s + Number(r.tokens || 0), 0);
+  const providerDistributionMode = totalProviderCost > 0 ? "cost" : "tokens";
+  const providerDistributionTotal =
+    providerDistributionMode === "cost" ? totalProviderCost || 1 : totalProviderTokens || 1;
 
+  const agentRows = agentRunsDb?.rows ?? EMPTY_ARRAY;
   const agentSummary = useMemo(() => {
-    const rows = agentRunsDb?.rows ?? EMPTY_ARRAY;
+    const rows = agentRows;
     const grouped = new Map();
     for (const row of rows) {
       const actor = row.actor || row.agent_type || "unknown";
@@ -786,9 +1064,107 @@ function OverviewPageContent() {
       .map((r) => ({ ...r, avgDuration: r.total ? r.duration / r.total : 0 }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 6);
-  }, [agentRunsDb]);
+  }, [agentRows]);
 
   const totalAgentRuns = agentSummary.reduce((s, r) => s + r.total, 0);
+
+  const agentStatusRows = useMemo(() => {
+    const grouped = new Map();
+    for (const row of agentRows) {
+      const status = String(row.status || "unknown").trim().toLowerCase() || "unknown";
+      grouped.set(status, (grouped.get(status) || 0) + 1);
+    }
+    return Array.from(grouped.entries())
+      .map(([status, count]) => ({ status, count }))
+      .sort((a, b) => b.count - a.count || a.status.localeCompare(b.status));
+  }, [agentRows]);
+
+  const recentAgentRows = useMemo(
+    () =>
+      [...agentRows]
+        .sort((a, b) => String(b.started_at || "").localeCompare(String(a.started_at || "")))
+        .slice(0, 12),
+    [agentRows],
+  );
+
+  const workflowProviderStats = useMemo(() => {
+    const providerMap = new Map();
+    const countryMap = new Map();
+    const runIds = new Set();
+    const analysedUrls = new Set();
+    let abuseContacts = 0;
+
+    for (const row of providerAnalysisRows) {
+      const provider = String(row.provider || "unknown").trim() || "unknown";
+      const country = String(row.country || "").trim();
+      const streamUrl = String(row.stream_url || "").trim();
+      const pipelineRunId = row.pipeline_run_id != null ? String(row.pipeline_run_id) : "";
+      if (pipelineRunId) runIds.add(pipelineRunId);
+      if (streamUrl) analysedUrls.add(streamUrl);
+      if (row.abuse_email) abuseContacts += 1;
+      if (!providerMap.has(provider)) {
+        providerMap.set(provider, {
+          provider,
+          count: 0,
+          affectedRuns: new Set(),
+          abuseContacts: 0,
+          countries: new Set(),
+        });
+      }
+      const providerEntry = providerMap.get(provider);
+      providerEntry.count += 1;
+      if (pipelineRunId) providerEntry.affectedRuns.add(pipelineRunId);
+      if (row.abuse_email) providerEntry.abuseContacts += 1;
+      if (country) providerEntry.countries.add(country);
+
+      if (country) {
+        const entry = countryMap.get(country) || { country, count: 0 };
+        entry.count += 1;
+        countryMap.set(country, entry);
+      }
+    }
+
+    const providerRows = Array.from(providerMap.values())
+      .map((row) => ({
+        ...row,
+        affectedRuns: row.affectedRuns.size,
+        countries: row.countries.size,
+      }))
+      .sort((a, b) => b.count - a.count || a.provider.localeCompare(b.provider));
+    const countryRows = Array.from(countryMap.values()).sort(
+      (a, b) => b.count - a.count || a.country.localeCompare(b.country),
+    );
+
+    return {
+      providerRows,
+      countryRows,
+      analysedLinks: analysedUrls.size || providerAnalysisRows.length,
+      streamLinks: workflowStreamRows.length,
+      affectedRuns: runIds.size,
+      abuseContacts,
+    };
+  }, [providerAnalysisRows, workflowStreamRows]);
+
+  const workflowProviderLinkRows = useMemo(() => {
+    if (providerAnalysisRows.length) {
+      return providerAnalysisRows.slice(0, 60).map((row) => ({
+        ...row,
+        url: row.stream_url || "",
+        source: "provider_analysis",
+      }));
+    }
+    return workflowStreamRows.slice(0, 60).map((row) => ({
+      ...row,
+      url: row.stream_url || "",
+      provider: "",
+      hostname: "",
+      org: "",
+      country: "",
+      abuse_email: "",
+      created_at: row.captured_at || row.created_at || "",
+      source: "run_stream",
+    }));
+  }, [providerAnalysisRows, workflowStreamRows]);
 
   /* Loading skeleton */
   if (!overview) {
@@ -831,8 +1207,8 @@ function OverviewPageContent() {
     },
     {
       label: "Total cost",
-      value: formatCurrency(summary.total_cost_usd || 0),
-      description: "Recorded model spend",
+      value: formatCurrency(effectiveTotalCost),
+      description: costSourceLabel,
       sparkData: trend.map((r) => r.cost_usd || 0),
       accent: "signal",
     },
@@ -898,14 +1274,14 @@ function OverviewPageContent() {
   const costsKpis = [
     {
       label: "Total cost",
-      value: formatCurrency(summary.total_cost_usd || 0),
-      description: "All recorded model spend",
+      value: formatCurrency(effectiveTotalCost),
+      description: costSourceLabel,
       sparkData: trend.map((r) => r.cost_usd || 0),
       accent: "signal",
     },
     {
       label: "Avg cost / run",
-      value: formatCurrency(summary.avg_cost_usd || 0),
+      value: formatCurrency(effectiveAvgCost),
       description: "Per persisted run",
       accent: "signal",
     },
@@ -924,7 +1300,7 @@ function OverviewPageContent() {
       label: "Cost / 1k tok",
       value: summary.total_tokens
         ? formatCurrency(
-            (summary.total_cost_usd || 0) / (summary.total_tokens / 1000),
+            effectiveTotalCost / (summary.total_tokens / 1000),
           )
         : "$0.000",
       description: "Blended rate",
@@ -1069,14 +1445,111 @@ function OverviewPageContent() {
     },
   ];
 
+  const providerKpis = [
+    {
+      label: "Workflow links",
+      value: formatNumber(workflowProviderStats.streamLinks || workflowProviderStats.analysedLinks),
+      description: "Stream links captured by runs",
+      accent: "sky",
+    },
+    {
+      label: "Analysed links",
+      value: formatNumber(workflowProviderStats.analysedLinks),
+      description: "Links resolved to provider intel",
+      accent: "signal",
+    },
+    {
+      label: "Providers",
+      value: formatNumber(workflowProviderStats.providerRows.length || summary.unique_providers || 0),
+      description: "Distinct hosting/CDN names",
+      accent: "violet",
+    },
+    {
+      label: "Affected runs",
+      value: formatNumber(workflowProviderStats.affectedRuns),
+      description: "Runs with provider rows",
+      accent: "mint",
+    },
+    {
+      label: "Abuse contacts",
+      value: formatNumber(workflowProviderStats.abuseContacts),
+      description: "Resolved abuse inboxes",
+      accent: "rose",
+    },
+    {
+      label: "Coverage",
+      value: formatPercent(
+        workflowProviderStats.streamLinks
+          ? workflowProviderStats.analysedLinks / workflowProviderStats.streamLinks
+          : 0,
+      ),
+      description: "Analysed links / captured links",
+      bar: workflowProviderStats.streamLinks
+        ? (workflowProviderStats.analysedLinks / workflowProviderStats.streamLinks) * 100
+        : 0,
+      accent: "mint",
+    },
+  ];
+
   /* ── donut segment builders ──────────────────────────────────────────── */
   const providerDonutSegs = providerCostRows.slice(0, 5).map((row, i) => ({
     label: row.provider,
-    value: Number(row.cost_usd || 0),
+    value:
+      providerDistributionMode === "cost"
+        ? Number(row.cost_usd || 0)
+        : Number(row.tokens || 0),
     color: PALETTE[i % PALETTE.length],
-    pct: Number(row.cost_usd || 0) / totalProviderCost,
-    formatted: formatCurrency(row.cost_usd || 0),
+    pct:
+      (providerDistributionMode === "cost"
+        ? Number(row.cost_usd || 0)
+        : Number(row.tokens || 0)) / providerDistributionTotal,
+    formatted:
+      providerDistributionMode === "cost"
+        ? formatCurrency(row.cost_usd || 0)
+        : `${formatNumber(row.tokens || 0)} tok`,
   }));
+
+  const costComponentTotals = modelRows.reduce(
+    (acc, row) => {
+      acc.input += Number(row.estimated_input_cost_usd || 0);
+      acc.cached += Number(row.estimated_cached_input_cost_usd || 0);
+      acc.cacheWrite += Number(row.estimated_cache_write_cost_usd || 0);
+      acc.output += Number(row.estimated_output_cost_usd || 0);
+      return acc;
+    },
+    { input: 0, cached: 0, cacheWrite: 0, output: 0 },
+  );
+  const costComponentTotal =
+    costComponentTotals.input +
+    costComponentTotals.cached +
+    costComponentTotals.cacheWrite +
+    costComponentTotals.output;
+  const costComponentSegs = [
+    {
+      label: "Input",
+      value: costComponentTotals.input,
+      color: "var(--signal)",
+      formatted: formatCurrency(costComponentTotals.input),
+    },
+    {
+      label: "Cached",
+      value: costComponentTotals.cached,
+      color: "var(--violet)",
+      formatted: formatCurrency(costComponentTotals.cached),
+    },
+    {
+      label: "Cache write",
+      value: costComponentTotals.cacheWrite,
+      color: "var(--sky)",
+      formatted: formatCurrency(costComponentTotals.cacheWrite),
+    },
+    {
+      label: "Output",
+      value: costComponentTotals.output,
+      color: "var(--mint)",
+      formatted: formatCurrency(costComponentTotals.output),
+    },
+  ].filter((item) => item.value > 0);
 
   const tokenDonutSegs = [
     {
@@ -1136,6 +1609,33 @@ function OverviewPageContent() {
     color: PALETTE[i % PALETTE.length],
     pct: row.total / (totalAgentRuns || 1),
     formatted: formatNumber(row.total),
+  }));
+
+  const agentStatusSegs = agentStatusRows.map((row, i) => ({
+    label: row.status,
+    value: row.count,
+    color:
+      row.status === "success" || row.status === "succeeded"
+        ? "var(--mint)"
+        : row.status === "failed"
+          ? "var(--rose)"
+          : PALETTE[i % PALETTE.length],
+    pct: row.count / (agentRows.length || 1),
+    formatted: formatNumber(row.count),
+  }));
+
+  const workflowProviderSegs = workflowProviderStats.providerRows.slice(0, 6).map((row, i) => ({
+    label: row.provider,
+    value: row.count,
+    color: PALETTE[i % PALETTE.length],
+    pct: row.count / (workflowProviderStats.analysedLinks || 1),
+    formatted: `${formatNumber(row.count)} links`,
+  }));
+
+  const workflowCountryPieData = workflowProviderStats.countryRows.slice(0, 7).map((row, i) => ({
+    label: row.country || "unknown",
+    value: row.count,
+    color: PALETTE[i % PALETTE.length],
   }));
 
   /* ── render ──────────────────────────────────────────────────────────── */
@@ -1266,6 +1766,25 @@ function OverviewPageContent() {
             />
           )}
 
+          {trend.length > 2 && (
+            <BarTrendCard
+              title="Run outcome mix"
+              description="Stacked daily successes, partial/running runs, and failures."
+              data={trend.map((r) => ({
+                date: r.date || "",
+                successes: Number(r.successes || 0),
+                partials: Number(r.partials || 0),
+                failures: Number(r.failures || 0),
+              }))}
+              series={[
+                { key: "successes", label: "Success", color: "var(--chart-1)", stackId: "status" },
+                { key: "partials", label: "Partial", color: "var(--chart-2)", stackId: "status" },
+                { key: "failures", label: "Failed", color: "var(--chart-5)", stackId: "status" },
+              ]}
+              height={210}
+            />
+          )}
+
           {/* Active + recent runs */}
           <div className="grid gap-5 xl:grid-cols-[340px_1fr]">
             <Panel>
@@ -1367,7 +1886,7 @@ function OverviewPageContent() {
             <Panel>
               <PanelHead
                 title="Cost by provider"
-                sub="Aggregated from model usage rows"
+                sub="Aggregated from model usage rows; falls back to token share when pricing is absent"
                 accent="var(--signal)"
               />
               <div className="flex items-center gap-6 p-5">
@@ -1375,8 +1894,12 @@ function OverviewPageContent() {
                   segments={providerDonutSegs}
                   size={148}
                   thickness={22}
-                  label={formatCurrency(summary.total_cost_usd || 0)}
-                  sublabel="total"
+                  label={
+                    providerDistributionMode === "cost"
+                      ? formatCurrency(effectiveTotalCost)
+                      : formatNumber(totalProviderTokens)
+                  }
+                  sublabel={providerDistributionMode === "cost" ? "total" : "tokens"}
                 />
                 <div className="flex-1">
                   <DonutLegend segments={providerDonutSegs} />
@@ -1395,23 +1918,26 @@ function OverviewPageContent() {
             <Panel>
               <PanelHead
                 title="Cost by model"
-                sub="Top models by recorded spend"
+                sub="Top models by recorded or token-priced spend"
                 accent="var(--violet)"
               />
               {modelRows.length ? (
                 modelRows
                   .slice(0, 8)
-                  .map((row, i) => (
-                    <HBarRow
-                      key={`${row.provider}-${row.model_name}-${i}`}
-                      rank={i + 1}
-                      label={row.label || `${row.provider}::${row.model_name}`}
-                      value={formatCurrency(row.cost_usd || 0)}
-                      share={(Number(row.cost_usd || 0) / totalModelCost) * 100}
-                      color={PALETTE[i % PALETTE.length]}
-                      sub={`${formatNumber(row.calls || 0)} calls · ${formatNumber(row.tokens || 0)} tok`}
-                    />
-                  ))
+                  .map((row, i) => {
+                    const shareValue = computedModelCost > 0 ? Number(row.cost_usd || 0) : Number(row.tokens || 0);
+                    return (
+                      <HBarRow
+                        key={`${row.provider}-${row.model_name}-${i}`}
+                        rank={i + 1}
+                        label={row.label || `${row.provider}::${row.model_name}`}
+                        value={formatCurrency(row.cost_usd || 0)}
+                        share={(shareValue / totalModelCost) * 100}
+                        color={PALETTE[i % PALETTE.length]}
+                        sub={`${formatNumber(row.calls || 0)} calls · ${formatNumber(row.tokens || 0)} tok · ${row.cost_source || "unpriced"}`}
+                      />
+                    );
+                  })
               ) : (
                 <div
                   className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40"
@@ -1419,6 +1945,74 @@ function OverviewPageContent() {
                   No model cost data
                 </div>
               )}
+            </Panel>
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
+            <Panel>
+              <PanelHead
+                title="Cost component mix"
+                sub="Input, cached input, cache writes, and output"
+                accent="var(--mint)"
+              />
+              <div className="flex flex-col items-center gap-4 p-5">
+                <DonutChart
+                  segments={costComponentSegs}
+                  size={140}
+                  thickness={20}
+                  label={formatCurrency(costComponentTotal || effectiveTotalCost)}
+                  sublabel="priced"
+                />
+                {costComponentSegs.length ? (
+                  <DonutLegend segments={costComponentSegs} />
+                ) : (
+                  <div className="text-center text-[12px] text-muted-foreground/50">
+                    Configure pricing to split spend by token type.
+                  </div>
+                )}
+              </div>
+            </Panel>
+
+            <Panel>
+              <PanelHead
+                title="Model pricing details"
+                sub="Token-derived cost components per model"
+                accent="var(--sky)"
+              />
+              <div className="overflow-x-auto">
+                <Table className="min-w-full text-[12px]">
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      {["Model", "Input", "Cached", "Output", "Total", "Source"].map((h) => (
+                        <TableHead key={h} className="px-4 py-2.5 text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/60">
+                          {h}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {modelRows.slice(0, 8).map((row) => (
+                      <TableRow key={`${row.provider}-${row.model_name}-pricing`}>
+                        <TableCell className="max-w-[260px] truncate px-4 py-2.5 font-mono text-[11px]" title={row.label || `${row.provider}::${row.model_name}`}>
+                          {row.label || `${row.provider}::${row.model_name}`}
+                        </TableCell>
+                        <TableCell className="px-4 py-2.5 font-mono text-[11px]">{formatCurrency(row.estimated_input_cost_usd || 0)}</TableCell>
+                        <TableCell className="px-4 py-2.5 font-mono text-[11px]">{formatCurrency(row.estimated_cached_input_cost_usd || 0)}</TableCell>
+                        <TableCell className="px-4 py-2.5 font-mono text-[11px]">{formatCurrency(row.estimated_output_cost_usd || 0)}</TableCell>
+                        <TableCell className="px-4 py-2.5 font-mono text-[11px] text-foreground">{formatCurrency(row.cost_usd || 0)}</TableCell>
+                        <TableCell className="px-4 py-2.5 font-mono text-[10px] text-muted-foreground">{row.cost_source || "unpriced"}</TableCell>
+                      </TableRow>
+                    ))}
+                    {!modelRows.length && (
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell colSpan={6} className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40">
+                          No model usage rows recorded yet
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </Panel>
           </div>
 
@@ -1451,7 +2045,7 @@ function OverviewPageContent() {
                   <div
                     className="font-mono text-[13px] font-semibold text-primary"
                   >
-                    {formatCurrency(summary.total_cost_usd || 0)} total
+                    {formatCurrency(effectiveTotalCost)} total
                   </div>
                 </div>
                 <AreaLine
@@ -1587,9 +2181,10 @@ function OverviewPageContent() {
                     ...tokenRows.map((r) => r.newIn + r.cachedIn + r.out),
                     1,
                   );
-                  const nw = Math.round((row.newIn / maxTotal) * 260);
-                  const cw = Math.round((row.cachedIn / maxTotal) * 260);
-                  const ow = Math.round((row.out / maxTotal) * 260);
+                  const scaledWidth = Math.max((total / maxTotal) * 100, 2);
+                  const nw = (row.newIn / total) * 100;
+                  const cw = (row.cachedIn / total) * 100;
+                  const ow = (row.out / total) * 100;
                   return (
                     <div
                       key={row.label}
@@ -1612,25 +2207,21 @@ function OverviewPageContent() {
                           {formatNumber(total)} tok
                         </div>
                       </div>
-                      <div
-                        className="flex h-3.5 overflow-hidden rounded-full gap-[1px]"
-                        style={{ background: "var(--line)" }}
-                      >
-                        {nw > 0 && (
-                          <span
-                            style={{ width: nw, background: "var(--signal)" }}
-                          />
-                        )}
-                        {cw > 0 && (
-                          <span
-                            style={{ width: cw, background: "var(--violet)" }}
-                          />
-                        )}
-                        {ow > 0 && (
-                          <span
-                            style={{ width: ow, background: "var(--mint)" }}
-                          />
-                        )}
+                      <div className="h-3.5 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+                        <div
+                          className="flex h-full overflow-hidden rounded-full gap-[1px]"
+                          style={{ width: `${scaledWidth}%` }}
+                        >
+                          {nw > 0 && (
+                            <span style={{ flexBasis: `${nw}%`, background: "var(--signal)" }} />
+                          )}
+                          {cw > 0 && (
+                            <span style={{ flexBasis: `${cw}%`, background: "var(--violet)" }} />
+                          )}
+                          {ow > 0 && (
+                            <span style={{ flexBasis: `${ow}%`, background: "var(--mint)" }} />
+                          )}
+                        </div>
                       </div>
                       <div
                         className="font-mono text-[11px] text-foreground/80"
@@ -1682,7 +2273,7 @@ function OverviewPageContent() {
                   <span
                     className="font-mono text-[11px] text-foreground/80"
                   >
-                    {formatCurrency(summary.total_cost_usd || 0)}
+                    {formatCurrency(effectiveTotalCost)}
                   </span>
                 </div>
               )}
@@ -1701,6 +2292,136 @@ function OverviewPageContent() {
               height={190}
             />
           )}
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════════════
+          PROVIDERS TAB
+      ════════════════════════════════════════════════════════════════════ */}
+      {tab === "providers" && (
+        <div className="space-y-6">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {providerKpis.map((kpi) => (
+              <KpiCard key={kpi.label} {...kpi} />
+            ))}
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-2">
+            <Panel>
+              <PanelHead
+                title="Provider distribution"
+                sub="Hosting/CDN providers from workflow stream analysis"
+                accent="var(--violet)"
+              />
+              <div className="flex items-center gap-6 p-5">
+                <DonutChart
+                  segments={workflowProviderSegs}
+                  size={148}
+                  thickness={22}
+                  label={formatNumber(workflowProviderStats.analysedLinks)}
+                  sublabel="links"
+                />
+                <div className="flex-1">
+                  {workflowProviderSegs.length ? (
+                    <DonutLegend segments={workflowProviderSegs} />
+                  ) : (
+                    <div className="text-[12px] text-muted-foreground/50">
+                      No provider analysis rows recorded yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Panel>
+
+            <Panel>
+              <PanelHead
+                title="Provider geography"
+                sub="Countries resolved from provider analysis"
+                accent="var(--mint)"
+              />
+              <div className="flex items-center gap-6 p-5">
+                <MiniPieChart data={workflowCountryPieData} size={176} />
+                <div className="flex-1 space-y-2">
+                  {workflowProviderStats.countryRows.slice(0, 7).map((row, i) => (
+                    <div key={row.country || i} className="flex items-center gap-2 text-[11px]">
+                      <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: PALETTE[i % PALETTE.length] }} />
+                      <span className="min-w-0 flex-1 truncate text-foreground/80">{row.country || "unknown"}</span>
+                      <span className="font-mono text-[10.5px] text-muted-foreground">{formatNumber(row.count)}</span>
+                    </div>
+                  ))}
+                  {!workflowProviderStats.countryRows.length && (
+                    <div className="text-[12px] text-muted-foreground/50">
+                      Country data appears after provider lookups resolve IP metadata.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Panel>
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
+            <Panel>
+              <PanelHead
+                title="Top providers"
+                sub="Link count, affected runs, and abuse contacts"
+                accent="var(--signal)"
+              />
+              {workflowProviderStats.providerRows.length ? (
+                workflowProviderStats.providerRows.slice(0, 10).map((row, i) => (
+                  <HBarRow
+                    key={row.provider}
+                    rank={i + 1}
+                    label={row.provider}
+                    value={formatNumber(row.count)}
+                    share={(row.count / (workflowProviderStats.analysedLinks || 1)) * 100}
+                    color={PALETTE[i % PALETTE.length]}
+                    sub={`${formatNumber(row.affectedRuns)} runs · ${formatNumber(row.abuseContacts)} abuse contacts`}
+                  />
+                ))
+              ) : (
+                <div className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40">
+                  No provider rows recorded yet
+                </div>
+              )}
+            </Panel>
+
+            <Panel>
+              <PanelHead
+                title="Workflow links"
+                sub="Stream links captured during workflow execution"
+                accent="var(--sky)"
+                aside={
+                  <span className="font-mono text-[10px] text-muted-foreground/60">
+                    {formatNumber(workflowProviderLinkRows.length)} shown
+                  </span>
+                }
+              />
+              {workflowProviderLinkRows.length ? (
+                <div className="overflow-x-auto">
+                  <Table className="min-w-full text-[12px]">
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        {["Link", "Provider", "Host", "Country", "Abuse", "Run"].map((h) => (
+                          <TableHead key={h} className="px-4 py-2.5 text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/60">
+                            {h}
+                          </TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {workflowProviderLinkRows.map((row, i) => (
+                        <ProviderWorkflowRow key={`${row.url || row.stream_url}-${i}`} row={row} />
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40">
+                  No workflow stream links recorded yet
+                </div>
+              )}
+            </Panel>
+          </div>
         </div>
       )}
 
@@ -1957,8 +2678,75 @@ function OverviewPageContent() {
                   )}
                 </div>
               </Panel>
+
+              <Panel>
+                <PanelHead
+                  title="Agent status mix"
+                  sub="Terminal and in-flight statuses"
+                  accent="var(--mint)"
+                />
+                <div className="flex flex-col items-center gap-4 p-5">
+                  <DonutChart
+                    segments={agentStatusSegs}
+                    size={132}
+                    thickness={18}
+                    label={formatNumber(agentRows.length)}
+                    sublabel="records"
+                  />
+                  {agentStatusSegs.length > 0 && <DonutLegend segments={agentStatusSegs} />}
+                </div>
+              </Panel>
             </div>
           </div>
+
+          <Panel>
+            <PanelHead
+              title="Recent agent invocations"
+              sub="Latest persisted agent rows from the workflow database"
+              accent="var(--sky)"
+              aside={
+                <span className="font-mono text-[10px] text-muted-foreground/60">
+                  {formatNumber(agentRows.length)} loaded
+                </span>
+              }
+            />
+            {recentAgentRows.length ? (
+              <div className="overflow-x-auto">
+                <Table className="min-w-full text-[12px]">
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      {["Agent", "Status", "Target", "LLM", "Tools", "Duration"].map((h) => (
+                        <TableHead key={h} className="px-4 py-2.5 text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/60">
+                          {h}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {recentAgentRows.map((row) => (
+                      <TableRow key={row.id || `${row.actor}-${row.started_at}`}>
+                        <TableCell className="px-4 py-2.5">
+                          <div className="font-mono text-[11px] text-foreground">{row.actor || row.agent_type || "agent"}</div>
+                          <div className="font-mono text-[10px] text-muted-foreground/50">{row.agent_type || "-"}</div>
+                        </TableCell>
+                        <TableCell className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">{row.status || "-"}</TableCell>
+                        <TableCell className="max-w-[340px] truncate px-4 py-2.5 font-mono text-[11px] text-muted-foreground" title={row.target_url}>
+                          {row.target_url || "-"}
+                        </TableCell>
+                        <TableCell className="px-4 py-2.5 font-mono text-[11px]">{formatNumber(row.llm_calls_made || 0)}</TableCell>
+                        <TableCell className="px-4 py-2.5 font-mono text-[11px]">{formatNumber(row.tool_calls_made || 0)}</TableCell>
+                        <TableCell className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">{Number(row.duration_seconds || 0).toFixed(1)}s</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40">
+                No agent database rows returned
+              </div>
+            )}
+          </Panel>
 
           {/* Failed runs */}
           <Panel>
@@ -1999,4 +2787,3 @@ export function OverviewPage() {
     </Suspense>
   );
 }
-

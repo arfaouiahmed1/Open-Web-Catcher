@@ -61,11 +61,38 @@ function relTime(ts) {
   }
 }
 
+function decisionIntent(event) {
+  const details = event?.details && typeof event.details === "object" ? event.details : {};
+  return (
+    details.next_action ||
+    details.next_step ||
+    details.next_actor ||
+    details.next_agent ||
+    details.selected_agent ||
+    details.route_to ||
+    ""
+  );
+}
+
+function decisionReason(event) {
+  const details = event?.details && typeof event.details === "object" ? event.details : {};
+  return (
+    details.reasoning ||
+    details.reason ||
+    details.summary ||
+    details.note ||
+    details.explanation ||
+    ""
+  );
+}
+
 function DecisionCard({ event, index, isNew }) {
   const [expanded, setExpanded] = useState(false);
   const { icon: Icon, color, label } = decisionMeta(event);
   const hasDetails = event.details && Object.keys(event.details).length > 0;
   const time = relTime(event.timestamp);
+  const intent = decisionIntent(event);
+  const reason = decisionReason(event);
 
   return (
     <div
@@ -115,6 +142,17 @@ function DecisionCard({ event, index, isNew }) {
             {event.message}
           </p>
         )}
+
+        {intent ? (
+          <p className="mt-1 text-[11.5px] text-foreground/90">
+            <span className="font-semibold">Next:</span> {String(intent)}
+          </p>
+        ) : null}
+        {reason ? (
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            <span className="font-semibold">Why:</span> {String(reason)}
+          </p>
+        ) : null}
 
         {hasDetails && (
           <div className="mt-2">

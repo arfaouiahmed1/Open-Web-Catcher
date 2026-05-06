@@ -95,11 +95,23 @@ export function ContextWindowMeter({
       .filter((group) => group.contextWindow > 0 || group.tokens > 0)
       .sort((a, b) => {
         if (focusKey) {
-          const aFocus = a.key === focusKey || a.stage === focusKey;
-          const bFocus = b.key === focusKey || b.stage === focusKey;
+          const aFocus =
+            a.key === focusKey ||
+            a.stage === focusKey ||
+            a.actor === focusKey ||
+            a.agentType === focusKey;
+          const bFocus =
+            b.key === focusKey ||
+            b.stage === focusKey ||
+            b.actor === focusKey ||
+            b.agentType === focusKey;
           if (aFocus !== bFocus) return aFocus ? -1 : 1;
         }
-        return Number(a.order || 0) - Number(b.order || 0);
+        const orderDelta = Number(a.order || 0) - Number(b.order || 0);
+        if (orderDelta !== 0) return orderDelta;
+        const invocationDelta = Number(a.invocationIndex || 0) - Number(b.invocationIndex || 0);
+        if (invocationDelta !== 0) return invocationDelta;
+        return String(a.label || "").localeCompare(String(b.label || ""));
       });
   }, [focusKey, groups, pricingMap, primaryModel, primaryProvider]);
 
@@ -136,7 +148,7 @@ export function ContextWindowMeter({
               Context Window
             </CardTitle>
             <div className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-              Peak input per stage or agent instead of one workflow-wide total.
+              Peak input per agent invocation instead of one workflow-wide total.
             </div>
           </div>
           <div className="text-right text-[10px] text-muted-foreground">
@@ -147,7 +159,12 @@ export function ContextWindowMeter({
         <CardContent className="grid gap-3 p-4 pt-0 lg:grid-cols-2">
           {groupRows.map((group) => {
             const color = toneFor(group.pctClamped);
-            const isFocused = focusKey && (group.key === focusKey || group.stage === focusKey);
+            const isFocused =
+              focusKey &&
+              (group.key === focusKey ||
+                group.stage === focusKey ||
+                group.actor === focusKey ||
+                group.agentType === focusKey);
             return (
               <div
                 key={group.key}

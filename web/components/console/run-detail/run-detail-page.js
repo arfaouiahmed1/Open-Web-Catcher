@@ -1,31 +1,50 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { ChevronLeft, ExternalLink } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { AlertCircle, ExternalLink, RefreshCw, Trash2, XCircle } from "lucide-react";
 
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiUrl } from "@/lib/api";
 import { formatNumber } from "@/lib/utils";
-import { statusLabel, statusTone as runStatusTone } from "@/lib/run-status";
+import {
+  canCancelRun,
+  canDeleteRun,
+  statusLabel,
+  statusTone as runStatusTone,
+} from "@/lib/run-status";
 import { AgentOutputPanel } from "@/components/agent-output-panel";
 import { StreamProviderTab } from "@/components/console/run-detail/stream-provider-tab";
 import { DataTable } from "@/components/data-table";
 import { KpiCard } from "@/components/kpi-card";
-import { RunDetailLive } from "@/components/console/run-detail/run-detail-live";
+import { RunDetailLive } from "@/components/run-detail-live";
 import { LlmOutputPanel } from "@/components/dashboard";
-import { TimelinePanel } from "@/components/timeline-panel";
 import { ScreenshotGallery } from "@/components/console/run-detail/browser-live-view";
 import { useRunViewSettings } from "@/components/run-view-settings";
 import { CostEstimateCard, ContextWindowMeter } from "@/components/dashboard";
-import { synthCallsFromModelUsage } from "@/lib/pricing";
+import { StructuredDataCard } from "@/components/structured-data-card";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ConfirmAction } from "@/components/console/common/confirm-action";
 import {
   buildContextWindowGroups,
+  buildPersistedLlmEvents,
+  collectScreenshotUrls,
+  extractLlmResponses,
+  normalizeTraceEvents,
   summarizeRunState,
 } from "@/lib/run-trace";
+import { collectRunProviderUrls } from "@/lib/run-log-sync";
 
 const EMPTY_OBJECT = {};
 const EMPTY_ARRAY = [];
@@ -64,9 +83,25 @@ function normalizeRunDetailError(message) {
 }
 
 function RunMeta({ run, jobState, parallelism }) {
+  const classificationValue = run.top_level_page_type
+    ? run.classification_confidence
+      ? `${run.top_level_page_type} / ${run.classification_confidence}`
+      : run.top_level_page_type
+    : "unknown";
+  const modeValue = String(jobState?.job_type || "").trim().toLowerCase();
   const items = [
-    { label: "Root actor", value: run.root_actor || jobState?.actor || "--" },
-    { label: "Page type", value: run.page_type || "--" },
+    { label: "Root actor", value: run.root_actor || jobState?.actor || "unknown" },
+    {
+      label: "Mode",
+      value:
+        modeValue === "workflow"
+          ? "Workflow"
+          : modeValue === "agent"
+            ? "Agent"
+            : modeValue || "unknown",
+    },
+    { label: "Classification", value: classificationValue },
+    { label: "Page type", value: run.page_type || "unknown" },
     { label: "Duration", value: dur(run.duration_seconds) },
     { label: "Started", value: fmt(run.started_at || run.created_at) },
     { label: "Finished", value: fmt(run.finished_at) },
@@ -119,7 +154,7 @@ function ExpandableTable({ title, description, columns, rows, expand }) {
       title={title}
       description={
         description
-          ? `${description}${!showAll && rows.length > 8 ? ` · ${rows.length - 8} more hidden` : ""}`
+          ? `${description}${!showAll && rows.length > 8 ? ` / ${rows.length - 8} more hidden` : ""}`
           : undefined
       }
       columns={columns}
@@ -144,14 +179,33 @@ function RunHeader({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <Link
-                href="/runs"
-                className="flex items-center gap-1 text-[11px] transition-colors"
-                style={{ color: "var(--mute-2)" }}
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-                Runs
-              </Link>
+              <Breadcrumb>
+                <BreadcrumbList className="text-[11px]">
+                  <BreadcrumbItem>
+                    <Link
+                      href="/"
+                      className="transition-colors hover:text-foreground"
+                    >
+                      Console
+                    </Link>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    <Link
+                      href="/runs"
+                      className="transition-colors hover:text-foreground"
+                    >
+                      Runs
+                    </Link>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    <BreadcrumbPage className="font-mono text-[11px]">
+                      {runId ? `${runId.slice(0, 12)}...` : "--"}
+                    </BreadcrumbPage>
+                  </BreadcrumbItem>
+                </BreadcrumbList>
+              </Breadcrumb>
               {live ? (
                 <span
                   className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
@@ -218,15 +272,152 @@ function RunHeader({
   );
 }
 
+function summarizeProviderAnalysis(entries = []) {
+  return (Array.isArray(entries) ? entries : []).reduce((acc, entry, index) => {
+    acc[`provider ${index + 1}`] = {
+      provider: String(entry?.provider || ""),
+      stream_url: String(entry?.stream_url || ""),
+      hostname: String(entry?.hostname || ""),
+      ip: String(entry?.ip || ""),
+      country: String(entry?.country || ""),
+      abuse_email: String(entry?.abuse_email || ""),
+    };
+    return acc;
+  }, {});
+}
+
+function summarizeTakedownEmails(entries = []) {
+  return (Array.isArray(entries) ? entries : []).reduce((acc, entry, index) => {
+    acc[`email ${index + 1}`] = {
+      provider: String(entry?.provider || ""),
+      abuse_email: String(entry?.abuse_email || ""),
+      subject: String(entry?.subject || ""),
+      infringing_url: String(entry?.infringing_url || ""),
+      stream_count: Array.isArray(entry?.stream_urls) ? entry.stream_urls.length : 0,
+    };
+    return acc;
+  }, {});
+}
+
+function summarizeStreams(entries = []) {
+  return (Array.isArray(entries) ? entries : []).reduce((acc, entry, index) => {
+    if (typeof entry === "string") {
+      acc[`stream ${index + 1}`] = entry;
+      return acc;
+    }
+    acc[`stream ${index + 1}`] = {
+      url: String(entry?.url || ""),
+      protocol: String(entry?.protocol || ""),
+      provider: String(entry?.provider || ""),
+    };
+    return acc;
+  }, {});
+}
+
+function RunFinalOutputsSection({
+  snapshot = EMPTY_OBJECT,
+  isWorkflowRun = false,
+}) {
+  if (!isWorkflowRun) return null;
+
+  const providerAnalysis = summarizeProviderAnalysis(snapshot.provider_analysis || EMPTY_ARRAY);
+  const takedownEmails = summarizeTakedownEmails(snapshot.takedown_emails || EMPTY_ARRAY);
+  const allStreams = summarizeStreams(snapshot.all_streams || EMPTY_ARRAY);
+  const allScreenshots = Array.isArray(snapshot.all_screenshots) ? snapshot.all_screenshots : [];
+
+  const cards = [
+    {
+      title: "Provider analysis",
+      description: "Persisted provider lookup results and analysis metadata.",
+      data: providerAnalysis,
+      emptyLabel: "No provider analysis was persisted for this run.",
+    },
+    {
+      title: "Takedown emails",
+      description: "Generated takedown payloads captured in the final snapshot.",
+      data: takedownEmails,
+      emptyLabel: "No takedown emails were persisted for this run.",
+    },
+    {
+      title: "Streams",
+      description: "All collected stream URLs across the run.",
+      data: allStreams,
+      emptyLabel: "No streams were persisted for this run.",
+    },
+    {
+      title: "Screenshots",
+      description: "Captured screenshot URLs from the completed workflow.",
+      data: allScreenshots,
+      emptyLabel: "No screenshots were persisted for this run.",
+    },
+  ].filter((card) => {
+    if (Array.isArray(card.data)) return card.data.length > 0;
+    if (card.data && typeof card.data === "object") return Object.keys(card.data).length > 0;
+    return Boolean(card.data);
+  });
+
+  if (!cards.length) return null;
+
+  return (
+    <Card className="overflow-hidden shadow-card">
+      <CardHeader className="border-b px-4 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle className="text-sm font-medium">Final outputs</CardTitle>
+            <p className="mt-1 text-[12px] text-muted-foreground">
+              Workflow-only snapshot data surfaced directly from the persisted run.
+            </p>
+          </div>
+          <Badge tone="signal" className="shrink-0">
+            Workflow view
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 p-4 xl:grid-cols-2">
+        {cards.map((card) => (
+          <StructuredDataCard
+            key={card.title}
+            title={card.title}
+            description={card.description}
+            data={card.data}
+            limit={5}
+            emptyLabel={card.emptyLabel}
+          />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function RunDetailPage() {
   const { runId } = useParams();
+  const router = useRouter();
   const [payload, setPayload] = useState(null);
   const [isLoading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tab, setTab] = useState("live");
   const [liveMetrics, setLiveMetrics] = useState(null);
-  const [liveLlmCalls, setLiveLlmCalls] = useState(null);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const tabsHeaderRef = useRef(null);
+  const tabListRef = useRef(null);
   const { settings } = useRunViewSettings();
+
+  async function refreshRun() {
+    if (!runId) return;
+    setIsRefreshing(true);
+    setActionError("");
+    try {
+      const next = await apiFetch(`/ui/runs/${runId}`);
+      setPayload(next);
+    } catch (nextError) {
+      setActionError(nextError instanceof Error ? nextError.message : "Refresh failed");
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
 
   useEffect(() => {
     if (!runId) return;
@@ -239,93 +430,161 @@ export function RunDetailPage() {
   }, [runId]);
 
   useEffect(() => {
-    if (!payload?.active_trace) return undefined;
+    const jobStatus = String(payload?.job_state?.status || payload?.job?.status || payload?.run?.job_state || "").toLowerCase();
+    const runStatus = String(payload?.run?.final_status || payload?.run?.status || "").toLowerCase();
+    const shouldRefresh =
+      Boolean(payload?.active_trace) ||
+      ["queued", "running", "retrying", "leased"].includes(jobStatus) ||
+      ["queued", "running", "retrying"].includes(runStatus);
+    if (!shouldRefresh) return undefined;
     const id = setInterval(() => {
       apiFetch(`/ui/runs/${runId}`)
         .then((next) => {
           setPayload(next);
-          if (!next?.active_trace) clearInterval(id);
+          const nextJobStatus = String(next?.job_state?.status || next?.job?.status || next?.run?.job_state || "").toLowerCase();
+          const nextRunStatus = String(next?.run?.final_status || next?.run?.status || "").toLowerCase();
+          if (
+            !next?.active_trace &&
+            !["queued", "running", "retrying", "leased"].includes(nextJobStatus) &&
+            !["queued", "running", "retrying"].includes(nextRunStatus)
+          ) {
+            clearInterval(id);
+          }
         })
-        .catch(() => {});
+        .catch((nextError) => setActionError(nextError instanceof Error ? nextError.message : "Refresh failed"));
     }, 5000);
     return () => clearInterval(id);
-  }, [payload?.active_trace, runId]);
+  }, [payload?.active_trace, payload?.job?.status, payload?.job_state?.status, payload?.run?.final_status, payload?.run?.job_state, payload?.run?.status, runId]);
 
   const isActiveTrace = Boolean(payload?.active_trace);
   const trace = isActiveTrace ? payload.active_trace : null;
   const snapshot = payload?.snapshot ?? EMPTY_OBJECT;
-  const events = payload?.events ?? EMPTY_ARRAY;
+  const persistedEventsRaw = payload?.events ?? EMPTY_ARRAY;
   const persistedLlmCalls = payload?.llm_calls ?? EMPTY_ARRAY;
   const liveMetricsSafe = liveMetrics || trace?.metrics || EMPTY_OBJECT;
   const agentRuns = payload?.agent_runs ?? EMPTY_ARRAY;
-  const traceEvents = trace?.events || EMPTY_ARRAY;
-  const runEvents = isActiveTrace ? traceEvents : events;
+  const normalizedPersistedEvents = useMemo(
+    () => normalizeTraceEvents(persistedEventsRaw),
+    [persistedEventsRaw],
+  );
+  const normalizedTraceEvents = useMemo(
+    () => normalizeTraceEvents(trace?.events || EMPTY_ARRAY),
+    [trace?.events],
+  );
+  const normalizedTrace = useMemo(
+    () => (trace ? { ...trace, events: normalizedTraceEvents } : null),
+    [normalizedTraceEvents, trace],
+  );
+  const runEvents = isActiveTrace ? normalizedTraceEvents : normalizedPersistedEvents;
+  const activeLlmCalls = useMemo(() => extractLlmResponses(runEvents), [runEvents]);
+  const llmCalls = useMemo(
+    () => (isActiveTrace ? activeLlmCalls : (persistedLlmCalls.length ? persistedLlmCalls : activeLlmCalls)),
+    [activeLlmCalls, isActiveTrace, persistedLlmCalls],
+  );
   const runState = useMemo(() => summarizeRunState(runEvents), [runEvents]);
+  const contextFromEvents = !isActiveTrace && !persistedLlmCalls.length && activeLlmCalls.length > 0;
   const contextGroups = useMemo(
     () =>
       buildContextWindowGroups({
         events: runEvents,
-        llmCalls: persistedLlmCalls,
+        llmCalls,
         agentRuns,
-        active: isActiveTrace,
+        active: isActiveTrace || contextFromEvents,
       }),
-    [agentRuns, isActiveTrace, persistedLlmCalls, runEvents],
+    [agentRuns, contextFromEvents, isActiveTrace, llmCalls, runEvents],
+  );
+  const llmOutputEvents = useMemo(() => {
+    const hasLlmEvents = runEvents.some((event) =>
+      ["llm_response", "llm_error", "llm_timeout", "llm_rate_limited"].includes(String(event?.kind || "")),
+    );
+    if (hasLlmEvents) return runEvents;
+    return buildPersistedLlmEvents({ llmCalls: persistedLlmCalls, agentRuns });
+  }, [agentRuns, persistedLlmCalls, runEvents]);
+  const providerSnapshot = useMemo(
+    () => ({
+      all_streams: snapshot.all_streams || payload?.all_streams || EMPTY_ARRAY,
+      provider_analysis: snapshot.provider_analysis || payload?.provider_analysis || EMPTY_ARRAY,
+      takedown_emails: snapshot.takedown_emails || payload?.takedown_emails || EMPTY_ARRAY,
+    }),
+    [payload?.all_streams, payload?.provider_analysis, payload?.takedown_emails, snapshot],
+  );
+  const providerUrls = useMemo(
+    () => collectRunProviderUrls({ snapshot: providerSnapshot, events: runEvents }),
+    [providerSnapshot, runEvents],
   );
 
-  const screenshots = useMemo(() => {
-    const fromSnapshot = (snapshot.all_screenshots || []).filter(Boolean);
-    const fromEvents = events
-      .map(
-        (event) =>
-          event?.details?.screenshot_url ||
-          event?.details?.result_full?.screenshot_url ||
-          event?.details_json?.screenshot_url ||
-          event?.details_json?.result_full?.screenshot_url,
-      )
-      .filter(Boolean);
-    return [...new Set([...fromSnapshot, ...fromEvents])];
-  }, [snapshot, events]);
-
-  const llmCalls = useMemo(() => {
-    if (isActiveTrace) {
-      const synth = synthCallsFromModelUsage(liveMetricsSafe.model_usage);
-      if (synth.length) return synth;
-      if (Array.isArray(liveLlmCalls) && liveLlmCalls.length) return liveLlmCalls;
+  useEffect(() => {
+    if (tabsHeaderRef.current) {
+      tabsHeaderRef.current.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
     }
-    return persistedLlmCalls;
-  }, [isActiveTrace, liveMetricsSafe, liveLlmCalls, persistedLlmCalls]);
+    const active = tabListRef.current?.querySelector("[data-state='active']");
+    if (active && typeof active.scrollIntoView === "function") {
+      active.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    }
+  }, [tab]);
+
+  const screenshots = useMemo(() => {
+    const urls = new Set();
+    collectScreenshotUrls(snapshot.all_screenshots || EMPTY_ARRAY, urls);
+    collectScreenshotUrls(payload?.all_screenshots || EMPTY_ARRAY, urls);
+    for (const event of runEvents) {
+      collectScreenshotUrls(event?.details, urls);
+      collectScreenshotUrls(event?.details_json, urls);
+    }
+    return Array.from(urls);
+  }, [payload?.all_screenshots, runEvents, snapshot]);
 
   if (isLoading) {
     return (
-      <div
-        className="flex h-64 items-center justify-center gap-3"
-        style={{ color: "var(--mute)" }}
-      >
-        <span
-          className="owc-spinner owc-spinner-lg"
-          style={{ color: "var(--signal)" }}
-        />
-        <span className="text-[13px]">Loading run...</span>
+      <div className="space-y-5">
+        <Card className="overflow-hidden shadow-card">
+          <CardHeader className="space-y-3 border-b px-4 py-4">
+            <Skeleton className="h-3 w-40" />
+            <Skeleton className="h-6 w-72" />
+            <Skeleton className="h-4 w-96" />
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-3 px-4 py-4 sm:grid-cols-4">
+            {Array.from({ length: 6 }).map((_, idx) => (
+              <div key={idx} className="space-y-1.5">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-4 w-28" />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+        <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, idx) => (
+            <Skeleton key={idx} className="h-24 rounded-xl" />
+          ))}
+        </div>
+        <Skeleton className="h-64 rounded-xl" />
       </div>
     );
   }
 
   if (error || !payload) {
     return (
-      <div
-        className="flex h-64 flex-col items-center justify-center gap-3"
-        style={{ color: "var(--mute)" }}
-      >
-        <div className="text-[13px]" style={{ color: "var(--rose)" }}>
-          {error || "Run not found"}
-        </div>
-        <Link
-          href="/runs"
-          className="text-[12px]"
-          style={{ color: "var(--signal)" }}
+      <div className="space-y-4">
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-xl border px-4 py-3 text-sm"
+          style={{
+            borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)",
+            background: "color-mix(in oklch, var(--rose) 8%, transparent)",
+            color: "var(--rose)",
+          }}
         >
-          Back to runs
-        </Link>
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="flex-1">
+            <div className="font-medium">Run unavailable</div>
+            <div className="mt-0.5 text-[12.5px] opacity-90">
+              {error || "Run not found"}
+            </div>
+          </div>
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/runs">Back to runs</Link>
+        </Button>
       </div>
     );
   }
@@ -334,12 +593,18 @@ export function RunDetailPage() {
   const agentOutputs = payload.agent_outputs || EMPTY_ARRAY;
   const agentRollups = payload.agent_rollups || EMPTY_ARRAY;
   const stageRollups = payload.stage_rollups || EMPTY_ARRAY;
+  const modelUsage = payload.model_usage || EMPTY_ARRAY;
   const parallelism = payload.parallelism || {
     current_parallel_agents: 0,
     max_parallel_agents: 0,
   };
   const toolCalls = payload.tool_calls || EMPTY_ARRAY;
   const jobState = payload.job_state || payload.job || null;
+  const degradedFallback = payload.source === "background_job_result";
+  const telemetryStatus = String(payload.telemetry_status || run.telemetry_status || "").trim().toLowerCase();
+  const telemetryMissing = degradedFallback && telemetryStatus === "missing";
+  const missingMetricValue = telemetryMissing ? "--" : null;
+  const metricDescription = (fallback, normal) => (telemetryMissing ? "Trace not persisted" : normal || fallback);
 
   const llmCallCount = isActiveTrace
     ? Number(liveMetricsSafe.total_llm_calls || llmCalls.length || 0)
@@ -353,57 +618,203 @@ export function RunDetailPage() {
   const tokensOut = isActiveTrace
     ? Number(liveMetricsSafe.total_tokens_out || 0)
     : Number(run.total_tokens_out || 0);
+  const runMode = String(jobState?.job_type || run.job_type || "").trim().toLowerCase();
+  const rootActorMode = String(
+    run.root_actor || normalizedTrace?.root_actor || jobState?.actor || "",
+  )
+    .trim()
+    .toLowerCase();
+  const inferredRunMode = runMode || (rootActorMode === "orchestrator" ? "workflow" : rootActorMode ? "agent" : "");
+  const isAgentRun = inferredRunMode === "agent";
+  const isWorkflowRun = inferredRunMode === "workflow" || rootActorMode === "orchestrator";
+  const providerAnalysis = snapshot.provider_analysis || EMPTY_ARRAY;
+  const takedownEmails = snapshot.takedown_emails || EMPTY_ARRAY;
+  const allStreams = snapshot.all_streams || EMPTY_ARRAY;
+  const allScreenshots = snapshot.all_screenshots || EMPTY_ARRAY;
+  const hasFinalOutputs =
+    (Array.isArray(providerAnalysis) && providerAnalysis.length > 0) ||
+    (Array.isArray(takedownEmails) && takedownEmails.length > 0) ||
+    (Array.isArray(allStreams) && allStreams.length > 0) ||
+    (Array.isArray(allScreenshots) && allScreenshots.length > 0);
+  const showFinalOutputs = isWorkflowRun && hasFinalOutputs;
 
   const kpis = [
     {
       label: "LLM Calls",
-      value: formatNumber(llmCallCount),
+      value: missingMetricValue || formatNumber(llmCallCount),
       accent: "violet",
-      description: "Model completions",
+      description: metricDescription("Model completions", "Model completions"),
     },
     {
       label: "Tool Calls",
-      value: formatNumber(toolCallCount),
+      value: missingMetricValue || formatNumber(toolCallCount),
       accent: "sky",
-      description: "MCP tool calls",
+      description: metricDescription("MCP tool calls", "MCP tool calls"),
     },
     {
       label: "Tokens",
-      value: formatNumber(tokensIn + tokensOut),
+      value: missingMetricValue || formatNumber(tokensIn + tokensOut),
       accent: "signal",
-      description: `${formatNumber(tokensIn)} in / ${formatNumber(tokensOut)} out`,
+      description: telemetryMissing
+        ? "Trace not persisted"
+        : `${formatNumber(tokensIn)} in / ${formatNumber(tokensOut)} out`,
     },
     {
       label: "Parallel",
-      value: `${formatNumber(parallelism.current_parallel_agents || 0)} / ${formatNumber(parallelism.max_parallel_agents || 0)}`,
+      value: missingMetricValue || `${formatNumber(parallelism.current_parallel_agents || 0)} / ${formatNumber(parallelism.max_parallel_agents || 0)}`,
       accent: "signal",
-      description: "Live / peak agents",
+      description: telemetryMissing ? "Trace not persisted" : "Live / peak agents",
     },
     {
       label: "Screenshots",
-      value: formatNumber(run.screenshot_count || screenshots.length || 0),
+      value: missingMetricValue || formatNumber(run.screenshot_count || screenshots.length || 0),
       accent: "sky",
-      description: "Captures taken",
+      description: metricDescription("Captures taken", "Captures taken"),
     },
     {
       label: "Streams",
-      value: formatNumber(run.stream_count || 0),
+      value: missingMetricValue || formatNumber(run.stream_count || 0),
       accent: "signal",
-      description: "Stream URLs found",
+      description: metricDescription("Stream URLs found", "Stream URLs found"),
     },
   ];
 
+  async function cancelRun() {
+    if (!runId || isCancelling) return;
+    setIsCancelling(true);
+    setActionError("");
+    try {
+      const response = await fetch(apiUrl(`/ui/runs/${runId}/cancel`), {
+        method: "POST",
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || `Cancel failed (${response.status})`);
+      }
+      await refreshRun();
+    } catch (nextError) {
+      setActionError(nextError instanceof Error ? nextError.message : "Cancel failed");
+    } finally {
+      setIsCancelling(false);
+    }
+  }
+
+  async function deleteRun() {
+    if (!runId || isDeleting) return;
+    setIsDeleting(true);
+    setActionError("");
+    try {
+      const response = await fetch(apiUrl(`/ui/runs/${runId}`), {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || `Delete failed (${response.status})`);
+      }
+      router.push("/runs");
+      router.refresh();
+    } catch (nextError) {
+      setActionError(nextError instanceof Error ? nextError.message : "Delete failed");
+      setIsDeleting(false);
+    }
+  }
+
   return (
     <div className="space-y-5">
+      {degradedFallback ? (
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-xl border px-4 py-3 text-sm"
+          style={{
+            borderColor: "color-mix(in oklch, var(--amber) 28%, transparent)",
+            background: "color-mix(in oklch, var(--amber) 9%, transparent)",
+            color: "var(--signal)",
+          }}
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="flex-1">
+            <div className="font-medium">
+              {telemetryMissing ? "Final answer recovered, telemetry missing" : "Background result recovered"}
+            </div>
+            <div className="mt-0.5 text-[12.5px] opacity-90">
+              {payload.telemetry_message ||
+                run.telemetry_message ||
+                "This run is using the background job payload because normalized run telemetry was unavailable."}
+            </div>
+          </div>
+        </div>
+      ) : null}
       <RunHeader
         runId={runId}
-        url={run.url || trace?.metrics?.url}
+        url={run.url || normalizedTrace?.metrics?.url}
         run={run}
         live={isActiveTrace}
         jobState={jobState}
         parallelism={parallelism}
         subtitle={isActiveTrace ? "Streaming from in-memory observer" : null}
       />
+
+      <Card className="overflow-hidden shadow-card">
+        <CardContent className="flex flex-wrap items-center gap-2 px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium">Run controls</div>
+            <div className="text-xs text-muted-foreground">
+              Stop an active run, refresh persisted state, or delete a finished run.
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={refreshRun}
+            disabled={isLoading || isRefreshing}
+          >
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+          {canCancelRun(run) ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={cancelRun}
+              disabled={isCancelling}
+            >
+              <XCircle className="h-4 w-4" />
+              {isCancelling ? "Stopping..." : "Stop run"}
+            </Button>
+          ) : null}
+          {canDeleteRun(run) ? (
+            <ConfirmAction
+              title="Delete this run?"
+              description="Removes the run and its persisted telemetry. This cannot be undone."
+              actionLabel={isDeleting ? "Deleting..." : "Delete run"}
+              onConfirm={deleteRun}
+              trigger={(
+                <Button type="button" variant="outline" size="sm" disabled={isDeleting}>
+                  <Trash2 className="h-4 w-4" />
+                  Delete
+                </Button>
+              )}
+            />
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {actionError ? (
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-xl border px-4 py-3 text-sm"
+          style={{
+            borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)",
+            background: "color-mix(in oklch, var(--rose) 8%, transparent)",
+            color: "var(--rose)",
+          }}
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>{actionError}</div>
+        </div>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
         {kpis.map((kpi) => (
@@ -417,17 +828,20 @@ export function RunDetailPage() {
           primaryModel={run.primary_model}
           primaryProvider={run.primary_provider}
           groups={contextGroups}
-          focusKey={runState?.active?.stage || ""}
+          focusKey={runState?.active?.actor || runState?.active?.stage || ""}
         />
-        <CostEstimateCard llmCalls={llmCalls} />
+        <CostEstimateCard llmCalls={llmCalls} agentRollups={agentRollups} unavailable={telemetryMissing} />
       </div>
 
+      <RunFinalOutputsSection snapshot={snapshot} isWorkflowRun={showFinalOutputs} />
+
       <Tabs value={tab} onValueChange={setTab}>
-        <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 shadow-sm">
-          <TabsList className="h-auto flex-wrap justify-start gap-1 border-0 bg-transparent p-0 shadow-none">
+        <div ref={tabsHeaderRef} className="rounded-xl border border-border bg-card px-3 py-2 shadow-sm">
+          <div ref={tabListRef} className="max-w-full overflow-x-auto">
+          <TabsList className="h-auto w-max min-w-full flex-nowrap justify-start gap-1 border-0 bg-transparent p-0 shadow-none">
             <TabsTrigger value="live">Live &amp; Graph</TabsTrigger>
             <TabsTrigger value="outputs">
-              Outputs
+              {isAgentRun ? "Agent output" : "Workflow outputs"}
               {agentRollups.length || agentOutputs.length ? (
                 <Badge tone="signal" className="ml-1 px-1.5 py-0 text-[10px]">
                   {agentRollups.length || agentOutputs.length}
@@ -436,55 +850,63 @@ export function RunDetailPage() {
             </TabsTrigger>
             <TabsTrigger value="data">
               Tables
-              {agentRuns.length + toolCalls.length + persistedLlmCalls.length ? (
+              {agentRuns.length + toolCalls.length + persistedLlmCalls.length + modelUsage.length ? (
                 <Badge tone="violet" className="ml-1 px-1.5 py-0 text-[10px]">
-                  {agentRuns.length + toolCalls.length + persistedLlmCalls.length}
+                  {agentRuns.length + toolCalls.length + persistedLlmCalls.length + modelUsage.length}
                 </Badge>
               ) : null}
             </TabsTrigger>
-            {screenshots.length > 0 && settings.showScreenshots ? (
+            {settings.showScreenshots ? (
               <TabsTrigger value="screenshots">
                 Screenshots
-                <Badge tone="sky" className="ml-1 px-1.5 py-0 text-[10px]">
-                  {screenshots.length}
-                </Badge>
+                {screenshots.length > 0 ? (
+                  <Badge tone="sky" className="ml-1 px-1.5 py-0 text-[10px]">
+                    {screenshots.length}
+                  </Badge>
+                ) : null}
               </TabsTrigger>
             ) : null}
-            {run.stream_count > 0 || run.url ? (
+            {providerUrls.length > 0 ? (
               <TabsTrigger value="providers">Provider Intel</TabsTrigger>
             ) : null}
           </TabsList>
+          </div>
         </div>
 
         <TabsContent value="live" className="space-y-4">
-          <div className="space-y-4">
-            <RunDetailLive
-              runId={runId}
-              activeTrace={trace}
-              persistedEvents={isActiveTrace ? traceEvents : events}
-              defaultStreaming={isActiveTrace}
-              rootActor={run.root_actor || trace?.root_actor || ""}
-              onMetricsChange={(next) => {
-                setLiveMetrics(next);
-                if (Array.isArray(next?.llm_calls)) setLiveLlmCalls(next.llm_calls);
-              }}
-            />
-            {!isActiveTrace && events.length > 2 ? (
-              <TimelinePanel events={events} />
-            ) : null}
-            <LlmOutputPanel events={isActiveTrace ? traceEvents : events} />
-          </div>
+          <RunDetailLive
+            runId={runId}
+            activeTrace={normalizedTrace}
+            persistedEvents={runEvents}
+            persistedToolCalls={toolCalls}
+            initialDecisions={payload?.decisions || EMPTY_ARRAY}
+            defaultStreaming={isActiveTrace}
+            rootActor={run.root_actor || normalizedTrace?.root_actor || ""}
+            onMetricsChange={(next) => {
+              setLiveMetrics(next);
+            }}
+          />
         </TabsContent>
 
         <TabsContent value="outputs">
-          <AgentOutputPanel
-            stageRollups={stageRollups}
-            agentRollups={agentRollups}
-            parallelism={parallelism}
-            title={
-              jobState?.job_type === "agent" ? "Agent output" : "Workflow outputs"
-            }
-          />
+          <div className="space-y-4">
+            <LlmOutputPanel
+              events={llmOutputEvents}
+              emptyMessage={
+                telemetryMissing
+                  ? "No LLM calls were persisted for this run."
+                  : undefined
+              }
+            />
+            <AgentOutputPanel
+              stageRollups={stageRollups}
+              agentRollups={agentRollups}
+              parallelism={parallelism}
+              title={
+                isAgentRun ? "Agent output" : "Workflow outputs"
+              }
+            />
+          </div>
         </TabsContent>
 
         <TabsContent value="data">
@@ -509,6 +931,7 @@ export function RunDetailPage() {
                 description="Tool usage and reliability trail"
                 columns={[
                   "seq",
+                  "actor",
                   "tool_name",
                   "status",
                   "duration_seconds",
@@ -520,13 +943,32 @@ export function RunDetailPage() {
             </div>
             <div className="grid gap-5 xl:grid-cols-2">
               <ExpandableTable
+                title="Model Usage"
+                description="Persisted provider/model cost totals for this run"
+                columns={[
+                  "provider",
+                  "model_name",
+                  "llm_calls",
+                  "input_tokens",
+                  "cached_input_tokens",
+                  "new_input_tokens",
+                  "output_tokens",
+                  "estimated_total_cost_usd",
+                ]}
+                rows={modelUsage}
+                expand={settings.expandTables}
+              />
+              <ExpandableTable
                 title="LLM Calls"
                 description="Prompt, token, and cost telemetry"
                 columns={[
                   "seq",
+                  "actor",
                   "provider",
                   "model_name",
                   "input_tokens",
+                  "cached_input_tokens",
+                  "new_input_tokens",
                   "output_tokens",
                   "context_window",
                   "total_cost_usd",
@@ -558,7 +1000,7 @@ export function RunDetailPage() {
         </TabsContent>
 
         <TabsContent value="providers">
-          <StreamProviderTab runId={runId} runUrl={run.url} />
+          <StreamProviderTab runId={runId} runUrl={run.url} streamUrls={providerUrls} />
         </TabsContent>
       </Tabs>
     </div>

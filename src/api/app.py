@@ -26,6 +26,7 @@ from src.evaluation.datasets import build_dataset_examples, export_dataset_examp
 from src.evaluation.deepeval_bridge import EXPECTED_TOOLS_BY_PROFILE
 from src.evaluation.scoring import evaluate_case_artifact
 from src.evaluation.tracing import setup_tracing_from_settings
+from src.models.enums import AgentType, Confidence, ExtractionStatus
 from src.models.schemas import (
     AgentTestRequest,
     ClassificationResult,
@@ -45,7 +46,11 @@ from src.models.schemas import (
 )
 from src.storage.database import create_tables, get_session
 from src.storage.dataset_repository import DatasetRepository
-from src.storage.repositories import BackgroundJobRepository, RunRepository
+from src.storage.repositories import (
+    BackgroundJobRepository,
+    RunRepository,
+    normalize_runtime_event_payload,
+)
 from src.storage.ui_repository import OperatorConsoleRepository
 from src.tools.mcp_client import REQUIRED_TOOLS_BY_PROFILE, agent_tools
 from src.utils.browser_runtime import (
@@ -60,7 +65,7 @@ from src.utils.console_state import (
 )
 from src.utils.ipinfo import lookup_multiple
 from src.utils.logging import get_logger, setup_logging
-from src.utils.observability import get_observability_status, run_registry
+from src.utils.observability import RunTrace, get_observability_status, run_registry
 from src.utils.provider_models import (
     ProviderModelCatalogError,
     get_provider_model_catalog,
@@ -69,11 +74,16 @@ from src.utils.provider_models import (
     resolve_agent_model_selection,
 )
 from src.utils.provider_pricing import ProviderPricingSyncError, fetch_provider_pricing
-from src.utils.service_health import probe_browser, probe_mcp
+from src.utils.service_health import (
+    build_runtime_preflight,
+    probe_browser,
+    probe_mcp,
+)
 
 logger = get_logger(__name__)
 
 _settings: Settings | None = None
+RUNTIME_TOOL_PROFILES = ("classification", "landing", "hosting", "embedded")
 
 # ── Simple in-memory TTL cache for expensive read endpoints ──────────────
 _TTL_CACHE: dict[str, tuple[float, Any]] = {}
@@ -100,6 +110,35 @@ def _cache_bust(prefix: str) -> None:
     for key in list(_TTL_CACHE.keys()):
         if key.startswith(prefix):
             _TTL_CACHE.pop(key, None)
+
+
+def _runtime_dependency_snapshot(settings: Settings) -> dict[str, Any]:
+    browser_status = probe_browser(settings.browser_ws_endpoint)
+    mcp_status = probe_mcp(settings.mcp_server_url)
+    preflight = build_runtime_preflight(
+        browser_status,
+        mcp_status,
+        required_profiles=RUNTIME_TOOL_PROFILES,
+        require_browser=True,
+    )
+    return {
+        "browser": browser_status,
+        "mcp": mcp_status,
+        "preflight": preflight,
+    }
+
+
+def _ensure_launch_runtime_ready(settings: Settings) -> dict[str, Any]:
+    runtime = _runtime_dependency_snapshot(settings)
+    if runtime["preflight"]["launch_ready"]:
+        return runtime
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "message": "Runtime dependencies are not ready for a new run.",
+            "runtime": runtime,
+        },
+    )
 
 
 @dataclass
@@ -145,6 +184,38 @@ class PromptDryRunRequest(BaseModel):
     agent: str
     url: str
     content: str = ""
+
+
+class RunDecisionUpsertRequest(BaseModel):
+    title: str
+    summary: str = ""
+    actor: str = ""
+    category: str = ""
+    status: str = "open"
+    details: dict[str, Any] = {}
+
+
+class RunTaskUpsertRequest(BaseModel):
+    title: str
+    description: str = ""
+    actor: str = ""
+    priority: str = "medium"
+    status: str = "open"
+    details: dict[str, Any] = {}
+
+
+class RunAutoDecisionSyncItem(BaseModel):
+    auto_key: str
+    title: str
+    summary: str = ""
+    actor: str = ""
+    category: str = ""
+    status: str = "open"
+    details: dict[str, Any] = {}
+
+
+class RunAutoLogsSyncRequest(BaseModel):
+    decisions: list[RunAutoDecisionSyncItem] = []
 
 
 PROMPTS_DIR = Path("configs/prompts").resolve()
@@ -873,10 +944,11 @@ def _active_trace_row(trace: Any) -> dict[str, Any]:
     total_tokens_out = int(metrics.total_tokens_out or 0) if metrics else 0
     status = "running"
     if trace.completed:
-        if trace.cancel_requested or str(
-            (metrics.failure_mode if metrics else "") or ""
-        ).lower() in {"runcancellederror", "cancelled", "canceled"}:
+        failure_mode = str((metrics.failure_mode if metrics else "") or "").lower()
+        if trace.cancel_requested or failure_mode in {"runcancellederror", "cancelled", "canceled"}:
             status = "cancelled"
+        elif failure_mode == "partial":
+            status = "partial"
         else:
             status = "success" if (metrics and metrics.success) else "failed"
 
@@ -899,30 +971,146 @@ def _active_trace_row(trace: Any) -> dict[str, Any]:
     }
 
 
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _background_job_result_summary(job: Any) -> dict[str, Any]:
+    result = getattr(job, "result_json", None)
+    snapshot = result if isinstance(result, dict) else {}
+    classification = snapshot.get("classification") if isinstance(snapshot.get("classification"), dict) else {}
+    extraction_results = snapshot.get("extraction_results") if isinstance(snapshot.get("extraction_results"), list) else []
+    first_extraction = extraction_results[0] if extraction_results and isinstance(extraction_results[0], dict) else {}
+    metrics = snapshot.get("metrics") if isinstance(snapshot.get("metrics"), dict) else {}
+    raw_events = snapshot.get("events")
+    if not isinstance(raw_events, list):
+        raw_trace = snapshot.get("trace") if isinstance(snapshot.get("trace"), dict) else {}
+        raw_events = raw_trace.get("events") if isinstance(raw_trace.get("events"), list) else []
+    events = [normalize_runtime_event_payload(event) for event in raw_events if isinstance(event, dict)]
+
+    screenshots = _extract_screenshot_urls_from_value(snapshot.get("all_screenshots", []))
+    _extract_screenshot_urls_from_value(snapshot, screenshots)
+    streams = snapshot.get("all_streams") if isinstance(snapshot.get("all_streams"), list) else []
+    if not streams and first_extraction:
+        streams = first_extraction.get("streams") if isinstance(first_extraction.get("streams"), list) else []
+
+    page_type = str(
+        snapshot.get("page_type")
+        or snapshot.get("top_level_page_type")
+        or classification.get("page_type")
+        or first_extraction.get("page_type")
+        or ""
+    ).strip()
+    confidence = str(snapshot.get("confidence") or classification.get("confidence") or "").strip()
+    reasoning = str(snapshot.get("reasoning") or classification.get("reasoning") or "").strip()
+    agent_type = str(
+        snapshot.get("agent_type")
+        or classification.get("agent_type")
+        or first_extraction.get("agent_type")
+        or getattr(job, "actor", "")
+        or ""
+    ).strip()
+
+    llm_calls = _safe_int(metrics.get("total_llm_calls"))
+    if not llm_calls:
+        llm_calls = sum(1 for event in events if event.get("kind") == "llm_response")
+    tool_calls = _safe_int(metrics.get("total_tool_calls"))
+    if not tool_calls:
+        tool_calls = sum(1 for event in events if event.get("kind") == "tool_call_started")
+    tokens_in = _safe_int(metrics.get("total_tokens_in"))
+    tokens_out = _safe_int(metrics.get("total_tokens_out"))
+    total_messages = _safe_int(metrics.get("total_messages"))
+    total_cost = _safe_float(metrics.get("estimated_total_cost_usd"))
+    duration = _safe_float(metrics.get("total_duration_seconds"))
+    if duration <= 0:
+        started_at = getattr(job, "started_at", None)
+        finished_at = getattr(job, "finished_at", None)
+        if started_at is not None and finished_at is not None:
+            with suppress(Exception):
+                duration = max((finished_at - started_at).total_seconds(), 0.0)
+
+    has_telemetry = bool(metrics or events)
+    telemetry_status = str(snapshot.get("telemetry_status") or "").strip()
+    if not telemetry_status:
+        telemetry_status = "job_result" if has_telemetry else "missing"
+    telemetry_message = str(snapshot.get("telemetry_message") or "").strip()
+    if not telemetry_message:
+        telemetry_message = (
+            "Recovered metrics from the background job result payload."
+            if has_telemetry
+            else (
+                "This job only stored the final agent answer. LLM, tool, token, "
+                "stream, and screenshot telemetry was not persisted for this run."
+            )
+        )
+
+    final_status = str(snapshot.get("final_status") or _background_job_display_status(job) or "").strip()
+    if final_status == "succeeded":
+        final_status = "success"
+
+    return {
+        "snapshot": snapshot,
+        "page_type": page_type,
+        "confidence": confidence,
+        "reasoning": reasoning,
+        "agent_type": agent_type,
+        "events": events,
+        "all_screenshots": screenshots,
+        "all_streams": streams,
+        "stream_count": len(streams),
+        "screenshot_count": len(screenshots),
+        "email_count": len(snapshot.get("takedown_emails", []) or []),
+        "provider_analysis_count": len(snapshot.get("provider_analysis", []) or []),
+        "total_llm_calls": llm_calls,
+        "total_tool_calls": tool_calls,
+        "total_tokens_in": tokens_in,
+        "total_tokens_out": tokens_out,
+        "total_messages": total_messages,
+        "estimated_total_cost_usd": total_cost,
+        "duration_seconds": duration,
+        "final_status": final_status,
+        "telemetry_status": telemetry_status,
+        "telemetry_message": telemetry_message,
+    }
+
+
 def _background_job_row(job: Any) -> dict[str, Any]:
     display_status = _background_job_display_status(job)
     started_at = getattr(job, "started_at", None)
     finished_at = getattr(job, "finished_at", None)
     created_at = getattr(job, "created_at", None)
+    summary = _background_job_result_summary(job)
+    final_status = summary["final_status"] or display_status
+    job_url = str(getattr(job, "url", "") or summary["snapshot"].get("url") or "")
     return {
         "run_id": job.run_id,
-        "url": job.url,
-        "page_type": "unknown",
-        "status": display_status,
-        "final_status": display_status,
-        "stream_count": 0,
-        "screenshot_count": 0,
-        "email_count": 0,
-        "provider_analysis_count": 0,
-        "success": display_status == "success",
-        "duration_seconds": 0.0,
-        "total_tool_calls": 0,
-        "total_llm_calls": 0,
-        "total_tokens_in": 0,
-        "total_tokens_out": 0,
-        "estimated_total_cost_usd": 0.0,
-        "total_cost_usd": 0.0,
-        "total_messages": 0,
+        "url": job_url,
+        "page_type": summary["page_type"] or "unknown",
+        "status": final_status,
+        "final_status": final_status,
+        "stream_count": summary["stream_count"],
+        "screenshot_count": summary["screenshot_count"],
+        "email_count": summary["email_count"],
+        "provider_analysis_count": summary["provider_analysis_count"],
+        "success": final_status == "success",
+        "duration_seconds": summary["duration_seconds"],
+        "total_tool_calls": summary["total_tool_calls"],
+        "total_llm_calls": summary["total_llm_calls"],
+        "total_tokens_in": summary["total_tokens_in"],
+        "total_tokens_out": summary["total_tokens_out"],
+        "estimated_total_cost_usd": summary["estimated_total_cost_usd"],
+        "total_cost_usd": summary["estimated_total_cost_usd"],
+        "total_messages": summary["total_messages"],
         "created_at": created_at.isoformat() if created_at else "",
         "started_at": started_at.isoformat() if started_at else "",
         "finished_at": finished_at.isoformat() if finished_at else "",
@@ -933,6 +1121,11 @@ def _background_job_row(job: Any) -> dict[str, Any]:
         "job_state": display_status,
         "job": _background_job_state(job),
         "max_parallel_agents": 0,
+        "top_level_page_type": summary["page_type"] or "unknown",
+        "classification_confidence": summary["confidence"],
+        "classification_reasoning": summary["reasoning"],
+        "telemetry_status": summary["telemetry_status"],
+        "telemetry_message": summary["telemetry_message"],
     }
 
 
@@ -963,6 +1156,266 @@ def _background_job_state(job: Any) -> dict[str, Any]:
         "heartbeat_at": getattr(job, "heartbeat_at", None).isoformat()
         if getattr(job, "heartbeat_at", None)
         else "",
+    }
+
+
+def _background_llm_rows(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    seq = 0
+    for event in events:
+        if event.get("kind") != "llm_response":
+            continue
+        seq += 1
+        details = event.get("details") if isinstance(event.get("details"), dict) else {}
+        usage = details.get("usage_metadata") if isinstance(details.get("usage_metadata"), dict) else {}
+        if not usage:
+            usage = details.get("usage_metadata_json") if isinstance(details.get("usage_metadata_json"), dict) else {}
+        cost_source = str(details.get("cost_source") or usage.get("cost_source") or "")
+        rows.append(
+            {
+                "agent_run_id": 0,
+                "seq": seq,
+                "actor": str(event.get("actor") or ""),
+                "provider": str(details.get("provider") or ""),
+                "model_name": str(details.get("model_name") or ""),
+                "prompt_version": str((details.get("prompt") or {}).get("prompt_version", ""))
+                if isinstance(details.get("prompt"), dict)
+                else "",
+                "prompt_hash": str((details.get("prompt") or {}).get("prompt_hash", ""))
+                if isinstance(details.get("prompt"), dict)
+                else "",
+                "cache_mode": str((details.get("prompt") or {}).get("cache_mode", ""))
+                if isinstance(details.get("prompt"), dict)
+                else "",
+                "input_tokens": _safe_int(details.get("input_tokens")),
+                "output_tokens": _safe_int(details.get("output_tokens")),
+                "context_window": _safe_int(details.get("context_window")) or None,
+                "estimated_total_cost_usd": _safe_float(details.get("estimated_total_cost_usd")),
+                "total_cost_usd": _safe_float(details.get("estimated_total_cost_usd")),
+                "cost_source": cost_source,
+                "tool_calls_requested": _safe_int(details.get("tool_calls")),
+                "tools_requested": details.get("tool_call_names", []) or [],
+                "content_preview": str(details.get("content_preview") or ""),
+                "usage_metadata_json": usage,
+                "created_at": str(event.get("timestamp") or event.get("created_at") or ""),
+            }
+        )
+    return rows
+
+
+def _background_tool_rows(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    pending: dict[str, dict[str, Any]] = {}
+    rows: list[dict[str, Any]] = []
+    seq = 0
+    for event in events:
+        kind = str(event.get("kind") or "")
+        details = event.get("details") if isinstance(event.get("details"), dict) else {}
+        if kind == "tool_call_started":
+            seq += 1
+            tool_call_id = str(details.get("tool_call_id") or f"seq-{seq}")
+            pending[tool_call_id] = {
+                "seq": seq,
+                "actor": str(event.get("actor") or ""),
+                "tool_name": str(details.get("tool_name") or ""),
+                "args": details.get("tool_args") if isinstance(details.get("tool_args"), dict) else {},
+                "created_at": str(event.get("timestamp") or event.get("created_at") or ""),
+            }
+            continue
+        if kind != "tool_call_finished":
+            continue
+        tool_call_id = str(details.get("tool_call_id") or "")
+        started = pending.pop(tool_call_id, None) if tool_call_id else None
+        if started is None and pending:
+            fallback_key = next(reversed(pending))
+            started = pending.pop(fallback_key)
+        tool_name = str(details.get("tool_name") or (started or {}).get("tool_name") or "")
+        args = (started or {}).get("args", {})
+        status = str(details.get("status") or event.get("status") or "success")
+        rows.append(
+            {
+                "agent_run_id": 0,
+                "seq": _safe_int((started or {}).get("seq"), len(rows) + 1),
+                "actor": str(event.get("actor") or (started or {}).get("actor") or ""),
+                "tool_name": tool_name,
+                "args_json": args,
+                "target_summary": tool_name,
+                "status": status,
+                "duration_seconds": _safe_float(details.get("duration_seconds")),
+                "result_preview": str(details.get("result_preview") or ""),
+                "error_text": str(details.get("result_preview") or "") if status == "error" else "",
+                "created_at": str((started or {}).get("created_at") or event.get("timestamp") or event.get("created_at") or ""),
+            }
+        )
+    for started in pending.values():
+        rows.append(
+            {
+                "agent_run_id": 0,
+                "seq": _safe_int(started.get("seq"), len(rows) + 1),
+                "actor": str(started.get("actor") or ""),
+                "tool_name": str(started.get("tool_name") or ""),
+                "args_json": started.get("args") or {},
+                "target_summary": str(started.get("tool_name") or ""),
+                "status": "running",
+                "duration_seconds": 0.0,
+                "result_preview": "",
+                "error_text": "",
+                "created_at": str(started.get("created_at") or ""),
+            }
+        )
+    return rows
+
+
+def _build_pipeline_result_from_agent_result(
+    *,
+    run_id: str,
+    url: str,
+    result: ClassificationResult | ExtractionResult,
+    trace: RunTrace | None,
+) -> PipelineResult:
+    metrics = trace.metrics.model_copy(deep=True) if trace and trace.metrics is not None else None
+    if metrics is not None:
+        metrics.run_id = run_id
+        metrics.url = url
+
+    if isinstance(result, ClassificationResult):
+        all_screenshots = _trace_screenshot_urls(trace)
+        return PipelineResult(
+            run_id=run_id,
+            url=url,
+            classification=result,
+            final_status=ExtractionStatus.SUCCESS,
+            all_streams=[],
+            all_screenshots=all_screenshots,
+            metrics=metrics,
+        )
+
+    all_screenshots = _extract_screenshot_urls_from_value(result.screenshots or [])
+    for screenshot in _trace_screenshot_urls(trace):
+        if screenshot not in all_screenshots:
+            all_screenshots.append(screenshot)
+    return PipelineResult(
+        run_id=run_id,
+        url=url,
+        extraction_results=[result],
+        final_status=result.status,
+        all_streams=list(result.streams or []),
+        all_screenshots=all_screenshots,
+        metrics=metrics,
+    )
+
+
+def _background_result_payload(result: PipelineResult, trace: RunTrace | None) -> dict[str, Any]:
+    payload = result.model_dump(mode="json")
+    if trace is not None:
+        payload["events"] = [
+            normalize_runtime_event_payload(event.model_dump(mode="json"))
+            for event in trace.events
+        ]
+        payload["telemetry_status"] = "trace_payload"
+        payload["telemetry_message"] = "Run telemetry was mirrored into the background job result."
+    return payload
+
+
+def _build_trace_detail_payload(
+    *,
+    run_id: str,
+    trace: RunTrace,
+    job_state: dict[str, Any] | None = None,
+    snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    metrics = trace.metrics
+    snapshot_payload = snapshot if isinstance(snapshot, dict) else {}
+    status = "running"
+    if trace.completed:
+        failure_mode = str((metrics.failure_mode if metrics else "") or "").lower()
+        if trace.cancel_requested or failure_mode in {"runcancellederror", "cancelled", "canceled"}:
+            status = "cancelled"
+        elif failure_mode == "partial":
+            status = "partial"
+        elif metrics and metrics.success:
+            status = "success"
+        else:
+            status = "failed"
+
+    run_row = {
+        "run_id": run_id,
+        "url": str((metrics.url if metrics else "") or snapshot_payload.get("url") or ""),
+        "page_type": str(
+            snapshot_payload.get("page_type")
+            or snapshot_payload.get("classification", {}).get("page_type")
+            or "unknown"
+        ),
+        "status": status,
+        "final_status": status,
+        "stream_count": len(snapshot_payload.get("all_streams", []) or []),
+        "screenshot_count": len(snapshot_payload.get("all_screenshots", []) or []),
+        "email_count": len(snapshot_payload.get("takedown_emails", []) or []),
+        "provider_analysis_count": len(snapshot_payload.get("provider_analysis", []) or []),
+        "success": bool(metrics.success) if metrics and trace.completed else False,
+        "duration_seconds": float(metrics.total_duration_seconds or 0.0) if metrics else 0.0,
+        "total_tool_calls": int(metrics.total_tool_calls or 0) if metrics else 0,
+        "total_llm_calls": int(metrics.total_llm_calls or 0) if metrics else 0,
+        "total_tokens_in": int(metrics.total_tokens_in or 0) if metrics else 0,
+        "total_cached_input_tokens": int(metrics.total_cached_input_tokens or 0) if metrics else 0,
+        "total_new_input_tokens": int(metrics.total_new_input_tokens or 0) if metrics else 0,
+        "total_tokens_out": int(metrics.total_tokens_out or 0) if metrics else 0,
+        "total_cache_hit_calls": int(metrics.total_cache_hit_calls or 0) if metrics else 0,
+        "estimated_input_cost_usd": float(metrics.estimated_input_cost_usd or 0.0) if metrics else 0.0,
+        "estimated_cached_input_cost_usd": float(metrics.estimated_cached_input_cost_usd or 0.0) if metrics else 0.0,
+        "estimated_cache_write_cost_usd": float(metrics.estimated_cache_write_cost_usd or 0.0) if metrics else 0.0,
+        "estimated_output_cost_usd": float(metrics.estimated_output_cost_usd or 0.0) if metrics else 0.0,
+        "estimated_total_cost_usd": float(metrics.estimated_total_cost_usd or 0.0) if metrics else 0.0,
+        "total_cost_usd": float(metrics.estimated_total_cost_usd or 0.0) if metrics else 0.0,
+        "total_messages": int(metrics.total_messages or 0) if metrics else 0,
+        "created_at": trace.started_at.isoformat(),
+        "started_at": trace.started_at.isoformat(),
+        "finished_at": trace.finished_at.isoformat() if trace.finished_at else "",
+        "root_actor": trace.root_actor,
+        "job_type": str((job_state or {}).get("job_type") or ("workflow" if trace.root_actor == "orchestrator" else "agent")),
+        "attempts": int((job_state or {}).get("attempts", 0) or 0),
+        "max_attempts": int((job_state or {}).get("max_attempts", 0) or 0),
+        "job_state": str((job_state or {}).get("display_status") or status),
+        "max_parallel_agents": 0,
+        "top_level_page_type": str(
+            snapshot_payload.get("page_type")
+            or snapshot_payload.get("classification", {}).get("page_type")
+            or "unknown"
+        ),
+        "classification_confidence": str(
+            snapshot_payload.get("classification", {}).get("confidence")
+            or ""
+        ),
+        "classification_reasoning": str(
+            snapshot_payload.get("classification", {}).get("reasoning")
+            or ""
+        ),
+        "source": "active_trace",
+    }
+    if job_state is not None:
+        run_row["job"] = job_state
+
+    return {
+        "run": run_row,
+        "snapshot": snapshot_payload,
+        "provider_analysis": snapshot_payload.get("provider_analysis", []) or [],
+        "takedown_emails": snapshot_payload.get("takedown_emails", []) or [],
+        "all_streams": snapshot_payload.get("all_streams", []) or [],
+        "all_screenshots": snapshot_payload.get("all_screenshots", []) or [],
+        "agent_runs": [],
+        "agent_outputs": [],
+        "agent_rollups": [],
+        "stage_rollups": [],
+        "parallelism": {
+            "current_parallel_agents": 0,
+            "max_parallel_agents": 0,
+            "by_stage": [],
+        },
+        "tool_calls": [],
+        "llm_calls": [],
+        "events": [normalize_runtime_event_payload(event.model_dump(mode="json")) for event in trace.events],
+        "job": job_state,
+        "job_state": job_state,
+        "source": "active_trace",
     }
 
 
@@ -1053,26 +1506,39 @@ def _restore_trace_from_db(run_id: str) -> bool:
         job = BackgroundJobRepository(session).get_by_run_id(run_id)
         if job is None or job.status in {"succeeded", "failed", "dead_letter", "cancelled"}:
             return False
-        events = RunRepository(session).list_runtime_events(run_id)
+        repo = RunRepository(session)
+        events = repo.list_runtime_events(run_id)
+        snapshot = repo.get_run_snapshot(run_id) or {}
     except SQLAlchemyError:
         return False
     finally:
         session.close()
     if not events:
         return False
-    observer = run_registry.create(
-        run_id=run_id,
-        root_actor=job.actor or ("orchestrator" if job.job_type == "workflow" else "agent"),
-        observability=get_observability_status(get_settings()),
-    )
-    observer.set_url(job.url or "")
-    for event in events:
-        observer.child(str(event.get("actor", "") or observer.actor)).emit(
-            str(event.get("kind", "event") or "event"),
-            str(event.get("message", "") or ""),
-            status=str(event.get("status", "info") or "info"),
-            details=event.get("details") if isinstance(event.get("details"), dict) else {},
-        )
+    observability = get_observability_status(get_settings())
+    metrics_payload = snapshot.get("metrics") if isinstance(snapshot, dict) else {}
+    started_at = (
+        metrics_payload.get("started_at")
+        if isinstance(metrics_payload, dict)
+        else None
+    ) or getattr(job, "started_at", None) or getattr(job, "created_at", None)
+    trace_payload = {
+        "run_id": run_id,
+        "root_actor": job.actor or ("orchestrator" if job.job_type == "workflow" else "agent"),
+        "started_at": started_at,
+        "finished_at": metrics_payload.get("finished_at") if isinstance(metrics_payload, dict) else None,
+        "events": events,
+        "metrics": metrics_payload if isinstance(metrics_payload, dict) else {},
+        "observability": observability.model_dump(),
+        "completed": False,
+        "cancel_requested": False,
+        "cancel_reason": "",
+    }
+    try:
+        trace_model = RunTrace.model_validate(trace_payload)
+    except Exception:
+        return False
+    run_registry.restore(trace_model)
     return True
 
 
@@ -1115,8 +1581,9 @@ async def _background_workflow(run_id: str, url: str) -> dict[str, Any]:
             _run_pipeline(url=url, settings=settings, observer=observer),
             timeout=timeout_seconds,
         )
+        trace = run_registry.get(run_id)
         await _persist_pipeline_result(result)
-        return {"ok": True, "result": result.model_dump(mode="json")}
+        return {"ok": True, "result": _background_result_payload(result, trace)}
     except asyncio.TimeoutError:
         message = f"Workflow timed out after {max(1, int(settings.agent_timeout_seconds))}s"
         _emit_failure_once(observer, "pipeline_failed", message)
@@ -1178,10 +1645,17 @@ async def _background_agent(
             success = result.status.value in {"success", "partial"}
             failure_mode = "" if success else result.status.value
         observer.finish(success=success, failure_mode=failure_mode)
-        _persist_trace_snapshot(run_id, root_actor=agent, url=url)
+        pipeline_result = _build_pipeline_result_from_agent_result(
+            run_id=run_id,
+            url=url,
+            result=result,
+            trace=run_registry.get(run_id),
+        )
+        trace = run_registry.get(run_id)
+        await _persist_pipeline_result(pipeline_result)
         return {
             "ok": success,
-            "result": result.model_dump(mode="json") if hasattr(result, "model_dump") else {},
+            "result": _background_result_payload(pipeline_result, trace),
         }
     except asyncio.TimeoutError:
         message = f"Agent timed out after {max(1, int(settings.agent_timeout_seconds))}s"
@@ -1348,12 +1822,35 @@ def _resolve_prompt_file(name: str) -> Path:
     return candidate
 
 
+def _is_valid_screenshot_url(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    if text.startswith("data:image/"):
+        return True
+    if not text.startswith("http://") and not text.startswith("https://"):
+        return False
+    try:
+        parsed = urlparse(text)
+    except Exception:
+        return False
+    path = (parsed.path or "").lower()
+    query = (parsed.query or "").lower()
+    if any(path.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg")):
+        return True
+    if "/image/" in path or "/images/" in path or "image/upload" in path:
+        return True
+    if any(token in query for token in ("format=png", "format=jpg", "format=jpeg", "format=webp", "fm=png", "fm=jpg", "fm=jpeg", "fm=webp")):
+        return True
+    return False
+
+
 def _extract_screenshot_url_from_value(value: Any) -> str:
     if value is None:
         return ""
     if isinstance(value, str):
         text = value.strip()
-        if text.startswith("http") or text.startswith("data:image/"):
+        if _is_valid_screenshot_url(text):
             return text
         try:
             parsed = json.loads(text)
@@ -1368,18 +1865,74 @@ def _extract_screenshot_url_from_value(value: Any) -> str:
         return ""
     if isinstance(value, dict):
         direct = value.get("screenshot_url")
-        if isinstance(direct, str) and direct.strip():
+        if isinstance(direct, str) and _is_valid_screenshot_url(direct):
             return direct.strip()
         urls = value.get("screenshot_urls")
         if isinstance(urls, list):
             for url in urls:
-                if isinstance(url, str) and url.strip():
+                if isinstance(url, str) and _is_valid_screenshot_url(url):
                     return url.strip()
         for nested in value.values():
             candidate = _extract_screenshot_url_from_value(nested)
             if candidate:
                 return candidate
     return ""
+
+
+def _extract_screenshot_urls_from_value(value: Any, out: list[str] | None = None) -> list[str]:
+    if out is None:
+        out = []
+    if value is None:
+        return out
+    if isinstance(value, str):
+        text = value.strip()
+        if _is_valid_screenshot_url(text):
+            if text not in out:
+                out.append(text)
+            return out
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            parsed = None
+        if parsed is not None:
+            _extract_screenshot_urls_from_value(parsed, out)
+        return out
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            _extract_screenshot_urls_from_value(item, out)
+        return out
+    if isinstance(value, dict):
+        for key in ("screenshot_url", "screenshot"):
+            candidate = value.get(key)
+            if isinstance(candidate, str) and _is_valid_screenshot_url(candidate):
+                text = candidate.strip()
+                if text not in out:
+                    out.append(text)
+        for key in ("screenshot_urls", "screenshots", "all_screenshots"):
+            _extract_screenshot_urls_from_value(value.get(key), out)
+        for nested in value.values():
+            _extract_screenshot_urls_from_value(nested, out)
+    return out
+
+
+def _trace_screenshot_urls(trace: RunTrace | None) -> list[str]:
+    if trace is None:
+        return []
+    urls: list[str] = []
+    for event in trace.events:
+        _extract_screenshot_urls_from_value(event.details or {}, urls)
+    return urls
+
+
+def _empty_screenshot_payload(run_id: str, *, source: str) -> dict[str, Any]:
+    return {
+        "run_id": run_id,
+        "screenshot": "",
+        "screenshot_url": "",
+        "event_seq": None,
+        "timestamp": None,
+        "source": source,
+    }
 
 
 def _provider_lookup_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1411,6 +1964,65 @@ def _provider_lookup_urls(stream_urls: list[str], settings: Settings) -> list[di
         return repo.record_provider_lookup_batch(str(uuid.uuid4()), results)
     finally:
         session.close()
+
+
+def _normalize_auto_key(value: str) -> str:
+    return str(value or "").strip()[:255]
+
+
+def _sync_auto_decisions(
+    repo: OperatorConsoleRepository,
+    run_id: str,
+    incoming: list[RunAutoDecisionSyncItem],
+) -> list[dict[str, Any]]:
+    existing = repo.list_run_decisions(run_id)
+    auto_existing: dict[str, dict[str, Any]] = {}
+    for row in existing:
+        details = row.get("details") or {}
+        if details.get("source") != "agent_auto":
+            continue
+        auto_key = _normalize_auto_key(str(details.get("auto_key") or ""))
+        if auto_key:
+            auto_existing[auto_key] = row
+
+    seen: set[str] = set()
+    for item in incoming:
+        auto_key = _normalize_auto_key(item.auto_key)
+        if not auto_key:
+            continue
+        seen.add(auto_key)
+        details = dict(item.details or {})
+        details["source"] = "agent_auto"
+        details["auto_key"] = auto_key
+        current = auto_existing.get(auto_key)
+        if current is None:
+            repo.create_run_decision(
+                run_id,
+                title=item.title,
+                summary=item.summary,
+                actor=item.actor,
+                category=item.category,
+                status=item.status,
+                details=details,
+            )
+            continue
+        repo.update_run_decision(
+            run_id,
+            int(current["id"]),
+            title=item.title,
+            summary=item.summary,
+            actor=item.actor,
+            category=item.category,
+            status=item.status,
+            details=details,
+        )
+
+    for auto_key, row in auto_existing.items():
+        if auto_key in seen:
+            continue
+        repo.delete_run_decision(run_id, int(row["id"]))
+
+    return repo.list_run_decisions(run_id)
 
 
 def _background_job_health() -> dict[str, Any]:
@@ -1497,23 +2109,25 @@ async def _stream_trace(run_id: str, request: Request | None = None):
                                 )
                             if event_kind:
                                 synthetic_events.append(
-                                    {
-                                        "seq": last_seq + 1,
-                                        "kind": event_kind,
-                                        "actor": str(job.actor or ""),
-                                        "status": "success"
-                                        if display_status in {"success", "partial"}
-                                        else "error",
-                                        "message": str(job.error_text or "") or display_status,
-                                        "timestamp": (
-                                            job.finished_at or job.updated_at or job.created_at
-                                        ).isoformat(),
-                                        "details": {
-                                            "job_status": str(job.status or ""),
-                                            "display_status": display_status,
-                                            "error": str(job.error_text or ""),
-                                        },
-                                    }
+                                    normalize_runtime_event_payload(
+                                        {
+                                            "seq": last_seq + 1,
+                                            "kind": event_kind,
+                                            "actor": str(job.actor or ""),
+                                            "status": "success"
+                                            if display_status in {"success", "partial"}
+                                            else "error",
+                                            "message": str(job.error_text or "") or display_status,
+                                            "timestamp": (
+                                                job.finished_at or job.updated_at or job.created_at
+                                            ).isoformat(),
+                                            "details": {
+                                                "job_status": str(job.status or ""),
+                                                "display_status": display_status,
+                                                "error": str(job.error_text or ""),
+                                            },
+                                        }
+                                    )
                                 )
                         payload = {
                             "run_id": run_id,
@@ -1546,7 +2160,9 @@ async def _stream_trace(run_id: str, request: Request | None = None):
                 break
 
             new_events = [
-                event.model_dump(mode="json") for event in trace.events if event.seq > last_seq
+                normalize_runtime_event_payload(event.model_dump(mode="json"))
+                for event in trace.events
+                if event.seq > last_seq
             ]
             if first_tick or new_events or trace.completed:
                 if new_events:
@@ -1597,19 +2213,8 @@ async def _stream_trace(run_id: str, request: Request | None = None):
 @app.get("/health")
 def health():
     settings = get_settings()
-    mcp_status = probe_mcp(settings.mcp_server_url)
-    browser_status = probe_browser(settings.browser_ws_endpoint)
+    runtime = _runtime_dependency_snapshot(settings)
     background_status = _background_job_health()
-
-    # In isolated mode, MCP launches and manages per-session browsers.
-    # The shared CDP endpoint is only a fallback and may be intentionally absent.
-    if mcp_status.get("healthy") and str(mcp_status.get("browser_mode", "")).lower() == "isolated":
-        browser_status = {
-            **browser_status,
-            "healthy": True,
-            "mode": "isolated",
-            "note": "Shared browser probe is informational in isolated mode.",
-        }
 
     return {
         "status": "ok",
@@ -1618,10 +2223,11 @@ def health():
         "browser_ws_endpoint": settings.browser_ws_endpoint,
         "mcp_server_url": settings.mcp_server_url,
         "dependencies": {
-            "browser": browser_status,
-            "mcp": mcp_status,
+            "browser": runtime["browser"],
+            "mcp": runtime["mcp"],
             "background_jobs": background_status,
         },
+        "runtime_preflight": runtime["preflight"],
         "observability": get_observability_status(settings).model_dump(),
     }
 
@@ -1995,35 +2601,312 @@ def ui_run_detail(run_id: str):
     active = run_registry.get(run_id)
     if active is None and _restore_trace_from_db(run_id):
         active = run_registry.get(run_id)
-    if active is not None and not active.completed:
-        return {"active_trace": active.model_dump(mode="json")}
 
     session = get_session()
     try:
+        job = BackgroundJobRepository(session).get_by_run_id(run_id)
+        job_state = _background_job_state(job) if job is not None else None
         payload = OperatorConsoleRepository(session).get_run_detail(run_id)
+        if active is not None:
+            if payload is None:
+                snapshot = RunRepository(session).get_run_snapshot(run_id)
+                if snapshot is None and job is not None and job.result_json:
+                    snapshot = job.result_json
+                payload = _build_trace_detail_payload(
+                    run_id=run_id,
+                    trace=active,
+                    job_state=job_state,
+                    snapshot=snapshot,
+                )
+            else:
+                if job_state is not None:
+                    payload["job_state"] = job_state
+                    payload["job"] = job_state
+            if not active.completed:
+                payload["active_trace"] = active.model_dump(mode="json")
+            return payload
         if payload is None:
-            job = BackgroundJobRepository(session).get_by_run_id(run_id)
             if job is None:
                 raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+            summary = _background_job_result_summary(job)
+            snapshot = summary["snapshot"]
+            page_type = summary["page_type"]
+            confidence = summary["confidence"]
+            reasoning = summary["reasoning"]
+            display_status = _background_job_display_status(job)
+            run_row = _background_job_row(job)
+            run_row["source"] = "background_job_result"
+            events = summary["events"]
+            if not events:
+                events = [
+                    {
+                        "seq": 1,
+                        "timestamp": job.finished_at.isoformat()
+                        if job.finished_at
+                        else (job.started_at.isoformat() if job.started_at else ""),
+                        "actor": str(job.actor or ""),
+                        "kind": "agent_finished",
+                        "message": "Agent result loaded from background job result payload.",
+                        "status": display_status,
+                        "details": {
+                            "page_type": page_type,
+                            "confidence": confidence,
+                            "reasoning": reasoning,
+                        },
+                        "details_json": {
+                            "page_type": page_type,
+                            "confidence": confidence,
+                            "reasoning": reasoning,
+                        },
+                    }
+                ]
+            llm_rows = _background_llm_rows(events)
+            tool_rows = _background_tool_rows(events)
+
+            agent_output_summary = reasoning or (
+                f"Classified as {page_type or 'unknown'}"
+                + (f" ({confidence})" if confidence else "")
+            )
+            stream_count = summary["stream_count"]
+            input_tokens = summary["total_tokens_in"]
+            output_tokens = summary["total_tokens_out"]
+            total_tokens = input_tokens + output_tokens
+            synthetic_rollup = {
+                "agent_run_id": 0,
+                "actor": str(job.actor or ""),
+                "agent_type": summary["agent_type"] or str(job.actor or ""),
+                "status": run_row["final_status"] or display_status,
+                "started_at": job.started_at.isoformat() if job.started_at else "",
+                "finished_at": job.finished_at.isoformat() if job.finished_at else "",
+                "duration_seconds": float(run_row.get("duration_seconds", 0.0) or 0.0),
+                "tool_calls": len(tool_rows) or summary["total_tool_calls"],
+                "tool_calls_made": len(tool_rows) or summary["total_tool_calls"],
+                "llm_calls": len(llm_rows) or summary["total_llm_calls"],
+                "llm_calls_made": len(llm_rows) or summary["total_llm_calls"],
+                "invocation_index": 1,
+                "input_tokens": input_tokens,
+                "cached_input_tokens": 0,
+                "new_input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total_tokens,
+                "cost_usd": summary["estimated_total_cost_usd"],
+                "stream_count": stream_count,
+                "embedded_url_count": 0,
+                "hosting_page_count": 0,
+                "output_summary": agent_output_summary,
+                "raw_output": snapshot,
+            }
+            synthetic_stage = {
+                "agent_type": synthetic_rollup["agent_type"] or str(job.actor or "agent"),
+                "actors": [str(job.actor or "")] if job.actor else [],
+                "status": synthetic_rollup["status"],
+                "invocations": 1,
+                "started_at": synthetic_rollup["started_at"],
+                "finished_at": synthetic_rollup["finished_at"],
+                "duration_seconds": synthetic_rollup["duration_seconds"],
+                "tool_calls": synthetic_rollup["tool_calls"],
+                "llm_calls": synthetic_rollup["llm_calls"],
+                "input_tokens": input_tokens,
+                "cached_input_tokens": 0,
+                "new_input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total_tokens,
+                "cost_usd": summary["estimated_total_cost_usd"],
+                "stream_count": stream_count,
+                "output_summary": agent_output_summary,
+                "max_parallel_agents": 0,
+                "active_parallel_agents": 0,
+            }
             return {
-                "run": _background_job_row(job),
-                "snapshot": job.result_json or {},
+                "run": run_row,
+                "snapshot": snapshot,
+                "provider_analysis": snapshot.get("provider_analysis", []) or [],
+                "takedown_emails": snapshot.get("takedown_emails", []) or [],
+                "all_streams": summary["all_streams"],
+                "all_screenshots": summary["all_screenshots"],
                 "agent_runs": [],
-                "agent_outputs": [],
-                "agent_rollups": [],
-                "stage_rollups": [],
+                "agent_outputs": [
+                    {
+                        "agent_run_id": 0,
+                        "actor": str(job.actor or ""),
+                        "agent_type": synthetic_rollup["agent_type"],
+                        "invocation_index": 1,
+                        "summary_text": agent_output_summary,
+                        "validation_status": "ok" if page_type else "missing",
+                        "stream_count": stream_count,
+                        "embedded_url_count": 0,
+                        "hosting_page_count": 0,
+                        "output_json": snapshot,
+                    }
+                ],
+                "agent_rollups": [synthetic_rollup],
+                "stage_rollups": [synthetic_stage],
                 "parallelism": {
                     "current_parallel_agents": 0,
                     "max_parallel_agents": 0,
                     "by_stage": [],
                 },
-                "tool_calls": [],
-                "llm_calls": [],
-                "events": [],
+                "tool_calls": tool_rows,
+                "llm_calls": llm_rows,
+                "events": events,
                 "job": _background_job_state(job),
                 "job_state": _background_job_state(job),
+                "source": "background_job_result",
+                "telemetry_status": summary["telemetry_status"],
+                "telemetry_message": summary["telemetry_message"],
             }
+        if job_state is not None:
+            payload["job_state"] = job_state
+            payload["job"] = job_state
         return payload
+    finally:
+        session.close()
+
+
+@app.get("/ui/runs/{run_id}/decisions")
+def ui_run_decisions(run_id: str):
+    session = get_session()
+    try:
+        rows = OperatorConsoleRepository(session).list_run_decisions(run_id)
+        return {"run_id": run_id, "decisions": rows}
+    finally:
+        session.close()
+
+
+@app.post("/ui/runs/{run_id}/decisions")
+def ui_create_run_decision(run_id: str, body: RunDecisionUpsertRequest):
+    if not body.title.strip():
+        raise HTTPException(status_code=400, detail="Decision title is required")
+    session = get_session()
+    try:
+        row = OperatorConsoleRepository(session).create_run_decision(
+            run_id,
+            title=body.title,
+            summary=body.summary,
+            actor=body.actor,
+            category=body.category,
+            status=body.status,
+            details=body.details,
+        )
+        return row
+    finally:
+        session.close()
+
+
+@app.patch("/ui/runs/{run_id}/decisions/{decision_id}")
+def ui_update_run_decision(
+    run_id: str,
+    decision_id: int,
+    body: RunDecisionUpsertRequest,
+):
+    session = get_session()
+    try:
+        row = OperatorConsoleRepository(session).update_run_decision(
+            run_id,
+            decision_id,
+            title=body.title,
+            summary=body.summary,
+            actor=body.actor,
+            category=body.category,
+            status=body.status,
+            details=body.details,
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="Decision not found")
+        return row
+    finally:
+        session.close()
+
+
+@app.delete("/ui/runs/{run_id}/decisions/{decision_id}")
+def ui_delete_run_decision(run_id: str, decision_id: int):
+    session = get_session()
+    try:
+        deleted = OperatorConsoleRepository(session).delete_run_decision(run_id, decision_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Decision not found")
+        return {"ok": True}
+    finally:
+        session.close()
+
+
+@app.get("/ui/runs/{run_id}/tasks")
+def ui_run_tasks(run_id: str):
+    session = get_session()
+    try:
+        rows = OperatorConsoleRepository(session).list_run_tasks(run_id)
+        return {"run_id": run_id, "tasks": rows}
+    finally:
+        session.close()
+
+
+@app.post("/ui/runs/{run_id}/tasks")
+def ui_create_run_task(run_id: str, body: RunTaskUpsertRequest):
+    if not body.title.strip():
+        raise HTTPException(status_code=400, detail="Task title is required")
+    session = get_session()
+    try:
+        row = OperatorConsoleRepository(session).create_run_task(
+            run_id,
+            title=body.title,
+            description=body.description,
+            actor=body.actor,
+            priority=body.priority,
+            status=body.status,
+            details=body.details,
+        )
+        return row
+    finally:
+        session.close()
+
+
+@app.patch("/ui/runs/{run_id}/tasks/{task_id}")
+def ui_update_run_task(
+    run_id: str,
+    task_id: int,
+    body: RunTaskUpsertRequest,
+):
+    session = get_session()
+    try:
+        row = OperatorConsoleRepository(session).update_run_task(
+            run_id,
+            task_id,
+            title=body.title,
+            description=body.description,
+            actor=body.actor,
+            priority=body.priority,
+            status=body.status,
+            details=body.details,
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return row
+    finally:
+        session.close()
+
+
+@app.delete("/ui/runs/{run_id}/tasks/{task_id}")
+def ui_delete_run_task(run_id: str, task_id: int):
+    session = get_session()
+    try:
+        deleted = OperatorConsoleRepository(session).delete_run_task(run_id, task_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return {"ok": True}
+    finally:
+        session.close()
+
+
+@app.post("/ui/runs/{run_id}/sync-logs")
+def ui_sync_run_logs(run_id: str, body: RunAutoLogsSyncRequest):
+    session = get_session()
+    try:
+        repo = OperatorConsoleRepository(session)
+        decisions = _sync_auto_decisions(repo, run_id, body.decisions)
+        return {
+            "run_id": run_id,
+            "decisions": decisions,
+        }
     finally:
         session.close()
 
@@ -2170,6 +3053,8 @@ def _enqueue_background_job(
 
 @app.post("/ui/workflows/run")
 async def ui_workflow_run(req: WorkflowRunRequest):
+    settings = get_settings()
+    _ensure_launch_runtime_ready(settings)
     run_id = str(uuid.uuid4())
     key = (req.idempotency_key or "").strip()
     _cache_bust("overview")
@@ -2185,6 +3070,8 @@ async def ui_workflow_run(req: WorkflowRunRequest):
 
 @app.post("/ui/agents/test")
 async def ui_agent_test(req: AgentTestRequest):
+    settings = get_settings()
+    _ensure_launch_runtime_ready(settings)
     run_id = str(uuid.uuid4())
     key = (req.idempotency_key or "").strip()
     return _enqueue_background_job(
@@ -2824,26 +3711,36 @@ def ui_run_latest_screenshot(run_id: str):
         try:
             detail = OperatorConsoleRepository(session).get_run_detail(run_id)
             if detail:
-                screenshots = (detail.get("snapshot") or {}).get("all_screenshots") or []
-                if screenshots:
+                screenshot = _extract_screenshot_url_from_value(
+                    (detail.get("snapshot") or {}).get("all_screenshots")
+                    or detail.get("all_screenshots")
+                    or []
+                )
+                if screenshot:
                     return {
                         "run_id": run_id,
-                        "screenshot_url": str(screenshots[-1]),
+                        "screenshot": screenshot,
+                        "screenshot_url": screenshot,
                         "event_seq": None,
                         "timestamp": None,
                         "source": "database_snapshot",
                     }
+                return _empty_screenshot_payload(run_id, source="database_snapshot")
             job = BackgroundJobRepository(session).get_by_run_id(run_id)
             if job is not None and job.result_json:
                 screenshot = _extract_screenshot_url_from_value(job.result_json)
                 if screenshot:
                     return {
                         "run_id": run_id,
+                        "screenshot": screenshot,
                         "screenshot_url": screenshot,
                         "event_seq": None,
                         "timestamp": None,
                         "source": "background_job_result",
                     }
+                return _empty_screenshot_payload(run_id, source="background_job_result")
+            if job is not None:
+                return _empty_screenshot_payload(run_id, source="background_job")
         finally:
             session.close()
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
@@ -2858,11 +3755,13 @@ def ui_run_latest_screenshot(run_id: str):
         if candidate:
             return {
                 "run_id": run_id,
+                "screenshot": candidate,
                 "screenshot_url": candidate,
                 "event_seq": event.seq,
                 "timestamp": event.timestamp.isoformat(),
+                "source": "active_trace",
             }
-    return {"run_id": run_id, "screenshot_url": "", "event_seq": None, "timestamp": None}
+    return _empty_screenshot_payload(run_id, source="active_trace")
 
 
 @app.get("/ui/browser/screenshot")
@@ -2901,11 +3800,11 @@ async def ui_browser_live_screenshot(
 def ui_browser_status():
     """Return browser and MCP server health status."""
     settings = get_settings()
-    browser_status = probe_browser(settings.browser_ws_endpoint)
-    mcp_status = probe_mcp(settings.mcp_server_url)
+    runtime = _runtime_dependency_snapshot(settings)
     return {
-        "browser": browser_status,
-        "mcp": mcp_status,
+        "browser": runtime["browser"],
+        "mcp": runtime["mcp"],
+        "preflight": runtime["preflight"],
         "browser_engine": settings.browser_engine,
         "browser_ws_endpoint": settings.browser_ws_endpoint,
         "mcp_server_url": settings.mcp_server_url,
@@ -2933,7 +3832,7 @@ def ui_database_tables():
 @app.get("/ui/database/{table}", response_model=DatabaseTableResponse)
 def ui_database_table(
     table: str,
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
     session = get_session()

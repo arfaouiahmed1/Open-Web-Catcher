@@ -9,9 +9,14 @@ BROWSER_IDS = ("puppeteer", "playwright")
 MCP_PROFILE_IDS = ("classification", "landing", "hosting", "embedded")
 DEFAULT_PROXY_SOURCE_ORDER = [
     "openproxylist-https",
-    "openproxylist-socks5",
+    "proxifly-http",
+    "monosans-http",
     "speedx-http",
+    "openproxylist-socks5",
+    "proxifly-socks5",
+    "monosans-socks5",
     "speedx-socks5",
+    "proxifly-socks4",
 ]
 
 DEFAULT_BROWSER_RUNTIME: dict[str, dict[str, Any]] = {

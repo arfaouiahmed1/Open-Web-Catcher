@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from sqlalchemy.orm import Session
 
 from src.memory.long_term import build_site_memory_entry
-from src.models.enums import AgentType
+from src.models.enums import AgentType, ExtractionStatus
 from src.models.schemas import PipelineResult
 from src.storage.models import (
     AgentOutputRecord,
@@ -36,6 +36,136 @@ from src.storage.models import (
 )
 from src.utils.observability import RunTrace
 
+
+_SCREENSHOT_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg")
+
+
+def serialize_runtime_event_record(row: RuntimeEventRecord) -> dict[str, Any]:
+    """Normalize a RuntimeEventRecord into a UI/SSE-safe dict.
+
+    Always emits `timestamp` (ISO) and `details` (object) plus legacy aliases.
+    """
+    timestamp = row.created_at.isoformat() if row.created_at else ""
+    details = row.details_json if isinstance(row.details_json, dict) else {}
+    return {
+        "seq": int(row.seq or 0),
+        "actor": str(row.actor or ""),
+        "kind": str(row.kind or ""),
+        "status": str(row.status or ""),
+        "message": str(row.message or ""),
+        "details": details,
+        "details_json": details,
+        "created_at": timestamp,
+        "timestamp": timestamp,
+        "agent_run_id": row.agent_run_id,
+    }
+
+
+def normalize_runtime_event_payload(event: dict[str, Any] | None) -> dict[str, Any]:
+    """Ensure an in-memory event dict (from RuntimeEvent.model_dump) carries timestamp + details."""
+    if not isinstance(event, dict):
+        return {}
+    payload = dict(event)
+    timestamp = payload.get("timestamp") or payload.get("created_at") or ""
+    if hasattr(timestamp, "isoformat"):
+        timestamp = timestamp.isoformat()  # type: ignore[assignment]
+    payload["timestamp"] = str(timestamp or "")
+    payload["created_at"] = payload.get("created_at") or payload["timestamp"]
+    details = payload.get("details")
+    if not isinstance(details, dict):
+        details = payload.get("details_json") if isinstance(payload.get("details_json"), dict) else {}
+    payload["details"] = details
+    payload["details_json"] = details
+    payload.setdefault("status", "")
+    payload.setdefault("message", "")
+    payload.setdefault("actor", "")
+    payload.setdefault("kind", "")
+    return payload
+
+
+def _is_screenshot_url(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    if text.startswith("data:image/"):
+        return True
+    if not text.startswith(("http://", "https://")):
+        return False
+    try:
+        parsed = urlparse(text)
+    except Exception:
+        return False
+    path = (parsed.path or "").lower()
+    query = (parsed.query or "").lower()
+    if any(path.endswith(ext) for ext in _SCREENSHOT_EXTENSIONS):
+        return True
+    if "/image/" in path or "/images/" in path or "image/upload" in path:
+        return True
+    return any(
+        token in query
+        for token in (
+            "format=png",
+            "format=jpg",
+            "format=jpeg",
+            "format=webp",
+            "fm=png",
+            "fm=jpg",
+            "fm=jpeg",
+            "fm=webp",
+        )
+    )
+
+
+def _collect_screenshot_urls(value: Any, out: list[str] | None = None) -> list[str]:
+    if out is None:
+        out = []
+    if value is None:
+        return out
+
+    if isinstance(value, str):
+        text = value.strip()
+        if _is_screenshot_url(text):
+            if text not in out:
+                out.append(text)
+            return out
+        try:
+            import json
+
+            parsed = json.loads(text)
+        except Exception:
+            parsed = None
+        if parsed is not None:
+            _collect_screenshot_urls(parsed, out)
+        return out
+
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            _collect_screenshot_urls(item, out)
+        return out
+
+    if isinstance(value, dict):
+        for key in ("screenshot_url", "screenshot"):
+            candidate = value.get(key)
+            if _is_screenshot_url(candidate):
+                text = str(candidate).strip()
+                if text not in out:
+                    out.append(text)
+        for key in ("screenshot_urls", "screenshots", "all_screenshots"):
+            _collect_screenshot_urls(value.get(key), out)
+        for nested in value.values():
+            _collect_screenshot_urls(nested, out)
+    return out
+
+
+def _trace_screenshot_urls(trace: RunTrace | None) -> list[str]:
+    if trace is None:
+        return []
+    urls: list[str] = []
+    for event in trace.events:
+        _collect_screenshot_urls(event.details or {}, urls)
+        _collect_screenshot_urls(event.message or "", urls)
+    return urls
+
 _PROMPT_PATHS = {
     AgentType.CLASSIFICATION.value: Path("configs/prompts/classification_v1.md"),
     AgentType.LANDING_PAGE.value: Path("configs/prompts/landing_page_v1.md"),
@@ -50,6 +180,14 @@ _ACTOR_TO_AGENT_TYPE = {
     "embedded": AgentType.EMBEDDED_PAGE.value,
     "orchestrator": AgentType.ORCHESTRATOR.value,
 }
+
+
+def _result_primary_page_type(result: PipelineResult) -> str:
+    if result.classification is not None:
+        return result.classification.page_type.value
+    if result.extraction_results:
+        return result.extraction_results[0].page_type.value
+    return "unknown"
 
 
 class RunRepository:
@@ -89,22 +227,39 @@ class RunRepository:
             legacy = self.get_by_run_id(run_id)
             if legacy is None:
                 legacy = RunRecord(run_id=run_id)
+                legacy.url = url
                 self._session.add(legacy)
+            snapshot = self._session.query(RunSnapshotRecord).filter_by(run_id=run_id).first()
+            snapshot_json = (
+                snapshot.snapshot_json
+                if snapshot is not None and isinstance(snapshot.snapshot_json, dict)
+                else {}
+            )
+            screenshot_urls = _collect_screenshot_urls(snapshot_json.get("all_screenshots", []))
+            _collect_screenshot_urls(_trace_screenshot_urls(trace), screenshot_urls)
             legacy.url = url
-            legacy.page_type = "unknown"
+            legacy.page_type = str(
+                snapshot_json.get("page_type")
+                or snapshot_json.get("classification", {}).get("page_type")
+                or legacy.page_type
+                or "unknown"
+            )
             failure_mode = str((trace.metrics.failure_mode if trace.metrics else "") or "").lower()
             if not trace.completed:
                 legacy.status = "running"
             elif trace.cancel_requested or failure_mode in {"runcancellederror", "cancelled", "canceled"}:
                 legacy.status = "cancelled"
-            elif trace.metrics and trace.metrics.success:
-                legacy.status = "success"
             elif failure_mode == "partial":
                 legacy.status = "partial"
+            elif trace.metrics and trace.metrics.success:
+                legacy.status = "success"
             else:
                 legacy.status = "failed"
             legacy.success = bool(trace.metrics.success) if (trace.metrics and trace.completed) else False
-            legacy.streams_found = 0
+            legacy.streams_found = max(
+                int(legacy.streams_found or 0),
+                int(len(snapshot_json.get("all_streams", []) or [])),
+            )
             metrics = trace.metrics
             if metrics is not None:
                 legacy.tokens_in = int(metrics.total_tokens_in or 0)
@@ -122,39 +277,76 @@ class RunRepository:
             pipeline = self._session.query(PipelineRunRecord).filter_by(run_id=run_id).first()
             if pipeline is None:
                 pipeline = PipelineRunRecord(run_id=run_id)
+                pipeline.root_url = url
                 self._session.add(pipeline)
                 self._session.flush()
             pipeline.root_url = url
-            pipeline.page_type = "unknown"
-            pipeline.top_level_page_type = "unknown"
+            pipeline.page_type = str(
+                snapshot_json.get("page_type")
+                or snapshot_json.get("classification", {}).get("page_type")
+                or pipeline.page_type
+                or "unknown"
+            )
+            pipeline.top_level_page_type = str(
+                snapshot_json.get("page_type")
+                or snapshot_json.get("classification", {}).get("page_type")
+                or pipeline.top_level_page_type
+                or "unknown"
+            )
             pipeline.final_status = legacy.status
             pipeline.success = legacy.success
             pipeline.failure_mode = legacy.failure_mode
+            pipeline.stream_count = max(
+                int(pipeline.stream_count or 0),
+                int(len(snapshot_json.get("all_streams", []) or [])),
+            )
+            pipeline.screenshot_count = max(
+                int(pipeline.screenshot_count or 0),
+                int(len(screenshot_urls)),
+            )
+            pipeline.email_count = max(
+                int(pipeline.email_count or 0),
+                int(len(snapshot_json.get("takedown_emails", []) or [])),
+            )
+            pipeline.provider_analysis_count = max(
+                int(pipeline.provider_analysis_count or 0),
+                int(len(snapshot_json.get("provider_analysis", []) or [])),
+            )
             pipeline.started_at = trace.started_at
             pipeline.finished_at = trace.finished_at
             if metrics is not None:
                 pipeline.total_tokens_in = int(metrics.total_tokens_in or 0)
+                pipeline.total_cached_input_tokens = int(metrics.total_cached_input_tokens or 0)
+                pipeline.total_new_input_tokens = int(metrics.total_new_input_tokens or 0)
                 pipeline.total_tokens_out = int(metrics.total_tokens_out or 0)
                 pipeline.total_tool_calls = int(metrics.total_tool_calls or 0)
                 pipeline.total_llm_calls = int(metrics.total_llm_calls or 0)
+                pipeline.total_cache_hit_calls = int(metrics.total_cache_hit_calls or 0)
                 pipeline.total_messages = int(metrics.total_messages or 0)
                 pipeline.duration_seconds = float(metrics.total_duration_seconds or 0.0)
                 pipeline.estimated_input_cost_usd = float(metrics.estimated_input_cost_usd or 0.0)
+                pipeline.estimated_cached_input_cost_usd = float(
+                    metrics.estimated_cached_input_cost_usd or 0.0
+                )
+                pipeline.estimated_cache_write_cost_usd = float(
+                    metrics.estimated_cache_write_cost_usd or 0.0
+                )
                 pipeline.estimated_output_cost_usd = float(metrics.estimated_output_cost_usd or 0.0)
                 pipeline.estimated_total_cost_usd = float(metrics.estimated_total_cost_usd or 0.0)
 
-            snapshot = self._session.query(RunSnapshotRecord).filter_by(run_id=run_id).first()
             if snapshot is None:
                 snapshot = RunSnapshotRecord(run_id=run_id, pipeline_run_id=pipeline.id)
                 self._session.add(snapshot)
                 self._session.flush()
             snapshot.pipeline_run_id = pipeline.id
             snapshot.snapshot_json = {
+                **snapshot_json,
                 "run_id": run_id,
                 "url": url,
                 "status": legacy.status,
                 "metrics": metrics.model_dump(mode="json") if metrics else {},
                 "events": [event.model_dump(mode="json") for event in trace.events],
+                "all_screenshots": screenshot_urls,
             }
             self._replace_trace_children(pipeline.id)
             agent_runs = self._persist_trace_agent_runs(
@@ -165,6 +357,7 @@ class RunRepository:
             )
             self._persist_trace_runtime_events(pipeline.id, trace, agent_runs)
             self._persist_trace_model_usage(pipeline.id, trace)
+            self._persist_trace_screenshots(pipeline.id, screenshot_urls, source_url=url)
 
     def cleanup_old_artifacts(self, *, retention_days: int = 30) -> dict[str, int]:
         threshold = datetime.utcnow() - timedelta(days=max(1, int(retention_days)))
@@ -451,8 +644,15 @@ class RunRepository:
                 "prompt_hash": row.prompt_hash,
                 "cache_mode": row.cache_mode,
                 "input_tokens": row.input_tokens,
+                "cached_input_tokens": row.cached_input_tokens,
+                "new_input_tokens": row.new_input_tokens,
+                "cache_creation_input_tokens": row.cache_creation_input_tokens,
                 "output_tokens": row.output_tokens,
                 "context_window": row.context_window,
+                "estimated_input_cost_usd": row.estimated_input_cost_usd,
+                "estimated_cached_input_cost_usd": row.estimated_cached_input_cost_usd,
+                "estimated_cache_write_cost_usd": row.estimated_cache_write_cost_usd,
+                "estimated_output_cost_usd": row.estimated_output_cost_usd,
                 "estimated_total_cost_usd": row.estimated_total_cost_usd,
                 "total_cost_usd": row.estimated_total_cost_usd,
                 "cost_source": (row.usage_metadata_json or {}).get("cost_source", ""),
@@ -500,19 +700,7 @@ class RunRepository:
             .order_by(RuntimeEventRecord.seq.asc())
             .all()
         )
-        return [
-            {
-                "seq": row.seq,
-                "actor": row.actor,
-                "kind": row.kind,
-                "status": row.status,
-                "message": row.message,
-                "details": row.details_json,
-                "created_at": row.created_at.isoformat(),
-                "agent_run_id": row.agent_run_id,
-            }
-            for row in rows
-        ]
+        return [serialize_runtime_event_record(row) for row in rows]
 
     def list_memory_entries(
         self,
@@ -602,10 +790,10 @@ class RunRepository:
             record = RunRecord(run_id=result.run_id)
             self._session.add(record)
         record.url = result.url
-        record.page_type = result.classification.page_type.value if result.classification else "unknown"
+        record.page_type = _result_primary_page_type(result)
         record.status = result.final_status.value
         record.streams_found = len(result.all_streams)
-        record.success = result.final_status.value == "success"
+        record.success = result.final_status in {ExtractionStatus.SUCCESS, ExtractionStatus.PARTIAL}
         record.result_json = result.model_dump(mode="json")
         if result.metrics:
             record.tokens_in = result.metrics.total_tokens_in
@@ -621,27 +809,33 @@ class RunRepository:
             pipeline = PipelineRunRecord(run_id=result.run_id)
             self._session.add(pipeline)
         metrics = result.metrics
+        page_type = _result_primary_page_type(result)
         pipeline.root_url = result.url
-        pipeline.page_type = result.classification.page_type.value if result.classification else "unknown"
+        pipeline.page_type = page_type
         pipeline.final_status = result.final_status.value
-        pipeline.success = result.final_status.value == "success"
+        pipeline.success = result.final_status in {ExtractionStatus.SUCCESS, ExtractionStatus.PARTIAL}
         pipeline.failure_mode = metrics.failure_mode if metrics else ""
         pipeline.stream_count = len(result.all_streams)
         pipeline.screenshot_count = len(result.all_screenshots)
         pipeline.email_count = len(result.takedown_emails)
         pipeline.provider_analysis_count = len(result.provider_analysis)
-        pipeline.top_level_page_type = result.classification.page_type.value if result.classification else "unknown"
+        pipeline.top_level_page_type = page_type
         pipeline.classification_confidence = result.classification.confidence.value if result.classification else ""
         pipeline.classification_reasoning = result.classification.reasoning if result.classification else ""
         pipeline.started_at = metrics.started_at if metrics else pipeline.started_at
         pipeline.finished_at = metrics.finished_at if metrics else pipeline.finished_at
         pipeline.duration_seconds = metrics.total_duration_seconds if metrics else 0.0
         pipeline.total_tokens_in = metrics.total_tokens_in if metrics else 0
+        pipeline.total_cached_input_tokens = metrics.total_cached_input_tokens if metrics else 0
+        pipeline.total_new_input_tokens = metrics.total_new_input_tokens if metrics else 0
         pipeline.total_tokens_out = metrics.total_tokens_out if metrics else 0
         pipeline.total_llm_calls = metrics.total_llm_calls if metrics else 0
+        pipeline.total_cache_hit_calls = metrics.total_cache_hit_calls if metrics else 0
         pipeline.total_tool_calls = metrics.total_tool_calls if metrics else 0
         pipeline.total_messages = metrics.total_messages if metrics else 0
         pipeline.estimated_input_cost_usd = metrics.estimated_input_cost_usd if metrics else 0.0
+        pipeline.estimated_cached_input_cost_usd = metrics.estimated_cached_input_cost_usd if metrics else 0.0
+        pipeline.estimated_cache_write_cost_usd = metrics.estimated_cache_write_cost_usd if metrics else 0.0
         pipeline.estimated_output_cost_usd = metrics.estimated_output_cost_usd if metrics else 0.0
         pipeline.estimated_total_cost_usd = metrics.estimated_total_cost_usd if metrics else 0.0
         return pipeline
@@ -679,6 +873,7 @@ class RunRepository:
         self._session.query(AgentOutputRecord).filter(AgentOutputRecord.agent_run_id.in_(agent_run_ids)).delete(synchronize_session=False)
         self._session.query(RuntimeEventRecord).filter_by(pipeline_run_id=pipeline_run_id).delete(synchronize_session=False)
         self._session.query(RunModelUsageRecord).filter_by(pipeline_run_id=pipeline_run_id).delete(synchronize_session=False)
+        self._session.query(RunScreenshotRecord).filter_by(pipeline_run_id=pipeline_run_id).delete(synchronize_session=False)
         self._session.query(AgentRunRecord).filter_by(pipeline_run_id=pipeline_run_id).delete(synchronize_session=False)
 
     def _persist_agent_runs(self, pipeline_run_id: int, result: PipelineResult, trace: RunTrace | None) -> list[dict[str, Any]]:
@@ -820,7 +1015,12 @@ class RunRepository:
             prompt_details = details.get("prompt", {}) or ctx.get("prompt", {}) or {}
             input_tokens = int(details.get("input_tokens", 0) or 0)
             output_tokens = int(details.get("output_tokens", 0) or 0)
+            cached_input_tokens = int(details.get("cached_input_tokens", 0) or 0)
+            new_input_tokens = int(details.get("new_input_tokens", max(input_tokens - cached_input_tokens, 0)) or 0)
+            cache_creation_input_tokens = int(details.get("cache_creation_input_tokens", 0) or 0)
             estimated_input_cost_usd = float(details.get("estimated_input_cost_usd", 0.0) or 0.0)
+            estimated_cached_input_cost_usd = float(details.get("estimated_cached_input_cost_usd", 0.0) or 0.0)
+            estimated_cache_write_cost_usd = float(details.get("estimated_cache_write_cost_usd", 0.0) or 0.0)
             estimated_output_cost_usd = float(details.get("estimated_output_cost_usd", 0.0) or 0.0)
             estimated_total_cost_usd = float(details.get("estimated_total_cost_usd", 0.0) or 0.0)
 
@@ -829,7 +1029,12 @@ class RunRepository:
                 usage_metadata = {
                     **usage_metadata,
                     "cost_source": str(details.get("cost_source", "") or ""),
+                    "cached_input_tokens": cached_input_tokens,
+                    "new_input_tokens": new_input_tokens,
+                    "cache_creation_input_tokens": cache_creation_input_tokens,
                     "estimated_input_cost_usd": estimated_input_cost_usd,
+                    "estimated_cached_input_cost_usd": estimated_cached_input_cost_usd,
+                    "estimated_cache_write_cost_usd": estimated_cache_write_cost_usd,
                     "estimated_output_cost_usd": estimated_output_cost_usd,
                     "estimated_total_cost_usd": estimated_total_cost_usd,
                 }
@@ -837,7 +1042,12 @@ class RunRepository:
                 usage_metadata = {
                     "raw": usage_metadata,
                     "cost_source": str(details.get("cost_source", "") or ""),
+                    "cached_input_tokens": cached_input_tokens,
+                    "new_input_tokens": new_input_tokens,
+                    "cache_creation_input_tokens": cache_creation_input_tokens,
                     "estimated_input_cost_usd": estimated_input_cost_usd,
+                    "estimated_cached_input_cost_usd": estimated_cached_input_cost_usd,
+                    "estimated_cache_write_cost_usd": estimated_cache_write_cost_usd,
                     "estimated_output_cost_usd": estimated_output_cost_usd,
                     "estimated_total_cost_usd": estimated_total_cost_usd,
                 }
@@ -852,9 +1062,14 @@ class RunRepository:
                     prompt_hash=str(prompt_details.get("prompt_hash", "") or ""),
                     cache_mode=str(prompt_details.get("cache_mode", "") or ""),
                     input_tokens=input_tokens,
+                    cached_input_tokens=cached_input_tokens,
+                    new_input_tokens=new_input_tokens,
+                    cache_creation_input_tokens=cache_creation_input_tokens,
                     output_tokens=output_tokens,
                     context_window=int(details["context_window"]) if details.get("context_window") else None,
                     estimated_input_cost_usd=estimated_input_cost_usd,
+                    estimated_cached_input_cost_usd=estimated_cached_input_cost_usd,
+                    estimated_cache_write_cost_usd=estimated_cache_write_cost_usd,
                     estimated_output_cost_usd=estimated_output_cost_usd,
                     estimated_total_cost_usd=estimated_total_cost_usd,
                     tool_calls_requested=int(details.get("tool_calls", 0) or 0),
@@ -960,9 +1175,14 @@ class RunRepository:
                     provider=entry.provider,
                     model_name=entry.model_name,
                     llm_calls=entry.llm_calls,
+                    cache_hit_calls=entry.cache_hit_calls,
                     input_tokens=entry.input_tokens,
+                    cached_input_tokens=entry.cached_input_tokens,
+                    new_input_tokens=entry.new_input_tokens,
                     output_tokens=entry.output_tokens,
                     estimated_input_cost_usd=entry.estimated_input_cost_usd,
+                    estimated_cached_input_cost_usd=entry.estimated_cached_input_cost_usd,
+                    estimated_cache_write_cost_usd=entry.estimated_cache_write_cost_usd,
                     estimated_output_cost_usd=entry.estimated_output_cost_usd,
                     estimated_total_cost_usd=entry.estimated_total_cost_usd,
                 )
@@ -979,9 +1199,14 @@ class RunRepository:
                     provider=entry.provider,
                     model_name=entry.model_name,
                     llm_calls=entry.llm_calls,
+                    cache_hit_calls=entry.cache_hit_calls,
                     input_tokens=entry.input_tokens,
+                    cached_input_tokens=entry.cached_input_tokens,
+                    new_input_tokens=entry.new_input_tokens,
                     output_tokens=entry.output_tokens,
                     estimated_input_cost_usd=entry.estimated_input_cost_usd,
+                    estimated_cached_input_cost_usd=entry.estimated_cached_input_cost_usd,
+                    estimated_cache_write_cost_usd=entry.estimated_cache_write_cost_usd,
                     estimated_output_cost_usd=entry.estimated_output_cost_usd,
                     estimated_total_cost_usd=entry.estimated_total_cost_usd,
                 )
@@ -1010,6 +1235,24 @@ class RunRepository:
                     pipeline_run_id=pipeline_run_id,
                     screenshot_url=screenshot,
                     source_url=result.url,
+                )
+            )
+
+    def _persist_trace_screenshots(
+        self,
+        pipeline_run_id: int,
+        screenshots: list[str],
+        *,
+        source_url: str,
+    ) -> None:
+        for screenshot in screenshots:
+            if not _is_screenshot_url(screenshot):
+                continue
+            self._session.add(
+                RunScreenshotRecord(
+                    pipeline_run_id=pipeline_run_id,
+                    screenshot_url=screenshot,
+                    source_url=source_url,
                 )
             )
 
@@ -1420,7 +1663,10 @@ def _agent_output_payload(ctx: dict[str, Any], result: PipelineResult) -> dict[s
             "run_id": result.run_id,
             "url": result.url,
             "final_status": result.final_status.value,
+            "page_type": _result_primary_page_type(result),
+            "matches_found": len(result.matches),
             "stream_count": len(result.all_streams),
+            "provider_analysis_count": len(result.provider_analysis),
             "email_count": len(result.takedown_emails),
         }
     if agent_type == AgentType.CLASSIFICATION.value and result.classification is not None:
@@ -1447,13 +1693,26 @@ def _agent_output_summary(agent_type: str, payload: dict[str, Any]) -> str:
     if not payload:
         return ""
     if agent_type == AgentType.CLASSIFICATION.value:
-        return f"classified as {payload.get('page_type', 'unknown')}"
+        return f"classified as {payload.get('page_type', 'unknown')} ({payload.get('confidence', 'unknown')} confidence)"
     if agent_type == AgentType.LANDING_PAGE.value:
-        return f"hosting pages found={len(payload.get('hosting_pages', []) or [])}"
+        count = len(payload.get("hosting_pages", []) or [])
+        return (
+            f"hosting pages found={count}"
+            if count
+            else "no hosting pages returned; no downstream targets queued"
+        )
     if agent_type in {AgentType.HOSTING_PAGE.value, AgentType.EMBEDDED_PAGE.value}:
-        return f"streams found={_stream_count_from_payload(payload)}"
+        return (
+            f"status={payload.get('status', 'unknown')}; "
+            f"streams={_stream_count_from_payload(payload)}; "
+            f"embedded targets={len(payload.get('embedded_urls', []) or [])}"
+        )
     if agent_type == AgentType.ORCHESTRATOR.value:
-        return f"pipeline status={payload.get('final_status', 'unknown')}"
+        return (
+            f"pipeline status={payload.get('final_status', 'unknown')}; "
+            f"matches={payload.get('matches_found', 0)}; "
+            f"streams={payload.get('stream_count', 0)}"
+        )
     return ""
 
 
@@ -1476,7 +1735,7 @@ def _resolve_agent_status(ctx: dict[str, Any], result: PipelineResult) -> str:
     if agent_type == AgentType.CLASSIFICATION.value:
         return "success" if result.classification is not None else "failed"
     if agent_type == AgentType.LANDING_PAGE.value:
-        return "success" if payload.get("hosting_pages") else "failed"
+        return "success" if payload.get("hosting_pages") else "partial"
     if agent_type in {AgentType.HOSTING_PAGE.value, AgentType.EMBEDDED_PAGE.value}:
         status = str(payload.get("status", "") or "")
         return status or str(ctx["events"][-1].status or "unknown").replace("warning", "partial")
@@ -1600,11 +1859,20 @@ def _trace_agent_output_payload(ctx: dict[str, Any]) -> dict[str, Any]:
 def _trace_agent_output_summary(agent_type: str, payload: dict[str, Any], status: str) -> str:
     if payload:
         if agent_type == AgentType.CLASSIFICATION.value:
-            return f"classified as {payload.get('page_type', 'unknown')}"
+            return f"classified as {payload.get('page_type', 'unknown')} ({payload.get('confidence', 'unknown')} confidence)"
         if agent_type == AgentType.LANDING_PAGE.value:
-            return f"hosting pages found={len(payload.get('hosting_pages', []) or [])}"
+            count = len(payload.get("hosting_pages", []) or [])
+            return (
+                f"hosting pages found={count}"
+                if count
+                else "no hosting pages returned; no downstream targets queued"
+            )
         if agent_type in {AgentType.HOSTING_PAGE.value, AgentType.EMBEDDED_PAGE.value}:
-            return f"streams found={_stream_count_from_payload(payload)}"
+            return (
+                f"status={payload.get('status', 'unknown')}; "
+                f"streams={_stream_count_from_payload(payload)}; "
+                f"embedded targets={len(payload.get('embedded_urls', []) or [])}"
+            )
         if agent_type == AgentType.ORCHESTRATOR.value:
             return f"pipeline status={payload.get('final_status', status or 'unknown')}"
     return f"status={status or 'unknown'}"

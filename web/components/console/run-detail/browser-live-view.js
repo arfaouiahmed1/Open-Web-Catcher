@@ -33,6 +33,53 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const EMPTY_ARRAY = [];
 
+function BrokenShotState({ message = "No screenshot captured for this stage yet.", compact = false }) {
+  return (
+    <div
+      className={`flex flex-col items-center justify-center px-4 text-center ${
+        compact ? "h-full gap-1.5 text-[10px]" : "min-h-[320px] gap-2 text-[12px]"
+      }`}
+    >
+      <Monitor
+        className={compact ? "h-4 w-4 opacity-30" : "h-8 w-8 opacity-20"}
+        style={{ color: "var(--mute-3)" }}
+      />
+      <div style={{ color: "var(--mute-3)" }}>{message}</div>
+    </div>
+  );
+}
+
+function ScreenshotImage({
+  src,
+  alt,
+  className,
+  style,
+  loading,
+  fallbackMessage,
+  compact = false,
+}) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (!src || failed) {
+    return <BrokenShotState message={fallbackMessage} compact={compact} />;
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      style={style}
+      loading={loading}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function frameLabel(frame) {
   if (!frame) return "";
   return [frame.toolName, frame.target].filter(Boolean).join(" | ");
@@ -208,11 +255,9 @@ export function BrowserLiveView({
         const payload = await response.json();
         if (cancelled) return;
         const next = payload?.screenshot || payload?.screenshot_url || "";
-        if (next) {
-          setFallbackScreenshot(next);
-          setFallbackTimestamp(payload?.timestamp || "");
-          setFetchError("");
-        }
+        setFallbackScreenshot(next);
+        setFallbackTimestamp(payload?.timestamp || "");
+        setFetchError(payload?.error ? String(payload.error) : "");
       } catch (error) {
         if (!cancelled) {
           setFetchError(
@@ -392,11 +437,12 @@ export function BrowserLiveView({
         >
           {activeUrl ? (
             <>
-              <img
+              <ScreenshotImage
                 src={activeUrl}
                 alt="Agent browser view"
                 className="block w-full object-contain"
                 style={{ maxHeight: activeImageMaxHeight }}
+                fallbackMessage="This screenshot could not be loaded."
               />
               <FrameOverlay
                 frame={
@@ -461,11 +507,13 @@ export function BrowserLiveView({
                       background: "var(--bg)",
                     }}
                   >
-                    <img
+                    <ScreenshotImage
                       src={frame.url}
                       alt={`${selectedStage} frame ${index + 1}`}
                       className="h-full w-full object-cover"
                       loading="lazy"
+                      fallbackMessage="Unavailable"
+                      compact
                     />
                   </button>
                 ))}
@@ -556,12 +604,13 @@ export function ScreenshotGallery({ screenshots = [] }) {
           className="group relative overflow-hidden rounded-xl border border-border bg-black/95"
           onClick={() => setZoom(true)}
         >
-          <img
+          <ScreenshotImage
             src={active}
             alt="Screenshot"
             className="block w-full object-contain"
             style={{ maxHeight: 380 }}
             loading="lazy"
+            fallbackMessage="This screenshot could not be loaded."
           />
           <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
         </button>
@@ -583,11 +632,13 @@ export function ScreenshotGallery({ screenshots = [] }) {
                       background: "var(--bg)",
                     }}
                   >
-                    <img
+                    <ScreenshotImage
                       src={src}
                       alt={`Screenshot ${index + 1}`}
                       className="h-full w-full object-cover"
                       loading="lazy"
+                      fallbackMessage="Unavailable"
+                      compact
                     />
                   </button>
                 ))}
@@ -615,10 +666,11 @@ export function ScreenshotGallery({ screenshots = [] }) {
                 <span className="sr-only">Close screenshot</span>
               </Button>
             </DialogClose>
-            <img
+            <ScreenshotImage
               src={active}
               alt="Screenshot fullscreen"
               className="max-h-[88vh] w-full object-contain"
+              fallbackMessage="This screenshot could not be loaded."
             />
           </div>
         </DialogContent>

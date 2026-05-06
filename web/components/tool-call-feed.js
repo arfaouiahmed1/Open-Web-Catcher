@@ -5,7 +5,10 @@ import { Camera, ChevronDown, ExternalLink, Wrench } from "lucide-react";
 
 import { formatNumber, safeJson } from "@/lib/utils";
 import { STAGE_LABELS } from "@/lib/run-trace";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 
 function toneForStatus(status) {
   const normalized = String(status || "").toLowerCase();
@@ -154,24 +157,89 @@ function ToolCallRow({ call }) {
 }
 
 export function ToolCallFeed({ toolCalls = [], title = "Tool Calls", emptyLabel = "Tool calls will appear here.", maxHeight = 540 }) {
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const filtered = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    return toolCalls.filter((call) => {
+      if (statusFilter && String(call.status || "").toLowerCase() !== statusFilter) {
+        return false;
+      }
+      if (!term) return true;
+      return [
+        call.toolName,
+        call.target,
+        call.actor,
+        call.stage,
+        call.status,
+        safeJson(call.args),
+        safeJson(call.result),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(term);
+    });
+  }, [query, statusFilter, toolCalls]);
+  const statuses = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          toolCalls
+            .map((call) => String(call.status || "").toLowerCase())
+            .filter(Boolean),
+        ),
+      ).sort(),
+    [toolCalls],
+  );
+
   return (
     <Card className="overflow-hidden shadow-card">
-      <CardHeader className="flex-row items-center gap-2 space-y-0 border-b border-border px-4 py-3">
-        <Wrench className="h-4 w-4 text-primary" />
-        <CardTitle className="text-[12px] font-semibold uppercase tracking-[0.12em] text-primary">
-          {title}
-        </CardTitle>
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground/60">
-          {formatNumber(toolCalls.length)}
-        </span>
+      <CardHeader className="space-y-3 border-b border-border px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Wrench className="h-4 w-4 text-primary" />
+          <CardTitle className="text-[12px] font-semibold uppercase tracking-[0.12em] text-primary">
+            {title}
+          </CardTitle>
+          <Badge tone="default" className="ml-auto font-mono">
+            {formatNumber(filtered.length)}
+            {filtered.length !== toolCalls.length ? ` / ${formatNumber(toolCalls.length)}` : ""}
+          </Badge>
+        </div>
+        <CardDescription className="text-xs">
+          Search by tool, actor, target, or payload and filter by status.
+        </CardDescription>
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search tool calls"
+            className="h-8 min-w-[220px] flex-1 text-xs"
+          />
+          {statuses.length > 1 ? (
+            <Select
+              value={statusFilter}
+              onChange={(value) => setStatusFilter(value)}
+              options={[
+                { value: "", label: "All statuses" },
+                ...statuses.map((status) => ({
+                  value: status,
+                  label: status,
+                })),
+              ]}
+              placeholder="Status"
+              className="min-w-[160px]"
+            />
+          ) : null}
+        </div>
       </CardHeader>
 
       <CardContent className="space-y-2 overflow-y-auto p-3" style={{ maxHeight }}>
-        {toolCalls.length ? (
-          toolCalls.map((call) => <ToolCallRow key={call.key} call={call} />)
+        {filtered.length ? (
+          filtered.map((call) => <ToolCallRow key={call.key} call={call} />)
         ) : (
           <div className="flex h-36 items-center justify-center text-sm text-muted-foreground/60">
-            {emptyLabel}
+            {toolCalls.length ? "No tool calls match the current filters." : emptyLabel}
           </div>
         )}
       </CardContent>

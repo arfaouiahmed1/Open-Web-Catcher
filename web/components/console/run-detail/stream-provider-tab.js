@@ -15,7 +15,7 @@ import {
 } from "recharts";
 import { AlertCircle, Globe, Loader2, Server, Shield, Wifi } from "lucide-react";
 
-import { apiFetch, apiUrl } from "@/lib/api";
+import { apiUrl } from "@/lib/api";
 import { formatNumber } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -126,16 +126,11 @@ function StatCard({ label, value, color }) {
   );
 }
 
-export function StreamProviderTab({ runId, runUrl }) {
+export function StreamProviderTab({ runId, runUrl, streamUrls = [] }) {
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [hasRun, setHasRun] = useState(false);
-
-  async function fetchHistory() {
-    const payload = await apiFetch("/ui/providers/history?limit=50&offset=0");
-    return payload;
-  }
 
   async function runLookup(urls) {
     setIsLoading(true);
@@ -158,22 +153,22 @@ export function StreamProviderTab({ runId, runUrl }) {
   }
 
   useEffect(() => {
-    // Auto-resolve run URL when tab mounts
-    if (runUrl) {
-      runLookup([runUrl]);
-    } else {
-      // Fall back to history
-      fetchHistory()
-        .then((h) => setData(h))
-        .catch(() => {})
-        .finally(() => setHasRun(true));
+    const urls = Array.isArray(streamUrls) && streamUrls.length
+      ? streamUrls
+      : (runUrl ? [runUrl] : []);
+    if (!urls.length) {
+      setData(null);
+      setHasRun(true);
+      return;
     }
-  }, [runId]); // eslint-disable-line react-hooks/exhaustive-deps
+    runLookup(urls);
+  }, [runId, runUrl, streamUrls]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = data?.stats || data?.summary || {};
   const rows = data?.rows || [];
   const topProviders = data?.top_providers || [];
   const topCountries = data?.top_countries || [];
+  const hasLookupUrls = (Array.isArray(streamUrls) && streamUrls.length > 0) || Boolean(runUrl);
 
   const resolveRate = stats.total_urls
     ? Math.round(((stats.resolved_ips || 0) / stats.total_urls) * 100)
@@ -198,13 +193,13 @@ export function StreamProviderTab({ runId, runUrl }) {
         <div>
           <h2 className="text-base font-semibold text-foreground">Provider Intelligence</h2>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {runUrl
-              ? `Resolved from run URL — IP, hosting provider, country, and abuse contacts.`
-              : "Lookup history across all resolved stream URLs."}
+            {hasLookupUrls
+              ? `Resolved from run URLs and detected stream targets (${formatNumber((streamUrls || []).length || (runUrl ? 1 : 0))} candidate URLs).`
+              : "No run URLs available for provider resolution yet."}
           </p>
         </div>
-        {runUrl ? (
-          <Button variant="outline" size="sm" onClick={() => runLookup([runUrl])} disabled={isLoading}>
+        {hasLookupUrls ? (
+          <Button variant="outline" size="sm" onClick={() => runLookup(streamUrls.length ? streamUrls : [runUrl])} disabled={isLoading}>
             <Wifi className="mr-1.5 h-3.5 w-3.5" />
             Re-resolve
           </Button>
@@ -320,3 +315,4 @@ export function StreamProviderTab({ runId, runUrl }) {
     </div>
   );
 }
+

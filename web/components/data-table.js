@@ -3,6 +3,15 @@
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 function fmtHeader(key) {
   return key
@@ -53,7 +62,6 @@ function fmtCell(key, value) {
   }
   const str = String(value);
 
-  /* status pills */
   if (
     [
       "success",
@@ -69,13 +77,9 @@ function fmtCell(key, value) {
     return <StatusPill value={str} />;
   }
 
-  /* truncate long strings */
   if (str.length > 60) {
     return (
-      <span
-        className="mono text-xs text-muted-foreground"
-        title={str}
-      >
+      <span className="mono text-xs text-muted-foreground" title={str}>
         {str.slice(0, 60)}&hellip;
       </span>
     );
@@ -97,74 +101,62 @@ export function DataTable({
   rows,
   onRowClick,
   className,
+  emptyLabel = "No data yet",
 }) {
+  const safeRows = Array.isArray(rows) ? rows : [];
   return (
-    <Card
-      className={cn(
-        "overflow-hidden text-card-foreground shadow-sm",
-        className,
-      )}
-    >
+    <Card className={cn("overflow-hidden text-card-foreground shadow-sm", className)}>
       {(title || description) && (
         <CardHeader className="space-y-1 border-b border-border px-4 py-3">
           {title ? <CardTitle className="text-sm font-medium">{title}</CardTitle> : null}
           {description ? (
-            <CardDescription className="text-sm">{description}</CardDescription>
+            <CardDescription className="text-xs">{description}</CardDescription>
           ) : null}
         </CardHeader>
       )}
       <CardContent className="p-0">
-        <div className="overflow-x-auto">
-        <table
-          className="min-w-full border-collapse text-sm"
-          style={{ borderSpacing: 0 }}
-        >
-          <thead>
-            <tr>
-              {columns.map((col) => (
-                <th
-                  key={col}
-                  className="whitespace-nowrap border-b border-border bg-muted/50 px-4 py-2.5 text-left text-[10.5px] font-medium uppercase tracking-[0.1em] text-muted-foreground"
-                >
-                  {fmtHeader(col)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length ? (
-              rows.map((row, i) => (
-                <tr
-                  key={i}
-                  onClick={() => onRowClick?.(row)}
-                  className={cn(
-                    "border-b border-border transition-colors last:border-b-0",
-                    onRowClick && "cursor-pointer hover:bg-accent/50",
-                  )}
-                >
-                  {columns.map((col) => (
-                    <td
-                      key={col}
-                      className="whitespace-nowrap px-4 py-3 align-middle text-foreground"
-                    >
-                      {fmtCell(col, row[col])}
-                    </td>
-                  ))}
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td
-                  colSpan={columns.length}
+        <ScrollArea className="max-h-[520px]">
+          <Table className="min-w-full">
+            <TableHeader className="bg-muted/40">
+              <TableRow>
+                {columns.map((col) => (
+                  <TableHead key={col} className="whitespace-nowrap">
+                    {fmtHeader(col)}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {safeRows.length ? (
+                safeRows.map((row, i) => (
+                  <TableRow
+                    key={i}
+                    onClick={() => onRowClick?.(row)}
+                    className={cn(onRowClick && "cursor-pointer")}
+                  >
+                    {columns.map((col) => (
+                      <TableCell
+                        key={col}
+                        className="whitespace-nowrap px-4 py-3 align-middle text-foreground"
+                      >
+                        {fmtCell(col, row[col])}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell
+                    colSpan={columns.length}
                     className="px-4 py-10 text-center text-sm text-muted-foreground"
-                >
-                  No data yet
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-        </div>
+                  >
+                    {emptyLabel}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </ScrollArea>
       </CardContent>
     </Card>
   );

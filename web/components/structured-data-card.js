@@ -1,18 +1,19 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 function isPrimitive(value) {
   return value == null || ["string", "number", "boolean"].includes(typeof value);
 }
 
 function formatValue(value) {
-  if (value == null) return "—";
+  if (value == null) return "--";
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(2);
-  if (typeof value === "string") return value || "—";
+  if (typeof value === "string") return value || "--";
   if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? "" : "s"}`;
   if (typeof value === "object") return `${Object.keys(value).length} field${Object.keys(value).length === 1 ? "" : "s"}`;
   return String(value);
@@ -92,6 +93,7 @@ function ObjectSection({ label, value, limit }) {
 }
 
 export function StructuredDataCard({ title, description, data, limit = 8, emptyLabel = "No structured data available." }) {
+  const [mode, setMode] = useState("table");
   const normalized = useMemo(() => data ?? null, [data]);
   const isEmpty = useMemo(() => {
     if (normalized == null) return true;
@@ -101,19 +103,43 @@ export function StructuredDataCard({ title, description, data, limit = 8, emptyL
   }, [normalized]);
 
   return (
-    <Card className="overflow-hidden shadow-card">
+    <div className="overflow-hidden rounded-lg border border-border bg-card/60 shadow-sm">
       {(title || description) ? (
-        <CardHeader className="space-y-1 border-b border-border px-4 py-3.5">
-          {title ? <CardTitle className="text-sm font-semibold">{title}</CardTitle> : null}
-          {description ? <CardDescription className="text-xs">{description}</CardDescription> : null}
-        </CardHeader>
+        <div className="flex flex-row items-start justify-between gap-3 border-b border-border px-4 py-3.5">
+          <div className="space-y-1">
+            {title ? <div className="text-sm font-semibold text-foreground">{title}</div> : null}
+            {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
+          </div>
+          {!isEmpty && !isPrimitive(normalized) ? (
+            <div className="flex shrink-0 rounded-md border border-border bg-muted/30 p-0.5">
+              {["table", "json"].map((entry) => (
+                <Button
+                  key={entry}
+                  type="button"
+                  variant={mode === entry ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-7 px-2 text-[11px] capitalize"
+                  onClick={() => setMode(entry)}
+                >
+                  {entry}
+                </Button>
+              ))}
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
-      <CardContent className="p-4">
+      <div className="p-4">
         {isEmpty ? (
           <div className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
             {emptyLabel}
           </div>
+        ) : mode === "json" && !isPrimitive(normalized) ? (
+          <ScrollArea className="max-h-[460px] rounded-lg border border-border bg-muted/20">
+            <pre className="whitespace-pre-wrap break-words p-3 font-mono text-[11.5px] leading-relaxed text-foreground/85">
+              {JSON.stringify(normalized, null, 2)}
+            </pre>
+          </ScrollArea>
         ) : Array.isArray(normalized) ? (
           <div className="space-y-3">
             <div className="flex flex-wrap gap-1.5">
@@ -128,7 +154,7 @@ export function StructuredDataCard({ title, description, data, limit = 8, emptyL
         ) : (
           <ObjectSection value={normalized} limit={limit} />
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

@@ -23,7 +23,7 @@ const defs = getToolDefinitions(endpoint, fakeTools);
 for (const [toolName, def] of Object.entries(defs)) {
   const parsedArgs = z.object(def.schema).parse(catalog[toolName].input_example ?? {});
   await def.handler(parsedArgs);
-  assert.deepEqual(calls.at(-1), [toolName, { ...parsedArgs, browserWsEndpoint: endpoint }]);
+  assert.deepEqual(calls.at(-1), [toolName, { ...parsedArgs, browserWsEndpoint: endpoint, browserProfile: '' }]);
 }
 
 for (const [profileName, toolNames] of Object.entries(PROFILES)) {

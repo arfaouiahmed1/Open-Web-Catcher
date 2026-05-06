@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -21,6 +23,7 @@ from src.models.schemas import (
 )
 from src.utils.config import Settings, build_browser_runtime_sync_status
 from src.utils.observability import ObservabilityStatus, run_registry
+from src.utils.service_health import build_runtime_preflight
 
 
 @pytest.fixture
@@ -58,6 +61,75 @@ def test_health_reports_dependency_config(client: TestClient):
     assert payload["mcp_server_url"] == "http://mcp.local:3000"
     assert payload["dependencies"]["browser"]["healthy"] is True
     assert payload["dependencies"]["mcp"]["healthy"] is True
+    assert payload["runtime_preflight"]["launch_ready"] is True
+
+
+def test_build_runtime_preflight_separates_browser_mcp_and_profile_failures():
+    browser = {
+        "healthy": False,
+        "configured_ws_endpoint": "ws://browser.local:9222",
+        "probe_url": "http://browser.local:9222/json/version",
+        "error": "connection refused",
+    }
+    mcp = {
+        "healthy": True,
+        "probe_url": "http://mcp.local:3000/health",
+        "profiles": ["classification", "landing"],
+    }
+
+    preflight = build_runtime_preflight(
+        browser,
+        mcp,
+        required_profiles=("classification", "landing", "hosting", "embedded"),
+    )
+
+    assert preflight["launch_ready"] is False
+    assert [reason["kind"] for reason in preflight["blocking_reasons"]] == [
+        "browser_unhealthy",
+        "tool_profile_unavailable",
+        "tool_profile_unavailable",
+    ]
+    assert preflight["profiles"][0]["profile"] == "classification"
+    assert preflight["profiles"][0]["healthy"] is True
+    assert preflight["profiles"][2]["profile"] == "hosting"
+    assert preflight["profiles"][2]["healthy"] is False
+
+
+def test_ui_browser_status_returns_blocking_preflight(api_settings: Settings):
+    from src.api import app as api_app
+
+    with patch.object(api_app, "_settings", api_settings), \
+         patch.object(api_app, "setup_tracing_from_settings"), \
+         patch.object(api_app, "create_tables"), \
+         patch.object(api_app, "_auto_sync_provider_pricing"), \
+         patch.object(
+             api_app,
+             "probe_browser",
+             return_value={
+                 "healthy": False,
+                 "configured_ws_endpoint": api_settings.browser_ws_endpoint,
+                 "probe_url": "http://browser.local:9222/json/version",
+                 "error": "connection refused",
+             },
+         ), \
+         patch.object(
+             api_app,
+             "probe_mcp",
+             return_value={
+                 "healthy": True,
+                 "probe_url": "http://mcp.local:3000/health",
+                 "profiles": ["classification", "landing", "hosting", "embedded"],
+             },
+         ):
+        with TestClient(api_app.app) as test_client:
+            response = test_client.get("/ui/browser/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["browser"]["healthy"] is False
+    assert payload["mcp"]["healthy"] is True
+    assert payload["preflight"]["launch_ready"] is False
+    assert payload["preflight"]["blocking_reasons"][0]["kind"] == "browser_unhealthy"
 
 
 def test_extract_routes_to_hosting_agent(api_settings: Settings):
@@ -477,10 +549,270 @@ def test_ui_run_detail_returns_active_trace(client: TestClient):
     )
     observer.emit("pipeline_started", "Pipeline started")
 
-    response = client.get(f"/ui/runs/{run_id}")
+    job = SimpleNamespace(
+        job_id="job-123",
+        run_id=run_id,
+        job_type="agent",
+        actor="classification",
+        status="queued",
+        attempts=1,
+        max_attempts=3,
+        error_text="",
+        created_at=datetime(2026, 5, 3, 18, 0, 0),
+        started_at=None,
+        finished_at=None,
+        heartbeat_at=None,
+    )
+
+    with patch("src.api.app.BackgroundJobRepository") as mock_job_repo_cls, \
+         patch("src.api.app.get_session") as mock_get_session:
+        session = MagicMock()
+        mock_get_session.return_value = session
+        mock_job_repo_cls.return_value.get_by_run_id.return_value = job
+        response = client.get(f"/ui/runs/{run_id}")
 
     assert response.status_code == 200
-    assert response.json()["active_trace"]["run_id"] == run_id
+    payload = response.json()
+    assert payload["active_trace"]["run_id"] == run_id
+    assert payload["job_state"]["job_type"] == "agent"
+    assert payload["job"]["actor"] == "classification"
+
+
+def test_ui_run_detail_returns_completed_run_snapshot_payload(client: TestClient):
+    run_id = "ui-completed-run"
+    payload = {
+        "run": {
+            "run_id": run_id,
+            "url": "https://example.com/watch",
+            "status": "success",
+            "root_actor": "orchestrator",
+        },
+        "snapshot": {
+            "provider_analysis": [{"provider": "Example CDN"}],
+            "takedown_emails": [{"abuse_email": "abuse@example.com"}],
+            "all_streams": [{"url": "https://cdn.example.com/master.m3u8"}],
+            "all_screenshots": ["https://img.example.com/1.png"],
+        },
+        "provider_analysis": [{"provider": "Example CDN"}],
+        "takedown_emails": [{"abuse_email": "abuse@example.com"}],
+        "all_streams": [{"url": "https://cdn.example.com/master.m3u8"}],
+        "all_screenshots": ["https://img.example.com/1.png"],
+        "agent_runs": [],
+        "agent_outputs": [],
+        "agent_rollups": [],
+        "stage_rollups": [],
+        "parallelism": {
+            "current_parallel_agents": 0,
+            "max_parallel_agents": 0,
+            "by_stage": [],
+        },
+        "tool_calls": [],
+        "llm_calls": [],
+        "events": [],
+        "job": None,
+        "job_state": None,
+    }
+
+    with patch("src.api.app.OperatorConsoleRepository") as mock_repo_cls, \
+         patch("src.api.app.get_session") as mock_get_session:
+        session = MagicMock()
+        mock_get_session.return_value = session
+        mock_repo_cls.return_value.get_run_detail.return_value = payload
+        response = client.get(f"/ui/runs/{run_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider_analysis"] == payload["provider_analysis"]
+    assert body["takedown_emails"] == payload["takedown_emails"]
+    assert body["all_streams"] == payload["all_streams"]
+    assert body["all_screenshots"] == payload["all_screenshots"]
+
+
+def test_ui_run_detail_prefers_completed_active_trace_over_background_fallback(client: TestClient):
+    run_id = "ui-completed-active-trace"
+    observer = run_registry.create(
+        run_id=run_id,
+        root_actor="classification",
+        observability=ObservabilityStatus(
+            enabled=False,
+            project="test",
+            pricing_models=[],
+            default_dataset_name="open-web-catcher-runs",
+        ),
+    )
+    observer.emit("agent_started", "Classification started")
+    observer.emit(
+        "llm_response",
+        "Model responded",
+        details={"provider": "openrouter", "model_name": "test-model"},
+    )
+    observer.finish(success=True)
+
+    with patch("src.api.app.OperatorConsoleRepository") as mock_repo_cls, \
+         patch("src.api.app.BackgroundJobRepository") as mock_job_repo_cls, \
+         patch("src.api.app.get_session") as mock_get_session:
+        session = MagicMock()
+        mock_get_session.return_value = session
+        mock_repo_cls.return_value.get_run_detail.return_value = None
+        mock_job_repo_cls.return_value.get_by_run_id.return_value = None
+
+        response = client.get(f"/ui/runs/{run_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "active_trace"
+    assert body["run"]["root_actor"] == "classification"
+    assert len(body["events"]) == 2
+    assert "active_trace" not in body
+
+
+def test_ui_run_detail_uses_normalized_payload_when_job_result_exists(client: TestClient):
+    run_id = "ui-normalized-run"
+    payload = {
+        "run": {
+            "run_id": run_id,
+            "url": "https://example.com/watch",
+            "status": "success",
+            "root_actor": "classification",
+        },
+        "snapshot": {
+            "classification": {
+                "page_type": "hosting_page",
+                "confidence": "high",
+                "reasoning": "Player detected.",
+            },
+            "all_screenshots": ["https://img.example.com/1.png"],
+        },
+        "provider_analysis": [],
+        "takedown_emails": [],
+        "all_streams": [],
+        "all_screenshots": ["https://img.example.com/1.png"],
+        "agent_runs": [],
+        "agent_outputs": [],
+        "agent_rollups": [],
+        "stage_rollups": [],
+        "parallelism": {
+            "current_parallel_agents": 0,
+            "max_parallel_agents": 0,
+            "by_stage": [],
+        },
+        "tool_calls": [],
+        "llm_calls": [],
+        "events": [{"seq": 1, "actor": "classification", "kind": "agent_finished"}],
+        "source": "database",
+    }
+    job = SimpleNamespace(
+        job_id="job-789",
+        run_id=run_id,
+        job_type="agent",
+        actor="classification",
+        status="succeeded",
+        attempts=1,
+        max_attempts=3,
+        error_text="",
+        created_at=datetime(2026, 5, 3, 18, 0, 0),
+        started_at=datetime(2026, 5, 3, 18, 0, 1),
+        finished_at=datetime(2026, 5, 3, 18, 0, 2),
+        heartbeat_at=None,
+        result_json={"page_type": "landing_page"},
+    )
+
+    with patch("src.api.app.OperatorConsoleRepository") as mock_repo_cls, \
+         patch("src.api.app.BackgroundJobRepository") as mock_job_repo_cls, \
+         patch("src.api.app.get_session") as mock_get_session:
+        session = MagicMock()
+        mock_get_session.return_value = session
+        mock_repo_cls.return_value.get_run_detail.return_value = payload
+        mock_job_repo_cls.return_value.get_by_run_id.return_value = job
+
+        response = client.get(f"/ui/runs/{run_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "database"
+    assert body["events"] == payload["events"]
+    assert body["job_state"]["display_status"] == "success"
+
+
+def test_ui_run_detail_recovers_telemetry_from_background_pipeline_result(client: TestClient):
+    run_id = "ui-background-pipeline-result"
+    job = SimpleNamespace(
+        job_id="job-telemetry",
+        run_id=run_id,
+        job_type="agent",
+        actor="classification",
+        status="succeeded",
+        attempts=1,
+        max_attempts=3,
+        error_text="",
+        created_at=datetime(2026, 5, 3, 18, 0, 0),
+        started_at=datetime(2026, 5, 3, 18, 0, 1),
+        finished_at=datetime(2026, 5, 3, 18, 0, 3),
+        heartbeat_at=None,
+        result_json={
+            "run_id": run_id,
+            "url": "https://example.com/watch",
+            "classification": {
+                "url": "https://example.com/watch",
+                "page_type": "landing_page",
+                "confidence": "high",
+                "reasoning": "Directory hub.",
+                "agent_type": "classification",
+            },
+            "final_status": "success",
+            "all_streams": [],
+            "all_screenshots": ["https://img.example.com/run/frame-1.png"],
+            "metrics": {
+                "run_id": run_id,
+                "url": "https://example.com/watch",
+                "total_llm_calls": 1,
+                "total_tool_calls": 2,
+                "total_tokens_in": 1200,
+                "total_tokens_out": 96,
+                "estimated_total_cost_usd": 0.0042,
+            },
+            "events": [
+                {
+                    "seq": 1,
+                    "actor": "classification",
+                    "kind": "llm_response",
+                    "timestamp": "2026-05-03T18:00:02",
+                    "details": {
+                        "provider": "openrouter",
+                        "model_name": "test-model",
+                        "input_tokens": 1200,
+                        "output_tokens": 96,
+                        "context_window": 131072,
+                        "estimated_total_cost_usd": 0.0042,
+                        "content_preview": "Directory hub.",
+                    },
+                }
+            ],
+            "telemetry_status": "trace_payload",
+        },
+    )
+
+    with patch("src.api.app.OperatorConsoleRepository") as mock_repo_cls, \
+         patch("src.api.app.BackgroundJobRepository") as mock_job_repo_cls, \
+         patch("src.api.app.get_session") as mock_get_session:
+        session = MagicMock()
+        mock_get_session.return_value = session
+        mock_repo_cls.return_value.get_run_detail.return_value = None
+        mock_job_repo_cls.return_value.get_by_run_id.return_value = job
+
+        response = client.get(f"/ui/runs/{run_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "background_job_result"
+    assert body["telemetry_status"] == "trace_payload"
+    assert body["run"]["page_type"] == "landing_page"
+    assert body["run"]["total_llm_calls"] == 1
+    assert body["run"]["total_tool_calls"] == 2
+    assert body["run"]["total_tokens_in"] == 1200
+    assert body["all_screenshots"] == ["https://img.example.com/run/frame-1.png"]
+    assert len(body["llm_calls"]) == 1
+    assert body["llm_calls"][0]["context_window"] == 131072
 
 
 def test_ui_run_stream_emits_sse_payload(client: TestClient):
@@ -504,6 +836,53 @@ def test_ui_run_stream_emits_sse_payload(client: TestClient):
     assert response.status_code == 200
     assert "\"run_id\": \"" + run_id + "\"" in body
     assert "\"completed\": true" in body.lower()
+
+
+def test_ui_run_latest_screenshot_returns_empty_payload_for_known_run_without_image(client: TestClient):
+    run_id = "ui-known-run-no-screenshot"
+    detail_payload = {
+        "snapshot": {
+            "all_screenshots": [],
+        }
+    }
+
+    with patch("src.api.app.OperatorConsoleRepository") as mock_repo_cls, \
+         patch("src.api.app.BackgroundJobRepository") as mock_job_repo_cls, \
+         patch("src.api.app.get_session") as mock_get_session:
+        session = MagicMock()
+        mock_get_session.return_value = session
+        mock_repo_cls.return_value.get_run_detail.return_value = detail_payload
+        mock_job_repo_cls.return_value.get_by_run_id.return_value = None
+
+        response = client.get(f"/ui/runs/{run_id}/screenshot")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["screenshot_url"] == ""
+    assert body["source"] == "database_snapshot"
+
+
+def test_ui_run_latest_screenshot_ignores_non_image_background_url(client: TestClient):
+    run_id = "ui-run-bad-screenshot-url"
+    job = SimpleNamespace(
+        run_id=run_id,
+        result_json={"screenshot_url": "https://ppv.to/"},
+    )
+
+    with patch("src.api.app.OperatorConsoleRepository") as mock_repo_cls, \
+         patch("src.api.app.BackgroundJobRepository") as mock_job_repo_cls, \
+         patch("src.api.app.get_session") as mock_get_session:
+        session = MagicMock()
+        mock_get_session.return_value = session
+        mock_repo_cls.return_value.get_run_detail.return_value = None
+        mock_job_repo_cls.return_value.get_by_run_id.return_value = job
+
+        response = client.get(f"/ui/runs/{run_id}/screenshot")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["screenshot_url"] == ""
+    assert body["source"] == "background_job_result"
 
 
 @pytest.mark.asyncio

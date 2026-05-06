@@ -142,12 +142,16 @@ def _extract_provider_reported_costs(
 
         return {
             "estimated_input_cost_usd": round(max(float(parsed_input or 0.0), 0.0), 8),
+            "estimated_cached_input_cost_usd": 0.0,
+            "estimated_cache_write_cost_usd": 0.0,
             "estimated_output_cost_usd": round(max(float(parsed_output or 0.0), 0.0), 8),
             "estimated_total_cost_usd": round(max(float(parsed_total or 0.0), 0.0), 8),
         }
 
     return {
         "estimated_input_cost_usd": 0.0,
+        "estimated_cached_input_cost_usd": 0.0,
+        "estimated_cache_write_cost_usd": 0.0,
         "estimated_output_cost_usd": 0.0,
         "estimated_total_cost_usd": 0.0,
     }
@@ -321,6 +325,7 @@ class RunObserver:
         cache_hit = bool(resolved_cache.get("cache_hit", False))
         cached_input_tokens = _to_int(resolved_cache.get("cached_input_tokens"))
         new_input_tokens = _to_int(resolved_cache.get("new_input_tokens"))
+        cache_creation_input_tokens = _to_int(resolved_cache.get("cache_creation_input_tokens"))
 
         reported_costs = _extract_provider_reported_costs(
             usage,
@@ -341,17 +346,24 @@ class RunObserver:
         else:
             pricing_input = float(pricing.get("input_per_million", 0.0) or 0.0)
             pricing_output = float(pricing.get("output_per_million", 0.0) or 0.0)
-            if pricing_input > 0.0 or pricing_output > 0.0:
-                billable_input_tokens = (
-                    max(new_input_tokens, 0)
-                    if cache_hit and new_input_tokens > 0
-                    else max(input_tokens, 0)
-                )
+            pricing_cached_input = float(pricing.get("cached_input_per_million", 0.0) or 0.0)
+            pricing_cache_write = float(pricing.get("cache_write_per_million", 0.0) or 0.0)
+            if pricing_input > 0.0 or pricing_output > 0.0 or pricing_cached_input > 0.0 or pricing_cache_write > 0.0:
+                if cache_hit or cache_creation_input_tokens > 0:
+                    billable_input_tokens = max(new_input_tokens, 0)
+                else:
+                    billable_input_tokens = max(input_tokens, 0)
+                cache_write_tokens = min(max(cache_creation_input_tokens, 0), max(billable_input_tokens, 0))
+                billable_input_tokens = max(billable_input_tokens - cache_write_tokens, 0)
                 costs = estimate_usage_cost(
                     billable_input_tokens,
                     output_tokens,
+                    cached_input_tokens=cached_input_tokens,
+                    cache_write_input_tokens=cache_write_tokens,
                     input_per_million=pricing_input,
                     output_per_million=pricing_output,
+                    cached_input_per_million=pricing_cached_input,
+                    cache_write_per_million=pricing_cache_write,
                 )
                 cost_source = "provider_pricing_catalog"
             else:
@@ -368,6 +380,12 @@ class RunObserver:
             if cache_hit:
                 metrics.total_cache_hit_calls += 1
             metrics.estimated_input_cost_usd = round(metrics.estimated_input_cost_usd + costs["estimated_input_cost_usd"], 8)
+            metrics.estimated_cached_input_cost_usd = round(
+                metrics.estimated_cached_input_cost_usd + costs["estimated_cached_input_cost_usd"], 8
+            )
+            metrics.estimated_cache_write_cost_usd = round(
+                metrics.estimated_cache_write_cost_usd + costs["estimated_cache_write_cost_usd"], 8
+            )
             metrics.estimated_output_cost_usd = round(metrics.estimated_output_cost_usd + costs["estimated_output_cost_usd"], 8)
             metrics.estimated_total_cost_usd = round(metrics.estimated_total_cost_usd + costs["estimated_total_cost_usd"], 8)
 
@@ -380,6 +398,12 @@ class RunObserver:
             model_usage.new_input_tokens += new_input_tokens
             model_usage.output_tokens += output_tokens
             model_usage.estimated_input_cost_usd = round(model_usage.estimated_input_cost_usd + costs["estimated_input_cost_usd"], 8)
+            model_usage.estimated_cached_input_cost_usd = round(
+                model_usage.estimated_cached_input_cost_usd + costs["estimated_cached_input_cost_usd"], 8
+            )
+            model_usage.estimated_cache_write_cost_usd = round(
+                model_usage.estimated_cache_write_cost_usd + costs["estimated_cache_write_cost_usd"], 8
+            )
             model_usage.estimated_output_cost_usd = round(model_usage.estimated_output_cost_usd + costs["estimated_output_cost_usd"], 8)
             model_usage.estimated_total_cost_usd = round(model_usage.estimated_total_cost_usd + costs["estimated_total_cost_usd"], 8)
 
@@ -389,8 +413,11 @@ class RunObserver:
             "output_tokens": output_tokens,
             "cached_input_tokens": cached_input_tokens,
             "new_input_tokens": new_input_tokens,
+            "cache_creation_input_tokens": cache_creation_input_tokens,
             "cache_hit": cache_hit,
             "estimated_input_cost_usd": float(costs.get("estimated_input_cost_usd", 0.0) or 0.0),
+            "estimated_cached_input_cost_usd": float(costs.get("estimated_cached_input_cost_usd", 0.0) or 0.0),
+            "estimated_cache_write_cost_usd": float(costs.get("estimated_cache_write_cost_usd", 0.0) or 0.0),
             "estimated_output_cost_usd": float(costs.get("estimated_output_cost_usd", 0.0) or 0.0),
             "estimated_total_cost_usd": float(costs.get("estimated_total_cost_usd", 0.0) or 0.0),
             "cost_source": cost_source,
@@ -398,6 +425,9 @@ class RunObserver:
                 "provider": resolved_provider,
                 "input_per_million": float(pricing.get("input_per_million", 0.0) or 0.0),
                 "output_per_million": float(pricing.get("output_per_million", 0.0) or 0.0),
+                "cached_input_per_million": float(pricing.get("cached_input_per_million", 0.0) or 0.0),
+                "cache_write_per_million": float(pricing.get("cache_write_per_million", 0.0) or 0.0),
+                "context_window": int(pricing.get("context_window", 0) or 0),
             },
         }
 
@@ -456,12 +486,48 @@ class RunRegistry:
 
     def create(self, run_id: str, root_actor: str, observability: ObservabilityStatus) -> RunObserver:
         with self._lock:
-            state = _RunState(run_id=run_id, root_actor=root_actor, observability=observability)
-            self._runs[run_id] = state
+            state = self._runs.get(run_id)
+            if state is None or state.completed:
+                state = _RunState(run_id=run_id, root_actor=root_actor, observability=observability)
+                self._runs[run_id] = state
+            else:
+                if root_actor and not state.root_actor:
+                    state.root_actor = root_actor
+                state.observability = observability
             self._runs.move_to_end(run_id)
             while len(self._runs) > self._max_runs:
                 self._runs.popitem(last=False)
-            return RunObserver(state, root_actor)
+            return RunObserver(state, root_actor or state.root_actor)
+
+    def restore(self, trace: RunTrace) -> RunObserver:
+        with self._lock:
+            existing = self._runs.get(trace.run_id)
+            if existing is not None and len(existing.events) >= len(trace.events):
+                self._runs.move_to_end(trace.run_id)
+                return RunObserver(existing, existing.root_actor)
+
+            state = _RunState(
+                run_id=trace.run_id,
+                root_actor=trace.root_actor,
+                observability=trace.observability,
+            )
+            state.started_at = trace.started_at
+            state.finished_at = trace.finished_at
+            state.events = [event.model_copy(deep=True) for event in trace.events]
+            state.metrics = (
+                trace.metrics.model_copy(deep=True)
+                if trace.metrics is not None
+                else RunMetrics(run_id=trace.run_id, url="")
+            )
+            state.completed = trace.completed
+            state.cancel_requested = trace.cancel_requested
+            state.cancel_reason = trace.cancel_reason
+            state._next_seq = max((event.seq for event in state.events), default=0) + 1
+            self._runs[trace.run_id] = state
+            self._runs.move_to_end(trace.run_id)
+            while len(self._runs) > self._max_runs:
+                self._runs.popitem(last=False)
+            return RunObserver(state, trace.root_actor)
 
     def get(self, run_id: str) -> RunTrace | None:
         with self._lock:

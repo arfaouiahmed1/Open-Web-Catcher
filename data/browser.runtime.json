@@ -22,9 +22,14 @@
       "proxy_source_mode": "hybrid",
       "proxy_source_order": [
         "openproxylist-https",
-        "openproxylist-socks5",
+        "proxifly-http",
+        "monosans-http",
         "speedx-http",
-        "speedx-socks5"
+        "openproxylist-socks5",
+        "proxifly-socks5",
+        "monosans-socks5",
+        "speedx-socks5",
+        "proxifly-socks4"
       ],
       "proxy_custom_list": [],
       "proxy_rotation_mode": "session",
@@ -75,9 +80,14 @@
       "proxy_source_mode": "hybrid",
       "proxy_source_order": [
         "openproxylist-https",
-        "openproxylist-socks5",
+        "proxifly-http",
+        "monosans-http",
         "speedx-http",
-        "speedx-socks5"
+        "openproxylist-socks5",
+        "proxifly-socks5",
+        "monosans-socks5",
+        "speedx-socks5",
+        "proxifly-socks4"
       ],
       "proxy_custom_list": [],
       "proxy_rotation_mode": "session",
@@ -108,7 +118,7 @@
   "runtime_sync": {
     "source_path": "/app/data/settings.runtime.yaml",
     "bridge_path": "/app/data/browser.runtime.json",
-    "synced_at": "2026-05-04T20:00:46.317288+00:00",
+    "synced_at": "2026-05-06T10:33:25.454402+00:00",
     "active_runtime_source": "runtime_yaml"
   }
 }

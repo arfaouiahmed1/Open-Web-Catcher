@@ -317,9 +317,14 @@ const BROWSER_OPTIONS = [
 
 const DEFAULT_PROXY_SOURCE_ORDER = [
   "openproxylist-https",
-  "openproxylist-socks5",
+  "proxifly-http",
+  "monosans-http",
   "speedx-http",
+  "openproxylist-socks5",
+  "proxifly-socks5",
+  "monosans-socks5",
   "speedx-socks5",
+  "proxifly-socks4",
 ];
 
 const BUILTIN_PROXY_SOURCE_OPTIONS = [
@@ -352,6 +357,36 @@ const BUILTIN_PROXY_SOURCE_OPTIONS = [
     value: "speedx-socks5",
     label: "TheSpeedX SOCKS5",
     description: "SOCKS5 raw list from TheSpeedX/SOCKS-List",
+  },
+  {
+    value: "monosans-http",
+    label: "monosans HTTP",
+    description: "Raw HTTP proxy list from monosans/proxy-list",
+  },
+  {
+    value: "monosans-socks4",
+    label: "monosans SOCKS4",
+    description: "Raw SOCKS4 proxy list from monosans/proxy-list",
+  },
+  {
+    value: "monosans-socks5",
+    label: "monosans SOCKS5",
+    description: "Raw SOCKS5 proxy list from monosans/proxy-list",
+  },
+  {
+    value: "proxifly-http",
+    label: "Proxifly HTTP",
+    description: "HTTP list from proxifly/free-proxy-list",
+  },
+  {
+    value: "proxifly-socks4",
+    label: "Proxifly SOCKS4",
+    description: "SOCKS4 list from proxifly/free-proxy-list",
+  },
+  {
+    value: "proxifly-socks5",
+    label: "Proxifly SOCKS5",
+    description: "SOCKS5 list from proxifly/free-proxy-list",
   },
 ];
 
@@ -2890,7 +2925,7 @@ export function SettingsPage() {
                       value,
                     )
                   }
-                  placeholder="openproxylist-https, openproxylist-socks5, speedx-http, speedx-socks5"
+                  placeholder="openproxylist-https, proxifly-http, monosans-http, speedx-http, openproxylist-socks5, proxifly-socks5"
                   description="Comma-separated built-in source IDs or raw .txt URLs."
                 />
                 <BrowserRuntimeTextarea

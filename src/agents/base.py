@@ -878,9 +878,16 @@ async def run_agent_loop(
                     "cache_hit": bool(cache_metrics.get("cache_hit", False)),
                     "cached_input_tokens": _to_int(cache_metrics.get("cached_input_tokens")),
                     "new_input_tokens": _to_int(cache_metrics.get("new_input_tokens")),
+                    "cache_creation_input_tokens": _to_int(cache_metrics.get("cache_creation_input_tokens")),
                     "provider_cache_active": provider_cache_active,
                     "gemini_cached_content_source": gemini_cached_content_source,
                     "estimated_input_cost_usd": float(usage_rollup.get("estimated_input_cost_usd", 0.0) or 0.0),
+                    "estimated_cached_input_cost_usd": float(
+                        usage_rollup.get("estimated_cached_input_cost_usd", 0.0) or 0.0
+                    ),
+                    "estimated_cache_write_cost_usd": float(
+                        usage_rollup.get("estimated_cache_write_cost_usd", 0.0) or 0.0
+                    ),
                     "estimated_output_cost_usd": float(usage_rollup.get("estimated_output_cost_usd", 0.0) or 0.0),
                     "estimated_total_cost_usd": float(usage_rollup.get("estimated_total_cost_usd", 0.0) or 0.0),
                     "cost_source": str(usage_rollup.get("cost_source", "") or "provider_pricing_catalog"),
@@ -1190,9 +1197,16 @@ async def run_agent_loop(
                     "cache_hit": bool(final_cache_metrics.get("cache_hit", False)),
                     "cached_input_tokens": _to_int(final_cache_metrics.get("cached_input_tokens")),
                     "new_input_tokens": _to_int(final_cache_metrics.get("new_input_tokens")),
+                    "cache_creation_input_tokens": _to_int(final_cache_metrics.get("cache_creation_input_tokens")),
                     "provider_cache_active": provider_cache_active,
                     "gemini_cached_content_source": gemini_cached_content_source,
                     "estimated_input_cost_usd": float(usage_rollup.get("estimated_input_cost_usd", 0.0) or 0.0),
+                    "estimated_cached_input_cost_usd": float(
+                        usage_rollup.get("estimated_cached_input_cost_usd", 0.0) or 0.0
+                    ),
+                    "estimated_cache_write_cost_usd": float(
+                        usage_rollup.get("estimated_cache_write_cost_usd", 0.0) or 0.0
+                    ),
                     "estimated_output_cost_usd": float(usage_rollup.get("estimated_output_cost_usd", 0.0) or 0.0),
                     "estimated_total_cost_usd": float(usage_rollup.get("estimated_total_cost_usd", 0.0) or 0.0),
                     "cost_source": str(usage_rollup.get("cost_source", "") or "provider_pricing_catalog"),

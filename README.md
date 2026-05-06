@@ -29,8 +29,8 @@ URL
 ## Main Surfaces
 
 - API: `http://localhost:8000`
-- Operator console: `http://localhost:3001`
-- MCP tools server: `http://localhost:3000`
+- Operator console: `http://localhost:3000`
+- MCP tools server: `http://localhost:3001`
 
 ## Operator Console
 

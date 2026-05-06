@@ -9,6 +9,11 @@ Set-StrictMode -Version Latest
 
 . (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "_common.ps1")
 
+# Stop does not bind new ports; relax strict checks so an active stack does not
+# trip "port in use" diagnostics during teardown.
+$global:OwcStrictPorts = $false
+Reset-OwcReservedPorts
+
 $context = Get-OwcContext -CallerPath $MyInvocation.MyCommand.Path
 Assert-OwcProjectFiles -Context $context
 Assert-DockerAvailable

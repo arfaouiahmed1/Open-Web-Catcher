@@ -381,6 +381,45 @@ class TestUiAgentTestEndpoint:
 
         assert response.status_code == 200
 
+    def test_blocks_launch_when_runtime_preflight_fails(self, api_settings: Settings):
+        from src.api import app as api_app
+
+        with (
+            patch.object(api_app, "_settings", api_settings),
+            patch.object(api_app, "setup_tracing_from_settings"),
+            patch.object(api_app, "create_tables"),
+            patch.object(api_app, "_auto_sync_provider_pricing"),
+            patch.object(
+                api_app,
+                "probe_browser",
+                return_value={
+                    "healthy": False,
+                    "configured_ws_endpoint": api_settings.browser_ws_endpoint,
+                    "probe_url": "http://browser.local:9222/json/version",
+                    "error": "connection refused",
+                },
+            ),
+            patch.object(
+                api_app,
+                "probe_mcp",
+                return_value={
+                    "healthy": True,
+                    "probe_url": "http://mcp.local:3000/health",
+                    "profiles": ["classification", "landing", "hosting", "embedded"],
+                },
+            ),
+        ):
+            with TestClient(api_app.app) as test_client:
+                response = test_client.post(
+                    "/ui/agents/test",
+                    json={"agent": "classification", "url": "https://streaming.example.com"},
+                )
+
+        assert response.status_code == 503
+        payload = response.json()
+        assert payload["detail"]["message"] == "Runtime dependencies are not ready for a new run."
+        assert payload["detail"]["runtime"]["preflight"]["launch_ready"] is False
+
 
 # ---------------------------------------------------------------------------
 # POST /ui/workflows/run → background full pipeline run
@@ -411,6 +450,45 @@ class TestUiWorkflowRunEndpoint:
         response = client.post("/ui/workflows/run", json={"url": "https://streaming.example.com"})
         assert response.status_code == 200
         assert response.json()["job_status"] in {"queued", "running", "retrying"}
+
+    def test_blocks_launch_when_runtime_preflight_fails(self, api_settings: Settings):
+        from src.api import app as api_app
+
+        with (
+            patch.object(api_app, "_settings", api_settings),
+            patch.object(api_app, "setup_tracing_from_settings"),
+            patch.object(api_app, "create_tables"),
+            patch.object(api_app, "_auto_sync_provider_pricing"),
+            patch.object(
+                api_app,
+                "probe_browser",
+                return_value={
+                    "healthy": False,
+                    "configured_ws_endpoint": api_settings.browser_ws_endpoint,
+                    "probe_url": "http://browser.local:9222/json/version",
+                    "error": "connection refused",
+                },
+            ),
+            patch.object(
+                api_app,
+                "probe_mcp",
+                return_value={
+                    "healthy": True,
+                    "probe_url": "http://mcp.local:3000/health",
+                    "profiles": ["classification", "landing", "hosting", "embedded"],
+                },
+            ),
+        ):
+            with TestClient(api_app.app) as test_client:
+                response = test_client.post(
+                    "/ui/workflows/run",
+                    json={"url": "https://streaming.example.com"},
+                )
+
+        assert response.status_code == 503
+        payload = response.json()
+        assert payload["detail"]["runtime"]["browser"]["healthy"] is False
+        assert payload["detail"]["runtime"]["preflight"]["blocking_reasons"][0]["kind"] == "browser_unhealthy"
 
 
 class TestPricingSyncEndpoint:

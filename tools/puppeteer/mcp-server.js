@@ -12,6 +12,7 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 
 import { PROFILES } from './profiles.js';
 import { closeEphemeralBrowser, isSharedBrowserFallbackAllowed, launchEphemeralBrowser } from './shared/browser.js';
+import { probeBrowserEndpoint } from '../shared/browser-health.js';
 import { decodeUriEverywhere } from './shared/tool-runtime.js';
 import { getToolCatalog, getToolDefinitions, getToolSpec } from './tool-registry.js';
 
@@ -70,12 +71,15 @@ async function closeSession(sessionId) {
   console.log(`[MCP] Session closed: ${sessionId} (${session.profile})`);
 }
 
-app.get('/health', (_req, res) => {
-  res.json({
-    status: 'ok',
+app.get('/health', async (_req, res) => {
+  const browser = await probeBrowserEndpoint(BROWSER_WS);
+  const healthy = browser.healthy;
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'ok' : 'degraded',
     profiles: Object.keys(PROFILES),
     browser_mode: BROWSER_MODE,
     shared_browser_fallback: BROWSER_WS,
+    browser,
   });
 });
 

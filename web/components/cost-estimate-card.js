@@ -14,7 +14,7 @@ function Bar({ label, value, total, color }) {
         <span style={{ color: "var(--mute-2)" }}>{label}</span>
         <span className="font-mono" style={{ color: "var(--ink-dim)" }}>
           {formatCurrency(value)}{" "}
-          <span style={{ color: "var(--mute-3)" }}>· {pct.toFixed(0)}%</span>
+          <span style={{ color: "var(--mute-3)" }}>- {pct.toFixed(0)}%</span>
         </span>
       </div>
       <div
@@ -30,7 +30,36 @@ function Bar({ label, value, total, color }) {
   );
 }
 
-export function CostEstimateCard({ llmCalls = [], compact = false }) {
+function AgentCostBreakdown({ agentRollups = [] }) {
+  const rows = (Array.isArray(agentRollups) ? agentRollups : [])
+    .filter((row) => Number(row?.cost_usd || 0) > 0 || Number(row?.llm_calls || 0) > 0)
+    .slice(0, 6);
+  if (!rows.length) return null;
+  return (
+    <div className="mt-2 space-y-1.5 border-t border-border pt-3">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        Agent costs
+      </div>
+      {rows.map((row) => (
+        <div key={`${row.agent_type}-${row.agent_run_id || row.actor}`} className="flex items-center justify-between gap-3 rounded-md bg-muted/25 px-2 py-1.5">
+          <div className="min-w-0">
+            <div className="truncate text-[11.5px] font-medium text-foreground/85">
+              {row.actor || row.agent_type || "agent"}
+            </div>
+            <div className="font-mono text-[10px] text-muted-foreground">
+              {formatNumber(row.llm_calls || 0)} calls / {formatNumber(row.total_tokens || 0)} tokens
+            </div>
+          </div>
+          <div className="shrink-0 font-mono text-[11px] text-foreground/85">
+            {formatCurrency(row.cost_usd || 0)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function CostEstimateCard({ llmCalls = [], agentRollups = [], compact = false, unavailable = false }) {
   const [pricingMap, setPricingMap] = useState(null);
 
   useEffect(() => {
@@ -72,6 +101,30 @@ export function CostEstimateCard({ llmCalls = [], compact = false }) {
           </span>
         ) : null}
       </div>
+    );
+  }
+
+  if (unavailable) {
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-baseline justify-between gap-3 p-4">
+          <div>
+            <CardTitle className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Estimated Cost
+            </CardTitle>
+            <div className="mt-0.5 font-mono text-2xl font-semibold" style={{ color: "var(--signal)" }}>
+              --
+            </div>
+          </div>
+          <div className="text-right text-[10px] text-muted-foreground">
+            <div>trace missing</div>
+            <div>0% priced</div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-4 pt-0 text-[12px] text-muted-foreground">
+          Cost cannot be reconstructed because no LLM call telemetry was stored for this run.
+        </CardContent>
+      </Card>
     );
   }
 
@@ -121,6 +174,7 @@ export function CostEstimateCard({ llmCalls = [], compact = false }) {
           total={totals.total}
           color="var(--mint)"
         />
+        <AgentCostBreakdown agentRollups={agentRollups} />
       </CardContent>
 
       {pricingMap && pricingMap.size === 0 ? (

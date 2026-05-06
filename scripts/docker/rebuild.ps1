@@ -11,6 +11,32 @@ Set-StrictMode -Version Latest
 
 . (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "_common.ps1")
 
+# Rebuild needs to tear the stack down first, but the final web endpoint must
+# stay pinned to localhost:3000. Use relaxed port checks for teardown, then wait
+# for the canonical web port to reopen before starting the stack again.
+$global:OwcStrictPorts = $false
+Reset-OwcReservedPorts
+$env:OWC_WEB_HOST_PORT = "3000"
+
+function Wait-OwcTcpPortFree {
+    param(
+        [Parameter(Mandatory = $true)][int]$Port,
+        [int]$TimeoutSeconds = 30
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-OwcTcpPortAvailable -Port $Port) {
+            return
+        }
+
+        Start-Sleep -Seconds 1
+    }
+
+    $holder = Format-OwcPortHolder -Port $Port
+    throw "Timed out after $TimeoutSeconds seconds waiting for port $Port to become free ($holder). Rebuild requires http://localhost:3000/ to stay available."
+}
+
 $context = Get-OwcContext -CallerPath $MyInvocation.MyCommand.Path
 Assert-OwcProjectFiles -Context $context
 Assert-DockerAvailable
@@ -29,7 +55,23 @@ Write-OwcDivider
 $startedAt = Get-Date
 
 Write-OwcStep "Stopping existing stack..."
-Invoke-OwcComposeChecked -Context $context -Arguments (@("rm", "-f", "-s") + $context.StartServices) | Out-Null
+Invoke-OwcComposeChecked -Context $context -Arguments @("down", "--remove-orphans") | Out-Null
+
+Write-OwcStep "Waiting for localhost:3000 to be released..."
+Wait-OwcTcpPortFree -Port 3000 -TimeoutSeconds ([Math]::Min(60, $TimeoutSeconds))
+
+Reset-OwcReservedPorts
+$context = Get-OwcContext -CallerPath $MyInvocation.MyCommand.Path
+if ($context.WebHostPort -ne 3000) {
+    throw "Rebuild could not bind the web interface to http://localhost:3000/. Free port 3000 and retry."
+}
+
+$env:OWC_TOOLS_HOST_PORT = "$($context.ToolsHostPort)"
+$env:OWC_WEB_HOST_PORT = "$($context.WebHostPort)"
+$env:OWC_TOOLS_PW_HOST_PORT = "$($context.PlaywrightToolsHostPort)"
+$env:OWC_TOOLS_DEBUG_HOST_PORT = "$($context.ToolsDebugHostPort)"
+$env:OWC_TOOLS_PW_DEBUG_HOST_PORT = "$($context.PlaywrightToolsDebugHostPort)"
+$env:UI_CORS_ORIGINS = "http://localhost:$($context.WebHostPort),http://127.0.0.1:$($context.WebHostPort)"
 
 Write-OwcStep "Building stack images..."
 Invoke-OwcBuild -Context $context -NoCache:(-not $useCache)

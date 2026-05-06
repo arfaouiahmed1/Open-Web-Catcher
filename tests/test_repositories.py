@@ -22,6 +22,7 @@ from src.storage.models import (
     LLMCallRecord,
     MemoryEntryRecord,
     PipelineRunRecord,
+    RunScreenshotRecord,
     RunSnapshotRecord,
 )
 from src.storage.repositories import RunRepository
@@ -174,6 +175,97 @@ def test_run_repository_backfills_normalized_rows_from_legacy_snapshot():
     assert session.query(PipelineRunRecord).count() == 1
 
 
+def test_run_repository_trace_snapshot_preserves_existing_snapshot_outputs():
+    session = _session()
+    repo = RunRepository(session)
+    run_id = "run-trace-snapshot-preserve"
+    repo.save(_build_result(run_id=run_id), trace=None)
+
+    repo.save_trace_snapshot(
+        run_id=run_id,
+        root_actor="classification",
+        url="https://example.com/watch",
+        trace=_build_trace(run_id=run_id),
+    )
+
+    legacy = repo.get_by_run_id(run_id)
+    pipeline = session.query(PipelineRunRecord).filter_by(run_id=run_id).first()
+    snapshot = repo.get_run_snapshot(run_id)
+
+    assert legacy is not None
+    assert pipeline is not None
+    assert legacy.page_type == "hosting_page"
+    assert legacy.streams_found == 1
+    assert pipeline.page_type == "hosting_page"
+    assert pipeline.top_level_page_type == "hosting_page"
+    assert pipeline.stream_count == 1
+    assert pipeline.screenshot_count == 1
+    assert pipeline.email_count == 1
+    assert pipeline.provider_analysis_count == 1
+    assert snapshot is not None
+    assert snapshot["all_screenshots"] == ["https://img.example.com/1.png"]
+    assert snapshot["provider_analysis"][0]["provider"] == "Example CDN"
+
+
+def test_run_repository_trace_snapshot_persists_event_screenshots():
+    session = _session()
+    repo = RunRepository(session)
+    run_id = "run-trace-event-screenshots"
+    trace = _build_trace(run_id=run_id)
+    trace.events.append(
+        RuntimeEvent(
+            seq=16,
+            actor="hosting",
+            kind="tool_call_finished",
+            message="browser screenshot captured",
+            status="success",
+            details={
+                "tool_name": "capture_screenshot",
+                "result_full": {
+                    "screenshot_url": "https://img.example.com/run/frame-2.png",
+                },
+            },
+        )
+    )
+
+    repo.save_trace_snapshot(
+        run_id=run_id,
+        root_actor="hosting",
+        url="https://example.com/watch",
+        trace=trace,
+    )
+
+    pipeline = session.query(PipelineRunRecord).filter_by(run_id=run_id).first()
+    snapshot = repo.get_run_snapshot(run_id)
+    screenshot_rows = session.query(RunScreenshotRecord).all()
+
+    assert pipeline is not None
+    assert pipeline.screenshot_count == 1
+    assert snapshot is not None
+    assert snapshot["all_screenshots"] == ["https://img.example.com/run/frame-2.png"]
+    assert [row.screenshot_url for row in screenshot_rows] == [
+        "https://img.example.com/run/frame-2.png"
+    ]
+
+
+def test_run_repository_uses_extraction_page_type_for_agent_only_results():
+    session = _session()
+    repo = RunRepository(session)
+    result = _build_result(run_id="run-agent-only-page-type")
+    result.classification = None
+
+    repo.save(result, trace=None)
+
+    legacy = repo.get_by_run_id(result.run_id)
+    pipeline = session.query(PipelineRunRecord).filter_by(run_id=result.run_id).first()
+
+    assert legacy is not None
+    assert pipeline is not None
+    assert legacy.page_type == "hosting_page"
+    assert pipeline.page_type == "hosting_page"
+    assert pipeline.top_level_page_type == "hosting_page"
+
+
 def test_operator_console_repository_builds_db_backed_overview_and_seeds_evaluations():
     session = _session()
     run_repo = RunRepository(session)
@@ -230,6 +322,26 @@ def test_operator_console_repository_builds_db_backed_overview_and_seeds_evaluat
     assert table["table"] == "pipeline_runs"
     assert "run_id" in table["columns"]
     assert table["total"] == 3
+
+
+def test_operator_console_repository_run_detail_surfaces_final_outputs_and_telemetry():
+    session = _session()
+    run_repo = RunRepository(session)
+    run_id = "run-final-outputs"
+    run_repo.save(_build_result(run_id=run_id), trace=_build_trace(run_id=run_id))
+
+    repo = OperatorConsoleRepository(session)
+    detail = repo.get_run_detail(run_id)
+
+    assert detail is not None
+    assert detail["snapshot"]["provider_analysis"][0]["provider"] == "Example CDN"
+    assert detail["provider_analysis"][0]["provider"] == "Example CDN"
+    assert detail["takedown_emails"][0]["abuse_email"] == "abuse@example.com"
+    assert detail["all_streams"][0]["url"] == "https://cdn.example.com/master.m3u8"
+    assert detail["all_screenshots"][0] == "https://img.example.com/1.png"
+    assert all(call["cost_source"] == "provider_pricing_catalog" for call in detail["llm_calls"])
+    llm_event = next(event for event in detail["events"] if event["kind"] == "llm_response")
+    assert llm_event["details"]["cost_source"] == "provider_pricing_catalog"
 
 
 def test_operator_console_repository_persists_tool_playground_history():

@@ -55,6 +55,12 @@ export function normalizeTraceEvent(event) {
   };
 }
 
+export function normalizeTraceEvents(events = []) {
+  return (Array.isArray(events) ? events : [])
+    .map((event) => normalizeTraceEvent(event))
+    .filter(Boolean);
+}
+
 function eventFallbackKey(event) {
   const normalized = normalizeTraceEvent(event) || {};
   return [
@@ -138,31 +144,246 @@ export function extractLlmResponses(events = []) {
     .filter((event) => event?.kind === "llm_response")
     .map((event) => {
       const details = event.details || {};
+      const usageMetadata = details.usage_metadata || details.usage_metadata_json || {};
+      const responseMetadata = details.response_metadata || details.response_metadata_json || {};
+      const additionalKwargs = details.additional_kwargs || {};
+      const providerCacheActive =
+        details.provider_cache_active ??
+        responseMetadata.provider_cache_active ??
+        additionalKwargs.provider_cache_active ??
+        false;
+      const costSource =
+        details.cost_source ||
+        usageMetadata.cost_source ||
+        responseMetadata.cost_source ||
+        additionalKwargs.cost_source ||
+        "";
+      const responseClass =
+        details.response_class ||
+        responseMetadata.response_class ||
+        additionalKwargs.response_class ||
+        "";
       return {
         key: `llm-${event.seq || event.timestamp || Math.random()}`,
         seq: seqNumber(event),
         actor: String(event.actor || ""),
         stage: actorToStage(event.actor),
+        kind: String(event.kind || "llm_response"),
         provider: String(details.provider || ""),
         model_name: String(details.model_name || ""),
         input_tokens: Number(details.input_tokens || 0),
         output_tokens: Number(details.output_tokens || 0),
         context_window: Number(details.context_window || 0),
+        cost_source: String(costSource || ""),
+        provider_cache_active: providerCacheActive,
+        response_class: String(responseClass || ""),
         estimated_total_cost_usd: Number(
           details.estimated_total_cost_usd || 0,
         ),
+        estimated_input_cost_usd: Number(details.estimated_input_cost_usd || 0),
+        estimated_cached_input_cost_usd: Number(
+          details.estimated_cached_input_cost_usd || 0,
+        ),
+        estimated_cache_write_cost_usd: Number(
+          details.estimated_cache_write_cost_usd || 0,
+        ),
+        estimated_output_cost_usd: Number(details.estimated_output_cost_usd || 0),
         usage_metadata_json: {
           cached_input_tokens: Number(details.cached_input_tokens || 0),
+          cache_creation_input_tokens: Number(details.cache_creation_input_tokens || 0),
           new_input_tokens: Number(details.new_input_tokens || 0),
+          estimated_input_cost_usd: Number(details.estimated_input_cost_usd || 0),
+          estimated_cached_input_cost_usd: Number(
+            details.estimated_cached_input_cost_usd || 0,
+          ),
+          estimated_cache_write_cost_usd: Number(
+            details.estimated_cache_write_cost_usd || 0,
+          ),
+          estimated_output_cost_usd: Number(details.estimated_output_cost_usd || 0),
+          cache_hit: Boolean(details.cache_hit),
+          provider_cache_active: Boolean(providerCacheActive),
+          cost_source: String(costSource || ""),
         },
+        response_metadata_json: responseMetadata,
+        additional_kwargs_json: additionalKwargs,
+        content_preview: String(details.content_preview || ""),
+        content_full: String(details.content_full || ""),
+        thinking_content: String(details.thinking_content || ""),
+        thinking_tokens: Number(details.thinking_tokens || 0),
         timestamp: event.timestamp || "",
         event,
       };
     });
 }
 
+function resolveLiveContextStatus(events) {
+  const normalized = Array.isArray(events) ? events : [];
+  const lastEvent = [...normalized].reverse().find(Boolean) || null;
+  if (!lastEvent) return "tracked";
+
+  if (
+    RUN_FAILURE_KINDS.has(lastEvent.kind) ||
+    normalized.some((event) => RUN_FAILURE_KINDS.has(event.kind)) ||
+    ["error", "failed", "fail"].includes(String(lastEvent?.status || "").toLowerCase()) ||
+    normalized.some((event) =>
+      ["error", "failed", "fail"].includes(String(event?.status || "").toLowerCase()),
+    )
+  ) {
+    return "failed";
+  }
+
+  if (["run_cancelled", "cancel_requested"].includes(lastEvent.kind)) {
+    return "cancelled";
+  }
+
+  if (
+    ["agent_finished", "pipeline_finished"].includes(lastEvent.kind) ||
+    ["success", "done", "completed"].includes(String(lastEvent?.status || "").toLowerCase())
+  ) {
+    return "done";
+  }
+
+  if (normalized.some((event) => ["agent_started", "pipeline_started"].includes(event.kind))) {
+    return "running";
+  }
+
+  if (lastEvent.kind === "llm_response" || lastEvent.kind === "llm_turn_started") {
+    return "running";
+  }
+
+  return String(lastEvent.status || "tracked");
+}
+
+function buildLiveAgentContexts(events = [], rootActor = "") {
+  const normalized = normalizeTraceEvents(events);
+  const contexts = [];
+  const openRuns = new Map();
+  const invocationCounts = new Map();
+
+  for (const event of normalized) {
+    const actor = String(event.actor || rootActor || "unknown") || "unknown";
+    if (actor === "control-room") continue;
+
+    const kind = String(event.kind || "");
+    const isStart = kind === "agent_started" || kind === "pipeline_started";
+    const isFinish =
+      kind === "agent_finished" ||
+      kind === "pipeline_finished" ||
+      kind === "pipeline_failed" ||
+      kind === "run_cancelled";
+    let current = openRuns.get(actor);
+
+    if (isStart) {
+      const nextInvocation = Number(invocationCounts.get(actor) || 0) + 1;
+      invocationCounts.set(actor, nextInvocation);
+      current = {
+        actor,
+        agentType: normalizeStageName(actor) || actorToStage(actor) || actor,
+        events: [event],
+        startedAt: event.timestamp || "",
+        finishedAt: null,
+        invocationIndex: nextInvocation,
+      };
+      openRuns.set(actor, current);
+      continue;
+    }
+
+    if (current == null) {
+      const nextInvocation = Number(invocationCounts.get(actor) || 0) + 1;
+      invocationCounts.set(actor, nextInvocation);
+      current = {
+        actor,
+        agentType: normalizeStageName(actor) || actorToStage(actor) || actor,
+        events: [],
+        startedAt: event.timestamp || "",
+        finishedAt: null,
+        invocationIndex: nextInvocation,
+      };
+      openRuns.set(actor, current);
+    }
+
+    current.events.push(event);
+
+    if (isFinish) {
+      current.finishedAt = event.timestamp || current.startedAt || "";
+      contexts.push(current);
+      openRuns.delete(actor);
+    }
+  }
+
+  for (const current of openRuns.values()) {
+    current.finishedAt =
+      current.events[current.events.length - 1]?.timestamp || current.startedAt || "";
+    contexts.push(current);
+  }
+
+  contexts.sort((a, b) => {
+    const byStart = String(a.startedAt || "").localeCompare(String(b.startedAt || ""));
+    if (byStart !== 0) return byStart;
+    const byInvocation = Number(a.invocationIndex || 0) - Number(b.invocationIndex || 0);
+    if (byInvocation !== 0) return byInvocation;
+    return String(a.actor || "").localeCompare(String(b.actor || ""));
+  });
+
+  return contexts.map((ctx) => {
+    const stage =
+      actorToStage(ctx.actor) || normalizeStageName(ctx.agentType || ctx.actor) || "unknown";
+    const invocationIndex = Number(ctx.invocationIndex || 0);
+    const llmCalls = extractLlmResponses(ctx.events).map((call) => ({
+      ...call,
+      stage,
+      actor: ctx.actor,
+      invocationIndex,
+    }));
+    const stageIndex = STAGE_ORDER.indexOf(stage);
+    const order = (stageIndex >= 0 ? stageIndex : STAGE_ORDER.length) * 1000 + invocationIndex;
+    return {
+      key: `agent-${ctx.actor || "unknown"}-${invocationIndex || 0}`,
+      order,
+      label: `${STAGE_LABELS[stage] || ctx.actor || "Agent"}${invocationIndex > 0 ? ` ${invocationIndex}` : ""}`,
+      stage,
+      agentType: stage,
+      actor: ctx.actor,
+      status: resolveLiveContextStatus(ctx.events),
+      invocationIndex,
+      llmCalls,
+      startedAt: ctx.startedAt,
+      finishedAt: ctx.finishedAt,
+    };
+  });
+}
+
 function isScreenshotValue(value) {
-  return typeof value === "string" && value.trim().length > 0 && (value.startsWith("http") || value.startsWith("data:image/"));
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) return false;
+  if (text.startsWith("data:image/")) return true;
+  if (!/^https?:\/\//i.test(text)) return false;
+
+  try {
+    const parsed = new URL(text);
+    const path = String(parsed.pathname || "").toLowerCase();
+    const query = String(parsed.search || "").toLowerCase();
+    if (/\.(png|jpe?g|webp|gif|bmp|svg)$/.test(path)) return true;
+    if (path.includes("/image/") || path.includes("/images/") || path.includes("image/upload")) {
+      return true;
+    }
+    if (
+      query.includes("format=png") ||
+      query.includes("format=jpg") ||
+      query.includes("format=jpeg") ||
+      query.includes("format=webp") ||
+      query.includes("fm=png") ||
+      query.includes("fm=jpg") ||
+      query.includes("fm=jpeg") ||
+      query.includes("fm=webp")
+    ) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
 }
 
 export function collectScreenshotUrls(value, out = new Set()) {
@@ -484,22 +705,7 @@ export function buildContextWindowGroups({
   active = false,
 } = {}) {
   if (active) {
-    const liveCalls = extractLlmResponses(events);
-    const stageStatusMap = new Map(
-      buildStageView(events).stages.map((stage) => [stage.stage, stage.status]),
-    );
-    return STAGE_ORDER.map((stage, index) => {
-      const rows = liveCalls.filter((call) => call.stage === stage);
-      if (!rows.length) return null;
-      return {
-        key: stage,
-        order: index,
-        label: STAGE_LABELS[stage],
-        stage,
-        status: stageStatusMap.get(stage) || "idle",
-        llmCalls: rows,
-      };
-    }).filter(Boolean);
+    return buildLiveAgentContexts(events);
   }
 
   const agentMap = new Map(
@@ -510,6 +716,7 @@ export function buildContextWindowGroups({
         stage: normalizeStageName(row?.agent_type || row?.actor || ""),
         invocationIndex: Number(row?.invocation_index || 0),
         status: String(row?.status || ""),
+        agentType: String(row?.agent_type || row?.actor || ""),
       },
     ]),
   );
@@ -524,12 +731,17 @@ export function buildContextWindowGroups({
       const labelBase = STAGE_LABELS[stage] || stage || "Agent";
       const label =
         agent?.invocationIndex > 0 ? `${labelBase} ${agent.invocationIndex}` : labelBase;
+      const stageIndex = STAGE_ORDER.indexOf(stage);
       groups.set(key, {
         key,
-        order: STAGE_ORDER.indexOf(stage),
+        order: (stageIndex >= 0 ? stageIndex : STAGE_ORDER.length) * 1000 + Number(agent?.invocationIndex || 0),
         label,
         stage,
+        agentType: agent?.agentType || stage,
+        actor: agent?.actor || String(row?.actor || ""),
         status: agent?.status || "",
+        invocationIndex: Number(agent?.invocationIndex || 0),
+        agentRunId: agentRunId > 0 ? agentRunId : 0,
         llmCalls: [],
       });
     }
@@ -539,7 +751,77 @@ export function buildContextWindowGroups({
   return [...groups.values()].sort((a, b) => {
     const stageDelta = Number(a.order || 999) - Number(b.order || 999);
     if (stageDelta !== 0) return stageDelta;
+    const invocationDelta = Number(a.invocationIndex || 0) - Number(b.invocationIndex || 0);
+    if (invocationDelta !== 0) return invocationDelta;
     return a.label.localeCompare(b.label);
+  });
+}
+
+export function buildPersistedLlmEvents({ llmCalls = [], agentRuns = [] } = {}) {
+  const agentMap = new Map(
+    (agentRuns || []).map((row) => [
+      Number(row?.id || 0),
+      {
+        actor: String(row?.actor || ""),
+        agentType: String(row?.agent_type || ""),
+        invocationIndex: Number(row?.invocation_index || 0),
+      },
+    ]),
+  );
+
+  return (llmCalls || []).map((row, index) => {
+    const agentRunId = Number(row?.agent_run_id || 0);
+    const agent = agentMap.get(agentRunId) || {};
+    const usageMetadata = row?.usage_metadata_json || {};
+    const responseMetadata = row?.response_metadata_json || {};
+    const cost = Number(row?.total_cost_usd ?? row?.estimated_total_cost_usd ?? 0);
+    const costSource = String(row?.cost_source || usageMetadata?.cost_source || "");
+    const actor = String(row?.actor || agent.actor || row?.agent_type || agent.agentType || "llm");
+    const details = {
+      provider: String(row?.provider || ""),
+      model_name: String(row?.model_name || ""),
+      input_tokens: Number(row?.input_tokens || 0),
+      output_tokens: Number(row?.output_tokens || 0),
+      context_window: Number(row?.context_window || 0),
+      estimated_total_cost_usd: cost,
+      estimated_input_cost_usd: Number(row?.estimated_input_cost_usd || 0),
+      estimated_cached_input_cost_usd: Number(row?.estimated_cached_input_cost_usd || 0),
+      estimated_cache_write_cost_usd: Number(row?.estimated_cache_write_cost_usd || 0),
+      estimated_output_cost_usd: Number(row?.estimated_output_cost_usd || 0),
+      cached_input_tokens: Number(
+        row?.cached_input_tokens || usageMetadata?.cached_input_tokens || 0,
+      ),
+      cache_creation_input_tokens: Number(
+        row?.cache_creation_input_tokens ||
+          usageMetadata?.cache_creation_input_tokens ||
+          0,
+      ),
+      new_input_tokens: Number(row?.new_input_tokens || usageMetadata?.new_input_tokens || 0),
+      cost_source: costSource,
+      tool_calls: Number(row?.tool_calls_requested || 0),
+      tool_call_names: row?.tools_requested || [],
+      content_preview: String(row?.content_preview || ""),
+      content_full: String(row?.content_full || row?.content_preview || ""),
+      usage_metadata_json: usageMetadata,
+      response_metadata_json: responseMetadata,
+      prompt: {
+        prompt_version: String(row?.prompt_version || ""),
+        prompt_hash: String(row?.prompt_hash || ""),
+        cache_mode: String(row?.cache_mode || ""),
+      },
+    };
+    return {
+      seq: Number(row?.seq || index + 1),
+      timestamp: row?.created_at || row?.timestamp || "",
+      created_at: row?.created_at || row?.timestamp || "",
+      actor,
+      kind: "llm_response",
+      message: details.content_preview ? "Persisted LLM response" : "Persisted LLM telemetry",
+      status: "success",
+      agent_run_id: agentRunId || row?.agent_run_id || null,
+      details,
+      details_json: details,
+    };
   });
 }
 
@@ -633,7 +915,7 @@ export function summarizeRunState(events = []) {
       stage: pendingTool.stage,
       actor: String(pendingTool.actor || ""),
       title: "Tool running",
-      message: [pendingTool.toolName, pendingTool.target].filter(Boolean).join(" · "),
+      message: [pendingTool.toolName, pendingTool.target].filter(Boolean).join(" / "),
       event: pendingTool.startedEvent,
     };
   } else if (
@@ -661,7 +943,7 @@ export function summarizeRunState(events = []) {
         title: "Model responded",
         message:
           Number(details.output_tokens || 0) > 0
-            ? `${details.model_name || "model"} · ${Number(details.output_tokens || 0).toLocaleString()} out`
+            ? `${details.model_name || "model"} / ${Number(details.output_tokens || 0).toLocaleString()} out`
             : `${details.model_name || "model"} responded`,
       };
     } else if (lastCompleted.kind === "tool_call_finished") {
@@ -672,7 +954,7 @@ export function summarizeRunState(events = []) {
         title: "Tool finished",
         message: [lastCompleted.details?.tool_name, lastCompleted.details?.status]
           .filter(Boolean)
-          .join(" · "),
+          .join(" / "),
       };
     } else {
       completedSummary = {

@@ -5,21 +5,26 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertCircle,
+  AlertTriangle,
   Bot,
   CheckCircle2,
   ExternalLink,
   Loader2,
   Play,
-  Plus,
+  RefreshCw,
   Radio,
   Route,
-  Trash2,
   Waypoints,
   Workflow,
   X,
 } from "lucide-react";
 
 import { apiFetch, apiUrl } from "@/lib/api";
+import {
+  formatBlockingReason,
+  formatLaunchError,
+  normalizeRuntimeStatus,
+} from "@/lib/runtime-health";
 import { statusLabel, statusTone } from "@/lib/run-status";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +37,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
 const RECENT_POLL_MS = 8_000;
+const HEALTH_POLL_MS = 15_000;
 
 const MODE_OPTIONS = [
   {
@@ -96,6 +102,45 @@ function parseUrls(raw) {
     .filter(Boolean);
 }
 
+function HealthPill({ healthy, label }) {
+  return (
+    <span
+      className={cn(
+        "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        healthy
+          ? "border border-emerald-500/25 bg-emerald-500/10 text-emerald-600"
+          : "border border-rose-500/25 bg-rose-500/10 text-rose-500",
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+function RuntimeStatusCard({ title, healthy, detail, note, badges = [] }) {
+  return (
+    <div className="rounded-lg border bg-card px-3 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[12.5px] font-semibold text-foreground">{title}</div>
+        <HealthPill healthy={healthy} label={healthy ? "ready" : "blocked"} />
+      </div>
+      <div className="mt-2 break-all font-mono text-[10.5px] text-muted-foreground">
+        {detail}
+      </div>
+      {note ? (
+        <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">{note}</p>
+      ) : null}
+      {badges.length ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {badges.map((badge) => (
+            <HealthPill key={badge.label} healthy={badge.healthy} label={badge.label} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function RecentRunRow({ run }) {
   return (
     <div className="flex items-center gap-2.5 rounded-md px-3 py-2 text-[12px] transition-colors hover:bg-muted/40">
@@ -127,6 +172,9 @@ export function RunLauncher({ defaultMode = "workflow" }) {
   const [queued, setQueued] = useState(0);
   const [error, setError] = useState("");
   const [recentRuns, setRecentRuns] = useState([]);
+  const [runtimeStatus, setRuntimeStatus] = useState(null);
+  const [isLoadingRuntime, setIsLoadingRuntime] = useState(true);
+  const [runtimeError, setRuntimeError] = useState("");
   const lastLaunchedIds = useRef([]);
 
   // Poll recent runs
@@ -144,6 +192,34 @@ export function RunLauncher({ defaultMode = "workflow" }) {
     return () => { cancelled = true; clearInterval(t); };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshRuntimeStatus() {
+      if (!cancelled) setIsLoadingRuntime(true);
+      try {
+        const payload = await apiFetch("/ui/browser/status");
+        if (!cancelled) {
+          setRuntimeStatus(normalizeRuntimeStatus(payload));
+          setRuntimeError("");
+        }
+      } catch (nextError) {
+        if (!cancelled) {
+          setRuntimeError(nextError.message || "Failed to load runtime status");
+        }
+      } finally {
+        if (!cancelled) setIsLoadingRuntime(false);
+      }
+    }
+
+    refreshRuntimeStatus();
+    const t = setInterval(refreshRuntimeStatus, HEALTH_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, []);
+
   function setMode(next) {
     if (next === mode) return;
     const params = new URLSearchParams(searchParams.toString());
@@ -157,10 +233,20 @@ export function RunLauncher({ defaultMode = "workflow" }) {
   const urls = parseUrls(urlText);
   const validUrls = urls.filter(isValidUrl);
   const invalidUrls = urls.filter((u) => !isValidUrl(u));
-  const canSubmit = validUrls.length > 0 && !isStarting;
+  const launchReady = Boolean(runtimeStatus?.preflight?.launchReady);
+  const blockingReasons = runtimeStatus?.preflight?.blockingReasons || [];
+  const canSubmit = validUrls.length > 0 && !isStarting && launchReady;
 
   async function startRuns() {
-    if (!canSubmit) return;
+    if (!validUrls.length || isStarting) return;
+    if (!launchReady) {
+      setError(
+        blockingReasons.length
+          ? blockingReasons.map(formatBlockingReason).join("\n\n")
+          : "Runtime dependencies are not ready for a new run.",
+      );
+      return;
+    }
     setIsStarting(true);
     setError("");
     setQueued(0);
@@ -179,7 +265,7 @@ export function RunLauncher({ defaultMode = "workflow" }) {
           body: JSON.stringify(body),
         });
         const payload = await res.json();
-        if (!res.ok) throw new Error(payload?.detail || `Start failed (${res.status})`);
+        if (!res.ok) throw new Error(formatLaunchError(payload?.detail, res.status));
         const runId = payload.run_id;
         if (!runId) throw new Error("Server did not return a run_id");
         newIds.push(runId);
@@ -206,6 +292,19 @@ export function RunLauncher({ defaultMode = "workflow" }) {
         setUrlText("");
         setTimeout(() => setQueued(0), 6000);
       }
+    }
+  }
+
+  async function refreshRuntimeStatusNow() {
+    setIsLoadingRuntime(true);
+    try {
+      const payload = await apiFetch("/ui/browser/status");
+      setRuntimeStatus(normalizeRuntimeStatus(payload));
+      setRuntimeError("");
+    } catch (nextError) {
+      setRuntimeError(nextError.message || "Failed to load runtime status");
+    } finally {
+      setIsLoadingRuntime(false);
     }
   }
 
@@ -332,6 +431,82 @@ export function RunLauncher({ defaultMode = "workflow" }) {
 
             <Separator />
 
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Runtime preflight
+                  </Label>
+                  <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+                    Submission is blocked until Docker browser, MCP, and required tool profiles are all ready.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={refreshRuntimeStatusNow}
+                  disabled={isLoadingRuntime}
+                >
+                  {isLoadingRuntime ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                  Refresh status
+                </Button>
+              </div>
+
+              {runtimeError ? (
+                <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/8 px-3 py-2.5 text-sm text-destructive">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <pre className="min-w-0 flex-1 whitespace-pre-wrap font-mono text-xs">{runtimeError}</pre>
+                </div>
+              ) : null}
+
+              {runtimeStatus ? (
+                <>
+                  <div className="grid gap-3 lg:grid-cols-3">
+                    <RuntimeStatusCard
+                      title="Browser"
+                      healthy={runtimeStatus.summary.browserHealthy}
+                      detail={runtimeStatus.browser.probe_url || runtimeStatus.browser.configured_ws_endpoint || "No browser endpoint configured"}
+                      note={runtimeStatus.browser.error || runtimeStatus.browser.browser || ""}
+                    />
+                    <RuntimeStatusCard
+                      title="MCP"
+                      healthy={runtimeStatus.summary.mcpHealthy}
+                      detail={runtimeStatus.mcp.probe_url || "No MCP endpoint configured"}
+                      note={runtimeStatus.mcp.error || `profiles=${(runtimeStatus.mcp.profiles || []).join(", ") || "none"}`}
+                    />
+                    <RuntimeStatusCard
+                      title="Tool profiles"
+                      healthy={runtimeStatus.summary.profilesHealthy}
+                      detail="classification, landing, hosting, embedded"
+                      badges={runtimeStatus.preflight.profiles.map((row) => ({
+                        label: row.profile,
+                        healthy: row.healthy,
+                      }))}
+                    />
+                  </div>
+
+                  {!runtimeStatus.preflight.launchReady ? (
+                    <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-700">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <pre className="min-w-0 flex-1 whitespace-pre-wrap font-mono text-xs">
+                        {blockingReasons.map(formatBlockingReason).join("\n\n")}
+                      </pre>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-3 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading runtime status
+                </div>
+              )}
+            </div>
+
             {/* URL input */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -363,6 +538,11 @@ export function RunLauncher({ defaultMode = "workflow" }) {
               <p className="text-[10.5px] text-muted-foreground">
                 One URL per line for batch runs. Press ⌘+Enter to submit.
               </p>
+              {!launchReady && runtimeStatus ? (
+                <p className="text-[11px] text-amber-700">
+                  Launching is disabled until the runtime preflight is ready.
+                </p>
+              ) : null}
             </div>
 
             {/* Actions */}

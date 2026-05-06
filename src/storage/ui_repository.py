@@ -38,10 +38,12 @@ from src.storage.models import (
     ProviderAnalysisRecord,
     ProviderLookupCheckRecord,
     RunModelUsageRecord,
+    RunDecisionRecord,
     RunRecord,
     RunScreenshotRecord,
     RunSnapshotRecord,
     RunStreamRecord,
+    RunTaskRecord,
     RuntimeEventRecord,
     TakedownEmailRecord,
     ToolCallRecord,
@@ -122,9 +124,11 @@ class OperatorConsoleRepository:
         "prompt_versions": PromptVersionRecord,
         "prompt_compilations": PromptCompilationRecord,
         "run_model_usage": RunModelUsageRecord,
+        "run_decisions": RunDecisionRecord,
         "memory_entries": MemoryEntryRecord,
         "run_streams": RunStreamRecord,
         "run_screenshots": RunScreenshotRecord,
+        "run_tasks": RunTaskRecord,
         "provider_analyses": ProviderAnalysisRecord,
         "takedown_emails": TakedownEmailRecord,
         "pricing_configs": PricingConfigRecord,
@@ -701,10 +705,28 @@ class OperatorConsoleRepository:
             .order_by(LLMCallRecord.created_at.asc())
             .all()
         )
+        model_usage = (
+            self._session.query(RunModelUsageRecord)
+            .filter_by(pipeline_run_id=pipeline.id)
+            .order_by(RunModelUsageRecord.estimated_total_cost_usd.desc(), RunModelUsageRecord.model_name.asc())
+            .all()
+        )
         events = (
             self._session.query(RuntimeEventRecord)
             .filter_by(pipeline_run_id=pipeline.id)
             .order_by(RuntimeEventRecord.seq.asc())
+            .all()
+        )
+        decisions = (
+            self._session.query(RunDecisionRecord)
+            .filter(RunDecisionRecord.run_id == run_id)
+            .order_by(RunDecisionRecord.created_at.asc(), RunDecisionRecord.id.asc())
+            .all()
+        )
+        tasks = (
+            self._session.query(RunTaskRecord)
+            .filter(RunTaskRecord.run_id == run_id)
+            .order_by(RunTaskRecord.created_at.asc(), RunTaskRecord.id.asc())
             .all()
         )
         outputs = (
@@ -748,29 +770,25 @@ class OperatorConsoleRepository:
             input_tokens = sum(int(item.input_tokens or 0) for item in llm_rows)
             output_tokens = sum(int(item.output_tokens or 0) for item in llm_rows)
             cached_input_tokens = sum(
-                int(((item.usage_metadata_json or {}).get("cached_input_tokens", 0)) or 0)
+                int(getattr(item, "cached_input_tokens", 0) or 0)
                 for item in llm_rows
             )
             new_input_tokens = sum(
                 int(
-                    (
-                        (item.usage_metadata_json or {}).get(
-                            "new_input_tokens",
-                            max(
-                                int(item.input_tokens or 0)
-                                - int(
-                                    ((item.usage_metadata_json or {}).get("cached_input_tokens", 0))
-                                    or 0
-                                ),
-                                0,
-                            ),
-                        )
+                    getattr(
+                        item,
+                        "new_input_tokens",
+                        max(int(item.input_tokens or 0) - int(getattr(item, "cached_input_tokens", 0) or 0), 0),
                     )
                     or 0
                 )
                 for item in llm_rows
             )
             total_cost = sum(float(item.estimated_total_cost_usd or 0.0) for item in llm_rows)
+            input_cost = sum(float(item.estimated_input_cost_usd or 0.0) for item in llm_rows)
+            cached_input_cost = sum(float(item.estimated_cached_input_cost_usd or 0.0) for item in llm_rows)
+            cache_write_cost = sum(float(item.estimated_cache_write_cost_usd or 0.0) for item in llm_rows)
+            output_cost = sum(float(item.estimated_output_cost_usd or 0.0) for item in llm_rows)
             stage_key = str(agent_row.agent_type or agent_row.actor or "unknown")
             status_value = normalize_run_display_status(
                 str(agent_row.status or ""),
@@ -795,6 +813,10 @@ class OperatorConsoleRepository:
                 "new_input_tokens": new_input_tokens,
                 "output_tokens": output_tokens,
                 "total_tokens": input_tokens + output_tokens,
+                "input_cost_usd": round(input_cost, 6),
+                "cached_input_cost_usd": round(cached_input_cost, 6),
+                "cache_write_cost_usd": round(cache_write_cost, 6),
+                "output_cost_usd": round(output_cost, 6),
                 "cost_usd": round(total_cost, 6),
                 "stream_count": int(output_row.get("stream_count", 0) or 0),
                 "embedded_url_count": int(output_row.get("embedded_url_count", 0) or 0),
@@ -821,6 +843,10 @@ class OperatorConsoleRepository:
                     "output_tokens": 0,
                     "total_tokens": 0,
                     "cost_usd": 0.0,
+                    "input_cost_usd": 0.0,
+                    "cached_input_cost_usd": 0.0,
+                    "cache_write_cost_usd": 0.0,
+                    "output_cost_usd": 0.0,
                     "invocations": 0,
                     "stream_count": 0,
                     "output_summaries": [],
@@ -841,6 +867,10 @@ class OperatorConsoleRepository:
             stage_entry["output_tokens"] += output_tokens
             stage_entry["total_tokens"] += input_tokens + output_tokens
             stage_entry["cost_usd"] += total_cost
+            stage_entry["input_cost_usd"] += input_cost
+            stage_entry["cached_input_cost_usd"] += cached_input_cost
+            stage_entry["cache_write_cost_usd"] += cache_write_cost
+            stage_entry["output_cost_usd"] += output_cost
             stage_entry["invocations"] += 1
             stage_entry["stream_count"] += int(output_row.get("stream_count", 0) or 0)
             if output_row.get("summary_text"):
@@ -878,6 +908,10 @@ class OperatorConsoleRepository:
                     "new_input_tokens": int(values["new_input_tokens"] or 0),
                     "output_tokens": int(values["output_tokens"] or 0),
                     "total_tokens": int(values["total_tokens"] or 0),
+                    "input_cost_usd": round(float(values["input_cost_usd"] or 0.0), 6),
+                    "cached_input_cost_usd": round(float(values["cached_input_cost_usd"] or 0.0), 6),
+                    "cache_write_cost_usd": round(float(values["cache_write_cost_usd"] or 0.0), 6),
+                    "output_cost_usd": round(float(values["output_cost_usd"] or 0.0), 6),
                     "cost_usd": round(float(values["cost_usd"] or 0.0), 6),
                     "stream_count": int(values["stream_count"] or 0),
                     "output_summary": "\n".join(values["output_summaries"][:3]),
@@ -894,15 +928,43 @@ class OperatorConsoleRepository:
             )
 
         job_state = self._job_state_row(job)
+        snapshot_payload = snapshot.snapshot_json if snapshot else {}
         run_payload = self._run_row(
             pipeline,
             root_actor=root_actor,
             job_status=str(job.status or "") if job is not None else "",
             max_parallel_agents=_max_concurrency(parallel_rows),
         )
+        if model_usage:
+            primary_usage = model_usage[0]
+            run_payload["primary_provider"] = str(primary_usage.provider or "")
+            run_payload["primary_model"] = str(primary_usage.model_name or "")
+        agent_by_id = {int(row.id): row for row in agent_runs}
+        tool_call_rows: list[dict[str, Any]] = []
+        for row in tool_calls:
+            payload = self._serialize_model(row)
+            agent_row = agent_by_id.get(int(row.agent_run_id or 0))
+            if agent_row is not None:
+                payload["actor"] = str(agent_row.actor or "")
+                payload["agent_type"] = str(agent_row.agent_type or "")
+                payload["invocation_index"] = int(agent_row.invocation_index or 0)
+            tool_call_rows.append(payload)
+        llm_call_rows: list[dict[str, Any]] = []
+        for row in llm_calls:
+            payload = self._llm_row(row)
+            agent_row = agent_by_id.get(int(row.agent_run_id or 0))
+            if agent_row is not None:
+                payload["actor"] = str(agent_row.actor or "")
+                payload["agent_type"] = str(agent_row.agent_type or "")
+                payload["invocation_index"] = int(agent_row.invocation_index or 0)
+            llm_call_rows.append(payload)
         return {
             "run": run_payload,
-            "snapshot": snapshot.snapshot_json if snapshot else {},
+            "snapshot": snapshot_payload,
+            "provider_analysis": snapshot_payload.get("provider_analysis", []) or [],
+            "takedown_emails": snapshot_payload.get("takedown_emails", []) or [],
+            "all_streams": snapshot_payload.get("all_streams", []) or [],
+            "all_screenshots": snapshot_payload.get("all_screenshots", []) or [],
             "agent_runs": [self._serialize_model(row) for row in agent_runs],
             "agent_outputs": agent_output_rows,
             "agent_rollups": agent_rollups,
@@ -933,12 +995,181 @@ class OperatorConsoleRepository:
                     for stage_key, items in parallel_by_stage.items()
                 ],
             },
-            "tool_calls": [self._serialize_model(row) for row in tool_calls],
-            "llm_calls": [self._llm_row(row) for row in llm_calls],
-            "events": [self._serialize_model(row) for row in events],
+            "tool_calls": tool_call_rows,
+            "llm_calls": llm_call_rows,
+            "model_usage": [self._model_usage_row(row) for row in model_usage],
+            "events": [self._runtime_event_row(row) for row in events],
+            "decisions": [self._decision_row(row) for row in decisions],
+            "tasks": [self._task_row(row) for row in tasks],
             "job": job_state,
             "job_state": job_state,
         }
+
+    def list_run_decisions(self, run_id: str) -> list[dict[str, Any]]:
+        rows = (
+            self._session.query(RunDecisionRecord)
+            .filter(RunDecisionRecord.run_id == run_id)
+            .order_by(RunDecisionRecord.created_at.asc(), RunDecisionRecord.id.asc())
+            .all()
+        )
+        return [self._decision_row(row) for row in rows]
+
+    def create_run_decision(
+        self,
+        run_id: str,
+        *,
+        title: str,
+        summary: str = "",
+        actor: str = "",
+        category: str = "",
+        status: str = "open",
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        pipeline = self._session.query(PipelineRunRecord).filter_by(run_id=run_id).first()
+        row = RunDecisionRecord(
+            pipeline_run_id=pipeline.id if pipeline is not None else None,
+            run_id=run_id,
+            title=title.strip(),
+            summary=summary.strip(),
+            actor=actor.strip(),
+            category=category.strip(),
+            status=(status or "open").strip().lower(),
+            details_json=details or {},
+        )
+        self._session.add(row)
+        self._session.commit()
+        self._session.refresh(row)
+        return self._decision_row(row)
+
+    def update_run_decision(
+        self,
+        run_id: str,
+        decision_id: int,
+        *,
+        title: str | None = None,
+        summary: str | None = None,
+        actor: str | None = None,
+        category: str | None = None,
+        status: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        row = (
+            self._session.query(RunDecisionRecord)
+            .filter(RunDecisionRecord.id == decision_id, RunDecisionRecord.run_id == run_id)
+            .first()
+        )
+        if row is None:
+            return None
+        if title is not None:
+            row.title = title.strip()
+        if summary is not None:
+            row.summary = summary.strip()
+        if actor is not None:
+            row.actor = actor.strip()
+        if category is not None:
+            row.category = category.strip()
+        if status is not None:
+            row.status = status.strip().lower() or row.status
+        if details is not None:
+            row.details_json = details
+        self._session.commit()
+        self._session.refresh(row)
+        return self._decision_row(row)
+
+    def delete_run_decision(self, run_id: str, decision_id: int) -> bool:
+        row = (
+            self._session.query(RunDecisionRecord)
+            .filter(RunDecisionRecord.id == decision_id, RunDecisionRecord.run_id == run_id)
+            .first()
+        )
+        if row is None:
+            return False
+        self._session.delete(row)
+        self._session.commit()
+        return True
+
+    def list_run_tasks(self, run_id: str) -> list[dict[str, Any]]:
+        rows = (
+            self._session.query(RunTaskRecord)
+            .filter(RunTaskRecord.run_id == run_id)
+            .order_by(RunTaskRecord.created_at.asc(), RunTaskRecord.id.asc())
+            .all()
+        )
+        return [self._task_row(row) for row in rows]
+
+    def create_run_task(
+        self,
+        run_id: str,
+        *,
+        title: str,
+        description: str = "",
+        actor: str = "",
+        priority: str = "medium",
+        status: str = "open",
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        pipeline = self._session.query(PipelineRunRecord).filter_by(run_id=run_id).first()
+        row = RunTaskRecord(
+            pipeline_run_id=pipeline.id if pipeline is not None else None,
+            run_id=run_id,
+            title=title.strip(),
+            description=description.strip(),
+            actor=actor.strip(),
+            priority=(priority or "medium").strip().lower(),
+            status=(status or "open").strip().lower(),
+            details_json=details or {},
+        )
+        self._session.add(row)
+        self._session.commit()
+        self._session.refresh(row)
+        return self._task_row(row)
+
+    def update_run_task(
+        self,
+        run_id: str,
+        task_id: int,
+        *,
+        title: str | None = None,
+        description: str | None = None,
+        actor: str | None = None,
+        priority: str | None = None,
+        status: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        row = (
+            self._session.query(RunTaskRecord)
+            .filter(RunTaskRecord.id == task_id, RunTaskRecord.run_id == run_id)
+            .first()
+        )
+        if row is None:
+            return None
+        if title is not None:
+            row.title = title.strip()
+        if description is not None:
+            row.description = description.strip()
+        if actor is not None:
+            row.actor = actor.strip()
+        if priority is not None:
+            row.priority = priority.strip().lower() or row.priority
+        if status is not None:
+            row.status = status.strip().lower() or row.status
+        if details is not None:
+            row.details_json = details
+        self._session.commit()
+        self._session.refresh(row)
+        return self._task_row(row)
+
+    def delete_run_task(self, run_id: str, task_id: int) -> bool:
+        row = (
+            self._session.query(RunTaskRecord)
+            .filter(RunTaskRecord.id == task_id, RunTaskRecord.run_id == run_id)
+            .first()
+        )
+        if row is None:
+            return False
+        self._session.delete(row)
+        self._session.commit()
+        return True
 
     def ensure_default_evaluation_suites(self) -> list[EvaluationSuite]:
         suites = (
@@ -1414,7 +1645,7 @@ class OperatorConsoleRepository:
             .limit(max(limit, 1))
             .all()
         )
-        payloads = [self._serialize_model(row) for row in rows]
+        payloads = [self._runtime_event_row(row) for row in rows]
         payloads.reverse()
         return payloads
 
@@ -1485,14 +1716,23 @@ class OperatorConsoleRepository:
             "email_count": row.email_count,
             "provider_analysis_count": row.provider_analysis_count,
             "total_tokens_in": row.total_tokens_in,
+            "total_cached_input_tokens": getattr(row, "total_cached_input_tokens", 0) or 0,
+            "total_new_input_tokens": getattr(row, "total_new_input_tokens", 0) or 0,
             "total_tokens_out": row.total_tokens_out,
             "total_llm_calls": row.total_llm_calls,
+            "total_cache_hit_calls": getattr(row, "total_cache_hit_calls", 0) or 0,
             "total_tool_calls": row.total_tool_calls,
+            "estimated_input_cost_usd": float(row.estimated_input_cost_usd or 0.0),
+            "estimated_cached_input_cost_usd": float(getattr(row, "estimated_cached_input_cost_usd", 0.0) or 0.0),
+            "estimated_cache_write_cost_usd": float(getattr(row, "estimated_cache_write_cost_usd", 0.0) or 0.0),
+            "estimated_output_cost_usd": float(row.estimated_output_cost_usd or 0.0),
             "estimated_total_cost_usd": total_cost,
             "total_cost_usd": total_cost,
             "duration_seconds": float(row.duration_seconds or 0.0),
             "failure_mode": row.failure_mode or "",
             "top_level_page_type": row.top_level_page_type or "",
+            "classification_confidence": row.classification_confidence or "",
+            "classification_reasoning": row.classification_reasoning or "",
             "root_actor": root_actor,
             "started_at": _json_ready(row.started_at),
             "finished_at": _json_ready(row.finished_at),
@@ -1508,6 +1748,49 @@ class OperatorConsoleRepository:
         payload["cost_source"] = str(
             (payload.get("usage_metadata_json", {}) or {}).get("cost_source", "") or ""
         )
+        return payload
+
+    def _model_usage_row(self, row: RunModelUsageRecord) -> dict[str, Any]:
+        payload = self._serialize_model(row)
+        payload["calls"] = int(payload.get("llm_calls", 0) or 0)
+        payload["tokens"] = int(payload.get("input_tokens", 0) or 0) + int(payload.get("output_tokens", 0) or 0)
+        payload["cost_usd"] = float(payload.get("estimated_total_cost_usd", 0.0) or 0.0)
+        return payload
+
+    def _decision_row(self, row: RunDecisionRecord) -> dict[str, Any]:
+        return {
+            "id": int(row.id),
+            "run_id": row.run_id,
+            "title": row.title,
+            "summary": row.summary,
+            "actor": row.actor,
+            "category": row.category,
+            "status": row.status,
+            "details": row.details_json or {},
+            "created_at": _json_ready(row.created_at),
+            "updated_at": _json_ready(row.updated_at),
+        }
+
+    def _task_row(self, row: RunTaskRecord) -> dict[str, Any]:
+        return {
+            "id": int(row.id),
+            "run_id": row.run_id,
+            "title": row.title,
+            "description": row.description,
+            "actor": row.actor,
+            "priority": row.priority,
+            "status": row.status,
+            "details": row.details_json or {},
+            "created_at": _json_ready(row.created_at),
+            "updated_at": _json_ready(row.updated_at),
+        }
+
+    def _runtime_event_row(self, row: RuntimeEventRecord) -> dict[str, Any]:
+        payload = self._serialize_model(row)
+        if payload.get("timestamp") is None:
+            payload["timestamp"] = payload.get("created_at") or ""
+        if payload.get("details") is None:
+            payload["details"] = payload.get("details_json") or {}
         return payload
 
     def _serialize_model(self, row: Any) -> dict[str, Any]:
@@ -1535,16 +1818,22 @@ class OperatorConsoleRepository:
                 RunModelUsageRecord.model_name,
                 func.coalesce(func.sum(RunModelUsageRecord.llm_calls), 0),
                 func.coalesce(func.sum(RunModelUsageRecord.input_tokens), 0),
+                func.coalesce(func.sum(RunModelUsageRecord.cached_input_tokens), 0),
+                func.coalesce(func.sum(RunModelUsageRecord.new_input_tokens), 0),
                 func.coalesce(func.sum(RunModelUsageRecord.output_tokens), 0),
                 func.coalesce(func.sum(RunModelUsageRecord.estimated_total_cost_usd), 0.0),
             )
             .group_by(RunModelUsageRecord.provider, RunModelUsageRecord.model_name)
             .all()
         )
-        for provider, model_name, calls, input_tokens, output_tokens, cost in model_usage_rows:
+        persisted_keys: set[tuple[str, str]] = set()
+        for provider, model_name, calls, input_tokens, cached_input_tokens, new_input_tokens, output_tokens, cost in model_usage_rows:
             key = ((provider or "unknown") or "unknown", (model_name or "unknown") or "unknown")
+            persisted_keys.add(key)
             aggregated[key]["calls"] += int(calls or 0)
             aggregated[key]["input_tokens"] += int(input_tokens or 0)
+            aggregated[key]["cached_input_tokens"] += int(cached_input_tokens or 0)
+            aggregated[key]["new_input_tokens"] += int(new_input_tokens or 0)
             aggregated[key]["output_tokens"] += int(output_tokens or 0)
             aggregated[key]["cost"] += float(cost or 0.0)
         runtime_rows = self._runtime_llm_rollup()
@@ -1559,6 +1848,8 @@ class OperatorConsoleRepository:
             cost,
         ) in runtime_rows:
             key = ((provider or "unknown") or "unknown", (model_name or "unknown") or "unknown")
+            if key in persisted_keys:
+                continue
             if key not in aggregated:
                 aggregated[key]["calls"] += int(calls or 0)
                 aggregated[key]["input_tokens"] += int(input_tokens or 0)

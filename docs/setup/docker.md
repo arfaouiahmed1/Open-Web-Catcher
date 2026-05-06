@@ -6,13 +6,15 @@ The Docker topology is defined in [`docker-compose.yml`](../../docker-compose.ym
 
 - `postgres`
 - `owc-tools`
+- `owc-tools-playwright`
 - `owc`
 - `owc-web`
 
 ## Ports
 
-- `3000`: MCP tools server
-- `3001`: Next.js operator console
+- `3000`: Next.js operator console
+- `3001`: MCP tools server
+- `3002`: Playwright MCP tools server
 - `8000`: FastAPI backend
 
 ## Build Files

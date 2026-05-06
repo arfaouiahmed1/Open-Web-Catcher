@@ -1,20 +1,20 @@
-agent_model: z-ai/glm-4.5-air:free
+agent_model: z-ai/glm4.7
 agent_model_config:
   classification:
-    model: z-ai/glm-4.5-air:free
-    provider: openrouter
+    model: z-ai/glm4.7
+    provider: nvidia
   embedded:
-    model: z-ai/glm-4.5-air:free
-    provider: openrouter
+    model: z-ai/glm4.7
+    provider: nvidia
   hosting:
-    model: z-ai/glm-4.5-air:free
-    provider: openrouter
+    model: z-ai/glm4.7
+    provider: nvidia
   landing:
-    model: z-ai/glm-4.5-air:free
-    provider: openrouter
+    model: z-ai/glm4.7
+    provider: nvidia
   orchestrator:
-    model: z-ai/glm-4.5-air:free
-    provider: openrouter
+    model: z-ai/glm4.7
+    provider: nvidia
 agent_timeout_seconds: 300
 browser_engine: puppeteer
 browser_runtime:
@@ -58,9 +58,14 @@ browser_runtime:
     proxy_source_mode: hybrid
     proxy_source_order:
     - openproxylist-https
-    - openproxylist-socks5
+    - proxifly-http
+    - monosans-http
     - speedx-http
+    - openproxylist-socks5
+    - proxifly-socks5
+    - monosans-socks5
     - speedx-socks5
+    - proxifly-socks4
     proxy_test_url: https://api.ipify.org?format=json
     proxy_validation_timeout_ms: 12000
     streaming_safe_mode: adaptive
@@ -104,9 +109,14 @@ browser_runtime:
     proxy_source_mode: hybrid
     proxy_source_order:
     - openproxylist-https
-    - openproxylist-socks5
+    - proxifly-http
+    - monosans-http
     - speedx-http
+    - openproxylist-socks5
+    - proxifly-socks5
+    - monosans-socks5
     - speedx-socks5
+    - proxifly-socks4
     proxy_test_url: https://api.ipify.org?format=json
     proxy_validation_timeout_ms: 12000
     stream_cors_include_credentials: false
@@ -166,17 +176,36 @@ gemini_temperature: 1.0
 hosting_page_max_tool_calls: 20
 ipinfo_token: ''
 landing_page_max_tool_calls: 50
-llm_provider: openrouter
+llm_provider: nvidia
 llm_tuning:
-  agent_overrides: {}
-  model_overrides: {}
+  agent_overrides:
+    classification:
+      temperature: 1
+      top_p: 0.48
+    embedded:
+      temperature: 1
+      top_p: 0.5
+    hosting:
+      temperature: 1
+      top_p: 0.62
+    landing:
+      temperature: 1
+      top_p: 0.5
+    orchestrator:
+      enable_thinking: 1
+      temperature: 1
+  model_overrides:
+    openrouter::openrouter/free:
+      temperature: 1
   provider_defaults:
     google:
+      temperature: 1
+    openrouter:
       temperature: 1
 log_file: data/logs/app.log
 log_level: INFO
 max_parallel_hosting_pages: 5
-orchestrator_model: z-ai/glm-4.5-air:free
+orchestrator_model: z-ai/glm4.7
 provider_cache_enabled: true
 thinking_budget_tokens: 8000
 thinking_enabled: false

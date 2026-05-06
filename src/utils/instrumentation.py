@@ -103,6 +103,9 @@ def resolve_model_pricing_config(settings: Settings) -> dict[str, dict[str, Any]
             "provider": provider,
             "input_per_million": float(config.get("input_per_million", 0.0) or 0.0),
             "output_per_million": float(config.get("output_per_million", 0.0) or 0.0),
+            "cached_input_per_million": float(config.get("cached_input_per_million", 0.0) or 0.0),
+            "cache_write_per_million": float(config.get("cache_write_per_million", 0.0) or 0.0),
+            "context_window": int(config.get("context_window", 0) or 0),
         }
         normalized[model_key] = payload
         if provider:
@@ -187,6 +190,9 @@ def resolve_model_pricing(settings: Settings, model_name: str, provider: str = "
         "provider": str(match.get("provider") or provider_key or "").strip(),
         "input_per_million": float(match.get("input_per_million", 0.0) or 0.0),
         "output_per_million": float(match.get("output_per_million", 0.0) or 0.0),
+        "cached_input_per_million": float(match.get("cached_input_per_million", 0.0) or 0.0),
+        "cache_write_per_million": float(match.get("cache_write_per_million", 0.0) or 0.0),
+        "context_window": int(match.get("context_window", 0) or 0),
     }
 
 
@@ -194,15 +200,23 @@ def estimate_usage_cost(
     input_tokens: int,
     output_tokens: int,
     *,
+    cached_input_tokens: int = 0,
+    cache_write_input_tokens: int = 0,
     input_per_million: float = 0.0,
     output_per_million: float = 0.0,
+    cached_input_per_million: float = 0.0,
+    cache_write_per_million: float = 0.0,
 ) -> dict[str, float]:
     input_cost = (max(input_tokens, 0) / 1_000_000.0) * max(input_per_million, 0.0)
+    cached_input_cost = (max(cached_input_tokens, 0) / 1_000_000.0) * max(cached_input_per_million, 0.0)
+    cache_write_cost = (max(cache_write_input_tokens, 0) / 1_000_000.0) * max(cache_write_per_million, 0.0)
     output_cost = (max(output_tokens, 0) / 1_000_000.0) * max(output_per_million, 0.0)
     return {
         "estimated_input_cost_usd": round(input_cost, 8),
+        "estimated_cached_input_cost_usd": round(cached_input_cost, 8),
+        "estimated_cache_write_cost_usd": round(cache_write_cost, 8),
         "estimated_output_cost_usd": round(output_cost, 8),
-        "estimated_total_cost_usd": round(input_cost + output_cost, 8),
+        "estimated_total_cost_usd": round(input_cost + cached_input_cost + cache_write_cost + output_cost, 8),
     }
 
 

@@ -1,6 +1,21 @@
 Set-StrictMode -Version Latest
 
 $global:OwcReservedHostPorts = @{}
+if (-not (Test-Path variable:global:OwcStrictPorts)) {
+    $global:OwcStrictPorts = $true
+}
+
+# Canonical fixed ports for the OWC stack. Tests/scripts read these instead of
+# scattering literals; the start script may opt into auto-resolution by setting
+# $global:OwcStrictPorts = $false.
+$global:OwcFixedPorts = [ordered]@{
+    Web            = 3000
+    Tools          = 3001
+    PlaywrightTools = 3002
+    Api            = 8000
+    ToolsDebug     = 9222
+    PlaywrightToolsDebug = 9223
+}
 
 function Test-OwcTcpPortAvailable {
     param([Parameter(Mandatory = $true)][int]$Port)
@@ -19,15 +34,68 @@ function Test-OwcTcpPortAvailable {
     }
 }
 
+function Get-OwcTcpPortHolder {
+    param([Parameter(Mandatory = $true)][int]$Port)
+
+    $holders = New-Object System.Collections.Generic.List[pscustomobject]
+
+    try {
+        $conns = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue
+        foreach ($conn in $conns) {
+            $procName = $null
+            try {
+                $proc = Get-Process -Id $conn.OwningProcess -ErrorAction SilentlyContinue
+                if ($proc) { $procName = $proc.ProcessName }
+            } catch {}
+            $holders.Add([pscustomobject]@{
+                Port = $Port
+                Pid  = $conn.OwningProcess
+                Process = $procName
+            })
+        }
+    }
+    catch {}
+
+    if ($holders.Count -eq 0) {
+        $matches = netstat -ano 2>$null | Select-String -Pattern ":$Port\s+.*LISTENING"
+        foreach ($match in $matches) {
+            $tokens = ($match.ToString() -split '\s+') | Where-Object { $_ }
+            $procPid = $tokens[-1]
+            $procName = $null
+            try {
+                $proc = Get-Process -Id ([int]$procPid) -ErrorAction SilentlyContinue
+                if ($proc) { $procName = $proc.ProcessName }
+            } catch {}
+            $holders.Add([pscustomobject]@{ Port = $Port; Pid = $procPid; Process = $procName })
+        }
+    }
+
+    return $holders.ToArray()
+}
+
+function Format-OwcPortHolder {
+    param([Parameter(Mandatory = $true)][int]$Port)
+
+    $holders = Get-OwcTcpPortHolder -Port $Port
+    if (-not $holders -or $holders.Count -eq 0) {
+        return "(holder unknown)"
+    }
+
+    return ($holders | ForEach-Object { "PID $($_.Pid)$(if ($_.Process) { ' (' + $_.Process + ')' })" }) -join ", "
+}
+
 function Resolve-OwcHostPort {
-    param([Parameter(Mandatory = $true)][int]$PreferredPort)
+    param(
+        [Parameter(Mandatory = $true)][int]$PreferredPort,
+        [string]$Label = ""
+    )
 
     $explicitPort = $null
-    if ($env:OWC_TOOLS_HOST_PORT -and $PreferredPort -eq 3000) {
-        $explicitPort = [int]$env:OWC_TOOLS_HOST_PORT
-    }
-    elseif ($env:OWC_WEB_HOST_PORT -and $PreferredPort -eq 3001) {
+    if ($env:OWC_WEB_HOST_PORT -and $PreferredPort -eq 3000) {
         $explicitPort = [int]$env:OWC_WEB_HOST_PORT
+    }
+    elseif ($env:OWC_TOOLS_HOST_PORT -and $PreferredPort -eq 3001) {
+        $explicitPort = [int]$env:OWC_TOOLS_HOST_PORT
     }
     elseif ($env:OWC_TOOLS_PW_HOST_PORT -and $PreferredPort -eq 3002) {
         $explicitPort = [int]$env:OWC_TOOLS_PW_HOST_PORT
@@ -39,9 +107,30 @@ function Resolve-OwcHostPort {
         $explicitPort = [int]$env:OWC_TOOLS_PW_DEBUG_HOST_PORT
     }
 
-    if ($null -ne $explicitPort -and (Test-OwcTcpPortAvailable -Port $explicitPort) -and -not $global:OwcReservedHostPorts.ContainsKey($explicitPort)) {
-        $global:OwcReservedHostPorts[$explicitPort] = $true
-        return $explicitPort
+    $candidate = if ($null -ne $explicitPort) { $explicitPort } else { $PreferredPort }
+    $labelText = if ($Label) { $Label } else { "port $candidate" }
+    $envHint = switch ($PreferredPort) {
+        3000 { "OWC_WEB_HOST_PORT" }
+        3001 { "OWC_TOOLS_HOST_PORT" }
+        3002 { "OWC_TOOLS_PW_HOST_PORT" }
+        9222 { "OWC_TOOLS_DEBUG_HOST_PORT" }
+        9223 { "OWC_TOOLS_PW_DEBUG_HOST_PORT" }
+        default { "OWC_*_HOST_PORT" }
+    }
+
+    if (-not $global:OwcReservedHostPorts.ContainsKey($candidate) -and (Test-OwcTcpPortAvailable -Port $candidate)) {
+        $global:OwcReservedHostPorts[$candidate] = $true
+        return $candidate
+    }
+
+    if ($global:OwcStrictPorts) {
+        $holder = Format-OwcPortHolder -Port $candidate
+        $msg = @(
+            "Fixed host $labelText is already in use ($holder).",
+            "Free the port (Stop-Process -Id <pid>) or override via `$env:$envHint = '<free port>',",
+            "or rerun start.ps1 with -AutoPort to fall back to the next free port."
+        ) -join " "
+        throw $msg
     }
 
     for ($port = $PreferredPort; $port -lt ($PreferredPort + 100); $port++) {
@@ -51,11 +140,42 @@ function Resolve-OwcHostPort {
 
         if (Test-OwcTcpPortAvailable -Port $port) {
             $global:OwcReservedHostPorts[$port] = $true
+            if ($port -ne $PreferredPort) {
+                Write-Host "[warn] Falling back: $labelText busy, using $port instead." -ForegroundColor Yellow
+            }
             return $port
         }
     }
 
-    throw "No free host port was found starting at $PreferredPort. Set the matching OWC_*_HOST_PORT environment variable manually and retry."
+    throw "No free host port was found starting at $PreferredPort. Set $envHint manually and retry."
+}
+
+function Reset-OwcReservedPorts {
+    $global:OwcReservedHostPorts = @{}
+}
+
+function Remove-OwcStaleContainer {
+    param(
+        [Parameter(Mandatory = $true)][string]$Container
+    )
+
+    $inspect = Invoke-DockerCapture -Arguments @("container", "inspect", "--format", "{{.State.Status}}", $Container)
+    if ($inspect.ExitCode -ne 0) {
+        return $false
+    }
+
+    $state = $inspect.Text.Trim()
+    if ([string]::IsNullOrWhiteSpace($state)) {
+        return $false
+    }
+
+    if ($state -in @("exited", "dead", "created")) {
+        Write-Host "[info] Removing stale container '$Container' (state: $state)..." -ForegroundColor DarkGray
+        Invoke-DockerCapture -Arguments @("rm", "-f", $Container) | Out-Null
+        return $true
+    }
+
+    return $false
 }
 
 function Get-OwcContext {
@@ -76,8 +196,8 @@ function Get-OwcContext {
     $toolsContainer = if ($env:OWC_TOOLS_CONTAINER) { $env:OWC_TOOLS_CONTAINER } else { "owc-tools" }
     $toolsPlaywrightContainer = if ($env:OWC_TOOLS_PW_CONTAINER) { $env:OWC_TOOLS_PW_CONTAINER } else { "owc-tools-playwright" }
     $webContainer = if ($env:OWC_WEB_CONTAINER) { $env:OWC_WEB_CONTAINER } else { "owc-web" }
-    $toolsHostPort = Resolve-OwcHostPort -PreferredPort 3000
-    $webHostPort = Resolve-OwcHostPort -PreferredPort 3001
+    $webHostPort = Resolve-OwcHostPort -PreferredPort 3000
+    $toolsHostPort = Resolve-OwcHostPort -PreferredPort 3001
     $playwrightToolsHostPort = Resolve-OwcHostPort -PreferredPort 3002
     $toolsDebugHostPort = Resolve-OwcHostPort -PreferredPort 9222
     $playwrightToolsDebugHostPort = Resolve-OwcHostPort -PreferredPort 9223
