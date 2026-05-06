@@ -15,6 +15,9 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
     PLAYWRIGHT_EXECUTABLE_PATH=/usr/local/bin/google-chrome-stable \
     PUPPETEER_EXECUTABLE_PATH=/usr/local/bin/google-chrome-stable \
+    OWC_UBOL_ENABLED=true \
+    OWC_UBOL_EXTENSION_DIR=/app/tools/playwright/extensions/ubol \
+    OWC_UBOL_DEFAULT_FILTERING=optimal \
     MCP_BROWSER_MODE=isolated \
     BROWSER_WS_ENDPOINT=ws://127.0.0.1:9223 \
     REMOTE_DEBUGGING_PORT=9223 \
@@ -27,7 +30,16 @@ RUN --mount=type=cache,target=/root/.npm \
     && CHROME_BIN="$(find /ms-playwright -type f -path '*/chrome-linux/chrome' | head -n 1)" \
     && test -n "${CHROME_BIN}" \
     && ln -sf "${CHROME_BIN}" /usr/local/bin/google-chrome-stable \
-    && ln -sf /usr/local/bin/google-chrome-stable /usr/local/bin/google-chrome
+    && ln -sf /usr/local/bin/google-chrome-stable /usr/local/bin/google-chrome \
+    && curl -fsSL 'https://api.github.com/repos/uBlockOrigin/uBOL-home/releases?per_page=10' -o /tmp/ubol-releases.json \
+    && UBOL_ASSET_URL="$(node -e "const fs=require('fs'); const releases=JSON.parse(fs.readFileSync('/tmp/ubol-releases.json','utf8')); const pick=(rows, includePrerelease)=>rows.filter((release)=>!release.draft && (includePrerelease || !release.prerelease)).flatMap((release)=>(release.assets||[]).map((asset)=>({ ...asset, release_tag: release.tag_name }))).find((asset)=>/chromium.*\\.zip$/i.test(String(asset.name||''))); const asset=pick(releases,false) || pick(releases,true); if(!asset?.browser_download_url){console.error('No Chromium uBOL asset found in recent releases'); process.exit(1);} process.stdout.write(asset.browser_download_url);")" \
+    && test -n "${UBOL_ASSET_URL}" \
+    && mkdir -p /app/tools/playwright/extensions/ubol \
+    && curl -fsSL "${UBOL_ASSET_URL}" -o /tmp/ubol.zip \
+    && unzip -q /tmp/ubol.zip -d /app/tools/playwright/extensions/ubol \
+    && rm -f /tmp/ubol.zip /tmp/ubol-releases.json \
+    && test -f /app/tools/playwright/extensions/ubol/manifest.json \
+    && test -f /app/tools/playwright/extensions/ubol/rulesets/ruleset-details.json
 
 COPY tools/playwright/ tools/playwright/
 COPY tools/shared/ tools/shared/

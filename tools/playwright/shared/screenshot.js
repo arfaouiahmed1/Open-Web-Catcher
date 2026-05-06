@@ -36,7 +36,7 @@ async function restoreScrollPosition(page, snapshot) {
 export async function screenshotFull(page) {
   const scrollSnapshot = await captureScrollPosition(page);
   try {
-    const buf = await page.screenshot({ fullPage: true, type: 'png' });
+    const buf = await page.screenshot({ fullPage: true, type: 'png', scale: 'device' });
     return uploadImage(`data:image/png;base64,${buf.toString('base64')}`);
   } finally {
     await restoreScrollPosition(page, scrollSnapshot);
@@ -48,7 +48,7 @@ export async function screenshotFull(page) {
  * Viewport is already enforced to 1920×1080 by getPage(); do not override here.
  */
 export async function screenshotViewport(page) {
-  const buf = await page.screenshot({ fullPage: false, type: 'png' });
+  const buf = await page.screenshot({ fullPage: false, type: 'png', scale: 'device' });
   return uploadImage(`data:image/png;base64,${buf.toString('base64')}`);
 }
 
@@ -56,6 +56,6 @@ export async function screenshotViewport(page) {
 export async function screenshotElement(page, selector) {
   const el = await page.$(selector);
   if (!el) throw new Error(`Element not found: ${selector}`);
-  const buf = await el.screenshot({ type: 'png' });
+  const buf = await el.screenshot({ type: 'png', scale: 'device' });
   return uploadImage(`data:image/png;base64,${buf.toString('base64')}`);
 }

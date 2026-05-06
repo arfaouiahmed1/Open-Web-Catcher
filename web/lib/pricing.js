@@ -13,6 +13,10 @@ function normalizeModel(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function canonicalModel(value) {
+  return normalizeModel(value).replace(/[^a-z0-9/]+/g, "");
+}
+
 function pricingKey(provider, model) {
   return `${normalizeProvider(provider)}|${normalizeModel(model)}`;
 }
@@ -82,11 +86,17 @@ export function lookupPricing(map, provider, model) {
   const providerless = map.get(pricingKey("", model));
   if (providerless) return providerless;
   const m = normalizeModel(model);
+  const canonical = canonicalModel(model);
   const p = normalizeProvider(provider);
   let best = null;
   for (const [, value] of map) {
     if (value.provider && value.provider !== p) continue;
-    if (m.startsWith(value.model) || value.model.startsWith(m)) {
+    const candidateCanonical = canonicalModel(value.model);
+    if (
+      m.startsWith(value.model)
+      || value.model.startsWith(m)
+      || (canonical && candidateCanonical && (canonical === candidateCanonical || canonical.startsWith(candidateCanonical) || candidateCanonical.startsWith(canonical)))
+    ) {
       if (!best || value.model.length > best.model.length) best = value;
     }
   }
@@ -189,6 +199,7 @@ export function estimateRunCost(llmCalls, pricingMap) {
     output: 0,
     calls: 0,
     computed: 0,
+    unpriced: 0,
   };
   for (const call of llmCalls || []) {
     const r = estimateCallCost(call, pricingMap);
@@ -199,6 +210,7 @@ export function estimateRunCost(llmCalls, pricingMap) {
     totals.output += r.output;
     totals.calls += 1;
     if (r.source === "computed" || r.source === "logged") totals.computed += 1;
+    else totals.unpriced += 1;
   }
   return totals;
 }

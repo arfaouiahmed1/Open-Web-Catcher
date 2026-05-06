@@ -270,11 +270,21 @@ export function OrchestratorGraph({ events = [], rootActor = "orchestrator" }) {
 
             <Connector vertical active={graph.orchestrator.status !== "idle"} />
 
-            <div className="relative mx-auto flex max-w-[1060px] justify-between gap-4 pt-2">
-              <div className="absolute left-[10%] right-[10%] top-1 border-t border-dashed border-border" />
-              {graph.agentNodes.map((node) => (
-                <AgentBranch key={node.id} node={node} />
-              ))}
+            <div className="relative mx-auto max-w-[1060px] pt-3">
+              <div className="absolute left-[10%] right-[10%] top-0 border-t border-dashed border-border" />
+              <div className="pointer-events-none absolute left-1/2 top-0 h-4 w-px -translate-x-1/2 border-l border-dashed border-border" />
+              <div className="pointer-events-none absolute left-[10%] top-0 h-4 w-px border-l border-dashed border-border" />
+              <div className="pointer-events-none absolute left-[36.7%] top-0 h-4 w-px border-l border-dashed border-border" />
+              <div className="pointer-events-none absolute left-[63.3%] top-0 h-4 w-px border-l border-dashed border-border" />
+              <div className="pointer-events-none absolute right-[10%] top-0 h-4 w-px border-l border-dashed border-border" />
+              <div className="flex justify-between gap-4">
+                {graph.agentNodes.map((node) => (
+                  <div key={node.id} className="flex flex-col items-center gap-2">
+                    <Connector vertical active={node.status !== "idle"} />
+                    <AgentBranch node={node} />
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

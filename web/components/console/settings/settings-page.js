@@ -89,62 +89,6 @@ const PROVIDERS = [
     color: "var(--mint)",
     features: ["local-compatible", "optimized"],
   },
-  {
-    id: "mistral",
-    name: "Mistral AI",
-    keyEnv: "MISTRAL_API_KEY",
-    color: "var(--signal)",
-    features: ["fast", "efficient", "multilingual"],
-  },
-  {
-    id: "xai",
-    name: "xAI / Grok",
-    keyEnv: "XAI_API_KEY",
-    color: "var(--ink)",
-    features: ["large-context", "real-time"],
-  },
-  {
-    id: "groq",
-    name: "Groq",
-    keyEnv: "GROQ_API_KEY",
-    color: "var(--rose)",
-    features: ["ultra-fast", "llama", "whisper"],
-  },
-  {
-    id: "together",
-    name: "Together AI",
-    keyEnv: "TOGETHER_API_KEY",
-    color: "var(--sky)",
-    features: ["open-source", "fine-tuning"],
-  },
-  {
-    id: "cohere",
-    name: "Cohere",
-    keyEnv: "COHERE_API_KEY",
-    color: "var(--violet)",
-    features: ["rag", "rerank", "embed"],
-  },
-  {
-    id: "deepseek",
-    name: "DeepSeek",
-    keyEnv: "DEEPSEEK_API_KEY",
-    color: "var(--sky)",
-    features: ["cost-efficient", "coding", "math"],
-  },
-  {
-    id: "perplexity",
-    name: "Perplexity",
-    keyEnv: "PERPLEXITY_API_KEY",
-    color: "var(--violet)",
-    features: ["search-augmented", "citations"],
-  },
-  {
-    id: "azure",
-    name: "Azure OpenAI",
-    keyEnv: "AZURE_OPENAI_API_KEY",
-    color: "var(--sky)",
-    features: ["enterprise", "compliance", "private"],
-  },
 ];
 
 const AGENT_SLOTS = [
@@ -307,11 +251,11 @@ const MCP_TOOL_META = {
 };
 
 const BROWSER_OPTIONS = [
-  { id: "puppeteer", name: "Puppeteer", note: "Port 3000 - mature, CDP-based" },
+  { id: "puppeteer", name: "Puppeteer", note: "Default tool stack - owc-tools on port 3001" },
   {
     id: "playwright",
     name: "Playwright",
-    note: "Port 3001 - context isolation, modern",
+    note: "Secondary tool stack - owc-tools-playwright on port 3002",
   },
 ];
 
@@ -410,7 +354,7 @@ const TAB_DETAILS = {
   browser: {
     title: "Browser Runtime",
     description:
-      "Choose the default engine and tune fingerprints, proxies, launch flags, iframe recovery, and media capture behavior.",
+      "Choose the default engine and keep browsing realistic: stable fingerprints, careful proxy rotation, light cleanup, and reliable iframe/media recovery.",
     storage: "server",
     saveLabel: "Save browser settings",
   },
@@ -493,37 +437,38 @@ const DEFAULT_BROWSER_RUNTIME = {
     adblock_allowlist_hosts: [],
     adblock_excluded_categories: ["nsfw", "gambling"],
     adblock_auto_recovery_enabled: true,
-    adblock_auto_recovery_on_abort: true,
+    adblock_auto_recovery_on_abort: false,
     adblock_auto_recovery_retry: true,
     fingerprint_rotation_mode: "origin",
     fingerprint_fallback_strategy: "profile",
-    fingerprint_rotation_interval_ms: 180000,
-    fingerprint_rotation_max_uses: 6,
-    fingerprint_recent_pool_size: 12,
+    fingerprint_rotation_interval_ms: 600000,
+    fingerprint_rotation_max_uses: 8,
+    fingerprint_recent_pool_size: 18,
     proxy_enabled: false,
     proxy_source_mode: "hybrid",
     proxy_source_order: [...DEFAULT_PROXY_SOURCE_ORDER],
     proxy_custom_list: [],
-    proxy_rotation_mode: "session",
-    proxy_selection_strategy: "ordered",
+    proxy_rotation_mode: "sticky",
+    proxy_selection_strategy: "random",
     proxy_fallback_strategy: "direct",
     proxy_fetch_timeout_ms: 8000,
     proxy_validation_timeout_ms: 12000,
     proxy_cache_ttl_ms: 600000,
-    proxy_max_candidates: 25,
+    proxy_max_candidates: 40,
     proxy_test_url: "https://api.ipify.org?format=json",
     streaming_safe_mode: "adaptive",
     media_proxy_strategy: "direct_first",
     asset_diagnostics_enabled: true,
-    ubol_enabled: true,
+    popup_blocking_enabled: true,
+    ubol_enabled: false,
     stream_cors_patch_enabled: false,
     stream_cors_include_credentials: false,
     iframe_sandbox_patch_enabled: true,
     iframe_auto_recovery_enabled: true,
     iframe_recovery_timeout_ms: 20000,
-    media_capture_timeout_ms: 30000,
-    media_retry_count: 3,
-    media_retry_backoff_ms: [1000, 2000, 4000],
+    media_capture_timeout_ms: 45000,
+    media_retry_count: 4,
+    media_retry_backoff_ms: [1200, 2500, 5000, 8000],
     media_cors_patch_enabled: false,
     media_playback_verification_enabled: true,
   },
@@ -534,34 +479,35 @@ const DEFAULT_BROWSER_RUNTIME = {
     adblock_allowlist_hosts: [],
     adblock_excluded_categories: ["nsfw", "gambling"],
     adblock_auto_recovery_enabled: true,
-    adblock_auto_recovery_on_abort: true,
+    adblock_auto_recovery_on_abort: false,
     adblock_auto_recovery_retry: true,
     fingerprint_rotation_mode: "origin",
     fingerprint_fallback_strategy: "profile",
-    fingerprint_rotation_interval_ms: 180000,
-    fingerprint_rotation_max_uses: 6,
-    fingerprint_recent_pool_size: 12,
+    fingerprint_rotation_interval_ms: 600000,
+    fingerprint_rotation_max_uses: 8,
+    fingerprint_recent_pool_size: 18,
     proxy_enabled: false,
     proxy_source_mode: "hybrid",
     proxy_source_order: [...DEFAULT_PROXY_SOURCE_ORDER],
     proxy_custom_list: [],
-    proxy_rotation_mode: "session",
-    proxy_selection_strategy: "ordered",
+    proxy_rotation_mode: "sticky",
+    proxy_selection_strategy: "random",
     proxy_fallback_strategy: "direct",
     proxy_fetch_timeout_ms: 8000,
     proxy_validation_timeout_ms: 12000,
     proxy_cache_ttl_ms: 600000,
-    proxy_max_candidates: 25,
+    proxy_max_candidates: 40,
     proxy_test_url: "https://api.ipify.org?format=json",
     streaming_safe_mode: "adaptive",
     media_proxy_strategy: "direct_first",
     asset_diagnostics_enabled: true,
+    popup_blocking_enabled: true,
     iframe_sandbox_patch_enabled: true,
     iframe_auto_recovery_enabled: true,
     iframe_recovery_timeout_ms: 20000,
-    media_capture_timeout_ms: 30000,
-    media_retry_count: 3,
-    media_retry_backoff_ms: [1000, 2000, 4000],
+    media_capture_timeout_ms: 45000,
+    media_retry_count: 4,
+    media_retry_backoff_ms: [1200, 2500, 5000, 8000],
     media_cors_patch_enabled: false,
     media_playback_verification_enabled: true,
   },
@@ -829,12 +775,21 @@ function ensureSelectedOption(options, value) {
 
 function sourceTone(source) {
   if (source === "provider_api") return "ok";
+  if (source === "unavailable") return "error";
   return "warn";
 }
 
 function sourceLabel(source) {
   if (source === "provider_api") return "Live provider catalog";
-  return "Fallback catalog";
+  if (source === "unavailable") return "Catalog unavailable";
+  return "Stored catalog";
+}
+
+function pricingStatusTone(status) {
+  if (!status) return "default";
+  if (status.model_count > 0) return "success";
+  if (status.api_key_set) return "warning";
+  return "default";
 }
 
 function providerOptionRows() {
@@ -1238,6 +1193,18 @@ function CostEstimator({ provider, model }) {
             </span>
           </div>
           <div className="flex items-center justify-between text-[12px]">
+            <span className="text-muted-foreground">Cached read cost</span>
+            <span className="font-mono text-foreground">
+              ${(costs.cached_input_cost_usd || 0).toFixed(6)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-[12px]">
+            <span className="text-muted-foreground">Cache write cost</span>
+            <span className="font-mono text-foreground">
+              ${(costs.cache_write_cost_usd || 0).toFixed(6)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-[12px]">
             <span className="text-muted-foreground">Output cost</span>
             <span className="font-mono text-foreground">
               ${costs.output_cost_usd.toFixed(6)}
@@ -1418,6 +1385,8 @@ export function SettingsPage() {
   const [activeProfileTab, setActiveProfileTab] = useState("classification");
   const [providerCatalogs, setProviderCatalogs] = useState({});
   const [catalogLoading, setCatalogLoading] = useState("");
+  const [pricingStatus, setPricingStatus] = useState({});
+  const [pricingSyncLoading, setPricingSyncLoading] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedTab, setSavedTab] = useState("");
   const [configErr, setConfigErr] = useState("");
@@ -1426,6 +1395,7 @@ export function SettingsPage() {
   const activeProvider =
     PROVIDERS.find((item) => item.id === provider) || PROVIDERS[0];
   const activeCatalog = providerCatalogs[provider] || null;
+  const activePricingStatus = pricingStatus[provider] || null;
   const activeBrowserRuntime =
     browserRuntime[browserSettingsTab] ||
     DEFAULT_BROWSER_RUNTIME[browserSettingsTab];
@@ -1564,14 +1534,52 @@ export function SettingsPage() {
         ? `Live model catalog unavailable. Add ${providerMeta.keyEnv} or use a manual model ID.`
         : "Live model catalog unavailable for this provider.";
       const payload = {
+        provider: providerId,
+        available: false,
+        source: "unavailable",
         models: [],
-        defaults: {},
+        hyperparameters: [],
         error: fallback,
       };
       setProviderCatalogs((current) => ({ ...current, [providerId]: payload }));
       return payload;
     } finally {
       setCatalogLoading("");
+    }
+  }
+
+  async function loadPricingStatus() {
+    try {
+      const payload = await apiFetch("/ui/pricing");
+      setPricingStatus(payload?.provider_statuses || {});
+      return payload;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async function syncPricing(providerId = provider) {
+    const targetProvider = String(providerId || "").trim().toLowerCase();
+    if (!targetProvider) return;
+    setPricingSyncLoading(targetProvider);
+    setConfigErr("");
+    try {
+      await fetch(apiUrl("/ui/pricing/sync"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: targetProvider }),
+      }).then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || payload.error || `Status ${response.status}`);
+        }
+        return payload;
+      });
+      await loadPricingStatus();
+    } catch (error) {
+      setConfigErr(error.message || "Could not sync provider pricing.");
+    } finally {
+      setPricingSyncLoading("");
     }
   }
 
@@ -1638,6 +1646,7 @@ export function SettingsPage() {
         loadProviderCatalog(providerId, { force: true }).catch(() => null),
       ),
     );
+    await loadPricingStatus();
   }
 
   async function loadConfig() {
@@ -1856,6 +1865,7 @@ export function SettingsPage() {
       if (!response.ok)
         throw new Error(payload.detail || `Status ${response.status}`);
       await hydrateConfig(payload);
+      await loadPricingStatus();
       if (payload.config_persisted === false) {
         setConfigErr(
           payload.config_persist_error ||
@@ -1909,8 +1919,15 @@ export function SettingsPage() {
           />
         </CardContent>
         <div className="flex flex-col gap-2 border-t px-3 py-3">
-          <Badge tone={providerCatalogs[provider] ? "signal" : "default"} className="justify-center rounded-lg px-2.5 py-1.5 text-xs">
-            {providerCatalogs[provider] ? "Catalogs loaded" : "Loading..."}
+          <Badge tone={activeCatalog?.available ? "success" : activeCatalog ? "warning" : "default"} className="justify-center rounded-lg px-2.5 py-1.5 text-xs">
+            {activeCatalog?.available ? "Catalog ready" : activeCatalog ? "Catalog unavailable" : "Loading..."}
+          </Badge>
+          <Badge tone={pricingStatusTone(activePricingStatus)} className="justify-center rounded-lg px-2.5 py-1.5 text-xs">
+            {activePricingStatus?.model_count > 0
+              ? `${activePricingStatus.model_count} priced models`
+              : activePricingStatus?.api_key_set
+                ? "Pricing not synced"
+                : "Pricing unavailable"}
           </Badge>
           <Badge tone={hasDirty ? "warning" : "success"} className="justify-center rounded-lg px-2.5 py-1.5 text-xs">
             {hasDirty ? "Unsaved changes" : "All synced"}
@@ -2002,7 +2019,26 @@ export function SettingsPage() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div />
                   <div className="flex items-center gap-2">
-                    {activeCatalog ? <Badge tone={sourceTone(activeCatalog.source) === "ok" ? "success" : "warning"}>{sourceLabel(activeCatalog.source)}</Badge> : null}
+                    {activeCatalog ? (
+                      <Badge
+                        tone={
+                          sourceTone(activeCatalog.source) === "ok"
+                            ? "success"
+                            : sourceTone(activeCatalog.source) === "error"
+                              ? "destructive"
+                              : "warning"
+                        }
+                      >
+                        {sourceLabel(activeCatalog.source)}
+                      </Badge>
+                    ) : null}
+                    {activePricingStatus ? (
+                      <Badge tone={pricingStatusTone(activePricingStatus)}>
+                        {activePricingStatus.model_count > 0
+                          ? `${activePricingStatus.model_count} pricing rows`
+                          : "Pricing not synced"}
+                      </Badge>
+                    ) : null}
                     <Button
                       variant="secondary"
                       size="sm"
@@ -2023,6 +2059,24 @@ export function SettingsPage() {
                         </>
                       )}
                     </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => syncPricing(provider)}
+                      disabled={pricingSyncLoading === provider}
+                    >
+                      {pricingSyncLoading === provider ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Syncing pricing
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          Sync pricing
+                        </>
+                      )}
+                    </Button>
                   </div>
                 </div>
 
@@ -2030,12 +2084,40 @@ export function SettingsPage() {
                   <div className="flex items-start gap-2 rounded-lg border border-primary/35 bg-primary/10 px-3 py-2.5 text-sm text-primary">
                     <Key className="mt-0.5 size-4 shrink-0" />
                     <span>
-                      <strong>{activeProvider.keyEnv}</strong> not set. Live model loading may fall back to cached lists.
+                      <strong>{activeProvider.keyEnv}</strong> not set. Live model loading is unavailable until the provider API is configured.
                     </span>
                   </div>
                 ) : null}
 
                 {activeCatalog?.error ? <div className="rounded-lg border border-destructive/35 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">{activeCatalog.error}</div> : null}
+                {activePricingStatus ? (
+                  <div className="grid gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-3 text-[12px] sm:grid-cols-3">
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        Pricing status
+                      </div>
+                      <div className="mt-1 text-foreground">
+                        {activePricingStatus.model_count > 0 ? "Synced" : "Missing"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        Last sync
+                      </div>
+                      <div className="mt-1 text-foreground">
+                        {activePricingStatus.last_sync_at || "Not recorded"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        Models priced
+                      </div>
+                      <div className="mt-1 text-foreground">
+                        {activePricingStatus.model_count || 0}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="grid gap-6 sm:grid-cols-2">
                   <div>
@@ -2243,12 +2325,17 @@ export function SettingsPage() {
                           </div>
                         </div>
                         {slotCatalog ? (
-                          <span
-                            className={`owc-pill ${sourceTone(slotCatalog.source)}`}
+                          <Badge
+                            tone={
+                              sourceTone(slotCatalog.source) === "ok"
+                                ? "success"
+                                : sourceTone(slotCatalog.source) === "error"
+                                  ? "destructive"
+                                  : "warning"
+                            }
                           >
-                            <span className="dot" />
                             {sourceLabel(slotCatalog.source)}
-                          </span>
+                          </Badge>
                         ) : null}
                       </div>
 
@@ -2947,7 +3034,7 @@ export function SettingsPage() {
 
               <FieldGroup
                 title="Adaptive Streaming"
-                description="Control how the runtime behaves on streaming and player-heavy pages."
+                description="Prefer direct, browser-like playback on player pages and only escalate when evidence says it is needed."
                 accent="var(--mint)"
               >
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -3038,8 +3125,8 @@ export function SettingsPage() {
               </FieldGroup>
 
               <FieldGroup
-                title="Ad-Blocking & Launch"
-                description="Chromium launch flags, request blocker, and recovery behavior."
+                title="Cleanup & Launch"
+                description="Keep the browser looking normal, trim visual annoyances, and avoid network blockers unless you explicitly need them."
                 accent="var(--rose)"
               >
                 <BrowserRuntimeTextarea
@@ -3071,7 +3158,7 @@ export function SettingsPage() {
                       )
                     }
                     placeholder="example.com, cdn.example.com"
-                    description="Hosts that bypass blocking even when adblock is enabled."
+                    description="Always leave these hosts untouched if blocking is enabled for a special case."
                   />
                   <BrowserRuntimeInput
                     label="Excluded categories"
@@ -3086,10 +3173,22 @@ export function SettingsPage() {
                       )
                     }
                     placeholder="nsfw, gambling"
-                    description="Filter categories to leave disabled when the blocker is active."
+                    description="Categories intentionally left out when the blocker is active."
                   />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  <ToggleRow
+                    label="Block popups"
+                    checked={!!activeBrowserRuntime.popup_blocking_enabled}
+                    onChange={(value) =>
+                      updateBrowserRuntime(
+                        browserSettingsTab,
+                        "popup_blocking_enabled",
+                        value,
+                      )
+                    }
+                    description="Block new tabs, alert-style interruptions, and window.open popups so agents stay on task."
+                  />
                   <ToggleRow
                     label="Enable adblock"
                     checked={!!activeBrowserRuntime.adblock_enabled}
@@ -3100,7 +3199,7 @@ export function SettingsPage() {
                         value,
                       )
                     }
-                    description="Attach the request blocker for this runtime."
+                    description="Network-level ad blocking. Leave off for the most browser-like behavior."
                   />
                   <ToggleRow
                     label="Auto recovery"
@@ -3163,7 +3262,7 @@ export function SettingsPage() {
                       onChange={(value) =>
                         updateBrowserRuntime("puppeteer", "ubol_enabled", value)
                       }
-                      description="Load bundled uBlock Origin Lite extension if present on disk."
+                      description="Optional extension-based blocking. Off by default so iframe and media traffic stays natural."
                     />
                   ) : null}
                   {browserSettingsTab === "puppeteer" ? (
@@ -3179,7 +3278,7 @@ export function SettingsPage() {
                           value,
                         )
                       }
-                      description="Force CORS headers on stream requests. Use sparingly."
+                      description="Last-resort compatibility patch. Keep off unless diagnostics show a real stream-header issue."
                     />
                   ) : null}
                   {browserSettingsTab === "puppeteer" ? (
@@ -3204,7 +3303,7 @@ export function SettingsPage() {
 
               <FieldGroup
                 title="Recovery & Media"
-                description="Iframe recovery, media capture, and navigation retry behavior."
+                description="Give players enough time to load, retry transient failures, and recover cross-frame playback without over-correcting."
                 accent="var(--sky)"
               >
                 <div className="grid gap-3 sm:grid-cols-3">

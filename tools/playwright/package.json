@@ -14,7 +14,6 @@
     "test": "node ../shared/tests/browser-health.test.js && node tests/tool-registry.test.js && node tests/tool-runtime.test.js && node tests/playwright-contracts.test.js && node tests/error-codes.test.js"
   },
   "dependencies": {
-    "@ghostery/adblocker-playwright": "^2.13.0",
     "@modelcontextprotocol/sdk": "^1.10.0",
     "cloudinary": "^2.0.0",
     "express": "^4.19.0",

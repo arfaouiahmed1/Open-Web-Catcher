@@ -68,7 +68,7 @@ def build_browser_runtime_sync_status(
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    # LLM provider selection: google | openai | anthropic | openrouter
+    # LLM provider selection: google | google-vertex | openai | anthropic | openrouter | nvidia
     llm_provider: str = "google"
 
     orchestrator_model: str = "gemini-2.5-flash-lite"

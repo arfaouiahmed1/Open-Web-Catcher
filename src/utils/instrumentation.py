@@ -130,6 +130,21 @@ _MODEL_PRICING_ALIASES: dict[str, str] = {
 }
 
 
+def _canonical_model_key(value: str) -> str:
+    text = (value or "").strip().lower()
+    if not text:
+        return ""
+    if "::" in text:
+        provider_part, model_part = text.split("::", 1)
+        model_text = model_part
+        provider_text = provider_part
+    else:
+        provider_text = ""
+        model_text = text
+    compact = "".join(ch for ch in model_text if ch.isalnum() or ch == "/")
+    return f"{provider_text}::{compact}" if provider_text else compact
+
+
 def resolve_model_pricing(settings: Settings, model_name: str, provider: str = "") -> dict[str, Any]:
     pricing = resolve_model_pricing_config(settings)
     model_key = (model_name or "").strip().lower()
@@ -141,6 +156,20 @@ def resolve_model_pricing(settings: Settings, model_name: str, provider: str = "
     match = pricing.get(composite_key, {}) if composite_key else {}
     if not match:
         match = pricing.get(model_key, {})
+
+    if not match and model_key:
+        canonical_model = _canonical_model_key(model_key)
+        canonical_composite = _canonical_model_key(composite_key) if composite_key else ""
+        if canonical_composite:
+            for key, value in pricing.items():
+                if _canonical_model_key(key) == canonical_composite:
+                    match = value
+                    break
+        if not match and canonical_model:
+            for key, value in pricing.items():
+                if _canonical_model_key(key) == canonical_model:
+                    match = value
+                    break
 
     # Fallback: normalize provider/model prefixes and date-like suffixes.
     if not match and model_key:

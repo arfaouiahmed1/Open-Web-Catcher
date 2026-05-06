@@ -46,6 +46,7 @@ from src.models.schemas import (
 )
 from src.storage.database import create_tables, get_session
 from src.storage.dataset_repository import DatasetRepository
+from src.storage.models import PricingConfigRecord
 from src.storage.repositories import (
     BackgroundJobRepository,
     RunRepository,
@@ -746,11 +747,59 @@ def _sync_provider_pricing_to_db(
     }
 
 
+def _pricing_sync_provider_ids() -> list[str]:
+    return ["google", "google-vertex", "openai", "anthropic", "openrouter", "nvidia"]
+
+
+def _provider_api_key_available(settings: Settings, provider: str) -> bool:
+    provider_key = str(provider or "").strip().lower()
+    if provider_key == "google":
+        return bool(str(settings.google_api_key or "").strip())
+    if provider_key == "google-vertex":
+        return bool(str(settings.google_vertex_api_key or "").strip())
+    if provider_key == "openai":
+        return bool(str(settings.openai_api_key or "").strip())
+    if provider_key == "anthropic":
+        return bool(str(settings.anthropic_api_key or "").strip())
+    if provider_key == "openrouter":
+        return bool(str(settings.openrouter_api_key or "").strip())
+    if provider_key == "nvidia":
+        return bool(str(settings.nvidia_api_key or "").strip())
+    return False
+
+
+def _provider_pricing_status_payload(session, settings: Settings) -> dict[str, dict[str, Any]]:
+    rows = session.query(PricingConfigRecord).all()
+    grouped: dict[str, list[PricingConfigRecord]] = {}
+    for row in rows:
+        provider_key = str(row.provider or "").strip().lower()
+        if not provider_key:
+            continue
+        grouped.setdefault(provider_key, []).append(row)
+
+    status: dict[str, dict[str, Any]] = {}
+    for provider_key in _pricing_sync_provider_ids():
+        provider_rows = grouped.get(provider_key, [])
+        updated_at = max((row.updated_at for row in provider_rows if getattr(row, "updated_at", None)), default=None)
+        status[provider_key] = {
+            "provider": provider_key,
+            "api_key_set": _provider_api_key_available(settings, provider_key),
+            "configured": provider_key == "openrouter" or _provider_api_key_available(settings, provider_key),
+            "model_count": len(provider_rows),
+            "available": len(provider_rows) > 0,
+            "last_sync_at": updated_at.isoformat() if updated_at else "",
+        }
+    return status
+
+
 def _auto_sync_provider_pricing(settings: Settings) -> None:
     if not settings.provider_pricing_sync_enabled:
         return
 
     provider = (settings.llm_provider or "").strip().lower()
+    if provider != "openrouter" and not _provider_api_key_available(settings, provider):
+        logger.info("Provider pricing sync skipped: provider '%s' is not configured.", provider)
+        return
     if provider == "openrouter" and not (settings.openrouter_api_key or "").strip():
         logger.info("Provider pricing sync skipped: OPENROUTER_API_KEY is not set.")
         return
@@ -3441,6 +3490,7 @@ def ui_pricing():
             "stored": stored,
             "env_defaults": env_defaults,
             "effective_models": get_observability_status(get_settings()).pricing_models,
+            "provider_statuses": _provider_pricing_status_payload(session, get_settings()),
         }
     finally:
         session.close()
@@ -3467,14 +3517,45 @@ def ui_sync_pricing(req: PricingSyncRequest):
 
     try:
         if provider in {"", "all"}:
-            providers = ["google", "openai", "anthropic", "openrouter"]
+            providers = _pricing_sync_provider_ids()
             results: list[dict[str, Any]] = []
             for item in providers:
-                if item == "openrouter" and not (settings.openrouter_api_key or "").strip():
+                if item != "openrouter" and not _provider_api_key_available(settings, item):
+                    results.append(
+                        {
+                            "provider": item,
+                            "synced": 0,
+                            "stored": 0,
+                            "models": [],
+                            "error": "provider_api_key_missing",
+                        }
+                    )
                     continue
-                results.append(
-                    _sync_provider_pricing_to_db(settings, provider=item, max_models=max_models)
-                )
+                if item == "openrouter" and not (settings.openrouter_api_key or "").strip():
+                    results.append(
+                        {
+                            "provider": item,
+                            "synced": 0,
+                            "stored": 0,
+                            "models": [],
+                            "error": "provider_api_key_missing",
+                        }
+                    )
+                    continue
+                try:
+                    results.append(
+                        _sync_provider_pricing_to_db(settings, provider=item, max_models=max_models)
+                    )
+                except (NotImplementedError, ProviderPricingSyncError) as exc:
+                    results.append(
+                        {
+                            "provider": item,
+                            "synced": 0,
+                            "stored": 0,
+                            "models": [],
+                            "error": str(exc),
+                        }
+                    )
             return {
                 "provider": "all",
                 "results": results,
@@ -3496,73 +3577,61 @@ def ui_estimate_costs(
     input_tokens: int = Query(1000, ge=0, description="Input token count"),
     output_tokens: int = Query(1000, ge=0, description="Output token count"),
     cached_input_tokens: int = Query(0, ge=0, description="Cached input token count"),
+    cache_write_input_tokens: int = Query(0, ge=0, description="Cache write token count"),
 ):
     """Estimate cost for a given provider, model, and token counts."""
     from src.utils.instrumentation import estimate_usage_cost, resolve_model_pricing
 
     settings = get_settings()
-    session = get_session()
-    try:
-        repo = OperatorConsoleRepository(session)
-        pricing_configs = repo.list_pricing_configs()
+    pricing = resolve_model_pricing(settings, model, provider)
+    pricing_source = "database" if (
+        float(pricing.get("input_per_million", 0.0) or 0.0) > 0
+        or float(pricing.get("output_per_million", 0.0) or 0.0) > 0
+        or float(pricing.get("cached_input_per_million", 0.0) or 0.0) > 0
+        or float(pricing.get("cache_write_per_million", 0.0) or 0.0) > 0
+    ) else "no_pricing_available"
 
-        # Build pricing lookup
-        pricing_by_key = {}
-        for config in pricing_configs:
-            key = f"{config.provider}::{config.model_name}"
-            pricing_by_key[key] = config
-            if not config.provider:
-                pricing_by_key[config.model_name] = config
-
-        # Find pricing for this model
-        pricing_config = None
-        search_keys = [
-            f"{provider}::{model}",
-            model,
-            f"{provider}::{model.split('::')[0]}",
-        ]
-        for key in search_keys:
-            if key in pricing_by_key:
-                pricing_config = pricing_by_key[key]
-                break
-
-        if not pricing_config:
-            # No pricing found
-            return {
-                "provider": provider,
-                "model": model,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "cached_input_tokens": cached_input_tokens,
-                "input_cost_usd": 0.0,
-                "output_cost_usd": 0.0,
-                "total_cost_usd": 0.0,
-                "pricing_source": "no_pricing_available",
-            }
-
-        # Calculate costs
-        # Cached tokens often don't count toward cost, or count at reduced rate
-        chargeable_input_tokens = input_tokens + cached_input_tokens  # Conservative: count all
-        costs = estimate_usage_cost(
-            input_tokens=chargeable_input_tokens,
-            output_tokens=output_tokens,
-            input_per_million=pricing_config.input_per_million,
-            output_per_million=pricing_config.output_per_million,
-        )
-
+    if pricing_source == "no_pricing_available":
         return {
             "provider": provider,
             "model": model,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "cached_input_tokens": cached_input_tokens,
-            "input_cost_usd": costs["estimated_input_cost_usd"],
-            "output_cost_usd": costs["estimated_output_cost_usd"],
-            "total_cost_usd": costs["estimated_total_cost_usd"],
-            "pricing_source": "database",
+            "cache_write_input_tokens": cache_write_input_tokens,
+            "input_cost_usd": 0.0,
+            "cached_input_cost_usd": 0.0,
+            "cache_write_cost_usd": 0.0,
+            "output_cost_usd": 0.0,
+            "total_cost_usd": 0.0,
+            "pricing_source": pricing_source,
         }
-    finally:
-        session.close()
+
+    costs = estimate_usage_cost(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cached_input_tokens=cached_input_tokens,
+        cache_write_input_tokens=cache_write_input_tokens,
+        input_per_million=float(pricing.get("input_per_million", 0.0) or 0.0),
+        output_per_million=float(pricing.get("output_per_million", 0.0) or 0.0),
+        cached_input_per_million=float(pricing.get("cached_input_per_million", 0.0) or 0.0),
+        cache_write_per_million=float(pricing.get("cache_write_per_million", 0.0) or 0.0),
+    )
+
+    return {
+        "provider": provider,
+        "model": model,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cached_input_tokens": cached_input_tokens,
+        "cache_write_input_tokens": cache_write_input_tokens,
+        "input_cost_usd": costs["estimated_input_cost_usd"],
+        "cached_input_cost_usd": costs["estimated_cached_input_cost_usd"],
+        "cache_write_cost_usd": costs["estimated_cache_write_cost_usd"],
+        "output_cost_usd": costs["estimated_output_cost_usd"],
+        "total_cost_usd": costs["estimated_total_cost_usd"],
+        "pricing_source": pricing_source,
+    }
 
 
 @app.get("/ui/evaluations/suites")

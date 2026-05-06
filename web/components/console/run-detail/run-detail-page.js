@@ -125,9 +125,16 @@ function RunMeta({ run, jobState, parallelism }) {
   }
 
   return (
-    <dl className="flex flex-wrap gap-x-6 gap-y-2">
+    <dl className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
       {items.map(({ label, value }) => (
-        <div key={label}>
+        <div
+          key={label}
+          className="rounded-[12px] border px-3 py-2.5"
+          style={{
+            borderColor: "var(--line)",
+            background: "color-mix(in oklch, var(--card) 88%, transparent)",
+          }}
+        >
           <dt
             className="text-[10px] font-semibold uppercase tracking-[0.12em]"
             style={{ color: "var(--mute-3)" }}
@@ -135,8 +142,8 @@ function RunMeta({ run, jobState, parallelism }) {
             {label}
           </dt>
           <dd
-            className="mt-0.5 text-[12.5px]"
-            style={{ color: "var(--ink-dim)" }}
+            className="mt-1 break-words text-[13px] font-medium"
+            style={{ color: "var(--ink)" }}
           >
             {value}
           </dd>
@@ -175,10 +182,16 @@ function RunHeader({
 }) {
   return (
     <Card className="overflow-hidden shadow-card">
-      <CardHeader className="border-b px-4 py-4">
+      <CardHeader
+        className="px-4 py-4"
+        style={{
+          background:
+            "linear-gradient(180deg, color-mix(in oklch, var(--signal) 8%, transparent), transparent 68%)",
+        }}
+      >
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
               <Breadcrumb>
                 <BreadcrumbList className="text-[11px]">
                   <BreadcrumbItem>
@@ -227,18 +240,28 @@ function RunHeader({
                   Live
                 </span>
               ) : null}
+              <span
+                className="rounded-full border px-2 py-0.5 font-mono text-[10px]"
+                style={{
+                  borderColor: "var(--line)",
+                  color: "var(--mute-2)",
+                  background: "rgba(255,255,255,0.55)",
+                }}
+              >
+                {runId ? runId.slice(0, 12) : "--"}
+              </span>
             </div>
             <span className="owc-eyebrow mt-1">run detail</span>
             <h1
-              className="mt-1 font-mono text-xl font-semibold"
+              className="mt-1 font-mono text-[28px] font-semibold leading-none"
               style={{ color: "var(--ink)" }}
             >
               {title || (runId ? `${runId.slice(0, 18)}...` : "Run")}
             </h1>
             {url || subtitle ? (
-              <div className="mt-0.5 flex items-center gap-1.5">
+              <div className="mt-2 flex items-center gap-1.5">
                 <p
-                  className="max-w-xl truncate text-[12px]"
+                  className="max-w-3xl truncate text-[12.5px]"
                   style={{ color: "var(--mute)" }}
                   title={url}
                 >
@@ -258,14 +281,38 @@ function RunHeader({
               </div>
             ) : null}
           </div>
-          {run?.final_status ? (
-            <Badge tone={runStatusTone(run.final_status)} className="mt-1 shrink-0">
-              {statusLabel(run.final_status)}
-            </Badge>
-          ) : null}
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            {run?.final_status ? (
+              <Badge tone={runStatusTone(run.final_status)} className="mt-1 shrink-0">
+                {statusLabel(run.final_status)}
+              </Badge>
+            ) : null}
+            <div className="flex flex-wrap justify-end gap-2">
+              <span
+                className="rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.12em]"
+                style={{
+                  borderColor: "var(--line)",
+                  color: "var(--mute-2)",
+                  background: "rgba(255,255,255,0.52)",
+                }}
+              >
+                {String(jobState?.job_type || "").toLowerCase() === "workflow" ? "workflow run" : "agent run"}
+              </span>
+              <span
+                className="rounded-full border px-2.5 py-1 font-mono text-[10px]"
+                style={{
+                  borderColor: "var(--line)",
+                  color: "var(--mute-2)",
+                  background: "rgba(255,255,255,0.52)",
+                }}
+              >
+                {formatNumber(parallelism?.current_parallel_agents || 0)} live / {formatNumber(parallelism?.max_parallel_agents || 0)} peak
+              </span>
+            </div>
+          </div>
         </div>
       </CardHeader>
-      <CardContent className="px-4 py-4 pt-0">
+      <CardContent className="border-t px-4 py-4" style={{ borderColor: "var(--line)" }}>
         <RunMeta run={run} jobState={jobState} parallelism={parallelism} />
       </CardContent>
     </Card>
@@ -830,7 +877,12 @@ export function RunDetailPage() {
           groups={contextGroups}
           focusKey={runState?.active?.actor || runState?.active?.stage || ""}
         />
-        <CostEstimateCard llmCalls={llmCalls} agentRollups={agentRollups} unavailable={telemetryMissing} />
+        <CostEstimateCard
+          llmCalls={llmCalls}
+          modelUsage={modelUsage}
+          agentRollups={agentRollups}
+          unavailable={telemetryMissing}
+        />
       </div>
 
       <RunFinalOutputsSection snapshot={snapshot} isWorkflowRun={showFinalOutputs} />

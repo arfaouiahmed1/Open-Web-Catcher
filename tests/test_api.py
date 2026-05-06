@@ -225,6 +225,15 @@ def test_ui_pricing_update_persists_and_updates_runtime_settings(client: TestCli
     assert stored["gemini-2.5-flash"]["provider"] == "google"
 
 
+def test_ui_pricing_reports_provider_statuses(client: TestClient):
+    response = client.get("/ui/pricing")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "provider_statuses" in payload
+    assert payload["provider_statuses"]["google"]["provider"] == "google"
+
+
 def test_ui_config_update_reports_persist_path(client: TestClient, api_settings: Settings):
     with patch.object(api_settings.__class__, "save_yaml", return_value=Path("data/settings.runtime.yaml")):
         response = client.put(
@@ -403,6 +412,7 @@ def test_ui_provider_models_returns_catalog(client: TestClient):
         "name": "OpenAI",
         "key_env": "OPENAI_API_KEY",
         "api_key_set": True,
+        "available": True,
         "source": "provider_api",
         "error": "",
         "models": [{"id": "gpt-5", "label": "gpt-5"}],
@@ -417,6 +427,42 @@ def test_ui_provider_models_returns_catalog(client: TestClient):
     assert payload["provider"] == "openai"
     assert payload["models"][0]["id"] == "gpt-5"
     mock_catalog.assert_called_once()
+
+
+def test_ui_estimate_costs_uses_split_cached_and_output_rates(client: TestClient, api_settings: Settings):
+    api_settings.model_pricing_json = json.dumps(
+        {
+            "google::gemini-2.5-flash": {
+                "provider": "google",
+                "input_per_million": 1.0,
+                "output_per_million": 2.0,
+                "cached_input_per_million": 0.25,
+                "cache_write_per_million": 0.5,
+                "context_window": 1048576,
+            }
+        }
+    )
+
+    response = client.get(
+        "/ui/settings/estimate-costs",
+        params={
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "input_tokens": 1000,
+            "output_tokens": 2000,
+            "cached_input_tokens": 4000,
+            "cache_write_input_tokens": 3000,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["pricing_source"] == "database"
+    assert payload["input_cost_usd"] == pytest.approx(0.001, rel=1e-6)
+    assert payload["cached_input_cost_usd"] == pytest.approx(0.001, rel=1e-6)
+    assert payload["cache_write_cost_usd"] == pytest.approx(0.0015, rel=1e-6)
+    assert payload["output_cost_usd"] == pytest.approx(0.004, rel=1e-6)
+    assert payload["total_cost_usd"] == pytest.approx(0.0075, rel=1e-6)
 
 
 def test_ui_evaluation_lab_reports_deepeval_readiness(client: TestClient, api_settings: Settings):

@@ -24,6 +24,104 @@ const LIMITS = {
 const clean = (value, max = 160) =>
   String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 
+async function warmLandingLazyContent(page) {
+  return page.evaluate(async () => {
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const visible = (el) => {
+      if (!(el instanceof Element)) return false;
+      const rect = el.getBoundingClientRect();
+      const style = window.getComputedStyle(el);
+      return rect.width > 0
+        && rect.height > 0
+        && style.display !== 'none'
+        && style.visibility !== 'hidden'
+        && style.opacity !== '0';
+    };
+    const scrollStep = Math.max(Math.floor(window.innerHeight * 0.8), 320);
+    const clickLabels = [];
+    const clickSelectors = [
+      'button',
+      'a[href]',
+      '[role="button"]',
+      '[data-action]',
+      '[data-testid]',
+      '[class*="more"]',
+      '[class*="load"]',
+      '[class*="show"]',
+    ].join(',');
+    const clickPattern = /(load more|show more|view more|see more|more matches|more events|more streams|expand|show all|view all)/i;
+    let scrollSteps = 0;
+    let clicked = 0;
+    const initialHeight = Math.max(
+      document.body?.scrollHeight || 0,
+      document.documentElement?.scrollHeight || 0,
+    );
+
+    for (let pass = 0; pass < 4; pass += 1) {
+      const clickCandidates = Array.from(document.querySelectorAll(clickSelectors))
+        .filter(visible)
+        .filter((node) => clickPattern.test((node.innerText || node.textContent || node.getAttribute('aria-label') || '').trim()))
+        .slice(0, 8);
+      for (const node of clickCandidates) {
+        try {
+          node.scrollIntoView({ block: 'center', inline: 'nearest' });
+          await sleep(120);
+          node.click();
+          clicked += 1;
+          clickLabels.push((node.innerText || node.textContent || node.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 80));
+          await sleep(220);
+        } catch {
+          // ignore
+        }
+      }
+
+      const sections = Array.from(document.querySelectorAll('main section, main article, [class*="match"], [class*="event"], [class*="card"], [data-testid*="card"], [data-testid*="match"]'))
+        .filter(visible)
+        .slice(0, 18);
+      for (const section of sections) {
+        try {
+          section.scrollIntoView({ block: 'center', inline: 'nearest' });
+          await sleep(90);
+        } catch {
+          // ignore
+        }
+      }
+
+      const maxScrollable = Math.max(
+        document.body?.scrollHeight || 0,
+        document.documentElement?.scrollHeight || 0,
+      );
+      while ((window.scrollY + window.innerHeight) < (maxScrollable - 24)) {
+        window.scrollBy({ top: scrollStep, left: 0, behavior: 'instant' });
+        scrollSteps += 1;
+        await sleep(160);
+        if (scrollSteps >= 18) break;
+      }
+      await sleep(260);
+    }
+
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    await sleep(120);
+
+    return {
+      clicked,
+      click_labels: clickLabels.slice(0, 8),
+      scroll_steps: scrollSteps,
+      initial_height: initialHeight,
+      final_height: Math.max(
+        document.body?.scrollHeight || 0,
+        document.documentElement?.scrollHeight || 0,
+      ),
+    };
+  }).catch(() => ({
+    clicked: 0,
+    click_labels: [],
+    scroll_steps: 0,
+    initial_height: 0,
+    final_height: 0,
+  }));
+}
+
 function textHash(value) {
   const text = clean(value, 800);
   let hash = 0;
@@ -464,12 +562,13 @@ async function collectFrameSummary(frame, framePath, offset) {
 /**
  * @param {{ browserWsEndpoint?: string }} params
  */
-export async function inspect({ browserWsEndpoint } = {}) {
+export async function inspect({ browserWsEndpoint, scanMode = 'default' } = {}) {
   const browser = await connectBrowser(browserWsEndpoint);
   const page    = await getPage(browser);
 
   const url = page.url();
   const title = await page.title().catch(() => '');
+  const lazy_load_warmup = scanMode === 'landing' ? await warmLandingLazyContent(page) : null;
   const rootData = await collectRootData(page);
 
   const framePathMap = buildFramePathMap(page);
@@ -533,6 +632,7 @@ export async function inspect({ browserWsEndpoint } = {}) {
     videos: rootData.videos,
     elements: rootData.elements,
     frame_tree: frameRecords,
+    lazy_load_warmup,
     page_digest: {
       text_sample: rootData.text_sample,
       text_hash: textHash(rootData.text_sample),
@@ -549,6 +649,8 @@ export async function inspect({ browserWsEndpoint } = {}) {
       elements: rootData.elements.length,
       frames_total: frameRecords.length,
       frames_with_video: frameRecords.filter((frame) => frame.video_count > 0).length,
+      lazy_load_clicks: Number(lazy_load_warmup?.clicked || 0),
+      lazy_load_scroll_steps: Number(lazy_load_warmup?.scroll_steps || 0),
     },
   };
 }

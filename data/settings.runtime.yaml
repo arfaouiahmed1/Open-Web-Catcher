@@ -16,7 +16,7 @@ agent_model_config:
     model: z-ai/glm4.7
     provider: nvidia
 agent_timeout_seconds: 300
-browser_engine: puppeteer
+browser_engine: playwright
 browser_runtime:
   playwright:
     adblock_allowlist_hosts: []
@@ -47,6 +47,7 @@ browser_runtime:
     - 2000
     - 4000
     media_retry_count: 3
+    popup_blocking_enabled: true
     proxy_cache_ttl_ms: 600000
     proxy_custom_list: []
     proxy_enabled: false
@@ -98,6 +99,7 @@ browser_runtime:
     - 2000
     - 4000
     media_retry_count: 3
+    popup_blocking_enabled: true
     proxy_cache_ttl_ms: 600000
     proxy_custom_list: []
     proxy_enabled: true

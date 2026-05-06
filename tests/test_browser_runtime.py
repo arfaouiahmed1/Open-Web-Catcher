@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from src.utils.browser_runtime import DEFAULT_BROWSER_RUNTIME, normalize_browser_runtime
 
 
@@ -125,3 +127,56 @@ def test_normalize_browser_runtime_rejects_invalid_streaming_policy_choices():
     defaults = DEFAULT_BROWSER_RUNTIME["puppeteer"]
     assert runtime["streaming_safe_mode"] == defaults["streaming_safe_mode"]
     assert runtime["media_proxy_strategy"] == defaults["media_proxy_strategy"]
+
+
+def test_browser_runtime_defaults_stay_aligned_for_fingerprint_and_proxy_controls():
+    puppeteer = DEFAULT_BROWSER_RUNTIME["puppeteer"]
+    playwright = DEFAULT_BROWSER_RUNTIME["playwright"]
+    shared_keys = (
+        "adblock_enabled",
+        "adblock_auto_recovery_enabled",
+        "adblock_auto_recovery_on_abort",
+        "adblock_auto_recovery_retry",
+        "fingerprint_rotation_mode",
+        "fingerprint_fallback_strategy",
+        "fingerprint_rotation_interval_ms",
+        "fingerprint_rotation_max_uses",
+        "fingerprint_recent_pool_size",
+        "proxy_enabled",
+        "proxy_source_mode",
+        "proxy_rotation_mode",
+        "proxy_selection_strategy",
+        "proxy_fallback_strategy",
+        "proxy_fetch_timeout_ms",
+        "proxy_validation_timeout_ms",
+        "proxy_cache_ttl_ms",
+        "proxy_max_candidates",
+        "proxy_test_url",
+        "streaming_safe_mode",
+        "media_proxy_strategy",
+        "asset_diagnostics_enabled",
+        "popup_blocking_enabled",
+        "iframe_sandbox_patch_enabled",
+        "iframe_auto_recovery_enabled",
+        "iframe_recovery_timeout_ms",
+        "media_capture_timeout_ms",
+        "media_retry_count",
+        "media_retry_backoff_ms",
+        "media_cors_patch_enabled",
+        "media_playback_verification_enabled",
+    )
+    for key in shared_keys:
+        assert puppeteer[key] == playwright[key], key
+
+
+def test_browser_stacks_both_use_fingerprint_injector():
+    workspace = Path(__file__).resolve().parents[1]
+    puppeteer_source = (workspace / "tools" / "puppeteer" / "shared" / "browser.js").read_text(encoding="utf-8")
+    playwright_source = (workspace / "tools" / "playwright" / "shared" / "browser.js").read_text(encoding="utf-8")
+
+    assert "FingerprintInjector" in puppeteer_source
+    assert "attachFingerprintToPuppeteer" in puppeteer_source
+    assert "targetcreated" in puppeteer_source
+
+    assert "FingerprintInjector" in playwright_source
+    assert "attachFingerprintToPlaywright" in playwright_source

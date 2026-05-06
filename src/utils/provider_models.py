@@ -50,15 +50,15 @@ PROVIDER_METADATA: dict[str, dict[str, str]] = {
 
 FALLBACK_MODELS: dict[str, list[dict[str, Any]]] = {
     "google": [
-        {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "description": "Most capable Gemini model."},
-        {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "description": "Balanced quality and speed."},
-        {"id": "gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash-Lite", "description": "Lower-cost Gemini option."},
-        {"id": "gemini-2.0-flash", "label": "Gemini 2.0 Flash", "description": "Fast Gemini model."},
+        {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "description": "Most capable Gemini model.", "context_window": 1_048_576},
+        {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "description": "Balanced quality and speed.", "context_window": 1_048_576},
+        {"id": "gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash-Lite", "description": "Lower-cost Gemini option.", "context_window": 1_048_576},
+        {"id": "gemini-2.0-flash", "label": "Gemini 2.0 Flash", "description": "Fast Gemini model.", "context_window": 1_048_576},
     ],
     "google-vertex": [
-        {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "description": "Most capable Gemini via Vertex AI."},
-        {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "description": "Balanced Gemini via Vertex AI."},
-        {"id": "gemini-2.0-flash", "label": "Gemini 2.0 Flash", "description": "Fast Gemini via Vertex AI."},
+        {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "description": "Most capable Gemini via Vertex AI.", "context_window": 1_048_576},
+        {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "description": "Balanced Gemini via Vertex AI.", "context_window": 1_048_576},
+        {"id": "gemini-2.0-flash", "label": "Gemini 2.0 Flash", "description": "Fast Gemini via Vertex AI.", "context_window": 1_048_576},
     ],
     "openai": [
         {"id": "gpt-5", "label": "gpt-5", "description": "Reasoning-capable flagship model."},
@@ -455,24 +455,34 @@ def get_provider_model_catalog(settings: Settings, provider: str, max_models: in
 
     metadata = dict(PROVIDER_METADATA[normalized_provider])
     api_key = _provider_api_key(settings, normalized_provider)
-    source = "fallback"
-    error = ""
+    if normalized_provider != "openrouter" and not api_key:
+        return {
+            **metadata,
+            "provider": normalized_provider,
+            "api_key_set": False,
+            "available": False,
+            "source": "unavailable",
+            "error": f"{metadata['key_env']} is not set. Live catalog unavailable.",
+            "models": [],
+            "hyperparameters": PROVIDER_TUNING_FIELDS.get(normalized_provider, []),
+        }
 
     try:
-        if normalized_provider != "openrouter" and not api_key:
-            raise ProviderModelCatalogError(
-                f"{metadata['key_env']} is not set. Showing fallback models until the provider API is available."
-            )
         models = fetch_provider_models(settings, normalized_provider, max_models=max_models)
         source = "provider_api"
+        error = ""
+        available = True
     except ProviderModelCatalogError as exc:
-        models = _fallback_models(settings, normalized_provider)
+        models = []
+        source = "unavailable"
         error = str(exc)
+        available = False
 
     return {
         **metadata,
         "provider": normalized_provider,
         "api_key_set": bool(api_key),
+        "available": available,
         "source": source,
         "error": error,
         "models": models,
@@ -767,59 +777,6 @@ def _provider_api_key(settings: Settings, provider: str) -> str:
         return str(settings.nvidia_api_key or "").strip()
     return ""
 
-
-def _fallback_models(settings: Settings, provider: str) -> list[dict[str, Any]]:
-    rows = list(FALLBACK_MODELS.get(provider, []))
-    pricing_models = _pricing_models_for_provider(settings, provider)
-    current_models = []
-    current_config = normalize_agent_model_config(settings, getattr(settings, "agent_model_config", {}))
-    for agent_id, config in current_config.items():
-        if str(config.get("provider") or "").strip().lower() != provider:
-            continue
-        model_id = str(config.get("model") or "").strip()
-        if not model_id:
-            continue
-        current_models.append(
-            {
-                "id": model_id,
-                "label": model_id,
-                "description": f"Configured for {agent_id} agent.",
-            }
-        )
-    return _dedupe_models(current_models + pricing_models + rows)
-
-
-def _pricing_models_for_provider(settings: Settings, provider: str) -> list[dict[str, Any]]:
-    raw = getattr(settings, "model_pricing_json", "{}") or "{}"
-    if not isinstance(raw, str):
-        return []
-    try:
-        import json
-
-        payload = json.loads(raw)
-    except ValueError:
-        return []
-    if not isinstance(payload, dict):
-        return []
-
-    rows = []
-    for model_name, config in payload.items():
-        if not isinstance(model_name, str) or "::" in model_name:
-            continue
-        if not isinstance(config, dict):
-            continue
-        if str(config.get("provider") or "").strip().lower() != provider:
-            continue
-        rows.append(
-            {
-                "id": model_name.strip(),
-                "label": model_name.strip(),
-                "description": "From saved pricing catalog.",
-            }
-        )
-    return rows
-
-
 # Hardcoded context window fallbacks for providers whose APIs don't expose it.
 # Values in tokens. Updated periodically; live catalog takes precedence when available.
 _CONTEXT_WINDOW_FALLBACKS: dict[str, int] = {
@@ -834,6 +791,20 @@ _CONTEXT_WINDOW_FALLBACKS: dict[str, int] = {
     "gpt-3.5-turbo": 16_385,
     "gpt-5": 1_047_576,
     "gpt-5-mini": 1_047_576,
+    "gemini-2.5-pro": 1_048_576,
+    "gemini-2.5-flash": 1_048_576,
+    "gemini-2.5-flash-lite": 1_048_576,
+    "gemini-2.0-flash": 1_048_576,
+    "google/gemini-2.5-pro": 1_048_576,
+    "google/gemini-2.5-flash": 1_048_576,
+    "google/gemini-2.5-flash-lite": 1_048_576,
+    "google/gemini-2.0-flash": 1_048_576,
+    "openai/gpt-5": 1_047_576,
+    "openai/gpt-5-mini": 1_047_576,
+    "openai/gpt-4.1": 1_047_576,
+    "openai/gpt-4o-mini": 128_000,
+    "anthropic/claude-sonnet-4": 200_000,
+    "anthropic/claude-opus-4": 200_000,
     "o1": 200_000,
     "o1-mini": 128_000,
     "o1-preview": 128_000,
@@ -872,13 +843,21 @@ _CONTEXT_WINDOW_PREFIXES: list[tuple[str, int]] = [
     ("claude-sonnet-4", 200_000),
     ("claude-haiku-4", 200_000),
     ("claude-3", 200_000),
+    ("anthropic/claude-", 200_000),
     ("gpt-5", 1_047_576),
+    ("openai/gpt-5", 1_047_576),
     ("gpt-4.1", 1_047_576),
+    ("openai/gpt-4.1", 1_047_576),
     ("gpt-4o", 128_000),
+    ("openai/gpt-4o", 128_000),
     ("gpt-4-turbo", 128_000),
     ("o4", 200_000),
     ("o3", 200_000),
     ("o1", 200_000),
+    ("gemini-2.5", 1_048_576),
+    ("gemini-2.0", 1_048_576),
+    ("google/gemini-2.5", 1_048_576),
+    ("google/gemini-2.0", 1_048_576),
     ("meta/llama-4", 10_000_000),
     ("meta/llama-3", 128_000),
     ("mistralai/", 128_000),

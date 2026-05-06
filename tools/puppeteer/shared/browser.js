@@ -48,6 +48,7 @@ const CHROME_VERSION_TIMEOUT_MS = Number.parseInt(
   10,
 );
 const FORCED_VIEWPORT = { width: 1920, height: 1080 };
+const FORCED_VIEWPORT_OPTIONS = { ...FORCED_VIEWPORT, deviceScaleFactor: 2 };
 const FORCED_WINDOWS_PLATFORM = 'Win32';
 const FORCED_WINDOWS_PLATFORM_VERSION = '10.0.0';
 const FORCED_LANGUAGE = 'en-US,en;q=0.9';
@@ -62,7 +63,7 @@ const DEFAULT_LAUNCH_ARGS = [
   // so layout, media queries, and video players all render at 1920×1080.
   `--window-size=${FORCED_VIEWPORT.width},${FORCED_VIEWPORT.height}`,
   '--window-position=0,0',
-  '--force-device-scale-factor=1',
+  '--force-device-scale-factor=2',
 
   // ── Anti-bot ────────────────────────────────────────────────────────────────
 
@@ -93,11 +94,14 @@ const pageCdps = new WeakMap();
 const pageNetworkState = new WeakMap();
 const pagePolicyState = new WeakMap();
 const pageNetworkListeners = new WeakSet();
+const pagePreparationPromises = new WeakMap();
+const pagePopupGuardsInstalled = new WeakSet();
 const recentlyUsedFingerprintSignatures = [];
 let chromeVersionPromise = null;
 const fingerprintSuiteCache = new Map();
 const launchedSessionMetadata = new Map();
 const browserProxyMetadata = new WeakMap();
+const browserPageLifecycleInstalled = new WeakSet();
 
 function runtimeSetting(key) {
   return getBrowserRuntimeSettings('puppeteer')?.[key];
@@ -260,13 +264,6 @@ function getAdblockAutoRecoveryEnabled() {
   );
 }
 
-function getAdblockAutoRecoveryOnAbort() {
-  return parseBoolean(
-    runtimeSetting('adblock_auto_recovery_on_abort') ?? process.env.OWC_ADBLOCK_AUTO_RECOVERY_ON_ABORT,
-    true,
-  );
-}
-
 function getAdblockAutoRecoveryRetryEnabled() {
   return parseBoolean(
     runtimeSetting('adblock_auto_recovery_retry') ?? process.env.OWC_ADBLOCK_AUTO_RECOVERY_RETRY,
@@ -306,6 +303,13 @@ function getIframeRecoveryTimeoutMs() {
   return Number.parseInt(
     String(runtimeSetting('iframe_recovery_timeout_ms') ?? process.env.OWC_IFRAME_RECOVERY_TIMEOUT_MS ?? '20000'),
     10,
+  );
+}
+
+function getPopupBlockingEnabled() {
+  return parseBoolean(
+    runtimeSetting('popup_blocking_enabled') ?? process.env.OWC_POPUP_BLOCKING_ENABLED,
+    true,
   );
 }
 
@@ -670,7 +674,7 @@ function attachNetworkDiagnostics(page) {
 
     if (getAdblockAutoRecoveryEnabled() && !state.autoRecovery.attempted) {
       const recoverableFailure = failure.iframe_or_player_related
-        && (failure.blocked_by_client || (getAdblockAutoRecoveryOnAbort() && failure.aborted));
+        && failure.blocked_by_client;
 
       if (recoverableFailure) {
         state.autoRecovery.attempted = true;
@@ -1534,7 +1538,7 @@ async function applyRuntimeFingerprintProfile(page, runtimeProfile) {
 }
 
 async function applyFingerprintProfileToPage(page, profile) {
-  await page.setViewport(FORCED_VIEWPORT);
+  await page.setViewport(FORCED_VIEWPORT_OPTIONS);
 
   await page.setUserAgent({
     userAgent: profile.userAgent,
@@ -1558,7 +1562,6 @@ async function applyFingerprintProfileToPage(page, profile) {
   await page.setCacheEnabled(true);
   await page.setExtraHTTPHeaders(profile.headers);
   await ensureStreamCorsInjection(page, profile);
-  await ensureIframeSandboxPatch(page);
   await applyRuntimeFingerprintProfile(page, {
     userAgent: profile.userAgent,
     userAgentMetadata: profile.userAgentMetadata,
@@ -1680,6 +1683,157 @@ async function enforceWindowBounds(browser, page) {
   }
 }
 
+async function installPopupGuards(page) {
+  if (!getPopupBlockingEnabled() || !page || pagePopupGuardsInstalled.has(page)) {
+    return;
+  }
+
+  pagePopupGuardsInstalled.add(page);
+  page.on('dialog', (dialog) => {
+    dialog.dismiss().catch(() => {});
+  });
+
+  await page.evaluateOnNewDocument(() => {
+    const blockerKey = Symbol.for('__owc_popup_blocker__');
+    if (globalThis[blockerKey]) {
+      return;
+    }
+    Object.defineProperty(globalThis, blockerKey, { value: true, writable: false });
+
+    const noopOpen = () => null;
+    try {
+      Object.defineProperty(window, 'open', {
+        configurable: true,
+        writable: false,
+        value: noopOpen,
+      });
+    } catch {
+      try {
+        window.open = noopOpen;
+      } catch {
+        // ignore
+      }
+    }
+  });
+
+  await page.evaluate(() => {
+    const noopOpen = () => null;
+    try {
+      window.open = noopOpen;
+    } catch {
+      // ignore
+    }
+  }).catch(() => {});
+}
+
+async function preparePageForAutomation(browser, page, {
+  targetUrl = '',
+  forceRotateFingerprint = false,
+  browserProfile = '',
+  bestEffort = false,
+} = {}) {
+  const existing = pagePreparationPromises.get(page);
+  if (existing) {
+    await existing;
+  }
+
+  const preparation = (async () => {
+    const browserMetadata = browserProxyMetadata.get(browser) || {};
+    const effectiveProfile = browserProfile || browserMetadata.browserProfile || '';
+    const currentUrl = page.url?.() || '';
+    const resolvedTargetUrl = targetUrl || currentUrl;
+    const effectivePolicy = buildEffectivePolicy({
+      browserProfile: effectiveProfile,
+      targetUrl: resolvedTargetUrl,
+      currentUrl,
+      sharedConnection: browserMetadata.sharedConnection !== false,
+    });
+
+    await applyProxyAuthentication(page);
+    await installPopupGuards(page);
+    await applyFingerprint(page, {
+      targetUrl: resolvedTargetUrl,
+      forceRotate: forceRotateFingerprint,
+    });
+    await enforceWindowBounds(browser, page);
+    await page.setViewport(FORCED_VIEWPORT_OPTIONS);
+    attachNetworkDiagnostics(page);
+    setPageEffectivePolicy(page, effectivePolicy);
+    await page.setCacheEnabled(true);
+
+    if (effectivePolicy.cosmetic_filtering_enabled) {
+      try {
+        await enableBlocking(page, { targetUrl: resolvedTargetUrl });
+      } catch (error) {
+        const debugAdblock = String(process.env.OWC_DEBUG_ADBLOCK || '').trim().toLowerCase();
+        if (debugAdblock === '1' || debugAdblock === 'true' || debugAdblock === 'yes') {
+          console.warn('[owc] adblocker attach skipped:', error?.message || error);
+        }
+      }
+    } else {
+      await disableBlocking(page).catch(() => {});
+    }
+  })();
+
+  pagePreparationPromises.set(page, preparation);
+  try {
+    if (!bestEffort) {
+      await preparation;
+      return;
+    }
+
+    await preparation.catch((error) => {
+      const debugFingerprint = String(process.env.OWC_DEBUG_FINGERPRINT || '').trim().toLowerCase();
+      const debugAdblock = String(process.env.OWC_DEBUG_ADBLOCK || '').trim().toLowerCase();
+      if (debugFingerprint === '1' || debugFingerprint === 'true' || debugFingerprint === 'yes'
+        || debugAdblock === '1' || debugAdblock === 'true' || debugAdblock === 'yes') {
+        console.warn('[owc] background page preparation skipped:', error?.message || error);
+      }
+    });
+  } finally {
+    if (pagePreparationPromises.get(page) === preparation) {
+      pagePreparationPromises.delete(page);
+    }
+  }
+}
+
+function installBrowserPageLifecycle(browser) {
+  if (!browser || browserPageLifecycleInstalled.has(browser)) {
+    return;
+  }
+
+  browserPageLifecycleInstalled.add(browser);
+  browser.on('targetcreated', async (target) => {
+    if (target.type?.() !== 'page') {
+      return;
+    }
+
+    try {
+      if (getPopupBlockingEnabled()) {
+        const opener = typeof target.opener === 'function' ? target.opener() : null;
+        if (opener) {
+          const popup = await target.page();
+          await popup?.close().catch(() => {});
+          return;
+        }
+      }
+      const page = await target.page();
+      if (!page) {
+        return;
+      }
+      await preparePageForAutomation(browser, page, { bestEffort: true });
+    } catch {
+      // Best effort only. getPage() still performs strict preparation later.
+    }
+  });
+
+  browser.pages()
+    .then((pages) => Promise.allSettled(
+      pages.map((page) => preparePageForAutomation(browser, page, { bestEffort: true })),
+    ))
+    .catch(() => {});
+}
+
 async function launchBrowserAttempt({ launchTimeout, launchArgs, userDataDir, proxy = null } = {}) {
   const nextLaunchArgs = [...launchArgs];
   if (proxy?.server) {
@@ -1689,7 +1843,7 @@ async function launchBrowserAttempt({ launchTimeout, launchArgs, userDataDir, pr
   const browser = await puppeteer.launch({
     executablePath: EXECUTABLE_PATH,
     headless: true,
-    defaultViewport: FORCED_VIEWPORT,
+    defaultViewport: FORCED_VIEWPORT_OPTIONS,
     timeout: launchTimeout,
     waitForInitialPage: true,
     userDataDir,
@@ -1697,6 +1851,7 @@ async function launchBrowserAttempt({ launchTimeout, launchArgs, userDataDir, pr
   });
 
   browserProxyMetadata.set(browser, { proxy });
+  installBrowserPageLifecycle(browser);
   return browser;
 }
 
@@ -1724,7 +1879,7 @@ export function isSharedBrowserFallbackAllowed() {
 export async function connectBrowser(wsEndpoint = WS_ENDPOINT) {
   const browser = await puppeteer.connect({
     browserWSEndpoint: wsEndpoint,
-    defaultViewport: FORCED_VIEWPORT,
+    defaultViewport: FORCED_VIEWPORT_OPTIONS,
   });
   const metadata = launchedSessionMetadata.get(wsEndpoint);
   if (metadata) {
@@ -1732,6 +1887,7 @@ export async function connectBrowser(wsEndpoint = WS_ENDPOINT) {
   } else {
     browserProxyMetadata.set(browser, { proxy: null, browserProfile: '', launchPolicy: null, sharedConnection: true });
   }
+  installBrowserPageLifecycle(browser);
   return browser;
 }
 
@@ -1757,7 +1913,8 @@ export async function launchEphemeralBrowser(sessionId, { browserProfile = '' } 
     }
   }
 
-  const proxyPlan = await getProxyCandidatePlan('puppeteer', getProxyRuntimeConfig());
+  const proxySelectionKey = `puppeteer:${String(browserProfile || 'default').trim().toLowerCase() || 'default'}`;
+  const proxyPlan = await getProxyCandidatePlan(proxySelectionKey, getProxyRuntimeConfig());
   const attemptedErrors = [];
   let browser = null;
   let selectedProxy = null;
@@ -1775,12 +1932,12 @@ export async function launchEphemeralBrowser(sessionId, { browserProfile = '' } 
           testUrl: proxyPlan.testUrl,
           timeoutMs: proxyPlan.validationTimeoutMs,
         });
-        markProxySuccess('puppeteer', candidate);
+        markProxySuccess(proxySelectionKey, candidate);
         selectedProxy = candidate;
         break;
       } catch (error) {
         attemptedErrors.push(`${describeProxyCandidate(candidate)} -> ${error?.message || error}`);
-        markProxyFailure('puppeteer', candidate);
+        markProxyFailure(proxySelectionKey, candidate);
         if (browser) {
           await browser.close().catch(() => {});
           browser = null;
@@ -1858,7 +2015,12 @@ export async function getPage(browser, {
     ?? pages.find((p) => p.url() === 'about:blank')
     ?? await browser.newPage();
 
-  await applyProxyAuthentication(page);
+  await preparePageForAutomation(browser, page, {
+    targetUrl,
+    forceRotateFingerprint,
+    browserProfile,
+  });
+  return page;
 
   // applyFingerprint internally enforces FORCED_VIEWPORT after injector runs.
   // We set it once more here as the single authoritative enforcement point so
@@ -1866,7 +2028,7 @@ export async function getPage(browser, {
   // whether the fingerprint step was skipped (already applied) or threw.
   await applyFingerprint(page, { targetUrl, forceRotate: forceRotateFingerprint });
   await enforceWindowBounds(browser, page);
-  await page.setViewport(FORCED_VIEWPORT);
+  await page.setViewport(FORCED_VIEWPORT_OPTIONS);
   attachNetworkDiagnostics(page);
   const browserMetadata = browserProxyMetadata.get(browser) || {};
   const effectivePolicy = buildEffectivePolicy({
@@ -1876,10 +2038,9 @@ export async function getPage(browser, {
     sharedConnection: browserMetadata.sharedConnection !== false,
   });
   setPageEffectivePolicy(page, effectivePolicy);
-  await ensureIframeSandboxPatch(page);
 
   await page.setCacheEnabled(true);
-  if (effectivePolicy.ghostery_enabled) {
+  if (effectivePolicy.cosmetic_filtering_enabled) {
     try {
       await enableBlocking(page, { targetUrl });
     } catch (error) {
