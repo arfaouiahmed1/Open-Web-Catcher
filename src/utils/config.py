@@ -68,7 +68,7 @@ def build_browser_runtime_sync_status(
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    # LLM provider selection: google | google-vertex | openai | anthropic | openrouter | nvidia
+    # LLM provider selection for the operator console: Google Gemini only.
     llm_provider: str = "google"
 
     orchestrator_model: str = "gemini-2.5-flash-lite"
@@ -183,9 +183,9 @@ class Settings(BaseSettings):
     thinking_enabled: bool = False
     thinking_budget_tokens: int = 8000
 
-    # DeepEval evaluation framework settings
-    deepeval_provider: str = "openai"
-    deepeval_model: str = "gpt-4o"
+    # Evaluation defaults stay aligned with the primary Gemini provider surface.
+    deepeval_provider: str = "google"
+    deepeval_model: str = "gemini-2.5-flash"
     deepeval_temperature: float = 0.0
 
     @classmethod

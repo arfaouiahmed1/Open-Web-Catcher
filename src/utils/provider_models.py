@@ -545,6 +545,10 @@ def _fetch_google_models(settings: Settings, max_models: int) -> list[dict[str, 
                     "description": str(item.get("description") or "").strip(),
                     "context_window": item.get("inputTokenLimit"),
                     "output_limit": item.get("outputTokenLimit"),
+                    "default_parameters": _extract_google_model_defaults(item),
+                    "supported_generation_methods": actions,
+                    "capabilities": _extract_google_model_capabilities(model_id, actions),
+                    "release_channel": _google_model_release_channel(model_id),
                 }
             )
             if len(rows) >= max_models:
@@ -553,6 +557,42 @@ def _fetch_google_models(settings: Settings, max_models: int) -> list[dict[str, 
         if not page_token:
             break
     return _dedupe_models(rows)
+
+
+def _extract_google_model_defaults(item: dict[str, Any]) -> dict[str, Any]:
+    defaults: dict[str, Any] = {}
+    for source_key, target_key in (
+        ("temperature", "temperature"),
+        ("topP", "top_p"),
+        ("topK", "top_k"),
+        ("outputTokenLimit", "max_output_tokens"),
+    ):
+        value = item.get(source_key)
+        if value is None:
+            continue
+        defaults[target_key] = value
+    return defaults
+
+
+def _extract_google_model_capabilities(model_id: str, actions: list[Any]) -> dict[str, bool]:
+    normalized = str(model_id or "").strip().lower()
+    action_set = {str(action or "").strip() for action in actions if str(action or "").strip()}
+    return {
+        "supports_generate_content": "generateContent" in action_set,
+        "supports_token_count": "countTokens" in action_set,
+        "supports_explicit_cache": "createCachedContent" in action_set,
+        "supports_batch": "batchGenerateContent" in action_set,
+        "supports_thinking_controls": normalized.startswith("gemini-2.5") or normalized.startswith("gemini-3"),
+    }
+
+
+def _google_model_release_channel(model_id: str) -> str:
+    normalized = str(model_id or "").strip().lower()
+    if "preview" in normalized or "-exp-" in normalized or normalized.endswith("-exp"):
+        return "preview"
+    if "experimental" in normalized:
+        return "experimental"
+    return "stable"
 
 
 def _fetch_google_vertex_models(settings: Settings, max_models: int) -> list[dict[str, Any]]:

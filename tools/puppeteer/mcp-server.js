@@ -76,6 +76,7 @@ app.get('/health', async (_req, res) => {
   const healthy = browser.healthy;
   res.status(healthy ? 200 : 503).json({
     status: healthy ? 'ok' : 'degraded',
+    engine: 'puppeteer',
     profiles: Object.keys(PROFILES),
     browser_mode: BROWSER_MODE,
     shared_browser_fallback: BROWSER_WS,

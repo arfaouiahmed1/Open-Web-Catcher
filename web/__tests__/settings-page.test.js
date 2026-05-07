@@ -37,8 +37,8 @@ function makeState(overrides = {}) {
       puppeteer: { classification: [], landing: [], hosting: [], embedded: [] },
       playwright: { classification: [], landing: [], hosting: [], embedded: [] },
     },
-    deepevalProvider: "openai",
-    deepevalModel: "gpt-4o",
+    deepevalProvider: "google",
+    deepevalModel: "gemini-2.5-flash",
     deepevalTemperature: "0",
     ...overrides,
   };
@@ -75,6 +75,32 @@ describe("settings-page save state helpers", () => {
     });
   });
 
+  it("normalizes browser runtime to the single validated sticky proxy strategy", () => {
+    const draft = buildServerConfigDraft(makeState({
+      browserRuntime: {
+        puppeteer: {
+          launch_timeout_ms: 45000,
+          proxy_rotation_mode: "session",
+          proxy_selection_strategy: "random",
+          proxy_fallback_strategy: "fail",
+        },
+        playwright: {
+          launch_timeout_ms: 45000,
+          proxy_rotation_mode: "never",
+          proxy_selection_strategy: "random",
+          proxy_fallback_strategy: "fail",
+        },
+      },
+    }));
+
+    expect(draft.browser_runtime.puppeteer.proxy_rotation_mode).toBe("sticky");
+    expect(draft.browser_runtime.puppeteer.proxy_selection_strategy).toBe("ordered");
+    expect(draft.browser_runtime.puppeteer.proxy_fallback_strategy).toBe("direct");
+    expect(draft.browser_runtime.playwright.proxy_rotation_mode).toBe("sticky");
+    expect(draft.browser_runtime.playwright.proxy_selection_strategy).toBe("ordered");
+    expect(draft.browser_runtime.playwright.proxy_fallback_strategy).toBe("direct");
+  });
+
   it("marks only MCP tools dirty when tool availability changes", () => {
     const baseline = snapshotServerConfig(buildServerConfigDraft(makeState()));
     const draft = buildServerConfigDraft(makeState({
@@ -95,13 +121,13 @@ describe("settings-page save state helpers", () => {
   it("marks only the models tab dirty when provider routing changes", () => {
     const baseline = snapshotServerConfig(buildServerConfigDraft(makeState()));
     const draft = buildServerConfigDraft(makeState({
-      provider: "openai",
+      provider: "google",
       agentModelConfig: {
-        classification: { provider: "openai", model: "gpt-4o-mini" },
+        classification: { provider: "google", model: "gemini-2.5-pro" },
         landing: { provider: "google", model: "gemini-2.5-flash" },
         hosting: { provider: "google", model: "gemini-2.5-flash" },
         embedded: { provider: "google", model: "gemini-2.5-flash" },
-        orchestrator: { provider: "openai", model: "gpt-4o" },
+        orchestrator: { provider: "google", model: "gemini-2.5-pro" },
       },
     }));
 
@@ -116,8 +142,8 @@ describe("settings-page save state helpers", () => {
   it("marks only the evaluation tab dirty when the judge model changes", () => {
     const baseline = snapshotServerConfig(buildServerConfigDraft(makeState()));
     const draft = buildServerConfigDraft(makeState({
-      deepevalProvider: "anthropic",
-      deepevalModel: "claude-3-7-sonnet",
+      deepevalProvider: "google",
+      deepevalModel: "gemini-2.5-pro",
       deepevalTemperature: "0.2",
     }));
 

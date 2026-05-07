@@ -24,7 +24,7 @@ def test_normalize_browser_runtime_accepts_proxy_and_fingerprint_controls():
                     "http://1.1.1.1:8080",
                     "socks5://2.2.2.2:1080",
                 ],
-                "proxy_rotation_mode": "sticky",
+                "proxy_rotation_mode": "session",
                 "proxy_selection_strategy": "random",
                 "proxy_fallback_strategy": "fail",
                 "proxy_fetch_timeout_ms": "9000",
@@ -43,8 +43,8 @@ def test_normalize_browser_runtime_accepts_proxy_and_fingerprint_controls():
     assert runtime["proxy_source_order"] == ["speedx-http", "openproxylist-socks5"]
     assert runtime["proxy_custom_list"] == ["http://1.1.1.1:8080", "socks5://2.2.2.2:1080"]
     assert runtime["proxy_rotation_mode"] == "sticky"
-    assert runtime["proxy_selection_strategy"] == "random"
-    assert runtime["proxy_fallback_strategy"] == "fail"
+    assert runtime["proxy_selection_strategy"] == "ordered"
+    assert runtime["proxy_fallback_strategy"] == "direct"
     assert runtime["proxy_fetch_timeout_ms"] == 9000
     assert runtime["proxy_validation_timeout_ms"] == 13000
     assert runtime["proxy_cache_ttl_ms"] == 700000
@@ -73,9 +73,9 @@ def test_normalize_browser_runtime_falls_back_on_invalid_proxy_choices():
     defaults = DEFAULT_BROWSER_RUNTIME["playwright"]
     assert runtime["fingerprint_fallback_strategy"] == defaults["fingerprint_fallback_strategy"]
     assert runtime["proxy_source_mode"] == defaults["proxy_source_mode"]
-    assert runtime["proxy_rotation_mode"] == defaults["proxy_rotation_mode"]
-    assert runtime["proxy_selection_strategy"] == defaults["proxy_selection_strategy"]
-    assert runtime["proxy_fallback_strategy"] == defaults["proxy_fallback_strategy"]
+    assert runtime["proxy_rotation_mode"] == "sticky"
+    assert runtime["proxy_selection_strategy"] == "ordered"
+    assert runtime["proxy_fallback_strategy"] == "direct"
     assert runtime["proxy_fetch_timeout_ms"] == 1000
     assert runtime["proxy_validation_timeout_ms"] == 1000
     assert runtime["proxy_cache_ttl_ms"] == 1000
@@ -165,6 +165,29 @@ def test_browser_runtime_defaults_stay_aligned_for_fingerprint_and_proxy_control
     )
     for key in shared_keys:
         assert puppeteer[key] == playwright[key], key
+
+
+def test_browser_runtime_enforces_single_validated_sticky_proxy_strategy():
+    payload = normalize_browser_runtime(
+        {
+            "puppeteer": {
+                "proxy_rotation_mode": "session",
+                "proxy_selection_strategy": "random",
+                "proxy_fallback_strategy": "fail",
+            },
+            "playwright": {
+                "proxy_rotation_mode": "never",
+                "proxy_selection_strategy": "random",
+                "proxy_fallback_strategy": "fail",
+            },
+        }
+    )
+
+    for browser in ("puppeteer", "playwright"):
+        runtime = payload[browser]
+        assert runtime["proxy_rotation_mode"] == "sticky"
+        assert runtime["proxy_selection_strategy"] == "ordered"
+        assert runtime["proxy_fallback_strategy"] == "direct"
 
 
 def test_browser_stacks_both_use_fingerprint_injector():

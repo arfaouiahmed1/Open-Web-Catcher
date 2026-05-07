@@ -781,14 +781,40 @@ function buildRenderGapSignals(failures = []) {
   };
 }
 
+function filterFailuresForCurrentPage(page, failures = []) {
+  const currentUrl = String(page.url?.() || '');
+  let currentOrigin = '';
+  try {
+    currentOrigin = new URL(currentUrl).origin;
+  } catch {
+    currentOrigin = '';
+  }
+  if (!currentUrl || currentUrl === 'about:blank') return failures;
+
+  return failures.filter((failure) => {
+    const frameUrl = String(failure?.frame_url || '');
+    const requestUrl = String(failure?.url || '');
+    if (!frameUrl) return true;
+    if (frameUrl === currentUrl || frameUrl.startsWith(`${currentUrl}#`)) return true;
+    if (requestUrl === currentUrl) return true;
+    if (!currentOrigin) return false;
+    try {
+      return new URL(frameUrl).origin === currentOrigin;
+    } catch {
+      return false;
+    }
+  });
+}
+
 export function getPageNetworkDiagnostics(page, { limit = 10 } = {}) {
   const state = getNetworkState(page);
-  const cappedFailures = state.failures.slice(-Math.max(1, Number.parseInt(String(limit || 10), 10) || 10));
+  const scopedFailures = filterFailuresForCurrentPage(page, state.failures);
+  const cappedFailures = scopedFailures.slice(-Math.max(1, Number.parseInt(String(limit || 10), 10) || 10));
   const summary = summarizeNetworkFailures(cappedFailures);
   const { disable_promise, ...publicRecovery } = state.autoRecovery;
   const { pending_promise, ...publicIframeRecovery } = state.iframeRecovery;
-  const critical_resource_failures = buildCriticalResourceFailures(state.failures);
-  const render_gap_signals = buildRenderGapSignals(state.failures);
+  const critical_resource_failures = buildCriticalResourceFailures(scopedFailures);
+  const render_gap_signals = buildRenderGapSignals(scopedFailures);
   const manifest_failure = critical_resource_failures.find((failure) => failure.kind === 'manifest_media') || null;
 
   return {
@@ -1965,6 +1991,7 @@ export async function launchEphemeralBrowser(sessionId, { browserProfile = '' } 
 
   launchedSessionMetadata.set(browser.wsEndpoint(), {
     proxy: selectedProxy,
+    proxy_strategy: proxyPlan.strategy,
     browserProfile,
     launchPolicy,
   });
@@ -1973,6 +2000,8 @@ export async function launchEphemeralBrowser(sessionId, { browserProfile = '' } 
     browser,
     wsEndpoint: browser.wsEndpoint(),
     userDataDir,
+    proxy: selectedProxy,
+    proxy_strategy: proxyPlan.strategy,
     browserProfile,
     launchPolicy,
   };

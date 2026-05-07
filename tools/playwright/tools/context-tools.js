@@ -524,10 +524,24 @@ export async function getMediaState({
       return buildEnvelope(page, { frame_path, ok: false, error: frameState.error });
     }
 
+    const mediaState = await getMediaSummary(frameState.frame);
+    const videos = Array.isArray(mediaState.videos) ? mediaState.videos : [];
+    const playbackStarted = videos.some((video) =>
+      (!video.paused && (Number(video.ready_state || 0) >= 2 || Number(video.current_time || 0) > 0))
+      || Number(video.current_time || 0) > 0);
+    const playbackReady = videos.some((video) => Number(video.ready_state || 0) >= 2);
+
     return buildEnvelope(page, {
       frame_path,
       data: {
-        media_state: await getMediaSummary(frameState.frame),
+        media_state: mediaState,
+        playback_ready: playbackReady,
+        playback_started: playbackStarted,
+        verification_basis: {
+          video_count: videos.length,
+          requires_current_time_or_playing_event: true,
+          ready_state_threshold: 2,
+        },
       },
     });
   });

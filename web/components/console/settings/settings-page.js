@@ -14,11 +14,11 @@ import {
   Layers,
   Loader2,
   Monitor,
+  Search,
   RefreshCw,
   Save,
-  Settings2,
-  ToggleLeft,
-  ToggleRight,
+  SlidersHorizontal,
+  Sparkles,
   Wrench,
 } from "lucide-react";
 
@@ -216,11 +216,11 @@ const MCP_TOOL_META = {
 };
 
 const BROWSER_OPTIONS = [
-  { id: "puppeteer", name: "Puppeteer", note: "Default tool stack - owc-tools on port 3001" },
+  { id: "puppeteer", name: "Puppeteer", note: "Default stack: direct browser websocket sessions, legacy CDP compatibility, page-level diagnostics" },
   {
     id: "playwright",
     name: "Playwright",
-    note: "Secondary tool stack - owc-tools-playwright on port 3002",
+    note: "Media stack: stronger context isolation, iframe recovery, persistent contexts, context-level proxy support",
   },
 ];
 
@@ -307,6 +307,15 @@ const SETTINGS_TABS = [
   { id: "notifications", label: "Notifications" },
   { id: "mcp-tools", label: "MCP Tools" },
 ];
+
+const SETTINGS_TAB_ICONS = {
+  models: Cpu,
+  browser: Globe,
+  display: Monitor,
+  "api-keys": Key,
+  notifications: Bell,
+  "mcp-tools": Layers,
+};
 
 const TAB_DETAILS = {
   models: {
@@ -409,7 +418,7 @@ const DEFAULT_BROWSER_RUNTIME = {
     proxy_source_order: [...DEFAULT_PROXY_SOURCE_ORDER],
     proxy_custom_list: [],
     proxy_rotation_mode: "sticky",
-    proxy_selection_strategy: "random",
+    proxy_selection_strategy: "ordered",
     proxy_fallback_strategy: "direct",
     proxy_fetch_timeout_ms: 8000,
     proxy_validation_timeout_ms: 12000,
@@ -446,7 +455,7 @@ const DEFAULT_BROWSER_RUNTIME = {
     proxy_source_order: [...DEFAULT_PROXY_SOURCE_ORDER],
     proxy_custom_list: [],
     proxy_rotation_mode: "sticky",
-    proxy_selection_strategy: "random",
+    proxy_selection_strategy: "ordered",
     proxy_fallback_strategy: "direct",
     proxy_fetch_timeout_ms: 8000,
     proxy_validation_timeout_ms: 12000,
@@ -542,6 +551,54 @@ function normalizeIntegerList(value, fallback = []) {
     .filter((item) => Number.isFinite(item) && item >= 0);
 }
 
+function applyValidatedStickyProxyStrategy(runtime) {
+  return {
+    ...runtime,
+    proxy_rotation_mode: "sticky",
+    proxy_selection_strategy: "ordered",
+    proxy_fallback_strategy: "direct",
+  };
+}
+
+function isProxyCandidateEntry(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  try {
+    const parsed = new URL(text.includes("://") ? text : `http://${text}`);
+    return /^(\d{1,3}\.){3}\d{1,3}$/.test(parsed.hostname) && !!parsed.port;
+  } catch {
+    return /^(\d{1,3}\.){3}\d{1,3}:\d{2,5}$/.test(text);
+  }
+}
+
+function splitProxyCandidateInput(value) {
+  const rows = normalizeStringList(value);
+  if (!rows.length) {
+    return {
+      proxy_custom_list: [],
+      proxy_source_order: [...DEFAULT_PROXY_SOURCE_ORDER],
+      proxy_source_mode: "hybrid",
+    };
+  }
+  const proxyCustomList = [];
+  const proxySourceOrder = [];
+  rows.forEach((row) => {
+    if (isProxyCandidateEntry(row)) proxyCustomList.push(row);
+    else proxySourceOrder.push(row);
+  });
+  return {
+    proxy_custom_list: proxyCustomList,
+    proxy_source_order: proxySourceOrder.length
+      ? proxySourceOrder
+      : [...DEFAULT_PROXY_SOURCE_ORDER],
+    proxy_source_mode: proxySourceOrder.length && proxyCustomList.length
+      ? "hybrid"
+      : proxySourceOrder.length
+        ? "remote"
+        : "custom",
+  };
+}
+
 function normalizeTuning(tuning) {
   if (!tuning || typeof tuning !== "object") return { ...EMPTY_TUNING };
 
@@ -611,7 +668,7 @@ function normalizeBrowserRuntime(value) {
   BROWSER_OPTIONS.forEach(({ id }) => {
     const current = value[id];
     if (!current || typeof current !== "object") return;
-    base[id] = {
+    base[id] = applyValidatedStickyProxyStrategy({
       ...base[id],
       ...current,
       extra_launch_args: normalizeStringList(
@@ -634,7 +691,7 @@ function normalizeBrowserRuntime(value) {
         current.media_retry_backoff_ms,
         base[id].media_retry_backoff_ms,
       ),
-    };
+    });
   });
 
   return base;
@@ -705,6 +762,35 @@ function fieldMatchesModel(field, modelId) {
   });
 }
 
+function getModelDefaultValue(modelMeta, fieldKey) {
+  return modelMeta?.default_parameters?.[fieldKey];
+}
+
+function getModelCapabilities(modelMeta) {
+  return modelMeta?.capabilities || {};
+}
+
+function formatParameterValue(value) {
+  if (value === "" || value == null) return "Not set";
+  if (typeof value === "number") {
+    if (Number.isInteger(value)) return value.toLocaleString();
+    return Number(value).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+  }
+  if (typeof value === "boolean") return value ? "Enabled" : "Disabled";
+  return String(value);
+}
+
+function formatTokenCount(value) {
+  if (!Number.isFinite(Number(value))) return "Unknown";
+  return Number(value).toLocaleString();
+}
+
+function releaseChannelTone(channel) {
+  if (channel === "stable") return "success";
+  if (channel === "preview") return "warning";
+  return "default";
+}
+
 function ensureSelectedOption(options, value) {
   if (!value) return options;
   if (options.some((option) => option.value === value)) return options;
@@ -757,10 +843,10 @@ function KeyStatus({ set }) {
 function SectionHeader({ children }) {
   return (
     <div className="flex items-center gap-3">
-      <h2 className="shrink-0 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+      <h2 className="shrink-0 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground/80">
         {children}
       </h2>
-      <Separator className="flex-1" />
+      <Separator className="flex-1 opacity-70" />
     </div>
   );
 }
@@ -795,12 +881,22 @@ function SettingsTabHero({
   const meta = TAB_DETAILS[tabId] || TAB_DETAILS.models;
   const isServerTab = meta.storage === "server";
   const isBrowserTab = meta.storage === "browser";
+  const Icon = SETTINGS_TAB_ICONS[tabId] || SlidersHorizontal;
 
   return (
-    <div className="flex flex-wrap items-start justify-between gap-4 border-b pb-6">
-      <div className="max-w-2xl space-y-1.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-[21px] font-semibold tracking-tight text-foreground">{meta.title}</h1>
+    <div className="rounded-[22px] border border-border/70 bg-gradient-to-br from-background via-background to-muted/20 p-5 shadow-[0_18px_48px_-30px_rgba(0,0,0,0.5)]">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl space-y-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="flex size-10 items-center justify-center rounded-2xl border border-border/80 bg-background/80 text-foreground shadow-sm">
+              <Icon className="size-4" />
+            </span>
+            <div className="space-y-1">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">
+                Settings workspace
+              </div>
+              <h1 className="text-[23px] font-semibold tracking-tight text-foreground">{meta.title}</h1>
+            </div>
           {dirty ? (
             <Badge tone="warning" className="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">Unsaved</Badge>
           ) : isServerTab && saved ? (
@@ -809,64 +905,61 @@ function SettingsTabHero({
               Saved
             </Badge>
           ) : null}
+          </div>
+          <p className="text-sm leading-relaxed text-muted-foreground">{meta.description}</p>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+            <StatusPill tone={isServerTab ? "info" : "neutral"}>
+              {isServerTab ? "Server-backed" : isBrowserTab ? "Saved in browser" : "Read only"}
+            </StatusPill>
+            {isBrowserTab ? (
+              <StatusPill tone="neutral">Auto-saved locally</StatusPill>
+            ) : null}
+            {isServerTab && dirty && otherDirtyCount > 0 ? (
+              <StatusPill tone="warning">
+                {otherDirtyCount} other dirty tab{otherDirtyCount === 1 ? "" : "s"}
+              </StatusPill>
+            ) : null}
+          </div>
         </div>
-        <p className="text-sm leading-relaxed text-muted-foreground">{meta.description}</p>
-        {isBrowserTab ? (
-          <p className="text-[11.5px] text-muted-foreground">
-            Preferences saved automatically to your browser.
-          </p>
-        ) : null}
-        {isServerTab && dirty && otherDirtyCount > 0 ? (
-          <p className="text-[11.5px] text-primary">
-            {otherDirtyCount} other tab{otherDirtyCount === 1 ? "" : "s"} also
-            have unsaved changes.
-          </p>
+
+        {isServerTab ? (
+          <Button variant="accent" onClick={onSave} disabled={saving || !dirty} className="min-w-[164px]">
+            {saving ? (
+              <>
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                Saving…
+              </>
+            ) : saved && !dirty ? (
+              <>
+                <Check className="mr-1.5 h-3.5 w-3.5" />
+                Saved
+              </>
+            ) : (
+              <>
+                <Save className="mr-1.5 h-3.5 w-3.5" />
+                {meta.saveLabel}
+              </>
+            )}
+          </Button>
         ) : null}
       </div>
-
-      {isServerTab ? (
-        <Button variant="accent" onClick={onSave} disabled={saving || !dirty}>
-          {saving ? (
-            <>
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              Saving…
-            </>
-          ) : saved && !dirty ? (
-            <>
-              <Check className="mr-1.5 h-3.5 w-3.5" />
-              Saved
-            </>
-          ) : (
-            <>
-              <Save className="mr-1.5 h-3.5 w-3.5" />
-              {meta.saveLabel}
-            </>
-          )}
-        </Button>
-      ) : null}
     </div>
   );
 }
 
-function SettingsTabBar({ active, onChange, dirtyTabs = {} }) {
-  const TAB_ICONS = {
-    models: Cpu,
-    browser: Globe,
-    display: Monitor,
-    "api-keys": Key,
-    notifications: Bell,
-    "mcp-tools": Layers,
-  };
-
+function SettingsTabBar({ active, onChange, dirtyTabs = {}, mobile = false }) {
   return (
-    <nav className="flex flex-col gap-1">
-      <div className="mb-1 border-b px-2 pb-3 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-        Configuration
-      </div>
+    <nav className={cn("gap-1.5", mobile ? "flex overflow-x-auto pb-1" : "flex flex-col")}>
+      {mobile ? null : (
+        <div className="mb-2 border-b px-2 pb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground/80">
+          Configuration
+        </div>
+      )}
       {SETTINGS_TABS.map((tab) => {
         const isActive = active === tab.id;
         const isDirty = dirtyTabs[tab.id];
-        const Icon = TAB_ICONS[tab.id];
+        const Icon = SETTINGS_TAB_ICONS[tab.id];
+        const meta = TAB_DETAILS[tab.id];
         return (
           <Button
             key={tab.id}
@@ -874,16 +967,31 @@ function SettingsTabBar({ active, onChange, dirtyTabs = {} }) {
             onClick={() => onChange(tab.id)}
             variant={isActive ? "secondary" : "ghost"}
             className={cn(
-              "w-full justify-between rounded-[10px] px-3 py-2 text-left text-[13px] font-medium",
-              isActive ? "border border-border text-foreground" : "text-muted-foreground",
+              mobile
+                ? "h-auto shrink-0 rounded-[14px] border px-3.5 py-2.5 text-left"
+                : "h-auto w-full justify-between rounded-[14px] px-3 py-3 text-left",
+              isActive
+                ? "border-border bg-background text-foreground shadow-sm"
+                : "border-transparent text-muted-foreground hover:border-border/70 hover:bg-muted/30",
             )}
           >
-            <span className="flex items-center gap-2.5">
-              {Icon ? <Icon className="size-[14px] shrink-0" /> : null}
-              {tab.label}
+            <span className={cn("flex gap-2.5", mobile ? "items-center" : "items-start")}>
+              {Icon ? <Icon className="mt-0.5 size-[14px] shrink-0" /> : null}
+              <span className="min-w-0">
+                <span className="block text-[13px] font-medium leading-none">{tab.label}</span>
+                {mobile ? null : (
+                  <span className="mt-1 block text-[11px] font-normal leading-snug text-muted-foreground/80">
+                    {meta?.storage === "server"
+                      ? "Saved to runtime config"
+                      : meta?.storage === "browser"
+                        ? "Local browser preference"
+                        : "Status only"}
+                  </span>
+                )}
+              </span>
             </span>
             {isDirty ? (
-              <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-label={`${tab.label} has unsaved changes`} />
+              <span className="ml-2 size-2 shrink-0 rounded-full bg-primary" aria-label={`${tab.label} has unsaved changes`} />
             ) : null}
           </Button>
         );
@@ -1006,9 +1114,55 @@ function TuningCard({
   );
 }
 
+function ModelFact({ label, value, tone = "default" }) {
+  return (
+    <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2.5">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+        {label}
+      </div>
+      <div className={cn("mt-1 text-sm font-medium", tone === "primary" ? "text-primary" : "text-foreground")}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function ParameterSummaryCard({ title, icon: Icon, tone = "default", rows = [] }) {
+  return (
+    <Card className="rounded-[14px] border">
+      <CardContent className="space-y-3 p-4">
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              "flex size-8 items-center justify-center rounded-xl border",
+              tone === "primary" ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-muted/40 text-foreground",
+            )}
+          >
+            <Icon className="size-4" />
+          </span>
+          <div className="text-[13px] font-semibold text-foreground">{title}</div>
+        </div>
+        <div className="space-y-2">
+          {rows.map((row) => (
+            <div key={row.label} className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/70 px-3 py-2">
+              <div className="min-w-0">
+                <div className="text-[11px] font-medium text-foreground">{row.label}</div>
+                {row.note ? (
+                  <div className="text-[10px] text-muted-foreground">{row.note}</div>
+                ) : null}
+              </div>
+              <div className="shrink-0 font-mono text-[11.5px] text-foreground">{row.value}</div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function MiniSegment({ options, active, onChange }) {
   return (
-    <div className="flex w-fit gap-1.5 rounded-[12px] border bg-muted/30 p-1.5">
+    <div className="flex w-full flex-wrap gap-1.5 rounded-[16px] border border-border/70 bg-muted/25 p-1.5">
       {options.map((option) => {
         const isActive = option.id === active;
         return (
@@ -1019,8 +1173,10 @@ function MiniSegment({ options, active, onChange }) {
             variant={isActive ? "secondary" : "ghost"}
             size="sm"
             className={cn(
-              "h-auto rounded-[8px] px-3 py-1.5 text-[12.5px] font-medium",
-              isActive ? "border border-border text-foreground" : "text-muted-foreground",
+              "h-auto flex-1 rounded-[12px] px-3 py-2 text-[12.5px] font-medium sm:flex-none",
+              isActive
+                ? "border border-border bg-background text-foreground shadow-sm"
+                : "text-muted-foreground",
             )}
           >
             {option.label}
@@ -1199,13 +1355,40 @@ function CostEstimator({ provider, model }) {
 
 function FieldGroup({ title, description, children, accent = null }) {
   return (
-    <Card className="overflow-hidden rounded-lg border">
-      <div className={cn("border-b bg-muted/10 px-5 py-4", accent && "border-l-4")}>
-        <div className="text-sm font-semibold text-foreground">{title}</div>
-        {description ? <p className="mt-1 text-xs text-muted-foreground">{description}</p> : null}
+    <Card className="overflow-hidden rounded-[18px] border border-border/70 bg-card/95 shadow-[0_18px_48px_-36px_rgba(0,0,0,0.55)]">
+      <div
+        className="border-b px-5 py-4"
+        style={{
+          borderColor: "var(--line)",
+          background: accent
+            ? `linear-gradient(135deg, color-mix(in oklch, ${accent} 8%, transparent), rgba(255,255,255,0.015))`
+            : "rgba(255,255,255,0.018)",
+          boxShadow: accent ? `inset 3px 0 0 ${accent}` : "none",
+        }}
+      >
+        <div className="text-[14px] font-semibold text-foreground">{title}</div>
+        {description ? <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{description}</p> : null}
       </div>
       <CardContent className="flex flex-col gap-4 p-5">{children}</CardContent>
     </Card>
+  );
+}
+
+function CompactStat({ label, value, tone = "default" }) {
+  return (
+    <div
+      className={cn(
+        "rounded-[14px] border px-3.5 py-3",
+        tone === "primary" ? "border-primary/20 bg-primary/5" : "border-border/70 bg-background/70",
+      )}
+    >
+      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+        {label}
+      </div>
+      <div className={cn("mt-1 text-[14px] font-semibold", tone === "primary" ? "text-primary" : "text-foreground")}>
+        {value}
+      </div>
+    </div>
   );
 }
 
@@ -1335,8 +1518,8 @@ export function SettingsPage() {
   const [thinkingEnabled, setThinkingEnabled] = useState(false);
   const [thinkingBudgetTokens, setThinkingBudgetTokens] = useState("8000");
   const [maxParallelHostingPages, setMaxParallelHostingPages] = useState("5");
-  const [deepevalProvider, setDeepevalProvider] = useState("openai");
-  const [deepevalModel, setDeepevalModel] = useState("gpt-4o");
+  const [deepevalProvider, setDeepevalProvider] = useState("google");
+  const [deepevalModel, setDeepevalModel] = useState("gemini-2.5-flash");
   const [deepevalTemperature, setDeepevalTemperature] = useState("0");
   const [browserEngine, setBrowserEngine] = useState("puppeteer");
   const [browserSettingsTab, setBrowserSettingsTab] = useState("puppeteer");
@@ -1345,7 +1528,10 @@ export function SettingsPage() {
     useState(normalizeDisabledToolsByBrowserProfile({}));
   const [activeMcpBrowserTab, setActiveMcpBrowserTab] = useState("puppeteer");
   const [activeProfileTab, setActiveProfileTab] = useState("classification");
+  const [mcpToolQuery, setMcpToolQuery] = useState("");
   const [providerCatalogs, setProviderCatalogs] = useState({});
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [selectedCatalogModelId, setSelectedCatalogModelId] = useState("");
   const [catalogLoading, setCatalogLoading] = useState("");
   const [pricingStatus, setPricingStatus] = useState({});
   const [pricingSyncLoading, setPricingSyncLoading] = useState("");
@@ -1361,6 +1547,9 @@ export function SettingsPage() {
   const activeBrowserRuntime =
     browserRuntime[browserSettingsTab] ||
     DEFAULT_BROWSER_RUNTIME[browserSettingsTab];
+  const activeMcpDisabledTools =
+    disabledToolsByBrowserProfile[activeMcpBrowserTab]?.[activeProfileTab] ||
+    [];
   const browserRuntimeSyncStatus = config?.browser_runtime_sync_status || null;
   const proxySourceReference = BUILTIN_PROXY_SOURCE_OPTIONS.map(
     (item) => `${item.value}: ${item.label}`,
@@ -1391,6 +1580,26 @@ export function SettingsPage() {
       diffs.push("proxy-first media strategy");
     return diffs;
   }, [activeBrowserRuntime, browserSettingsTab]);
+  const filteredMcpTools = useMemo(() => {
+    const query = mcpToolQuery.trim().toLowerCase();
+    const tools = MCP_TOOLS_BY_PROFILE[activeProfileTab] || [];
+    if (!query) return tools;
+    return tools.filter((toolName) => {
+      const meta = MCP_TOOL_META[toolName] || {};
+      return [
+        toolName,
+        meta.label,
+        meta.desc,
+        meta.category,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+    });
+  }, [activeProfileTab, mcpToolQuery]);
+  const enabledToolCount =
+    (MCP_TOOLS_BY_PROFILE[activeProfileTab] || []).length -
+    activeMcpDisabledTools.length;
 
   const modelOverrideTargets = useMemo(() => {
     const byModel = new Map();
@@ -1414,6 +1623,93 @@ export function SettingsPage() {
         (field) => !field.model_patterns?.length,
       ),
     [activeCatalog],
+  );
+
+  const catalogModels = useMemo(() => activeCatalog?.models || [], [activeCatalog]);
+  const filteredCatalogModels = useMemo(() => {
+    const query = catalogQuery.trim().toLowerCase();
+    if (!query) return catalogModels;
+    return catalogModels.filter((model) => {
+      const haystack = [
+        model.id,
+        model.label,
+        model.description,
+        model.release_channel,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [catalogModels, catalogQuery]);
+
+  useEffect(() => {
+    if (!catalogModels.length) {
+      setSelectedCatalogModelId("");
+      return;
+    }
+    if (catalogModels.some((item) => item.id === selectedCatalogModelId)) return;
+    const preferredModelId = modelOverrideTargets[0]?.id;
+    const fallbackSelection =
+      catalogModels.find((item) => item.id === preferredModelId)?.id ||
+      catalogModels[0]?.id ||
+      "";
+    setSelectedCatalogModelId(fallbackSelection);
+  }, [catalogModels, modelOverrideTargets, selectedCatalogModelId]);
+
+  const selectedCatalogModel =
+    catalogModels.find((item) => item.id === selectedCatalogModelId) || null;
+  const selectedModelFields = useMemo(
+    () =>
+      (activeCatalog?.hyperparameters || []).filter((field) =>
+        fieldMatchesModel(field, selectedCatalogModel?.id),
+      ),
+    [activeCatalog, selectedCatalogModel],
+  );
+  const selectedModelOverrideValues = useMemo(
+    () =>
+      llmTuning.model_overrides[
+        modelOverrideKey(provider, selectedCatalogModel?.id || "")
+      ] || {},
+    [llmTuning.model_overrides, provider, selectedCatalogModel],
+  );
+  const selectedModelEffectiveRows = useMemo(
+    () =>
+      selectedModelFields.map((field) => {
+        const liveDefault = getModelDefaultValue(selectedCatalogModel, field.key);
+        const providerDefault = llmTuning.provider_defaults[provider]?.[field.key];
+        const overrideValue = selectedModelOverrideValues[field.key];
+        const effectiveValue =
+          overrideValue !== undefined && overrideValue !== ""
+            ? overrideValue
+            : providerDefault !== undefined && providerDefault !== ""
+              ? providerDefault
+              : liveDefault;
+        let source = "Gemini live default";
+        if (overrideValue !== undefined && overrideValue !== "") source = "Model override";
+        else if (providerDefault !== undefined && providerDefault !== "") source = "Provider default";
+        return {
+          label: field.label,
+          value: formatParameterValue(effectiveValue),
+          note: source,
+        };
+      }),
+    [
+      llmTuning.provider_defaults,
+      provider,
+      selectedCatalogModel,
+      selectedModelFields,
+      selectedModelOverrideValues,
+    ],
+  );
+  const selectedModelDefaultRows = useMemo(
+    () =>
+      selectedModelFields.map((field) => ({
+        label: field.label,
+        value: formatParameterValue(getModelDefaultValue(selectedCatalogModel, field.key)),
+        note: "Pulled from Gemini catalog",
+      })),
+    [selectedCatalogModel, selectedModelFields],
   );
 
   const serverDraft = useMemo(
@@ -1581,8 +1877,8 @@ export function SettingsPage() {
     setThinkingEnabled(Boolean(payload.thinking_enabled ?? false));
     setThinkingBudgetTokens(String(payload.thinking_budget_tokens ?? 8000));
     setMaxParallelHostingPages(String(payload.max_parallel_hosting_pages ?? 5));
-    setDeepevalProvider(payload.deepeval_provider || "openai");
-    setDeepevalModel(payload.deepeval_model || "gpt-4o");
+    setDeepevalProvider(payload.deepeval_provider || "google");
+    setDeepevalModel(payload.deepeval_model || "gemini-2.5-flash");
     setDeepevalTemperature(String(payload.deepeval_temperature ?? 0));
     setBrowserEngine(payload.browser_engine || "puppeteer");
     setBrowserSettingsTab(payload.browser_engine || "puppeteer");
@@ -1618,12 +1914,6 @@ export function SettingsPage() {
     loadConfig();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function selectProvider(nextProvider) {
-    setProvider(nextProvider.id);
-    setConfigErr("");
-    await loadProviderCatalog(nextProvider.id).catch(() => null);
-  }
 
   async function updateAgentProvider(agentId, nextProvider) {
     setConfigErr("");
@@ -1700,6 +1990,22 @@ export function SettingsPage() {
     });
   }
 
+  function applyLiveDefaultsToModelOverride(modelMeta) {
+    if (!modelMeta?.id) return;
+    const key = modelOverrideKey(provider, modelMeta.id);
+    const liveDefaults = modelMeta.default_parameters || {};
+    setLlmTuning((current) => {
+      const next = normalizeTuning(current);
+      return {
+        ...next,
+        model_overrides: {
+          ...next.model_overrides,
+          [key]: { ...liveDefaults },
+        },
+      };
+    });
+  }
+
   function updateAgentOverride(agentId, field, value) {
     setLlmTuning((current) => {
       const next = normalizeTuning(current);
@@ -1728,10 +2034,10 @@ export function SettingsPage() {
   function updateBrowserRuntime(browserId, key, value) {
     setBrowserRuntime((current) => ({
       ...current,
-      [browserId]: {
+      [browserId]: applyValidatedStickyProxyStrategy({
         ...current[browserId],
         [key]: value,
-      },
+      }),
     }));
   }
 
@@ -1741,6 +2047,17 @@ export function SettingsPage() {
 
   function updateBrowserRuntimeIntegerList(browserId, key, value) {
     updateBrowserRuntime(browserId, key, normalizeIntegerList(value));
+  }
+
+  function updateProxyCandidateInput(browserId, value) {
+    const parsed = splitProxyCandidateInput(value);
+    setBrowserRuntime((current) => ({
+      ...current,
+      [browserId]: applyValidatedStickyProxyStrategy({
+        ...current[browserId],
+        ...parsed,
+      }),
+    }));
   }
 
   function activeBrowserTools() {
@@ -1839,14 +2156,6 @@ export function SettingsPage() {
     }
   }
 
-  const providerCardUsage = useMemo(() => {
-    const counts = Object.fromEntries(PROVIDERS.map((item) => [item.id, 0]));
-    Object.values(agentModelConfig).forEach((row) => {
-      if (row?.provider && counts[row.provider] != null)
-        counts[row.provider] += 1;
-    });
-    return counts;
-  }, [agentModelConfig]);
   const currentTabSaved = savedTab === activeTab && !currentTabDirty;
   const showConfigError =
     Boolean(configErr) &&
@@ -1856,17 +2165,38 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Settings
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Configure Gemini, browser runtime, display preferences, and more.
-        </p>
+      <div className="rounded-[24px] border border-border/70 bg-gradient-to-br from-background via-background to-muted/15 p-5 shadow-[0_20px_60px_-36px_rgba(0,0,0,0.5)]">
+        <div className="flex flex-col gap-4">
+          <div className="space-y-1">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">
+              Operator console
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              Settings
+            </h1>
+            <p className="max-w-3xl text-sm text-muted-foreground">
+              Configure Gemini, browser runtime, local display behavior, and tool availability without losing tab-scoped save behavior.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <CompactStat label="Unsaved tabs" value={hasDirty ? `${Object.values(dirtyTabs).filter(Boolean).length}` : "0"} tone={hasDirty ? "primary" : "default"} />
+            <CompactStat label="Active engine" value={browserEngine === "playwright" ? "Playwright" : "Puppeteer"} />
+            <CompactStat label="Catalog" value={activeCatalog?.available ? "Live" : activeCatalog ? "Offline fallback" : "Loading"} />
+            <CompactStat label="MCP tools" value={`${enabledToolCount}/${(MCP_TOOLS_BY_PROFILE[activeProfileTab] || []).length} enabled`} />
+          </div>
+          <div className="lg:hidden">
+            <SettingsTabBar
+              active={activeTab}
+              onChange={setActiveTab}
+              dirtyTabs={dirtyTabs}
+              mobile
+            />
+          </div>
+        </div>
       </div>
-    <div className="flex items-start gap-6">
+      <div className="flex items-start gap-6">
       {/* ── LEFT SIDEBAR NAV ───────────────────────────────────── */}
-      <Card className="sticky top-6 hidden w-56 shrink-0 self-start overflow-hidden lg:block">
+      <Card className="sticky top-6 hidden w-64 shrink-0 self-start overflow-hidden rounded-[22px] border-border/70 bg-card/95 shadow-[0_24px_60px_-42px_rgba(0,0,0,0.6)] lg:block">
         <CardContent className="px-3 pb-2 pt-3">
           <SettingsTabBar
             active={activeTab}
@@ -1874,7 +2204,7 @@ export function SettingsPage() {
             dirtyTabs={dirtyTabs}
           />
         </CardContent>
-        <div className="flex flex-col gap-2 border-t px-3 py-3">
+        <div className="flex flex-col gap-2 border-t border-border/70 px-3 py-3">
           <Badge tone={activeCatalog?.available ? "success" : activeCatalog ? "warning" : "default"} className="justify-center rounded-lg px-2.5 py-1.5 text-xs">
             {activeCatalog?.available ? "Catalog ready" : activeCatalog ? "Catalog unavailable" : "Loading..."}
           </Badge>
@@ -1913,328 +2243,448 @@ export function SettingsPage() {
                 </TabsList>
 
                 <TabsContent value="providers" className="space-y-4">
-                  <SectionHeader>Gemini Defaults</SectionHeader>
+                  <SectionHeader>Gemini Control Plane</SectionHeader>
 
-                  <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                {PROVIDERS.map((item) => {
-                  const isActive = provider === item.id;
-                  const usage = providerCardUsage[item.id] || 0;
-                  const hasKey = !!apiKeys[item.id];
-                  return (
-                    <Card
-                      key={item.id}
-                      className={cn(
-                        "rounded-[12px] border transition-colors",
-                        isActive ? "border-primary bg-primary/5" : "border-border bg-card",
-                      )}
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(340px,0.9fr)]">
+                    <FieldGroup
+                      title="Models & Live Defaults"
+                      description="Browse the live Gemini catalog, inspect per-model defaults from Gemini itself, and compare them with your active overrides."
+                      accent="var(--signal)"
                     >
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => selectProvider(item)}
-                        className="h-auto w-full justify-start rounded-[12px] p-3 text-left"
-                      >
-                      {/* Header row */}
-                      <div className="flex items-start justify-between gap-1.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className={cn("size-2 shrink-0 rounded-full", hasKey ? "bg-emerald-500" : "bg-muted-foreground/50")} />
-                          <span className={cn("text-[12.5px] font-semibold leading-snug", isActive ? "text-primary" : "text-foreground")}>{item.name}</span>
-                        </div>
-                        {!hasKey && (
-                          <Badge tone="default" className="px-1 py-0.5 text-[9px] font-medium uppercase tracking-wide">
-                            no key
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge tone={activeCatalog?.available ? "success" : activeCatalog ? "warning" : "default"}>
+                            {activeCatalog?.available ? "Catalog ready" : activeCatalog ? "Catalog unavailable" : "Loading..."}
                           </Badge>
-                        )}
-                        {hasKey && (
-                          <Badge tone="success" className="px-1 py-0.5 text-[9px]">set</Badge>
-                        )}
+                          <Badge tone={pricingStatusTone(activePricingStatus)}>
+                            {activePricingStatus?.model_count > 0
+                              ? `${activePricingStatus.model_count} priced models`
+                              : activePricingStatus?.api_key_set
+                                ? "Pricing not synced"
+                                : "Pricing unavailable"}
+                          </Badge>
+                          <Badge tone={apiKeys[provider] ? "success" : "default"}>
+                            {apiKeys[provider] ? "Gemini key connected" : "Gemini key missing"}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => loadProviderCatalog(provider, { force: true })}
+                            disabled={catalogLoading === provider}
+                          >
+                            {catalogLoading === provider ? (
+                              <>
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Refreshing
+                              </>
+                            ) : (
+                              <>
+                                <RefreshCw className="h-3.5 w-3.5" />
+                                Refresh catalog
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => syncPricing(provider)}
+                            disabled={pricingSyncLoading === provider}
+                          >
+                            {pricingSyncLoading === provider ? (
+                              <>
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Syncing pricing
+                              </>
+                            ) : (
+                              <>
+                                <RefreshCw className="h-3.5 w-3.5" />
+                                Sync pricing
+                              </>
+                            )}
+                          </Button>
+                        </div>
                       </div>
 
-             
-
-                      {/* Usage */}
-                      {usage > 0 && (
-                        <div className="mt-2 flex items-center gap-1">
-                          <span className="size-1 rounded-full bg-emerald-500" />
-                          <span className="text-[10px] text-emerald-500">
-                            {usage} agent{usage !== 1 ? "s" : ""}
+                      {!apiKeys[provider] ? (
+                        <div className="flex items-start gap-2 rounded-lg border border-primary/35 bg-primary/10 px-3 py-2.5 text-sm text-primary">
+                          <Key className="mt-0.5 size-4 shrink-0" />
+                          <span>
+                            <strong>{activeProvider.keyEnv}</strong> not set. Live Gemini model defaults and capabilities only load when the API key is available.
                           </span>
                         </div>
-                      )}
-                      </Button>
-                    </Card>
-                  );
-                })}
+                      ) : null}
+
+                      {activeCatalog?.error ? (
+                        <div className="rounded-lg border border-destructive/35 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
+                          {activeCatalog.error}
+                        </div>
+                      ) : null}
+
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <ModelFact label="Provider" value={activeProvider.name} tone="primary" />
+                        <ModelFact label="Live models" value={String(catalogModels.length || 0)} />
+                        <ModelFact
+                          label="Priced models"
+                          value={String(activePricingStatus?.model_count || 0)}
+                        />
+                        <ModelFact
+                          label="Last pricing sync"
+                          value={activePricingStatus?.last_sync_at || "Not recorded"}
+                        />
+                      </div>
+
+                      <div className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(320px,1.05fr)]">
+                        <div className="space-y-3">
+                          <div className="relative">
+                            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                              value={catalogQuery}
+                              onChange={(event) => setCatalogQuery(event.target.value)}
+                              placeholder="Search Gemini models"
+                              className="h-10 pl-9"
+                            />
+                          </div>
+                          <div className="space-y-2 rounded-2xl border border-border/70 bg-muted/15 p-2">
+                            {filteredCatalogModels.length ? (
+                              filteredCatalogModels.map((model) => {
+                                const isSelected = model.id === selectedCatalogModelId;
+                                const capabilities = getModelCapabilities(model);
+                                const isAssigned = modelOverrideTargets.some((target) => target.id === model.id);
+                                return (
+                                  <button
+                                    key={model.id}
+                                    type="button"
+                                    onClick={() => setSelectedCatalogModelId(model.id)}
+                                    className={cn(
+                                      "w-full rounded-xl border px-3 py-3 text-left transition-colors",
+                                      isSelected
+                                        ? "border-primary/40 bg-primary/8"
+                                        : "border-border/60 bg-background hover:bg-muted/35",
+                                    )}
+                                  >
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <div className="text-sm font-semibold text-foreground">{model.label || model.id}</div>
+                                          <Badge tone={releaseChannelTone(model.release_channel)} className="px-1.5 py-0.5 text-[9px] uppercase tracking-wide">
+                                            {model.release_channel || "stable"}
+                                          </Badge>
+                                          {isAssigned ? (
+                                            <Badge tone="signal" className="px-1.5 py-0.5 text-[9px]">
+                                              in use
+                                            </Badge>
+                                          ) : null}
+                                        </div>
+                                        <div className="mt-1 font-mono text-[11px] text-muted-foreground">
+                                          {model.id}
+                                        </div>
+                                      </div>
+                                      {isSelected ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" /> : null}
+                                    </div>
+                                    <div className="mt-2 line-clamp-2 text-[11.5px] leading-relaxed text-muted-foreground">
+                                      {model.description || "No provider description returned."}
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                                      <Badge tone="default" className="px-1.5 py-0.5 text-[9px]">
+                                        {formatTokenCount(model.context_window)} ctx
+                                      </Badge>
+                                      <Badge tone="default" className="px-1.5 py-0.5 text-[9px]">
+                                        {formatTokenCount(model.output_limit)} out
+                                      </Badge>
+                                      {capabilities.supports_explicit_cache ? (
+                                        <Badge tone="success" className="px-1.5 py-0.5 text-[9px]">
+                                          cache
+                                        </Badge>
+                                      ) : null}
+                                      {capabilities.supports_thinking_controls ? (
+                                        <Badge tone="signal" className="px-1.5 py-0.5 text-[9px]">
+                                          thinking
+                                        </Badge>
+                                      ) : null}
+                                    </div>
+                                  </button>
+                                );
+                              })
+                            ) : (
+                              <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+                                No Gemini models match this search.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          {selectedCatalogModel ? (
+                            <>
+                              <Card className="rounded-[16px] border">
+                                <CardContent className="space-y-4 p-5">
+                                  <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div className="space-y-1">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <h3 className="text-lg font-semibold text-foreground">
+                                          {selectedCatalogModel.label || selectedCatalogModel.id}
+                                        </h3>
+                                        <Badge tone={releaseChannelTone(selectedCatalogModel.release_channel)}>
+                                          {selectedCatalogModel.release_channel || "stable"}
+                                        </Badge>
+                                      </div>
+                                      <div className="font-mono text-[11px] text-muted-foreground">
+                                        {selectedCatalogModel.id}
+                                      </div>
+                                      <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                                        {selectedCatalogModel.description || "No provider description returned."}
+                                      </p>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      {modelOverrideTargets.some((target) => target.id === selectedCatalogModel.id) ? (
+                                        <Badge tone="signal">Assigned to agents</Badge>
+                                      ) : null}
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => applyLiveDefaultsToModelOverride(selectedCatalogModel)}
+                                        disabled={!selectedModelFields.length}
+                                      >
+                                        <Sparkles className="h-3.5 w-3.5" />
+                                        Copy Gemini defaults
+                                      </Button>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                    <ModelFact label="Context window" value={formatTokenCount(selectedCatalogModel.context_window)} />
+                                    <ModelFact label="Output limit" value={formatTokenCount(selectedCatalogModel.output_limit)} />
+                                    <ModelFact label="Cache API" value={getModelCapabilities(selectedCatalogModel).supports_explicit_cache ? "Supported" : "Unavailable"} />
+                                    <ModelFact label="Thinking controls" value={getModelCapabilities(selectedCatalogModel).supports_thinking_controls ? "Supported" : "Check docs"} />
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    {(selectedCatalogModel.supported_generation_methods || []).map((method) => (
+                                      <Badge key={method} tone="default" className="px-1.5 py-0.5 text-[9px]">
+                                        {method}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </CardContent>
+                              </Card>
+
+                              <div className="grid gap-4 xl:grid-cols-2">
+                                <ParameterSummaryCard
+                                  title="Gemini live defaults"
+                                  icon={Sparkles}
+                                  tone="primary"
+                                  rows={selectedModelDefaultRows}
+                                />
+                                <ParameterSummaryCard
+                                  title="Effective request values"
+                                  icon={SlidersHorizontal}
+                                  rows={selectedModelEffectiveRows}
+                                />
+                              </div>
+
+                              <CostEstimator provider={provider} model={selectedCatalogModel.id} />
+                            </>
+                          ) : (
+                            <Card className="rounded-[16px] border border-dashed">
+                              <CardContent className="px-5 py-10 text-center text-sm text-muted-foreground">
+                                Select a Gemini model to inspect live defaults, capabilities, and estimated costs.
+                              </CardContent>
+                            </Card>
+                          )}
+                        </div>
+                      </div>
+                    </FieldGroup>
+
+                    <div className="space-y-4">
+                      <FieldGroup
+                        title="Runtime Defaults"
+                        description="Global settings applied before per-model and per-agent overrides."
+                        accent="var(--signal)"
+                      >
+                        <div className="grid gap-6 sm:grid-cols-2">
+                          <div>
+                            <div className="mb-3 flex items-center gap-2">
+                              <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                                Fallback Temperature
+                              </span>
+                              <HelpIcon tip="Global temperature applied when no provider-specific or model-specific override is set." />
+                            </div>
+                            <Slider
+                              value={Number(fallbackTemperature) || 0}
+                              onChange={(next) => setFallbackTemperature(next)}
+                              min={0}
+                              max={2}
+                              step={0.1}
+                              description="Used only when the request does not already resolve to a Gemini default or explicit override."
+                            />
+                          </div>
+                          <div>
+                            <div className="mb-3 flex items-center gap-2">
+                              <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                                Tool Cache Stabilization
+                              </span>
+                              <HelpIcon tip="How many identical consecutive tool results must be seen before the response is cached." />
+                            </div>
+                            <Slider
+                              value={Number(toolCacheStable) || 1}
+                              onChange={(next) => setToolCacheStable(next)}
+                              min={1}
+                              max={10}
+                              step={1}
+                              description="Higher values are more conservative."
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <ToggleRow
+                            label="Provider prompt caching"
+                            checked={providerCacheEnabled}
+                            onChange={setProviderCacheEnabled}
+                            description="Use Gemini-native cache hits for repeated shared prompt context."
+                          />
+                          <ToggleRow
+                            label="Deterministic tool result cache"
+                            checked={toolCacheEnabled}
+                            onChange={setToolCacheEnabled}
+                            description="Cache repeated browser-tool responses within the same run session."
+                          />
+                        </div>
+                      </FieldGroup>
+
+                      <FieldGroup
+                        title="Gemini Explicit Cache"
+                        description="Server-side cached context for repeated Gemini runs."
+                        accent="var(--violet)"
+                      >
+                        <ToggleRow
+                          label="Enabled"
+                          checked={geminiExplicitCacheEnabled}
+                          onChange={setGeminiExplicitCacheEnabled}
+                          description="Activate explicit cached content for Gemini runs."
+                        />
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <BrowserRuntimeInput
+                            label="Cache TTL (seconds)"
+                            value={geminiExplicitCacheTtl}
+                            onChange={setGeminiExplicitCacheTtl}
+                            type="number"
+                            min="60"
+                            step="60"
+                            description="How long the server keeps the cached context alive."
+                          />
+                          <BrowserRuntimeInput
+                            label="Refresh lead (seconds)"
+                            value={geminiExplicitCacheRefreshLead}
+                            onChange={setGeminiExplicitCacheRefreshLead}
+                            type="number"
+                            min="5"
+                            step="5"
+                            description="How early the runtime pre-warms a replacement cache."
+                          />
+                        </div>
+                      </FieldGroup>
+
+                      <FieldGroup
+                        title="Extended Thinking"
+                        description="Enable Gemini reasoning budgets for supported models."
+                        accent="var(--sky)"
+                      >
+                        <ToggleRow
+                          label="Enable thinking"
+                          checked={thinkingEnabled}
+                          onChange={setThinkingEnabled}
+                          description="Turns on Gemini reasoning budgets where the selected model supports them."
+                        />
+                        {thinkingEnabled ? (
+                          <div className="max-w-sm">
+                            <BrowserRuntimeInput
+                              label="Thinking budget (tokens)"
+                              value={thinkingBudgetTokens}
+                              onChange={setThinkingBudgetTokens}
+                              type="number"
+                              min="1000"
+                              max="32000"
+                              step="1000"
+                              description="Higher values allow deeper reasoning with higher cost."
+                            />
+                          </div>
+                        ) : null}
+                      </FieldGroup>
+
+                      <FieldGroup
+                        title="Parallelism"
+                        description="Concurrency limits for hosting and embedded extraction."
+                        accent="var(--mint)"
+                      >
+                        <div className="max-w-sm">
+                          <BrowserRuntimeInput
+                            label="Max parallel hosting pages"
+                            value={maxParallelHostingPages}
+                            onChange={setMaxParallelHostingPages}
+                            type="number"
+                            min="1"
+                            max="20"
+                            step="1"
+                            description="Caps simultaneous hosting-page and embedded-page executions."
+                          />
+                        </div>
+                      </FieldGroup>
+                    </div>
                   </div>
 
                   <FieldGroup
-                    title={`Provider defaults — ${activeProvider.name}`}
-                    description="Hyperparameters applied to Gemini models unless overridden for a specific model or agent."
+                    title="Overrides"
+                    description="These controls sit on top of Gemini live defaults. Use provider defaults for broad steering and model overrides only where you need a deliberate deviation."
                     accent="var(--signal)"
                   >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div />
-                  <div className="flex items-center gap-2">
-                    {activeCatalog ? (
-                      <Badge
-                        tone={
-                          sourceTone(activeCatalog.source) === "ok"
-                            ? "success"
-                            : sourceTone(activeCatalog.source) === "error"
-                              ? "destructive"
-                              : "warning"
-                        }
-                      >
-                        {sourceLabel(activeCatalog.source)}
-                      </Badge>
-                    ) : null}
-                    {activePricingStatus ? (
-                      <Badge tone={pricingStatusTone(activePricingStatus)}>
-                        {activePricingStatus.model_count > 0
-                          ? `${activePricingStatus.model_count} pricing rows`
-                          : "Pricing not synced"}
-                      </Badge>
-                    ) : null}
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() =>
-                        loadProviderCatalog(provider, { force: true })
-                      }
-                      disabled={catalogLoading === provider}
-                    >
-                      {catalogLoading === provider ? (
-                        <>
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          Refreshing
-                        </>
-                      ) : (
-                        <>
-                          <RefreshCw className="h-3.5 w-3.5" />
-                          Refresh models
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => syncPricing(provider)}
-                      disabled={pricingSyncLoading === provider}
-                    >
-                      {pricingSyncLoading === provider ? (
-                        <>
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          Syncing pricing
-                        </>
-                      ) : (
-                        <>
-                          <RefreshCw className="h-3.5 w-3.5" />
-                          Sync pricing
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </div>
-
-                {!apiKeys[provider] ? (
-                  <div className="flex items-start gap-2 rounded-lg border border-primary/35 bg-primary/10 px-3 py-2.5 text-sm text-primary">
-                    <Key className="mt-0.5 size-4 shrink-0" />
-                      <span>
-                      <strong>{activeProvider.keyEnv}</strong> not set. Live Gemini model loading is unavailable until the API key is configured.
-                    </span>
-                  </div>
-                ) : null}
-
-                {activeCatalog?.error ? <div className="rounded-lg border border-destructive/35 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">{activeCatalog.error}</div> : null}
-                {activePricingStatus ? (
-                  <div className="grid gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-3 text-[12px] sm:grid-cols-3">
-                    <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                        Pricing status
-                      </div>
-                      <div className="mt-1 text-foreground">
-                        {activePricingStatus.model_count > 0 ? "Synced" : "Missing"}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                        Last sync
-                      </div>
-                      <div className="mt-1 text-foreground">
-                        {activePricingStatus.last_sync_at || "Not recorded"}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                        Models priced
-                      </div>
-                      <div className="mt-1 text-foreground">
-                        {activePricingStatus.model_count || 0}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="grid gap-6 sm:grid-cols-2">
-                  <div>
-                    <div className="mb-3 flex items-center gap-2">
-                      <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                        Fallback Temperature
-                      </span>
-                      <HelpIcon tip="Global temperature applied when no provider-specific or agent-specific override is set. 0 = deterministic, 1+ = creative." />
-                    </div>
-                    <Slider
-                      value={Number(fallbackTemperature) || 0}
-                      onChange={(next) => setFallbackTemperature(next)}
-                      min={0}
-                      max={2}
-                      step={0.1}
-                      description="Global temperature when no provider override is set"
-                    />
-                  </div>
-                  <div>
-                    <div className="mb-3 flex items-center gap-2">
-                      <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                        Tool Cache Stabilization
-                      </span>
-                      <HelpIcon tip="How many identical consecutive tool results must be seen before the response is cached. Higher = less aggressive caching." />
-                    </div>
-                    <Slider
-                      value={Number(toolCacheStable) || 1}
-                      onChange={(next) => setToolCacheStable(next)}
-                      min={1}
-                      max={10}
-                      step={1}
-                      description="Consecutive identical results before caching kicks in"
-                    />
-                  </div>
-                </div>
-
-                <TuningCard
-                  title={`${activeProvider.name} defaults`}
-                  description="Applied first for every model from this provider."
-                  values={llmTuning.provider_defaults[provider] || {}}
-                  fields={providerDefaultFields}
-                  onChange={updateAgentProviderDefault}
-                />
-
-                {modelOverrideTargets.map((target) => {
-                  const fields = (activeCatalog?.hyperparameters || []).filter(
-                    (field) => fieldMatchesModel(field, target.id),
-                  );
-                  const values =
-                    llmTuning.model_overrides[
-                      modelOverrideKey(provider, target.id)
-                    ] || {};
-                  return (
                     <TuningCard
-                      key={target.id}
-                      title={`Model override - ${target.title}`}
-                      description={target.description}
-                      values={values}
-                      fields={fields}
-                      onChange={(field, value) =>
-                        updateModelOverride(target.id, field, value)
-                      }
-                      onClear={() => clearModelOverride(target.id)}
-                      clearLabel="Clear override"
+                      title={`${activeProvider.name} provider defaults`}
+                      description="Applied to Gemini requests before model-specific overrides."
+                      values={llmTuning.provider_defaults[provider] || {}}
+                      fields={providerDefaultFields}
+                      onChange={updateAgentProviderDefault}
                     />
-                  );
-                })}
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <ToggleRow
-                    label="Provider prompt caching"
-                    checked={providerCacheEnabled}
-                    onChange={setProviderCacheEnabled}
-                    description="Hooks into Gemini-native caching for repeated shared prompt context. Reduces repeated input cost."
-                  />
-                  <ToggleRow
-                    label="Deterministic tool result cache"
-                    checked={toolCacheEnabled}
-                    onChange={setToolCacheEnabled}
-                    description="Caches identical browser-tool responses within the same session. Speeds up repeated DOM queries."
-                  />
-                </div>
-                  </FieldGroup>
-
-                  <FieldGroup
-                    title="Gemini Explicit Cache"
-                    description="Server-side cached context for Gemini models — reduces latency and cost on repeated system prompts."
-                    accent="var(--violet)"
-                  >
-                <ToggleRow
-                  label="Enabled"
-                  checked={geminiExplicitCacheEnabled}
-                  onChange={setGeminiExplicitCacheEnabled}
-                  description="Activate explicit cached content for Gemini runs."
-                />
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <BrowserRuntimeInput
-                    label="Cache TTL (seconds)"
-                    value={geminiExplicitCacheTtl}
-                    onChange={setGeminiExplicitCacheTtl}
-                    type="number"
-                    min="60"
-                    step="60"
-                    description="How long the server keeps the cached context alive (min 60 s)."
-                  />
-                  <BrowserRuntimeInput
-                    label="Refresh lead (seconds)"
-                    value={geminiExplicitCacheRefreshLead}
-                    onChange={setGeminiExplicitCacheRefreshLead}
-                    type="number"
-                    min="5"
-                    step="5"
-                    description="Seconds before expiry when the runtime pre-warms a new cache entry."
-                  />
-                </div>
-                  </FieldGroup>
-
-                  <FieldGroup
-                    title="Extended Thinking"
-                    description="Enable Gemini reasoning budgets. This increases token usage, including thinking tokens, but improves reasoning quality."
-                    accent="var(--sky)"
-                  >
-                <ToggleRow
-                  label="Enable thinking"
-                  checked={thinkingEnabled}
-                  onChange={setThinkingEnabled}
-                  description="Turns on extended reasoning for supported models."
-                />
-                {thinkingEnabled ? (
-                  <div className="max-w-sm">
-                    <BrowserRuntimeInput
-                      label="Thinking budget (tokens)"
-                      value={thinkingBudgetTokens}
-                      onChange={setThinkingBudgetTokens}
-                      type="number"
-                      min="1000"
-                      max="32000"
-                      step="1000"
-                      description="Max tokens for internal reasoning (1000–32000). Higher = deeper reasoning, more cost."
-                    />
-                  </div>
-                ) : null}
-                  </FieldGroup>
-
-                  <FieldGroup
-                    title="Parallelism"
-                    description="Controls how many hosting pages run simultaneously. Lower reduces memory load; higher increases throughput."
-                    accent="var(--mint)"
-                  >
-                <div className="max-w-sm">
-                  <BrowserRuntimeInput
-                    label="Max parallel hosting pages"
-                    value={maxParallelHostingPages}
-                    onChange={setMaxParallelHostingPages}
-                    type="number"
-                    min="1"
-                    max="20"
-                    step="1"
-                    description="Default 5. Caps concurrent hosting-page and embedded-page agent executions."
-                  />
-                </div>
+                    {modelOverrideTargets.map((target) => {
+                      const fields = (activeCatalog?.hyperparameters || []).filter(
+                        (field) => fieldMatchesModel(field, target.id),
+                      );
+                      const values =
+                        llmTuning.model_overrides[
+                          modelOverrideKey(provider, target.id)
+                        ] || {};
+                      const modelMeta = catalogModels.find((item) => item.id === target.id);
+                      return (
+                        <div key={target.id} className="space-y-3">
+                          <TuningCard
+                            title={`Model override - ${target.title}`}
+                            description={`${target.description} Gemini live defaults remain visible in the model inspector above.`}
+                            values={values}
+                            fields={fields}
+                            onChange={(field, value) =>
+                              updateModelOverride(target.id, field, value)
+                            }
+                            onClear={() => clearModelOverride(target.id)}
+                            clearLabel="Clear override"
+                          />
+                          {modelMeta ? (
+                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                              {fields.map((field) => (
+                                <ModelFact
+                                  key={`${target.id}-${field.key}`}
+                                  label={`${field.label} default`}
+                                  value={formatParameterValue(getModelDefaultValue(modelMeta, field.key))}
+                                />
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
                   </FieldGroup>
                 </TabsContent>
 
@@ -2396,6 +2846,7 @@ export function SettingsPage() {
 
           {activeTab === "browser" ? (
             <section className="space-y-4">
+              <SectionHeader>Engine Selection</SectionHeader>
               <div className="grid gap-3 sm:grid-cols-2">
                 {BROWSER_OPTIONS.map((engine) => {
                   const isActive = browserEngine === engine.id;
@@ -2436,11 +2887,24 @@ export function SettingsPage() {
                         {isActive ? <Badge tone="signal">Active</Badge> : null}
                       </div>
                       <p
-                        className="mt-1 text-[12px]"
+                        className="mt-1 text-[12px] leading-relaxed"
                         style={{ color: "var(--mute)" }}
                       >
                         {engine.note}
                       </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {engine.id === "playwright" ? (
+                          <>
+                            <Badge tone="signal">iframe recovery</Badge>
+                            <Badge tone="default">context isolation</Badge>
+                          </>
+                        ) : (
+                          <>
+                            <Badge tone="signal">default path</Badge>
+                            <Badge tone="default">legacy CDP</Badge>
+                          </>
+                        )}
+                      </div>
                     </button>
                   );
                 })}
@@ -2454,6 +2918,13 @@ export function SettingsPage() {
                   label: item.name,
                 }))}
               />
+
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <CompactStat label="Editing runtime" value={browserSettingsTab === "playwright" ? "Playwright" : "Puppeteer"} tone="primary" />
+                <CompactStat label="Proxy mode" value={activeBrowserRuntime.proxy_enabled ? "Validated sticky" : "Direct only"} />
+                <CompactStat label="Fingerprint" value={activeBrowserRuntime.fingerprint_rotation_mode || "origin"} />
+                <CompactStat label="Media retries" value={`${activeBrowserRuntime.media_retry_count || 0}`} />
+              </div>
 
               <FieldGroup
                 title="Runtime Status"
@@ -2709,163 +3180,52 @@ export function SettingsPage() {
 
               <FieldGroup
                 title="Proxy Rotation"
-                description="Load, validate, and rotate proxies for isolated browser sessions."
+                description="One runtime strategy: validate candidates, keep the first healthy proxy per engine/profile, rotate only after failure, and fall back direct."
                 accent="var(--signal)"
               >
-                <ToggleRow
-                  label="Enable proxy pool"
-                  checked={!!activeBrowserRuntime.proxy_enabled}
-                  onChange={(value) =>
-                    updateBrowserRuntime(
-                      browserSettingsTab,
-                      "proxy_enabled",
-                      value,
-                    )
-                  }
-                  description="Turn on remote/custom proxy loading, validation, rotation, and fallback handling."
-                />
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                  <BrowserRuntimeSelect
-                    label="Source mode"
-                    value={activeBrowserRuntime.proxy_source_mode || "hybrid"}
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+                  <ToggleRow
+                    label="Enable proxy pool"
+                    checked={!!activeBrowserRuntime.proxy_enabled}
                     onChange={(value) =>
                       updateBrowserRuntime(
                         browserSettingsTab,
-                        "proxy_source_mode",
+                        "proxy_enabled",
                         value,
                       )
                     }
-                    options={[
-                      {
-                        value: "hybrid",
-                        label: "Hybrid",
-                        description: "Custom first, then remote lists.",
-                      },
-                      {
-                        value: "remote",
-                        label: "Remote only",
-                        description: "Pull from built-in or custom URLs only.",
-                      },
-                      {
-                        value: "custom",
-                        label: "Custom only",
-                        description: "Only manually entered proxies.",
-                      },
-                    ]}
-                    placeholder="Select source mode"
-                    description="Where to pull candidate proxies from."
+                    description="When enabled, every isolated session validates candidates first. Bad proxies never reach browser tools."
                   />
-                  <BrowserRuntimeSelect
-                    label="Rotation mode"
-                    value={
-                      activeBrowserRuntime.proxy_rotation_mode || "session"
-                    }
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "proxy_rotation_mode",
-                        value,
-                      )
-                    }
-                    options={[
-                      {
-                        value: "session",
-                        label: "Per session",
-                        description:
-                          "Advance to next candidate each new session.",
-                      },
-                      {
-                        value: "sticky",
-                        label: "Sticky",
-                        description:
-                          "Prefer last working proxy until it fails.",
-                      },
-                      {
-                        value: "failure",
-                        label: "On failure",
-                        description: "Retry last good proxy first.",
-                      },
-                      {
-                        value: "never",
-                        label: "Always first",
-                        description: "Always start from first candidate.",
-                      },
-                    ]}
-                    placeholder="Select rotation mode"
-                    description="How selection advances between sessions."
-                  />
-                  <BrowserRuntimeSelect
-                    label="Selection order"
-                    value={
-                      activeBrowserRuntime.proxy_selection_strategy || "ordered"
-                    }
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "proxy_selection_strategy",
-                        value,
-                      )
-                    }
-                    options={[
-                      {
-                        value: "ordered",
-                        label: "Ordered",
-                        description: "Respect source order exactly.",
-                      },
-                      {
-                        value: "random",
-                        label: "Random",
-                        description: "Shuffle candidates before trying.",
-                      },
-                    ]}
-                    placeholder="Select order"
-                    description="Ordered or shuffled candidate list."
-                  />
-                  <BrowserRuntimeSelect
-                    label="Fallback"
-                    value={
-                      activeBrowserRuntime.proxy_fallback_strategy || "direct"
-                    }
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "proxy_fallback_strategy",
-                        value,
-                      )
-                    }
-                    options={[
-                      {
-                        value: "direct",
-                        label: "Direct browser",
-                        description: "Continue without proxy if all fail.",
-                      },
-                      {
-                        value: "fail",
-                        label: "Fail closed",
-                        description: "Do not fall back to direct.",
-                      },
-                    ]}
-                    placeholder="Select fallback"
-                    description="What happens after every candidate fails."
-                  />
+                  <div
+                    className="rounded-[12px] border px-4 py-3 text-[11.5px]"
+                    style={{
+                      borderColor: "var(--line-hi)",
+                      background: "rgba(255,255,255,0.04)",
+                      color: "var(--mute)",
+                    }}
+                  >
+                    <div className="font-semibold" style={{ color: "var(--ink)" }}>
+                      Strategy: validated sticky
+                    </div>
+                    <div className="mt-1">
+                      Ordered candidates, sticky success, rotate on failure,
+                      direct fallback.
+                    </div>
+                  </div>
                 </div>
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   <BrowserRuntimeInput
-                    label="Fetch timeout (ms)"
-                    value={String(
-                      activeBrowserRuntime.proxy_fetch_timeout_ms ?? "",
-                    )}
+                    label="Validation URL"
+                    value={String(activeBrowserRuntime.proxy_test_url ?? "")}
                     onChange={(value) =>
                       updateBrowserRuntime(
                         browserSettingsTab,
-                        "proxy_fetch_timeout_ms",
-                        Number.parseInt(value || "0", 10) || 0,
+                        "proxy_test_url",
+                        value,
                       )
                     }
-                    type="number"
-                    min="1000"
-                    step="1000"
-                    description="Budget for downloading each remote source."
+                    placeholder="https://api.ipify.org?format=json"
+                    description="Lightweight URL used to prove a proxy works before launch."
                   />
                   <BrowserRuntimeInput
                     label="Validation timeout (ms)"
@@ -2883,23 +3243,6 @@ export function SettingsPage() {
                     min="1000"
                     step="1000"
                     description="Time before a candidate is marked bad."
-                  />
-                  <BrowserRuntimeInput
-                    label="Source cache TTL (ms)"
-                    value={String(
-                      activeBrowserRuntime.proxy_cache_ttl_ms ?? "",
-                    )}
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "proxy_cache_ttl_ms",
-                        Number.parseInt(value || "0", 10) || 0,
-                      )
-                    }
-                    type="number"
-                    min="1000"
-                    step="1000"
-                    description="How long remote downloads stay cached."
                   />
                   <BrowserRuntimeInput
                     label="Max candidates"
@@ -2921,19 +3264,57 @@ export function SettingsPage() {
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <BrowserRuntimeInput
-                    label="Validation URL"
-                    value={String(activeBrowserRuntime.proxy_test_url ?? "")}
+                    label="Source fetch timeout (ms)"
+                    value={String(
+                      activeBrowserRuntime.proxy_fetch_timeout_ms ?? "",
+                    )}
                     onChange={(value) =>
                       updateBrowserRuntime(
                         browserSettingsTab,
-                        "proxy_test_url",
-                        value,
+                        "proxy_fetch_timeout_ms",
+                        Number.parseInt(value || "0", 10) || 0,
                       )
                     }
-                    placeholder="https://api.ipify.org?format=json"
-                    description="Lightweight URL used to confirm a proxy works before handing it to tools."
+                    type="number"
+                    min="1000"
+                    step="1000"
+                    description="Budget for downloading remote source lists."
                   />
-                  <div className="space-y-1.5">
+                  <BrowserRuntimeInput
+                    label="Source cache TTL (ms)"
+                    value={String(
+                      activeBrowserRuntime.proxy_cache_ttl_ms ?? "",
+                    )}
+                    onChange={(value) =>
+                      updateBrowserRuntime(
+                        browserSettingsTab,
+                        "proxy_cache_ttl_ms",
+                        Number.parseInt(value || "0", 10) || 0,
+                      )
+                    }
+                    type="number"
+                    min="1000"
+                    step="1000"
+                    description="How long remote downloads stay cached."
+                  />
+                </div>
+                <BrowserRuntimeTextarea
+                  label="Proxy list / source input"
+                  value={[
+                    ...(activeBrowserRuntime.proxy_custom_list || []),
+                    ...(
+                      activeBrowserRuntime.proxy_source_order || []
+                    ).filter(
+                      (entry) => !DEFAULT_PROXY_SOURCE_ORDER.includes(entry),
+                    ),
+                  ].join(", ")}
+                  onChange={(value) =>
+                    updateProxyCandidateInput(browserSettingsTab, value)
+                  }
+                  placeholder="http://user:pass@1.2.3.4:8080, socks5://5.6.7.8:1080, https://example.com/proxies.txt"
+                  description="Paste proxy endpoints and optional source-list URLs/IDs. Empty source input uses the curated built-ins."
+                />
+                <div className="space-y-1.5">
                     <div
                       className="text-[11.5px] font-semibold"
                       style={{ color: "var(--ink-dim)" }}
@@ -2951,41 +3332,9 @@ export function SettingsPage() {
                       {proxySourceReference}
                     </div>
                     <p className="text-[11px]" style={{ color: "var(--mute)" }}>
-                      Reference only — use source-order field below to choose
-                      which IDs are tried.
+                      Curated built-ins are used when no source URL/ID is pasted. They are ordered and validated before use.
                     </p>
-                  </div>
                 </div>
-                <BrowserRuntimeTextarea
-                  label="Proxy source order"
-                  value={(activeBrowserRuntime.proxy_source_order || []).join(
-                    ", ",
-                  )}
-                  onChange={(value) =>
-                    updateBrowserRuntimeList(
-                      browserSettingsTab,
-                      "proxy_source_order",
-                      value,
-                    )
-                  }
-                  placeholder="openproxylist-https, proxifly-http, monosans-http, speedx-http, openproxylist-socks5, proxifly-socks5"
-                  description="Comma-separated built-in source IDs or raw .txt URLs."
-                />
-                <BrowserRuntimeTextarea
-                  label="Custom proxy list"
-                  value={(activeBrowserRuntime.proxy_custom_list || []).join(
-                    ", ",
-                  )}
-                  onChange={(value) =>
-                    updateBrowserRuntimeList(
-                      browserSettingsTab,
-                      "proxy_custom_list",
-                      value,
-                    )
-                  }
-                  placeholder="http://user:pass@1.2.3.4:8080, socks5://5.6.7.8:1080"
-                  description="Manual proxies prepended when source mode includes custom. Supports scheme://user:pass@host:port."
-                />
               </FieldGroup>
 
               <FieldGroup
@@ -3621,8 +3970,7 @@ export function SettingsPage() {
               <div className="flex items-center justify-between">
                 <SectionHeader>MCP Tools</SectionHeader>
                 <span className="text-[11px]" style={{ color: "var(--mute)" }}>
-                  Disabled tools are excluded from the selected browser profile
-                  at runtime
+                  Clean per-profile toggles with faster scanning and fewer accidental disables
                 </span>
               </div>
 
@@ -3661,30 +4009,36 @@ export function SettingsPage() {
                 }))}
               />
 
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <CompactStat label="Enabled" value={`${enabledToolCount}/${(MCP_TOOLS_BY_PROFILE[activeProfileTab] || []).length}`} tone="primary" />
+                <CompactStat label="Disabled" value={`${activeMcpDisabledTools.length}`} />
+                <CompactStat label="Backend" value={activeMcpBrowserTab === "playwright" ? "Playwright" : "Puppeteer"} />
+                <CompactStat label="Profile" value={PROFILE_LABELS[activeProfileTab]} />
+              </div>
+
               <div
-                className="rounded-[14px] border p-4"
-                style={{
-                  borderColor: "var(--line)",
-                  background: "var(--card)",
-                  boxShadow: "var(--shadow-card)",
-                }}
+                className="rounded-[18px] border border-border/70 bg-card/95 p-4 shadow-[0_18px_48px_-36px_rgba(0,0,0,0.55)]"
               >
-                {/* Header row */}
-                <div className="mb-4 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-[13px] font-semibold text-foreground">
-                      {BROWSER_OPTIONS.find((item) => item.id === activeMcpBrowserTab)?.name}
-                      {" · "}
-                      {PROFILE_LABELS[activeProfileTab]}
-                    </span>
-                    <Badge tone="default" className="font-mono text-[10px]">
-                      {MCP_TOOLS_BY_PROFILE[activeProfileTab].length - activeBrowserTools().length}
-                      {" / "}
-                      {MCP_TOOLS_BY_PROFILE[activeProfileTab].length} enabled
-                    </Badge>
+                <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-[13px] font-semibold text-foreground">
+                        {BROWSER_OPTIONS.find((item) => item.id === activeMcpBrowserTab)?.name}
+                        {" · "}
+                        {PROFILE_LABELS[activeProfileTab]}
+                      </span>
+                      <Badge tone="default" className="font-mono text-[10px]">
+                        {enabledToolCount}
+                        {" / "}
+                        {(MCP_TOOLS_BY_PROFILE[activeProfileTab] || []).length} enabled
+                      </Badge>
+                    </div>
+                    <p className="max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
+                      Required shared tools should normally stay enabled. Use this screen to trim redundant or risky tools per engine/profile, not to hide core navigation and inspection by default.
+                    </p>
                   </div>
-                  <div className="flex gap-1.5">
+                  <div className="flex flex-wrap gap-1.5">
                     <Button
                       type="button"
                       variant="outline"
@@ -3706,25 +4060,44 @@ export function SettingsPage() {
                   </div>
                 </div>
 
-                {/* Grouped tool list */}
+                <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70" />
+                    <input
+                      value={mcpToolQuery}
+                      onChange={(event) => setMcpToolQuery(event.target.value)}
+                      placeholder="Filter tools by name, category, or description"
+                      className="h-11 w-full rounded-[14px] border border-border/70 bg-background/75 pl-10 pr-3 text-[13px] text-foreground outline-none transition focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                    />
+                  </div>
+                  <div className="rounded-[14px] border border-border/70 bg-background/70 px-3.5 py-3 text-[12px] text-muted-foreground">
+                    Showing <span className="font-semibold text-foreground">{filteredMcpTools.length}</span> of{" "}
+                    <span className="font-semibold text-foreground">{(MCP_TOOLS_BY_PROFILE[activeProfileTab] || []).length}</span> tools
+                  </div>
+                </div>
+
                 {(() => {
-                  const tools = MCP_TOOLS_BY_PROFILE[activeProfileTab];
-                  const categories = [...new Set(tools.map((t) => MCP_TOOL_META[t]?.category || "Other"))];
+                  const categories = [...new Set(filteredMcpTools.map((t) => MCP_TOOL_META[t]?.category || "Other"))];
                   return categories.map((cat) => {
-                    const catTools = tools.filter((t) => (MCP_TOOL_META[t]?.category || "Other") === cat);
+                    const catTools = filteredMcpTools.filter((t) => (MCP_TOOL_META[t]?.category || "Other") === cat);
                     return (
-                      <div key={cat} className="mb-3">
-                        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
-                          {cat}
+                      <div key={cat} className="mb-4">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+                            {cat}
+                          </div>
+                          <Badge tone="default" className="text-[9px] font-mono">
+                            {catTools.filter((toolName) => !activeBrowserTools().includes(toolName)).length}/{catTools.length} enabled
+                          </Badge>
                         </div>
-                        <div className="divide-y divide-border/40 rounded-lg border border-border/60">
+                        <div className="divide-y divide-border/40 rounded-[14px] border border-border/60 bg-background/65">
                           {catTools.map((toolName) => {
                             const isDisabled = activeBrowserTools().includes(toolName);
                             const meta = MCP_TOOL_META[toolName];
                             return (
                               <div
                                 key={toolName}
-                                className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-muted/30"
+                                className="flex items-start gap-3 px-3 py-3 transition-colors hover:bg-muted/25"
                               >
                                 <Switch
                                   checked={!isDisabled}
@@ -3737,16 +4110,21 @@ export function SettingsPage() {
                                   }}
                                 />
                                 <div className="min-w-0 flex-1">
-                                  <span className={cn(
-                                    "font-mono text-[12px] font-medium",
-                                    isDisabled ? "text-muted-foreground/50 line-through" : "text-foreground"
-                                  )}>
-                                    {toolName}
-                                  </span>
-                                  {meta?.desc ? (
-                                    <span className="ml-2 text-[11px] text-muted-foreground/70">
-                                      — {meta.desc}
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className={cn(
+                                      "font-mono text-[12px] font-medium",
+                                      isDisabled ? "text-muted-foreground/50 line-through" : "text-foreground"
+                                    )}>
+                                      {toolName}
                                     </span>
+                                    <Badge tone="default" className="text-[9px]">
+                                      {meta?.category || "Other"}
+                                    </Badge>
+                                  </div>
+                                  {meta?.desc ? (
+                                    <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/75">
+                                      {meta.desc}
+                                    </p>
                                   ) : null}
                                 </div>
                               </div>
@@ -3757,6 +4135,11 @@ export function SettingsPage() {
                     );
                   });
                 })()}
+                {!filteredMcpTools.length ? (
+                  <div className="rounded-[14px] border border-dashed border-border/70 px-4 py-6 text-center text-[12px] text-muted-foreground">
+                    No tools match this filter.
+                  </div>
+                ) : null}
               </div>
             </section>
           ) : null}

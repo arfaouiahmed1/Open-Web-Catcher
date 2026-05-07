@@ -308,9 +308,9 @@ export function normalizeProxyRuntimeConfig(settings = {}) {
     sourceMode,
     sourceOrder: splitUniqueStrings(settings.proxy_source_order, DEFAULT_PROXY_SOURCE_ORDER),
     customList: splitUniqueStrings(settings.proxy_custom_list),
-    rotationMode: normalizeChoice(settings.proxy_rotation_mode, new Set(['never', 'session', 'sticky', 'failure']), 'session'),
-    selectionStrategy: normalizeChoice(settings.proxy_selection_strategy, new Set(['ordered', 'random']), 'ordered'),
-    fallbackStrategy: normalizeChoice(settings.proxy_fallback_strategy, new Set(['direct', 'fail']), 'direct'),
+    rotationMode: 'sticky',
+    selectionStrategy: 'ordered',
+    fallbackStrategy: 'direct',
     fetchTimeoutMs: clampPositiveInteger(settings.proxy_fetch_timeout_ms, 8000),
     validationTimeoutMs: clampPositiveInteger(settings.proxy_validation_timeout_ms, 12000),
     cacheTtlMs: clampPositiveInteger(settings.proxy_cache_ttl_ms, 600000),
@@ -330,6 +330,12 @@ export async function getProxyCandidatePlan(browserId, proxyConfig) {
     return {
       enabled: false,
       allowDirectFallback: true,
+      strategy: {
+        rotation_mode: config.rotationMode,
+        selection_strategy: config.selectionStrategy,
+        fallback_strategy: config.fallbackStrategy,
+        description: 'validated_sticky disabled because proxy pool is off',
+      },
       candidates: [],
       testUrl: config.testUrl,
       validationTimeoutMs: config.validationTimeoutMs,
@@ -389,6 +395,12 @@ export async function getProxyCandidatePlan(browserId, proxyConfig) {
   return {
     enabled: true,
     allowDirectFallback: config.fallbackStrategy === 'direct',
+    strategy: {
+      rotation_mode: config.rotationMode,
+      selection_strategy: config.selectionStrategy,
+      fallback_strategy: config.fallbackStrategy,
+      description: 'validated_sticky: keep the first healthy candidate per engine/profile and rotate only after failure',
+    },
     candidates: ordered.slice(0, config.maxCandidates),
     testUrl: config.testUrl,
     validationTimeoutMs: config.validationTimeoutMs,

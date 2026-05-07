@@ -34,7 +34,7 @@ DEFAULT_BROWSER_RUNTIME: dict[str, dict[str, Any]] = {
         "proxy_source_order": list(DEFAULT_PROXY_SOURCE_ORDER),
         "proxy_custom_list": [],
         "proxy_rotation_mode": "sticky",
-        "proxy_selection_strategy": "random",
+        "proxy_selection_strategy": "ordered",
         "proxy_fallback_strategy": "direct",
         "proxy_fetch_timeout_ms": 8000,
         "proxy_validation_timeout_ms": 12000,
@@ -71,7 +71,7 @@ DEFAULT_BROWSER_RUNTIME: dict[str, dict[str, Any]] = {
         "proxy_source_order": list(DEFAULT_PROXY_SOURCE_ORDER),
         "proxy_custom_list": [],
         "proxy_rotation_mode": "sticky",
-        "proxy_selection_strategy": "random",
+        "proxy_selection_strategy": "ordered",
         "proxy_fallback_strategy": "direct",
         "proxy_fetch_timeout_ms": 8000,
         "proxy_validation_timeout_ms": 12000,
@@ -146,21 +146,12 @@ def normalize_browser_runtime(value: Any) -> dict[str, dict[str, Any]]:
             fallback=current["proxy_source_order"],
         )
         current["proxy_custom_list"] = _coerce_string_list(raw.get("proxy_custom_list"))
-        current["proxy_rotation_mode"] = _coerce_choice(
-            raw.get("proxy_rotation_mode"),
-            allowed={"never", "session", "sticky", "failure"},
-            fallback=current["proxy_rotation_mode"],
-        )
-        current["proxy_selection_strategy"] = _coerce_choice(
-            raw.get("proxy_selection_strategy"),
-            allowed={"ordered", "random"},
-            fallback=current["proxy_selection_strategy"],
-        )
-        current["proxy_fallback_strategy"] = _coerce_choice(
-            raw.get("proxy_fallback_strategy"),
-            allowed={"direct", "fail"},
-            fallback=current["proxy_fallback_strategy"],
-        )
+        # The runtime intentionally exposes one dependable strategy:
+        # validate candidates, keep the last healthy proxy, rotate only when it
+        # fails, and fall back to direct browsing if no proxy validates.
+        current["proxy_rotation_mode"] = "sticky"
+        current["proxy_selection_strategy"] = "ordered"
+        current["proxy_fallback_strategy"] = "direct"
         current["proxy_fetch_timeout_ms"] = _coerce_int(
             raw.get("proxy_fetch_timeout_ms"),
             current["proxy_fetch_timeout_ms"],

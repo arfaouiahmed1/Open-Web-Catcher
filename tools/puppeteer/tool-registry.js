@@ -81,9 +81,33 @@ function formatJsonBlock(label, value) {
   return `${label}:\n\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``;
 }
 
-function buildDescription(summary, inputExample, outputExample) {
+function toolUsageGuidance(toolName) {
+  const broadInspectors = new Set(['inspect', 'inspect_landing', 'inspect_hosting', 'inspect_embedded', 'get_page_context']);
+  const targetedInspectors = new Set(['query_elements', 'get_element_detail', 'get_frame_tree', 'get_media_state', 'capture_streams']);
+  const actionTools = new Set([
+    'click_element', 'click_css', 'click_text', 'click_xpath', 'click_checkbox', 'click_radio',
+    'type_into', 'select_option', 'play_media', 'swipe_region', 'click_coordinates', 'interact',
+  ]);
+
+  if (broadInspectors.has(toolName)) {
+    return 'Efficiency guidance: Use once after navigation or a meaningful page-state change. Reuse returned frame_path, element_ref, media, and link evidence; do not repeat broad inspection when URL and DOM state are unchanged.';
+  }
+  if (targetedInspectors.has(toolName)) {
+    return 'Efficiency guidance: Use after get_page_context or a profile inspect result when you need narrower evidence. Prefer this over another broad inspect; return values are intended to feed the next action or media verification step.';
+  }
+  if (actionTools.has(toolName)) {
+    return 'Efficiency guidance: Use only after a prior inspect/query/detail result identifies a target. Prefer element_ref when available, then verify observed_change, playback_started, or network diagnostics before calling more tools.';
+  }
+  if (toolName === 'open_url' || toolName === 'navigate' || toolName === 'go_back') {
+    return 'Efficiency guidance: Use only for intentional navigation. After it returns, inspect once, then plan from that snapshot instead of navigating back and re-inspecting unchanged state.';
+  }
+  return 'Efficiency guidance: Use when its cached or memory output can prevent repeated browser exploration. Do not call it if the current page evidence already answers the question.';
+}
+
+function buildDescription(toolName, summary, inputExample, outputExample) {
   return [
     summary,
+    toolUsageGuidance(toolName),
     formatJsonBlock('Input JSON', inputExample),
     formatJsonBlock('Output JSON', outputExample),
   ].join('\n\n');
@@ -566,7 +590,8 @@ function toPublicToolSpec(name, specValue) {
   return {
     name,
     summary: specValue.summary,
-    description: buildDescription(specValue.summary, specValue.inputExample, specValue.outputExample),
+    usage_guidance: toolUsageGuidance(name),
+    description: buildDescription(name, specValue.summary, specValue.inputExample, specValue.outputExample),
     input_schema: specValue.inputSchema,
     input_example: specValue.inputExample,
     output_example: specValue.outputExample,

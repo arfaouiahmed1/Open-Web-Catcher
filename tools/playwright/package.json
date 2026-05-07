@@ -11,7 +11,7 @@
   "scripts": {
     "start": "node mcp-server.js",
     "dev": "node --watch mcp-server.js",
-    "test": "node ../shared/tests/browser-health.test.js && node tests/tool-registry.test.js && node tests/tool-runtime.test.js && node tests/playwright-contracts.test.js && node tests/error-codes.test.js && node tests/ubol-launch.test.js"
+    "test": "node ../shared/tests/browser-health.test.js && node ../shared/tests/proxy-pool.test.js && node tests/tool-registry.test.js && node tests/tool-runtime.test.js && node tests/playwright-contracts.test.js && node tests/error-codes.test.js && node tests/ubol-launch.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.0",

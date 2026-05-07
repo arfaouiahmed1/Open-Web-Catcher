@@ -1,19 +1,19 @@
-agent_model: gemini-2.5-flash
+agent_model: gemini-flash-lite-latest
 agent_model_config:
   classification:
-    model: gemini-2.5-flash
+    model: gemini-flash-lite-latest
     provider: google
   embedded:
-    model: gemini-2.5-flash
+    model: gemini-flash-lite-latest
     provider: google
   hosting:
-    model: gemini-2.5-flash
+    model: gemini-flash-lite-latest
     provider: google
   landing:
-    model: gemini-2.5-flash
+    model: gemini-flash-lite-latest
     provider: google
   orchestrator:
-    model: gemini-2.5-flash
+    model: gemini-flash-lite-latest
     provider: google
 agent_timeout_seconds: 300
 browser_engine: puppeteer
@@ -47,7 +47,7 @@ browser_runtime:
     proxy_fallback_strategy: direct
     proxy_fetch_timeout_ms: 8000
     proxy_max_candidates: 25
-    proxy_rotation_mode: session
+    proxy_rotation_mode: sticky
     proxy_selection_strategy: ordered
     proxy_source_mode: hybrid
     proxy_source_order:
@@ -93,7 +93,7 @@ browser_runtime:
     proxy_fallback_strategy: direct
     proxy_fetch_timeout_ms: 8000
     proxy_max_candidates: 25
-    proxy_rotation_mode: session
+    proxy_rotation_mode: sticky
     proxy_selection_strategy: ordered
     proxy_source_mode: hybrid
     proxy_source_order:
@@ -190,6 +190,8 @@ llm_tuning:
       temperature: 1
       top_p: 0.95
   model_overrides:
+    google::gemini-2.5-flash:
+      temperature: 0.8
     nvidia::minimaxai/minimax-m2.7:
       max_tokens: 8192
       temperature: 1
@@ -207,10 +209,10 @@ llm_tuning:
 log_file: data/logs/app.log
 log_level: INFO
 max_parallel_hosting_pages: 5
-orchestrator_model: gemini-2.5-flash
+orchestrator_model: gemini-flash-lite-latest
 provider_cache_enabled: true
 thinking_budget_tokens: 8000
-thinking_enabled: false
+thinking_enabled: true
 tool_result_cache_enabled: true
-tool_result_cache_min_identical_observations: 2
+tool_result_cache_min_identical_observations: 1
 tool_timeout_seconds: 30

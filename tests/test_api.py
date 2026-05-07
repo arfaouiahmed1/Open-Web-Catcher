@@ -239,16 +239,16 @@ def test_ui_config_update_reports_persist_path(client: TestClient, api_settings:
         response = client.put(
             "/ui/config",
             json={
-                "llm_provider": "openai",
-                "agent_model": "gpt-4o-mini",
-                "orchestrator_model": "gpt-4o-mini",
+                "llm_provider": "google",
+                "agent_model": "gemini-2.5-flash",
+                "orchestrator_model": "gemini-2.5-flash",
                 "gemini_temperature": 0.4,
                 "llm_tuning": {
                     "provider_defaults": {
-                        "openai": {"temperature": 0.3, "top_p": 0.9},
+                    "google": {"temperature": 0.3, "top_p": 0.9},
                     },
                     "model_overrides": {
-                        "openai::gpt-4o-mini": {"max_tokens": 1024},
+                    "google::gemini-2.5-flash": {"max_output_tokens": 1024},
                     },
                 },
                 "thinking_enabled": True,
@@ -258,10 +258,10 @@ def test_ui_config_update_reports_persist_path(client: TestClient, api_settings:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["llm_provider"] == "openai"
-    assert payload["agent_model"] == "gpt-4o-mini"
-    assert payload["llm_tuning"]["provider_defaults"]["openai"]["temperature"] == 0.3
-    assert payload["llm_tuning"]["model_overrides"]["openai::gpt-4o-mini"]["max_tokens"] == 1024
+    assert payload["llm_provider"] == "google"
+    assert payload["agent_model"] == "gemini-2.5-flash"
+    assert payload["llm_tuning"]["provider_defaults"]["google"]["temperature"] == 0.3
+    assert payload["llm_tuning"]["model_overrides"]["google::gemini-2.5-flash"]["max_output_tokens"] == 1024
     assert payload["thinking_enabled"] is True
     assert payload["thinking_budget_tokens"] == 12000
     assert payload["config_persisted"] is True
@@ -274,16 +274,29 @@ def test_ui_config_update_reports_persist_error(client: TestClient, api_settings
         response = client.put(
             "/ui/config",
             json={
-                "llm_provider": "openrouter",
-                "agent_model": "openai/gpt-4o-mini",
+                "llm_provider": "google",
+                "agent_model": "gemini-2.5-flash",
             },
         )
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["llm_provider"] == "openrouter"
+    assert payload["llm_provider"] == "google"
     assert payload["config_persisted"] is False
     assert "read-only" in payload["config_persist_error"].lower()
+
+
+def test_ui_config_update_rejects_non_gemini_provider(client: TestClient):
+    response = client.put(
+        "/ui/config",
+        json={
+            "llm_provider": "openai",
+            "agent_model": "gpt-4o-mini",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Google Gemini provider" in response.json()["detail"]
 
 
 def test_ui_config_update_normalizes_browser_runtime(client: TestClient, api_settings: Settings):
@@ -378,12 +391,12 @@ def test_browser_runtime_sync_status_reports_bridge_metadata(tmp_path: Path):
 
 
 def test_ui_config_update_supports_partial_tab_saves(client: TestClient, api_settings: Settings):
-    api_settings.llm_provider = "openai"
-    api_settings.agent_model = "gpt-4o-mini"
-    api_settings.orchestrator_model = "gpt-4o"
+    api_settings.llm_provider = "google"
+    api_settings.agent_model = "gemini-2.5-flash"
+    api_settings.orchestrator_model = "gemini-2.5-pro"
     api_settings.browser_engine = "puppeteer"
-    api_settings.deepeval_provider = "openai"
-    api_settings.deepeval_model = "gpt-4o"
+    api_settings.deepeval_provider = "google"
+    api_settings.deepeval_model = "gemini-2.5-flash"
 
     with patch.object(api_settings.__class__, "save_yaml", return_value=Path("data/settings.runtime.yaml")), \
          patch.object(api_settings.__class__, "save_browser_runtime_bridge", return_value=Path("data/browser.runtime.json")):
@@ -403,34 +416,41 @@ def test_ui_config_update_supports_partial_tab_saves(client: TestClient, api_set
     payload = response.json()
     assert payload["browser_engine"] == "playwright"
     assert payload["browser_runtime"]["playwright"]["launch_timeout_ms"] == 61000
-    assert payload["llm_provider"] == "openai"
-    assert payload["agent_model"] == "gpt-4o-mini"
-    assert payload["orchestrator_model"] == "gpt-4o"
-    assert payload["deepeval_provider"] == "openai"
-    assert payload["deepeval_model"] == "gpt-4o"
+    assert payload["llm_provider"] == "google"
+    assert payload["agent_model"] == "gemini-2.5-flash"
+    assert payload["orchestrator_model"] == "gemini-2.5-pro"
+    assert payload["deepeval_provider"] == "google"
+    assert payload["deepeval_model"] == "gemini-2.5-flash"
 
 
 def test_ui_provider_models_returns_catalog(client: TestClient):
     catalog = {
-        "provider": "openai",
-        "name": "OpenAI",
-        "key_env": "OPENAI_API_KEY",
+        "provider": "google",
+        "name": "Google Gemini",
+        "key_env": "GOOGLE_API_KEY",
         "api_key_set": True,
         "available": True,
         "source": "provider_api",
         "error": "",
-        "models": [{"id": "gpt-5", "label": "gpt-5"}],
+        "models": [{"id": "gemini-2.5-flash", "label": "gemini-2.5-flash"}],
         "hyperparameters": [{"key": "temperature", "type": "number"}],
     }
 
     with patch("src.api.app.get_provider_model_catalog", return_value=catalog) as mock_catalog:
-        response = client.get("/ui/providers/models", params={"provider": "openai"})
+        response = client.get("/ui/providers/models", params={"provider": "google"})
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["provider"] == "openai"
-    assert payload["models"][0]["id"] == "gpt-5"
+    assert payload["provider"] == "google"
+    assert payload["models"][0]["id"] == "gemini-2.5-flash"
     mock_catalog.assert_called_once()
+
+
+def test_ui_provider_models_rejects_non_gemini_provider(client: TestClient):
+    response = client.get("/ui/providers/models", params={"provider": "openai"})
+
+    assert response.status_code == 400
+    assert "Google Gemini provider" in response.json()["detail"]
 
 
 def test_ui_estimate_costs_uses_split_cached_and_output_rates(client: TestClient, api_settings: Settings):

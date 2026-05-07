@@ -496,6 +496,7 @@ def build_llm(
         model=model_name,
         google_api_key=settings.google_api_key,
         temperature=temp,
+        streaming=True,
         **gemini_kwargs,
         convert_system_message_to_human=True,
     )

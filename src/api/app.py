@@ -144,6 +144,7 @@ def _ensure_launch_runtime_ready(settings: Settings) -> dict[str, Any]:
 
 @dataclass
 class _PlaygroundToolSession:
+    session_key: str
     profile: str
     manager: Any
     tools: list[Any]
@@ -271,10 +272,24 @@ def get_settings() -> Settings:
     return _settings
 
 
-async def _close_playground_tool_session(profile: str) -> None:
+def _playground_tool_session_key(profile: str, settings: Settings) -> str:
+    browser = str(getattr(settings, "browser_engine", "") or "puppeteer").strip().lower()
+    mcp_url = str(getattr(settings, "mcp_server_url", "") or "").strip()
+    disabled_signature = json.dumps(
+        {
+            "legacy": getattr(settings, "disabled_tools_by_profile", {}) or {},
+            "by_browser": getattr(settings, "disabled_tools_by_browser_profile", {}) or {},
+        },
+        sort_keys=True,
+        default=str,
+    )
+    return f"{browser}|{mcp_url}|{profile}|{disabled_signature}"
+
+
+async def _close_playground_tool_session(session_key: str) -> None:
     session: _PlaygroundToolSession | None = None
     async with _playground_tool_session_lock:
-        session = _playground_tool_sessions.pop(profile, None)
+        session = _playground_tool_sessions.pop(session_key, None)
 
     if session is None:
         return
@@ -282,28 +297,33 @@ async def _close_playground_tool_session(profile: str) -> None:
     try:
         await session.manager.__aexit__(None, None, None)
     except Exception as exc:  # noqa: BLE001
-        logger.debug("Failed to close playground MCP session for '%s': %s", profile, exc)
+        logger.debug(
+            "Failed to close playground MCP session for '%s' (%s): %s",
+            session.profile,
+            session_key,
+            exc,
+        )
 
 
 async def _close_all_playground_tool_sessions() -> None:
-    profiles: list[str]
+    session_keys: list[str]
     async with _playground_tool_session_lock:
-        profiles = list(_playground_tool_sessions.keys())
+        session_keys = list(_playground_tool_sessions.keys())
 
-    for profile in profiles:
-        await _close_playground_tool_session(profile)
+    for session_key in session_keys:
+        await _close_playground_tool_session(session_key)
 
 
 async def _cleanup_expired_playground_tool_sessions() -> None:
     now = perf_counter()
-    profiles_to_close: list[str] = []
+    session_keys_to_close: list[str] = []
     async with _playground_tool_session_lock:
-        for profile, session in list(_playground_tool_sessions.items()):
+        for session_key, session in list(_playground_tool_sessions.items()):
             if (now - session.last_used_at) >= _PLAYGROUND_SESSION_TTL_SECONDS:
-                profiles_to_close.append(profile)
+                session_keys_to_close.append(session_key)
 
-    for profile in profiles_to_close:
-        await _close_playground_tool_session(profile)
+    for session_key in session_keys_to_close:
+        await _close_playground_tool_session(session_key)
 
 
 def _track_run_task(run_id: str, task: asyncio.Task) -> asyncio.Task:
@@ -331,9 +351,10 @@ async def _cancel_active_run_task(run_id: str) -> bool:
 async def _get_playground_tools(profile: str, settings: Settings) -> list[Any]:
     await _cleanup_expired_playground_tool_sessions()
     now = perf_counter()
+    session_key = _playground_tool_session_key(profile, settings)
 
     async with _playground_tool_session_lock:
-        existing = _playground_tool_sessions.get(profile)
+        existing = _playground_tool_sessions.get(session_key)
         if existing is not None:
             existing.last_used_at = now
             return existing.tools
@@ -342,9 +363,10 @@ async def _get_playground_tools(profile: str, settings: Settings) -> list[Any]:
     tools = await manager.__aenter__()
 
     async with _playground_tool_session_lock:
-        existing = _playground_tool_sessions.get(profile)
+        existing = _playground_tool_sessions.get(session_key)
         if existing is None:
-            _playground_tool_sessions[profile] = _PlaygroundToolSession(
+            _playground_tool_sessions[session_key] = _PlaygroundToolSession(
+                session_key=session_key,
                 profile=profile,
                 manager=manager,
                 tools=tools,
@@ -356,7 +378,7 @@ async def _get_playground_tools(profile: str, settings: Settings) -> list[Any]:
     # Another request initialized this profile first; close this duplicate.
     await manager.__aexit__(None, None, None)
     async with _playground_tool_session_lock:
-        surviving = _playground_tool_sessions[profile]
+        surviving = _playground_tool_sessions[session_key]
         surviving.last_used_at = now
         return surviving.tools
 
@@ -3348,16 +3370,11 @@ def _ui_config_payload(
         ),
         "browser_runtime": normalize_browser_runtime(getattr(settings, "browser_runtime", {})),
         "browser_runtime_sync_status": build_browser_runtime_sync_status(),
-        "deepeval_provider": getattr(settings, "deepeval_provider", "openai"),
-        "deepeval_model": getattr(settings, "deepeval_model", "gpt-4o"),
+        "deepeval_provider": getattr(settings, "deepeval_provider", "google"),
+        "deepeval_model": getattr(settings, "deepeval_model", "gemini-2.5-flash"),
         "deepeval_temperature": getattr(settings, "deepeval_temperature", 0.0),
         "api_keys": {
             "google": bool(settings.google_api_key),
-            "google-vertex": bool(settings.google_vertex_api_key),
-            "openai": bool(settings.openai_api_key),
-            "anthropic": bool(settings.anthropic_api_key),
-            "openrouter": bool(settings.openrouter_api_key),
-            "nvidia": bool(settings.nvidia_api_key),
         },
     }
     if config_persisted is not None:
@@ -3378,8 +3395,11 @@ def ui_provider_models(
     provider: str = Query(..., min_length=2), max_models: int = Query(default=200, ge=1, le=1000)
 ):
     """Return provider-backed model catalog and tuning metadata."""
+    normalized_provider = str(provider or "").strip().lower()
+    if normalized_provider != "google":
+        raise HTTPException(status_code=400, detail="Only the Google Gemini provider is supported.")
     try:
-        return get_provider_model_catalog(get_settings(), provider=provider, max_models=max_models)
+        return get_provider_model_catalog(get_settings(), provider="google", max_models=max_models)
     except ProviderModelCatalogError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -3389,6 +3409,8 @@ def ui_update_config(body: ModelConfigRequest):
     """Update active LLM provider/model at runtime and persist to settings.yaml."""
     s = get_settings()
     if body.llm_provider:
+        if str(body.llm_provider).strip().lower() != "google":
+            raise HTTPException(status_code=400, detail="Only the Google Gemini provider is supported.")
         s.llm_provider = body.llm_provider
     if body.agent_model:
         s.agent_model = body.agent_model
@@ -3452,7 +3474,7 @@ def ui_update_config(body: ModelConfigRequest):
     else:
         s.browser_runtime = normalize_browser_runtime(getattr(s, "browser_runtime", {}))
     if body.deepeval_provider is not None:
-        s.deepeval_provider = body.deepeval_provider
+        s.deepeval_provider = "google"
     if body.deepeval_model is not None:
         s.deepeval_model = body.deepeval_model
     if body.deepeval_temperature is not None:

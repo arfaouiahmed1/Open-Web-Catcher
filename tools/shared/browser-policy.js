@@ -10,6 +10,30 @@ const STREAMING_PATH_PATTERNS = [
 const STREAMING_PROFILE_IDS = new Set(['hosting', 'embedded']);
 const CLEANUP_ONLY_PROFILE_IDS = new Set(['landing', 'hosting', 'embedded']);
 
+function describeEngineStrengths(browserId) {
+  const normalized = String(browserId || '').trim().toLowerCase();
+  if (normalized === 'playwright') {
+    return {
+      preferred_for: [
+        'context isolation',
+        'iframe-heavy player recovery',
+        'persistent contexts with extensions',
+        'context-level proxy configuration',
+      ],
+      fallback_role: 'Use when media or iframe behavior needs stronger context ownership than the default Puppeteer path.',
+    };
+  }
+  return {
+    preferred_for: [
+      'default browser runs',
+      'legacy CDP-compatible tooling',
+      'direct browser websocket sessions',
+      'page-level diagnostics',
+    ],
+    fallback_role: 'Default engine; use Playwright when a run needs stronger context isolation or iframe/media handling.',
+  };
+}
+
 function collectUrls(value, collector) {
   if (!value) return;
   if (Array.isArray(value)) {
@@ -89,6 +113,7 @@ export function computeBrowserPolicy({
   return {
     browser_id: browserId,
     browser_profile: normalizedProfile,
+    engine_strengths: describeEngineStrengths(browserId),
     mode: wantsStreamingSafe ? 'streaming_safe' : 'standard',
     streaming_safe: wantsStreamingSafe,
     streaming_safe_mode: streamingSafeMode,
