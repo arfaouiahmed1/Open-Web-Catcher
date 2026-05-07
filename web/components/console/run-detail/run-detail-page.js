@@ -88,28 +88,25 @@ function RunMeta({ run, jobState, parallelism }) {
       ? `${run.top_level_page_type} / ${run.classification_confidence}`
       : run.top_level_page_type
     : "unknown";
-  const modeValue = String(jobState?.job_type || "").trim().toLowerCase();
   const items = [
     { label: "Root actor", value: run.root_actor || jobState?.actor || "unknown" },
-    {
-      label: "Mode",
-      value:
-        modeValue === "workflow"
-          ? "Workflow"
-          : modeValue === "agent"
-            ? "Agent"
-            : modeValue || "unknown",
-    },
-    { label: "Classification", value: classificationValue },
-    { label: "Page type", value: run.page_type || "unknown" },
     { label: "Duration", value: dur(run.duration_seconds) },
     { label: "Started", value: fmt(run.started_at || run.created_at) },
     { label: "Finished", value: fmt(run.finished_at) },
-    {
+  ];
+
+  if (classificationValue !== "unknown") {
+    items.push({ label: "Classification", value: classificationValue });
+  }
+  if (run.page_type && run.page_type !== "unknown") {
+    items.push({ label: "Page type", value: run.page_type });
+  }
+  if (parallelism?.max_parallel_agents || parallelism?.current_parallel_agents) {
+    items.push({
       label: "Parallel",
       value: `${formatNumber(parallelism?.current_parallel_agents || 0)} live / ${formatNumber(parallelism?.max_parallel_agents || 0)} peak`,
-    },
-  ];
+    });
+  }
 
   if (jobState?.status) {
     items.push({
@@ -179,6 +176,7 @@ function RunHeader({
   live,
   jobState = null,
   parallelism = null,
+  actions = null,
 }) {
   return (
     <Card className="overflow-hidden shadow-card">
@@ -309,6 +307,7 @@ function RunHeader({
                 {formatNumber(parallelism?.current_parallel_agents || 0)} live / {formatNumber(parallelism?.max_parallel_agents || 0)} peak
               </span>
             </div>
+            {actions ? <div className="flex flex-wrap justify-end gap-2">{actions}</div> : null}
           </div>
         </div>
       </CardHeader>
@@ -476,7 +475,7 @@ export function RunDetailPage() {
   const [payload, setPayload] = useState(null);
   const [isLoading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState("live");
+  const [tab, setTab] = useState("workflow");
   const [liveMetrics, setLiveMetrics] = useState(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -689,11 +688,11 @@ export function RunDetailPage() {
   const metricDescription = (fallback, normal) => (telemetryMissing ? "Trace not persisted" : normal || fallback);
 
   const llmCallCount = isActiveTrace
-    ? Number(liveMetricsSafe.total_llm_calls || llmCalls.length || 0)
-    : Number(run.total_llm_calls || llmCalls.length || 0);
+    ? Math.max(Number(liveMetricsSafe.total_llm_calls || 0), llmCalls.length)
+    : Math.max(Number(run.total_llm_calls || 0), llmCalls.length);
   const toolCallCount = isActiveTrace
-    ? Number(liveMetricsSafe.total_tool_calls || 0)
-    : Number(run.total_tool_calls || toolCalls.length || 0);
+    ? Math.max(Number(liveMetricsSafe.total_tool_calls || 0), toolCalls.length)
+    : Math.max(Number(run.total_tool_calls || 0), toolCalls.length);
   const tokensIn = isActiveTrace
     ? Number(liveMetricsSafe.total_tokens_in || 0)
     : Number(run.total_tokens_in || 0);
@@ -747,18 +746,18 @@ export function RunDetailPage() {
       accent: "signal",
       description: telemetryMissing ? "Trace not persisted" : "Live / peak agents",
     },
-    {
-      label: "Screenshots",
-      value: missingMetricValue || formatNumber(run.screenshot_count || screenshots.length || 0),
-      accent: "sky",
-      description: metricDescription("Captures taken", "Captures taken"),
-    },
-    {
-      label: "Streams",
-      value: missingMetricValue || formatNumber(run.stream_count || 0),
-      accent: "signal",
-      description: metricDescription("Stream URLs found", "Stream URLs found"),
-    },
+      {
+        label: "Screenshots",
+        value: missingMetricValue || formatNumber(Math.max(Number(run.screenshot_count || 0), screenshots.length)),
+        accent: "sky",
+        description: metricDescription("Captures taken", "Captures taken"),
+      },
+      {
+        label: "Streams",
+        value: missingMetricValue || formatNumber(Math.max(Number(run.stream_count || 0), allStreams.length)),
+        accent: "signal",
+        description: metricDescription("Stream URLs found", "Stream URLs found"),
+      },
   ];
 
   async function cancelRun() {
@@ -801,6 +800,10 @@ export function RunDetailPage() {
     }
   }
 
+  const topLevelKpis = kpis.filter((kpi) =>
+    ["LLM Calls", "Tool Calls", "Tokens", "Screenshots"].includes(kpi.label),
+  );
+
   return (
     <div className="space-y-5">
       {degradedFallback ? (
@@ -834,56 +837,49 @@ export function RunDetailPage() {
         jobState={jobState}
         parallelism={parallelism}
         subtitle={isActiveTrace ? "Streaming from in-memory observer" : null}
-      />
-
-      <DatasetContextCard context={datasetContext} />
-
-      <Card className="overflow-hidden shadow-card">
-        <CardContent className="flex flex-wrap items-center gap-2 px-4 py-3">
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium">Run controls</div>
-            <div className="text-xs text-muted-foreground">
-              Stop an active run, refresh persisted state, or delete a finished run.
-            </div>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={refreshRun}
-            disabled={isLoading || isRefreshing}
-          >
-            <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
-          {canCancelRun(run) ? (
+        actions={(
+          <>
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={cancelRun}
-              disabled={isCancelling}
+              onClick={refreshRun}
+              disabled={isLoading || isRefreshing}
             >
-              <XCircle className="h-4 w-4" />
-              {isCancelling ? "Stopping..." : "Stop run"}
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+              Refresh
             </Button>
-          ) : null}
-          {canDeleteRun(run) ? (
-            <ConfirmAction
-              title="Delete this run?"
-              description="Removes the run and its persisted telemetry. This cannot be undone."
-              actionLabel={isDeleting ? "Deleting..." : "Delete run"}
-              onConfirm={deleteRun}
-              trigger={(
-                <Button type="button" variant="outline" size="sm" disabled={isDeleting}>
-                  <Trash2 className="h-4 w-4" />
-                  Delete
-                </Button>
-              )}
-            />
-          ) : null}
-        </CardContent>
-      </Card>
+            {canCancelRun(run) ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={cancelRun}
+                disabled={isCancelling}
+              >
+                <XCircle className="h-4 w-4" />
+                {isCancelling ? "Stopping..." : "Stop run"}
+              </Button>
+            ) : null}
+            {canDeleteRun(run) ? (
+              <ConfirmAction
+                title="Delete this run?"
+                description="Removes the run and its persisted telemetry. This cannot be undone."
+                actionLabel={isDeleting ? "Deleting..." : "Delete run"}
+                onConfirm={deleteRun}
+                trigger={(
+                  <Button type="button" variant="outline" size="sm" disabled={isDeleting}>
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </Button>
+                )}
+              />
+            ) : null}
+          </>
+        )}
+      />
+
+      <DatasetContextCard context={datasetContext} />
 
       {actionError ? (
         <div
@@ -900,40 +896,30 @@ export function RunDetailPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        {kpis.map((kpi) => (
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {topLevelKpis.map((kpi) => (
           <KpiCard key={kpi.label} {...kpi} />
         ))}
       </div>
-
-      <div className="grid gap-3 lg:grid-cols-2">
-        <ContextWindowMeter
-          llmCalls={llmCalls}
-          primaryModel={run.primary_model}
-          primaryProvider={run.primary_provider}
-          groups={contextGroups}
-          focusKey={runState?.active?.actor || runState?.active?.stage || ""}
-        />
-        <CostEstimateCard
-          llmCalls={llmCalls}
-          modelUsage={modelUsage}
-          agentRollups={agentRollups}
-          unavailable={telemetryMissing}
-        />
-      </div>
-
-      <RunFinalOutputsSection snapshot={snapshot} isWorkflowRun={showFinalOutputs} />
 
       <Tabs value={tab} onValueChange={setTab}>
         <div ref={tabsHeaderRef} className="rounded-xl border border-border bg-card px-3 py-2 shadow-sm">
           <div ref={tabListRef} className="max-w-full overflow-x-auto">
           <TabsList className="h-auto w-max min-w-full flex-nowrap justify-start gap-1 border-0 bg-transparent p-0 shadow-none">
-            <TabsTrigger value="live">Live &amp; Graph</TabsTrigger>
-            <TabsTrigger value="outputs">
-              {isAgentRun ? "Agent output" : "Workflow outputs"}
-              {agentRollups.length || agentOutputs.length ? (
+            <TabsTrigger value="workflow">Workflow</TabsTrigger>
+            <TabsTrigger value="reasoning">
+              Reasoning
+              {llmCalls.length ? (
+                <Badge tone="violet" className="ml-1 px-1.5 py-0 text-[10px]">
+                  {llmCalls.length}
+                </Badge>
+              ) : null}
+            </TabsTrigger>
+            <TabsTrigger value="agents">
+              Agents
+              {agentRollups.length || agentOutputs.length || contextGroups.length ? (
                 <Badge tone="signal" className="ml-1 px-1.5 py-0 text-[10px]">
-                  {agentRollups.length || agentOutputs.length}
+                  {Math.max(agentRollups.length || agentOutputs.length, contextGroups.length)}
                 </Badge>
               ) : null}
             </TabsTrigger>
@@ -962,7 +948,7 @@ export function RunDetailPage() {
           </div>
         </div>
 
-        <TabsContent value="live" className="space-y-4">
+        <TabsContent value="workflow" className="space-y-4">
           <RunDetailLive
             runId={runId}
             activeTrace={normalizedTrace}
@@ -977,25 +963,41 @@ export function RunDetailPage() {
           />
         </TabsContent>
 
-        <TabsContent value="outputs">
-          <div className="space-y-4">
-            <LlmOutputPanel
-              events={llmOutputEvents}
-              emptyMessage={
-                telemetryMissing
-                  ? "No LLM calls were persisted for this run."
-                  : undefined
-              }
+        <TabsContent value="reasoning">
+          <LlmOutputPanel
+            events={llmOutputEvents}
+            emptyMessage={
+              telemetryMissing
+                ? "No LLM calls were persisted for this run."
+                : undefined
+            }
+          />
+        </TabsContent>
+
+        <TabsContent value="agents" className="space-y-4">
+          <div className="grid gap-3 lg:grid-cols-2">
+            <ContextWindowMeter
+              llmCalls={llmCalls}
+              primaryModel={run.primary_model}
+              primaryProvider={run.primary_provider}
+              groups={contextGroups}
+              focusKey={runState?.active?.actor || runState?.active?.stage || ""}
             />
-            <AgentOutputPanel
-              stageRollups={stageRollups}
+            <CostEstimateCard
+              llmCalls={llmCalls}
+              modelUsage={modelUsage}
               agentRollups={agentRollups}
-              parallelism={parallelism}
-              title={
-                isAgentRun ? "Agent output" : "Workflow outputs"
-              }
+              unavailable={telemetryMissing}
             />
           </div>
+          <AgentOutputPanel
+            stageRollups={stageRollups}
+            agentRollups={agentRollups}
+            parallelism={parallelism}
+            title={
+              isAgentRun ? "Agent output" : "Workflow outputs"
+            }
+          />
         </TabsContent>
 
         <TabsContent value="data">
@@ -1081,6 +1083,7 @@ export function RunDetailPage() {
                 expand={settings.expandTables}
               />
             </div>
+            <RunFinalOutputsSection snapshot={snapshot} isWorkflowRun={showFinalOutputs} />
           </div>
         </TabsContent>
 

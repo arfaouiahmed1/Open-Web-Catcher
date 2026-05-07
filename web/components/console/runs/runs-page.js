@@ -685,6 +685,8 @@ export function RunsPage() {
   const [runDetail, setRunDetail] = useState(null);
   const [runDetailLoading, setRunDetailLoading] = useState(false);
   const [historyBusyRunId, setHistoryBusyRunId] = useState("");
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [isPricingLoading, setIsPricingLoading] = useState(true);
   const [refreshTick, setRefreshTick] = useState(0);
 
   const languages = meta.languages || FALLBACK_LANGUAGES;
@@ -725,12 +727,10 @@ export function RunsPage() {
         limit: "0",
         offset: "0",
       });
-      const [metaPayload, sitesPayload, batchesPayload, runPayload, pricing] = await Promise.all([
+      const [metaPayload, sitesPayload, batchesPayload] = await Promise.all([
         apiFetch("/api/datasets/meta"),
         apiFetch(`/api/datasets/sites?${params.toString()}`),
         apiFetch("/api/datasets/batches?limit=20"),
-        apiFetch(`/ui/runs?limit=25&offset=0&query=${encodeURIComponent(query)}`),
-        loadPricing(),
       ]);
       setMeta({
         languages: metaPayload.languages || FALLBACK_LANGUAGES,
@@ -740,17 +740,13 @@ export function RunsPage() {
       setSites(sitesPayload.sites || []);
       setSiteTotal(sitesPayload.total || 0);
       setBatches(batchesPayload.batches || []);
-      setRunHistory(runPayload.rows || []);
-      setRunHistoryTotal(runPayload.total || 0);
-      setPricingMap(pricing);
       setSelectedSiteIds((current) =>
         current.filter((id) => (sitesPayload.sites || []).some((site) => site.id === id)),
       );
-      const nextBatchId = selectedBatchId || batchesPayload.batches?.[0]?.batch_id || "";
+      const nextBatchId =
+        selectedBatchId || (tab === "batches" ? batchesPayload.batches?.[0]?.batch_id : "") || "";
       if (nextBatchId) {
-        const nextBatch = await apiFetch(`/api/datasets/batches/${nextBatchId}`);
         setSelectedBatchId(nextBatchId);
-        setBatchDetail(nextBatch);
       } else {
         setBatchDetail(null);
       }
@@ -759,17 +755,85 @@ export function RunsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [label, language, query, selectedBatchId]);
+  }, [label, language, query, selectedBatchId, tab]);
 
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard, refreshTick]);
 
   useEffect(() => {
+    let cancelled = false;
+    setIsPricingLoading(true);
+    loadPricing()
+      .then((pricing) => {
+        if (!cancelled) setPricingMap(pricing);
+      })
+      .finally(() => {
+        if (!cancelled) setIsPricingLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshTick]);
+
+  useEffect(() => {
     if (!hasActiveDatasetWork) return undefined;
     const timer = setInterval(() => setRefreshTick((value) => value + 1), AUTO_REFRESH_MS);
     return () => clearInterval(timer);
   }, [hasActiveDatasetWork]);
+
+  useEffect(() => {
+    if (tab !== "history") return undefined;
+    let cancelled = false;
+    setIsHistoryLoading(true);
+    apiFetch(`/ui/runs?limit=25&offset=0&query=${encodeURIComponent(query)}`)
+      .then((payload) => {
+        if (!cancelled) {
+          setRunHistory(payload.rows || []);
+          setRunHistoryTotal(payload.total || 0);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setActionError(error instanceof Error ? error.message : "Failed to load run history");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [query, refreshTick, tab]);
+
+  useEffect(() => {
+    if (tab !== "batches") return undefined;
+    const batchId = selectedBatchId || batches[0]?.batch_id || "";
+    if (!batchId) {
+      setBatchDetail(null);
+      return undefined;
+    }
+    let cancelled = false;
+    setIsBatchLoading(true);
+    apiFetch(`/api/datasets/batches/${batchId}`)
+      .then((detail) => {
+        if (!cancelled) {
+          setSelectedBatchId(batchId);
+          setBatchDetail(detail);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setActionError(error instanceof Error ? error.message : "Failed to load batch detail");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsBatchLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [batches, selectedBatchId, tab]);
 
   useEffect(() => {
     if (!selectedRunId) {
@@ -1029,7 +1093,12 @@ export function RunsPage() {
           <MetricTile icon={Globe2} label="Websites" value={formatNumber(stats.total || siteTotal)} detail={`${formatNumber(stats.unlabeled || 0)} unlabeled`} />
           <MetricTile icon={CheckCircle2} label="Success rate" value={`${formatNumber(stats.success_rate || 0)}%`} detail={`${formatNumber(stats.successful_runs || 0)} / ${formatNumber(stats.total_runs || 0)} completed`} />
           <MetricTile icon={Activity} label="Batches" value={formatNumber(batches.length)} detail={hasActiveDatasetWork ? "Active work polling" : "No active batch"} />
-          <MetricTile icon={Database} label="Pricing catalog" value={formatNumber(pricingMap?.size || 0)} detail="Loaded from provider pricing API and stored pricing" />
+          <MetricTile
+            icon={Database}
+            label="Pricing catalog"
+            value={isPricingLoading ? "--" : formatNumber(pricingMap?.size || 0)}
+            detail={isPricingLoading ? "Loading provider pricing..." : "Loaded from provider pricing API and stored pricing"}
+          />
           <MetricTile icon={Clock} label="Latest batch" value={batches[0]?.status ? datasetStatusLabel(batches[0].status) : "--"} detail={batches[0]?.created_at ? formatDate(batches[0].created_at) : "No batch yet"} />
         </div>
 
@@ -1352,6 +1421,12 @@ export function RunsPage() {
                       </Table>
                     </div>
                   </>
+                ) : isBatchLoading ? (
+                  <div className="space-y-3 py-4">
+                    <Skeleton className="h-20 rounded-xl" />
+                    <Skeleton className="h-10 rounded-xl" />
+                    <Skeleton className="h-48 rounded-xl" />
+                  </div>
                 ) : (
                   <div className="py-16 text-center text-sm text-muted-foreground">
                     Select a batch to view results.
@@ -1433,6 +1508,14 @@ export function RunsPage() {
                               />
                             ) : null}
                           </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : isHistoryLoading ? (
+                    Array.from({ length: 6 }).map((_, index) => (
+                      <TableRow key={`history-loading-${index}`}>
+                        <TableCell colSpan={6}>
+                          <Skeleton className="h-8 w-full" />
                         </TableCell>
                       </TableRow>
                     ))

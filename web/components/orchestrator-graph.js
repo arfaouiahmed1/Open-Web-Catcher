@@ -3,14 +3,12 @@
 import {
   Bot,
   CheckCircle2,
-  Circle,
   Code2,
   Cpu,
   Loader2,
   MousePointerClick,
   Network,
   Route,
-  Search,
   XCircle,
 } from "lucide-react";
 
@@ -65,47 +63,102 @@ function latestEvent(events, predicate) {
   return [...events].reverse().find(predicate);
 }
 
+function firstEvent(events, predicate) {
+  return [...events].find(predicate);
+}
+
+function decisionIntent(event) {
+  const details = event?.details && typeof event.details === "object" ? event.details : {};
+  return (
+    details.next_action ||
+    details.next_step ||
+    details.next_actor ||
+    details.next_agent ||
+    details.selected_agent ||
+    details.route_to ||
+    ""
+  );
+}
+
+function decisionReason(event) {
+  const details = event?.details && typeof event.details === "object" ? event.details : {};
+  return (
+    details.reasoning ||
+    details.reason ||
+    details.summary ||
+    details.note ||
+    details.explanation ||
+    ""
+  );
+}
+
 function buildGraph(events, rootActor) {
   const normalized = normalizeTraceEvents(events);
   const stageView = buildStageView(normalized);
   const stageMap = new Map(stageView.stages.map((stage) => [stage.stage, stage]));
   const pipelineStarted = latestEvent(normalized, (event) => event.kind === "pipeline_started");
-  const pipelineFinished = latestEvent(normalized, (event) => event.kind === "pipeline_finished" || event.kind === "pipeline_failed");
+  const pipelineTerminal = latestEvent(normalized, (event) =>
+    ["pipeline_finished", "pipeline_failed", "run_cancelled", "cancel_requested"].includes(
+      event.kind,
+    ),
+  );
   const orchestratorDecisions = normalized.filter((event) => event.kind === "orchestrator_decision");
   const latestDecision = orchestratorDecisions.at(-1);
+  const runtimeReady = firstEvent(
+    normalized,
+    (event) =>
+      event.kind !== "pipeline_started" &&
+      (event.actor === "orchestrator" ||
+        Boolean(event.actor && AGENT_STAGES.some((stage) => String(event.actor).toLowerCase().includes(stage))) ||
+        [
+          "agent_started",
+          "tool_call_started",
+          "tool_call_finished",
+          "llm_turn_started",
+          "llm_response",
+        ].includes(event.kind)),
+  );
 
-  const preNodes = [
+  const ingressNodes = [
     {
-      id: "execute",
-      label: "Execute workflow",
+      id: "request",
+      label: "Run request",
       icon: MousePointerClick,
       status: pipelineStarted ? "done" : "idle",
       detail: pipelineStarted?.message || "Waiting for workflow start.",
     },
     {
-      id: "init",
-      label: "Init browser",
+      id: "runtime",
+      label: "Runtime active",
       icon: Code2,
-      status: normalized.some((event) => event.kind === "agent_loop_started" || event.kind === "tool_call_started") ? "done" : (pipelineStarted ? "running" : "idle"),
-      detail: "Browser and tool runtime initialization.",
-    },
-    {
-      id: "pre-navigation",
-      label: "Pre-navigation",
-      icon: Search,
-      status: normalized.some((event) => event.kind === "tool_call_finished") ? "done" : (pipelineStarted ? "running" : "idle"),
-      detail: "Context, page inspection, and first navigation/tool events.",
+      status: runtimeReady ? "done" : pipelineStarted ? "running" : "idle",
+      detail:
+        runtimeReady?.message ||
+        (pipelineStarted
+          ? "Waiting for the first orchestrator, agent, model, or tool event."
+          : "Runtime has not started."),
     },
   ];
 
-  const orchestratorStatus = pipelineFinished
-    ? (pipelineFinished.status === "error" ? "failed" : pipelineFinished.status === "warning" ? "partial" : "done")
+  const orchestratorStatus = pipelineTerminal
+    ? pipelineTerminal.kind === "pipeline_failed"
+      ? "failed"
+      : pipelineTerminal.kind === "run_cancelled" || pipelineTerminal.kind === "cancel_requested"
+        ? "cancelled"
+        : "done"
     : pipelineStarted
       ? "running"
       : "idle";
 
   const agentNodes = AGENT_STAGES.map((stage) => {
-    const view = stageMap.get(stage) || { stage, status: "idle", events: [], toolCalls: [], llmCalls: 0, frames: [] };
+    const view = stageMap.get(stage) || {
+      stage,
+      status: "idle",
+      events: [],
+      toolCalls: [],
+      llmCalls: 0,
+      frames: [],
+    };
     const latest = latestEvent(view.events || [], () => true);
     const llmEvents = (view.events || []).filter((event) => event.kind === "llm_response");
     return {
@@ -114,7 +167,6 @@ function buildGraph(events, rootActor) {
       label: STAGE_LABELS[stage] || stage,
       status: view.status || "idle",
       detail: latest?.message || view.liveLabel || "No events recorded for this agent.",
-      eventCount: (view.events || []).length,
       toolCalls: view.toolCalls || [],
       llmCalls: llmEvents,
       frames: view.frames || [],
@@ -122,14 +174,21 @@ function buildGraph(events, rootActor) {
   });
 
   return {
-    preNodes,
+    ingressNodes,
     orchestrator: {
       id: "orchestrator",
       label: "Orchestrator",
       status: orchestratorStatus,
-      detail: latestDecision?.message || pipelineFinished?.message || pipelineStarted?.message || rootActor || "orchestrator",
+      detail:
+        latestDecision?.message ||
+        pipelineTerminal?.message ||
+        pipelineStarted?.message ||
+        rootActor ||
+        "orchestrator",
       decisionCount: orchestratorDecisions.length,
-      details: latestDecision?.details || pipelineFinished?.details || {},
+      details: latestDecision?.details || pipelineTerminal?.details || {},
+      nextTarget: decisionIntent(latestDecision),
+      reason: decisionReason(latestDecision),
     },
     agentNodes,
     totalTools: stageView.toolCalls.length,
@@ -153,10 +212,16 @@ function GraphNode({ node, icon: Icon = Bot, wide = false }) {
   const details = [node.detail, compactJson(node.details)].filter(Boolean).join("\n\n");
   return (
     <div
-      className={`relative rounded-[8px] border bg-card px-3 py-2 shadow-sm ${wide ? "w-[230px]" : "w-[190px]"}`}
+      className={`relative rounded-[10px] border bg-card px-3 py-3 shadow-sm ${wide ? "w-[270px]" : "w-[196px]"}`}
       style={{
-        borderColor: node.status === "idle" ? "var(--line)" : `color-mix(in oklch, ${color} 42%, var(--line))`,
-        boxShadow: node.status === "running" || node.status === "active" ? `0 0 0 1px color-mix(in oklch, ${color} 28%, transparent)` : undefined,
+        borderColor:
+          node.status === "idle"
+            ? "var(--line)"
+            : `color-mix(in oklch, ${color} 42%, var(--line))`,
+        boxShadow:
+          node.status === "running" || node.status === "active"
+            ? `0 0 0 1px color-mix(in oklch, ${color} 28%, transparent)`
+            : undefined,
       }}
       title={details || node.label}
     >
@@ -172,9 +237,7 @@ function GraphNode({ node, icon: Icon = Bot, wide = false }) {
         </span>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[12px] font-semibold text-foreground">{node.label}</div>
-          <div className="truncate font-mono text-[10px] text-muted-foreground">
-            {node.status}
-          </div>
+          <div className="truncate font-mono text-[10px] text-muted-foreground">{node.status}</div>
         </div>
         <Badge tone={toneForStatus(node.status)} className="px-1.5 py-0 text-[9px] uppercase">
           {node.status === "idle" ? "idle" : node.status}
@@ -183,6 +246,20 @@ function GraphNode({ node, icon: Icon = Bot, wide = false }) {
       {node.detail ? (
         <div className="mt-2 line-clamp-2 text-[10.5px] leading-relaxed text-muted-foreground">
           {node.detail}
+        </div>
+      ) : null}
+      {node.nextTarget || node.reason ? (
+        <div className="mt-2 space-y-1 rounded-[8px] border border-border/70 bg-muted/25 px-2.5 py-2 text-[10px] leading-relaxed text-muted-foreground">
+          {node.nextTarget ? (
+            <div>
+              <span className="font-semibold text-foreground/80">Next:</span> {node.nextTarget}
+            </div>
+          ) : null}
+          {node.reason ? (
+            <div>
+              <span className="font-semibold text-foreground/80">Why:</span> {node.reason}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -222,9 +299,24 @@ function AgentBranch({ node }) {
       <GraphNode node={node} icon={Bot} />
       <Connector vertical active={node.status !== "idle"} />
       <div className="flex flex-col gap-1.5">
-        <MicroNode type="llm" label="Model calls" count={(node.llmCalls || []).length} detail={llmDetail} />
-        <MicroNode type="tool" label="MCP tools" count={(node.toolCalls || []).length} detail={toolDetail} />
-        <MicroNode type="artifact" label="Artifacts" count={(node.frames || []).length} detail="Screenshots and visual frames captured for this agent." />
+        <MicroNode
+          type="llm"
+          label="Model calls"
+          count={(node.llmCalls || []).length}
+          detail={llmDetail}
+        />
+        <MicroNode
+          type="tool"
+          label="MCP tools"
+          count={(node.toolCalls || []).length}
+          detail={toolDetail}
+        />
+        <MicroNode
+          type="artifact"
+          label="Artifacts"
+          count={(node.frames || []).length}
+          detail="Screenshots and visual frames captured for this agent."
+        />
       </div>
     </div>
   );
@@ -239,13 +331,19 @@ export function OrchestratorGraph({ events = [], rootActor = "orchestrator" }) {
           <div>
             <CardTitle className="text-sm">Workflow graph</CardTitle>
             <CardDescription>
-              Live orchestrator routing, agents, model calls, tools, and artifacts.
+              Event-derived ingress, orchestrator routing, agent branches, model calls, tools, and artifacts.
             </CardDescription>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <Badge tone="warning" className="font-mono">{graph.orchestrator.decisionCount} decisions</Badge>
-            <Badge tone="violet" className="font-mono">{graph.totalLlm} LLM</Badge>
-            <Badge tone="signal" className="font-mono">{graph.totalTools} tools</Badge>
+            <Badge tone="warning" className="font-mono">
+              {graph.orchestrator.decisionCount} decisions
+            </Badge>
+            <Badge tone="violet" className="font-mono">
+              {graph.totalLlm} LLM
+            </Badge>
+            <Badge tone="signal" className="font-mono">
+              {graph.totalTools} tools
+            </Badge>
           </div>
         </div>
       </CardHeader>
@@ -253,37 +351,43 @@ export function OrchestratorGraph({ events = [], rootActor = "orchestrator" }) {
         <div
           className="overflow-x-auto"
           style={{
-            backgroundImage: "radial-gradient(circle, color-mix(in oklch, var(--mute-3) 32%, transparent) 1px, transparent 1px)",
+            backgroundImage:
+              "radial-gradient(circle, color-mix(in oklch, var(--mute-3) 32%, transparent) 1px, transparent 1px)",
             backgroundSize: "18px 18px",
           }}
         >
-          <div className="min-w-[1180px] px-6 py-8">
-            <div className="flex items-center justify-center">
-              {graph.preNodes.map((node, index) => (
-                <div key={node.id} className="flex items-center">
-                  <GraphNode node={node} icon={node.icon} />
-                  <Connector active={node.status !== "idle"} />
-                </div>
-              ))}
-              <GraphNode node={graph.orchestrator} icon={Route} wide />
-            </div>
-
-            <Connector vertical active={graph.orchestrator.status !== "idle"} />
-
-            <div className="relative mx-auto max-w-[1060px] pt-3">
-              <div className="absolute left-[10%] right-[10%] top-0 border-t border-dashed border-border" />
-              <div className="pointer-events-none absolute left-1/2 top-0 h-4 w-px -translate-x-1/2 border-l border-dashed border-border" />
-              <div className="pointer-events-none absolute left-[10%] top-0 h-4 w-px border-l border-dashed border-border" />
-              <div className="pointer-events-none absolute left-[36.7%] top-0 h-4 w-px border-l border-dashed border-border" />
-              <div className="pointer-events-none absolute left-[63.3%] top-0 h-4 w-px border-l border-dashed border-border" />
-              <div className="pointer-events-none absolute right-[10%] top-0 h-4 w-px border-l border-dashed border-border" />
-              <div className="flex justify-between gap-4">
-                {graph.agentNodes.map((node) => (
-                  <div key={node.id} className="flex flex-col items-center gap-2">
-                    <Connector vertical active={node.status !== "idle"} />
-                    <AgentBranch node={node} />
+          <div className="min-w-[1120px] px-6 py-8">
+            <div className="flex flex-col items-center gap-5">
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                {graph.ingressNodes.map((node, index) => (
+                  <div key={node.id} className="flex items-center">
+                    <GraphNode node={node} icon={node.icon} />
+                    {index < graph.ingressNodes.length - 1 ? (
+                      <Connector active={node.status !== "idle"} />
+                    ) : null}
                   </div>
                 ))}
+              </div>
+
+              <Connector vertical active={graph.orchestrator.status !== "idle"} />
+
+              <div className="flex justify-center">
+                <GraphNode node={graph.orchestrator} icon={Route} wide />
+              </div>
+
+              <Connector vertical active={graph.orchestrator.status !== "idle"} />
+
+              <div className="relative mx-auto w-full max-w-[1060px] pt-3">
+                <div className="absolute left-[12.5%] right-[12.5%] top-0 border-t border-dashed border-border" />
+                <div className="pointer-events-none absolute left-1/2 top-0 h-4 w-px -translate-x-1/2 border-l border-dashed border-border" />
+                <div className="grid grid-cols-4 gap-4">
+                  {graph.agentNodes.map((node) => (
+                    <div key={node.id} className="flex flex-col items-center gap-2">
+                      <Connector vertical active={node.status !== "idle"} />
+                      <AgentBranch node={node} />
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>

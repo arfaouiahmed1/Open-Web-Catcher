@@ -22,13 +22,14 @@ import {
 } from "@/lib/run-trace";
 import { buildAutoDecisionSync } from "@/lib/run-log-sync";
 import { BrowserLiveView } from "@/components/console/run-detail/browser-live-view";
+import { OrchestratorDecisionFeed } from "@/components/orchestrator-decision-feed";
 import { DecisionLogPanel } from "@/components/run-log-panels";
 import { OrchestratorGraph } from "@/components/orchestrator-graph";
 import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
 import { ToolCallFeed } from "@/components/tool-call-feed";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -612,10 +613,6 @@ export function RunDetailLive({
 
         <FailureDetailsCard failure={runState?.failure} />
 
-        {runId ? (
-          <BrowserLiveView runId={runId} events={normalizedEvents} autoRefresh={isLive} />
-        ) : null}
-
         <TabsContent value="events">
           {normalizedEvents.length ? (
             <RuntimeEventsPanel events={normalizedEvents} title="Event Stream" />
@@ -633,9 +630,22 @@ export function RunDetailLive({
         </TabsContent>
 
         <TabsContent value="summary" className="space-y-4">
-          <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
+          {runId ? (
+            <BrowserLiveView runId={runId} events={normalizedEvents} autoRefresh={isLive} />
+          ) : null}
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
             <OrchestratorGraph events={normalizedEvents} rootActor={rootActor} />
-            <ToolCallFeed toolCalls={toolCallFeedRows} title="Tool Calls" maxHeight={480} />
+            <Card className="overflow-hidden shadow-card">
+              <CardHeader className="border-b border-border px-4 py-3">
+                <CardTitle className="text-sm">Routing decisions</CardTitle>
+                <CardDescription>
+                  Orchestrator intent and handoff reasoning without the full raw event stream.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="max-h-[540px] overflow-y-auto px-4 py-4">
+                <OrchestratorDecisionFeed events={normalizedEvents} isStreaming={isLive} />
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
 
