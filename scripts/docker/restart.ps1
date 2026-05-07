@@ -10,6 +10,11 @@ Set-StrictMode -Version Latest
 
 . (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "_common.ps1")
 
+# Restart reuses ports already held by the running stack's docker proxies; strict
+# mode would mistake those for foreign holders. Use auto.
+$global:OwcStrictPorts = $false
+Reset-OwcReservedPorts
+
 $context = Get-OwcContext -CallerPath $MyInvocation.MyCommand.Path
 Assert-OwcProjectFiles -Context $context
 Assert-DockerAvailable

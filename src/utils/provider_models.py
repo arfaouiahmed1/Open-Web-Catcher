@@ -20,6 +20,11 @@ PROVIDER_METADATA: dict[str, dict[str, str]] = {
         "name": "Google Gemini",
         "key_env": "GOOGLE_API_KEY",
     },
+    "google-vertex": {
+        "id": "google-vertex",
+        "name": "Google Vertex AI",
+        "key_env": "GOOGLE_VERTEX_API_KEY",
+    },
     "openai": {
         "id": "openai",
         "name": "OpenAI",
@@ -45,10 +50,15 @@ PROVIDER_METADATA: dict[str, dict[str, str]] = {
 
 FALLBACK_MODELS: dict[str, list[dict[str, Any]]] = {
     "google": [
-        {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "description": "Most capable Gemini model."},
-        {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "description": "Balanced quality and speed."},
-        {"id": "gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash-Lite", "description": "Lower-cost Gemini option."},
-        {"id": "gemini-2.0-flash", "label": "Gemini 2.0 Flash", "description": "Fast Gemini model."},
+        {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "description": "Most capable Gemini model.", "context_window": 1_048_576},
+        {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "description": "Balanced quality and speed.", "context_window": 1_048_576},
+        {"id": "gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash-Lite", "description": "Lower-cost Gemini option.", "context_window": 1_048_576},
+        {"id": "gemini-2.0-flash", "label": "Gemini 2.0 Flash", "description": "Fast Gemini model.", "context_window": 1_048_576},
+    ],
+    "google-vertex": [
+        {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "description": "Most capable Gemini via Vertex AI.", "context_window": 1_048_576},
+        {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "description": "Balanced Gemini via Vertex AI.", "context_window": 1_048_576},
+        {"id": "gemini-2.0-flash", "label": "Gemini 2.0 Flash", "description": "Fast Gemini via Vertex AI.", "context_window": 1_048_576},
     ],
     "openai": [
         {"id": "gpt-5", "label": "gpt-5", "description": "Reasoning-capable flagship model."},
@@ -80,6 +90,42 @@ FALLBACK_MODELS: dict[str, list[dict[str, Any]]] = {
 
 PROVIDER_TUNING_FIELDS: dict[str, list[dict[str, Any]]] = {
     "google": [
+        {
+            "key": "temperature",
+            "label": "Temperature",
+            "type": "number",
+            "min": 0,
+            "max": 2,
+            "step": 0.1,
+            "description": "Controls response randomness.",
+        },
+        {
+            "key": "top_p",
+            "label": "Top P",
+            "type": "number",
+            "min": 0,
+            "max": 1,
+            "step": 0.01,
+            "description": "Nucleus sampling cutoff.",
+        },
+        {
+            "key": "top_k",
+            "label": "Top K",
+            "type": "integer",
+            "min": 1,
+            "step": 1,
+            "description": "Token candidate count for sampling.",
+        },
+        {
+            "key": "max_output_tokens",
+            "label": "Max Output Tokens",
+            "type": "integer",
+            "min": 1,
+            "step": 1,
+            "description": "Maximum tokens generated in a response.",
+        },
+    ],
+    "google-vertex": [
         {
             "key": "temperature",
             "label": "Temperature",
@@ -409,24 +455,34 @@ def get_provider_model_catalog(settings: Settings, provider: str, max_models: in
 
     metadata = dict(PROVIDER_METADATA[normalized_provider])
     api_key = _provider_api_key(settings, normalized_provider)
-    source = "fallback"
-    error = ""
+    if normalized_provider != "openrouter" and not api_key:
+        return {
+            **metadata,
+            "provider": normalized_provider,
+            "api_key_set": False,
+            "available": False,
+            "source": "unavailable",
+            "error": f"{metadata['key_env']} is not set. Live catalog unavailable.",
+            "models": [],
+            "hyperparameters": PROVIDER_TUNING_FIELDS.get(normalized_provider, []),
+        }
 
     try:
-        if normalized_provider != "openrouter" and not api_key:
-            raise ProviderModelCatalogError(
-                f"{metadata['key_env']} is not set. Showing fallback models until the provider API is available."
-            )
         models = fetch_provider_models(settings, normalized_provider, max_models=max_models)
         source = "provider_api"
+        error = ""
+        available = True
     except ProviderModelCatalogError as exc:
-        models = _fallback_models(settings, normalized_provider)
+        models = []
+        source = "unavailable"
         error = str(exc)
+        available = False
 
     return {
         **metadata,
         "provider": normalized_provider,
         "api_key_set": bool(api_key),
+        "available": available,
         "source": source,
         "error": error,
         "models": models,
@@ -442,6 +498,8 @@ def fetch_provider_models(settings: Settings, provider: str, max_models: int = 2
 
     if normalized_provider == "google":
         return _fetch_google_models(settings, limit)
+    if normalized_provider == "google-vertex":
+        return _fetch_google_vertex_models(settings, limit)
     if normalized_provider == "openai":
         return _fetch_openai_models(settings, limit)
     if normalized_provider == "anthropic":
@@ -470,6 +528,89 @@ def _fetch_google_models(settings: Settings, max_models: int) -> list[dict[str, 
             params=params,
             timeout_seconds=settings.provider_pricing_timeout_seconds,
             provider="google",
+        )
+        for item in payload.get("models", []) or []:
+            actions = item.get("supportedGenerationMethods") or item.get("supportedActions") or []
+            if actions and "generateContent" not in actions:
+                continue
+            model_id = str(item.get("baseModelId") or item.get("name") or "").strip()
+            if model_id.startswith("models/"):
+                model_id = model_id.split("/", 1)[1]
+            if not model_id:
+                continue
+            rows.append(
+                {
+                    "id": model_id,
+                    "label": str(item.get("displayName") or model_id).strip(),
+                    "description": str(item.get("description") or "").strip(),
+                    "context_window": item.get("inputTokenLimit"),
+                    "output_limit": item.get("outputTokenLimit"),
+                    "default_parameters": _extract_google_model_defaults(item),
+                    "supported_generation_methods": actions,
+                    "capabilities": _extract_google_model_capabilities(model_id, actions),
+                    "release_channel": _google_model_release_channel(model_id),
+                }
+            )
+            if len(rows) >= max_models:
+                break
+        page_token = str(payload.get("nextPageToken") or "").strip()
+        if not page_token:
+            break
+    return _dedupe_models(rows)
+
+
+def _extract_google_model_defaults(item: dict[str, Any]) -> dict[str, Any]:
+    defaults: dict[str, Any] = {}
+    for source_key, target_key in (
+        ("temperature", "temperature"),
+        ("topP", "top_p"),
+        ("topK", "top_k"),
+        ("outputTokenLimit", "max_output_tokens"),
+    ):
+        value = item.get(source_key)
+        if value is None:
+            continue
+        defaults[target_key] = value
+    return defaults
+
+
+def _extract_google_model_capabilities(model_id: str, actions: list[Any]) -> dict[str, bool]:
+    normalized = str(model_id or "").strip().lower()
+    action_set = {str(action or "").strip() for action in actions if str(action or "").strip()}
+    return {
+        "supports_generate_content": "generateContent" in action_set,
+        "supports_token_count": "countTokens" in action_set,
+        "supports_explicit_cache": "createCachedContent" in action_set,
+        "supports_batch": "batchGenerateContent" in action_set,
+        "supports_thinking_controls": normalized.startswith("gemini-2.5") or normalized.startswith("gemini-3"),
+    }
+
+
+def _google_model_release_channel(model_id: str) -> str:
+    normalized = str(model_id or "").strip().lower()
+    if "preview" in normalized or "-exp-" in normalized or normalized.endswith("-exp"):
+        return "preview"
+    if "experimental" in normalized:
+        return "experimental"
+    return "stable"
+
+
+def _fetch_google_vertex_models(settings: Settings, max_models: int) -> list[dict[str, Any]]:
+    api_key = (settings.google_vertex_api_key or "").strip()
+    if not api_key:
+        raise ProviderModelCatalogError("GOOGLE_VERTEX_API_KEY is missing.")
+
+    rows: list[dict[str, Any]] = []
+    page_token = ""
+    while len(rows) < max_models:
+        params: dict[str, Any] = {"key": api_key, "pageSize": min(1000, max_models)}
+        if page_token:
+            params["pageToken"] = page_token
+        payload = _request_json(
+            "https://generativelanguage.googleapis.com/v1beta/models",
+            params=params,
+            timeout_seconds=settings.provider_pricing_timeout_seconds,
+            provider="google-vertex",
         )
         for item in payload.get("models", []) or []:
             actions = item.get("supportedGenerationMethods") or item.get("supportedActions") or []
@@ -664,6 +805,8 @@ def _provider_api_key(settings: Settings, provider: str) -> str:
     normalized_provider = (provider or "").strip().lower()
     if normalized_provider == "google":
         return str(settings.google_api_key or "").strip()
+    if normalized_provider == "google-vertex":
+        return str(settings.google_vertex_api_key or "").strip()
     if normalized_provider == "openai":
         return str(settings.openai_api_key or "").strip()
     if normalized_provider == "anthropic":
@@ -673,59 +816,6 @@ def _provider_api_key(settings: Settings, provider: str) -> str:
     if normalized_provider == "nvidia":
         return str(settings.nvidia_api_key or "").strip()
     return ""
-
-
-def _fallback_models(settings: Settings, provider: str) -> list[dict[str, Any]]:
-    rows = list(FALLBACK_MODELS.get(provider, []))
-    pricing_models = _pricing_models_for_provider(settings, provider)
-    current_models = []
-    current_config = normalize_agent_model_config(settings, getattr(settings, "agent_model_config", {}))
-    for agent_id, config in current_config.items():
-        if str(config.get("provider") or "").strip().lower() != provider:
-            continue
-        model_id = str(config.get("model") or "").strip()
-        if not model_id:
-            continue
-        current_models.append(
-            {
-                "id": model_id,
-                "label": model_id,
-                "description": f"Configured for {agent_id} agent.",
-            }
-        )
-    return _dedupe_models(current_models + pricing_models + rows)
-
-
-def _pricing_models_for_provider(settings: Settings, provider: str) -> list[dict[str, Any]]:
-    raw = getattr(settings, "model_pricing_json", "{}") or "{}"
-    if not isinstance(raw, str):
-        return []
-    try:
-        import json
-
-        payload = json.loads(raw)
-    except ValueError:
-        return []
-    if not isinstance(payload, dict):
-        return []
-
-    rows = []
-    for model_name, config in payload.items():
-        if not isinstance(model_name, str) or "::" in model_name:
-            continue
-        if not isinstance(config, dict):
-            continue
-        if str(config.get("provider") or "").strip().lower() != provider:
-            continue
-        rows.append(
-            {
-                "id": model_name.strip(),
-                "label": model_name.strip(),
-                "description": "From saved pricing catalog.",
-            }
-        )
-    return rows
-
 
 # Hardcoded context window fallbacks for providers whose APIs don't expose it.
 # Values in tokens. Updated periodically; live catalog takes precedence when available.
@@ -741,6 +831,20 @@ _CONTEXT_WINDOW_FALLBACKS: dict[str, int] = {
     "gpt-3.5-turbo": 16_385,
     "gpt-5": 1_047_576,
     "gpt-5-mini": 1_047_576,
+    "gemini-2.5-pro": 1_048_576,
+    "gemini-2.5-flash": 1_048_576,
+    "gemini-2.5-flash-lite": 1_048_576,
+    "gemini-2.0-flash": 1_048_576,
+    "google/gemini-2.5-pro": 1_048_576,
+    "google/gemini-2.5-flash": 1_048_576,
+    "google/gemini-2.5-flash-lite": 1_048_576,
+    "google/gemini-2.0-flash": 1_048_576,
+    "openai/gpt-5": 1_047_576,
+    "openai/gpt-5-mini": 1_047_576,
+    "openai/gpt-4.1": 1_047_576,
+    "openai/gpt-4o-mini": 128_000,
+    "anthropic/claude-sonnet-4": 200_000,
+    "anthropic/claude-opus-4": 200_000,
     "o1": 200_000,
     "o1-mini": 128_000,
     "o1-preview": 128_000,
@@ -779,13 +883,21 @@ _CONTEXT_WINDOW_PREFIXES: list[tuple[str, int]] = [
     ("claude-sonnet-4", 200_000),
     ("claude-haiku-4", 200_000),
     ("claude-3", 200_000),
+    ("anthropic/claude-", 200_000),
     ("gpt-5", 1_047_576),
+    ("openai/gpt-5", 1_047_576),
     ("gpt-4.1", 1_047_576),
+    ("openai/gpt-4.1", 1_047_576),
     ("gpt-4o", 128_000),
+    ("openai/gpt-4o", 128_000),
     ("gpt-4-turbo", 128_000),
     ("o4", 200_000),
     ("o3", 200_000),
     ("o1", 200_000),
+    ("gemini-2.5", 1_048_576),
+    ("gemini-2.0", 1_048_576),
+    ("google/gemini-2.5", 1_048_576),
+    ("google/gemini-2.0", 1_048_576),
     ("meta/llama-4", 10_000_000),
     ("meta/llama-3", 128_000),
     ("mistralai/", 128_000),

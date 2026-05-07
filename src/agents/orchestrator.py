@@ -153,6 +153,23 @@ def _dedupe_urls(urls: list[str]) -> list[str]:
     return result
 
 
+def _emit_orchestrator_decision(
+    observer: RunObserver | None,
+    message: str,
+    *,
+    status: str = "info",
+    details: dict[str, Any] | None = None,
+) -> None:
+    if observer is None:
+        return
+    observer.emit(
+        "orchestrator_decision",
+        message,
+        status=status,
+        details=details or {},
+    )
+
+
 def _collect_embedded_urls(extraction: ExtractionResult) -> list[str]:
     urls = list(extraction.embedded_urls)
     for server in extraction.servers:
@@ -355,15 +372,49 @@ async def classify_node(
     from src.agents.classification import ClassificationAgent
 
     child = observer.child("classification", AgentType.CLASSIFICATION) if observer else None
+    _emit_orchestrator_decision(
+        observer,
+        "Calling classification agent",
+        details={"url": state["url"], "reason": "recheck page type before routing"},
+    )
     result = await ClassificationAgent(settings).run(url=state["url"], observer=child)
+    next_node = route_after_classification({**state, "classification": result})
+    _emit_orchestrator_decision(
+        observer,
+        "Classification route selected",
+        details={
+            "page_type": result.page_type.value,
+            "confidence": result.confidence.value,
+            "next_node": next_node,
+            "reasoning_preview": _truncate(result.reasoning, max_chars=900),
+        },
+    )
     return {"classification": result, "error": ""}
 
 
-async def queue_root_hosting_node(state: PipelineState) -> dict[str, Any]:
+async def queue_root_hosting_node(
+    state: PipelineState,
+    *,
+    observer: RunObserver | None = None,
+) -> dict[str, Any]:
+    _emit_orchestrator_decision(
+        observer,
+        "Root URL queued for hosting agent",
+        details={"url": state["url"], "source": "classification"},
+    )
     return {"pending_hosting_urls": _dedupe_urls([*state["pending_hosting_urls"], state["url"]])}
 
 
-async def queue_root_embedded_node(state: PipelineState) -> dict[str, Any]:
+async def queue_root_embedded_node(
+    state: PipelineState,
+    *,
+    observer: RunObserver | None = None,
+) -> dict[str, Any]:
+    _emit_orchestrator_decision(
+        observer,
+        "Root URL queued for embedded agent",
+        details={"url": state["url"], "source": "classification"},
+    )
     return {"pending_embedded_urls": _dedupe_urls([*state["pending_embedded_urls"], state["url"]])}
 
 
@@ -384,7 +435,17 @@ async def landing_page_node(
         page_type=AgentType.LANDING_PAGE.value,
     )
     landing_handoff = _build_landing_handoff(state, memory_hint_text=landing_memory_hint)
+    _emit_orchestrator_decision(
+        observer,
+        "Landing handoff prepared",
+        details={
+            "next_node": "landing_page",
+            "handoff_preview": _truncate(landing_handoff, max_chars=1200),
+            "memory_hint_found": bool(landing_memory_hint),
+        },
+    )
     hosting_pages: list[dict[str, Any]] = []
+    landing_outcome: ExtractionResult | None = None
     try:
         landing_outcome = await LandingPageAgent(settings).run(
             url=state["url"],
@@ -420,6 +481,25 @@ async def landing_page_node(
     matches = normalized_matches
     pending_hosting_urls = _dedupe_urls(pending_hosting_urls)
     pending_embedded_urls = _dedupe_urls(pending_embedded_urls)
+    landing_metadata = landing_outcome.metadata if landing_outcome is not None else {}
+
+    _emit_orchestrator_decision(
+        observer,
+        "Landing results routed",
+        status="warning" if not pending_hosting_urls and not pending_embedded_urls else "info",
+        details={
+            "hosting_pages_found": len(hosting_pages),
+            "matches": len(matches),
+            "pending_hosting_urls": pending_hosting_urls,
+            "pending_embedded_urls": pending_embedded_urls,
+            "pattern_expansion": landing_metadata.get("pattern_expansion", {}),
+            "note": (
+                "No hosting candidates were found; workflow will finish without treating this as a runtime failure."
+                if not pending_hosting_urls and not pending_embedded_urls
+                else ""
+            ),
+        },
+    )
 
     return {
         "matches": matches,
@@ -442,6 +522,11 @@ async def hosting_page_node(
 
     target_urls = _dedupe_urls(state["pending_hosting_urls"])
     total_targets = len(target_urls)
+    _emit_orchestrator_decision(
+        observer,
+        "Hosting agent targets queued",
+        details={"target_count": total_targets, "target_urls": target_urls[:20]},
+    )
 
     # Derive pattern context from landing matches site_patterns
     matches = state.get("matches", [])
@@ -476,6 +561,17 @@ async def hosting_page_node(
             target_url=target_url,
             memory_hint_text=hosting_memory_hint,
             pattern_context=pattern_context,
+        )
+        _emit_orchestrator_decision(
+            observer,
+            "Hosting handoff prepared",
+            details={
+                "target_url": target_url,
+                "target_index": idx + 1,
+                "target_count": total_targets,
+                "handoff_preview": _truncate(handoff, max_chars=900),
+                "memory_hint_found": bool(hosting_memory_hint),
+            },
         )
         tasks.append(
             _guarded(
@@ -548,6 +644,12 @@ async def embedded_page_node(
         return {}
 
     target_urls = _dedupe_urls(state["pending_embedded_urls"])
+    total_targets = len(target_urls)
+    _emit_orchestrator_decision(
+        observer,
+        "Embedded agent targets queued",
+        details={"target_count": total_targets, "target_urls": target_urls[:20]},
+    )
     tasks = []
     sem = asyncio.Semaphore(settings.max_parallel_hosting_pages)
 
@@ -555,7 +657,7 @@ async def embedded_page_node(
         async with sem:
             return await coro
 
-    for target_url in target_urls:
+    for idx, target_url in enumerate(target_urls):
         child = observer.child("embedded", AgentType.EMBEDDED_PAGE) if observer else None
         embedded_memory_hint = _memory_hint(
             memory,
@@ -566,6 +668,17 @@ async def embedded_page_node(
             state,
             target_url=target_url,
             memory_hint_text=embedded_memory_hint,
+        )
+        _emit_orchestrator_decision(
+            observer,
+            "Embedded handoff prepared",
+            details={
+                "target_url": target_url,
+                "target_index": idx + 1,
+                "target_count": total_targets,
+                "handoff_preview": _truncate(handoff, max_chars=900),
+                "memory_hint_found": bool(embedded_memory_hint),
+            },
         )
         tasks.append(
             _guarded(
@@ -605,22 +718,55 @@ async def analyze_providers_node(
     state: PipelineState,
     *,
     settings: Settings,
+    observer: RunObserver | None = None,
 ) -> dict[str, Any]:
     stream_urls = [stream.url for stream in _collect_all_streams(state["extraction_results"])]
     if not stream_urls:
+        _emit_orchestrator_decision(
+            observer,
+            "Provider analysis skipped",
+            status="warning",
+            details={"reason": "no stream URLs were found"},
+        )
         return {"provider_analysis": []}
+    _emit_orchestrator_decision(
+        observer,
+        "Provider analysis started",
+        details={"stream_count": len(stream_urls)},
+    )
     payload = await IPInfoTool(ipinfo_token=settings.ipinfo_token)._arun(stream_urls=stream_urls)
     try:
         parsed = json.loads(payload)
     except json.JSONDecodeError:
         parsed = []
     providers = [ProviderInfo(**item) for item in parsed if isinstance(item, dict)]
+    _emit_orchestrator_decision(
+        observer,
+        "Provider analysis completed",
+        status="success" if providers else "warning",
+        details={"provider_count": len(providers)},
+    )
     return {"provider_analysis": providers}
 
 
-async def generate_takedown_emails_node(state: PipelineState) -> dict[str, Any]:
+async def generate_takedown_emails_node(
+    state: PipelineState,
+    *,
+    observer: RunObserver | None = None,
+) -> dict[str, Any]:
     if not _collect_all_streams(state["extraction_results"]):
+        _emit_orchestrator_decision(
+            observer,
+            "Takedown draft generation skipped",
+            status="warning",
+            details={"reason": "no stream URLs were found"},
+        )
         return {"takedown_emails": []}
+    _emit_orchestrator_decision(
+        observer,
+        "Takedown draft generation started",
+        details={"provider_analysis_count": len(state["provider_analysis"])},
+    )
     payload = await EmailTool()._arun(
         infringing_url=state["url"],
         provider_analysis=[provider.model_dump(mode="json") for provider in state["provider_analysis"]],
@@ -631,6 +777,12 @@ async def generate_takedown_emails_node(state: PipelineState) -> dict[str, Any]:
     except json.JSONDecodeError:
         parsed = []
     emails = [TakedownEmail(**item) for item in parsed if isinstance(item, dict)]
+    _emit_orchestrator_decision(
+        observer,
+        "Takedown draft generation completed",
+        status="success" if emails else "warning",
+        details={"email_count": len(emails)},
+    )
     return {"takedown_emails": emails}
 
 
@@ -676,8 +828,8 @@ def build_graph(settings: Settings, observer: RunObserver | None = None):
     memory = LongTermMemory(settings.memory_db_path) if settings.memory_enabled else None
     graph = StateGraph(PipelineState)
     graph.add_node("classify", partial(classify_node, settings=settings, observer=observer))
-    graph.add_node("queue_root_hosting", queue_root_hosting_node)
-    graph.add_node("queue_root_embedded", queue_root_embedded_node)
+    graph.add_node("queue_root_hosting", partial(queue_root_hosting_node, observer=observer))
+    graph.add_node("queue_root_embedded", partial(queue_root_embedded_node, observer=observer))
     graph.add_node(
         "landing_page",
         partial(landing_page_node, settings=settings, observer=observer, memory=memory),
@@ -690,8 +842,8 @@ def build_graph(settings: Settings, observer: RunObserver | None = None):
         "embedded_page",
         partial(embedded_page_node, settings=settings, observer=observer, memory=memory),
     )
-    graph.add_node("analyze_providers", partial(analyze_providers_node, settings=settings))
-    graph.add_node("generate_takedown_emails", generate_takedown_emails_node)
+    graph.add_node("analyze_providers", partial(analyze_providers_node, settings=settings, observer=observer))
+    graph.add_node("generate_takedown_emails", partial(generate_takedown_emails_node, observer=observer))
 
     graph.add_edge(START, "classify")
     graph.add_conditional_edges(
@@ -749,6 +901,41 @@ class OrchestratorAgent:
             self.observer.set_url(url)
             self.observer.mark_agent(AgentType.ORCHESTRATOR)
             self.observer.emit("pipeline_started", f"Pipeline started for {url}")
+            if self.settings.memory_enabled:
+                try:
+                    memory = LongTermMemory(self.settings.memory_db_path)
+                    memory_hints = {
+                        agent_type.value: _memory_hint(memory, url=url, page_type=agent_type.value, limit=2)
+                        for agent_type in (
+                            AgentType.CLASSIFICATION,
+                            AgentType.LANDING_PAGE,
+                            AgentType.HOSTING_PAGE,
+                            AgentType.EMBEDDED_PAGE,
+                        )
+                    }
+                    found_hints = {
+                        page_type: _truncate(hint, max_chars=700)
+                        for page_type, hint in memory_hints.items()
+                        if hint
+                    }
+                    _emit_orchestrator_decision(
+                        self.observer,
+                        "Orchestrator memory checked",
+                        details={
+                            "url": url,
+                            "page_types_checked": list(memory_hints.keys()),
+                            "hints_found": len(found_hints),
+                            "hint_previews": found_hints,
+                            "routing_policy": "memory is soft guidance; classification is still called to re-check the current page",
+                        },
+                    )
+                except Exception as exc:
+                    _emit_orchestrator_decision(
+                        self.observer,
+                        "Orchestrator memory check skipped",
+                        status="warning",
+                        details={"error_type": type(exc).__name__, "error_preview": str(exc)[:500]},
+                    )
 
         initial_state: PipelineState = {
             "url": url,
@@ -791,6 +978,7 @@ class OrchestratorAgent:
                     )
 
             if self.observer is not None:
+                non_failure_statuses = {ExtractionStatus.SUCCESS, ExtractionStatus.PARTIAL}
                 failure_mode = "" if result.final_status == ExtractionStatus.SUCCESS else result.final_status.value
                 self.observer.emit(
                     "pipeline_finished",
@@ -799,10 +987,11 @@ class OrchestratorAgent:
                     details={
                         "streams_found": len(result.all_streams),
                         "emails_generated": len(result.takedown_emails),
+                        "final_status": result.final_status.value,
                     },
                 )
                 self.observer.finish(
-                    success=result.final_status == ExtractionStatus.SUCCESS,
+                    success=result.final_status in non_failure_statuses,
                     failure_mode=failure_mode,
                 )
                 result.metrics = self.observer.trace().metrics
@@ -874,13 +1063,14 @@ def _collect_all_screenshots(extraction_results: list[ExtractionResult]) -> list
 
 def _build_pipeline_result(state: PipelineState, metrics: Any | None = None) -> PipelineResult:
     all_streams = _collect_all_streams(state["extraction_results"])
-    final_status = (
-        ExtractionStatus.SUCCESS
-        if all_streams
-        else ExtractionStatus.PARTIAL
-        if state["extraction_results"]
-        else ExtractionStatus.FAILED
-    )
+    if all_streams:
+        final_status = ExtractionStatus.SUCCESS
+    elif state["extraction_results"]:
+        final_status = ExtractionStatus.PARTIAL
+    elif state["classification"] is not None and state["classification"].page_type == PageType.LANDING:
+        final_status = ExtractionStatus.PARTIAL
+    else:
+        final_status = ExtractionStatus.FAILED
 
     return PipelineResult(
         run_id=state["run_id"],

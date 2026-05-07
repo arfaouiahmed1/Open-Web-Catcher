@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatNumber } from "@/lib/utils";
 import { getContextWindow, loadPricing, peakContextUsage } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
@@ -94,11 +95,23 @@ export function ContextWindowMeter({
       .filter((group) => group.contextWindow > 0 || group.tokens > 0)
       .sort((a, b) => {
         if (focusKey) {
-          const aFocus = a.key === focusKey || a.stage === focusKey;
-          const bFocus = b.key === focusKey || b.stage === focusKey;
+          const aFocus =
+            a.key === focusKey ||
+            a.stage === focusKey ||
+            a.actor === focusKey ||
+            a.agentType === focusKey;
+          const bFocus =
+            b.key === focusKey ||
+            b.stage === focusKey ||
+            b.actor === focusKey ||
+            b.agentType === focusKey;
           if (aFocus !== bFocus) return aFocus ? -1 : 1;
         }
-        return Number(a.order || 0) - Number(b.order || 0);
+        const orderDelta = Number(a.order || 0) - Number(b.order || 0);
+        if (orderDelta !== 0) return orderDelta;
+        const invocationDelta = Number(a.invocationIndex || 0) - Number(b.invocationIndex || 0);
+        if (invocationDelta !== 0) return invocationDelta;
+        return String(a.label || "").localeCompare(String(b.label || ""));
       });
   }, [focusKey, groups, pricingMap, primaryModel, primaryProvider]);
 
@@ -128,38 +141,30 @@ export function ContextWindowMeter({
 
   if (groupRows.length) {
     return (
-      <div
-        className="rounded-[12px] border p-4"
-        style={{
-          borderColor: "var(--line)",
-          background: "var(--card)",
-          boxShadow: "var(--shadow-card)",
-        }}
-      >
-        <div className="flex items-baseline justify-between gap-3">
+      <Card>
+        <CardHeader className="flex flex-row items-baseline justify-between gap-3 p-4">
           <div>
-            <span
-              className="text-[10px] font-semibold uppercase tracking-[0.14em]"
-              style={{ color: "var(--mute-2)" }}
-            >
+            <CardTitle className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
               Context Window
-            </span>
-            <div
-              className="mt-1 text-[12px] leading-relaxed"
-              style={{ color: "var(--mute)" }}
-            >
-              Peak input per stage or agent instead of one workflow-wide total.
+            </CardTitle>
+            <div className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+              Peak input per agent invocation instead of one workflow-wide total.
             </div>
           </div>
-          <div className="text-right text-[10px]" style={{ color: "var(--mute-3)" }}>
+          <div className="text-right text-[10px] text-muted-foreground">
             <div>{groupRows.length} tracked group{groupRows.length === 1 ? "" : "s"}</div>
           </div>
-        </div>
+        </CardHeader>
 
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <CardContent className="grid gap-3 p-4 pt-0 lg:grid-cols-2">
           {groupRows.map((group) => {
             const color = toneFor(group.pctClamped);
-            const isFocused = focusKey && (group.key === focusKey || group.stage === focusKey);
+            const isFocused =
+              focusKey &&
+              (group.key === focusKey ||
+                group.stage === focusKey ||
+                group.actor === focusKey ||
+                group.agentType === focusKey);
             return (
               <div
                 key={group.key}
@@ -229,36 +234,23 @@ export function ContextWindowMeter({
               </div>
             );
           })}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div
-      className="rounded-[12px] border p-4"
-      style={{
-        borderColor: "var(--line)",
-        background: "var(--card)",
-        boxShadow: "var(--shadow-card)",
-      }}
-    >
-      <div className="flex items-baseline justify-between gap-3">
+    <Card>
+      <CardHeader className="flex flex-row items-baseline justify-between gap-3 p-4">
         <div>
-          <span
-            className="text-[10px] font-semibold uppercase tracking-[0.14em]"
-            style={{ color: "var(--mute-2)" }}
-          >
+          <CardTitle className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             Context Window
-          </span>
-          <div
-            className="mt-0.5 font-mono text-2xl font-semibold"
-            style={{ color }}
-          >
+          </CardTitle>
+          <div className="mt-0.5 font-mono text-2xl font-semibold" style={{ color }}>
             {contextWindow > 0 ? `${(pctClamped * 100).toFixed(1)}%` : "--"}
           </div>
         </div>
-        <div className="text-right text-[10px]" style={{ color: "var(--mute-3)" }}>
+        <div className="text-right text-[10px] text-muted-foreground">
           <div className="font-mono">{modelLabel}</div>
           <div className="font-mono">
             {contextWindow > 0
@@ -266,9 +258,10 @@ export function ContextWindowMeter({
               : "no window data"}
           </div>
         </div>
-      </div>
+      </CardHeader>
 
-      <div
+      <CardContent className="p-4 pt-0">
+        <div
         className="relative mt-3 h-2 overflow-hidden rounded-full"
         style={{ background: "var(--line)" }}
       >
@@ -289,15 +282,13 @@ export function ContextWindowMeter({
             }}
           />
         ))}
-      </div>
+        </div>
 
-      <div
-        className="mt-2 flex items-center justify-between font-mono text-[10px]"
-        style={{ color: "var(--mute-3)" }}
-      >
-        <span>peak input</span>
-        <span>headroom: {compact(Math.max(contextWindow - tokens, 0))}</span>
-      </div>
-    </div>
+        <div className="mt-2 flex items-center justify-between font-mono text-[10px] text-muted-foreground">
+          <span>peak input</span>
+          <span>headroom: {compact(Math.max(contextWindow - tokens, 0))}</span>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

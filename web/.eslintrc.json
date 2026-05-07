@@ -1,5 +1,17 @@
 {
   "extends": [
     "next/core-web-vitals"
+  ],
+  "overrides": [
+    {
+      "files": [
+        "components/tool-call-feed.js",
+        "components/trace-explorer.js",
+        "components/console/run-detail/browser-live-view.js"
+      ],
+      "rules": {
+        "@next/next/no-img-element": "off"
+      }
+    }
   ]
 }

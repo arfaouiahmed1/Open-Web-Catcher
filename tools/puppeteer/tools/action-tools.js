@@ -620,6 +620,8 @@ export async function playMedia({
         resolution_attempts: resolved.resolution_attempts || [],
         preflight,
         playback_started: playbackStarted,
+        playback_ready: Number(finalProbe.ready_state || 0) >= 2,
+        playback_current_time: Number(finalProbe.current_time || 0),
         playback_events: finalProbe.events || [],
         attempts,
         media_error_code: finalProbe.media_error_code,

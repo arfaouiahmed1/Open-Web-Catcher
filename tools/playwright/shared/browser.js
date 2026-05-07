@@ -32,7 +32,7 @@ import {
   extractChromeNetErrorCode,
 } from '../../shared/error-codes.js';
 import { computeBrowserPolicy } from '../../shared/browser-policy.js';
-import { attachAdBlocker } from './adblocker.js';
+import { disableBlocking, enableBlocking } from './adblocker.js';
 import { getBrowserRuntimeSettings, getEffectiveRuntimeMetadata } from './runtime-config.js';
 
 const stealthPlugin = StealthPlugin();
@@ -59,7 +59,7 @@ const FORCED_VIEWPORT = { width: 1920, height: 1080 };
 const FORCED_WINDOWS_PLATFORM = 'Win32';
 const FORCED_WINDOWS_PLATFORM_VERSION = '10.0.0';
 const FORCED_LANGUAGE = 'en-US,en;q=0.9';
-// Playwright: no uBOL extension — adblock done via context.route() in adblocker.js
+const UBOL_EXTENSION_DIR = String(process.env.OWC_UBOL_EXTENSION_DIR || '/app/tools/playwright/extensions/ubol').trim();
 
 const DEFAULT_LAUNCH_ARGS = [
   '--no-sandbox',
@@ -68,7 +68,7 @@ const DEFAULT_LAUNCH_ARGS = [
   // ── Window / viewport ───────────────────────────────────────────────────────
   `--window-size=${FORCED_VIEWPORT.width},${FORCED_VIEWPORT.height}`,
   '--window-position=0,0',
-  '--force-device-scale-factor=1',
+  '--force-device-scale-factor=2',
 
   // ── Anti-bot ────────────────────────────────────────────────────────────────
 
@@ -97,6 +97,7 @@ const pageCdps = new WeakMap();
 const pageNetworkState = new WeakMap();
 const pagePolicyState = new WeakMap();
 const pageNetworkListeners = new WeakSet();
+const pagePopupGuardsInstalled = new WeakSet();
 const recentlyUsedFingerprintSignatures = [];
 let chromeVersionPromise = null;
 const fingerprintSuiteCache = new Map();
@@ -242,13 +243,6 @@ function getAdblockAutoRecoveryEnabled() {
   );
 }
 
-function getAdblockAutoRecoveryOnAbort() {
-  return parseBoolean(
-    runtimeSetting('adblock_auto_recovery_on_abort') ?? process.env.OWC_ADBLOCK_AUTO_RECOVERY_ON_ABORT,
-    true,
-  );
-}
-
 function getAdblockAutoRecoveryRetryEnabled() {
   return parseBoolean(
     runtimeSetting('adblock_auto_recovery_retry') ?? process.env.OWC_ADBLOCK_AUTO_RECOVERY_RETRY,
@@ -263,6 +257,10 @@ function getIframeSandboxPatchEnabled() {
   );
 }
 
+function getUbolEnabled() {
+  return parseBoolean(runtimeSetting('ubol_enabled') ?? process.env.OWC_UBOL_ENABLED, true);
+}
+
 function getIframeAutoRecoveryEnabled() {
   return parseBoolean(
     runtimeSetting('iframe_auto_recovery_enabled') ?? process.env.OWC_IFRAME_AUTO_RECOVERY_ENABLED,
@@ -274,6 +272,13 @@ function getIframeRecoveryTimeoutMs() {
   return Number.parseInt(
     String(runtimeSetting('iframe_recovery_timeout_ms') ?? process.env.OWC_IFRAME_RECOVERY_TIMEOUT_MS ?? '20000'),
     10,
+  );
+}
+
+function getPopupBlockingEnabled() {
+  return parseBoolean(
+    runtimeSetting('popup_blocking_enabled') ?? process.env.OWC_POPUP_BLOCKING_ENABLED,
+    true,
   );
 }
 
@@ -507,13 +512,9 @@ function recordRequestFailure(page, request) {
 }
 
 // In Playwright, disableBlocking on a page means updating the context route handler.
-// We keep a per-page flag and the context route aborts nothing when disabled.
-const pageBlockingDisabled = new WeakSet();
-
 async function disableBlockingForPage(page) {
   try {
-    pageBlockingDisabled.add(page);
-    return true;
+    return await disableBlocking(page);
   } catch { return false; }
 }
 
@@ -581,7 +582,7 @@ function attachNetworkDiagnostics(page) {
 
     if (getAdblockAutoRecoveryEnabled() && !state.autoRecovery.attempted) {
       const recoverableFailure = failure.iframe_or_player_related
-        && (failure.blocked_by_client || (getAdblockAutoRecoveryOnAbort() && failure.aborted));
+        && failure.blocked_by_client;
 
       if (recoverableFailure) {
         state.autoRecovery.attempted = true;
@@ -684,14 +685,40 @@ function buildRenderGapSignals(failures = []) {
   };
 }
 
+function filterFailuresForCurrentPage(page, failures = []) {
+  const currentUrl = String(page.url?.() || '');
+  let currentOrigin = '';
+  try {
+    currentOrigin = new URL(currentUrl).origin;
+  } catch {
+    currentOrigin = '';
+  }
+  if (!currentUrl || currentUrl === 'about:blank') return failures;
+
+  return failures.filter((failure) => {
+    const frameUrl = String(failure?.frame_url || '');
+    const requestUrl = String(failure?.url || '');
+    if (!frameUrl) return true;
+    if (frameUrl === currentUrl || frameUrl.startsWith(`${currentUrl}#`)) return true;
+    if (requestUrl === currentUrl) return true;
+    if (!currentOrigin) return false;
+    try {
+      return new URL(frameUrl).origin === currentOrigin;
+    } catch {
+      return false;
+    }
+  });
+}
+
 export function getPageNetworkDiagnostics(page, { limit = 10 } = {}) {
   const state = getNetworkState(page);
-  const cappedFailures = state.failures.slice(-Math.max(1, Number.parseInt(String(limit || 10), 10) || 10));
+  const scopedFailures = filterFailuresForCurrentPage(page, state.failures);
+  const cappedFailures = scopedFailures.slice(-Math.max(1, Number.parseInt(String(limit || 10), 10) || 10));
   const summary = summarizeNetworkFailures(cappedFailures);
   const { disable_promise, ...publicRecovery } = state.autoRecovery;
   const { pending_promise, ...publicIframeRecovery } = state.iframeRecovery;
-  const critical_resource_failures = buildCriticalResourceFailures(state.failures);
-  const render_gap_signals = buildRenderGapSignals(state.failures);
+  const critical_resource_failures = buildCriticalResourceFailures(scopedFailures);
+  const render_gap_signals = buildRenderGapSignals(scopedFailures);
   const manifest_failure = critical_resource_failures.find((failure) => failure.kind === 'manifest_media') || null;
   return {
     request_failures: cappedFailures,
@@ -1087,6 +1114,40 @@ const runtimeFingerprintPatchFn = (fingerprintProfile) => {
   }
 };
 
+const popupBlockerInitScript = () => {
+  const blockerKey = Symbol.for('__owc_popup_blocker__');
+  if (globalThis[blockerKey]) {
+    return;
+  }
+  Object.defineProperty(globalThis, blockerKey, { value: true, writable: false });
+  const noopOpen = () => null;
+  try {
+    Object.defineProperty(window, 'open', {
+      configurable: true,
+      writable: false,
+      value: noopOpen,
+    });
+  } catch {
+    try {
+      window.open = noopOpen;
+    } catch {
+      // ignore
+    }
+  }
+};
+
+async function installPopupGuards(page) {
+  if (!getPopupBlockingEnabled() || !page || pagePopupGuardsInstalled.has(page)) {
+    return;
+  }
+  pagePopupGuardsInstalled.add(page);
+  page.on('dialog', (dialog) => {
+    dialog.dismiss().catch(() => {});
+  });
+  await page.addInitScript(popupBlockerInitScript).catch(() => {});
+  await page.evaluate(popupBlockerInitScript).catch(() => {});
+}
+
 const patchIframeSandboxFn = () => {
   const patchKey = Symbol.for('__owc_iframe_sandbox_patch__');
   if (globalThis[patchKey]) return;
@@ -1145,6 +1206,7 @@ const patchIframeSandboxFn = () => {
 async function createFingerprintedContext(browser, profile, synchronizedBundle = null, { injectFingerprint = true } = {}) {
   const context = await browser.newContext({
     viewport: FORCED_VIEWPORT,
+    deviceScaleFactor: 2,
     userAgent: profile.userAgent,
     locale: profile.language || 'en-US',
     extraHTTPHeaders: profile.headers,
@@ -1169,18 +1231,27 @@ async function createFingerprintedContext(browser, profile, synchronizedBundle =
     secChUa: profile.secChUa,
   });
 
-  if (getIframeSandboxPatchEnabled()) {
-    await context.addInitScript(patchIframeSandboxFn);
-  }
-
   // Remove Playwright-specific globals that some sites check
   await context.addInitScript(() => {
     try { delete window.__playwright; } catch { /* ignore */ }
     try { delete window.__pw_manual; } catch { /* ignore */ }
   });
+  if (getPopupBlockingEnabled()) {
+    await context.addInitScript(popupBlockerInitScript);
+    context.on('page', async (page) => {
+      try {
+        const opener = await page.opener().catch(() => null);
+        if (opener) {
+          await page.close().catch(() => {});
+          return;
+        }
+        await installPopupGuards(page);
+      } catch {
+        // ignore
+      }
+    });
+  }
 
-  // Apply route-based ad blocking
-  await attachAdBlocker(context, { pageBlockingDisabled });
   preparedContexts.add(context);
 
   return context;
@@ -1191,20 +1262,37 @@ async function prepareSharedContext(context) {
     return context;
   }
 
-  if (getIframeSandboxPatchEnabled()) {
-    await context.addInitScript(patchIframeSandboxFn);
-  }
   await context.addInitScript(() => {
     try { delete window.__playwright; } catch { /* ignore */ }
     try { delete window.__pw_manual; } catch { /* ignore */ }
   });
-  await attachAdBlocker(context, { pageBlockingDisabled });
+  if (getPopupBlockingEnabled()) {
+    await context.addInitScript(popupBlockerInitScript);
+    context.on('page', async (page) => {
+      try {
+        const opener = await page.opener().catch(() => null);
+        if (opener) {
+          await page.close().catch(() => {});
+          return;
+        }
+        await installPopupGuards(page);
+      } catch {
+        // ignore
+      }
+    });
+  }
   preparedContexts.add(context);
   return context;
 }
 
-async function launchBrowserAttempt({ launchTimeout, launchArgs, proxy = null } = {}) {
-  return chromium.launch({
+async function launchBrowserAttempt({
+  launchTimeout,
+  launchArgs,
+  proxy = null,
+  userDataDir = '',
+  persistent = false,
+} = {}) {
+  const launchOptions = {
     executablePath: EXECUTABLE_PATH,
     headless: true,
     timeout: launchTimeout,
@@ -1216,17 +1304,43 @@ async function launchBrowserAttempt({ launchTimeout, launchArgs, proxy = null } 
           password: proxy.password || undefined,
         }
       : undefined,
-  });
+  };
+
+  if (persistent) {
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      ...launchOptions,
+      viewport: FORCED_VIEWPORT,
+      deviceScaleFactor: 2,
+    });
+    return {
+      browser: context.browser(),
+      context,
+      persistent: true,
+    };
+  }
+
+  const browser = await chromium.launch(launchOptions);
+  return {
+    browser,
+    context: null,
+    persistent: false,
+  };
 }
 
-async function validateProxyConnection(browser, { testUrl, timeoutMs } = {}) {
-  const context = await browser.newContext({
-    viewport: FORCED_VIEWPORT,
-    ignoreHTTPSErrors: true,
-  });
+async function validateProxyConnection(launchResult, { testUrl, timeoutMs } = {}) {
+  const persistentContext = launchResult?.context || null;
+  const browser = launchResult?.browser || null;
+  const temporaryContext = persistentContext
+    ? null
+    : await browser.newContext({
+        viewport: FORCED_VIEWPORT,
+        deviceScaleFactor: 2,
+        ignoreHTTPSErrors: true,
+      });
 
+  const context = persistentContext || temporaryContext;
   try {
-    const page = await context.newPage();
+    const page = context.pages()[0] || await context.newPage();
     const response = await page.goto(testUrl, {
       waitUntil: 'domcontentloaded',
       timeout: timeoutMs,
@@ -1235,7 +1349,9 @@ async function validateProxyConnection(browser, { testUrl, timeoutMs } = {}) {
       throw new Error(`Proxy validation failed for ${testUrl}`);
     }
   } finally {
-    await context.close().catch(() => {});
+    if (temporaryContext) {
+      await temporaryContext.close().catch(() => {});
+    }
   }
 }
 
@@ -1322,43 +1438,73 @@ export async function launchEphemeralBrowser(sessionId, { browserProfile = '' } 
   const launchTimeout = Number.isFinite(launchTimeoutMs) ? Math.max(0, launchTimeoutMs) : 45000;
   const launchArgs = [...DEFAULT_LAUNCH_ARGS, ...getExtraLaunchArgs()];
   const launchPolicy = buildEffectivePolicy({ browserProfile });
-  const proxyPlan = await getProxyCandidatePlan('playwright', getProxyRuntimeConfig());
+
+  let launchPersistentContext = false;
+  if (launchPolicy.ubol_enabled && getUbolEnabled() && UBOL_EXTENSION_DIR) {
+    try {
+      await fs.access(path.join(UBOL_EXTENSION_DIR, 'manifest.json'));
+      launchArgs.push(`--disable-extensions-except=${UBOL_EXTENSION_DIR}`);
+      launchArgs.push(`--load-extension=${UBOL_EXTENSION_DIR}`);
+      launchPersistentContext = true;
+    } catch {
+      console.warn(`[owc-pw] uBOL extension not found at ${UBOL_EXTENSION_DIR}; continuing without extension.`);
+    }
+  }
+
+  const proxySelectionKey = `playwright:${String(browserProfile || 'default').trim().toLowerCase() || 'default'}`;
+  const proxyPlan = await getProxyCandidatePlan(proxySelectionKey, getProxyRuntimeConfig());
   const attemptedErrors = [];
   let browser = null;
+  let context = null;
+  let persistentContext = false;
   let selectedProxy = null;
 
   if (proxyPlan.enabled && launchPolicy.use_proxy_on_first_attempt) {
     for (const candidate of proxyPlan.candidates) {
       try {
-        browser = await launchBrowserAttempt({
+        const launchResult = await launchBrowserAttempt({
           launchTimeout,
           launchArgs,
           proxy: candidate,
+          userDataDir,
+          persistent: launchPersistentContext,
         });
-        await validateProxyConnection(browser, {
+        await validateProxyConnection(launchResult, {
           testUrl: proxyPlan.testUrl,
           timeoutMs: proxyPlan.validationTimeoutMs,
         });
-        markProxySuccess('playwright', candidate);
+        browser = launchResult.browser;
+        context = launchResult.context;
+        persistentContext = launchResult.persistent;
+        markProxySuccess(proxySelectionKey, candidate);
         selectedProxy = candidate;
         break;
       } catch (error) {
         attemptedErrors.push(`${candidate.server} (${candidate.sourceId}) -> ${error?.message || error}`);
-        markProxyFailure('playwright', candidate);
-        if (browser) {
+        markProxyFailure(proxySelectionKey, candidate);
+        if (context) {
+          await context.close().catch(() => {});
+          context = null;
+        } else if (browser) {
           await browser.close().catch(() => {});
           browser = null;
         }
+        persistentContext = false;
       }
     }
   }
 
   if (!browser && (!proxyPlan.enabled || proxyPlan.allowDirectFallback)) {
-    browser = await launchBrowserAttempt({
+    const launchResult = await launchBrowserAttempt({
       launchTimeout,
       launchArgs,
       proxy: null,
+      userDataDir,
+      persistent: launchPersistentContext,
     });
+    browser = launchResult.browser;
+    context = launchResult.context;
+    persistentContext = launchResult.persistent;
   }
 
   if (!browser) {
@@ -1369,23 +1515,26 @@ export async function launchEphemeralBrowser(sessionId, { browserProfile = '' } 
     );
   }
 
-  const suite = await getFingerprintSuite(browser);
-  let context = null;
-  try {
-    const synchronized = generateRotatingFingerprintBundle(
-      suite.fingerprintGenerator,
-      suite.chromeVersion,
-      suite.chromeMajorVersion,
-    );
-    const profile = buildProfileFromFingerprint(synchronized, suite.chromeVersion, suite.chromeMajorVersion);
-    context = await createFingerprintedContext(browser, profile, synchronized);
-  } catch (error) {
-    if (getFingerprintFallbackStrategy() !== 'profile') {
-      await browser.close().catch(() => {});
-      throw error;
+  if (!context) {
+    const suite = await getFingerprintSuite(browser);
+    try {
+      const synchronized = generateRotatingFingerprintBundle(
+        suite.fingerprintGenerator,
+        suite.chromeVersion,
+        suite.chromeMajorVersion,
+      );
+      const profile = buildProfileFromFingerprint(synchronized, suite.chromeVersion, suite.chromeMajorVersion);
+      context = await createFingerprintedContext(browser, profile, synchronized);
+    } catch (error) {
+      if (getFingerprintFallbackStrategy() !== 'profile') {
+        await browser.close().catch(() => {});
+        throw error;
+      }
+      const profile = buildFallbackFingerprintProfile(suite.chromeVersion, suite.chromeMajorVersion);
+      context = await createFingerprintedContext(browser, profile, null, { injectFingerprint: false });
     }
-    const profile = buildFallbackFingerprintProfile(suite.chromeVersion, suite.chromeMajorVersion);
-    context = await createFingerprintedContext(browser, profile, null, { injectFingerprint: false });
+  } else {
+    await prepareSharedContext(context);
   }
 
   return {
@@ -1393,10 +1542,11 @@ export async function launchEphemeralBrowser(sessionId, { browserProfile = '' } 
     context,
     userDataDir,
     proxy: selectedProxy,
+    proxy_strategy: proxyPlan.strategy,
     browserProfile,
     launchPolicy,
     sharedConnection: false,
-    ownsBrowser: true,
+    ownsBrowser: !persistentContext,
     ownsContext: true,
     disconnect: async () => browser.close(),
   };
@@ -1453,6 +1603,7 @@ export async function getPage(session, {
 
   // Enforce viewport (context setting may be overridden by some sites)
   await page.setViewportSize(FORCED_VIEWPORT);
+  await installPopupGuards(page);
   attachNetworkDiagnostics(page);
   const effectivePolicy = buildEffectivePolicy({
     browserProfile: effectiveBrowserProfile,
@@ -1462,15 +1613,10 @@ export async function getPage(session, {
   });
   setPageEffectivePolicy(page, effectivePolicy);
 
-  // Apply iframe sandbox patch to the live page as well (addInitScript covers future pages)
-  if (getIframeSandboxPatchEnabled()) {
-    await page.evaluate(patchIframeSandboxFn).catch(() => {});
-  }
-
-  if (effectivePolicy.page_blocking_disabled) {
+  if (effectivePolicy.page_blocking_disabled || !effectivePolicy.cosmetic_filtering_enabled) {
     await disableBlockingForPage(page).catch(() => {});
   } else {
-    pageBlockingDisabled.delete(page);
+    await enableBlocking(page, { targetUrl }).catch(() => {});
   }
 
   return page;

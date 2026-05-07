@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
 const RUNTIME_CONFIG_PATH = String(
   process.env.OWC_BROWSER_RUNTIME_CONFIG || path.join(PROJECT_ROOT, 'data', 'browser.runtime.json'),
 ).trim();

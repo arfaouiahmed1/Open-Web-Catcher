@@ -1,5 +1,11 @@
-import { RunLauncher } from "@/components/run-launcher";
+import { Suspense } from "react";
 
-export default function LivePage() {
-  return <RunLauncher defaultMode="workflow" />;
+import { LivePage } from "@/components/console/live/live-page";
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="min-h-[40vh]" />}>
+      <LivePage />
+    </Suspense>
+  );
 }

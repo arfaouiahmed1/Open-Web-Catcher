@@ -311,6 +311,27 @@ async def test_landing_node_does_not_fallback_to_root_hosting_when_no_matches(mo
     assert result["pending_embedded_urls"] == []
 
 
+def test_landing_no_matches_is_partial_pipeline_result():
+    from src.agents.orchestrator import _build_pipeline_result
+
+    result = _build_pipeline_result(
+        {
+            "url": "https://example.com",
+            "run_id": "test-run",
+            "classification": _make_classification(PageType.LANDING),
+            "matches": [],
+            "extraction_results": [],
+            "pending_hosting_urls": [],
+            "pending_embedded_urls": [],
+            "provider_analysis": [],
+            "takedown_emails": [],
+            "error": "",
+        }
+    )
+
+    assert result.final_status == ExtractionStatus.PARTIAL
+
+
 @pytest.mark.asyncio
 @patch("src.agents.hosting_page.HostingPageAgent.run", new_callable=AsyncMock)
 async def test_hosting_node_sends_orchestrator_handoff(mock_hosting_run, settings):

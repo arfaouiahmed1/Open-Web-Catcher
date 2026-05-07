@@ -35,7 +35,55 @@ const BUILTIN_PROXY_SOURCES = {
     url: 'https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt',
     scheme: 'socks5',
   },
+  'monosans-http': {
+    id: 'monosans-http',
+    label: 'monosans HTTP',
+    url: 'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt',
+    scheme: 'http',
+  },
+  'monosans-socks4': {
+    id: 'monosans-socks4',
+    label: 'monosans SOCKS4',
+    url: 'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks4.txt',
+    scheme: 'socks4',
+  },
+  'monosans-socks5': {
+    id: 'monosans-socks5',
+    label: 'monosans SOCKS5',
+    url: 'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt',
+    scheme: 'socks5',
+  },
+  'proxifly-http': {
+    id: 'proxifly-http',
+    label: 'Proxifly HTTP',
+    url: 'https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/protocols/http/data.txt',
+    scheme: 'http',
+  },
+  'proxifly-socks4': {
+    id: 'proxifly-socks4',
+    label: 'Proxifly SOCKS4',
+    url: 'https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/protocols/socks4/data.txt',
+    scheme: 'socks4',
+  },
+  'proxifly-socks5': {
+    id: 'proxifly-socks5',
+    label: 'Proxifly SOCKS5',
+    url: 'https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/protocols/socks5/data.txt',
+    scheme: 'socks5',
+  },
 };
+
+export const DEFAULT_PROXY_SOURCE_ORDER = [
+  'openproxylist-https',
+  'proxifly-http',
+  'monosans-http',
+  'speedx-http',
+  'openproxylist-socks5',
+  'proxifly-socks5',
+  'monosans-socks5',
+  'speedx-socks5',
+  'proxifly-socks4',
+];
 
 const remoteSourceCache = new Map();
 const proxySelectionState = new Map();
@@ -258,16 +306,11 @@ export function normalizeProxyRuntimeConfig(settings = {}) {
   return {
     enabled: Boolean(settings.proxy_enabled),
     sourceMode,
-    sourceOrder: splitUniqueStrings(settings.proxy_source_order, [
-      'openproxylist-https',
-      'openproxylist-socks5',
-      'speedx-http',
-      'speedx-socks5',
-    ]),
+    sourceOrder: splitUniqueStrings(settings.proxy_source_order, DEFAULT_PROXY_SOURCE_ORDER),
     customList: splitUniqueStrings(settings.proxy_custom_list),
-    rotationMode: normalizeChoice(settings.proxy_rotation_mode, new Set(['never', 'session', 'sticky', 'failure']), 'session'),
-    selectionStrategy: normalizeChoice(settings.proxy_selection_strategy, new Set(['ordered', 'random']), 'ordered'),
-    fallbackStrategy: normalizeChoice(settings.proxy_fallback_strategy, new Set(['direct', 'fail']), 'direct'),
+    rotationMode: 'sticky',
+    selectionStrategy: 'ordered',
+    fallbackStrategy: 'direct',
     fetchTimeoutMs: clampPositiveInteger(settings.proxy_fetch_timeout_ms, 8000),
     validationTimeoutMs: clampPositiveInteger(settings.proxy_validation_timeout_ms, 12000),
     cacheTtlMs: clampPositiveInteger(settings.proxy_cache_ttl_ms, 600000),
@@ -287,6 +330,12 @@ export async function getProxyCandidatePlan(browserId, proxyConfig) {
     return {
       enabled: false,
       allowDirectFallback: true,
+      strategy: {
+        rotation_mode: config.rotationMode,
+        selection_strategy: config.selectionStrategy,
+        fallback_strategy: config.fallbackStrategy,
+        description: 'validated_sticky disabled because proxy pool is off',
+      },
       candidates: [],
       testUrl: config.testUrl,
       validationTimeoutMs: config.validationTimeoutMs,
@@ -346,6 +395,12 @@ export async function getProxyCandidatePlan(browserId, proxyConfig) {
   return {
     enabled: true,
     allowDirectFallback: config.fallbackStrategy === 'direct',
+    strategy: {
+      rotation_mode: config.rotationMode,
+      selection_strategy: config.selectionStrategy,
+      fallback_strategy: config.fallbackStrategy,
+      description: 'validated_sticky: keep the first healthy candidate per engine/profile and rotate only after failure',
+    },
     candidates: ordered.slice(0, config.maxCandidates),
     testUrl: config.testUrl,
     validationTimeoutMs: config.validationTimeoutMs,

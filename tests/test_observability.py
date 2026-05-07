@@ -69,6 +69,56 @@ def test_run_registry_tracks_events_metrics_and_costs():
     assert trace.events[0].message == "Pipeline started"
 
 
+def test_run_registry_persists_cached_token_cost_breakdowns():
+    registry = RunRegistry(max_runs=1)
+    observer = registry.create(
+        run_id="run-cache",
+        root_actor="orchestrator",
+        observability=ObservabilityStatus(
+            enabled=False,
+            project="open-web-catcher",
+            pricing_models=["test-model"],
+            default_dataset_name="open-web-catcher-runs",
+        ),
+    )
+
+    observer.add_llm_usage(
+        {"input_tokens": 1000, "output_tokens": 200},
+        model_name="test-model",
+        provider="test",
+        pricing={
+            "provider": "test",
+            "input_per_million": 2.0,
+            "cached_input_per_million": 0.5,
+            "cache_write_per_million": 3.0,
+            "output_per_million": 4.0,
+        },
+        cache_metrics={
+            "cache_hit": True,
+            "input_tokens": 1000,
+            "cached_input_tokens": 600,
+            "new_input_tokens": 400,
+            "cache_creation_input_tokens": 100,
+            "output_tokens": 200,
+        },
+    )
+
+    trace = registry.get("run-cache")
+
+    assert trace is not None
+    assert trace.metrics is not None
+    assert trace.metrics.total_cached_input_tokens == 600
+    assert trace.metrics.total_new_input_tokens == 400
+    assert trace.metrics.total_cache_hit_calls == 1
+    assert trace.metrics.estimated_input_cost_usd == 0.0006
+    assert trace.metrics.estimated_cached_input_cost_usd == 0.0003
+    assert trace.metrics.estimated_cache_write_cost_usd == 0.0003
+    assert trace.metrics.estimated_output_cost_usd == 0.0008
+    assert trace.metrics.estimated_total_cost_usd == 0.002
+    assert trace.metrics.model_usage[0].cached_input_tokens == 600
+    assert trace.metrics.model_usage[0].estimated_cache_write_cost_usd == 0.0003
+
+
 def test_model_pricing_resolution_handles_provider_prefixes_and_suffixes():
     settings = Settings(
         **{

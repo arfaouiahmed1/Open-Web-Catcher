@@ -9,88 +9,86 @@ BROWSER_IDS = ("puppeteer", "playwright")
 MCP_PROFILE_IDS = ("classification", "landing", "hosting", "embedded")
 DEFAULT_PROXY_SOURCE_ORDER = [
     "openproxylist-https",
-    "openproxylist-socks5",
+    "proxifly-http",
+    "monosans-http",
     "speedx-http",
+    "openproxylist-socks5",
+    "proxifly-socks5",
+    "monosans-socks5",
     "speedx-socks5",
+    "proxifly-socks4",
 ]
 
 DEFAULT_BROWSER_RUNTIME: dict[str, dict[str, Any]] = {
     "puppeteer": {
         "launch_timeout_ms": 45000,
         "extra_launch_args": [],
-        "adblock_enabled": False,
         "adblock_allowlist_hosts": [],
-        "adblock_excluded_categories": ["nsfw", "gambling"],
-        "adblock_auto_recovery_enabled": True,
-        "adblock_auto_recovery_on_abort": True,
-        "adblock_auto_recovery_retry": True,
         "fingerprint_rotation_mode": "origin",
         "fingerprint_fallback_strategy": "profile",
-        "fingerprint_rotation_interval_ms": 180000,
-        "fingerprint_rotation_max_uses": 6,
-        "fingerprint_recent_pool_size": 12,
+        "fingerprint_rotation_interval_ms": 600000,
+        "fingerprint_rotation_max_uses": 8,
+        "fingerprint_recent_pool_size": 18,
         "proxy_enabled": False,
         "proxy_source_mode": "hybrid",
         "proxy_source_order": list(DEFAULT_PROXY_SOURCE_ORDER),
         "proxy_custom_list": [],
-        "proxy_rotation_mode": "session",
+        "proxy_rotation_mode": "sticky",
         "proxy_selection_strategy": "ordered",
         "proxy_fallback_strategy": "direct",
         "proxy_fetch_timeout_ms": 8000,
         "proxy_validation_timeout_ms": 12000,
         "proxy_cache_ttl_ms": 600000,
-        "proxy_max_candidates": 25,
+        "proxy_max_candidates": 40,
         "proxy_test_url": "https://api.ipify.org?format=json",
         "streaming_safe_mode": "adaptive",
         "media_proxy_strategy": "direct_first",
         "asset_diagnostics_enabled": True,
+        "popup_blocking_enabled": True,
         "ubol_enabled": True,
         "stream_cors_patch_enabled": False,
         "stream_cors_include_credentials": False,
         "iframe_sandbox_patch_enabled": True,
         "iframe_auto_recovery_enabled": True,
         "iframe_recovery_timeout_ms": 20000,
-        "media_capture_timeout_ms": 30000,
-        "media_retry_count": 3,
-        "media_retry_backoff_ms": [1000, 2000, 4000],
+        "media_capture_timeout_ms": 45000,
+        "media_retry_count": 4,
+        "media_retry_backoff_ms": [1200, 2500, 5000, 8000],
         "media_cors_patch_enabled": False,
         "media_playback_verification_enabled": True,
     },
     "playwright": {
         "launch_timeout_ms": 45000,
         "extra_launch_args": [],
-        "adblock_enabled": False,
         "adblock_allowlist_hosts": [],
-        "adblock_excluded_categories": ["nsfw", "gambling"],
-        "adblock_auto_recovery_enabled": True,
-        "adblock_auto_recovery_on_abort": True,
-        "adblock_auto_recovery_retry": True,
         "fingerprint_rotation_mode": "origin",
         "fingerprint_fallback_strategy": "profile",
-        "fingerprint_rotation_interval_ms": 180000,
-        "fingerprint_rotation_max_uses": 6,
-        "fingerprint_recent_pool_size": 12,
+        "fingerprint_rotation_interval_ms": 600000,
+        "fingerprint_rotation_max_uses": 8,
+        "fingerprint_recent_pool_size": 18,
         "proxy_enabled": False,
         "proxy_source_mode": "hybrid",
         "proxy_source_order": list(DEFAULT_PROXY_SOURCE_ORDER),
         "proxy_custom_list": [],
-        "proxy_rotation_mode": "session",
+        "proxy_rotation_mode": "sticky",
         "proxy_selection_strategy": "ordered",
         "proxy_fallback_strategy": "direct",
         "proxy_fetch_timeout_ms": 8000,
         "proxy_validation_timeout_ms": 12000,
         "proxy_cache_ttl_ms": 600000,
-        "proxy_max_candidates": 25,
+        "proxy_max_candidates": 40,
         "proxy_test_url": "https://api.ipify.org?format=json",
         "streaming_safe_mode": "adaptive",
         "media_proxy_strategy": "direct_first",
         "asset_diagnostics_enabled": True,
+        "popup_blocking_enabled": True,
+        "ubol_enabled": True,
         "iframe_sandbox_patch_enabled": True,
         "iframe_auto_recovery_enabled": True,
         "iframe_recovery_timeout_ms": 20000,
-        "media_capture_timeout_ms": 30000,
-        "media_retry_count": 3,
-        "media_retry_backoff_ms": [1000, 2000, 4000],
+        "media_capture_timeout_ms": 45000,
+        "media_retry_count": 4,
+        "media_retry_backoff_ms": [1200, 2500, 5000, 8000],
         "media_cors_patch_enabled": False,
         "media_playback_verification_enabled": True,
     },
@@ -111,24 +109,7 @@ def normalize_browser_runtime(value: Any) -> dict[str, dict[str, Any]]:
         current = normalized[browser]
         current["launch_timeout_ms"] = _coerce_int(raw.get("launch_timeout_ms"), current["launch_timeout_ms"], minimum=1000)
         current["extra_launch_args"] = _coerce_string_list(raw.get("extra_launch_args"))
-        current["adblock_enabled"] = _coerce_bool(raw.get("adblock_enabled"), current["adblock_enabled"])
         current["adblock_allowlist_hosts"] = _coerce_string_list(raw.get("adblock_allowlist_hosts"))
-        current["adblock_excluded_categories"] = _coerce_string_list(
-            raw.get("adblock_excluded_categories"),
-            fallback=current["adblock_excluded_categories"],
-        )
-        current["adblock_auto_recovery_enabled"] = _coerce_bool(
-            raw.get("adblock_auto_recovery_enabled"),
-            current["adblock_auto_recovery_enabled"],
-        )
-        current["adblock_auto_recovery_on_abort"] = _coerce_bool(
-            raw.get("adblock_auto_recovery_on_abort"),
-            current["adblock_auto_recovery_on_abort"],
-        )
-        current["adblock_auto_recovery_retry"] = _coerce_bool(
-            raw.get("adblock_auto_recovery_retry"),
-            current["adblock_auto_recovery_retry"],
-        )
         current["fingerprint_rotation_mode"] = _coerce_choice(
             raw.get("fingerprint_rotation_mode"),
             allowed={"never", "page", "origin", "interval"},
@@ -165,21 +146,12 @@ def normalize_browser_runtime(value: Any) -> dict[str, dict[str, Any]]:
             fallback=current["proxy_source_order"],
         )
         current["proxy_custom_list"] = _coerce_string_list(raw.get("proxy_custom_list"))
-        current["proxy_rotation_mode"] = _coerce_choice(
-            raw.get("proxy_rotation_mode"),
-            allowed={"never", "session", "sticky", "failure"},
-            fallback=current["proxy_rotation_mode"],
-        )
-        current["proxy_selection_strategy"] = _coerce_choice(
-            raw.get("proxy_selection_strategy"),
-            allowed={"ordered", "random"},
-            fallback=current["proxy_selection_strategy"],
-        )
-        current["proxy_fallback_strategy"] = _coerce_choice(
-            raw.get("proxy_fallback_strategy"),
-            allowed={"direct", "fail"},
-            fallback=current["proxy_fallback_strategy"],
-        )
+        # The runtime intentionally exposes one dependable strategy:
+        # validate candidates, keep the last healthy proxy, rotate only when it
+        # fails, and fall back to direct browsing if no proxy validates.
+        current["proxy_rotation_mode"] = "sticky"
+        current["proxy_selection_strategy"] = "ordered"
+        current["proxy_fallback_strategy"] = "direct"
         current["proxy_fetch_timeout_ms"] = _coerce_int(
             raw.get("proxy_fetch_timeout_ms"),
             current["proxy_fetch_timeout_ms"],
@@ -218,6 +190,14 @@ def normalize_browser_runtime(value: Any) -> dict[str, dict[str, Any]]:
             raw.get("asset_diagnostics_enabled"),
             current["asset_diagnostics_enabled"],
         )
+        current["popup_blocking_enabled"] = _coerce_bool(
+            raw.get("popup_blocking_enabled"),
+            current["popup_blocking_enabled"],
+        )
+        current["ubol_enabled"] = _coerce_bool(
+            raw.get("ubol_enabled", raw.get("adblock_enabled")),
+            current["ubol_enabled"],
+        )
         current["iframe_sandbox_patch_enabled"] = _coerce_bool(
             raw.get("iframe_sandbox_patch_enabled"),
             current["iframe_sandbox_patch_enabled"],
@@ -255,7 +235,6 @@ def normalize_browser_runtime(value: Any) -> dict[str, dict[str, Any]]:
             current["media_playback_verification_enabled"],
         )
         if browser == "puppeteer":
-            current["ubol_enabled"] = _coerce_bool(raw.get("ubol_enabled"), current["ubol_enabled"])
             current["stream_cors_patch_enabled"] = _coerce_bool(
                 raw.get("stream_cors_patch_enabled"),
                 current["stream_cors_patch_enabled"],

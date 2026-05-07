@@ -41,8 +41,8 @@ services:
     stop_grace_period: 30s
     shm_size: "2gb"
     ports:
-      - "3000:3000"
-      - "9222:9222"
+      - "${OWC_TOOLS_HOST_PORT:-3001}:3000"
+      - "${OWC_TOOLS_DEBUG_HOST_PORT:-9222}:9222"
     env_file:
       - .env
     environment:
@@ -53,13 +53,9 @@ services:
       PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
       OWC_UBOL_ENABLED: ${OWC_UBOL_ENABLED:-true}
       OWC_UBOL_EXTENSION_DIR: ${OWC_UBOL_EXTENSION_DIR:-/app/tools/puppeteer/extensions/ubol}
+      OWC_UBOL_EXTENSION_ID: ${OWC_UBOL_EXTENSION_ID:-nkeimhogjdpnpccoofpliimaahmaaome}
       OWC_UBOL_DEFAULT_FILTERING: ${OWC_UBOL_DEFAULT_FILTERING:-optimal}
-      OWC_ADBLOCK_ENABLED: ${OWC_ADBLOCK_ENABLED:-false}
-      OWC_ADBLOCK_EXCLUDED_CATEGORIES: ${OWC_ADBLOCK_EXCLUDED_CATEGORIES:-nsfw,gambling}
       OWC_ADBLOCK_ALLOWLIST_HOSTS: ${OWC_ADBLOCK_ALLOWLIST_HOSTS:-}
-      OWC_ADBLOCK_AUTO_RECOVERY_ENABLED: ${OWC_ADBLOCK_AUTO_RECOVERY_ENABLED:-true}
-      OWC_ADBLOCK_AUTO_RECOVERY_ON_ABORT: ${OWC_ADBLOCK_AUTO_RECOVERY_ON_ABORT:-true}
-      OWC_ADBLOCK_AUTO_RECOVERY_RETRY: ${OWC_ADBLOCK_AUTO_RECOVERY_RETRY:-true}
       OWC_ENABLE_STREAM_CORS_PATCH: ${OWC_ENABLE_STREAM_CORS_PATCH:-false}
       OWC_STREAM_CORS_INCLUDE_CREDENTIALS: ${OWC_STREAM_CORS_INCLUDE_CREDENTIALS:-false}
     volumes:
@@ -93,16 +89,18 @@ services:
     stop_grace_period: 30s
     shm_size: "2gb"
     ports:
-      - "3002:3001"
-      - "9223:9223"
+      - "${OWC_TOOLS_PW_HOST_PORT:-3002}:3001"
+      - "${OWC_TOOLS_PW_DEBUG_HOST_PORT:-9223}:9223"
     env_file:
       - .env
     environment:
       PORT: 3001
       MCP_BROWSER_MODE: ${MCP_BROWSER_MODE:-isolated}
       BROWSER_WS_ENDPOINT: ws://127.0.0.1:9223
-      OWC_ADBLOCK_ENABLED: ${OWC_ADBLOCK_ENABLED:-true}
-      OWC_ADBLOCK_EXCLUDED_CATEGORIES: ${OWC_ADBLOCK_EXCLUDED_CATEGORIES:-nsfw,gambling}
+      OWC_UBOL_ENABLED: ${OWC_UBOL_ENABLED:-true}
+      OWC_UBOL_EXTENSION_DIR: ${OWC_UBOL_EXTENSION_DIR_PLAYWRIGHT:-/app/tools/playwright/extensions/ubol}
+      OWC_UBOL_EXTENSION_ID: ${OWC_UBOL_EXTENSION_ID:-nkeimhogjdpnpccoofpliimaahmaaome}
+      OWC_UBOL_DEFAULT_FILTERING: ${OWC_UBOL_DEFAULT_FILTERING:-optimal}
       OWC_ADBLOCK_ALLOWLIST_HOSTS: ${OWC_ADBLOCK_ALLOWLIST_HOSTS:-}
     volumes:
       - ./data:/app/data
@@ -148,7 +146,7 @@ services:
       OBSERVABILITY_DEFAULT_DATASET_NAME: ${OBSERVABILITY_DEFAULT_DATASET_NAME:-open-web-catcher-runs}
       OBSERVABILITY_DATASET_DIR: ${OBSERVABILITY_DATASET_DIR:-data/datasets}
       MODEL_PRICING_JSON: ${MODEL_PRICING_JSON:-{}}
-      UI_CORS_ORIGINS: ${UI_CORS_ORIGINS:-http://localhost:3001,http://127.0.0.1:3001}
+      UI_CORS_ORIGINS: ${UI_CORS_ORIGINS:-http://localhost:${OWC_WEB_HOST_PORT:-3000},http://127.0.0.1:${OWC_WEB_HOST_PORT:-3000}}
     depends_on:
       postgres:
         condition: service_healthy
@@ -159,6 +157,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./configs:/app/configs:ro
+      - ./datasets:/app/datasets:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -187,7 +186,7 @@ services:
     init: true
     stop_grace_period: 20s
     ports:
-      - "3001:3001"
+      - "${OWC_WEB_HOST_PORT:-3000}:3001"
     environment:
       API_BASE_URL: http://owc:8000
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8000

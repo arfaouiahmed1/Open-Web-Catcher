@@ -243,8 +243,14 @@ export async function captureStreams({
       const screenshot = await captureScreenshot(page, { mode: 'viewport' });
       const network_diagnostics = getPageNetworkDiagnostics(page, { limit: 12 });
       const result = Array.from(streams.values());
+      const playbackStarted = didPlaybackStart(media_state);
+      const streamEvidenceFound = result.length > 0;
       return buildEnvelope(page, {
         frame_path,
+        ok: playbackStarted || streamEvidenceFound,
+        error: playbackStarted || streamEvidenceFound
+          ? null
+          : 'No playback or stream evidence was observed during capture window.',
         screenshot,
         data: {
           duration_ms: captureWindowMs,
@@ -252,7 +258,12 @@ export async function captureStreams({
           player_iframe_hint,
           evidence,
           media_state,
-          playback_started: didPlaybackStart(media_state),
+          playback_started: playbackStarted,
+          stream_evidence_found: streamEvidenceFound,
+          verification_basis: {
+            requires_playback_or_stream_evidence: true,
+            stream_patterns: STREAM_PATTERNS.map((entry) => entry.protocol),
+          },
           cors_failures_detected: corsFailures,
           manifest_failure: network_diagnostics.manifest_failure,
           manifest_response: manifestResponse,

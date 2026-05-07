@@ -21,9 +21,13 @@ const fakeTools = Object.fromEntries(
 const defs = getToolDefinitions(endpoint, fakeTools);
 
 for (const [toolName, def] of Object.entries(defs)) {
+  assert.ok(catalog[toolName].usage_guidance?.includes('Efficiency guidance'), `${toolName} should expose usage guidance`);
+  assert.ok(catalog[toolName].description.includes('Efficiency guidance'), `${toolName} description should guide efficient use`);
+  assert.ok(catalog[toolName].description.includes('Input JSON'), `${toolName} description should include input shape`);
+  assert.ok(catalog[toolName].description.includes('Output JSON'), `${toolName} description should include output shape`);
   const parsedArgs = z.object(def.schema).parse(catalog[toolName].input_example ?? {});
   await def.handler(parsedArgs);
-  assert.deepEqual(calls.at(-1), [toolName, { ...parsedArgs, browserWsEndpoint: endpoint }]);
+  assert.deepEqual(calls.at(-1), [toolName, { ...parsedArgs, browserWsEndpoint: endpoint, browserProfile: '' }]);
 }
 
 for (const [profileName, toolNames] of Object.entries(PROFILES)) {

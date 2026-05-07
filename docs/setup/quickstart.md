@@ -20,7 +20,7 @@ docker compose up --build
 
 ## 3. Open the Product
 
-- Operator console: `http://localhost:3001`
+- Operator console: `http://localhost:3000`
 - API docs and routes: `http://localhost:8000`
 
 ## 4. Try a Workflow

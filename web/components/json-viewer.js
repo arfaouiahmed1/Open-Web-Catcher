@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Copy } from "lucide-react";
@@ -45,11 +45,11 @@ function decodeUriDeep(value, seen = new WeakSet()) {
 }
 
 function valueTone(value) {
-  if (value === null) return "text-slate-500";
+  if (value === null) return "text-muted-foreground";
   if (typeof value === "string") return "text-emerald-300";
   if (typeof value === "number" || typeof value === "bigint") return "text-amber-300";
   if (typeof value === "boolean") return value ? "text-sky-300" : "text-blue-300";
-  return "text-slate-300";
+  return "text-foreground/80";
 }
 
 function renderPrimitive(value) {
@@ -79,7 +79,7 @@ function CopyButton({ value }) {
   return (
     <button
       onClick={copy}
-      className="inline-flex items-center gap-1 rounded border border-white/10 bg-black/20 px-1.5 py-0.5 text-[10px] text-slate-500 hover:text-slate-200"
+      className="inline-flex items-center gap-1 rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-slate-200"
       title="Copy value"
       type="button"
     >
@@ -96,7 +96,7 @@ function JsonNode({ name, value, depth = 0, defaultExpandedDepth = 2 }) {
   if (!isExpandable) {
     return (
       <div className="py-0.5">
-        {name ? <span className="text-slate-500">{name}: </span> : null}
+        {name ? <span className="text-muted-foreground">{name}: </span> : null}
         <span className={valueTone(value)}>{renderPrimitive(value)}</span>
         <span className="ml-1.5 inline-flex align-middle"><CopyButton value={value} /></span>
       </div>
@@ -111,19 +111,19 @@ function JsonNode({ name, value, depth = 0, defaultExpandedDepth = 2 }) {
       <div className="flex items-center gap-1">
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="inline-flex items-center gap-1 text-slate-400 hover:text-white"
+          className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
           type="button"
         >
           {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-          {name ? <span className="text-slate-500">{name}:</span> : null}
-          <span className="text-slate-300">{isArray ? "[" : "{"}</span>
-          {!expanded && <span className="text-xs text-slate-600">{nodeSummary(value)}</span>}
-          <span className="text-slate-300">{isArray ? "]" : "}"}</span>
+          {name ? <span className="text-muted-foreground">{name}:</span> : null}
+          <span className="text-foreground/80">{isArray ? "[" : "{"}</span>
+          {!expanded && <span className="text-xs text-muted-foreground/70">{nodeSummary(value)}</span>}
+          <span className="text-foreground/80">{isArray ? "]" : "}"}</span>
         </button>
         <CopyButton value={value} />
       </div>
       {expanded && (
-        <div className="ml-5 border-l border-white/6 pl-3">
+        <div className="ml-5 border-l border-border pl-3">
           {entries.length ? (
             entries.map(([key, nested]) => (
               <JsonNode
@@ -135,7 +135,7 @@ function JsonNode({ name, value, depth = 0, defaultExpandedDepth = 2 }) {
               />
             ))
           ) : (
-            <div className="py-0.5 text-slate-600">{isArray ? "[]" : "{}"}</div>
+            <div className="py-0.5 text-muted-foreground/70">{isArray ? "[]" : "{}"}</div>
           )}
         </div>
       )}
@@ -147,16 +147,16 @@ export function JsonViewer({ value, label }) {
   const normalized = useMemo(() => decodeUriDeep(value), [value]);
   const isEmpty = !normalized || (typeof normalized === "object" && Object.keys(normalized).length === 0);
   return (
-    <div className="rounded-xl border border-white/8 bg-black/30 overflow-hidden shadow-card">
+    <div className="rounded-xl border border-border bg-muted/50 overflow-hidden shadow-card">
       {label && (
-        <div className="px-4 py-2.5 border-b border-white/6 text-xs font-medium text-slate-500 uppercase tracking-wider">
+        <div className="px-4 py-2.5 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
           {label}
         </div>
       )}
       {isEmpty ? (
-        <div className="px-4 py-6 text-xs text-slate-700 text-center">Empty</div>
+        <div className="px-4 py-6 text-xs text-muted-foreground/60 text-center">Empty</div>
       ) : (
-        <div className="p-4 text-xs font-mono text-slate-300 overflow-auto max-h-[70vh] leading-relaxed">
+        <div className="p-4 text-xs font-mono text-foreground/80 overflow-auto max-h-[70vh] leading-relaxed">
           <JsonNode name="$" value={normalized} />
         </div>
       )}

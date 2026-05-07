@@ -136,7 +136,7 @@ function toFrameOverview(frame) {
 }
 
 export async function inspectLanding(params = {}) {
-  const data = await inspect(params);
+  const data = await inspect({ ...params, scanMode: 'landing' });
 
   const rootMatchLinks = (data.contentLinks || []).map((entry) => normalizeLink(entry, 'root-content', 'root'));
   const iframeMatchLinks = (data.frame_tree || [])
@@ -185,6 +185,7 @@ export async function inspectLanding(params = {}) {
     title: data.title,
     screenshot_url: data.screenshot_url,
     hosting_signals: data.hosting_signals,
+    lazy_load_warmup: data.lazy_load_warmup,
     pagination: data.pagination,
     popups: (data.popups || []).slice(0, 8),
     match_candidates,

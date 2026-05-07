@@ -1,32 +1,25 @@
-agent_model: z-ai/glm-4.5-air:free
+agent_model: gemini-flash-lite-latest
 agent_model_config:
   classification:
-    model: z-ai/glm-4.5-air:free
-    provider: openrouter
+    model: gemini-flash-lite-latest
+    provider: google
   embedded:
-    model: z-ai/glm-4.5-air:free
-    provider: openrouter
+    model: gemini-flash-lite-latest
+    provider: google
   hosting:
-    model: z-ai/glm-4.5-air:free
-    provider: openrouter
+    model: gemini-flash-lite-latest
+    provider: google
   landing:
-    model: z-ai/glm-4.5-air:free
-    provider: openrouter
+    model: gemini-flash-lite-latest
+    provider: google
   orchestrator:
-    model: z-ai/glm-4.5-air:free
-    provider: openrouter
+    model: gemini-flash-lite-latest
+    provider: google
 agent_timeout_seconds: 300
 browser_engine: puppeteer
 browser_runtime:
   playwright:
     adblock_allowlist_hosts: []
-    adblock_auto_recovery_enabled: true
-    adblock_auto_recovery_on_abort: true
-    adblock_auto_recovery_retry: true
-    adblock_enabled: true
-    adblock_excluded_categories:
-    - nsfw
-    - gambling
     asset_diagnostics_enabled: true
     extra_launch_args: []
     fingerprint_fallback_strategy: profile
@@ -47,32 +40,32 @@ browser_runtime:
     - 2000
     - 4000
     media_retry_count: 3
+    popup_blocking_enabled: true
     proxy_cache_ttl_ms: 600000
     proxy_custom_list: []
     proxy_enabled: false
     proxy_fallback_strategy: direct
     proxy_fetch_timeout_ms: 8000
     proxy_max_candidates: 25
-    proxy_rotation_mode: session
+    proxy_rotation_mode: sticky
     proxy_selection_strategy: ordered
     proxy_source_mode: hybrid
     proxy_source_order:
     - openproxylist-https
-    - openproxylist-socks5
+    - proxifly-http
+    - monosans-http
     - speedx-http
+    - openproxylist-socks5
+    - proxifly-socks5
+    - monosans-socks5
     - speedx-socks5
+    - proxifly-socks4
     proxy_test_url: https://api.ipify.org?format=json
     proxy_validation_timeout_ms: 12000
     streaming_safe_mode: adaptive
+    ubol_enabled: true
   puppeteer:
     adblock_allowlist_hosts: []
-    adblock_auto_recovery_enabled: true
-    adblock_auto_recovery_on_abort: true
-    adblock_auto_recovery_retry: true
-    adblock_enabled: true
-    adblock_excluded_categories:
-    - nsfw
-    - gambling
     asset_diagnostics_enabled: true
     extra_launch_args: []
     fingerprint_fallback_strategy: profile
@@ -93,20 +86,26 @@ browser_runtime:
     - 2000
     - 4000
     media_retry_count: 3
+    popup_blocking_enabled: true
     proxy_cache_ttl_ms: 600000
     proxy_custom_list: []
     proxy_enabled: true
     proxy_fallback_strategy: direct
     proxy_fetch_timeout_ms: 8000
     proxy_max_candidates: 25
-    proxy_rotation_mode: session
+    proxy_rotation_mode: sticky
     proxy_selection_strategy: ordered
     proxy_source_mode: hybrid
     proxy_source_order:
     - openproxylist-https
-    - openproxylist-socks5
+    - proxifly-http
+    - monosans-http
     - speedx-http
+    - openproxylist-socks5
+    - proxifly-socks5
+    - monosans-socks5
     - speedx-socks5
+    - proxifly-socks4
     proxy_test_url: https://api.ipify.org?format=json
     proxy_validation_timeout_ms: 12000
     stream_cors_include_credentials: false
@@ -162,24 +161,58 @@ embedded_page_max_tool_calls: 20
 gemini_explicit_cache_enabled: true
 gemini_explicit_cache_refresh_lead_seconds: 120
 gemini_explicit_cache_ttl_seconds: 1800
-gemini_temperature: 1.0
+gemini_temperature: 0.9
 hosting_page_max_tool_calls: 20
 ipinfo_token: ''
 landing_page_max_tool_calls: 50
-llm_provider: openrouter
+llm_provider: google
 llm_tuning:
-  agent_overrides: {}
-  model_overrides: {}
+  agent_overrides:
+    classification:
+      max_tokens: 8192
+      temperature: 1
+      top_p: 0.95
+    embedded:
+      max_tokens: 8192
+      temperature: 1
+      top_p: 0.95
+    hosting:
+      max_tokens: 8192
+      temperature: 1
+      top_p: 0.95
+    landing:
+      max_tokens: 8192
+      temperature: 1
+      top_p: 0.95
+    orchestrator:
+      enable_thinking: 1
+      max_tokens: 8192
+      temperature: 1
+      top_p: 0.95
+  model_overrides:
+    google::gemini-2.5-flash:
+      temperature: 0.8
+    nvidia::minimaxai/minimax-m2.7:
+      max_tokens: 8192
+      temperature: 1
+      top_p: 0.95
+    openrouter::openrouter/free:
+      temperature: 1
   provider_defaults:
     google:
+      temperature: 1
+    nvidia:
+      temperature: 1
+      top_p: 0.95
+    openrouter:
       temperature: 1
 log_file: data/logs/app.log
 log_level: INFO
 max_parallel_hosting_pages: 5
-orchestrator_model: z-ai/glm-4.5-air:free
+orchestrator_model: gemini-flash-lite-latest
 provider_cache_enabled: true
 thinking_budget_tokens: 8000
-thinking_enabled: false
+thinking_enabled: true
 tool_result_cache_enabled: true
-tool_result_cache_min_identical_observations: 2
+tool_result_cache_min_identical_observations: 1
 tool_timeout_seconds: 30

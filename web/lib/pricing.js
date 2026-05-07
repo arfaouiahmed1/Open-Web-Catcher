@@ -13,6 +13,10 @@ function normalizeModel(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function canonicalModel(value) {
+  return normalizeModel(value).replace(/[^a-z0-9/]+/g, "");
+}
+
 function pricingKey(provider, model) {
   return `${normalizeProvider(provider)}|${normalizeModel(model)}`;
 }
@@ -34,12 +38,36 @@ function buildPricingMap(rows) {
   return map;
 }
 
+function pricingRowsFromEnvDefaults(defaults = {}) {
+  if (!defaults || typeof defaults !== "object") return [];
+  const rows = [];
+  for (const [key, value] of Object.entries(defaults)) {
+    if (!value || typeof value !== "object") continue;
+    const [keyProvider, ...modelParts] = String(key || "").split("::");
+    const modelFromKey = modelParts.length ? modelParts.join("::") : keyProvider;
+    rows.push({
+      provider: value.provider || (modelParts.length ? keyProvider : ""),
+      model_name: value.model_name || modelFromKey,
+      input_per_million: value.input_per_million,
+      output_per_million: value.output_per_million,
+      cached_input_per_million: value.cached_input_per_million,
+      cache_write_per_million: value.cache_write_per_million,
+      context_window: value.context_window,
+      active: true,
+    });
+  }
+  return rows;
+}
+
 export async function loadPricing({ force = false } = {}) {
   if (!force && pricingCache) return pricingCache;
   if (!force && pricingPromise) return pricingPromise;
   pricingPromise = apiFetch("/ui/pricing")
     .then((payload) => {
-      pricingCache = buildPricingMap(payload?.stored || []);
+      pricingCache = buildPricingMap([
+        ...pricingRowsFromEnvDefaults(payload?.env_defaults || {}),
+        ...(payload?.stored || []),
+      ]);
       pricingPromise = null;
       return pricingCache;
     })
@@ -55,12 +83,20 @@ export function lookupPricing(map, provider, model) {
   if (!map) return null;
   const exact = map.get(pricingKey(provider, model));
   if (exact) return exact;
+  const providerless = map.get(pricingKey("", model));
+  if (providerless) return providerless;
   const m = normalizeModel(model);
+  const canonical = canonicalModel(model);
   const p = normalizeProvider(provider);
   let best = null;
   for (const [, value] of map) {
-    if (value.provider !== p) continue;
-    if (m.startsWith(value.model) || value.model.startsWith(m)) {
+    if (value.provider && value.provider !== p) continue;
+    const candidateCanonical = canonicalModel(value.model);
+    if (
+      m.startsWith(value.model)
+      || value.model.startsWith(m)
+      || (canonical && candidateCanonical && (canonical === candidateCanonical || canonical.startsWith(candidateCanonical) || candidateCanonical.startsWith(canonical)))
+    ) {
       if (!best || value.model.length > best.model.length) best = value;
     }
   }
@@ -74,9 +110,26 @@ export function estimateCallCost(call, pricingMap) {
   const inputTokens = Number(call?.input_tokens || 0);
   const outputTokens = Number(call?.output_tokens || 0);
   const meta = call?.usage_metadata_json || {};
-  const cachedInput = Number(meta?.cached_input_tokens || 0);
-  const cacheWriteInput = Number(meta?.cache_creation_input_tokens || 0);
-  const newInput = Math.max(inputTokens - cachedInput - cacheWriteInput, 0);
+  const cachedInput = Number(call?.cached_input_tokens ?? meta?.cached_input_tokens ?? 0);
+  const cacheWriteInput = Number(call?.cache_creation_input_tokens ?? meta?.cache_creation_input_tokens ?? 0);
+  const loggedInputCost = Number(call?.estimated_input_cost_usd ?? meta?.estimated_input_cost_usd ?? 0);
+  const loggedCachedCost = Number(call?.estimated_cached_input_cost_usd ?? meta?.estimated_cached_input_cost_usd ?? 0);
+  const loggedCacheWriteCost = Number(call?.estimated_cache_write_cost_usd ?? meta?.estimated_cache_write_cost_usd ?? 0);
+  const loggedOutputCost = Number(call?.estimated_output_cost_usd ?? meta?.estimated_output_cost_usd ?? 0);
+  const loggedTotalCost = Number(call?.estimated_total_cost_usd ?? call?.total_cost_usd ?? meta?.estimated_total_cost_usd ?? 0);
+  if (loggedTotalCost > 0 || loggedInputCost > 0 || loggedCachedCost > 0 || loggedCacheWriteCost > 0 || loggedOutputCost > 0) {
+    const total = loggedTotalCost || (loggedInputCost + loggedCachedCost + loggedCacheWriteCost + loggedOutputCost);
+    return {
+      total,
+      input: loggedInputCost,
+      cached: loggedCachedCost,
+      cacheWrite: loggedCacheWriteCost,
+      output: loggedOutputCost,
+      pricing,
+      source: "logged",
+    };
+  }
+  const newInput = Number(call?.new_input_tokens ?? meta?.new_input_tokens ?? Math.max(inputTokens - cachedInput - cacheWriteInput, 0));
 
   if (!pricing) {
     const fallback = Number(call?.estimated_total_cost_usd || call?.total_cost_usd || 0);
@@ -87,7 +140,7 @@ export function estimateCallCost(call, pricingMap) {
       cacheWrite: 0,
       output: 0,
       pricing: null,
-      source: "logged",
+      source: "unpriced",
     };
   }
 
@@ -129,6 +182,10 @@ export function synthCallsFromModelUsage(modelUsage = []) {
         cache_creation_input_tokens: Number(entry.cache_creation_input_tokens || 0),
         new_input_tokens: Number(entry.new_input_tokens || 0),
       },
+      estimated_input_cost_usd: Number(entry.estimated_input_cost_usd || 0),
+      estimated_cached_input_cost_usd: Number(entry.estimated_cached_input_cost_usd || 0),
+      estimated_cache_write_cost_usd: Number(entry.estimated_cache_write_cost_usd || 0),
+      estimated_output_cost_usd: Number(entry.estimated_output_cost_usd || 0),
       estimated_total_cost_usd: Number(entry.estimated_total_cost_usd || 0),
     }));
 }
@@ -142,6 +199,7 @@ export function estimateRunCost(llmCalls, pricingMap) {
     output: 0,
     calls: 0,
     computed: 0,
+    unpriced: 0,
   };
   for (const call of llmCalls || []) {
     const r = estimateCallCost(call, pricingMap);
@@ -151,7 +209,8 @@ export function estimateRunCost(llmCalls, pricingMap) {
     totals.cacheWrite += r.cacheWrite;
     totals.output += r.output;
     totals.calls += 1;
-    if (r.source === "computed") totals.computed += 1;
+    if (r.source === "computed" || r.source === "logged") totals.computed += 1;
+    else totals.unpriced += 1;
   }
   return totals;
 }

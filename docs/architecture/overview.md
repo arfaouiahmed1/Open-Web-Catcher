@@ -11,9 +11,9 @@
 
 ## Runtime Services
 
-- `owc-tools`: browser and MCP tools server on `3000`
+- `owc-tools`: browser and MCP tools server on `3001` (host)
 - `owc`: FastAPI backend on `8000`
-- `owc-web`: Next.js operator console on `3001`
+- `owc-web`: Next.js operator console on `3000` (host)
 - `postgres`: main persistence layer
 
 ## Key Paths

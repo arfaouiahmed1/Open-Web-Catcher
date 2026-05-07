@@ -30,6 +30,45 @@ export const SERVER_TAB_FIELDS = {
   ],
 };
 
+const DEFAULT_PROXY_SOURCE_ORDER = [
+  "openproxylist-https",
+  "proxifly-http",
+  "monosans-http",
+  "speedx-http",
+  "openproxylist-socks5",
+  "proxifly-socks5",
+  "monosans-socks5",
+  "speedx-socks5",
+  "proxifly-socks4",
+];
+
+function normalizeBrowserRuntimeForSave(value) {
+  const runtime = value && typeof value === "object" ? value : {};
+  return Object.fromEntries(
+    ["puppeteer", "playwright"].map((browser) => {
+      const current = runtime[browser] && typeof runtime[browser] === "object"
+        ? runtime[browser]
+        : {};
+      return [
+        browser,
+        {
+          ...current,
+          proxy_source_mode: current.proxy_source_mode || "hybrid",
+          proxy_source_order: Array.isArray(current.proxy_source_order)
+            ? current.proxy_source_order
+            : [...DEFAULT_PROXY_SOURCE_ORDER],
+          proxy_custom_list: Array.isArray(current.proxy_custom_list)
+            ? current.proxy_custom_list
+            : [],
+          proxy_rotation_mode: "sticky",
+          proxy_selection_strategy: "ordered",
+          proxy_fallback_strategy: "direct",
+        },
+      ];
+    }),
+  );
+}
+
 function sortValue(value) {
   if (Array.isArray(value)) return value.map(sortValue);
   if (value && typeof value === "object") {
@@ -73,9 +112,9 @@ export function buildServerConfigDraft(state) {
     max_parallel_hosting_pages: Number(state.maxParallelHostingPages || 5),
     browser_engine: state.browserEngine || "puppeteer",
     disabled_tools_by_browser_profile: state.disabledToolsByBrowserProfile || {},
-    browser_runtime: state.browserRuntime || {},
-    deepeval_provider: state.deepevalProvider || "openai",
-    deepeval_model: state.deepevalModel || "gpt-4o",
+    browser_runtime: normalizeBrowserRuntimeForSave(state.browserRuntime),
+    deepeval_provider: state.deepevalProvider || "google",
+    deepeval_model: state.deepevalModel || "gemini-2.5-flash",
     deepeval_temperature: Number.parseFloat(state.deepevalTemperature || "0") || 0,
   };
 }
@@ -99,9 +138,9 @@ export function snapshotServerConfig(payload) {
     max_parallel_hosting_pages: Number(payload?.max_parallel_hosting_pages ?? 5),
     browser_engine: payload?.browser_engine || "puppeteer",
     disabled_tools_by_browser_profile: payload?.disabled_tools_by_browser_profile || {},
-    browser_runtime: payload?.browser_runtime || {},
-    deepeval_provider: payload?.deepeval_provider || "openai",
-    deepeval_model: payload?.deepeval_model || "gpt-4o",
+    browser_runtime: normalizeBrowserRuntimeForSave(payload?.browser_runtime),
+    deepeval_provider: payload?.deepeval_provider || "google",
+    deepeval_model: payload?.deepeval_model || "gemini-2.5-flash",
     deepeval_temperature: Number.parseFloat(String(payload?.deepeval_temperature ?? "0")) || 0,
   });
 }

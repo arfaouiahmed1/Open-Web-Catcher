@@ -80,11 +80,16 @@ class PipelineRunRecord(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     duration_seconds: Mapped[float] = mapped_column(Float, default=0.0)
     total_tokens_in: Mapped[int] = mapped_column(Integer, default=0)
+    total_cached_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_new_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     total_tokens_out: Mapped[int] = mapped_column(Integer, default=0)
     total_llm_calls: Mapped[int] = mapped_column(Integer, default=0)
+    total_cache_hit_calls: Mapped[int] = mapped_column(Integer, default=0)
     total_tool_calls: Mapped[int] = mapped_column(Integer, default=0)
     total_messages: Mapped[int] = mapped_column(Integer, default=0)
     estimated_input_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    estimated_cached_input_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    estimated_cache_write_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     estimated_output_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     estimated_total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
@@ -184,9 +189,14 @@ class LLMCallRecord(Base):
     prompt_hash: Mapped[str] = mapped_column(String(128), default="", index=True)
     cache_mode: Mapped[str] = mapped_column(String(32), default="")
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cached_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    new_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_creation_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     context_window: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     estimated_input_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    estimated_cached_input_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    estimated_cache_write_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     estimated_output_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     estimated_total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     tool_calls_requested: Mapped[int] = mapped_column(Integer, default=0)
@@ -231,6 +241,54 @@ class ToolPlaygroundCallRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
+class RunDecisionRecord(Base):
+    __tablename__ = "run_decisions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pipeline_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("pipeline_runs.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(String(255), default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    actor: Mapped[str] = mapped_column(String(64), default="", index=True)
+    category: Mapped[str] = mapped_column(String(64), default="", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="open", index=True)
+    details_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+
+class RunTaskRecord(Base):
+    __tablename__ = "run_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pipeline_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("pipeline_runs.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(String(255), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    actor: Mapped[str] = mapped_column(String(64), default="", index=True)
+    priority: Mapped[str] = mapped_column(String(32), default="medium", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="open", index=True)
+    details_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+
 class ProviderLookupCheckRecord(Base):
     __tablename__ = "provider_lookup_checks"
 
@@ -272,9 +330,14 @@ class RunModelUsageRecord(Base):
     provider: Mapped[str] = mapped_column(String(64), default="", index=True)
     model_name: Mapped[str] = mapped_column(String(128), default="", index=True)
     llm_calls: Mapped[int] = mapped_column(Integer, default=0)
+    cache_hit_calls: Mapped[int] = mapped_column(Integer, default=0)
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cached_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    new_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     estimated_input_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    estimated_cached_input_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    estimated_cache_write_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     estimated_output_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     estimated_total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

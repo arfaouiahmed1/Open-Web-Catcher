@@ -8,6 +8,31 @@ const STREAMING_PATH_PATTERNS = [
 ];
 
 const STREAMING_PROFILE_IDS = new Set(['hosting', 'embedded']);
+const CLEANUP_ONLY_PROFILE_IDS = new Set(['landing', 'hosting', 'embedded']);
+
+function describeEngineStrengths(browserId) {
+  const normalized = String(browserId || '').trim().toLowerCase();
+  if (normalized === 'playwright') {
+    return {
+      preferred_for: [
+        'context isolation',
+        'iframe-heavy player recovery',
+        'persistent contexts with extensions',
+        'context-level proxy configuration',
+      ],
+      fallback_role: 'Use when media or iframe behavior needs stronger context ownership than the default Puppeteer path.',
+    };
+  }
+  return {
+    preferred_for: [
+      'default browser runs',
+      'legacy CDP-compatible tooling',
+      'direct browser websocket sessions',
+      'page-level diagnostics',
+    ],
+    fallback_role: 'Default engine; use Playwright when a run needs stronger context isolation or iframe/media handling.',
+  };
+}
 
 function collectUrls(value, collector) {
   if (!value) return;
@@ -65,6 +90,7 @@ export function computeBrowserPolicy({
   const streamingSafeMode = String(runtimeSettings?.streaming_safe_mode || 'adaptive').trim().toLowerCase();
   const mediaProxyStrategy = String(runtimeSettings?.media_proxy_strategy || 'direct_first').trim().toLowerCase();
   const assetDiagnosticsEnabled = runtimeSettings?.asset_diagnostics_enabled !== false;
+  const normalizedProfile = String(browserProfile || '').trim().toLowerCase();
   const streamingSignals = detectStreamingSignals({
     browserProfile,
     targetUrl,
@@ -77,14 +103,17 @@ export function computeBrowserPolicy({
     || (streamingSafeMode !== 'never' && streamingSignals.streaming_detected);
 
   const proxyEnabled = runtimeSettings?.proxy_enabled === true;
-  const directFirst = mediaProxyStrategy === 'direct_first';
   const directOnly = mediaProxyStrategy === 'direct_only';
   const proxyFirst = mediaProxyStrategy === 'proxy_first';
-  const useProxyOnFirstAttempt = proxyEnabled && (!wantsStreamingSafe || proxyFirst);
+  const useProxyOnFirstAttempt = proxyEnabled && proxyFirst;
+  const cleanupOnlyProfile = CLEANUP_ONLY_PROFILE_IDS.has(normalizedProfile);
+  const networkBlockingAllowed = !cleanupOnlyProfile;
+  const ubolEnabled = networkBlockingAllowed && !wantsStreamingSafe && runtimeSettings?.ubol_enabled === true;
 
   return {
     browser_id: browserId,
-    browser_profile: String(browserProfile || '').trim().toLowerCase(),
+    browser_profile: normalizedProfile,
+    engine_strengths: describeEngineStrengths(browserId),
     mode: wantsStreamingSafe ? 'streaming_safe' : 'standard',
     streaming_safe: wantsStreamingSafe,
     streaming_safe_mode: streamingSafeMode,
@@ -93,9 +122,11 @@ export function computeBrowserPolicy({
     proxy_enabled: proxyEnabled,
     use_proxy_on_first_attempt: useProxyOnFirstAttempt,
     direct_only: directOnly,
-    page_blocking_disabled: wantsStreamingSafe,
-    ghostery_enabled: !wantsStreamingSafe && runtimeSettings?.adblock_enabled === true,
-    ubol_enabled: browserId === 'puppeteer' && !wantsStreamingSafe && runtimeSettings?.ubol_enabled === true,
+    page_blocking_disabled: !ubolEnabled,
+    cleanup_only_profile: cleanupOnlyProfile,
+    cosmetic_filtering_enabled: ubolEnabled,
+    network_filtering_enabled: ubolEnabled,
+    ubol_enabled: ubolEnabled,
     shared_connection: Boolean(sharedConnection),
     shared_connection_warning: sharedConnection && wantsStreamingSafe
       ? 'Shared-browser fallback may still inherit blocker or proxy state from an existing session.'
@@ -103,7 +134,9 @@ export function computeBrowserPolicy({
     detection: streamingSignals,
     reason: wantsStreamingSafe
       ? (streamingSignals.profile_priority ? `profile:${browserProfile}` : 'streaming_hints')
-      : 'standard_runtime',
+      : cleanupOnlyProfile
+        ? `cleanup_only_profile:${normalizedProfile}`
+        : 'standard_runtime',
   };
 }
 

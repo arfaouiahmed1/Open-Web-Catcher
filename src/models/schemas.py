@@ -132,6 +132,8 @@ class ModelUsage(BaseModel):
     new_input_tokens: int = 0
     output_tokens: int = 0
     estimated_input_cost_usd: float = 0.0
+    estimated_cached_input_cost_usd: float = 0.0
+    estimated_cache_write_cost_usd: float = 0.0
     estimated_output_cost_usd: float = 0.0
     estimated_total_cost_usd: float = 0.0
 
@@ -154,6 +156,8 @@ class RunMetrics(BaseModel):
     ai_messages: int = 0
     tool_messages: int = 0
     estimated_input_cost_usd: float = 0.0
+    estimated_cached_input_cost_usd: float = 0.0
+    estimated_cache_write_cost_usd: float = 0.0
     estimated_output_cost_usd: float = 0.0
     estimated_total_cost_usd: float = 0.0
     total_duration_seconds: float = 0.0
