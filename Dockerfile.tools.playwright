@@ -17,11 +17,16 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     PUPPETEER_EXECUTABLE_PATH=/usr/local/bin/google-chrome-stable \
     OWC_UBOL_ENABLED=true \
     OWC_UBOL_EXTENSION_DIR=/app/tools/playwright/extensions/ubol \
+    OWC_UBOL_EXTENSION_ID=nkeimhogjdpnpccoofpliimaahmaaome \
     OWC_UBOL_DEFAULT_FILTERING=optimal \
     MCP_BROWSER_MODE=isolated \
     BROWSER_WS_ENDPOINT=ws://127.0.0.1:9223 \
     REMOTE_DEBUGGING_PORT=9223 \
     PORT=3001
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl unzip \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY tools/playwright/package*.json tools/playwright/
 RUN --mount=type=cache,target=/root/.npm \

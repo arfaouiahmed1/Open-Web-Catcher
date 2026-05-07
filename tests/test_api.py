@@ -251,6 +251,8 @@ def test_ui_config_update_reports_persist_path(client: TestClient, api_settings:
                         "openai::gpt-4o-mini": {"max_tokens": 1024},
                     },
                 },
+                "thinking_enabled": True,
+                "thinking_budget_tokens": 12000,
             },
         )
 
@@ -260,6 +262,8 @@ def test_ui_config_update_reports_persist_path(client: TestClient, api_settings:
     assert payload["agent_model"] == "gpt-4o-mini"
     assert payload["llm_tuning"]["provider_defaults"]["openai"]["temperature"] == 0.3
     assert payload["llm_tuning"]["model_overrides"]["openai::gpt-4o-mini"]["max_tokens"] == 1024
+    assert payload["thinking_enabled"] is True
+    assert payload["thinking_budget_tokens"] == 12000
     assert payload["config_persisted"] is True
     assert payload["config_persist_path"].replace("\\", "/").endswith("data/settings.runtime.yaml")
     assert "browser_runtime_sync_status" in payload

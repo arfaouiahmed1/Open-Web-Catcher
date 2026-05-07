@@ -319,6 +319,40 @@ function RunHeader({
   );
 }
 
+function DatasetContextCard({ context }) {
+  if (!context?.batch && !context?.site) return null;
+  const batch = context.batch || {};
+  const site = context.site || {};
+  const siteRun = context.site_run || {};
+  return (
+    <Card className="overflow-hidden shadow-card">
+      <CardContent className="flex flex-wrap items-center gap-3 px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium">Dataset batch context</div>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            {site.url ? (
+              <span className="max-w-[360px] truncate" title={site.url}>
+                {site.url}
+              </span>
+            ) : null}
+            {site.language ? <Badge>{site.language}</Badge> : null}
+            {site.label ? <Badge tone="signal">{site.label}</Badge> : null}
+            {siteRun.id ? <span className="font-mono">site-run #{siteRun.id}</span> : null}
+          </div>
+        </div>
+        {batch.batch_id ? (
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/runs?batch=${encodeURIComponent(batch.batch_id)}`}>
+              Open batch
+              <ExternalLink className="h-4 w-4" />
+            </Link>
+          </Button>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
 function summarizeProviderAnalysis(entries = []) {
   return (Array.isArray(entries) ? entries : []).reduce((acc, entry, index) => {
     acc[`provider ${index + 1}`] = {
@@ -647,6 +681,7 @@ export function RunDetailPage() {
   };
   const toolCalls = payload.tool_calls || EMPTY_ARRAY;
   const jobState = payload.job_state || payload.job || null;
+  const datasetContext = payload.dataset_context || null;
   const degradedFallback = payload.source === "background_job_result";
   const telemetryStatus = String(payload.telemetry_status || run.telemetry_status || "").trim().toLowerCase();
   const telemetryMissing = degradedFallback && telemetryStatus === "missing";
@@ -800,6 +835,8 @@ export function RunDetailPage() {
         parallelism={parallelism}
         subtitle={isActiveTrace ? "Streaming from in-memory observer" : null}
       />
+
+      <DatasetContextCard context={datasetContext} />
 
       <Card className="overflow-hidden shadow-card">
         <CardContent className="flex flex-wrap items-center gap-2 px-4 py-3">

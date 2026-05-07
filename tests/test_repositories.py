@@ -123,7 +123,7 @@ def _build_trace(
             RuntimeEvent(seq=2, actor="classification", kind="agent_started", message="Classification agent started for https://example.com/watch"),
             RuntimeEvent(seq=3, actor="classification", kind="prompt_compiled", message="prompt", details={"agent_id": "classification", "prompt_version": "classification:v1", "prompt_hash": "hash-a", "compiled_prompt_hash": "compiled-a", "cache_mode": "provider_hook", "sections": ["base_policy", "task_brief"]}),
             RuntimeEvent(seq=4, actor="classification", kind="agent_loop_started", message="loop", details={"max_tool_calls": 5}),
-            RuntimeEvent(seq=5, actor="classification", kind="llm_response", message="Model responded", details={"provider": "google", "model_name": model_name, "tool_calls": 1, "tool_call_names": ["get_page_context"], "content_preview": "{\"page_type\":\"hosting_page\"}", "input_tokens": 11, "output_tokens": 7, "estimated_input_cost_usd": 0.000011, "estimated_output_cost_usd": 0.000014, "estimated_total_cost_usd": 0.000025, "cost_source": "provider_pricing_catalog", "pricing": {"provider": "google", "input_per_million": 1.0, "output_per_million": 2.0}, "prompt": {"prompt_version": "classification:v1", "prompt_hash": "hash-a", "cache_mode": "provider_hook"}}),
+            RuntimeEvent(seq=5, actor="classification", kind="llm_response", message="Model responded", details={"provider": "google", "model_name": model_name, "tool_calls": 1, "tool_call_names": ["get_page_context"], "content_preview": "{\"page_type\":\"hosting_page\"}", "content_full": "{\"page_type\":\"hosting_page\",\"reasoning\":\"provider telemetry persisted\"}", "thinking_content": "Check player markers before deciding.", "thinking_tokens": 42, "input_tokens": 11, "output_tokens": 7, "estimated_input_cost_usd": 0.000011, "estimated_output_cost_usd": 0.000014, "estimated_total_cost_usd": 0.000025, "cost_source": "provider_pricing_catalog", "pricing": {"provider": "google", "input_per_million": 1.0, "output_per_million": 2.0}, "prompt": {"prompt_version": "classification:v1", "prompt_hash": "hash-a", "cache_mode": "provider_hook"}}),
             RuntimeEvent(seq=6, actor="classification", kind="agent_finished", message="Classification decided hosting_page", status="success"),
             RuntimeEvent(seq=7, actor="hosting", kind="agent_started", message="Hosting page agent started for https://example.com/watch"),
             RuntimeEvent(seq=8, actor="hosting", kind="memory_loaded", message="Loaded site memory hints for hosting_page", details={"page_type": "hosting_page", "url": "https://example.com/watch", "hint_preview": "SITE MEMORY HINTS"}),
@@ -160,6 +160,8 @@ def test_run_repository_dual_writes_legacy_and_normalized_rows():
     llm_rows = session.query(LLMCallRecord).all()
     assert llm_rows
     assert sum(float(row.estimated_total_cost_usd or 0.0) for row in llm_rows) > 0.0
+    assert llm_rows[0].response_metadata_json["thinking_content"] == "Check player markers before deciding."
+    assert llm_rows[0].response_metadata_json["thinking_tokens"] == 42
     assert session.query(MemoryEntryRecord).count() >= 1
 
 

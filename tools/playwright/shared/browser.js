@@ -1259,8 +1259,14 @@ async function prepareSharedContext(context) {
   return context;
 }
 
-async function launchBrowserAttempt({ launchTimeout, launchArgs, proxy = null } = {}) {
-  return chromium.launch({
+async function launchBrowserAttempt({
+  launchTimeout,
+  launchArgs,
+  proxy = null,
+  userDataDir = '',
+  persistent = false,
+} = {}) {
+  const launchOptions = {
     executablePath: EXECUTABLE_PATH,
     headless: true,
     timeout: launchTimeout,
@@ -1272,18 +1278,43 @@ async function launchBrowserAttempt({ launchTimeout, launchArgs, proxy = null } 
           password: proxy.password || undefined,
         }
       : undefined,
-  });
+  };
+
+  if (persistent) {
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      ...launchOptions,
+      viewport: FORCED_VIEWPORT,
+      deviceScaleFactor: 2,
+    });
+    return {
+      browser: context.browser(),
+      context,
+      persistent: true,
+    };
+  }
+
+  const browser = await chromium.launch(launchOptions);
+  return {
+    browser,
+    context: null,
+    persistent: false,
+  };
 }
 
-async function validateProxyConnection(browser, { testUrl, timeoutMs } = {}) {
-  const context = await browser.newContext({
-    viewport: FORCED_VIEWPORT,
-    deviceScaleFactor: 2,
-    ignoreHTTPSErrors: true,
-  });
+async function validateProxyConnection(launchResult, { testUrl, timeoutMs } = {}) {
+  const persistentContext = launchResult?.context || null;
+  const browser = launchResult?.browser || null;
+  const temporaryContext = persistentContext
+    ? null
+    : await browser.newContext({
+        viewport: FORCED_VIEWPORT,
+        deviceScaleFactor: 2,
+        ignoreHTTPSErrors: true,
+      });
 
+  const context = persistentContext || temporaryContext;
   try {
-    const page = await context.newPage();
+    const page = context.pages()[0] || await context.newPage();
     const response = await page.goto(testUrl, {
       waitUntil: 'domcontentloaded',
       timeout: timeoutMs,
@@ -1292,7 +1323,9 @@ async function validateProxyConnection(browser, { testUrl, timeoutMs } = {}) {
       throw new Error(`Proxy validation failed for ${testUrl}`);
     }
   } finally {
-    await context.close().catch(() => {});
+    if (temporaryContext) {
+      await temporaryContext.close().catch(() => {});
+    }
   }
 }
 
@@ -1380,11 +1413,13 @@ export async function launchEphemeralBrowser(sessionId, { browserProfile = '' } 
   const launchArgs = [...DEFAULT_LAUNCH_ARGS, ...getExtraLaunchArgs()];
   const launchPolicy = buildEffectivePolicy({ browserProfile });
 
+  let launchPersistentContext = false;
   if (launchPolicy.ubol_enabled && getUbolEnabled() && UBOL_EXTENSION_DIR) {
     try {
       await fs.access(path.join(UBOL_EXTENSION_DIR, 'manifest.json'));
       launchArgs.push(`--disable-extensions-except=${UBOL_EXTENSION_DIR}`);
       launchArgs.push(`--load-extension=${UBOL_EXTENSION_DIR}`);
+      launchPersistentContext = true;
     } catch {
       console.warn(`[owc-pw] uBOL extension not found at ${UBOL_EXTENSION_DIR}; continuing without extension.`);
     }
@@ -1394,40 +1429,56 @@ export async function launchEphemeralBrowser(sessionId, { browserProfile = '' } 
   const proxyPlan = await getProxyCandidatePlan(proxySelectionKey, getProxyRuntimeConfig());
   const attemptedErrors = [];
   let browser = null;
+  let context = null;
+  let persistentContext = false;
   let selectedProxy = null;
 
   if (proxyPlan.enabled && launchPolicy.use_proxy_on_first_attempt) {
     for (const candidate of proxyPlan.candidates) {
       try {
-        browser = await launchBrowserAttempt({
+        const launchResult = await launchBrowserAttempt({
           launchTimeout,
           launchArgs,
           proxy: candidate,
+          userDataDir,
+          persistent: launchPersistentContext,
         });
-        await validateProxyConnection(browser, {
+        await validateProxyConnection(launchResult, {
           testUrl: proxyPlan.testUrl,
           timeoutMs: proxyPlan.validationTimeoutMs,
         });
+        browser = launchResult.browser;
+        context = launchResult.context;
+        persistentContext = launchResult.persistent;
         markProxySuccess(proxySelectionKey, candidate);
         selectedProxy = candidate;
         break;
       } catch (error) {
         attemptedErrors.push(`${candidate.server} (${candidate.sourceId}) -> ${error?.message || error}`);
         markProxyFailure(proxySelectionKey, candidate);
-        if (browser) {
+        if (context) {
+          await context.close().catch(() => {});
+          context = null;
+        } else if (browser) {
           await browser.close().catch(() => {});
           browser = null;
         }
+        persistentContext = false;
       }
     }
   }
 
   if (!browser && (!proxyPlan.enabled || proxyPlan.allowDirectFallback)) {
-    browser = await launchBrowserAttempt({
+    const launchResult = await launchBrowserAttempt({
       launchTimeout,
       launchArgs,
       proxy: null,
+      userDataDir,
+      persistent: launchPersistentContext,
     });
+    browser = launchResult.browser;
+    context = launchResult.context;
+    persistentContext = launchResult.persistent;
   }
 
   if (!browser) {
@@ -1438,23 +1489,26 @@ export async function launchEphemeralBrowser(sessionId, { browserProfile = '' } 
     );
   }
 
-  const suite = await getFingerprintSuite(browser);
-  let context = null;
-  try {
-    const synchronized = generateRotatingFingerprintBundle(
-      suite.fingerprintGenerator,
-      suite.chromeVersion,
-      suite.chromeMajorVersion,
-    );
-    const profile = buildProfileFromFingerprint(synchronized, suite.chromeVersion, suite.chromeMajorVersion);
-    context = await createFingerprintedContext(browser, profile, synchronized);
-  } catch (error) {
-    if (getFingerprintFallbackStrategy() !== 'profile') {
-      await browser.close().catch(() => {});
-      throw error;
+  if (!context) {
+    const suite = await getFingerprintSuite(browser);
+    try {
+      const synchronized = generateRotatingFingerprintBundle(
+        suite.fingerprintGenerator,
+        suite.chromeVersion,
+        suite.chromeMajorVersion,
+      );
+      const profile = buildProfileFromFingerprint(synchronized, suite.chromeVersion, suite.chromeMajorVersion);
+      context = await createFingerprintedContext(browser, profile, synchronized);
+    } catch (error) {
+      if (getFingerprintFallbackStrategy() !== 'profile') {
+        await browser.close().catch(() => {});
+        throw error;
+      }
+      const profile = buildFallbackFingerprintProfile(suite.chromeVersion, suite.chromeMajorVersion);
+      context = await createFingerprintedContext(browser, profile, null, { injectFingerprint: false });
     }
-    const profile = buildFallbackFingerprintProfile(suite.chromeVersion, suite.chromeMajorVersion);
-    context = await createFingerprintedContext(browser, profile, null, { injectFingerprint: false });
+  } else {
+    await prepareSharedContext(context);
   }
 
   return {
@@ -1465,7 +1519,7 @@ export async function launchEphemeralBrowser(sessionId, { browserProfile = '' } 
     browserProfile,
     launchPolicy,
     sharedConnection: false,
-    ownsBrowser: true,
+    ownsBrowser: !persistentContext,
     ownsContext: true,
     disconnect: async () => browser.close(),
   };

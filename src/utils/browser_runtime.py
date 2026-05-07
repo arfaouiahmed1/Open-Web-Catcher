@@ -23,12 +23,7 @@ DEFAULT_BROWSER_RUNTIME: dict[str, dict[str, Any]] = {
     "puppeteer": {
         "launch_timeout_ms": 45000,
         "extra_launch_args": [],
-        "adblock_enabled": False,
         "adblock_allowlist_hosts": [],
-        "adblock_excluded_categories": ["nsfw", "gambling"],
-        "adblock_auto_recovery_enabled": True,
-        "adblock_auto_recovery_on_abort": False,
-        "adblock_auto_recovery_retry": True,
         "fingerprint_rotation_mode": "origin",
         "fingerprint_fallback_strategy": "profile",
         "fingerprint_rotation_interval_ms": 600000,
@@ -50,7 +45,7 @@ DEFAULT_BROWSER_RUNTIME: dict[str, dict[str, Any]] = {
         "media_proxy_strategy": "direct_first",
         "asset_diagnostics_enabled": True,
         "popup_blocking_enabled": True,
-        "ubol_enabled": False,
+        "ubol_enabled": True,
         "stream_cors_patch_enabled": False,
         "stream_cors_include_credentials": False,
         "iframe_sandbox_patch_enabled": True,
@@ -65,12 +60,7 @@ DEFAULT_BROWSER_RUNTIME: dict[str, dict[str, Any]] = {
     "playwright": {
         "launch_timeout_ms": 45000,
         "extra_launch_args": [],
-        "adblock_enabled": False,
         "adblock_allowlist_hosts": [],
-        "adblock_excluded_categories": ["nsfw", "gambling"],
-        "adblock_auto_recovery_enabled": True,
-        "adblock_auto_recovery_on_abort": False,
-        "adblock_auto_recovery_retry": True,
         "fingerprint_rotation_mode": "origin",
         "fingerprint_fallback_strategy": "profile",
         "fingerprint_rotation_interval_ms": 600000,
@@ -92,6 +82,7 @@ DEFAULT_BROWSER_RUNTIME: dict[str, dict[str, Any]] = {
         "media_proxy_strategy": "direct_first",
         "asset_diagnostics_enabled": True,
         "popup_blocking_enabled": True,
+        "ubol_enabled": True,
         "iframe_sandbox_patch_enabled": True,
         "iframe_auto_recovery_enabled": True,
         "iframe_recovery_timeout_ms": 20000,
@@ -118,24 +109,7 @@ def normalize_browser_runtime(value: Any) -> dict[str, dict[str, Any]]:
         current = normalized[browser]
         current["launch_timeout_ms"] = _coerce_int(raw.get("launch_timeout_ms"), current["launch_timeout_ms"], minimum=1000)
         current["extra_launch_args"] = _coerce_string_list(raw.get("extra_launch_args"))
-        current["adblock_enabled"] = _coerce_bool(raw.get("adblock_enabled"), current["adblock_enabled"])
         current["adblock_allowlist_hosts"] = _coerce_string_list(raw.get("adblock_allowlist_hosts"))
-        current["adblock_excluded_categories"] = _coerce_string_list(
-            raw.get("adblock_excluded_categories"),
-            fallback=current["adblock_excluded_categories"],
-        )
-        current["adblock_auto_recovery_enabled"] = _coerce_bool(
-            raw.get("adblock_auto_recovery_enabled"),
-            current["adblock_auto_recovery_enabled"],
-        )
-        current["adblock_auto_recovery_on_abort"] = _coerce_bool(
-            raw.get("adblock_auto_recovery_on_abort"),
-            current["adblock_auto_recovery_on_abort"],
-        )
-        current["adblock_auto_recovery_retry"] = _coerce_bool(
-            raw.get("adblock_auto_recovery_retry"),
-            current["adblock_auto_recovery_retry"],
-        )
         current["fingerprint_rotation_mode"] = _coerce_choice(
             raw.get("fingerprint_rotation_mode"),
             allowed={"never", "page", "origin", "interval"},
@@ -229,6 +203,10 @@ def normalize_browser_runtime(value: Any) -> dict[str, dict[str, Any]]:
             raw.get("popup_blocking_enabled"),
             current["popup_blocking_enabled"],
         )
+        current["ubol_enabled"] = _coerce_bool(
+            raw.get("ubol_enabled", raw.get("adblock_enabled")),
+            current["ubol_enabled"],
+        )
         current["iframe_sandbox_patch_enabled"] = _coerce_bool(
             raw.get("iframe_sandbox_patch_enabled"),
             current["iframe_sandbox_patch_enabled"],
@@ -266,7 +244,6 @@ def normalize_browser_runtime(value: Any) -> dict[str, dict[str, Any]]:
             current["media_playback_verification_enabled"],
         )
         if browser == "puppeteer":
-            current["ubol_enabled"] = _coerce_bool(raw.get("ubol_enabled"), current["ubol_enabled"])
             current["stream_cors_patch_enabled"] = _coerce_bool(
                 raw.get("stream_cors_patch_enabled"),
                 current["stream_cors_patch_enabled"],

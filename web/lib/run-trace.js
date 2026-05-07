@@ -774,6 +774,8 @@ export function buildPersistedLlmEvents({ llmCalls = [], agentRuns = [] } = {}) 
     const agent = agentMap.get(agentRunId) || {};
     const usageMetadata = row?.usage_metadata_json || {};
     const responseMetadata = row?.response_metadata_json || {};
+    const additionalKwargs =
+      row?.additional_kwargs_json || responseMetadata?.additional_kwargs || {};
     const cost = Number(row?.total_cost_usd ?? row?.estimated_total_cost_usd ?? 0);
     const costSource = String(row?.cost_source || usageMetadata?.cost_source || "");
     const actor = String(row?.actor || agent.actor || row?.agent_type || agent.agentType || "llm");
@@ -801,9 +803,21 @@ export function buildPersistedLlmEvents({ llmCalls = [], agentRuns = [] } = {}) 
       tool_calls: Number(row?.tool_calls_requested || 0),
       tool_call_names: row?.tools_requested || [],
       content_preview: String(row?.content_preview || ""),
-      content_full: String(row?.content_full || row?.content_preview || ""),
+      content_full: String(
+        row?.content_full ||
+          responseMetadata?.content_full ||
+          row?.content_preview ||
+          "",
+      ),
+      thinking_content: String(
+        row?.thinking_content || responseMetadata?.thinking_content || "",
+      ),
+      thinking_tokens: Number(
+        row?.thinking_tokens || responseMetadata?.thinking_tokens || 0,
+      ),
       usage_metadata_json: usageMetadata,
       response_metadata_json: responseMetadata,
+      additional_kwargs_json: additionalKwargs,
       prompt: {
         prompt_version: String(row?.prompt_version || ""),
         prompt_hash: String(row?.prompt_hash || ""),

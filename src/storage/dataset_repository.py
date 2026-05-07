@@ -11,9 +11,27 @@ from urllib.parse import urlparse, urlunparse
 
 from sqlalchemy.orm import Session
 
-from src.storage.models import DatasetBatchRecord, DatasetSiteRecord, DatasetSiteRunRecord
+from src.storage.models import (
+    AgentRunRecord,
+    DatasetBatchRecord,
+    DatasetSiteRecord,
+    DatasetSiteRunRecord,
+    PipelineRunRecord,
+    RunModelUsageRecord,
+)
 
-LANGUAGES = ["arabic", "english", "spanish", "french", "portuguese", "other"]
+LANGUAGES = [
+    "english",
+    "arabic",
+    "spanish",
+    "french",
+    "portuguese",
+    "turkish",
+    "russian",
+    "persian",
+    "hindi",
+    "other",
+]
 LABELS = ["piracy", "sports", "news", "entertainment", "unknown"]
 SUCCESS_FINAL_STATUSES = {"success", "partial"}
 FAILED_FINAL_STATUSES = {"failed", "cancelled"}
@@ -44,6 +62,10 @@ def _serialize_model(row: Any) -> dict[str, Any]:
     return payload
 
 
+def _serialize_datetime(value: Any) -> str:
+    return value.isoformat() if isinstance(value, datetime) else ""
+
+
 class DatasetRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -68,19 +90,23 @@ class DatasetRepository:
 
         inserted = 0
         updated = 0
+        seen_sites: dict[str, DatasetSiteRecord] = {}
         with csv_path.open("r", encoding="utf-8", newline="") as handle:
             for row in csv.DictReader(handle):
                 url = str(row.get("url", "") or "").strip()
                 canonical = canonicalize_url(url)
                 if not canonical:
                     continue
-                site = self._session.query(DatasetSiteRecord).filter_by(canonical_url=canonical).first()
+                site = seen_sites.get(canonical)
+                if site is None:
+                    site = self._session.query(DatasetSiteRecord).filter_by(canonical_url=canonical).first()
                 if site is None:
                     site = DatasetSiteRecord(canonical_url=canonical)
                     self._session.add(site)
                     inserted += 1
                 else:
                     updated += 1
+                seen_sites[canonical] = site
                 site.url = url
                 site.source = str(row.get("source", "") or source or site.source or "csv_import")
                 site.language = str(row.get("language", "") or site.language or "")
@@ -137,6 +163,95 @@ class DatasetRepository:
             rows = rows[:limit]
         return {"total": total, "sites": [self._site_payload(row) for row in rows]}
 
+    def create_site(
+        self,
+        *,
+        url: str,
+        language: str = "",
+        label: str = "",
+        notes: str = "",
+        source: str = "manual",
+    ) -> dict[str, Any]:
+        canonical = canonicalize_url(url)
+        if not canonical:
+            raise ValueError("A valid website URL is required")
+        row = self._session.query(DatasetSiteRecord).filter_by(canonical_url=canonical).first()
+        if row is None:
+            row = DatasetSiteRecord(canonical_url=canonical, source=source or "manual")
+            self._session.add(row)
+            self._session.flush()
+        row.url = str(url or "").strip()
+        row.language = str(language or "").strip()
+        row.label = str(label or "").strip()
+        row.notes = str(notes or "").strip()
+        row.source = row.source or source or "manual"
+        self._session.commit()
+        self._session.refresh(row)
+        return self._site_payload(row)
+
+    def get_site_detail(self, site_id: int, *, limit: int = 20) -> dict[str, Any]:
+        row = self._session.query(DatasetSiteRecord).filter_by(id=site_id).first()
+        if row is None:
+            raise ValueError("Site not found")
+        runs = (
+            self._session.query(DatasetSiteRunRecord)
+            .filter_by(site_id=site_id)
+            .order_by(
+                DatasetSiteRunRecord.created_at.desc(),
+                DatasetSiteRunRecord.id.desc(),
+            )
+            .limit(max(int(limit or 20), 1))
+            .all()
+        )
+        run_payloads = [self._site_run_payload(item) for item in runs]
+        terminal = [
+            item
+            for item in run_payloads
+            if str(item.get("final_status") or item.get("status") or "").strip().lower()
+            in TERMINAL_SITE_RUN_STATUSES
+        ]
+        total_cost = sum(float(item.get("total_cost_usd") or 0.0) for item in terminal)
+        total_tokens = sum(int(item.get("total_tokens") or 0) for item in terminal)
+        fastest = min(
+            [item for item in terminal if float(item.get("duration_seconds") or 0.0) > 0.0],
+            key=lambda item: float(item.get("duration_seconds") or 0.0),
+            default=None,
+        )
+        best_streams = max(
+            terminal,
+            key=lambda item: int(item.get("stream_count") or 0),
+            default=None,
+        )
+        return {
+            "site": self._site_payload(row),
+            "runs": run_payloads,
+            "summary": {
+                "terminal_runs": len(terminal),
+                "total_cost_usd": round(total_cost, 6),
+                "total_tokens": total_tokens,
+                "avg_cost_usd": round(total_cost / len(terminal), 6) if terminal else 0.0,
+                "fastest_run_id": fastest.get("run_id") if fastest else "",
+                "best_stream_run_id": best_streams.get("run_id") if best_streams else "",
+                "best_stream_count": int(best_streams.get("stream_count") or 0) if best_streams else 0,
+            },
+        }
+
+    def get_run_context(self, run_id: str) -> dict[str, Any] | None:
+        row = self._session.query(DatasetSiteRunRecord).filter_by(run_id=run_id).first()
+        if row is None:
+            return None
+        batch = self._session.query(DatasetBatchRecord).filter_by(id=row.batch_id).first()
+        site = (
+            self._session.query(DatasetSiteRecord).filter_by(id=row.site_id).first()
+            if row.site_id is not None
+            else None
+        )
+        return {
+            "site_run": self._site_run_payload(row),
+            "batch": self._batch_payload(batch, include_runs=False) if batch is not None else None,
+            "site": self._site_payload(site) if site is not None else None,
+        }
+
     def site_stats(self) -> dict[str, Any]:
         rows = self._session.query(DatasetSiteRecord).all()
         by_language: dict[str, int] = {}
@@ -174,6 +289,7 @@ class DatasetRepository:
         self,
         site_id: int,
         *,
+        url: str | None = None,
         language: str | None = None,
         label: str | None = None,
         notes: str | None = None,
@@ -181,6 +297,19 @@ class DatasetRepository:
         row = self._session.query(DatasetSiteRecord).filter_by(id=site_id).first()
         if row is None:
             raise ValueError("Site not found")
+        if url is not None:
+            canonical = canonicalize_url(url)
+            if not canonical:
+                raise ValueError("A valid website URL is required")
+            existing = (
+                self._session.query(DatasetSiteRecord)
+                .filter(DatasetSiteRecord.canonical_url == canonical, DatasetSiteRecord.id != site_id)
+                .first()
+            )
+            if existing is not None:
+                raise ValueError("Another site already uses this URL")
+            row.url = str(url or "").strip()
+            row.canonical_url = canonical
         if language is not None:
             row.language = str(language or "")
         if label is not None:
@@ -190,6 +319,14 @@ class DatasetRepository:
         self._session.commit()
         self._session.refresh(row)
         return self._site_payload(row)
+
+    def delete_site(self, site_id: int) -> bool:
+        row = self._session.query(DatasetSiteRecord).filter_by(id=site_id).first()
+        if row is None:
+            return False
+        self._session.delete(row)
+        self._session.commit()
+        return True
 
     def bulk_update(
         self,
@@ -325,7 +462,17 @@ class DatasetRepository:
         label_filter: str = "",
         source: str = "dataset",
     ) -> dict[str, Any]:
-        normalized_urls = [str(url or "").strip() for url in urls if str(url or "").strip()]
+        normalized_urls = []
+        seen_canonical: set[str] = set()
+        for url in urls:
+            raw = str(url or "").strip()
+            canonical = canonicalize_url(raw)
+            if not raw or not canonical or canonical in seen_canonical:
+                continue
+            seen_canonical.add(canonical)
+            normalized_urls.append(raw)
+        if not normalized_urls:
+            raise ValueError("No valid dataset URLs were provided")
         batch = DatasetBatchRecord(
             batch_id=str(uuid.uuid4()),
             batch_name=str(batch_name or "").strip(),
@@ -445,6 +592,14 @@ class DatasetRepository:
     def _site_payload(self, row: DatasetSiteRecord) -> dict[str, Any]:
         payload = _serialize_model(row)
         payload["success_rate"] = round((float(row.successful_runs or 0) / float(row.total_runs or 1)) * 100.0, 1) if row.total_runs else 0.0
+        payload["latest_run"] = self._latest_site_run_payload(row.id)
+        payload["active_run_count"] = int(
+            self._session.query(DatasetSiteRunRecord)
+            .filter_by(site_id=row.id)
+            .filter(DatasetSiteRunRecord.status.in_(["queued", "running", "retrying"]))
+            .count()
+            or 0
+        )
         return payload
 
     def _batch_payload(self, row: DatasetBatchRecord, *, include_runs: bool) -> dict[str, Any]:
@@ -457,7 +612,83 @@ class DatasetRepository:
                 .order_by(DatasetSiteRunRecord.created_at.asc(), DatasetSiteRunRecord.id.asc())
                 .all()
             )
-            payload["runs"] = [_serialize_model(item) for item in runs]
+            payload["runs"] = [self._site_run_payload(item) for item in runs]
+        return payload
+
+    def _latest_site_run_payload(self, site_id: int) -> dict[str, Any] | None:
+        row = (
+            self._session.query(DatasetSiteRunRecord)
+            .filter_by(site_id=site_id)
+            .order_by(
+                DatasetSiteRunRecord.created_at.desc(),
+                DatasetSiteRunRecord.id.desc(),
+            )
+            .first()
+        )
+        return self._site_run_payload(row) if row is not None else None
+
+    def _site_run_payload(self, row: DatasetSiteRunRecord) -> dict[str, Any]:
+        payload = _serialize_model(row)
+        batch = self._session.query(DatasetBatchRecord).filter_by(id=row.batch_id).first()
+        if batch is not None:
+            payload["batch_id"] = batch.batch_id
+            payload["batch_name"] = batch.batch_name
+            payload["batch_status"] = batch.status
+        pipeline = self._session.query(PipelineRunRecord).filter_by(run_id=row.run_id).first()
+        model_usage: list[dict[str, Any]] = []
+        agent_rows: list[dict[str, Any]] = []
+        if pipeline is not None:
+            model_usage_rows = (
+                self._session.query(RunModelUsageRecord)
+                .filter_by(pipeline_run_id=pipeline.id)
+                .order_by(
+                    RunModelUsageRecord.estimated_total_cost_usd.desc(),
+                    RunModelUsageRecord.model_name.asc(),
+                )
+                .all()
+            )
+            model_usage = [_serialize_model(item) for item in model_usage_rows]
+            agent_rows = [
+                _serialize_model(item)
+                for item in (
+                    self._session.query(AgentRunRecord)
+                    .filter_by(pipeline_run_id=pipeline.id)
+                    .order_by(AgentRunRecord.started_at.asc(), AgentRunRecord.id.asc())
+                    .all()
+                )
+            ]
+            payload["run"] = {
+                "run_id": pipeline.run_id,
+                "url": pipeline.root_url,
+                "final_status": pipeline.final_status,
+                "success": pipeline.success,
+                "page_type": pipeline.page_type,
+                "stream_count": int(pipeline.stream_count or 0),
+                "screenshot_count": int(pipeline.screenshot_count or 0),
+                "provider_analysis_count": int(pipeline.provider_analysis_count or 0),
+                "total_tokens_in": int(pipeline.total_tokens_in or 0),
+                "total_cached_input_tokens": int(getattr(pipeline, "total_cached_input_tokens", 0) or 0),
+                "total_new_input_tokens": int(getattr(pipeline, "total_new_input_tokens", 0) or 0),
+                "total_tokens_out": int(pipeline.total_tokens_out or 0),
+                "total_tokens": int(pipeline.total_tokens_in or 0) + int(pipeline.total_tokens_out or 0),
+                "total_llm_calls": int(pipeline.total_llm_calls or 0),
+                "total_tool_calls": int(pipeline.total_tool_calls or 0),
+                "estimated_total_cost_usd": float(pipeline.estimated_total_cost_usd or 0.0),
+                "duration_seconds": float(pipeline.duration_seconds or 0.0),
+                "started_at": _serialize_datetime(pipeline.started_at),
+                "finished_at": _serialize_datetime(pipeline.finished_at),
+                "created_at": _serialize_datetime(pipeline.created_at),
+            }
+            payload["final_status"] = payload["run"]["final_status"] or payload.get("final_status", "")
+            payload["stream_count"] = payload["run"]["stream_count"]
+            payload["total_cost_usd"] = float(payload["run"]["estimated_total_cost_usd"] or payload.get("total_cost_usd") or 0.0)
+            payload["total_tokens"] = payload["run"]["total_tokens"]
+            payload["duration_seconds"] = payload["run"]["duration_seconds"]
+        else:
+            payload["total_tokens"] = 0
+            payload["duration_seconds"] = 0.0
+        payload["model_usage"] = model_usage
+        payload["agent_runs"] = agent_rows
         return payload
 
     def _find_site(self, url: str) -> DatasetSiteRecord | None:

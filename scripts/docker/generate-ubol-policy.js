@@ -1,6 +1,8 @@
 const fs = require('node:fs');
 
-const extensionId = 'ddkjiahejlhfcafbddmgiahcphecmpfh';
+const extensionId = String(
+  process.env.OWC_UBOL_EXTENSION_ID || 'nkeimhogjdpnpccoofpliimaahmaaome',
+).trim();
 const extensionDir = String(process.env.OWC_UBOL_EXTENSION_DIR || '').trim();
 const rulesetDetailsPath = String(
   process.env.OWC_UBOL_RULESET_DETAILS_PATH

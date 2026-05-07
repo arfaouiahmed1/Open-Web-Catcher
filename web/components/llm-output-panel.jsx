@@ -182,9 +182,25 @@ function buildLlmRows(events = []) {
       additionalKwargsJson.response_class ||
       "";
     const usageMetadataJson = buildUsageMetadata(details, providerCacheActive, costSource);
-    const contentPreview = extractText(details.content_preview || "");
-    const contentFull = extractText(details.content_full || contentPreview || "");
-    const thinkingContent = extractText(details.thinking_content || "");
+    const contentPreview = extractText(
+      details.content_preview ||
+        responseMetadataJson.content_preview ||
+        additionalKwargsJson.content_preview ||
+        "",
+    );
+    const contentFull = extractText(
+      details.content_full ||
+        responseMetadataJson.content_full ||
+        additionalKwargsJson.content_full ||
+        contentPreview ||
+        "",
+    );
+    const thinkingContent = extractText(
+      details.thinking_content ||
+        responseMetadataJson.thinking_content ||
+        additionalKwargsJson.thinking_content ||
+        "",
+    );
     const errorPreview = extractText(
       details.error_preview || details.error || event.message || "",
     );
@@ -233,7 +249,12 @@ function buildLlmRows(events = []) {
       contentPreview,
       contentFull,
       thinkingContent,
-      thinkingTokens: Number(details.thinking_tokens || 0),
+      thinkingTokens: Number(
+        details.thinking_tokens ||
+          responseMetadataJson.thinking_tokens ||
+          additionalKwargsJson.thinking_tokens ||
+          0,
+      ),
       errorPreview,
       summary,
       toolCalls: Number(details.tool_calls || 0),

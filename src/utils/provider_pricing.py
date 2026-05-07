@@ -318,6 +318,17 @@ def _extract_first_dollar_amount(text: str, label: str) -> float:
     return float(match.group(1) or 0.0)
 
 
+def _extract_dollar_amounts(text: str, label: str) -> list[float]:
+    pattern = re.compile(
+        rf"{re.escape(label)}(?P<body>.*?)(?=(?:Input price|Output price|Context caching price|Grounding with|Used to improve our products|$))",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    match = pattern.search(text)
+    if not match:
+        return []
+    return [float(item) for item in re.findall(r"\$([0-9]+(?:\.[0-9]+)?)", match.group("body"))]
+
+
 def _parse_google_pricing(text: str, *, provider: str, max_models: int) -> list[PricingConfig]:
     cleaned = _clean_text(text)
     primary_pattern = re.compile(
@@ -349,6 +360,9 @@ def _parse_google_pricing(text: str, *, provider: str, max_models: int) -> list[
 
         input_per_million = _extract_first_dollar_amount(target, "Input price")
         output_per_million = _extract_first_dollar_amount(target, "Output price")
+        cache_amounts = _extract_dollar_amounts(target, "Context caching price")
+        context_caching_per_million = cache_amounts[0] if cache_amounts else 0.0
+        cache_storage_per_million_token_hour = cache_amounts[1] if len(cache_amounts) > 1 else 0.0
         if input_per_million == 0.0 and output_per_million == 0.0:
             continue
 
@@ -358,8 +372,17 @@ def _parse_google_pricing(text: str, *, provider: str, max_models: int) -> list[
                 model_name=model_name,
                 input_per_million=round(max(input_per_million, 0.0), 8),
                 output_per_million=round(max(output_per_million, 0.0), 8),
+                cached_input_per_million=round(max(context_caching_per_million, 0.0), 8),
+                cache_write_per_million=round(max(context_caching_per_million, 0.0), 8),
                 active=True,
-                notes="Synced from Gemini API pricing documentation",
+                notes=(
+                    "Synced from Gemini API pricing documentation"
+                    + (
+                        f"; storage charge {cache_storage_per_million_token_hour}/MTok-hour not included in estimates"
+                        if cache_storage_per_million_token_hour > 0
+                        else ""
+                    )
+                ),
             )
         )
     return _dedupe_configs(results, max_models=max_models)

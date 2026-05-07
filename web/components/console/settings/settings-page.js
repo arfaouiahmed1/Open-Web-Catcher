@@ -54,41 +54,6 @@ const PROVIDERS = [
     color: "var(--sky)",
     features: ["caching", "thinking", "grounding", "vision"],
   },
-  {
-    id: "google-vertex",
-    name: "Google Vertex AI",
-    keyEnv: "GOOGLE_VERTEX_API_KEY",
-    color: "var(--sky)",
-    features: ["caching", "thinking", "grounding", "vision", "enterprise"],
-  },
-  {
-    id: "openai",
-    name: "OpenAI",
-    keyEnv: "OPENAI_API_KEY",
-    color: "var(--mint)",
-    features: ["caching", "vision", "tools", "reasoning"],
-  },
-  {
-    id: "anthropic",
-    name: "Anthropic",
-    keyEnv: "ANTHROPIC_API_KEY",
-    color: "var(--signal)",
-    features: ["caching", "thinking", "vision", "tools"],
-  },
-  {
-    id: "openrouter",
-    name: "OpenRouter",
-    keyEnv: "OPENROUTER_API_KEY",
-    color: "var(--violet)",
-    features: ["unified-api", "100+ models"],
-  },
-  {
-    id: "nvidia",
-    name: "NVIDIA NIM",
-    keyEnv: "NVIDIA_API_KEY",
-    color: "var(--mint)",
-    features: ["local-compatible", "optimized"],
-  },
 ];
 
 const AGENT_SLOTS = [
@@ -335,7 +300,7 @@ const BUILTIN_PROXY_SOURCE_OPTIONS = [
 ];
 
 const SETTINGS_TABS = [
-  { id: "models", label: "Models & Providers" },
+  { id: "models", label: "Gemini Models" },
   { id: "browser", label: "Browser" },
   { id: "display", label: "Display" },
   { id: "api-keys", label: "API Keys" },
@@ -345,16 +310,16 @@ const SETTINGS_TABS = [
 
 const TAB_DETAILS = {
   models: {
-    title: "Models & Providers",
+    title: "Gemini Models",
     description:
-      "Set provider defaults, per-agent model assignments, and caching behavior for the active runtime.",
+      "Set Gemini model assignments, caching behavior, and reasoning defaults for the active runtime.",
     storage: "server",
     saveLabel: "Save model settings",
   },
   browser: {
     title: "Browser Runtime",
     description:
-      "Choose the default engine and keep browsing realistic: stable fingerprints, careful proxy rotation, light cleanup, and reliable iframe/media recovery.",
+      "Choose the default engine and keep browsing realistic: stable fingerprints, real uBOL loading, careful proxy rotation, and reliable iframe/media recovery.",
     storage: "server",
     saveLabel: "Save browser settings",
   },
@@ -365,9 +330,9 @@ const TAB_DETAILS = {
     storage: "browser",
   },
   "api-keys": {
-    title: "API Keys",
+    title: "Gemini API Key",
     description:
-      "See which providers are configured and ready for runtime calls. Informational only.",
+      "See whether the Gemini API key is configured and ready for live model calls.",
     storage: "readonly",
   },
   notifications: {
@@ -433,12 +398,7 @@ const DEFAULT_BROWSER_RUNTIME = {
   puppeteer: {
     launch_timeout_ms: 45000,
     extra_launch_args: [],
-    adblock_enabled: false,
     adblock_allowlist_hosts: [],
-    adblock_excluded_categories: ["nsfw", "gambling"],
-    adblock_auto_recovery_enabled: true,
-    adblock_auto_recovery_on_abort: false,
-    adblock_auto_recovery_retry: true,
     fingerprint_rotation_mode: "origin",
     fingerprint_fallback_strategy: "profile",
     fingerprint_rotation_interval_ms: 600000,
@@ -460,7 +420,7 @@ const DEFAULT_BROWSER_RUNTIME = {
     media_proxy_strategy: "direct_first",
     asset_diagnostics_enabled: true,
     popup_blocking_enabled: true,
-    ubol_enabled: false,
+    ubol_enabled: true,
     stream_cors_patch_enabled: false,
     stream_cors_include_credentials: false,
     iframe_sandbox_patch_enabled: true,
@@ -475,12 +435,7 @@ const DEFAULT_BROWSER_RUNTIME = {
   playwright: {
     launch_timeout_ms: 45000,
     extra_launch_args: [],
-    adblock_enabled: false,
     adblock_allowlist_hosts: [],
-    adblock_excluded_categories: ["nsfw", "gambling"],
-    adblock_auto_recovery_enabled: true,
-    adblock_auto_recovery_on_abort: false,
-    adblock_auto_recovery_retry: true,
     fingerprint_rotation_mode: "origin",
     fingerprint_fallback_strategy: "profile",
     fingerprint_rotation_interval_ms: 600000,
@@ -502,6 +457,7 @@ const DEFAULT_BROWSER_RUNTIME = {
     media_proxy_strategy: "direct_first",
     asset_diagnostics_enabled: true,
     popup_blocking_enabled: true,
+    ubol_enabled: true,
     iframe_sandbox_patch_enabled: true,
     iframe_auto_recovery_enabled: true,
     iframe_recovery_timeout_ms: 20000,
@@ -523,9 +479,6 @@ function cloneBrowserRuntime() {
       adblock_allowlist_hosts: [
         ...DEFAULT_BROWSER_RUNTIME.puppeteer.adblock_allowlist_hosts,
       ],
-      adblock_excluded_categories: [
-        ...DEFAULT_BROWSER_RUNTIME.puppeteer.adblock_excluded_categories,
-      ],
       proxy_source_order: [
         ...DEFAULT_BROWSER_RUNTIME.puppeteer.proxy_source_order,
       ],
@@ -543,9 +496,6 @@ function cloneBrowserRuntime() {
       ],
       adblock_allowlist_hosts: [
         ...DEFAULT_BROWSER_RUNTIME.playwright.adblock_allowlist_hosts,
-      ],
-      adblock_excluded_categories: [
-        ...DEFAULT_BROWSER_RUNTIME.playwright.adblock_excluded_categories,
       ],
       proxy_source_order: [
         ...DEFAULT_BROWSER_RUNTIME.playwright.proxy_source_order,
@@ -671,10 +621,6 @@ function normalizeBrowserRuntime(value) {
       adblock_allowlist_hosts: normalizeStringList(
         current.adblock_allowlist_hosts,
         base[id].adblock_allowlist_hosts,
-      ),
-      adblock_excluded_categories: normalizeStringList(
-        current.adblock_excluded_categories,
-        base[id].adblock_excluded_categories,
       ),
       proxy_source_order: normalizeStringList(
         current.proxy_source_order,
@@ -1120,6 +1066,7 @@ function CostEstimator({ provider, model }) {
   const [inputTokens, setInputTokens] = useState(1000);
   const [outputTokens, setOutputTokens] = useState(1000);
   const [cachedTokens, setCachedTokens] = useState(0);
+  const [cacheWriteTokens, setCacheWriteTokens] = useState(0);
   const [costs, setCosts] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -1128,7 +1075,7 @@ function CostEstimator({ provider, model }) {
     setLoading(true);
     try {
       const response = await apiFetch(
-        `/ui/settings/estimate-costs?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}&input_tokens=${inputTokens}&output_tokens=${outputTokens}&cached_input_tokens=${cachedTokens}`,
+        `/ui/settings/estimate-costs?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}&input_tokens=${inputTokens}&output_tokens=${outputTokens}&cached_input_tokens=${cachedTokens}&cache_write_input_tokens=${cacheWriteTokens}`,
       );
       setCosts(response);
     } catch (error) {
@@ -1136,7 +1083,7 @@ function CostEstimator({ provider, model }) {
     } finally {
       setLoading(false);
     }
-  }, [provider, model, inputTokens, outputTokens, cachedTokens]);
+  }, [provider, model, inputTokens, outputTokens, cachedTokens, cacheWriteTokens]);
 
   useEffect(() => {
     const timer = setTimeout(fetchCosts, 500);
@@ -1152,7 +1099,7 @@ function CostEstimator({ provider, model }) {
       <CardContent className="flex flex-col gap-4 p-4">
       <div className="text-[13px] font-medium text-foreground">Estimated Cost</div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Input
           label="Input tokens"
           type="number"
@@ -1180,6 +1127,16 @@ function CostEstimator({ provider, model }) {
           step="100"
           value={cachedTokens}
           onChange={(e) => setCachedTokens(parseInt(e.target.value, 10) || 0)}
+          className="h-9 border-[var(--line)] bg-muted/50 text-[12px] text-[var(--ink-dim)]"
+        />
+
+        <Input
+          label="Cache write tokens"
+          type="number"
+          min="0"
+          step="100"
+          value={cacheWriteTokens}
+          onChange={(e) => setCacheWriteTokens(parseInt(e.target.value, 10) || 0)}
           className="h-9 border-[var(--line)] bg-muted/50 text-[12px] text-[var(--ink-dim)]"
         />
       </div>
@@ -1223,6 +1180,11 @@ function CostEstimator({ provider, model }) {
                 Pricing: {costs.pricing_source}
               </p>
             )}
+          {provider === "google" ? (
+            <p className="text-[10px] text-muted-foreground">
+              Gemini cache storage retention charges are separate from token charges and are not included in this estimate.
+            </p>
+          ) : null}
           {costs.pricing_source === "no_pricing_available" && (
             <p className="mt-2 text-[10px] text-destructive">
               No pricing available for this model
@@ -1413,7 +1375,8 @@ export function SettingsPage() {
   }, [activeBrowserRuntime.streaming_safe_mode, activeProfileTab]);
   const safeStreamingDifferences = useMemo(() => {
     const diffs = [];
-    if (activeBrowserRuntime.adblock_enabled) diffs.push("adblock enabled");
+    if (activeBrowserRuntime.ubol_enabled)
+      diffs.push("uBOL active on standard pages");
     if (
       browserSettingsTab === "puppeteer" &&
       activeBrowserRuntime.stream_cors_patch_enabled
@@ -1633,14 +1596,7 @@ export function SettingsPage() {
     setActiveMcpBrowserTab(payload.browser_engine || "puppeteer");
     setSavedTab("");
 
-    const providersToLoad = [
-      ...new Set([
-        fallbackProvider,
-        ...Object.values(nextAgentConfig)
-          .map((row) => row.provider)
-          .filter(Boolean),
-      ]),
-    ];
+    const providersToLoad = ["google"];
     await Promise.all(
       providersToLoad.map((providerId) =>
         loadProviderCatalog(providerId, { force: true }).catch(() => null),
@@ -1905,7 +1861,7 @@ export function SettingsPage() {
           Settings
         </h1>
         <p className="text-sm text-muted-foreground">
-          Configure providers, browser runtime, display preferences, and more.
+          Configure Gemini, browser runtime, display preferences, and more.
         </p>
       </div>
     <div className="flex items-start gap-6">
@@ -1952,12 +1908,12 @@ export function SettingsPage() {
             <section className="space-y-4">
               <Tabs defaultValue="providers" className="w-full">
                 <TabsList className="h-auto w-full justify-start gap-1 p-1">
-                  <TabsTrigger value="providers">Providers</TabsTrigger>
+                  <TabsTrigger value="providers">Gemini</TabsTrigger>
                   <TabsTrigger value="agents">Agent Models</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="providers" className="space-y-4">
-                  <SectionHeader>Provider Defaults</SectionHeader>
+                  <SectionHeader>Gemini Defaults</SectionHeader>
 
                   <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                 {PROVIDERS.map((item) => {
@@ -2013,7 +1969,7 @@ export function SettingsPage() {
 
                   <FieldGroup
                     title={`Provider defaults — ${activeProvider.name}`}
-                    description="Hyperparameters applied to every model from this provider unless overridden."
+                    description="Hyperparameters applied to Gemini models unless overridden for a specific model or agent."
                     accent="var(--signal)"
                   >
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2083,8 +2039,8 @@ export function SettingsPage() {
                 {!apiKeys[provider] ? (
                   <div className="flex items-start gap-2 rounded-lg border border-primary/35 bg-primary/10 px-3 py-2.5 text-sm text-primary">
                     <Key className="mt-0.5 size-4 shrink-0" />
-                    <span>
-                      <strong>{activeProvider.keyEnv}</strong> not set. Live model loading is unavailable until the provider API is configured.
+                      <span>
+                      <strong>{activeProvider.keyEnv}</strong> not set. Live Gemini model loading is unavailable until the API key is configured.
                     </span>
                   </div>
                 ) : null}
@@ -2191,7 +2147,7 @@ export function SettingsPage() {
                     label="Provider prompt caching"
                     checked={providerCacheEnabled}
                     onChange={setProviderCacheEnabled}
-                    description="Hooks into provider-native caching (Anthropic cache_control, Gemini context caching). Reduces cost on repeated system prompts."
+                    description="Hooks into Gemini-native caching for repeated shared prompt context. Reduces repeated input cost."
                   />
                   <ToggleRow
                     label="Deterministic tool result cache"
@@ -2237,7 +2193,7 @@ export function SettingsPage() {
 
                   <FieldGroup
                     title="Extended Thinking"
-                    description="Enable model reasoning (Anthropic extended thinking, Gemini thinking budget). Increases token usage but improves reasoning quality."
+                    description="Enable Gemini reasoning budgets. This increases token usage, including thinking tokens, but improves reasoning quality."
                     accent="var(--sky)"
                   >
                 <ToggleRow
@@ -3126,7 +3082,7 @@ export function SettingsPage() {
 
               <FieldGroup
                 title="Cleanup & Launch"
-                description="Keep the browser looking normal, trim visual annoyances, and avoid network blockers unless you explicitly need them."
+                description="Keep the browser looking normal, load the real uBOL extension for standard pages, and leave stream-like targets untouched."
                 accent="var(--rose)"
               >
                 <BrowserRuntimeTextarea
@@ -3145,8 +3101,20 @@ export function SettingsPage() {
                   description="Extra Chromium flags appended at launch. Keep minimal so the browser looks normal."
                 />
                 <div className="grid gap-4 sm:grid-cols-2">
+                  <ToggleRow
+                    label="uBOL extension"
+                    checked={!!activeBrowserRuntime.ubol_enabled}
+                    onChange={(value) =>
+                      updateBrowserRuntime(
+                        browserSettingsTab,
+                        "ubol_enabled",
+                        value,
+                      )
+                    }
+                    description="Load uBlock Origin Lite for standard pages. Landing, hosting, embedded, and streaming-safe cases still stand down automatically."
+                  />
                   <BrowserRuntimeInput
-                    label="Allowlist hosts"
+                    label="uBOL no-filter hosts"
                     value={(
                       activeBrowserRuntime.adblock_allowlist_hosts || []
                     ).join(", ")}
@@ -3158,22 +3126,7 @@ export function SettingsPage() {
                       )
                     }
                     placeholder="example.com, cdn.example.com"
-                    description="Always leave these hosts untouched if blocking is enabled for a special case."
-                  />
-                  <BrowserRuntimeInput
-                    label="Excluded categories"
-                    value={(
-                      activeBrowserRuntime.adblock_excluded_categories || []
-                    ).join(", ")}
-                    onChange={(value) =>
-                      updateBrowserRuntimeList(
-                        browserSettingsTab,
-                        "adblock_excluded_categories",
-                        value,
-                      )
-                    }
-                    placeholder="nsfw, gambling"
-                    description="Categories intentionally left out when the blocker is active."
+                    description="Pass these hostnames to Chrome managed policy so uBOL leaves them alone even on standard pages."
                   />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -3190,58 +3143,6 @@ export function SettingsPage() {
                     description="Block new tabs, alert-style interruptions, and window.open popups so agents stay on task."
                   />
                   <ToggleRow
-                    label="Enable adblock"
-                    checked={!!activeBrowserRuntime.adblock_enabled}
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "adblock_enabled",
-                        value,
-                      )
-                    }
-                    description="Network-level ad blocking. Leave off for the most browser-like behavior."
-                  />
-                  <ToggleRow
-                    label="Auto recovery"
-                    checked={
-                      !!activeBrowserRuntime.adblock_auto_recovery_enabled
-                    }
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "adblock_auto_recovery_enabled",
-                        value,
-                      )
-                    }
-                    description="Disable blocking temporarily when player requests look broken."
-                  />
-                  <ToggleRow
-                    label="Recover on abort"
-                    checked={
-                      !!activeBrowserRuntime.adblock_auto_recovery_on_abort
-                    }
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "adblock_auto_recovery_on_abort",
-                        value,
-                      )
-                    }
-                    description="Treat aborted player requests as a recovery trigger."
-                  />
-                  <ToggleRow
-                    label="Retry after recovery"
-                    checked={!!activeBrowserRuntime.adblock_auto_recovery_retry}
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "adblock_auto_recovery_retry",
-                        value,
-                      )
-                    }
-                    description="Reload the page after disabling blocking so media requests can retry."
-                  />
-                  <ToggleRow
                     label="Iframe sandbox patch"
                     checked={
                       !!activeBrowserRuntime.iframe_sandbox_patch_enabled
@@ -3255,16 +3156,6 @@ export function SettingsPage() {
                     }
                     description="Loosen player iframe sandbox restrictions that block playback."
                   />
-                  {browserSettingsTab === "puppeteer" ? (
-                    <ToggleRow
-                      label="uBOL extension"
-                      checked={!!browserRuntime.puppeteer?.ubol_enabled}
-                      onChange={(value) =>
-                        updateBrowserRuntime("puppeteer", "ubol_enabled", value)
-                      }
-                      description="Optional extension-based blocking. Off by default so iframe and media traffic stays natural."
-                    />
-                  ) : null}
                   {browserSettingsTab === "puppeteer" ? (
                     <ToggleRow
                       label="Stream CORS patch"
@@ -3873,13 +3764,13 @@ export function SettingsPage() {
           {activeTab === "api-keys" ? (
             <section className="space-y-4">
               <div>
-                <h2 className="text-base font-semibold text-foreground">API Key Status</h2>
+                <h2 className="text-base font-semibold text-foreground">Gemini API Key Status</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Keys are loaded from environment variables at server start. Add them to your{" "}
+                  The key is loaded from environment variables at server start. Add it to your{" "}
                   <code className="rounded border bg-muted px-1 py-0.5 font-mono text-xs text-foreground">
                     .env
                   </code>{" "}
-                  file and rebuild to activate a provider.
+                  file and rebuild to activate Gemini.
                 </p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

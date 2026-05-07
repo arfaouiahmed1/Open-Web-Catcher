@@ -133,10 +133,7 @@ def test_browser_runtime_defaults_stay_aligned_for_fingerprint_and_proxy_control
     puppeteer = DEFAULT_BROWSER_RUNTIME["puppeteer"]
     playwright = DEFAULT_BROWSER_RUNTIME["playwright"]
     shared_keys = (
-        "adblock_enabled",
-        "adblock_auto_recovery_enabled",
-        "adblock_auto_recovery_on_abort",
-        "adblock_auto_recovery_retry",
+        "adblock_allowlist_hosts",
         "fingerprint_rotation_mode",
         "fingerprint_fallback_strategy",
         "fingerprint_rotation_interval_ms",
@@ -156,6 +153,7 @@ def test_browser_runtime_defaults_stay_aligned_for_fingerprint_and_proxy_control
         "media_proxy_strategy",
         "asset_diagnostics_enabled",
         "popup_blocking_enabled",
+        "ubol_enabled",
         "iframe_sandbox_patch_enabled",
         "iframe_auto_recovery_enabled",
         "iframe_recovery_timeout_ms",

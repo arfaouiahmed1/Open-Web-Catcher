@@ -17,6 +17,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     OWC_UBOL_ENABLED=true \
     OWC_UBOL_EXTENSION_DIR=/app/tools/puppeteer/extensions/ubol \
+    OWC_UBOL_EXTENSION_ID=nkeimhogjdpnpccoofpliimaahmaaome \
     OWC_UBOL_DEFAULT_FILTERING=optimal \
     MCP_BROWSER_MODE=isolated \
     BROWSER_WS_ENDPOINT=ws://127.0.0.1:9222
@@ -93,7 +94,7 @@ COPY configs/supervisord.tools.conf /etc/supervisor/conf.d/owc.conf
 COPY scripts/ scripts/
 
 RUN mkdir -p data/logs \
-    && chmod +x scripts/docker/entrypoint.sh
+    && chmod +x scripts/docker/entrypoint.sh scripts/docker/start-shared-puppeteer-chrome.sh
 
 EXPOSE 3000 9222
 

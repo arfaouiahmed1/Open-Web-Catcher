@@ -1052,6 +1052,21 @@ class RunRepository:
                     "estimated_total_cost_usd": estimated_total_cost_usd,
                 }
 
+            response_metadata = details.get("response_metadata", {}) or {}
+            if not isinstance(response_metadata, dict):
+                response_metadata = {"raw": response_metadata}
+            response_metadata = {
+                **response_metadata,
+                "content_full": str(
+                    details.get("content_full", "")
+                    or details.get("content_preview", "")
+                    or ""
+                ),
+                "thinking_content": str(details.get("thinking_content", "") or ""),
+                "thinking_tokens": int(details.get("thinking_tokens", 0) or 0),
+                "additional_kwargs": details.get("additional_kwargs", {}) or {},
+            }
+
             self._session.add(
                 LLMCallRecord(
                     agent_run_id=agent_run_id,
@@ -1076,7 +1091,7 @@ class RunRepository:
                     tools_requested=details.get("tool_call_names", []) or [],
                     content_preview=str(details.get("content_preview", "") or ""),
                     usage_metadata_json=usage_metadata,
-                    response_metadata_json=details.get("response_metadata", {}) or {},
+                    response_metadata_json=response_metadata,
                     created_at=event.timestamp,
                 )
             )

@@ -45,6 +45,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY src/ src/
 COPY tools/puppeteer/ tools/puppeteer/
 COPY configs/ configs/
+COPY datasets/ datasets/
 COPY tests/ tests/
 COPY notebooks/ notebooks/
 COPY scripts/ scripts/

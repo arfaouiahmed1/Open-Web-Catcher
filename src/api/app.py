@@ -748,7 +748,7 @@ def _sync_provider_pricing_to_db(
 
 
 def _pricing_sync_provider_ids() -> list[str]:
-    return ["google", "google-vertex", "openai", "anthropic", "openrouter", "nvidia"]
+    return ["google"]
 
 
 def _provider_api_key_available(settings: Settings, provider: str) -> bool:
@@ -2655,6 +2655,7 @@ def ui_run_detail(run_id: str):
     try:
         job = BackgroundJobRepository(session).get_by_run_id(run_id)
         job_state = _background_job_state(job) if job is not None else None
+        dataset_context = DatasetRepository(session).get_run_context(run_id)
         payload = OperatorConsoleRepository(session).get_run_detail(run_id)
         if active is not None:
             if payload is None:
@@ -2671,6 +2672,8 @@ def ui_run_detail(run_id: str):
                 if job_state is not None:
                     payload["job_state"] = job_state
                     payload["job"] = job_state
+            if dataset_context is not None:
+                payload["dataset_context"] = dataset_context
             if not active.completed:
                 payload["active_trace"] = active.model_dump(mode="json")
             return payload
@@ -2803,10 +2806,13 @@ def ui_run_detail(run_id: str):
                 "source": "background_job_result",
                 "telemetry_status": summary["telemetry_status"],
                 "telemetry_message": summary["telemetry_message"],
+                "dataset_context": dataset_context,
             }
         if job_state is not None:
             payload["job_state"] = job_state
             payload["job"] = job_state
+        if dataset_context is not None:
+            payload["dataset_context"] = dataset_context
         return payload
     finally:
         session.close()
@@ -3292,6 +3298,8 @@ class ModelConfigRequest(BaseModel):
     gemini_explicit_cache_refresh_lead_seconds: int | None = None
     tool_result_cache_enabled: bool | None = None
     tool_result_cache_min_identical_observations: int | None = None
+    thinking_enabled: bool | None = None
+    thinking_budget_tokens: int | None = None
     browser_engine: str | None = None
     disabled_tools_by_profile: dict | None = None
     disabled_tools_by_browser_profile: dict | None = None
@@ -3328,6 +3336,8 @@ def _ui_config_payload(
         "gemini_explicit_cache_refresh_lead_seconds": settings.gemini_explicit_cache_refresh_lead_seconds,
         "tool_result_cache_enabled": settings.tool_result_cache_enabled,
         "tool_result_cache_min_identical_observations": settings.tool_result_cache_min_identical_observations,
+        "thinking_enabled": getattr(settings, "thinking_enabled", False),
+        "thinking_budget_tokens": getattr(settings, "thinking_budget_tokens", 8000),
         "browser_engine": settings.browser_engine,
         "mcp_server_url_puppeteer": settings.mcp_server_url_puppeteer,
         "mcp_server_url_playwright": settings.mcp_server_url_playwright,
@@ -3343,6 +3353,7 @@ def _ui_config_payload(
         "deepeval_temperature": getattr(settings, "deepeval_temperature", 0.0),
         "api_keys": {
             "google": bool(settings.google_api_key),
+            "google-vertex": bool(settings.google_vertex_api_key),
             "openai": bool(settings.openai_api_key),
             "anthropic": bool(settings.anthropic_api_key),
             "openrouter": bool(settings.openrouter_api_key),
@@ -3411,6 +3422,10 @@ def ui_update_config(body: ModelConfigRequest):
             1,
             int(body.tool_result_cache_min_identical_observations),
         )
+    if body.thinking_enabled is not None:
+        s.thinking_enabled = body.thinking_enabled
+    if body.thinking_budget_tokens is not None:
+        s.thinking_budget_tokens = max(1000, min(32000, int(body.thinking_budget_tokens)))
     if body.browser_engine in ("puppeteer", "playwright"):
         s.browser_engine = body.browser_engine
         s.mcp_server_url = (
