@@ -716,6 +716,11 @@ export function RunsPage() {
     return siteActive || batchActive;
   }, [batchDetail?.status, batches, sites]);
 
+  const activeBatchId = useMemo(() => {
+    if (tab !== "batches") return "";
+    return selectedBatchId || batches[0]?.batch_id || "";
+  }, [batches, selectedBatchId, tab]);
+
   const loadDashboard = useCallback(async () => {
     setIsLoading(true);
     setActionError("");
@@ -743,19 +748,12 @@ export function RunsPage() {
       setSelectedSiteIds((current) =>
         current.filter((id) => (sitesPayload.sites || []).some((site) => site.id === id)),
       );
-      const nextBatchId =
-        selectedBatchId || (tab === "batches" ? batchesPayload.batches?.[0]?.batch_id : "") || "";
-      if (nextBatchId) {
-        setSelectedBatchId(nextBatchId);
-      } else {
-        setBatchDetail(null);
-      }
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Failed to load runs dashboard");
     } finally {
       setIsLoading(false);
     }
-  }, [label, language, query, selectedBatchId, tab]);
+  }, [label, language, query]);
 
   useEffect(() => {
     loadDashboard();
@@ -774,7 +772,7 @@ export function RunsPage() {
     return () => {
       cancelled = true;
     };
-  }, [refreshTick]);
+  }, []);
 
   useEffect(() => {
     if (!hasActiveDatasetWork) return undefined;
@@ -808,17 +806,28 @@ export function RunsPage() {
 
   useEffect(() => {
     if (tab !== "batches") return undefined;
-    const batchId = selectedBatchId || batches[0]?.batch_id || "";
-    if (!batchId) {
+    if (!batches.length) {
+      return undefined;
+    }
+    const nextBatchId =
+      batches.some((batch) => batch.batch_id === selectedBatchId) ? selectedBatchId : batches[0]?.batch_id || "";
+    if (!nextBatchId || nextBatchId === selectedBatchId) {
+      return undefined;
+    }
+    setSelectedBatchId(nextBatchId);
+  }, [batches, selectedBatchId, tab]);
+
+  useEffect(() => {
+    if (!activeBatchId) {
       setBatchDetail(null);
+      setIsBatchLoading(false);
       return undefined;
     }
     let cancelled = false;
     setIsBatchLoading(true);
-    apiFetch(`/api/datasets/batches/${batchId}`)
+    apiFetch(`/api/datasets/batches/${activeBatchId}`)
       .then((detail) => {
         if (!cancelled) {
-          setSelectedBatchId(batchId);
           setBatchDetail(detail);
         }
       })
@@ -833,7 +842,7 @@ export function RunsPage() {
     return () => {
       cancelled = true;
     };
-  }, [batches, selectedBatchId, tab]);
+  }, [activeBatchId, refreshTick]);
 
   useEffect(() => {
     if (!selectedRunId) {
@@ -1013,15 +1022,6 @@ export function RunsPage() {
     if (!batchId) return;
     setTab("batches");
     setSelectedBatchId(batchId);
-    setIsBatchLoading(true);
-    try {
-      const detail = await apiFetch(`/api/datasets/batches/${batchId}`);
-      setBatchDetail(detail);
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Failed to load batch");
-    } finally {
-      setIsBatchLoading(false);
-    }
   }
 
   async function cancelRun(runId) {
@@ -1339,7 +1339,7 @@ export function RunsPage() {
                     </CardDescription>
                   </div>
                   {selectedBatchId ? (
-                    <Button variant="outline" size="sm" onClick={() => openBatch(selectedBatchId)} disabled={isBatchLoading}>
+                    <Button variant="outline" size="sm" onClick={() => setRefreshTick((value) => value + 1)} disabled={isBatchLoading}>
                       <RefreshCw className={`h-4 w-4 ${isBatchLoading ? "animate-spin" : ""}`} />
                       Refresh batch
                     </Button>

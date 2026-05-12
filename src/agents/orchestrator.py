@@ -909,7 +909,9 @@ def route_after_landing(state: PipelineState) -> str:
 def route_after_hosting(state: PipelineState) -> str:
     if state["pending_embedded_urls"] and state["extraction_results"]:
         latest = state["extraction_results"][-1]
-        if latest.page_type == PageType.HOSTING and _requires_embedded_followup(latest):
+        if latest.page_type == PageType.HOSTING and (
+            latest.status == ExtractionStatus.FAILED or _requires_embedded_followup(latest)
+        ):
             return "embedded_page"
     if state["pending_hosting_urls"]:
         return "hosting_page"
@@ -1193,10 +1195,16 @@ def _build_pipeline_result(state: PipelineState, metrics: Any | None = None) -> 
         for result in extraction_results
     )
     has_timeout = any(result.status == ExtractionStatus.TIMEOUT for result in extraction_results)
+    landing_discovery_exhausted = (
+        state.get("classification") is not None
+        and state["classification"].page_type == PageType.LANDING
+        and not extraction_results
+        and not pending_followups
+    )
 
     if all_streams:
         final_status = ExtractionStatus.SUCCESS
-    elif pending_followups or has_nonfailed_evidence:
+    elif pending_followups or has_nonfailed_evidence or landing_discovery_exhausted:
         final_status = ExtractionStatus.PARTIAL
     elif has_timeout:
         final_status = ExtractionStatus.TIMEOUT

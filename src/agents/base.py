@@ -21,6 +21,7 @@ from src.agents.cache import (
     ToolResultCache,
     _create_gemini_cached_content_resource,
 )
+from src.agents.errors import BudgetExceededError, RunCancelledError
 from src.utils.config import Settings
 from src.utils.instrumentation import (
     observability_span,
@@ -41,14 +42,6 @@ logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from src.memory.short_term import ShortTermMemory
-
-
-class RunCancelledError(Exception):
-    """Raised when a live run is cancelled from the UI."""
-
-
-class BudgetExceededError(Exception):
-    """Raised when the agent cannot make more tool calls."""
 
 
 class AgentLoopResult:

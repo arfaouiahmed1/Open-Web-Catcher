@@ -21,7 +21,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.agents.base import RunCancelledError
+from src.agents.errors import RunCancelledError
 from src.evaluation.datasets import build_dataset_examples, export_dataset_examples
 from src.evaluation.deepeval_bridge import EXPECTED_TOOLS_BY_PROFILE
 from src.evaluation.scoring import evaluate_case_artifact
@@ -53,7 +53,6 @@ from src.storage.repositories import (
     normalize_runtime_event_payload,
 )
 from src.storage.ui_repository import OperatorConsoleRepository
-from src.tools.mcp_client import REQUIRED_TOOLS_BY_PROFILE, agent_tools
 from src.utils.browser_runtime import (
     normalize_browser_runtime,
     normalize_disabled_tools_by_browser_profile,
@@ -90,6 +89,12 @@ RUNTIME_TOOL_PROFILES = ("classification", "landing", "hosting", "embedded")
 _TTL_CACHE: dict[str, tuple[float, Any]] = {}
 _OVERVIEW_CACHE_TTL_SECONDS = 6.0  # overview is polled every 5–8 s; cache for 6 s
 _SSE_KEEPALIVE_SECONDS = 20.0  # send SSE `: heartbeat` comment every 20 s
+
+
+def _get_mcp_client_exports():
+    from src.tools.mcp_client import REQUIRED_TOOLS_BY_PROFILE, agent_tools
+
+    return REQUIRED_TOOLS_BY_PROFILE, agent_tools
 
 
 def _cache_get(key: str, ttl: float) -> Any | None:
@@ -355,6 +360,7 @@ async def _cancel_active_run_task(run_id: str) -> bool:
 
 
 async def _get_playground_tools(profile: str, settings: Settings) -> list[Any]:
+    _, agent_tools = _get_mcp_client_exports()
     await _cleanup_expired_playground_tool_sessions()
     now = perf_counter()
     session_key = _playground_tool_session_key(profile, settings)
@@ -1814,6 +1820,7 @@ async def _call_mcp_tool(
     reuse_playground_session: bool = False,
 ) -> dict[str, Any]:
     settings = get_settings()
+    _, agent_tools = _get_mcp_client_exports()
 
     if reuse_playground_session:
         try:
@@ -3235,6 +3242,7 @@ async def ui_tool_call(req: ToolPlaygroundRequest):
 
 @app.get("/ui/tools/list")
 def ui_tools_list(profile: str = Query("", description="agent profile")):
+    REQUIRED_TOOLS_BY_PROFILE, _ = _get_mcp_client_exports()
     normalized = profile.strip().lower()
     if normalized and normalized not in REQUIRED_TOOLS_BY_PROFILE:
         raise HTTPException(status_code=400, detail=f"Unknown profile '{profile}'")

@@ -43,7 +43,7 @@ const MODE_OPTIONS = [
   {
     value: "workflow",
     label: "Workflow",
-    description: "Full pipeline: classify → route → parallel agent branches.",
+    description: "Full pipeline: classify -> route -> parallel agent branches.",
     icon: Workflow,
   },
   {
@@ -285,7 +285,7 @@ export function RunLauncher({ defaultMode = "workflow" }) {
     if (errors.length) {
       setError(errors.join("\n"));
     } else {
-      // Single run → navigate; batch → stay and show status
+      // Single run -> navigate; batch -> stay and show status
       if (newIds.length === 1) {
         router.push(`/runs/${newIds[0]}`);
       } else {
@@ -318,7 +318,7 @@ export function RunLauncher({ defaultMode = "workflow" }) {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_320px]">
-        {/* ── Config panel ── */}
+        {/* Config panel */}
         <Card>
           <CardHeader className="space-y-3 border-b pb-4">
             <Tabs value={mode} onValueChange={(v) => { setMode(v); setError(""); }}>
@@ -336,7 +336,7 @@ export function RunLauncher({ defaultMode = "workflow" }) {
             </Tabs>
             <CardDescription className="text-sm">
               {mode === "workflow"
-                ? "One URL in, full pipeline out — classify, route, and parallelize."
+                ? "One URL in, full pipeline out - classify, route, and parallelize."
                 : "Pick an agent below and run it in isolation against a single URL."}
             </CardDescription>
           </CardHeader>
@@ -515,7 +515,7 @@ export function RunLauncher({ defaultMode = "workflow" }) {
                 </Label>
                 {urls.length > 1 && (
                   <span className="text-[10.5px] text-muted-foreground">
-                    {validUrls.length} valid · {invalidUrls.length} invalid
+                    {validUrls.length} valid | {invalidUrls.length} invalid
                   </span>
                 )}
               </div>
@@ -536,7 +536,7 @@ export function RunLauncher({ defaultMode = "workflow" }) {
                 </p>
               )}
               <p className="text-[10.5px] text-muted-foreground">
-                One URL per line for batch runs. Press ⌘+Enter to submit.
+                One URL per line for batch runs. Press Cmd/Ctrl+Enter to submit.
               </p>
               {!launchReady && runtimeStatus ? (
                 <p className="text-[11px] text-amber-700">
@@ -559,7 +559,7 @@ export function RunLauncher({ defaultMode = "workflow" }) {
                   <Play className="mr-1.5 h-4 w-4" />
                 )}
                 {isStarting
-                  ? `Launching ${validUrls.length}…`
+                  ? `Launching ${validUrls.length}...`
                   : validUrls.length > 1
                     ? `Run ${validUrls.length} URLs`
                     : mode === "workflow"
@@ -602,7 +602,7 @@ export function RunLauncher({ defaultMode = "workflow" }) {
           </CardContent>
         </Card>
 
-        {/* ── Recent runs panel ── */}
+        {/* Recent runs panel */}
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
@@ -628,7 +628,7 @@ export function RunLauncher({ defaultMode = "workflow" }) {
             ) : (
               <div className="flex flex-col items-center gap-2 py-8 text-center">
                 <Play className="h-6 w-6 text-muted-foreground/30" />
-                <p className="text-xs text-muted-foreground">No runs yet — start one!</p>
+                <p className="text-xs text-muted-foreground">No runs yet - start one!</p>
               </div>
             )}
           </CardContent>

@@ -534,7 +534,7 @@ export function RunDetailPage() {
         .catch((nextError) => setActionError(nextError instanceof Error ? nextError.message : "Refresh failed"));
     }, 5000);
     return () => clearInterval(id);
-  }, [payload?.active_trace, payload?.job?.status, payload?.job_state?.status, payload?.run?.final_status, payload?.run?.job_state, payload?.run?.status, runId]);
+  }, [runId, shouldRefresh]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isActiveTrace = Boolean(payload?.active_trace);
   const trace = isActiveTrace ? payload.active_trace : null;
@@ -543,6 +543,15 @@ export function RunDetailPage() {
   const persistedLlmCalls = payload?.llm_calls ?? EMPTY_ARRAY;
   const liveMetricsSafe = liveMetrics || trace?.metrics || EMPTY_OBJECT;
   const agentRuns = payload?.agent_runs ?? EMPTY_ARRAY;
+  const jobStatus = String(payload?.job_state?.status || payload?.job?.status || payload?.run?.job_state || "").toLowerCase();
+  const runStatus = String(payload?.run?.final_status || payload?.run?.status || "").toLowerCase();
+  const shouldRefresh = useMemo(
+    () =>
+      Boolean(payload?.active_trace) ||
+      ["queued", "running", "retrying", "leased"].includes(jobStatus) ||
+      ["queued", "running", "retrying"].includes(runStatus),
+    [jobStatus, payload?.active_trace, runStatus],
+  );
   const normalizedPersistedEvents = useMemo(
     () => normalizeTraceEvents(persistedEventsRaw),
     [persistedEventsRaw],

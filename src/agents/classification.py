@@ -5,14 +5,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from src.agents.base import build_llm, parse_json_object, run_agent_loop
 from src.agents.memory import build_memory_context, remember_agent_run
 from src.agents.prompting import build_runtime_context, build_task_brief, compile_agent_prompt
 from src.memory.long_term import LongTermMemory
 from src.memory.short_term import ShortTermMemory
 from src.models.enums import AgentType, Confidence, PageType
 from src.models.schemas import ClassificationResult
-from src.tools.mcp_client import agent_tools
 from src.utils.config import Settings
 from src.utils.instrumentation import (
     observability_span,
@@ -36,13 +34,18 @@ _AGENT_CONTRACT = """\
 class ClassificationAgent:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.llm = build_llm(settings, agent_id="classification")
+        self.llm = None
         self.memory = LongTermMemory(settings.memory_db_path) if settings.memory_enabled else None
         self._system_prompt = (
             PROMPT_PATH.read_text(encoding="utf-8") if PROMPT_PATH.exists() else _DEFAULT_PROMPT
         )
 
     async def run(self, url: str, observer: RunObserver | None = None) -> ClassificationResult:
+        from src.agents.base import build_llm, run_agent_loop
+        from src.tools.mcp_client import agent_tools
+
+        if self.llm is None:
+            self.llm = build_llm(self.settings, agent_id="classification")
         logger.info("ClassificationAgent: %s", url)
         if observer is not None:
             observer.mark_agent(AgentType.CLASSIFICATION)
@@ -167,6 +170,8 @@ _CONF_MAP = {"high": Confidence.HIGH, "medium": Confidence.MEDIUM, "low": Confid
 
 
 def _parse_output(text: str, url: str) -> ClassificationResult:
+    from src.agents.base import parse_json_object
+
     payload, _parse_error = parse_json_object(text)
     if payload:
         return ClassificationResult(

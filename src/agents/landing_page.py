@@ -7,14 +7,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
-from src.agents.base import build_llm, run_agent_loop
 from src.agents.memory import build_memory_context, remember_agent_run
 from src.agents.prompting import build_runtime_context, build_task_brief, compile_agent_prompt
 from src.memory.long_term import LongTermMemory
 from src.memory.short_term import ShortTermMemory
 from src.models.enums import AgentType, ExtractionStatus, PageType
 from src.models.schemas import ExtractionResult
-from src.tools.mcp_client import agent_tools
 from src.utils.config import Settings
 from src.utils.instrumentation import (
     observability_span,
@@ -304,7 +302,7 @@ def _augment_landing_output(
 class LandingPageAgent:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.llm = build_llm(settings, agent_id="landing")
+        self.llm = None
         self.memory = LongTermMemory(settings.memory_db_path) if settings.memory_enabled else None
         self._system_prompt = (
             PROMPT_PATH.read_text(encoding="utf-8")
@@ -318,6 +316,11 @@ class LandingPageAgent:
         observer: RunObserver | None = None,
         orchestrator_handoff: str = "",
     ) -> ExtractionResult:
+        from src.agents.base import build_llm, run_agent_loop
+        from src.tools.mcp_client import agent_tools
+
+        if self.llm is None:
+            self.llm = build_llm(self.settings, agent_id="landing")
         logger.info("LandingPageAgent: %s", url)
         if observer is not None:
             observer.mark_agent(AgentType.LANDING_PAGE)
