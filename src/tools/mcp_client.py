@@ -205,9 +205,7 @@ async def agent_tools(
     # for every tool invocation, which breaks browser continuity (e.g.
     # open_url -> get_page_context resetting to about:blank in isolated mode).
     # We instead pin one session for the whole agent_tools() context.
-    client = MultiServerMCPClient(
-        {profile: {"url": url, "transport": "sse"}}
-    )
+    client = MultiServerMCPClient({profile: {"url": url, "transport": "sse"}})
     session_manager = None
     session = None
     try:
@@ -229,7 +227,9 @@ async def agent_tools(
                 # get_tools(). Real runtime should use the session path above.
                 tools = await asyncio.wait_for(client.get_tools(), timeout=tool_load_timeout)
         except asyncio.TimeoutError:
-            message = f"Timed out loading MCP tools for profile '{profile}' after {tool_load_timeout}s"
+            message = (
+                f"Timed out loading MCP tools for profile '{profile}' after {tool_load_timeout}s"
+            )
             if observer is not None:
                 observer.emit(
                     "tool_session_failed",
@@ -256,15 +256,38 @@ async def agent_tools(
         disabled = _disabled_tools_for_profile(settings, profile)
         if disabled:
             tools = [t for t in tools if t.name not in disabled]
-            logger.info("MCP profile '%s' filtered out disabled tools: %s", profile, sorted(disabled))
+            logger.info(
+                "MCP profile '%s' filtered out disabled tools: %s", profile, sorted(disabled)
+            )
 
         tool_names = [t.name for t in tools]
+        missing_after_filter = sorted(REQUIRED_TOOLS_BY_PROFILE[profile] - set(tool_names))
+        if missing_after_filter:
+            if observer is not None:
+                observer.emit(
+                    "tool_session_failed",
+                    f"MCP profile '{profile}' disabled required tools",
+                    status="error",
+                    details={
+                        "profile": profile,
+                        "disabled_tools": sorted(disabled),
+                        "missing_tools": missing_after_filter,
+                    },
+                )
+            raise RuntimeError(
+                f"MCP profile '{profile}' disabled required tools: {', '.join(missing_after_filter)}"
+            )
+
         logger.info("MCP profile '%s' loaded %d tools: %s", profile, len(tools), tool_names)
         if observer is not None:
             observer.emit(
                 "tool_session_ready",
                 f"MCP profile '{profile}' loaded {len(tool_names)} tools",
-                details={"profile": profile, "tool_names": tool_names, "tool_count": len(tool_names)},
+                details={
+                    "profile": profile,
+                    "tool_names": tool_names,
+                    "tool_count": len(tool_names),
+                },
             )
         yield tools
     finally:

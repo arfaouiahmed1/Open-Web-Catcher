@@ -49,7 +49,9 @@ def _looks_like_pagination_url(url: str) -> bool:
     candidate = str(url or "").lower()
     return bool(
         candidate
-        and re.search(r"([?&](page|p|offset|start|cursor)=)|(/page/\d+)|(/p/\d+)|(-page-\d+)", candidate)
+        and re.search(
+            r"([?&](page|p|offset|start|cursor)=)|(/page/\d+)|(/p/\d+)|(-page-\d+)", candidate
+        )
     )
 
 
@@ -249,7 +251,9 @@ class ShortTermMemory:
             if resolved:
                 self._capture_url(resolved)
 
-        for selector in _extract_nested_strings(payload, {"selector", "xpath", "element_ref", "text"}):
+        for selector in _extract_nested_strings(
+            payload, {"selector", "xpath", "element_ref", "text"}
+        ):
             self._remember_signal("selectors", selector, max_items=40)
 
         for label in _extract_nested_strings(payload, {"label", "server_label", "server"}):
@@ -318,7 +322,15 @@ class ShortTermMemory:
                 status = entry.get("status", "info")
                 args = entry.get("tool_args", {}) or {}
                 target = ""
-                for key in ("url", "selector", "text", "xpath", "player_iframe_url", "kind", "action"):
+                for key in (
+                    "url",
+                    "selector",
+                    "text",
+                    "xpath",
+                    "player_iframe_url",
+                    "kind",
+                    "action",
+                ):
                     if args.get(key):
                         target = f"{key}={args[key]}"
                         break
@@ -337,14 +349,22 @@ class ShortTermMemory:
         if common.get("url_patterns"):
             lines.append("- run url patterns: " + ", ".join(common["url_patterns"][:4]))
         if common.get("pagination_patterns"):
-            lines.append("- run pagination patterns: " + ", ".join(common["pagination_patterns"][:3]))
+            lines.append(
+                "- run pagination patterns: " + ", ".join(common["pagination_patterns"][:3])
+            )
         if common.get("critical_links"):
             lines.append("- run critical links: " + ", ".join(common["critical_links"][:4]))
         if common.get("stream_urls"):
             lines.append("- run stream urls: " + ", ".join(common["stream_urls"][:3]))
-        if run_memory.get("page_type") == "landing_page" and run_memory.get("hosting_candidate_urls"):
-            lines.append(f"- landing candidates remembered: {len(run_memory['hosting_candidate_urls'])}")
-        if run_memory.get("page_type") in {"hosting_page", "embedded_page"} and run_memory.get("server_records"):
+        if run_memory.get("page_type") == "landing_page" and run_memory.get(
+            "hosting_candidate_urls"
+        ):
+            lines.append(
+                f"- landing candidates remembered: {len(run_memory['hosting_candidate_urls'])}"
+            )
+        if run_memory.get("page_type") in {"hosting_page", "embedded_page"} and run_memory.get(
+            "server_records"
+        ):
             lines.append(f"- server records remembered: {len(run_memory['server_records'])}")
         return "\n".join(lines)
 
@@ -377,7 +397,11 @@ class ShortTermMemory:
             + (", ".join(f"`{blocker}`" for blocker in blockers[:3]) if blockers else "`none yet`"),
             f"- last successful action: `{last_success or 'none yet'}`",
             "- detected run url patterns: "
-            + (", ".join(f"`{item}`" for item in common.get("url_patterns", [])[:4]) if common.get("url_patterns") else "`none yet`"),
+            + (
+                ", ".join(f"`{item}`" for item in common.get("url_patterns", [])[:4])
+                if common.get("url_patterns")
+                else "`none yet`"
+            ),
             "- detected pagination patterns: "
             + (
                 ", ".join(f"`{item}`" for item in common.get("pagination_patterns", [])[:3])
@@ -422,7 +446,11 @@ class ShortTermMemory:
             iframe_urls = run_memory.get("iframe_urls", [])
             lines.append(
                 "- recent iframe/embed evidence: "
-                + (", ".join(f"`{item}`" for item in iframe_urls[:4]) if iframe_urls else "`none yet`")
+                + (
+                    ", ".join(f"`{item}`" for item in iframe_urls[:4])
+                    if iframe_urls
+                    else "`none yet`"
+                )
             )
 
         lines.append(f"- next best move: {next_best_move}")
@@ -523,19 +551,31 @@ class ShortTermMemory:
         candidate = str(url or "").strip()
         if not candidate:
             return
-        self._remember_signal("critical_links", candidate, max_items=self._signal_limit("critical_links"))
+        self._remember_signal(
+            "critical_links", candidate, max_items=self._signal_limit("critical_links")
+        )
 
         pattern = _generalize_url_pattern(candidate)
         if pattern:
-            self._remember_signal("url_patterns", pattern, max_items=self._signal_limit("url_patterns"))
+            self._remember_signal(
+                "url_patterns", pattern, max_items=self._signal_limit("url_patterns")
+            )
             if _looks_like_pagination_url(candidate):
-                self._remember_signal("pagination_patterns", pattern, max_items=self._signal_limit("pagination_patterns"))
+                self._remember_signal(
+                    "pagination_patterns",
+                    pattern,
+                    max_items=self._signal_limit("pagination_patterns"),
+                )
 
         if _looks_like_stream_url(candidate):
-            self._remember_signal("stream_urls", candidate, max_items=self._signal_limit("stream_urls"))
+            self._remember_signal(
+                "stream_urls", candidate, max_items=self._signal_limit("stream_urls")
+            )
             host = _normalize_domain(candidate)
             if host:
-                self._remember_signal("stream_hosts", host, max_items=self._signal_limit("stream_hosts"))
+                self._remember_signal(
+                    "stream_hosts", host, max_items=self._signal_limit("stream_hosts")
+                )
 
     def _capture_hosting_candidates(self, payload: dict[str, Any], *, base_url: str = "") -> None:
         discovered: list[str] = []
@@ -563,10 +603,16 @@ class ShortTermMemory:
             self._capture_url(candidate)
 
     def _capture_server_artifacts(self, payload: dict[str, Any]) -> None:
-        for label in payload.get("all_detected_servers", []) if isinstance(payload.get("all_detected_servers"), list) else []:
+        for label in (
+            payload.get("all_detected_servers", [])
+            if isinstance(payload.get("all_detected_servers"), list)
+            else []
+        ):
             cleaned = str(label or "").strip()
             if cleaned:
-                self._remember_signal("server_labels", cleaned, max_items=self._signal_limit("server_labels"))
+                self._remember_signal(
+                    "server_labels", cleaned, max_items=self._signal_limit("server_labels")
+                )
 
         servers = payload.get("servers", [])
         if not isinstance(servers, list):
@@ -575,7 +621,12 @@ class ShortTermMemory:
         for index, server in enumerate(servers):
             if not isinstance(server, dict):
                 continue
-            label = str(server.get("label") or server.get("name") or server.get("server") or f"server_{index + 1}").strip()
+            label = str(
+                server.get("label")
+                or server.get("name")
+                or server.get("server")
+                or f"server_{index + 1}"
+            ).strip()
             status = str(server.get("status") or "").strip().lower()
             player_state = str(server.get("player_state") or "").strip().lower()
             server_up = bool(server.get("server_up"))
@@ -586,7 +637,9 @@ class ShortTermMemory:
             primary_stream = str(server.get("primary_stream") or "").strip()
 
             if label:
-                self._remember_signal("server_labels", label, max_items=self._signal_limit("server_labels"))
+                self._remember_signal(
+                    "server_labels", label, max_items=self._signal_limit("server_labels")
+                )
             if screenshot_url:
                 self._remember_signal(
                     "server_screenshots",
@@ -603,7 +656,7 @@ class ShortTermMemory:
                     self._capture_url(iframe_candidate)
 
             stream_urls: list[str] = []
-            for field in ("m3u8_urls", "mpd_urls", "mp4_urls"):
+            for field in ("stream_urls", "m3u8_urls", "mpd_urls", "mp4_urls"):
                 values = server.get(field, [])
                 if not isinstance(values, list):
                     continue
@@ -624,11 +677,16 @@ class ShortTermMemory:
                     )
                     self._capture_url(stream_url)
 
-            is_activated = server_up or status in {"success", "partial", "active"} or player_state in {
-                "playing",
-                "loading",
-                "ready",
-            }
+            is_activated = (
+                server_up
+                or status in {"success", "partial", "active"}
+                or player_state
+                in {
+                    "playing",
+                    "loading",
+                    "ready",
+                }
+            )
             if is_activated and label:
                 self._remember_signal(
                     "activated_servers",
@@ -691,7 +749,10 @@ class ShortTermMemory:
             joined = " ".join(text.lower() for text in texts if text).strip()
             if not joined:
                 continue
-            if any(token in joined for token in ("cloudflare", "captcha", "challenge", "blocked", "forbidden")):
+            if any(
+                token in joined
+                for token in ("cloudflare", "captcha", "challenge", "blocked", "forbidden")
+            ):
                 blockers.append(joined[:120])
             elif entry.get("kind") == "tool" and entry.get("status") == "error":
                 blockers.append(joined[:120] or f"{entry.get('tool_name', 'tool')} failed")

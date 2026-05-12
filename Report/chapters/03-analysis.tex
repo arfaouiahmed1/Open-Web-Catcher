@@ -1,223 +1,274 @@
 \chapter{Methodology, Requirements Analysis, and Design Constraints}
 
-This chapter defines the methodological framework adopted for the project, derives the
-functional and non-functional requirements from the operational context established in
-Chapter~2, and documents the design constraints that bounded the solution space. Together
-these elements provide the formal basis for the architectural decisions described in
-Chapter~4.
+This chapter presents the methodological frame adopted for the internship, explains why
+Design Science Research Methodology (DSRM) was selected, maps the six DSRM phases to
+the concrete work carried out, and derives the requirements and constraints that shaped
+the artifact described in Chapters~4 and~5. Because the internship delivered and
+evaluated technical artifacts rather than a predictive model, the methodological
+emphasis is on artifact design, demonstration, and evaluation.
 
 \section{Methodology options considered}
 
-The project combines software engineering, browser automation, prompt design, and
-evidence-oriented investigation. Three methodologies were considered: Agile, TDSP,
-and CRISP-DM.
+The internship combined software engineering, browser automation, prompt design, and
+evidence-oriented investigation. Three methodological options were considered: Agile,
+CRISP-DM, and Design Science Research Methodology (DSRM).
 
 \subsection{Agile}
 
-Agile matched the day-to-day iteration loop (build, run, inspect, improve), especially
-during prompt and tool refinement.
-
-\subsection{TDSP}
-
-TDSP was useful for thinking about experimentation and lifecycle discipline, but the
-project is not centered on training a predictive model.
+Agile practices matched the day-to-day execution rhythm of the internship. Short cycles
+of implementation, run inspection, failure analysis, and prompt or tool revision were
+essential because illegal streaming sites change quickly and often expose new obstacles
+only during live testing.
 
 \subsection{CRISP-DM}
 
-CRISP-DM~\cite{crispdm} offered the best end-to-end narrative from business objective
-to deployment and evaluation, while still allowing iterative engineering inside each phase.
+CRISP-DM~\cite{crispdm} offers a clear sequence from business understanding to
+deployment and evaluation. Parts of that logic were useful for organizing observations
+and reporting progress. However, the project was not a classical data-mining lifecycle
+and did not aim to optimize a predictive model on a labeled dataset.
+
+\subsection{Design Science Research Methodology (DSRM)}
+
+Design science research focuses on the creation and evaluation of artifacts that solve
+relevant organizational problems~\cite{hevner-ds,peffers-dsrm}. This framing matches the
+internship more closely because the central deliverable is an engineering artifact: an
+agentic browser-based evidence-collection pipeline composed of prompts, tools, browser
+traces, screenshots, structured outputs, and evaluation metrics.
 
 \begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.7cm}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3cm}
                               >{\raggedright\arraybackslash}X
                               >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
 Methodology & Strength for this project & Limitation for this project \\
 \midrule
-Agile & Excellent short-cycle execution and adaptation & Less explicit about
-  data/evidence lifecycle structure \\
-TDSP & Strong experimentation and operationalization framing & More model-training
-  oriented than this use case \\
-CRISP-DM & Clear business-to-deployment and evaluation progression & Needed adaptation
-  for agentic browser workflows \\
+Agile & Excellent short-cycle execution and adaptation during prompt, tool, and
+browser refinement & Less explicit about how to justify and evaluate a technical
+artifact as a research contribution \\
+CRISP-DM & Useful discipline for scoping, evaluation, and deployment discussion &
+Dataset/model-centered framing is not the main logic of this internship \\
+DSRM & Artifact-centered framing that explicitly links problem, design, demonstration,
+and evaluation & Needs complementary iteration rhythm for fast engineering feedback \\
 \bottomrule
 \end{tabularx}
-\caption{Methodology comparison used in the analysis phase.}
+\caption{Methodology comparison for the internship project.}
 \label{tab:method-compare}
 \end{table}
 
-\section{Chosen methodology and adaptation}
+\section{Chosen methodology: DSRM with iterative prototyping}
 
-CRISP-DM was selected as the primary methodology, with Agile iteration behavior inside
-each phase. The adapted cycle is illustrated in Figure~\ref{fig:crispdm}.
+DSRM was adopted as the overall methodology, while Agile-style short iterations were
+used inside each phase to refine prompts, tools, and browser behavior based on observed
+failures.
+
+DSRM fits the project better than CRISP-DM for three reasons. First, the project is
+artifact-centered, not dataset-centered or model-centered: the main work was to design a
+reliable evidence-collection system under adversarial web conditions. Second, the main
+output is a working and proposed system architecture together with a validated agent
+workflow, not a trained predictive model. Third, evaluation focuses on tool behavior,
+evidence quality, trace completeness, extraction success and failure patterns, cost, and
+robustness rather than on statistical accuracy against a fixed labeled benchmark.
+
+CRISP-DM remains a useful secondary lens for discussing operational context and
+evaluation discipline, but it is not the primary methodological backbone of the report.
+Figure~\ref{fig:dsrm} summarizes the adopted DSRM view.
 
 \begin{figure}[H]
 \centering
+\resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
   phase/.style={draw=accent, fill=blue!8, rounded corners=6pt,
-                minimum width=3.5cm, minimum height=1.1cm,
+                minimum width=3.6cm, minimum height=1.1cm,
                 text centered, font=\small\bfseries, align=center},
-  annot/.style={font=\tiny, text=gray!80, align=center, text width=2.8cm},
+  centerbox/.style={draw=orange!70, fill=orange!10, rounded corners=6pt,
+                minimum width=3.2cm, minimum height=1.0cm,
+                text centered, font=\small\bfseries, align=center},
   arr/.style={->, >=Stealth, thick, accent!70}
 ]
 
-% Hexagonal placement of phases
-\node[phase] (biz)  at (0,    3.5) {Business\\Understanding};
-\node[phase] (data) at (3.2,  2.0) {Data\\Understanding};
-\node[phase] (prep) at (3.2, -0.5) {Data\\Preparation};
-\node[phase] (mod)  at (0,   -2.0) {Modeling\\(Agent Design)};
-\node[phase] (eval) at (-3.2,-0.5) {Evaluation};
-\node[phase] (dep)  at (-3.2, 2.0) {Deployment};
+\node[phase] (problem) at (0,4.0) {Problem Identification\\and Motivation};
+\node[phase] (objectives) at (4.3,2.5) {Objectives of\\the Solution};
+\node[phase] (design) at (4.3,-0.5) {Design and\\Development};
+\node[phase] (demo) at (0,-2.0) {Demonstration};
+\node[phase] (eval) at (-4.3,-0.5) {Evaluation};
+\node[phase] (comm) at (-4.3,2.5) {Communication};
+\node[centerbox] (iter) at (0,1.0) {Agile-Style\\Short Iterations};
 
-% Center label
-\node[draw=accent!40, fill=yellow!10, rounded corners=4pt,
-      font=\footnotesize\bfseries, align=center] at (0, 0.7)
-  {Iterative\\CRISP-DM\\Cycle};
+\draw[arr] (problem) -- (objectives);
+\draw[arr] (objectives) -- (design);
+\draw[arr] (design) -- (demo);
+\draw[arr] (demo) -- (eval);
+\draw[arr] (eval) -- (comm);
+\draw[arr] (comm) -- (problem);
 
-% Arrows (cycle)
-\draw[arr] (biz)  -- (data);
-\draw[arr] (data) -- (prep);
-\draw[arr] (prep) -- (mod);
-\draw[arr] (mod)  -- (eval);
-\draw[arr] (eval) -- (dep);
-\draw[arr] (dep)  -- (biz);
-
-% Annotations
-\node[annot, right=0.15cm of data]
-  {DOM state, screenshots,\\network traces};
-\node[annot, right=0.15cm of prep]
-  {URL dedup, output shaping,\\context structuring};
-\node[annot, below=0.2cm of mod]
-  {Agent roles, tools,\\prompt policy};
-\node[annot, left=0.15cm of eval]
-  {Manual live-match\\campaigns + auto checks};
-\node[annot, left=0.15cm of dep]
-  {Azure Container Apps\\Jobs + Service Bus};
-\node[annot, above=0.2cm of biz]
-  {Produce evidence for\\takedown actions};
+\draw[->, >=Stealth, dashed, thick, orange!70] (iter) -- (problem);
+\draw[->, >=Stealth, dashed, thick, orange!70] (iter) -- (objectives);
+\draw[->, >=Stealth, dashed, thick, orange!70] (iter) -- (design);
+\draw[->, >=Stealth, dashed, thick, orange!70] (iter) -- (demo);
+\draw[->, >=Stealth, dashed, thick, orange!70] (iter) -- (eval);
+\draw[->, >=Stealth, dashed, thick, orange!70] (iter) -- (comm);
 
 \end{tikzpicture}
-\caption{CRISP-DM methodology adapted for agentic browser evidence collection.}
-\label{fig:crispdm}
+}
+\caption{DSRM adopted for the project, with Agile-style short iterations inside each
+phase.}
+\label{fig:dsrm}
 \end{figure}
 
-\section{Project evolution timeline}
+\section{DSRM applied to this project}
 
-The project progressed through two main stages as shown in Figure~\ref{fig:timeline}.
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-  milestone/.style={draw=accent, fill=blue!8, rounded corners=4pt,
-                    minimum width=3.8cm, minimum height=1.4cm,
-                    text centered, font=\footnotesize, align=center},
-  event/.style={font=\tiny, align=center, text width=3.0cm, text=gray!80}
-]
-
-% Main horizontal axis
-\draw[very thick, accent!60] (-0.5,0) -- (13.5,0);
-\foreach \x in {0,3.5,7,10.5,13}
-  \draw[thick, accent!60] (\x,-0.15) -- (\x,0.15);
-
-% Stage 1
-\node[milestone, fill=orange!10, draw=orange!60] at (1.75, 1.5)
-  {\textbf{n8n Phase}\\Rapid feasibility\\validation};
-\draw[->, thick, orange!70] (1.75,0.9) -- (1.75,0.15);
-
-\node[event] at (0,  -0.8) {Internship\\start};
-\node[event] at (3.5,-0.8) {n8n\\prototype};
-
-% Stage 2
-\node[milestone, fill=blue!10, draw=blue!60] at (5.25, 1.5)
-  {\textbf{Transition}\\Lessons codified;\\new platform design};
-\draw[->, thick, blue!70] (5.25,0.9) -- (5.25,0.15);
-\node[event] at (7,-0.8) {Python\\platform};
-
-% Stage 3
-\node[milestone, fill=green!10, draw=green!60] at (8.75, 1.5)
-  {\textbf{Python Platform}\\FastAPI, agents,\\tools, observability};
-\draw[->, thick, green!70] (8.75,0.9) -- (8.75,0.15);
-\node[event] at (10.5,-0.8) {Evaluation\\campaigns};
-
-% Stage 4
-\node[milestone, fill=purple!10, draw=purple!60] at (11.75, 1.5)
-  {\textbf{Hardening}\\Cloud packaging,\\deployment design};
-\draw[->, thick, purple!70] (11.75,0.9) -- (11.75,0.15);
-\node[event] at (13,-0.8) {Azure\\target design};
-
-\end{tikzpicture}
-\caption{Project evolution timeline: n8n phase to coded platform to cloud-ready design.}
-\label{fig:timeline}
-\end{figure}
-
-\section{CRISP-DM applied to this project}
-
-Each phase was adapted to the constraints of agentic browser automation on adversarial
-targets. Business understanding produced the core success criteria: classify every URL
-reliably, extract at least one validated stream URL per hosting page, and make every
-run fully auditable. Data understanding was conducted through manual observation of
-live pages — DOM output, screenshots, network traces, and frame trees — since no static
-labelled dataset exists. Data preparation covers URL normalization, HTML noise reduction
-(stripping scripts, ads, and tracking tags before LLM context building), and network
-log filtering to isolate m3u8/mpd candidates from unrelated traffic. Modeling refers to
-agent role design, prompt iteration (covered in Chapter~5), and model routing: lightweight
-models handle cheap decisions (classification, orchestration) while stronger models run
-extraction loops. Evaluation ran continuously through manual live-match campaigns and
-automated regression checks. Deployment follows an event-driven cloud model: FastAPI
-and Next.js as always-on services, Puppeteer extraction as Azure Container Apps Jobs
-triggered by Azure Service Bus, and Cloudinary for stateless screenshot storage.
-
-\section{Functional and non-functional requirements}
-
-Table~\ref{tab:fr-summary} summarizes the ten functional requirements derived from the
-operational context. All critical requirements were implemented in the final platform.
+Following Peffers et al.~\cite{peffers-dsrm}, the project was organized around six DSRM
+phases. Table~\ref{tab:dsrm-application} maps each phase to the concrete internship
+work and its main outputs.
 
 \begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{1.2cm}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.9cm}
                               >{\raggedright\arraybackslash}X
-                              >{\raggedright\arraybackslash}p{2.5cm}}
+                              >{\raggedright\arraybackslash}p{4.1cm}}
+\toprule
+\rowcolor{accent!8}
+DSRM phase & Application in this project & Main output \\
+\midrule
+Problem identification and motivation & Illegal streaming evidence collection is
+ dynamic, adversarial, multilingual, and difficult for static scrapers because evidence
+ may appear only after runtime interaction, iframe traversal, or player activation. &
+ Problem framing and motivation for the artifact \\
+Objectives of the solution & Define that the artifact must classify pages, extract
+ host/embed/stream evidence, capture screenshots, preserve traces, and calculate
+ evaluation metrics that support reviewable evidence collection. & Solution objectives
+ and acceptance criteria \\
+Design and development & Build the n8n prototype and the validated single-agent
+ workflow used in the company context; derive a Python/FastAPI reference architecture
+ for modularity, observability, memory, evaluation, and future scalability. &
+ Operational workflow plus reference architecture \\
+Demonstration & Run the artifact on representative streaming-site families: landing
+ pages, hosting pages, embedded player pages, and iframe/popup/tokenized-stream cases. &
+ Demonstration cases and observed behaviors \\
+Evaluation & Measure prompt behavior, tool usage, extraction success and failure,
+ token and cost metrics, cache behavior, trace quality, and practical limitations. &
+ Evaluation traces, metrics, and findings \\
+Communication & Produce the internship report, diagrams, architecture documentation,
+ and a future deployment roadmap for industrialization. & Communicated artifact and
+ future roadmap \\
+\bottomrule
+\end{tabularx}
+\caption{Application of DSRM to the evidence-collection project.}
+\label{tab:dsrm-application}
+\end{table}
+
+\section{Project evolution timeline}
+
+The internship evolved from early n8n validation to a company-side single-agent deployment, then to the Python reference architecture, evaluation campaigns, and a future target cloud deployment. Figure~\ref{fig:timeline} summarizes this sequence.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  marker/.style={circle, fill=accent, draw=accent, minimum size=6pt, inner sep=0pt},
+  labelbox/.style={draw=accent!60, fill=blue!6, rounded corners=4pt,
+                   minimum width=2.5cm, minimum height=0.95cm,
+                   text centered, font=\footnotesize, align=center}
+]
+
+\draw[very thick, accent!60] (0.5,0) -- (14.5,0);
+\node[marker] (p1) at (1.0,0) {};
+\node[marker] (p2) at (3.8,0) {};
+\node[marker] (p3) at (6.6,0) {};
+\node[marker] (p4) at (9.4,0) {};
+\node[marker] (p5) at (12.2,0) {};
+\node[marker] (p6) at (14.0,0) {};
+
+\node[labelbox, fill=gray!10, draw=gray!60] (start) at (1.0,1.35)
+  {Internship\\start};
+\node[labelbox, fill=orange!10, draw=orange!60] (proto) at (3.8,-1.35)
+  {n8n\\prototype};
+\node[labelbox, fill=orange!10, draw=orange!60] (deploy) at (6.6,1.35)
+  {Company-side\\single-agent\\deployment};
+\node[labelbox, fill=blue!10, draw=blue!60] (python) at (9.4,-1.35)
+  {Python reference\\architecture};
+\node[labelbox, fill=green!10, draw=green!60] (eval) at (12.2,1.35)
+  {Evaluation\\campaigns};
+\node[labelbox, fill=purple!10, draw=purple!60] (future) at (14.0,-1.35)
+  {Future cloud\\target};
+
+\draw[accent!55, thick] (p1.north) -- (start.south);
+\draw[accent!55, thick] (p2.south) -- (proto.north);
+\draw[accent!55, thick] (p3.north) -- (deploy.south);
+\draw[accent!55, thick] (p4.south) -- (python.north);
+\draw[accent!55, thick] (p5.north) -- (eval.south);
+\draw[accent!55, thick] (p6.south) -- (future.north);
+
+\end{tikzpicture}
+}
+\caption{Project evolution timeline from n8n validation to Python reference architecture and future deployment target.}
+\label{fig:timeline}
+\end{figure}
+
+The validated n8n workflow established the operational baseline used in the company context. The Python reference architecture should be interpreted as the maintainability-oriented evolution of the same evidence-collection logic, while the future cloud target remains a planned deployment direction rather than a claim of full platform replacement during the internship.
+
+\section{Functional and non-functional requirements}
+
+The requirements were addressed across two complementary levels. At the operational
+level, the validated n8n workflow covered the core evidence-collection tasks used in the
+company context. At the reference-architecture level, the Python implementation
+generalized those tasks into a more maintainable design with stronger observability,
+memory, evaluation support, and future scalability.
+
+Table~\ref{tab:fr-summary} summarizes the ten functional requirements derived from the
+operational context.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{1.7cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}p{2.2cm}}
 \toprule
 \rowcolor{accent!8}
 ID & Requirement summary & Priority \\
 \midrule
 FR-1 & URL ingestion and run lifecycle management & Critical \\
-FR-2 & Page-type classification with DOM + screenshot & Critical \\
+FR-2 & Page-type classification with DOM and screenshot signals & Critical \\
 FR-3 & Specialist routing by page type & Critical \\
 FR-4 & Tab-aware landing-page candidate discovery & High \\
 FR-5 & Multi-server hosting extraction loop & Critical \\
 FR-6 & Embedded player activation and stream capture & Critical \\
 FR-7 & Hosting-to-embedded fallback & High \\
-FR-8 & Screenshot capture and Cloudinary storage & High \\
+FR-8 & Screenshot capture and persistent evidence storage & High \\
 FR-9 & WHOIS / IP infrastructure enrichment & Medium \\
-FR-10 & Real-time operator console + SSE tracing & High \\
+FR-10 & Operator review surface and trace inspection & High \\
 \bottomrule
 \end{tabularx}
 \caption{Functional requirements summary with priority.}
 \label{tab:fr-summary}
 \end{table}
 
-Table~\ref{tab:nfr-summary} lists the non-functional requirements and the architectural
-decisions that address each one.
+Table~\ref{tab:nfr-summary} lists the non-functional requirements and the design choices
+used to address them across the validated workflow and the Python reference architecture.
 
 \begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{1.4cm}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{1.7cm}
                               >{\raggedright\arraybackslash}X
-                              >{\raggedright\arraybackslash}p{3cm}}
+                              >{\raggedright\arraybackslash}p{4.2cm}}
 \toprule
 \rowcolor{accent!8}
 ID & Non-functional requirement & How it is addressed \\
 \midrule
-NFR-1 & Maintainability & Versioned prompt files; modular tool registry \\
-NFR-2 & Observability & Structured event log; SSE console; cost dashboard \\
-NFR-3 & Cost control & Model routing; provider-side caching; token budgets \\
-NFR-4 & Reliability & Tool error contracts; popup handler; retry logic \\
-NFR-5 & Scalability & Azure Container Apps Jobs; Service Bus queue \\
-NFR-6 & Portability & Docker Compose; configurable browser profiles \\
-NFR-7 & Evidence traceability & Run-linked artifact chain: event $\to$ screenshot $\to$ URL \\
+NFR-1 & Maintainability & n8n validated behavior; Python modular agents, versioned
+  prompts, and tool registry \\
+NFR-2 & Observability & Structured event log, evaluation database, SSE review surface,
+  and trace persistence \\
+NFR-3 & Cost control & Model routing, provider-side caching, and token budgets \\
+NFR-4 & Reliability & Tool error contracts, popup handling, and bounded retry logic \\
+NFR-5 & Scalability & Target Azure Container Apps Jobs execution with Azure Service Bus
+  queueing \\
+NFR-6 & Portability & Docker Compose, configurable browser profiles, and separable
+  worker services \\
+NFR-7 & Evidence traceability & Run-linked artifact chain: event $\to$ screenshot $\to$
+  structured output \\
 \bottomrule
 \end{tabularx}
 \caption{Non-functional requirements and implementation approach.}
@@ -226,24 +277,37 @@ NFR-7 & Evidence traceability & Run-linked artifact chain: event $\to$ screensho
 
 \section{Design constraints}
 
-Five constraints bounded the solution space throughout: (1) target-site layouts and
-anti-bot behavior can change without notice between broadcast windows; (2) the player
-can be nested behind multiple iframe hops from the top-level page; (3) popups, overlays,
-and fake play controls can divert scripted extraction; (4) final stream manifests may
-only be generated after a runtime token exchange triggered by player activation; and
-(5) inference cost scales with exploration depth, number of hosting pages, and servers
-tested per page — requiring active caching and model routing to remain viable at scale.
+From a design science perspective, the artifact had to satisfy the problem environment
+while remaining evaluable and maintainable. Six constraints bounded the design space:
+
+\begin{enumerate}
+  \item target-site layouts and anti-bot behavior can change without notice between
+    broadcast windows;
+  \item the player can be nested behind multiple iframe hops from the top-level page;
+  \item popups, overlays, and fake play controls can divert scripted extraction;
+  \item final stream manifests may only be generated after a runtime token exchange
+    triggered by player activation;
+  \item inference cost scales with exploration depth, the number of hosting pages, and
+    the number of servers tested per page, requiring active caching and model routing;
+  \item the Python reference architecture must remain decoupled from enterprise
+    production databases, so persistence in this report is limited to observability,
+    evaluation, traces, metrics, screenshots, errors, tool calls, and structured
+    outputs.
+\end{enumerate}
 
 \section{Prompting methodology evolution: intent-based to ReAct-style loops}
 
-The prompting strategy evolved in two stages. Figure~\ref{fig:prompt-evolution} compares
-the two approaches side by side.
+The prompting strategy evolved during the DSRM design-and-development and evaluation
+phases. The first version relied on high-level intent prompts, which often produced
+premature answers on ambiguous pages. The later version adopted a ReAct-style loop in
+which the agent had to observe, reason, act, and re-check the browser state before
+declaring success. Figure~\ref{fig:prompt-evolution} compares the two approaches side by
+side.
 
 \begin{figure}[H]
 \centering
 \begin{tikzpicture}[node distance=0.55cm and 2.4cm]
 
-% ==== LEFT: Intent-based ====
 \node[flowbox, minimum width=5cm, fill=orange!12, draw=orange!60] (i1)
   at (0, 5.5) {\textbf{Intent-Based Prompt (early)}};
 \node[toolbox, minimum width=4.8cm, below=0.5cm of i1] (i2)
@@ -255,13 +319,12 @@ the two approaches side by side.
 \node[toolbox, minimum width=4.8cm, below=0.45cm of i4] (i5)
   {LLM calls tools in one pass};
 \node[toolbox, minimum width=4.8cm, fill=red!10, draw=red!50, below=0.45cm of i5] (i6)
-  {Returns answer — stops early\\if page is ambiguous};
+  {Returns answer --- stops early\\if page is ambiguous};
 
 \draw[grayarrow] (i1)--(i2); \draw[grayarrow] (i2)--(i3);
 \draw[grayarrow] (i3)--(i4); \draw[grayarrow] (i4)--(i5);
 \draw[grayarrow] (i5)--(i6);
 
-% ==== RIGHT: ReAct ====
 \node[flowbox, minimum width=5cm, fill=blue!12, draw=blue!60] (r1)
   at (7.5, 5.5) {\textbf{ReAct-Style Prompt (current)}};
 \node[toolbox, minimum width=4.8cm, below=0.5cm of r1] (r2)
@@ -281,7 +344,6 @@ the two approaches side by side.
 \draw[myarrow] (r3)--(r4); \draw[myarrow] (r4)--(r5);
 \draw[myarrow] (r5)--(r6);
 
-% Divider
 \draw[dashed, gray!50, thick] (3.75,-0.3) -- (3.75,6.0);
 
 \end{tikzpicture}
@@ -290,11 +352,38 @@ iterative loop.}
 \label{fig:prompt-evolution}
 \end{figure}
 
-The practical difference was not subtle. The intent-based prompt would often declare a run complete after inspecting the first server option, whether or not a stream had actually appeared in network traffic. The ReAct loop couldn't do that — the stopping criteria required explicit evidence. This also made debugging much easier, since each step in the trace corresponded to a specific reasoning decision rather than one large opaque LLM call.
+\textbf{Why ReAct performed better.} ReAct-style behavior:
+\begin{itemize}
+  \item reduced early stopping on ambiguous pages where the first observation was
+    insufficient;
+  \item enforced evidence-driven step progression, so the agent could not declare
+    success without a browser-grounded confirmation step;
+  \item made tool traces easier to audit because each reasoning step was explicitly
+    logged before and after the action.
+\end{itemize}
 
-The design principles that fell out of this analysis were: classify before deep extraction; use specialist agents with explicit fallback paths; ground every conclusion in browser evidence; validate state changes with screenshots; control cost through caching and model routing; and treat anti-bot configuration as a maintenance process, not a one-time setup.
+\section{Derived design principles}
 
-The requirements, constraints, and methodology defined in this chapter establish the
-formal scope of the system. Chapter~4 translates these inputs into a concrete
-multi-agent architecture, documenting the component structure, agent roles, tool
-allocation decisions, and deployment model.
+The methodology, constraints, and evaluation results led to the following design
+principles:
+
+\begin{itemize}
+  \item classify page role before deep extraction;
+  \item separate operational workflow validation from reference-architecture
+    generalization;
+  \item ground every conclusion in browser evidence rather than textual guesswork;
+  \item preserve auditable traces, screenshots, and structured outputs for every
+    critical step;
+  \item use specialist agents and explicit fallback paths rather than one unconstrained
+    agent;
+  \item optimize robustness together with cost through caching, budgets, and model
+    routing;
+  \item design the future cloud target around loose coupling between API services,
+    browser workers, observability storage, and artifact storage.
+\end{itemize}
+
+Taken together, the DSRM framing, the two-level requirement view, and the derived design
+principles establish the scope of the artifact presented in this report. Chapter~4
+translates these inputs into a concrete reference architecture, documenting the
+component structure, agent roles, tool allocation decisions, and target deployment
+model.

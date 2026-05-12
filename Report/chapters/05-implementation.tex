@@ -8,20 +8,119 @@ Implementation progressed in two explicit stages:
 \begin{itemize}
   \item \textbf{Stage 1: n8n phase} requested by the company for rapid feasibility
     validation;
-  \item \textbf{Stage 2: new Python platform} for maintainability, stronger memory,
-    clearer observability, and reliable long-run execution.
+  \item \textbf{Stage 2: Python reference architecture} for maintainability, stronger
+    memory, clearer observability, systematic evaluation, and future long-run
+    execution.
 \end{itemize}
 
-The second stage keeps the lessons of the first stage while removing structural
-limitations.
+The second stage keeps the lessons of the first stage while generalizing them into an
+academic and engineering reference implementation rather than claiming a full
+replacement of the operational company deployment.
 
 
 \section{Backend and operator surfaces}
 
-The runtime uses FastAPI for orchestration and API exposure, and Next.js for operator
-workflows (run launch, live stream of events, historical inspection, and evaluation
-review). The operator console streams run events in real time via Server-Sent Events
-(SSE), allowing operators to watch each tool call and agent decision as it happens.
+Within the Python reference architecture, the FastAPI backend acts as a control plane
+for runtime coordination, persistence, and operator-facing services. It is not presented
+here as a deployed enterprise production API, but as the academic implementation used to
+organize the reference workflow around explicit interfaces. In practice, it handles
+runtime health and preflight checks, run launch and workflow execution, background jobs,
+run status inspection, trace and event persistence, screenshot and evidence retrieval,
+provider and runtime configuration, pricing configuration, evaluation execution, tool
+playground support, and database-backed operator views.
+
+The Next.js frontend complements this backend as an operator and reviewer interface
+rather than as a passive visual dashboard. The console supports run launch, readiness
+checks, live trace review, historical run inspection, evaluation workflows, settings
+management, and controlled access to stored observability records. Live run progress is
+streamed through Server-Sent Events (SSE), allowing operators to watch tool calls,
+agent transitions, and evidence capture as they happen.
+
+\subsection{Backend runtime and API surface}
+
+The backend groups related capabilities into route families rather than exposing one
+monolithic execution endpoint. Table~\ref{tab:backend-route-families} summarizes the
+main interface families used in the Python reference architecture. The endpoint names are
+presented as representative examples of the implemented route families, not as a claim
+of a finalized enterprise API contract.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.0cm}
+                              >{\raggedright\arraybackslash}p{5.0cm}
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Route family & Example endpoints & Responsibility \\
+\midrule
+Runtime health & \texttt{/health}, \texttt{/ui/browser/status} &
+  Verify browser, MCP, and tool-profile readiness before launching runs. \\
+Core pipeline execution & \texttt{/run}, \texttt{/extract}, \texttt{/ui/workflows/run} &
+  Start a workflow or agent extraction run. \\
+Run inspection & \texttt{/ui/runs/\{run\_id\}}, \texttt{/ui/overview} &
+  Display run status, traces, artifacts, streams, screenshots, and costs. \\
+Evaluation & \texttt{/ui/evaluations/lab}, \texttt{/ui/evaluations/run} &
+  Execute evaluation suites or manual website batches and summarize metrics. \\
+Configuration & \texttt{/ui/config}, \texttt{/ui/providers/models}, \texttt{/ui/pricing} &
+  Manage LLM provider, model settings, browser runtime, and pricing. \\
+Tool playground & \texttt{/ui/tools/playground} &
+  Test browser tools independently from full workflow runs. \\
+Database inspection & \texttt{/ui/database/tables} &
+  Inspect stored run, evaluation, and tool records through an allowlisted interface. \\
+\bottomrule
+\end{tabularx}
+\caption{Representative backend route families in the Python reference architecture.}
+\label{tab:backend-route-families}
+\end{table}
+
+This separation is useful for engineering reasons. Health and preflight routes reduce
+avoidable failed runs; execution routes isolate workflow launch from review concerns;
+inspection routes make traces and artifacts auditable after completion; and evaluation,
+configuration, and tool-playground routes support iterative improvement without forcing
+all debugging work through the main extraction path.
+
+\subsection{Operator console and frontend workflows}
+
+The Next.js frontend functions as an operational review surface for the reference
+architecture. Its purpose is to help an operator or evaluator initiate investigations,
+observe execution, inspect evidence, review failure modes, and adjust runtime settings.
+In this sense, the frontend is part of the workflow-control loop: it launches runs,
+checks runtime readiness, watches live events and traces, reviews completed runs,
+inspects extracted streams, screenshots, provider analysis, errors, and costs, launches
+evaluation batches, updates provider/model/runtime settings, and reviews evaluation
+results.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.4cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}p{4.6cm}}
+\toprule
+\rowcolor{accent!8}
+Frontend surface & Main function & Backend dependency \\
+\midrule
+Overview dashboard & Summarizes runs, costs, success/failure, and active jobs. &
+  \texttt{/ui/overview} \\
+Run detail page & Shows events, tool calls, LLM calls, screenshots, and streams. &
+  \texttt{/ui/runs/\{run\_id\}} \\
+Workflow launcher & Starts a new URL investigation. &
+  \texttt{/ui/workflows/run} \\
+Evaluation lab & Runs manual or configured evaluation suites. &
+  \texttt{/ui/evaluations/run} \\
+Settings/config page & Updates provider, model, pricing, and browser runtime settings. &
+  \texttt{/ui/config}, \texttt{/ui/pricing}, \texttt{/ui/providers/models} \\
+Database viewer & Reviews allowlisted persistence tables. &
+  \texttt{/ui/database/tables} \\
+\bottomrule
+\end{tabularx}
+\caption{Main frontend workflows and their backend dependencies.}
+\label{tab:frontend-workflows}
+\end{table}
+
+Taken together, the backend and frontend form a reviewable implementation surface for
+the Python reference architecture. The backend exposes structured control and persistence
+interfaces; the frontend turns those interfaces into repeatable operator workflows for
+launch, observation, diagnosis, evaluation, and configuration.
 
 \section{Four-agent design: specialist roles and boundaries}
 
@@ -99,74 +198,71 @@ shows the four specialist agents with their tools and interfaces.
 
 \section{Agent design: reasoning toward a final objective}
 
-Each agent is built around a single concrete objective rather than a general instruction to "do useful things." The classification agent needs to produce a routing label — nothing else. The landing agent needs to find all hosting-page candidates on a listing site, including ones behind tabs and scrolled content. The hosting agent's job is to activate server controls, deal with whatever popups appear, and return stream URLs; if it can't find a stream after exhausting its options, it returns the embed URL so the pipeline can try the embedded agent. The embedded agent handles the fallback case: iframe-origin player pages where the main context had nothing to offer.
+Each agent follows the same operating principle: it has a final objective and a toolset
+to reach that objective through iterative evidence-based decisions.
+
+\begin{itemize}
+  \item \textbf{Classification agent objective:} route the page correctly.
+  \item \textbf{Landing agent objective:} discover and rank hosting candidates.
+  \item \textbf{Hosting agent objective:} activate players, test servers, and extract
+    streams.
+  \item \textbf{Embedded agent objective:} recover streams from iframe-centered contexts
+    and difficult fallback paths.
+\end{itemize}
 
 \section{Prompt design and structure per agent}
 
-This section documents the prompt structure for each agent. Prompts evolved from
-intent-based to ReAct-style over the course of the internship. The structures shown
-here reflect the final ReAct-style design.
+The full system prompts are omitted from this shortened report. In the main body, it is
+more useful to summarize what each prompt is responsible for and what constraint keeps it
+under control.
 
-\subsection{Classification agent prompt}
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.8cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Agent & Prompt objective & Main control rule \\
+\midrule
+Classification & Assign one page type from the predefined taxonomy using read-only evidence &
+No interaction; short tool budget; return a single structured decision \\
+Landing & Discover and rank hosting candidates on listing pages &
+Iterate over tabs and dynamic listings, but stop when no new candidates appear \\
+Hosting & Activate players, test servers, and recover stream evidence from host pages &
+Validate actions with screenshots or media state before harvesting; fall back when needed \\
+Embedded & Recover final stream evidence inside iframe-centered player contexts &
+Use bounded play-attempt logic and return an explicit failure reason when evidence is absent \\
+\bottomrule
+\end{tabularx}
+\caption{Prompt summary per specialist agent.}
+\label{tab:prompt-summary}
+\end{table}
 
-The classification agent receives a minimal toolset and must produce a confident
-page-type label with brief reasoning. It is the cheapest agent to run and uses the
-lightweight model.
+Across all four prompts, the final design converged on the same pattern: explicit final
+objective, evidence-based reasoning loop, bounded tool budget, and clear stopping criteria.
+This made agent behavior more auditable and reduced the tendency to stop too early on
+ambiguous pages.
 
-The prompt has three sections. First, a \emph{role and objective} block that constrains the agent to a
-single classification output — one of \texttt{landing\_page}, \texttt{host\_page},
-\texttt{embed\_video\_page}, or \texttt{other} — returned as a JSON object with a confidence
-score and reasoning field. Second, a \emph{procedure} block that enforces a strict two-tool
-sequence: call \texttt{inspect\_page} for structural DOM signals, then \texttt{screenshot}
-for visual confirmation, then reason and return. Third, an \emph{important} block that caps
-tool usage at three calls and prohibits any page interaction, keeping classification fast
-and inexpensive.
+\section{Prompt evaluation by use case}
 
-\subsection{Landing-page agent prompt}
+Prompt iteration was driven mainly by two recurring situations: navigation-heavy landing
+pages and click-to-play host or embedded pages. In both cases, the early intent-based
+prompts failed because they treated the first visible state as complete. The later ReAct-style
+prompts improved performance by forcing the agent to inspect, act, verify the result, and only
+then decide whether to continue.
 
-The landing agent must navigate listing pages to discover all hosting-page candidates.
-Its key challenge is that some matches only appear after interacting with date tabs or
-scrolling.
+The main prompt improvements were:
+\begin{itemize}
+  \item explicit checks for hidden navigation controls such as tabs, filters, and ``load more'' actions;
+  \item explicit player-state checks before calling \texttt{harvest};
+  \item post-interaction verification through screenshots or media-state diagnostics;
+  \item popup recovery instructions and alternative click strategies when normal interaction failed.
+\end{itemize}
 
-The prompt encodes a full
-ReAct loop: \textsc{observe} with \texttt{inspect\_landing}, \textsc{think} about which
-links are hosting candidates and whether any unexplored date tabs remain, \textsc{act} by
-clicking tabs or scrolling, and \textsc{reflect} on completeness before repeating. Stopping
-criteria are explicit: all visible tabs inspected, eight consecutive tool calls without new
-candidates, or twenty candidates already found. This prevents runaway exploration on
-paginated listing sites.
-
-\subsection{Hosting-page agent prompt}
-
-The hosting agent is the most complex. It must activate server controls, handle popups,
-validate player state after each interaction, and fall back to the embedded agent when
-needed.
-
-The prompt is the longest of the
-four. Its ReAct loop begins with \texttt{inspect\_hosting} to map server buttons, player
-containers, and any pre-loaded network signals. If no \texttt{.m3u8} pattern is already
-visible in the network, the agent activates the primary server button via \texttt{interact},
-then calls \texttt{screenshot} to confirm the click effect before invoking \texttt{harvest}.
-A dedicated popup-handling block instructs the agent to detect new tabs or overlays and
-retry with an alternative click strategy (\texttt{text\_content} or \texttt{js\_click})
-rather than failing. If all server options are exhausted without a stream, the agent returns
-the embedded player URL so the orchestrator can route to the embedded agent. The budget cap
-is 12 tool calls, reflecting the higher complexity of this agent's task.
-
-\subsection{Embedded-page agent prompt}
-
-The embedded agent works within iframe-origin player pages. Its main task is to
-trigger play and capture network-level stream evidence.
-
-The prompt reflects the
-narrower scope of an embedded player page: no navigation, no server cycling, just player
-activation and stream capture. The ReAct loop checks whether the player is auto-playing
-(call \texttt{harvest} immediately) or requires a play click (dismiss any ad overlay first,
-then click, wait two seconds for network requests to materialize, then \texttt{harvest}).
-A detailed player activation pattern section covers selector-based, coordinate-based, and
-JavaScript-injected click strategies in priority order. The budget is capped at three
-interaction attempts before the agent declares failure and returns a \texttt{stream\_masked}
-or \texttt{no\_play\_button} failure reason for the operator to review.
+These changes are discussed quantitatively in Chapter~6. In Chapter~5, the important point
+is the design consequence: the prompts became operational procedures rather than generic
+natural-language goals.
 
 \section{Puppeteer tool registry and tool descriptions}
 
@@ -194,7 +290,7 @@ that shape agent behavior:
 
 \begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3cm}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.5cm}
                               >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
@@ -449,6 +545,24 @@ This approach decouples evidence storage from the extraction container. Containe
 be ephemeral (as required by Azure Container Apps Jobs) while screenshots remain
 accessible indefinitely via the Cloudinary CDN link.
 
+\subsection{Future extension: Canvas-based screenshot annotation}
+
+The operator console can be extended with a Canvas-based annotation layer over stored
+screenshots. Reviewers would be able to draw rectangles, arrows, points, and labels
+over evidence regions such as server buttons, play controls, iframe containers, blocked
+overlays, broadcaster logos, and active player states. The annotations would be stored
+as metadata linked to \texttt{run\_id}, \texttt{screenshot\_url}, \texttt{page\_url},
+timestamp, and reviewer. This improves evidence interpretation and report/legal review
+without modifying the target website.
+
+A minimal annotation schema could include \texttt{annotation\_id}, \texttt{run\_id},
+\texttt{screenshot\_url}, \texttt{page\_url}, \texttt{label}, \texttt{shape\_type},
+\texttt{x}, \texttt{y}, \texttt{width}, \texttt{height}, \texttt{note},
+\texttt{reviewer}, and \texttt{created\_at}. Automatic validation checks whether the
+agent output is structurally and evidentially acceptable. The operator console and
+future Canvas annotation layer support human interpretation of the accepted or partial
+evidence.
+
 \section{Model strategy, cache behavior, and cost}
 
 The implementation uses smaller and larger models with role-based allocation:
@@ -485,10 +599,41 @@ Long context windows & repeated prompt context can become expensive &
 \label{tab:cost-drivers}
 \end{table}
 
+\section{Operational fallback strategy}
+
+The extraction workflow remains staged:
+
+\begin{enumerate}
+  \item deterministic path first;
+  \item if insufficient confidence, activate agentic path;
+  \item hosting-stage extraction first in agentic path;
+  \item embedded-stage fallback when hosting returns no reliable stream evidence.
+\end{enumerate}
+
+\section{Deployment-oriented implementation}
+
+Two deployment levels must be distinguished. The operational deployment achieved during
+the internship was the validated n8n single-agent workflow. The Python reference
+architecture remains compatible with queue-based cloud execution through FastAPI
+services, browser workers, a PostgreSQL observability database, Cloudinary screenshot
+storage, Azure Service Bus, and Azure Container Apps Jobs. During internship execution,
+this remained a future deployment target rather than the default daily runtime.
+
 \section{Implementation summary}
 
-The real test of the implementation was not in isolation but under actual streaming-site conditions: nested iframes, popup click traps, tokenized manifests that don't appear until 2+ seconds after play activation, and Cloudflare challenges that serve alternate HTML to anything that looks like a bot. The layered tool architecture handled most of these without prompt changes; the explicit fallback from hosting to embedded handled the rest.
+The current implementation addresses the main hard realities of this domain:
 
-The architecture is also compatible with queue-based cloud execution through Azure Service Bus and Container Apps Jobs. That deployment model was designed and documented during the internship but daily execution ran locally and in containers, which proved fast enough for evaluation campaigns.
+\begin{itemize}
+  \item nested iframes and popup-heavy pages;
+  \item tokenized and delayed stream generation;
+  \item anti-bot pressure and dynamic page drift;
+  \item cost growth with deeper hosting/server exploration.
+\end{itemize}
 
-Chapter~6 evaluates these design decisions through concrete use cases and prompt evolution measurements, including the impact each prompt version had on navigation recall, player activation rate, and overall stream recovery.
+It does so through reasoning agents with explicit goals, layered browser tools,
+screenshot-grounded validation, and explicit fallback behavior from hosting to embedded
+extraction.
+
+Chapter~6 evaluates this implementation against concrete use cases, measuring the impact
+of each prompt iteration on navigation recall, player activation rate, and overall
+stream-extraction success.

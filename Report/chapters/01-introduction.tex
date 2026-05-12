@@ -78,28 +78,37 @@ browser tools, a structured reasoning prompt, and persistent memory of past obse
 can adapt its extraction strategy at runtime in response to what it actually finds on the
 page.
 
-\section{Project evolution: from prototype to platform}
+\section{Project evolution: from validated workflow to reference architecture}
 
-The project did not start with the final coded platform. The first phase used \textbf{n8n}
-as the main experimentation environment. This allowed rapid assembly of browser action
-sequences, early prompt testing on real targets, and end-to-end workflow validation with
-minimal development overhead. The n8n phase confirmed that the multi-agent extraction
-approach was viable and surfaced the operational realities of the target domain.
+The internship did not begin with a fully specified reference architecture. The first phase used
+\textbf{n8n} as the main experimentation environment because it allowed rapid assembly of
+browser actions, early prompt testing on real targets, and end-to-end workflow
+validation with minimal development overhead. This phase established that agent-guided
+evidence collection was feasible on representative streaming sites and, after
+validation, led to the deployment of a focused \textbf{single-agent n8n workflow} in the
+company context.
 
-As the scope matured, the need for stronger observability, finer control over runtime
-behavior, explicit cost optimization, and a maintainable prompt and tool evolution cycle
-made it clear that a coded platform was required. The project transitioned to a solution
-built with \textbf{FastAPI}, \textbf{Next.js}, \textbf{Puppeteer}, structured persistence,
-and dedicated evaluation tooling. This transition preserved all the extraction logic
-validated in the prototype while adding engineering maturity: persistent memory,
-per-run cost tracking, streaming observability, and a containerized deployment model.
+As the scope matured, the limits of the visual workflow became clearer: prompt
+evolution was harder to version, browser traces were harder to structure, cross-run
+memory was limited, and systematic evaluation required more explicit engineering
+surfaces. This motivated a second phase built with \textbf{FastAPI}, \textbf{Next.js},
+\textbf{Puppeteer}, structured persistence, and evaluation tooling. The Python
+implementation should therefore be understood as a \textbf{reference architecture} and a
+future engineering evolution derived from the validated n8n workflow, not as a claim
+that the enterprise deployed the full multi-agent platform in production.
+
+The value of this second phase lies in making the artifact easier to maintain, observe,
+extend, and evaluate. It formalizes the modular agent boundaries, browser-tool
+contracts, trace model, memory model, and cloud-oriented execution target that would be
+difficult to express cleanly in n8n alone.
 
 \section{Problem statement}
 
 The main problem addressed by this internship can be stated as:
 
 \begin{quote}
-How can we design a maintainable and extensible multi-agent platform that analyses
+How can we design a maintainable and extensible agent-based evidence-collection
+architecture that analyses
 illegal streaming websites, distinguishes different page roles, extracts evidence-grade
 stream and infrastructure data, and remains effective despite dynamic interfaces,
 multilingual layouts, anti-bot barriers, and continuously evolving site behavior?
@@ -120,9 +129,10 @@ This problem is difficult for several reasons:
 
 \section{Objectives and contributions}
 
-The main objective was to design and implement a multi-agent pipeline capable of
-processing suspicious streaming websites end to end. This breaks down into the following
-operational goals:
+The main objective was to design and evaluate an agentic evidence-collection pipeline
+capable of processing suspicious streaming websites end to end. In practice, this
+objective was addressed through a validated n8n workflow and a Python reference
+architecture. This breaks down into the following operational goals:
 
 \begin{itemize}
   \item classify each input URL before deeper extraction begins;
@@ -136,28 +146,39 @@ operational goals:
   \item prepare the solution for containerized event-driven deployment on Azure.
 \end{itemize}
 
-The internship produced contributions at both prototype and platform level:
+The internship produced contributions at both operational-workflow and
+reference-architecture level:
 
 \begin{itemize}
-  \item \textbf{n8n prototype}: rapid validation of the extraction pipeline and early
-    prompt experimentation on real target websites;
-  \item \textbf{Four-agent architecture}: specialist agents for classification,
-    landing-page discovery, hosting extraction, and embedded-player analysis,
-    each with a targeted ReAct-style prompt and dedicated tool allocation;
-  \item \textbf{Browser tool layer}: six Puppeteer-based tools (inspect, interact,
-    harvest, screenshot, navigate, get\_media\_state) enabling adaptive page interaction
-    beyond static HTML retrieval;
-  \item \textbf{Operator platform}: FastAPI backend with structured observability plus
-    a Next.js operator console for live run streaming, history, and evaluation review;
-  \item \textbf{Memory and caching}: short-term run-level memory and long-term site
-    memory profiles, combined with provider-side prompt caching to control inference cost.
+  \item \textbf{Validated n8n workflow and company-side deployment}: rapid prototype used
+    to validate the extraction pipeline, from which one focused single-agent workflow was
+    deployed in the company context;
+  \item \textbf{Prompt and browser-interaction experimentation}: iterative refinement of
+    page classification, tab navigation, player activation, popup handling, and iframe
+    traversal on real target websites;
+  \item \textbf{Validation metrics and traces}: collection of screenshots, tool traces,
+    success/failure observations, and token/cost measurements from representative runs;
+  \item \textbf{Python/FastAPI reference architecture}: academic implementation derived
+    from the validated workflow, emphasizing maintainability, modular orchestration,
+    observability, memory, evaluation, and future scalability;
+  \item \textbf{Puppeteer tool layer}: six browser tools (inspect, interact, harvest,
+    screenshot, navigate, get\_media\_state) enabling adaptive page interaction beyond
+    static HTML retrieval;
+  \item \textbf{Observability and evaluation database}: persistence for runs, events,
+    tool calls, errors, screenshots, metrics, and structured outputs, separate from any
+    enterprise production database;
+  \item \textbf{Operator console concept/prototype}: FastAPI backend and Next.js review
+    surface for live monitoring, history inspection, and evaluation review;
+  \item \textbf{Future deployment target}: queue-driven architecture using Azure Service
+    Bus and Azure Container Apps Jobs as the intended execution model for later
+    industrialization.
 \end{itemize}
 
 \section{Report structure}
 
 Chapter~2 introduces the technical background and key technologies. Chapter~3 presents
 the adopted methodology, derives requirements, and documents design constraints.
-Chapter~4 describes the system architecture and Azure deployment model. Chapter~5
+Chapter~4 describes the system architecture and target Azure deployment model. Chapter~5
 explains the implementation in detail: agent composition, prompt engineering, and browser
 tooling. Chapter~6 evaluates the platform through automated tests, manual campaigns, and
 prompt evolution metrics. Chapter~7 concludes and outlines future directions.
@@ -172,7 +193,7 @@ prompt evolution metrics. Chapter~7 concludes and outlines future directions.
 ]
 \node[chbox] (c1) at (0,    0) {Ch.1\\Introduction};
 \node[chbox] (c2) at (3.8,  0) {Ch.2\\Background};
-\node[chbox] (c3) at (7.6,  0) {Ch.3\\Analysis};
+\node[chbox] (c3) at (7.6,  0) {Ch.3\\Methodology};
 \node[chbox] (c4) at (3.8,-2.4) {Ch.4\\Architecture};
 \node[chbox] (c5) at (7.6,-2.4) {Ch.5\\Implementation};
 \node[chbox] (c6) at (3.8,-4.8) {Ch.6\\Evaluation};

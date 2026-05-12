@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -12,16 +13,25 @@ from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-TOOLS_ROOT = Path(__file__).parent.parent.parent / "tools" / "puppeteer"
-RUNNER_SCRIPT = TOOLS_ROOT / "run-tool.js"
+PROJECT_TOOLS_ROOT = Path(__file__).parent.parent.parent / "tools"
+
+
+def _resolve_tools_root(engine: str | None = None) -> Path:
+    resolved_engine = str(engine or os.getenv("BROWSER_ENGINE") or "puppeteer").strip().lower()
+    if resolved_engine not in {"puppeteer", "playwright"}:
+        resolved_engine = "puppeteer"
+    return PROJECT_TOOLS_ROOT / resolved_engine
 
 
 class JSToolBridge:
     """Calls the generic Node tool runner with a public tool name and JSON payload."""
 
-    def __init__(self, browser_ws_endpoint: str, timeout: int = 30) -> None:
+    def __init__(
+        self, browser_ws_endpoint: str, timeout: int = 30, engine: str | None = None
+    ) -> None:
         self.browser_ws_endpoint = browser_ws_endpoint
         self.timeout = timeout
+        self.engine = str(engine or os.getenv("BROWSER_ENGINE") or "puppeteer").strip().lower()
 
     def call(self, tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
         """Execute a JS tool and return its parsed JSON output.
@@ -36,8 +46,10 @@ class JSToolBridge:
         Raises:
             RuntimeError: If the subprocess fails or output is not valid JSON.
         """
-        if not RUNNER_SCRIPT.exists():
-            raise FileNotFoundError(f"JS tool runner not found: {RUNNER_SCRIPT}")
+        tools_root = _resolve_tools_root(self.engine)
+        runner_script = tools_root / "run-tool.js"
+        if not runner_script.exists():
+            raise FileNotFoundError(f"JS tool runner not found: {runner_script}")
 
         payload = {"browserWSEndpoint": self.browser_ws_endpoint, **params}
         payload_json = json.dumps(payload)
@@ -45,11 +57,11 @@ class JSToolBridge:
         start = time.perf_counter()
         try:
             result = subprocess.run(
-                ["node", str(RUNNER_SCRIPT), tool_name, payload_json],
+                ["node", str(runner_script), tool_name, payload_json],
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
-                cwd=str(TOOLS_ROOT),
+                cwd=str(tools_root),
             )
         except subprocess.TimeoutExpired as e:
             raise RuntimeError(f"JS tool '{tool_name}' timed out after {self.timeout}s") from e

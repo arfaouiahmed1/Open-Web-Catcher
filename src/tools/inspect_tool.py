@@ -29,7 +29,12 @@ class InspectTool(BaseTool):
         include_screenshot: bool = True,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        return self.bridge.call("inspect", {})
+        payload = {
+            "selector": selector,
+            "include_screenshot": include_screenshot,
+            **kwargs,
+        }
+        return self.bridge.call("inspect", payload)
 
     async def _arun(self, *args: Any, **kwargs: Any) -> Any:
         return await asyncio.to_thread(self._run, *args, **kwargs)

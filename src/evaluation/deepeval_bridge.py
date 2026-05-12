@@ -12,11 +12,11 @@ five metrics relevant to this pipeline:
 
 Judge model
 -----------
-All LLM-judge metrics use OpenRouter via ``OpenRouterJudge``.
-Set these two env vars before running tests:
+All LLM-judge metrics use Google Gemini via ``GeminiJudge``.
+Set these env vars before running judge-based tests:
 
-    OPENROUTER_API_KEY=sk-or-...
-    OPENROUTER_MODEL=openai/gpt-4o-mini   # default; any OpenRouter model works
+    GOOGLE_API_KEY=...
+    GEMINI_JUDGE_MODEL=gemini-2.5-flash   # optional default
 
 Usage (pytest):
     from src.evaluation.deepeval_bridge import build_test_case, default_metrics
@@ -47,75 +47,67 @@ def _require_deepeval() -> None:
         import deepeval  # noqa: F401
     except ImportError as exc:
         raise ImportError(
-            "deepeval is required for evaluation metrics. "
-            "Install it with: pip install deepeval"
+            "deepeval is required for evaluation metrics. Install it with: pip install deepeval"
         ) from exc
 
 
 # ---------------------------------------------------------------------------
-# OpenRouter judge model
+# Gemini judge model
 # ---------------------------------------------------------------------------
 
-def _make_openrouter_judge() -> Any:
-    """Return a DeepEvalBaseLLM instance backed by OpenRouter.
 
-    OpenRouter is OpenAI-compatible, so we point the openai client at
-    https://openrouter.ai/api/v1 with an ``OPENROUTER_API_KEY``.
-
-    The model is resolved from the ``OPENROUTER_MODEL`` env var, defaulting
-    to ``openai/gpt-4o-mini`` (cheap, fast, good enough for LLM-judge tasks).
-    """
+def _make_gemini_judge() -> Any:
+    """Return a DeepEvalBaseLLM instance backed by Google Gemini."""
     _require_deepeval()
     try:
-        from openai import OpenAI  # type: ignore[import]
+        from langchain_google_genai import ChatGoogleGenerativeAI
     except ImportError as exc:
         raise ImportError(
-            "openai package is required for the OpenRouter judge. "
-            "Install it with: pip install openai"
+            "langchain-google-genai is required for the Gemini judge. "
+            "Install project dependencies with: pip install -e ."
         ) from exc
     from deepeval.models.base_model import DeepEvalBaseLLM  # type: ignore[import]
 
-    class OpenRouterJudge(DeepEvalBaseLLM):
-        """Thin DeepEval wrapper around OpenRouter's OpenAI-compatible API."""
+    class GeminiJudge(DeepEvalBaseLLM):
+        """Thin DeepEval wrapper around the project Gemini dependency."""
 
         def __init__(self) -> None:
-            self.model_name = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
-            self._client = OpenAI(
-                api_key=os.environ.get("OPENROUTER_API_KEY", ""),
-                base_url="https://openrouter.ai/api/v1",
-                default_headers={
-                    "HTTP-Referer": "https://github.com/open-web-catcher",
-                    "X-Title": "Open Web Catcher Evals",
-                },
+            self.model_name = os.environ.get("GEMINI_JUDGE_MODEL", "gemini-2.5-flash")
+            api_key = os.environ.get("GOOGLE_API_KEY", "").strip() or None
+            self._client = ChatGoogleGenerativeAI(
+                model=self.model_name,
+                api_key=api_key,
+                temperature=0,
+                convert_system_message_to_human=True,
             )
 
         def get_model_name(self) -> str:
             return self.model_name
 
-        def load_model(self) -> "OpenRouterJudge":
+        def load_model(self) -> "GeminiJudge":
             return self
 
         def generate(self, prompt: str) -> str:
-            response = self._client.chat.completions.create(
-                model=self.model_name,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0,
-            )
-            return response.choices[0].message.content or ""
+            response = self._client.invoke(prompt)
+            content = getattr(response, "content", "")
+            if isinstance(content, str):
+                return content
+            return str(content or "")
 
         async def a_generate(self, prompt: str) -> str:
-            # deepeval calls a_generate for async metric measurement;
-            # run the sync client in a thread to avoid blocking the event loop.
-            import asyncio
-            loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(None, lambda: self.generate(prompt))
+            response = await self._client.ainvoke(prompt)
+            content = getattr(response, "content", "")
+            if isinstance(content, str):
+                return content
+            return str(content or "")
 
-    return OpenRouterJudge()
+    return GeminiJudge()
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers that extract data from the trace / artifact dicts
 # ---------------------------------------------------------------------------
+
 
 def _extract_tool_outputs(trace: dict[str, Any]) -> list[str]:
     """Return tool result strings from trace events (used as retrieval_context)."""
@@ -188,7 +180,7 @@ def _build_actual_output(artifact: dict[str, Any]) -> str:
         parts.append("No stream URLs found.")
 
     # Providers
-    for entry in (artifact.get("provider_analysis") or []):
+    for entry in artifact.get("provider_analysis") or []:
         if not isinstance(entry, dict):
             continue
         provider = str(entry.get("provider") or "").strip()
@@ -198,7 +190,7 @@ def _build_actual_output(artifact: dict[str, Any]) -> str:
             parts.append(f"Provider: {provider or org} — abuse contact: {abuse or 'n/a'}")
 
     # Takedown emails (body excerpt)
-    for email in (artifact.get("takedown_emails") or []):
+    for email in artifact.get("takedown_emails") or []:
         if not isinstance(email, dict):
             continue
         body = str(email.get("body") or "").strip()
@@ -251,6 +243,7 @@ DEFAULT_EXPECTED_TOOLS: list[str] = [
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def build_test_case(
     case_result: Any,
     *,
@@ -278,11 +271,7 @@ def build_test_case(
     artifact: dict[str, Any] = getattr(case_result, "output", {}) or {}
     trace: dict[str, Any] = getattr(case_result, "trace", {}) or {}
 
-    input_url = str(
-        artifact.get("url")
-        or (artifact.get("input") or {}).get("url", "")
-        or ""
-    )
+    input_url = str(artifact.get("url") or (artifact.get("input") or {}).get("url", "") or "")
 
     actual_output = _build_actual_output(artifact)
     retrieval_context = _extract_tool_outputs(trace)
@@ -290,11 +279,13 @@ def build_test_case(
 
     # Resolve expected tools
     if expected_tools is not None:
-        _expected_tools = [ToolCall(name=t) for t in expected_tools]
+        _expected_tools = [ToolCall(name=t, input_parameters={}) for t in expected_tools]
     elif target_profile and target_profile in EXPECTED_TOOLS_BY_PROFILE:
-        _expected_tools = [ToolCall(name=t) for t in EXPECTED_TOOLS_BY_PROFILE[target_profile]]
+        _expected_tools = [
+            ToolCall(name=t, input_parameters={}) for t in EXPECTED_TOOLS_BY_PROFILE[target_profile]
+        ]
     else:
-        _expected_tools = [ToolCall(name=t) for t in DEFAULT_EXPECTED_TOOLS]
+        _expected_tools = [ToolCall(name=t, input_parameters={}) for t in DEFAULT_EXPECTED_TOOLS]
 
     return LLMTestCase(
         input=input_url,
@@ -313,7 +304,9 @@ def build_test_case_from_pipeline_result(pipeline_result: Any) -> Any:
     """
     _require_deepeval()
 
-    artifact = pipeline_result.model_dump(mode="json") if hasattr(pipeline_result, "model_dump") else {}
+    artifact = (
+        pipeline_result.model_dump(mode="json") if hasattr(pipeline_result, "model_dump") else {}
+    )
 
     # Flatten for _build_actual_output
     flat: dict[str, Any] = {
@@ -339,18 +332,21 @@ def build_test_case_from_pipeline_result(pipeline_result: Any) -> Any:
 # Metric factories
 # ---------------------------------------------------------------------------
 
+
 def hallucination_metric(threshold: float = 0.5) -> Any:
     """LLM judge: did the agent invent streams or providers not in tool outputs?"""
     _require_deepeval()
     from deepeval.metrics import HallucinationMetric  # type: ignore[import]
-    return HallucinationMetric(threshold=threshold, model=_make_openrouter_judge())
+
+    return HallucinationMetric(threshold=threshold, model=_make_gemini_judge())
 
 
 def faithfulness_metric(threshold: float = 0.7) -> Any:
     """LLM judge: is the DMCA email body grounded in captured tool evidence?"""
     _require_deepeval()
     from deepeval.metrics import FaithfulnessMetric  # type: ignore[import]
-    return FaithfulnessMetric(threshold=threshold, model=_make_openrouter_judge())
+
+    return FaithfulnessMetric(threshold=threshold, model=_make_gemini_judge())
 
 
 def tool_correctness_metric(threshold: float = 0.6) -> Any:
@@ -360,6 +356,7 @@ def tool_correctness_metric(threshold: float = 0.6) -> Any:
     """
     _require_deepeval()
     from deepeval.metrics import ToolCorrectnessMetric  # type: ignore[import]
+
     return ToolCorrectnessMetric(threshold=threshold)
 
 
@@ -367,17 +364,19 @@ def answer_relevancy_metric(threshold: float = 0.7) -> Any:
     """LLM judge: is the pipeline output relevant to the input streaming URL?"""
     _require_deepeval()
     from deepeval.metrics import AnswerRelevancyMetric  # type: ignore[import]
-    return AnswerRelevancyMetric(threshold=threshold, model=_make_openrouter_judge())
+
+    return AnswerRelevancyMetric(threshold=threshold, model=_make_gemini_judge())
 
 
 def task_completion_metric(threshold: float = 0.6) -> Any:
     """LLM judge: did the agent complete its goal (find stream + provider)?"""
     _require_deepeval()
     from deepeval.metrics import TaskCompletionMetric  # type: ignore[import]
+
     return TaskCompletionMetric(
         task="Extract streaming URLs and provider details from the given illegal streaming website URL, then generate a DMCA takedown email.",
         threshold=threshold,
-        model=_make_openrouter_judge(),
+        model=_make_gemini_judge(),
     )
 
 

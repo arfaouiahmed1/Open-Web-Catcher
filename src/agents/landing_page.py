@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import re
+from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 from src.agents.base import build_llm, run_agent_loop
 from src.agents.memory import build_memory_context, remember_agent_run
@@ -16,8 +16,12 @@ from src.models.enums import AgentType, ExtractionStatus, PageType
 from src.models.schemas import ExtractionResult
 from src.tools.mcp_client import agent_tools
 from src.utils.config import Settings
+from src.utils.instrumentation import (
+    observability_span,
+    set_span_output,
+    using_observability_context,
+)
 from src.utils.logging import get_logger
-from src.utils.instrumentation import observability_span, set_span_output, using_observability_context
 from src.utils.observability import RunObserver
 
 logger = get_logger(__name__)
@@ -87,7 +91,10 @@ def _looks_like_low_value_url(url: str) -> bool:
         return True
     if lowered.startswith(("javascript:", "mailto:", "tel:")):
         return True
-    if any(token in lowered for token in ("/privacy", "/terms", "/contact", "/about", "/login", "/register", "cdn-cgi")):
+    if any(
+        token in lowered
+        for token in ("/privacy", "/terms", "/contact", "/about", "/login", "/register", "cdn-cgi")
+    ):
         return True
     if re.search(r"\.(css|js|png|jpe?g|gif|svg|ico|webp|pdf)(\?|$)", lowered):
         return True
@@ -128,6 +135,9 @@ def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[st
             continue
 
         if not candidate_url.startswith(("http://", "https://")):
+            candidate_url = urljoin(source_url, candidate_url)
+            page_dict["url"] = candidate_url
+        if not candidate_url.startswith(("http://", "https://")):
             continue
         if candidate_url in seen_urls:
             continue
@@ -146,7 +156,8 @@ def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[st
         if not isinstance(page_dict.get("iframes"), list):
             page_dict["iframes"] = []
 
-        patterns = page_dict.get("patterns") if isinstance(page_dict.get("patterns"), dict) else {}
+        raw_patterns = page_dict.get("patterns")
+        patterns: dict[str, Any] = dict(raw_patterns) if isinstance(raw_patterns, dict) else {}
         if not patterns.get("url_pattern"):
             patterns["url_pattern"] = _generalize_url_pattern(candidate_url)
         page_dict["patterns"] = patterns
@@ -202,8 +213,12 @@ def _augment_landing_output(
     common_memory = run_memory.get("common", run_memory) if isinstance(run_memory, dict) else {}
     candidate_pool = _dedupe_keep_order(
         [
-            *list(run_memory.get("hosting_candidate_urls", []) if isinstance(run_memory, dict) else []),
-            *list(common_memory.get("critical_links", []) if isinstance(common_memory, dict) else []),
+            *list(
+                run_memory.get("hosting_candidate_urls", []) if isinstance(run_memory, dict) else []
+            ),
+            *list(
+                common_memory.get("critical_links", []) if isinstance(common_memory, dict) else []
+            ),
         ]
     )
 
@@ -223,7 +238,9 @@ def _augment_landing_output(
         candidate_signature = _normalize_pattern_signature(candidate_pattern)
         candidate_prefix = _hosting_prefix(candidate_url)
         pattern_match = bool(candidate_pattern and candidate_pattern in known_patterns)
-        signature_match = bool(candidate_signature and candidate_signature in known_pattern_signatures)
+        signature_match = bool(
+            candidate_signature and candidate_signature in known_pattern_signatures
+        )
         prefix_match = bool(candidate_prefix and candidate_prefix in known_prefixes)
         if not (pattern_match or signature_match or (prefix_match and known_pattern_signatures)):
             continue
@@ -276,7 +293,9 @@ def _augment_landing_output(
     output["pattern_expansion"] = {
         "expanded_candidates": expanded_count,
         "known_patterns": len([pattern for pattern in known_patterns if pattern]),
-        "known_pattern_signatures": len([signature for signature in known_pattern_signatures if signature]),
+        "known_pattern_signatures": len(
+            [signature for signature in known_pattern_signatures if signature]
+        ),
         "candidate_pool_size": len(candidate_pool),
     }
     return output, expanded_count
@@ -342,7 +361,9 @@ class LandingPageAgent:
                         page_type=AgentType.LANDING_PAGE.value,
                         run_goal="Explore the landing page and identify hosting-page URLs that should be passed downstream.",
                         extras={
-                            "orchestrator_handoff": orchestrator_handoff[:600] if orchestrator_handoff else "",
+                            "orchestrator_handoff": orchestrator_handoff[:600]
+                            if orchestrator_handoff
+                            else "",
                         },
                     ),
                     memory_context=memory_context,
@@ -362,7 +383,9 @@ class LandingPageAgent:
                         "Compiled layered prompt for landing page agent",
                         details=compiled_prompt.model_dump(exclude={"content"}),
                     )
-                initial_message = f"Explore this landing page and find all hosting page URLs.\n\nmainUrl: {url}"
+                initial_message = (
+                    f"Explore this landing page and find all hosting page URLs.\n\nmainUrl: {url}"
+                )
                 if orchestrator_handoff.strip():
                     initial_message += (
                         "\n\nORCHESTRATOR HANDOFF\n"
@@ -400,6 +423,25 @@ class LandingPageAgent:
                     source_url=url,
                     run_memory=run_memory,
                 )
+                output_json.setdefault(
+                    "agent_run",
+                    {
+                        "stop_reason": getattr(result, "stop_reason", "completed"),
+                        "budget_exhausted": bool(getattr(result, "budget_exhausted", False)),
+                        "tool_calls_used": result.tool_calls_made,
+                        "bootstrap_tool_calls": int(
+                            getattr(result, "bootstrap_tool_calls", 0) or 0
+                        ),
+                        "llm_tool_calls_made": int(
+                            getattr(result, "llm_tool_calls_made", result.tool_calls_made) or 0
+                        ),
+                        "parse_error": str(getattr(result, "parse_error", "") or ""),
+                    },
+                )
+                if getattr(result, "parse_error", ""):
+                    output_json["raw_final_text"] = str(getattr(result, "final_text", "") or "")[
+                        :4000
+                    ]
                 hosting_pages = output_json.get("hosting_pages", [])
                 extraction = ExtractionResult(
                     url=url,

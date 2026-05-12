@@ -6,7 +6,8 @@ import asyncio
 import json
 import re
 import time
-from typing import TYPE_CHECKING, Annotated, Any, Callable, TypedDict
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Annotated, Any, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
@@ -14,17 +15,26 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
-from src.agents.cache import GeminiCacheManager, ToolResultCache
+from src.agents import cache as cache_helpers
+from src.agents.cache import (
+    GeminiCacheManager,
+    ToolResultCache,
+    _create_gemini_cached_content_resource,
+)
 from src.utils.config import Settings
-from src.utils.provider_models import resolve_agent_model_selection, resolve_llm_tuning, resolve_model_context_window
-from src.utils.logging import get_logger
-from src.utils.observability import RunObserver
 from src.utils.instrumentation import (
     observability_span,
     resolve_model_pricing,
     set_span_attributes,
     set_span_output,
     using_observability_context,
+)
+from src.utils.logging import get_logger
+from src.utils.observability import RunObserver
+from src.utils.provider_models import (
+    resolve_agent_model_selection,
+    resolve_llm_tuning,
+    resolve_model_context_window,
 )
 
 logger = get_logger(__name__)
@@ -42,22 +52,98 @@ class BudgetExceededError(Exception):
 
 
 class AgentLoopResult:
-    def __init__(self, final_text: str, tool_calls_made: int, messages: list[BaseMessage]) -> None:
+    def __init__(
+        self,
+        final_text: str,
+        tool_calls_made: int,
+        messages: list[BaseMessage],
+        *,
+        bootstrap_tool_calls: int = 0,
+        llm_tool_calls_made: int | None = None,
+        stop_reason: str = "completed",
+        budget_exhausted: bool = False,
+    ) -> None:
         self.final_text = final_text
+        # Total tool calls, including bootstrap calls, for observability/reporting.
         self.tool_calls_made = tool_calls_made
+        self.bootstrap_tool_calls = bootstrap_tool_calls
+        self.llm_tool_calls_made = (
+            tool_calls_made - bootstrap_tool_calls
+            if llm_tool_calls_made is None
+            else llm_tool_calls_made
+        )
         self.messages = messages
+        self.stop_reason = stop_reason
+        self.budget_exhausted = budget_exhausted
+        self.parse_error = ""
 
     def parse_json(self) -> dict[str, Any]:
-        """Try to parse the final text as JSON. Strips markdown fences."""
-        text = self.final_text.strip()
-        if text.startswith("```"):
-            lines = text.splitlines()
-            text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+        """Parse a JSON object from Gemini output, including fenced/prose-wrapped JSON."""
+        parsed, error = parse_json_object(self.final_text)
+        self.parse_error = error
+        if error:
+            logger.warning("Could not parse agent output as JSON: %s", error)
+        return parsed
+
+
+def parse_json_object(text: str) -> tuple[dict[str, Any], str]:
+    """Best-effort extraction of the first JSON object from LLM text."""
+    raw = str(text or "").strip()
+    if not raw:
+        return {}, "empty_output"
+
+    candidates = [raw]
+    fenced = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", raw, flags=re.IGNORECASE | re.DOTALL)
+    candidates.extend(item.strip() for item in fenced if item.strip())
+
+    balanced = _extract_first_balanced_json_object(raw)
+    if balanced:
+        candidates.append(balanced)
+
+    last_error = ""
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
         try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            logger.warning("Could not parse agent output as JSON")
-            return {}
+            payload = json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            last_error = f"json_decode_error:{exc.msg}"
+            continue
+        if isinstance(payload, dict):
+            return payload, ""
+        last_error = f"json_root_not_object:{type(payload).__name__}"
+    return {}, last_error or "no_json_object_found"
+
+
+def _extract_first_balanced_json_object(text: str) -> str:
+    """Return the first balanced top-level JSON object substring, if present."""
+    start = text.find("{")
+    while start != -1:
+        depth = 0
+        in_string = False
+        escape = False
+        for index in range(start, len(text)):
+            char = text[index]
+            if in_string:
+                if escape:
+                    escape = False
+                elif char == "\\":
+                    escape = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start : index + 1]
+        start = text.find("{", start + 1)
+    return ""
 
 
 class AgentGraphState(TypedDict):
@@ -121,36 +207,30 @@ def _extract_text_from_content(content: Any) -> str:
 
 
 def _extract_thinking_from_content(content: Any) -> str:
-    """Extract thinking/reasoning text from Anthropic or Gemini content blocks."""
+    """Extract Gemini thinking/reasoning text from content blocks."""
     if not isinstance(content, list):
         return ""
     parts = []
     for block in content:
-        if isinstance(block, dict):
-            # Anthropic: {"type": "thinking", "thinking": "..."}
-            if block.get("type") == "thinking" and block.get("thinking"):
-                parts.append(str(block["thinking"]))
-            # Gemini: parts with thought=True
-            elif block.get("thought") and block.get("text"):
-                parts.append(str(block["text"]))
+        if isinstance(block, dict) and block.get("thought") and block.get("text"):
+            parts.append(str(block["text"]))
     return "\n".join(parts)
 
 
 def _extract_thinking_tokens(usage: Any, response_metadata: Any = None) -> int:
-    """Extract thinking/reasoning token count from provider usage payloads."""
+    """Extract Gemini thinking token counts from usage payloads."""
     usage_dict = usage if isinstance(usage, dict) else getattr(usage, "__dict__", {})
-    # Anthropic: thinking_tokens in usage
-    val = usage_dict.get("thinking_tokens") or usage_dict.get("reasoning_tokens")
-    if val:
-        return _to_int(val)
-    # Gemini: thought_token_count in usage_metadata
     val = usage_dict.get("thought_token_count") or usage_dict.get("thinking_token_count")
     if val:
         return _to_int(val)
     # Fallback: check response_metadata
     if response_metadata:
-        meta = response_metadata if isinstance(response_metadata, dict) else getattr(response_metadata, "__dict__", {})
-        for key in ("thinking_tokens", "reasoning_tokens", "thought_token_count"):
+        meta = (
+            response_metadata
+            if isinstance(response_metadata, dict)
+            else getattr(response_metadata, "__dict__", {})
+        )
+        for key in ("thought_token_count", "thinking_token_count"):
             if meta.get(key):
                 return _to_int(meta[key])
     return 0
@@ -170,7 +250,9 @@ def _extract_cache_counters(payload: Any) -> tuple[int, int, int]:
     cache_read_tokens = _to_int(payload_dict.get("cache_read_input_tokens"))
     cache_creation_tokens = _to_int(payload_dict.get("cache_creation_input_tokens"))
 
-    input_details = payload_dict.get("input_token_details") or payload_dict.get("prompt_tokens_details") or {}
+    input_details = (
+        payload_dict.get("input_token_details") or payload_dict.get("prompt_tokens_details") or {}
+    )
     if isinstance(input_details, dict):
         cached_tokens = max(cached_tokens, _to_int(input_details.get("cached_tokens")))
         cache_read_tokens = max(
@@ -185,22 +267,29 @@ def _extract_cache_counters(payload: Any) -> tuple[int, int, int]:
             _to_int(input_details.get("cache_creation")),
             _to_int(input_details.get("cache_creation_tokens")),
         )
-        # Anthropic may expose TTL-scoped cache writes in separate counters.
-        ttl_scoped_writes = (
-            _to_int(input_details.get("ephemeral_5m_input_tokens"))
-            + _to_int(input_details.get("ephemeral_1h_input_tokens"))
-        )
-        cache_creation_tokens = max(cache_creation_tokens, ttl_scoped_writes)
+        cache_creation_tokens = max(cache_creation_tokens, 0)
 
     return cached_tokens, cache_read_tokens, cache_creation_tokens
 
 
 def _extract_cache_metrics(usage: Any, response: AIMessage | None = None) -> dict[str, Any]:
     usage_dict = usage if isinstance(usage, dict) else getattr(usage, "__dict__", {})
-    response_metadata = getattr(response, "response_metadata", None) if response is not None else None
-    additional_kwargs = getattr(response, "additional_kwargs", None) if response is not None else None
-    response_dict = response_metadata if isinstance(response_metadata, dict) else getattr(response_metadata, "__dict__", {})
-    kwargs_dict = additional_kwargs if isinstance(additional_kwargs, dict) else getattr(additional_kwargs, "__dict__", {})
+    response_metadata = (
+        getattr(response, "response_metadata", None) if response is not None else None
+    )
+    additional_kwargs = (
+        getattr(response, "additional_kwargs", None) if response is not None else None
+    )
+    response_dict = (
+        response_metadata
+        if isinstance(response_metadata, dict)
+        else getattr(response_metadata, "__dict__", {})
+    )
+    kwargs_dict = (
+        additional_kwargs
+        if isinstance(additional_kwargs, dict)
+        else getattr(additional_kwargs, "__dict__", {})
+    )
 
     input_tokens = _to_int(
         usage_dict.get("input_tokens")
@@ -215,16 +304,26 @@ def _extract_cache_metrics(usage: Any, response: AIMessage | None = None) -> dic
         or usage_dict.get("output_token_count")
     )
 
-    cached_tokens, cache_read_input_tokens, cache_creation_input_tokens = _extract_cache_counters(usage_dict)
+    cached_tokens, cache_read_input_tokens, cache_creation_input_tokens = _extract_cache_counters(
+        usage_dict
+    )
 
     response_usage = response_dict.get("token_usage") if isinstance(response_dict, dict) else {}
-    response_cached_tokens, response_cache_read, response_cache_creation = _extract_cache_counters(response_usage)
+    response_cached_tokens, response_cache_read, response_cache_creation = _extract_cache_counters(
+        response_usage
+    )
     cached_tokens = max(cached_tokens, response_cached_tokens)
     cache_read_input_tokens = max(cache_read_input_tokens, response_cache_read)
     cache_creation_input_tokens = max(cache_creation_input_tokens, response_cache_creation)
 
-    kwargs_usage = kwargs_dict.get("usage") or kwargs_dict.get("token_usage") if isinstance(kwargs_dict, dict) else {}
-    kwargs_cached_tokens, kwargs_cache_read, kwargs_cache_creation = _extract_cache_counters(kwargs_usage)
+    kwargs_usage = (
+        kwargs_dict.get("usage") or kwargs_dict.get("token_usage")
+        if isinstance(kwargs_dict, dict)
+        else {}
+    )
+    kwargs_cached_tokens, kwargs_cache_read, kwargs_cache_creation = _extract_cache_counters(
+        kwargs_usage
+    )
     cached_tokens = max(cached_tokens, kwargs_cached_tokens)
     cache_read_input_tokens = max(cache_read_input_tokens, kwargs_cache_read)
     cache_creation_input_tokens = max(cache_creation_input_tokens, kwargs_cache_creation)
@@ -233,8 +332,6 @@ def _extract_cache_metrics(usage: Any, response: AIMessage | None = None) -> dic
         cached_tokens = max(cached_tokens, cache_read_input_tokens)
     cached_tokens = max(cached_tokens, 0)
 
-    # Anthropic reports ``input_tokens`` as the uncached tail when cache counters
-    # are present. Keep the reported suffix as new-input tokens in that case.
     if cache_read_input_tokens > 0 and cached_tokens > input_tokens:
         new_input_tokens = max(input_tokens, 0)
     else:
@@ -258,58 +355,25 @@ def _build_provider_cache_invoke_kwargs(
     prompt_metadata: dict[str, Any],
     allow_google_explicit_cache: bool = True,
 ) -> dict[str, Any]:
+    if provider != "google_genai":
+        return {}
     if not settings.provider_cache_enabled or not settings.prompt_cache_enabled:
         return {}
-
     if not bool(prompt_metadata.get("provider_cache_eligible", False)):
         return {}
 
     cache_mode = str(prompt_metadata.get("cache_mode", "") or "").strip().lower()
     if cache_mode not in {"provider_hook", "provider_active"}:
         return {}
+    if not allow_google_explicit_cache:
+        return {}
 
     cache_key = str(prompt_metadata.get("provider_cache_key", "") or "").strip()
-
-    if provider == "openrouter":
-        if not cache_key:
-            return {}
-        return {
-            "extra_headers": {
-                "x-openrouter-prompt-cache-key": cache_key,
-            }
-        }
-
-    if provider == "openai":
-        if not cache_key:
-            return {}
-        return {
-            "prompt_cache_key": cache_key,
-        }
-
-    if provider == "nvidia":
-        # NVIDIA NIM implicit caching is server-managed for identical prefixes.
-        # No invoke kwarg needed — cache activity signalled via _provider_cache_active_for_run.
-        return {}
-
-    if provider == "anthropic":
-        ttl = str(prompt_metadata.get("provider_cache_ttl", "") or "").strip().lower()
-        cache_control: dict[str, Any] = {"type": "ephemeral"}
-        if ttl == "1h":
-            cache_control["ttl"] = "1h"
-        return {"cache_control": cache_control}
-
-    if provider == "google_genai":
-        if not allow_google_explicit_cache:
-            return {}
-        # Gemini implicit caching is automatic; explicit cache references require
-        # a provider-generated cached content resource name.
-        cached_content = str(prompt_metadata.get("gemini_cached_content", "") or "").strip()
-        if not cached_content and cache_key.startswith("cachedContents/"):
-            cached_content = cache_key
-        if cached_content:
-            return {"cached_content": cached_content}
-        return {}
-
+    cached_content = str(prompt_metadata.get("gemini_cached_content", "") or "").strip()
+    if not cached_content and cache_key.startswith("cachedContents/"):
+        cached_content = cache_key
+    if cached_content:
+        return {"cached_content": cached_content}
     return {}
 
 
@@ -320,9 +384,10 @@ def _provider_cache_active_for_run(
     prompt_metadata: dict[str, Any],
     provider_cache_invoke_kwargs: dict[str, Any],
 ) -> bool:
+    if provider != "google_genai":
+        return False
     if not settings.provider_cache_enabled or not settings.prompt_cache_enabled:
         return False
-
     if not bool(prompt_metadata.get("provider_cache_eligible", False)):
         return False
 
@@ -330,20 +395,9 @@ def _provider_cache_active_for_run(
     if cache_mode not in {"provider_hook", "provider_active"}:
         return False
 
-    if provider in {"openrouter", "openai", "anthropic"}:
-        return bool(provider_cache_invoke_kwargs)
-
-    if provider == "google_genai":
-        # Gemini 2.5+ implicit caching is provider-managed and active by default
-        # for sufficiently large shared prefixes.
-        return True
-
-    if provider == "nvidia":
-        # NIM implicit caching is server-managed for identical prefixes — always active.
-        return True
-
-    return bool(provider_cache_invoke_kwargs)
-
+    # Gemini 2.5+ implicit caching is provider-managed and active by default
+    # for sufficiently large shared prefixes.
+    return True
 
 
 def _extract_retry_seconds(error_text: str) -> int | None:
@@ -402,19 +456,85 @@ async def _invoke_tool(tool: BaseTool, tool_args: dict[str, Any]) -> Any:
         return await asyncio.to_thread(tool.invoke, tool_args)
 
 
-_PROVIDER_CANONICAL = {
-    "google": "google_genai",
-    "openai": "openai",
-    "anthropic": "anthropic",
-    "openrouter": "openrouter",
-    "nvidia": "nvidia",
-}
-
 _gemini_cache_manager = GeminiCacheManager()
 
 
 def _clear_managed_gemini_cache_registry_for_tests() -> None:
     _gemini_cache_manager.clear_registry_for_tests()
+
+
+async def _resolve_managed_gemini_cached_content(
+    settings: Settings,
+    *,
+    prompt_metadata: dict[str, Any],
+    system_prompt: str,
+    model_name: str,
+    now_epoch: float | None = None,
+) -> tuple[str, str]:
+    cached_content = str(prompt_metadata.get("gemini_cached_content", "") or "").strip()
+    if cached_content:
+        return cached_content, "manual"
+
+    provider_cache_key = str(prompt_metadata.get("provider_cache_key", "") or "").strip()
+    if provider_cache_key.startswith("cachedContents/"):
+        return provider_cache_key, "provider_key"
+
+    if not cache_helpers._is_gemini_explicit_cache_enabled(settings, prompt_metadata):
+        return "", "disabled"
+
+    seed_text = cache_helpers._extract_gemini_cache_seed_text(system_prompt)
+    min_chars = max(int(settings.prompt_cache_min_chars or 0), 0)
+    if len(seed_text) < min_chars:
+        return "", "seed_too_small"
+
+    now = float(now_epoch if now_epoch is not None else time.time())
+    ttl_seconds = cache_helpers._gemini_ttl_seconds(settings, prompt_metadata)
+    refresh_lead = cache_helpers._gemini_refresh_lead_seconds(
+        settings, prompt_metadata, ttl_seconds
+    )
+    cache_key = cache_helpers._registry_key(prompt_metadata, seed_text, model_name)
+
+    with cache_helpers._REGISTRY_LOCK:
+        entry = cache_helpers._REGISTRY.get(cache_key)
+        if entry is not None:
+            entry_name = str(entry.get("cached_content", "") or "").strip()
+            expires_at = float(entry.get("expires_at", 0) or 0)
+            if entry_name and (expires_at - now) > refresh_lead:
+                return entry_name, "registry_hit"
+
+    try:
+        created_name, expires_at = await _create_gemini_cached_content_resource(
+            api_key=settings.google_api_key,
+            model_name=model_name,
+            cache_key=cache_key,
+            seed_text=seed_text,
+            ttl_seconds=ttl_seconds,
+            timeout_seconds=max(int(settings.tool_timeout_seconds or 30), 5),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Gemini explicit cache create/refresh failed for %s: %s", cache_key, exc)
+        with cache_helpers._REGISTRY_LOCK:
+            fallback = cache_helpers._REGISTRY.get(cache_key)
+            if fallback is not None:
+                fallback_name = str(fallback.get("cached_content", "") or "").strip()
+                fallback_expires = float(fallback.get("expires_at", 0) or 0)
+                if fallback_name and fallback_expires > now:
+                    return fallback_name, "fallback_after_error"
+        return "", "create_failed"
+
+    if not created_name:
+        return "", "empty_resource"
+
+    with cache_helpers._REGISTRY_LOCK:
+        prior = cache_helpers._REGISTRY.get(cache_key)
+        cache_helpers._REGISTRY[cache_key] = {
+            "cached_content": created_name,
+            "expires_at": expires_at,
+            "created_at": now,
+            "ttl_seconds": ttl_seconds,
+        }
+        cache_helpers._evict_registry(now)
+        return created_name, "created" if prior is None else "refreshed"
 
 
 def build_llm(
@@ -424,77 +544,62 @@ def build_llm(
     provider_override: str | None = None,
     agent_id: str | None = None,
 ):
-    """Build an LLM instance for the configured provider.
+    """Build the Gemini LLM used by all agents.
 
-    Imports for non-default providers are deferred so that the container
-    works with only langchain-google-genai installed (the default).
+    The runtime is intentionally Gemini-only. Legacy provider settings may still
+    exist in persisted config for compatibility, but agents never instantiate
+    OpenAI/Anthropic/OpenRouter/NVIDIA clients.
     """
     selection = resolve_agent_model_selection(settings, agent_id or "")
-    provider = (provider_override or selection.get("provider") or settings.llm_provider or "google").lower()
-    model_name = model_override or selection.get("model") or settings.agent_model
-    tuning = resolve_llm_tuning(settings, provider=provider, model_name=model_name, agent_id=agent_id or "")
-    temp = temperature if temperature is not None else tuning.pop("temperature", settings.gemini_temperature)
-
-    if provider == "openai":
-        from langchain_openai import ChatOpenAI  # noqa: PLC0415
-        return ChatOpenAI(
-            model=model_name,
-            api_key=settings.openai_api_key or None,
-            temperature=temp,
-            **_filter_llm_kwargs(tuning, {"top_p", "max_tokens", "reasoning_effort"}),
+    provider = (
+        (provider_override or selection.get("provider") or settings.llm_provider or "google")
+        .strip()
+        .lower()
+    )
+    provider_is_supported = provider in {"google", "gemini", "google_genai"}
+    if not provider_is_supported:
+        logger.warning(
+            "Ignoring unsupported LLM provider '%s'; Gemini is the only supported runtime.",
+            provider,
         )
+        provider = "google"
 
-    if provider == "anthropic":
-        from langchain_anthropic import ChatAnthropic  # noqa: PLC0415
-        anthropic_kwargs: dict[str, Any] = _filter_llm_kwargs(tuning, {"top_p", "top_k", "max_tokens"})
-        if settings.thinking_enabled:
-            anthropic_kwargs["thinking"] = {"type": "enabled", "budget_tokens": settings.thinking_budget_tokens}
-            temp = 1.0  # extended thinking requires temperature=1.0
-        return ChatAnthropic(
-            model=model_name,
-            api_key=settings.anthropic_api_key or None,
-            temperature=temp,
-            **anthropic_kwargs,
+    selection_model = selection.get("model") if provider_is_supported else ""
+    model_name = model_override or selection_model or settings.agent_model
+    if not str(model_name or "").strip().lower().startswith("gemini-"):
+        fallback_model = str(settings.agent_model or "").strip()
+        if not fallback_model.lower().startswith("gemini-"):
+            fallback_model = str(settings.gemini_model or "").strip() or "gemini-2.5-flash"
+        logger.warning(
+            "Ignoring non-Gemini model '%s'; using '%s'.",
+            model_name,
+            fallback_model,
         )
+        model_name = fallback_model
+    tuning = resolve_llm_tuning(
+        settings,
+        provider="google",
+        model_name=model_name,
+        agent_id=agent_id or "",
+    )
+    temp = (
+        temperature
+        if temperature is not None
+        else tuning.pop("temperature", settings.gemini_temperature)
+    )
 
-    if provider == "openrouter":
-        from langchain_openai import ChatOpenAI  # noqa: PLC0415
-        return ChatOpenAI(
-            model=model_name,
-            api_key=settings.openrouter_api_key or None,
-            base_url=settings.openrouter_base_url,
-            temperature=temp,
-            **_filter_llm_kwargs(tuning, {"top_p", "top_k", "max_tokens"}),
-        )
-
-    if provider == "nvidia":
-        from langchain_openai import ChatOpenAI  # noqa: PLC0415
-        enable_thinking = tuning.pop("enable_thinking", None)
-        clear_thinking = tuning.pop("clear_thinking", None)
-        nvidia_extra: dict[str, Any] = {}
-        if enable_thinking is not None or clear_thinking is not None:
-            chat_tmpl: dict[str, Any] = {}
-            if enable_thinking is not None:
-                chat_tmpl["enable_thinking"] = bool(enable_thinking)
-            if clear_thinking is not None:
-                chat_tmpl["clear_thinking"] = bool(clear_thinking)
-            nvidia_extra["model_kwargs"] = {"extra_body": {"chat_template_kwargs": chat_tmpl}}
-        return ChatOpenAI(
-            model=model_name,
-            api_key=settings.nvidia_api_key or None,
-            base_url=settings.nvidia_base_url,
-            temperature=temp,
-            **nvidia_extra,
-            **_filter_llm_kwargs(tuning, {"top_p", "max_tokens"}),
-        )
-
-    # default: google / gemini
-    gemini_kwargs: dict[str, Any] = _filter_llm_kwargs(tuning, {"top_p", "top_k", "max_output_tokens"})
+    gemini_kwargs: dict[str, Any] = _filter_llm_kwargs(
+        tuning, {"top_p", "top_k", "max_output_tokens"}
+    )
+    if "max_output_tokens" in gemini_kwargs:
+        gemini_kwargs["max_tokens"] = gemini_kwargs.pop("max_output_tokens")
     if settings.thinking_enabled:
-        gemini_kwargs["thinking_config"] = {"thinking_budget": settings.thinking_budget_tokens}
+        gemini_kwargs["thinking_budget"] = settings.thinking_budget_tokens
+
+    google_api_key = str(settings.google_api_key or "").strip() or None
     return ChatGoogleGenerativeAI(
         model=model_name,
-        google_api_key=settings.google_api_key,
+        api_key=google_api_key,
         temperature=temp,
         streaming=True,
         **gemini_kwargs,
@@ -516,7 +621,7 @@ async def run_agent_loop(
     budget_exhausted_message: str = "Budget exhausted. Output your final JSON now.",
     observer: RunObserver | None = None,
     run_name: str = "agent_loop",
-    working_memory: "ShortTermMemory | None" = None,
+    working_memory: ShortTermMemory | None = None,
     prompt_metadata: dict[str, Any] | None = None,
     turn_context_provider: Callable[[AgentGraphState], str] | None = None,
     bootstrap_url: str = "",
@@ -528,15 +633,15 @@ async def run_agent_loop(
     prompt_meta = dict(prompt_metadata or {})
     tool_map: dict[str, BaseTool] = {tool.name: tool for tool in tools}
     llm_with_tools = llm.bind_tools(tools)
-    # Support model name attribute differences across providers
-    model_name = (
-        getattr(llm, "model", None)
-        or getattr(llm, "model_name", None)
-        or ""
-    )
-    provider = _PROVIDER_CANONICAL.get(
-        (settings.llm_provider or "google").lower(), "google_genai"
-    )
+    # Gemini-only runtime. Keep canonical provider stable for metrics/caching.
+    model_name = getattr(llm, "model", None) or getattr(llm, "model_name", None) or ""
+    configured_provider = str(settings.llm_provider or "google").strip().lower()
+    if configured_provider not in {"google", "gemini", "google_genai"}:
+        logger.warning(
+            "Ignoring unsupported LLM provider '%s'; Gemini is the only supported runtime.",
+            configured_provider,
+        )
+    provider = "google_genai"
     model_context_window = resolve_model_context_window(model_name, provider)
     google_explicit_cache_compatible = True
     gemini_cached_content_source = "none"
@@ -547,7 +652,10 @@ async def run_agent_loop(
             gemini_cached_content_source = "disabled_with_tools"
             prompt_meta.pop("gemini_cached_content", None)
         else:
-            managed_cached_content, gemini_cached_content_source = await _gemini_cache_manager.resolve(
+            (
+                managed_cached_content,
+                gemini_cached_content_source,
+            ) = await _resolve_managed_gemini_cached_content(
                 settings,
                 prompt_metadata=prompt_meta,
                 system_prompt=system_prompt,
@@ -572,7 +680,9 @@ async def run_agent_loop(
     tool_timeout_seconds = max(1, int(settings.tool_timeout_seconds))
     llm_timeout_seconds = max(5, tool_timeout_seconds * 3)
     tool_cache = ToolResultCache(
-        min_identical_observations=max(int(settings.tool_result_cache_min_identical_observations or 2), 2)
+        min_identical_observations=max(
+            int(settings.tool_result_cache_min_identical_observations or 2), 2
+        )
     )
     llm_cache_hit_calls = 0
     llm_cached_input_tokens = 0
@@ -592,7 +702,9 @@ async def run_agent_loop(
                 "prompt": prompt_meta,
                 "provider_cache_active": provider_cache_active,
                 "gemini_cached_content_source": gemini_cached_content_source,
-                "gemini_cached_content": str(prompt_meta.get("gemini_cached_content", "") or "")[:200],
+                "gemini_cached_content": str(prompt_meta.get("gemini_cached_content", "") or "")[
+                    :200
+                ],
                 "tool_result_cache_enabled": bool(settings.tool_result_cache_enabled),
                 "tool_result_cache_min_identical_observations": tool_cache._min_obs,
                 "bootstrap_url": bootstrap_url,
@@ -604,6 +716,7 @@ async def run_agent_loop(
 
     async def _run_bootstrap_tool(tool_name: str, tool_args: dict[str, Any]) -> tuple[str, str]:
         nonlocal bootstrap_tool_calls
+        _assert_not_cancelled(observer, f"bootstrap {tool_name}")
         tool = tool_map.get(tool_name)
         if tool is None:
             return "error", json.dumps({"error": f"Bootstrap tool not available: {tool_name}"})
@@ -645,19 +758,20 @@ async def run_agent_loop(
             result_content = json.dumps({"error": str(exc)})
             status = "error"
 
+        _assert_not_cancelled(observer, f"bootstrap {tool_name}")
         bootstrap_tool_calls += 1
         duration = round(time.perf_counter() - started_at, 3)
         if observer is not None:
-                observer.emit(
-                    "tool_call_finished",
-                    f"Bootstrap {tool_name} completed",
-                    status=status,
-                    details={
-                        "tool_call_id": f"bootstrap-{bootstrap_tool_calls}",
-                        "tool_name": tool_name,
-                        "duration_seconds": duration,
-                        "result_preview": result_content[:800],
-                        "result_full": result_content,
+            observer.emit(
+                "tool_call_finished",
+                f"Bootstrap {tool_name} completed",
+                status=status,
+                details={
+                    "tool_call_id": f"bootstrap-{bootstrap_tool_calls}",
+                    "tool_name": tool_name,
+                    "duration_seconds": duration,
+                    "result_preview": result_content[:800],
+                    "result_full": result_content,
                     "bootstrap": True,
                 },
             )
@@ -695,9 +809,7 @@ async def run_agent_loop(
         bootstrap_messages.append(
             HumanMessage(
                 content=(
-                    f"BOOTSTRAP RESULT ({nav_tool_name}):\n"
-                    f"status={status}\n"
-                    f"payload={result[:4000]}"
+                    f"BOOTSTRAP RESULT ({nav_tool_name}):\nstatus={status}\npayload={result[:4000]}"
                 )
             )
         )
@@ -856,7 +968,9 @@ async def run_agent_loop(
                     "provider": provider,
                     "model_name": model_name,
                     "tool_calls": len(response.tool_calls or []),
-                    "tool_call_names": [call.get("name", "") for call in (response.tool_calls or [])],
+                    "tool_call_names": [
+                        call.get("name", "") for call in (response.tool_calls or [])
+                    ],
                     "tool_calls_payload": _json_ready(response.tool_calls or []),
                     "has_text": bool(response.content),
                     "message_count": message_count + 1,
@@ -879,19 +993,29 @@ async def run_agent_loop(
                     "cache_hit": bool(cache_metrics.get("cache_hit", False)),
                     "cached_input_tokens": _to_int(cache_metrics.get("cached_input_tokens")),
                     "new_input_tokens": _to_int(cache_metrics.get("new_input_tokens")),
-                    "cache_creation_input_tokens": _to_int(cache_metrics.get("cache_creation_input_tokens")),
+                    "cache_creation_input_tokens": _to_int(
+                        cache_metrics.get("cache_creation_input_tokens")
+                    ),
                     "provider_cache_active": provider_cache_active,
                     "gemini_cached_content_source": gemini_cached_content_source,
-                    "estimated_input_cost_usd": float(usage_rollup.get("estimated_input_cost_usd", 0.0) or 0.0),
+                    "estimated_input_cost_usd": float(
+                        usage_rollup.get("estimated_input_cost_usd", 0.0) or 0.0
+                    ),
                     "estimated_cached_input_cost_usd": float(
                         usage_rollup.get("estimated_cached_input_cost_usd", 0.0) or 0.0
                     ),
                     "estimated_cache_write_cost_usd": float(
                         usage_rollup.get("estimated_cache_write_cost_usd", 0.0) or 0.0
                     ),
-                    "estimated_output_cost_usd": float(usage_rollup.get("estimated_output_cost_usd", 0.0) or 0.0),
-                    "estimated_total_cost_usd": float(usage_rollup.get("estimated_total_cost_usd", 0.0) or 0.0),
-                    "cost_source": str(usage_rollup.get("cost_source", "") or "provider_pricing_catalog"),
+                    "estimated_output_cost_usd": float(
+                        usage_rollup.get("estimated_output_cost_usd", 0.0) or 0.0
+                    ),
+                    "estimated_total_cost_usd": float(
+                        usage_rollup.get("estimated_total_cost_usd", 0.0) or 0.0
+                    ),
+                    "cost_source": str(
+                        usage_rollup.get("cost_source", "") or "provider_pricing_catalog"
+                    ),
                     "pricing": usage_rollup.get("pricing", {}),
                 },
             )
@@ -916,9 +1040,12 @@ async def run_agent_loop(
         budget_exhausted = len(response.tool_calls) > len(allowed_tool_calls)
 
         for tc in allowed_tool_calls:
-            tool_name: str = tc["name"]
-            tool_args: dict[str, Any] = tc.get("args", {})
-            tool_id: str = tc["id"]
+            tool_name = str(tc.get("name", ""))
+            raw_tool_args = tc.get("args", {})
+            tool_args: dict[str, Any] = (
+                dict(raw_tool_args) if isinstance(raw_tool_args, dict) else {}
+            )
+            tool_id = str(tc.get("id", ""))
             tool_calls_made += 1
 
             logger.debug(
@@ -967,7 +1094,9 @@ async def run_agent_loop(
             ) as tool_span:
                 tool = tool_map.get(tool_name)
                 cache_hit = False
-                cache_eligible = bool(settings.tool_result_cache_enabled) and tool_cache.is_eligible(tool_name)
+                cache_eligible = bool(
+                    settings.tool_result_cache_enabled
+                ) and tool_cache.is_eligible(tool_name)
                 if tool is None:
                     result_content = json.dumps({"error": f"Unknown tool: {tool_name}"})
                     tool_status = "error"
@@ -1068,7 +1197,17 @@ async def run_agent_loop(
             )
             observer.record_message("human")
 
-        budget_message = HumanMessage(content=budget_exhausted_message)
+        final_context = ""
+        if turn_context_provider is not None:
+            final_context = str(turn_context_provider(state) or "").strip()
+        budget_content = budget_exhausted_message
+        if final_context:
+            budget_content += (
+                "\n\nCURRENT WORKING STATE\n"
+                f"{final_context}\n"
+                "Use this state and the observed tool results to produce the required final output now."
+            )
+        budget_message = HumanMessage(content=budget_content)
         _assert_not_cancelled(observer, "final answer preparation")
         with observability_span(
             f"{run_name}.final_answer",
@@ -1105,7 +1244,9 @@ async def run_agent_loop(
                             "phase": "budget_exhausted_final_answer",
                         },
                     )
-                raise RuntimeError(f"Final LLM call timed out after {llm_timeout_seconds}s") from exc
+                raise RuntimeError(
+                    f"Final LLM call timed out after {llm_timeout_seconds}s"
+                ) from exc
             except Exception as exc:
                 error_text = str(exc)
                 is_rate_limited = "RESOURCE_EXHAUSTED" in error_text or "429" in error_text
@@ -1154,7 +1295,9 @@ async def run_agent_loop(
         if observer is not None:
             observer.record_message("ai")
             nonlocal llm_cache_hit_calls, llm_cached_input_tokens, llm_new_input_tokens
-            final_cache_metrics = _extract_cache_metrics(getattr(final, "usage_metadata", None), response=final)
+            final_cache_metrics = _extract_cache_metrics(
+                getattr(final, "usage_metadata", None), response=final
+            )
             if final_cache_metrics["cache_hit"]:
                 llm_cache_hit_calls += 1
             llm_cached_input_tokens += _to_int(final_cache_metrics.get("cached_input_tokens"))
@@ -1198,19 +1341,29 @@ async def run_agent_loop(
                     "cache_hit": bool(final_cache_metrics.get("cache_hit", False)),
                     "cached_input_tokens": _to_int(final_cache_metrics.get("cached_input_tokens")),
                     "new_input_tokens": _to_int(final_cache_metrics.get("new_input_tokens")),
-                    "cache_creation_input_tokens": _to_int(final_cache_metrics.get("cache_creation_input_tokens")),
+                    "cache_creation_input_tokens": _to_int(
+                        final_cache_metrics.get("cache_creation_input_tokens")
+                    ),
                     "provider_cache_active": provider_cache_active,
                     "gemini_cached_content_source": gemini_cached_content_source,
-                    "estimated_input_cost_usd": float(usage_rollup.get("estimated_input_cost_usd", 0.0) or 0.0),
+                    "estimated_input_cost_usd": float(
+                        usage_rollup.get("estimated_input_cost_usd", 0.0) or 0.0
+                    ),
                     "estimated_cached_input_cost_usd": float(
                         usage_rollup.get("estimated_cached_input_cost_usd", 0.0) or 0.0
                     ),
                     "estimated_cache_write_cost_usd": float(
                         usage_rollup.get("estimated_cache_write_cost_usd", 0.0) or 0.0
                     ),
-                    "estimated_output_cost_usd": float(usage_rollup.get("estimated_output_cost_usd", 0.0) or 0.0),
-                    "estimated_total_cost_usd": float(usage_rollup.get("estimated_total_cost_usd", 0.0) or 0.0),
-                    "cost_source": str(usage_rollup.get("cost_source", "") or "provider_pricing_catalog"),
+                    "estimated_output_cost_usd": float(
+                        usage_rollup.get("estimated_output_cost_usd", 0.0) or 0.0
+                    ),
+                    "estimated_total_cost_usd": float(
+                        usage_rollup.get("estimated_total_cost_usd", 0.0) or 0.0
+                    ),
+                    "cost_source": str(
+                        usage_rollup.get("cost_source", "") or "provider_pricing_catalog"
+                    ),
                     "pricing": usage_rollup.get("pricing", {}),
                 },
             )
@@ -1246,7 +1399,7 @@ async def run_agent_loop(
             HumanMessage(content=initial_message),
             *bootstrap_messages,
         ],
-        "tool_calls_made": bootstrap_tool_calls,
+        "tool_calls_made": 0,
         "max_tool_calls": max_tool_calls,
         "budget_exhausted": False,
     }
@@ -1280,23 +1433,54 @@ async def run_agent_loop(
                 "owc.runtime": "langgraph",
             },
         ) as loop_span:
-            final_state = await compiled.ainvoke(initial_state)
+            recursion_limit = max(25, (max_tool_calls + bootstrap_tool_calls + 3) * 4)
+            graph_timeout_seconds = max(1, int(settings.agent_timeout_seconds or 300))
+            try:
+                final_state = await asyncio.wait_for(
+                    compiled.ainvoke(
+                        initial_state,
+                        config={"recursion_limit": recursion_limit},
+                    ),
+                    timeout=graph_timeout_seconds,
+                )
+            except asyncio.TimeoutError as exc:
+                if observer is not None:
+                    observer.emit(
+                        "agent_timeout",
+                        f"{run_name} timed out after {graph_timeout_seconds}s",
+                        status="error",
+                        details={
+                            "timeout_seconds": graph_timeout_seconds,
+                            "max_tool_calls": max_tool_calls,
+                            "bootstrap_tool_calls": bootstrap_tool_calls,
+                            "recursion_limit": recursion_limit,
+                        },
+                    )
+                raise RuntimeError(f"{run_name} timed out after {graph_timeout_seconds}s") from exc
             messages = list(final_state["messages"])
             final_ai = _last_ai_message(messages)
-            final_text = _extract_text_from_content(final_ai.content) if final_ai is not None else ""
+            final_text = (
+                _extract_text_from_content(final_ai.content) if final_ai is not None else ""
+            )
             budget_was_exhausted = any(
-                isinstance(message, HumanMessage) and message.content == budget_exhausted_message
+                isinstance(message, HumanMessage)
+                and str(message.content or "").startswith(budget_exhausted_message)
                 for message in messages[1:]
             )
+            llm_tool_calls_made = int(final_state["tool_calls_made"])
+            total_tool_calls_made = llm_tool_calls_made + bootstrap_tool_calls
+            stop_reason = "budget_exhausted" if budget_was_exhausted else "completed"
 
             if observer is not None:
                 observer.emit(
                     "agent_loop_finished",
                     f"{run_name} finished",
                     details={
-                        "tool_calls_made": final_state["tool_calls_made"],
+                        "tool_calls_made": total_tool_calls_made,
+                        "llm_tool_calls_made": llm_tool_calls_made,
                         "message_count": len(messages),
                         "bootstrap_tool_calls": bootstrap_tool_calls,
+                        "stop_reason": stop_reason,
                         "llm_cache_hit_calls": llm_cache_hit_calls,
                         "llm_cached_input_tokens": llm_cached_input_tokens,
                         "llm_new_input_tokens": llm_new_input_tokens,
@@ -1309,9 +1493,11 @@ async def run_agent_loop(
             set_span_output(
                 loop_span,
                 {
-                    "tool_calls_made": final_state["tool_calls_made"],
+                    "tool_calls_made": total_tool_calls_made,
+                    "llm_tool_calls_made": llm_tool_calls_made,
                     "message_count": len(messages),
                     "bootstrap_tool_calls": bootstrap_tool_calls,
+                    "stop_reason": stop_reason,
                     "final_text_preview": (final_text or "")[:2000],
                     "llm_cache_hit_calls": llm_cache_hit_calls,
                     "llm_cached_input_tokens": llm_cached_input_tokens,
@@ -1324,6 +1510,10 @@ async def run_agent_loop(
 
     return AgentLoopResult(
         final_text=final_text or "",
-        tool_calls_made=final_state["tool_calls_made"],
+        tool_calls_made=total_tool_calls_made,
+        llm_tool_calls_made=llm_tool_calls_made,
+        bootstrap_tool_calls=bootstrap_tool_calls,
+        stop_reason=stop_reason,
+        budget_exhausted=budget_was_exhausted,
         messages=messages,
     )

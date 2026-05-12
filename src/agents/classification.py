@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
-from src.agents.base import build_llm, run_agent_loop
+from src.agents.base import build_llm, parse_json_object, run_agent_loop
 from src.agents.memory import build_memory_context, remember_agent_run
 from src.agents.prompting import build_runtime_context, build_task_brief, compile_agent_prompt
 from src.memory.long_term import LongTermMemory
@@ -15,8 +14,12 @@ from src.models.enums import AgentType, Confidence, PageType
 from src.models.schemas import ClassificationResult
 from src.tools.mcp_client import agent_tools
 from src.utils.config import Settings
+from src.utils.instrumentation import (
+    observability_span,
+    set_span_output,
+    using_observability_context,
+)
 from src.utils.logging import get_logger
-from src.utils.instrumentation import observability_span, set_span_output, using_observability_context
 from src.utils.observability import RunObserver
 
 logger = get_logger(__name__)
@@ -36,9 +39,7 @@ class ClassificationAgent:
         self.llm = build_llm(settings, agent_id="classification")
         self.memory = LongTermMemory(settings.memory_db_path) if settings.memory_enabled else None
         self._system_prompt = (
-            PROMPT_PATH.read_text(encoding="utf-8")
-            if PROMPT_PATH.exists()
-            else _DEFAULT_PROMPT
+            PROMPT_PATH.read_text(encoding="utf-8") if PROMPT_PATH.exists() else _DEFAULT_PROMPT
         )
 
     async def run(self, url: str, observer: RunObserver | None = None) -> ClassificationResult:
@@ -166,17 +167,16 @@ _CONF_MAP = {"high": Confidence.HIGH, "medium": Confidence.MEDIUM, "low": Confid
 
 
 def _parse_output(text: str, url: str) -> ClassificationResult:
-    try:
-        payload = json.loads(text)
-        if isinstance(payload, dict):
-            return ClassificationResult(
-                url=url,
-                page_type=_PAGE_TYPE_MAP.get(str(payload.get("page_type", "")).lower(), PageType.UNKNOWN),
-                confidence=_CONF_MAP.get(str(payload.get("confidence", "")).lower(), Confidence.LOW),
-                reasoning=str(payload.get("reasoning", "") or text[:500]),
-            )
-    except json.JSONDecodeError:
-        pass
+    payload, _parse_error = parse_json_object(text)
+    if payload:
+        return ClassificationResult(
+            url=url,
+            page_type=_PAGE_TYPE_MAP.get(
+                str(payload.get("page_type", "")).lower(), PageType.UNKNOWN
+            ),
+            confidence=_CONF_MAP.get(str(payload.get("confidence", "")).lower(), Confidence.LOW),
+            reasoning=str(payload.get("reasoning", "") or text[:500]),
+        )
 
     page_type = PageType.UNKNOWN
     confidence = Confidence.LOW

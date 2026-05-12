@@ -14,8 +14,12 @@ from src.models.enums import AgentType, ExtractionStatus, PageType
 from src.models.schemas import ExtractionResult, ServerResult, StreamURL
 from src.tools.mcp_client import agent_tools
 from src.utils.config import Settings
+from src.utils.instrumentation import (
+    observability_span,
+    set_span_output,
+    using_observability_context,
+)
 from src.utils.logging import get_logger
-from src.utils.instrumentation import observability_span, set_span_output, using_observability_context
 from src.utils.observability import RunObserver
 
 logger = get_logger(__name__)
@@ -92,7 +96,9 @@ class HostingPageAgent:
                         page_type=AgentType.HOSTING_PAGE.value,
                         run_goal="Extract streams directly from the hosting page or identify the embedded player handoff.",
                         extras={
-                            "orchestrator_handoff": orchestrator_handoff[:600] if orchestrator_handoff else "",
+                            "orchestrator_handoff": orchestrator_handoff[:600]
+                            if orchestrator_handoff
+                            else "",
                         },
                     ),
                     memory_context=memory_context,
@@ -117,7 +123,9 @@ class HostingPageAgent:
                         "Compiled layered prompt for hosting page agent",
                         details=compiled_prompt.model_dump(exclude={"content"}),
                     )
-                initial_message = f"Extract all stream URLs from this hosting page.\n\nmainUrl: {url}"
+                initial_message = (
+                    f"Extract all stream URLs from this hosting page.\n\nmainUrl: {url}"
+                )
                 if orchestrator_handoff.strip():
                     initial_message += (
                         "\n\nORCHESTRATOR HANDOFF\n"
@@ -154,6 +162,25 @@ class HostingPageAgent:
                     )
 
                 output = result.parse_json()
+                run_memory = short_memory.export_run_memory(page_type=AgentType.HOSTING_PAGE.value)
+                output = _merge_run_memory_into_hosting_output(output, run_memory=run_memory)
+                output.setdefault(
+                    "agent_run",
+                    {
+                        "stop_reason": getattr(result, "stop_reason", "completed"),
+                        "budget_exhausted": bool(getattr(result, "budget_exhausted", False)),
+                        "tool_calls_used": result.tool_calls_made,
+                        "bootstrap_tool_calls": int(
+                            getattr(result, "bootstrap_tool_calls", 0) or 0
+                        ),
+                        "llm_tool_calls_made": int(
+                            getattr(result, "llm_tool_calls_made", result.tool_calls_made) or 0
+                        ),
+                        "parse_error": str(getattr(result, "parse_error", "") or ""),
+                    },
+                )
+                if getattr(result, "parse_error", ""):
+                    output["raw_final_text"] = str(getattr(result, "final_text", "") or "")[:4000]
                 normalized_output = _normalize_hosting_output(output)
                 streams = _collect_streams(normalized_output)
                 decision = normalized_output.get("decision", "")
@@ -265,7 +292,10 @@ def _safe_int(value: Any, default: int = 0) -> int:
 
 
 def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any]:
-    label = str(server.get("label") or server.get("name") or f"server_{index + 1}").strip() or f"server_{index + 1}"
+    label = (
+        str(server.get("label") or server.get("name") or f"server_{index + 1}").strip()
+        or f"server_{index + 1}"
+    )
     m3u8_urls = _normalize_url_list(server.get("m3u8_urls"))
     mpd_urls = _normalize_url_list(server.get("mpd_urls"))
     mp4_urls = _normalize_url_list(server.get("mp4_urls"))
@@ -290,12 +320,22 @@ def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any
     status = str(server.get("status") or "").strip().lower()
     embedded_url = str(server.get("embedded_url") or "").strip()
     embedded_url_source = str(server.get("embedded_url_source") or "").strip()
-    player_iframe_url = str(server.get("player_iframe_url") or server.get("iframe_url") or "").strip()
+    player_iframe_url = str(
+        server.get("player_iframe_url") or server.get("iframe_url") or ""
+    ).strip()
     if not status:
-        status = "success" if stream_urls else ("needs_embed_agent" if (embedded_url or player_iframe_url) else "failed")
+        status = (
+            "success"
+            if stream_urls
+            else ("needs_embed_agent" if (embedded_url or player_iframe_url) else "failed")
+        )
 
     server_up_value = server.get("server_up")
-    server_up = bool(server_up_value) if isinstance(server_up_value, bool) else status in {"success", "partial", "active"}
+    server_up = (
+        bool(server_up_value)
+        if isinstance(server_up_value, bool)
+        else status in {"success", "partial", "active"}
+    )
 
     return {
         "label": label,
@@ -324,11 +364,17 @@ def _normalize_servers(output: dict[str, Any]) -> list[dict[str, Any]]:
     rows = output.get("servers", [])
     if not isinstance(rows, list):
         return []
-    normalized = [_normalize_server_entry(server, index) for index, server in enumerate(rows) if isinstance(server, dict)]
+    normalized = [
+        _normalize_server_entry(server, index)
+        for index, server in enumerate(rows)
+        if isinstance(server, dict)
+    ]
     return normalized
 
 
-def _normalize_streaming_urls(output: dict[str, Any], servers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _normalize_streaming_urls(
+    output: dict[str, Any], servers: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     rows = output.get("streaming_urls", [])
     if not isinstance(rows, list):
         rows = []
@@ -347,7 +393,9 @@ def _normalize_streaming_urls(output: dict[str, Any], servers: list[dict[str, An
             {
                 "url": url,
                 "source": str(row.get("source") or "").strip(),
-                "type": str(row.get("type") or row.get("protocol") or _protocol_from_url(url)).strip(),
+                "type": str(
+                    row.get("type") or row.get("protocol") or _protocol_from_url(url)
+                ).strip(),
                 "role": str(row.get("role") or "").strip(),
             }
         )
@@ -361,7 +409,98 @@ def _normalize_streaming_urls(output: dict[str, Any], servers: list[dict[str, An
                     continue
                 seen.add(url_text)
                 merged.append({"url": url_text, "source": source, "type": protocol, "role": ""})
+        for url in server.get("stream_urls", []):
+            url_text = str(url or "").strip()
+            if not url_text or url_text in seen:
+                continue
+            seen.add(url_text)
+            merged.append(
+                {
+                    "url": url_text,
+                    "source": source,
+                    "type": _protocol_from_url(url_text),
+                    "role": "",
+                }
+            )
 
+    return merged
+
+
+def _merge_run_memory_into_hosting_output(
+    output: dict[str, Any], *, run_memory: dict[str, Any]
+) -> dict[str, Any]:
+    """Fallback-merge concrete tool evidence captured in short-term memory."""
+    merged = dict(output or {})
+    memory_streams = _dedupe_urls(
+        [
+            *list(run_memory.get("stream_urls", []) if isinstance(run_memory, dict) else []),
+            *list(run_memory.get("server_stream_urls", []) if isinstance(run_memory, dict) else []),
+        ]
+    )
+    memory_iframes = _dedupe_urls(
+        list(run_memory.get("iframe_urls", []) if isinstance(run_memory, dict) else [])
+    )
+    memory_screenshots = _dedupe_urls(
+        list(run_memory.get("server_screenshots", []) if isinstance(run_memory, dict) else [])
+    )
+
+    streaming_urls = merged.get("streaming_urls", [])
+    if not isinstance(streaming_urls, list):
+        streaming_urls = []
+    existing_streams = {
+        str(item.get("url") or item.get("stream_url") or "").strip()
+        for item in streaming_urls
+        if isinstance(item, dict)
+    }
+    for stream_url in memory_streams:
+        if not stream_url.startswith(("http://", "https://")) or stream_url in existing_streams:
+            continue
+        streaming_urls.append(
+            {
+                "url": stream_url,
+                "source": "short_term_memory",
+                "type": _protocol_from_url(stream_url),
+                "role": "memory_fallback",
+            }
+        )
+        existing_streams.add(stream_url)
+    merged["streaming_urls"] = streaming_urls
+
+    embedded_urls = _dedupe_urls(
+        [
+            *_normalize_url_list(merged.get("servers_needing_embed")),
+            *_normalize_url_list(merged.get("embedded_urls_for_processing")),
+            *memory_iframes,
+        ]
+    )
+    if embedded_urls:
+        merged["servers_needing_embed"] = embedded_urls
+        merged["embedded_urls_for_processing"] = embedded_urls
+
+    servers = merged.get("servers", [])
+    if not isinstance(servers, list):
+        servers = []
+    if not servers and (memory_streams or embedded_urls or memory_screenshots):
+        iframe = embedded_urls[0] if embedded_urls else ""
+        servers = [
+            {
+                "label": "memory_evidence",
+                "server_up": bool(memory_streams),
+                "screenshot_url": memory_screenshots[0] if memory_screenshots else "",
+                "embedded_url": iframe,
+                "embedded_url_source": "short_term_memory" if iframe else "",
+                "player_iframe_url": iframe,
+                "stream_urls": memory_streams,
+                "primary_stream": memory_streams[0] if memory_streams else "",
+                "status": "success"
+                if memory_streams
+                else ("needs_embed_agent" if iframe else "failed"),
+                "extraction_method": "short_term_memory",
+                "player_state": "unknown",
+                "visual_confirmation": "tool evidence recovered from short-term memory",
+            }
+        ]
+    merged["servers"] = servers
     return merged
 
 
@@ -370,18 +509,23 @@ def _normalize_hosting_output(output: dict[str, Any]) -> dict[str, Any]:
     servers = _normalize_servers(normalized)
     normalized["servers"] = servers
     normalized["streaming_urls"] = _normalize_streaming_urls(normalized, servers)
-    normalized["all_detected_servers"] = _dedupe_urls([str(item.get("label") or "").strip() for item in servers])
-    normalized["servers_needing_embed"] = _dedupe_urls(
-        [
-            candidate
-            for item in servers
-            for candidate in (
-                str(item.get("embedded_url") or "").strip(),
-                str(item.get("player_iframe_url") or "").strip(),
-            )
-            if candidate
-        ]
+    normalized["all_detected_servers"] = _dedupe_urls(
+        [str(item.get("label") or "").strip() for item in servers]
     )
+
+    top_level_embeds: list[str] = []
+    for key in ("servers_needing_embed", "embedded_urls_for_processing", "embedded_urls"):
+        top_level_embeds.extend(_normalize_url_list(normalized.get(key)))
+    per_server_embeds = [
+        candidate
+        for item in servers
+        for candidate in (
+            str(item.get("embedded_url") or "").strip(),
+            str(item.get("player_iframe_url") or "").strip(),
+        )
+        if candidate
+    ]
+    normalized["servers_needing_embed"] = _dedupe_urls([*top_level_embeds, *per_server_embeds])
     normalized["embedded_urls_for_processing"] = list(normalized["servers_needing_embed"])
     return normalized
 
@@ -425,12 +569,20 @@ def _collect_streams(output: dict[str, Any]) -> list[StreamURL]:
             streams.append(
                 StreamURL(
                     url=url,
-                    protocol=str(entry.get("type") or entry.get("protocol") or _protocol_from_url(url)),
+                    protocol=str(
+                        entry.get("type") or entry.get("protocol") or _protocol_from_url(url)
+                    ),
                     source_layer=str(entry.get("source") or ""),
                 )
             )
     for server in output.get("servers", []):
-        for url in server.get("m3u8_urls", []) + server.get("mpd_urls", []) + server.get("mp4_urls", []):
+        server_urls = (
+            server.get("stream_urls", [])
+            + server.get("m3u8_urls", [])
+            + server.get("mpd_urls", [])
+            + server.get("mp4_urls", [])
+        )
+        for url in server_urls:
             url_text = str(url or "").strip()
             if url_text and url_text not in seen:
                 seen.add(url_text)

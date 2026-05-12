@@ -154,4 +154,19 @@ describe("settings-page save state helpers", () => {
       "mcp-tools": false,
     });
   });
+
+  it("marks only the models tab dirty when parallelism changes", () => {
+    const baseline = snapshotServerConfig(buildServerConfigDraft(makeState()));
+    const draft = buildServerConfigDraft(makeState({
+      maxParallelHostingPages: "9",
+    }));
+
+    expect(getDirtyTabs(baseline, draft)).toEqual({
+      models: true,
+      browser: false,
+      evaluation: false,
+      "mcp-tools": false,
+    });
+    expect(draft.max_parallel_hosting_pages).toBe(9);
+  });
 });

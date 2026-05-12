@@ -123,39 +123,10 @@ disabled_tools_by_browser_profile:
     hosting: []
     landing: []
   puppeteer:
-    classification:
-    - open_url
-    - get_page_context
-    - get_frame_tree
-    - query_elements
-    - get_element_detail
-    - wait_for_page_state
-    embedded:
-    - get_frame_tree
-    - get_element_detail
-    - play_media
-    - get_media_state
-    - get_page_context
-    - query_elements
-    - open_url
-    hosting:
-    - get_page_context
-    - query_elements
-    - get_element_detail
-    - get_frame_tree
-    - wait_for_page_state
-    - scroll_to_element
-    - get_media_state
-    - play_media
-    landing:
-    - get_page_context
-    - query_elements
-    - get_element_detail
-    - get_frame_tree
-    - open_url
-    - wait_for_page_state
-    - play_media
-    - swipe_region
+    classification: []
+    embedded: []
+    hosting: []
+    landing: []
 disabled_tools_by_profile: {}
 embedded_page_max_tool_calls: 20
 gemini_explicit_cache_enabled: true
@@ -208,7 +179,7 @@ llm_tuning:
       temperature: 1
 log_file: data/logs/app.log
 log_level: INFO
-max_parallel_hosting_pages: 5
+max_parallel_hosting_pages: 1
 orchestrator_model: gemini-flash-lite-latest
 provider_cache_enabled: true
 thinking_budget_tokens: 8000

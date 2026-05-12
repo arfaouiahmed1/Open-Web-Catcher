@@ -1,82 +1,70 @@
 \chapter{System Architecture}
 
-\section{Overview of the final architecture}
+\section{Overview of the Python Reference Architecture}
 
-The final system is implemented as a layered investigation platform with clear
-responsibility boundaries. Figure~\ref{fig:arch-overview} shows the complete layer
-stack from the operator-facing console down to persistence.
+This chapter presents the Python reference architecture designed after the validated n8n workflow. The validated n8n workflow served as the operational validation path, while the architecture described here formalizes the same evidence-collection logic into clearer layers and runtime boundaries for maintainability, observability, evaluation, and future deployment.
+
+Figure~\ref{fig:logical-workflow} shows the logical sequence followed by one investigation run, from the input URL to the validated evidence bundle. This view is independent of concrete deployment technology and focuses on decisions, evidence sources, and outputs.
 
 \begin{figure}[H]
 \centering
+\resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
-  layer/.style={draw=accent, rounded corners=4pt,
-    text width=13.5cm, minimum height=1.4cm,
-    align=center, inner sep=8pt, font=\small},
+  wfstep/.style={draw=accent, fill=blue!6, rounded corners=5pt,
+    minimum width=4.2cm, minimum height=0.95cm, align=center,
+    font=\small\bfseries, text centered},
+  wfbranch/.style={draw=orange!70, fill=orange!10, rounded corners=5pt,
+    minimum width=4.1cm, minimum height=1.2cm, align=center,
+    font=\footnotesize\bfseries, text centered},
+  wfevidence/.style={draw=green!60!black, fill=green!8, rounded corners=5pt,
+    minimum width=12.6cm, minimum height=1.1cm, align=center,
+    font=\footnotesize, text centered},
+  wfoutput/.style={draw=purple!60, fill=purple!8, rounded corners=5pt,
+    minimum width=8.0cm, minimum height=1.0cm, align=center,
+    font=\small\bfseries, text centered},
+  wfdecision/.style={draw=orange!80, fill=orange!8, diamond, aspect=2.0,
+    minimum width=3.0cm, minimum height=1.15cm, align=center,
+    font=\small\bfseries, text centered},
   arr/.style={->, >=Stealth, thick, accent!80},
-  node distance=0.4cm
+  note/.style={font=\tiny, text=gray!70, align=center}
 ]
 
-\node[layer, fill=blue!5] (ui) {%
-  {\bfseries Operator Console \textnormal{(Next.js)}}\\[3pt]
-  {\footnotesize\normalfont Run launch \textbullet{} Live trace streaming
-   \textbullet{} Run history \textbullet{} Evaluation review}};
+\node[wfstep] (seed) at (0,7.2) {Seed URL};
+\node[wfstep] (init) at (0,5.7) {URL normalization\\Run initialization};
+\node[wfstep] (classify) at (0,4.2) {Page-type classification};
+\node[wfdecision] (route) at (0,2.4) {Routing\\decision};
 
-\node[layer, fill=blue!5, below=0.4cm of ui] (api) {%
-  {\bfseries FastAPI Backend}\\[3pt]
-  {\footnotesize\normalfont Run management \textbullet{} Orchestration entry
-   \textbullet{} Evaluation routes \textbullet{} Status endpoints}};
+\node[wfbranch] (landing) at (-5.0,0.3) {Landing path\\Candidates + metadata};
+\node[wfbranch] (host) at (0,0.3) {Hosting path\\Activate + inspect\\Stream or fallback};
+\node[wfbranch] (embed) at (5.0,0.3) {Embedded path\\Activate player\\Harvest manifests};
 
-\node[layer, fill=blue!5, below=0.4cm of api] (orch) {%
-  {\bfseries Orchestrator}\\[3pt]
-  {\footnotesize\normalfont Page-type router \textbullet{} Specialist dispatcher
-   \textbullet{} Fallback coordinator}};
+\node[wfevidence] (evidence) at (0,-2.0) {Browser evidence sources\\DOM, screenshots, iframe tree, network requests, player state};
+\node[wfstep, minimum width=4.8cm] (validate) at (0,-4.0) {Output validation\\Evidence acceptance};
+\node[wfoutput] (bundle) at (0,-5.8) {Evidence bundle\\Stream URLs, screenshots, traces, status, errors, metrics};
+\node[wfoutput, fill=gray!10, draw=gray!60, minimum width=6.8cm] (review) at (0,-7.4) {Operator review\\Downstream enforcement support};
 
-\node[layer, fill=orange!8, draw=orange!60, below=0.4cm of orch] (spec) {%
-  {\bfseries Specialist Agents}\\[3pt]
-  {\footnotesize\normalfont
-   Classification Agent \textbullet{}
-   Landing-page Agent \textbullet{}
-   Hosting Agent \textbullet{}
-   Embedded Agent}};
-
-\node[layer, fill=green!8, draw=green!60, below=0.4cm of spec] (tools) {%
-  {\bfseries Browser Tool Layer \textnormal{(Puppeteer)}}\\[3pt]
-  {\footnotesize\normalfont
-   \texttt{inspect\_page} \textbullet{}
-   \texttt{interact} \textbullet{}
-   \texttt{harvest\_streams} \textbullet{}
-   \texttt{screenshot} \textbullet{}
-   \texttt{navigate} \textbullet{}
-   \texttt{get\_media\_state}}};
-
-\node[layer, fill=purple!8, draw=purple!60, below=0.4cm of tools] (persist) {%
-  {\bfseries Persistence \& Memory}\\[3pt]
-  {\footnotesize\normalfont
-   PostgreSQL \textbullet{} Run events \textbullet{} Tool traces
-   \textbullet{} LLM call logs \textbullet{}
-   Short-term memory \textbullet{} Long-term site profiles}};
-
-\node[layer, fill=gray!10, draw=gray!60, below=0.4cm of persist] (azure) {%
-  {\bfseries Deployment Target \textnormal{(Azure)}}\\[3pt]
-  {\footnotesize\normalfont
-   Service Bus queue \textbullet{}
-   Container Apps Jobs \textbullet{}
-   Blob storage for screenshots}};
-
-% Vertical arrows
-\foreach \a/\b in {ui/api, api/orch, orch/spec, spec/tools, tools/persist, persist/azure}
-  \draw[arr] (\a) -- (\b);
-
-% Feedback dashed arrow on the right
-\draw[->, >=Stealth, thick, gray!50, dashed]
-  ([xshift=0.3cm]persist.east) -- ++(0.8,0)
-  |- node[near start, right, font=\tiny, gray!60]{traces \& memory}
-  ([xshift=0.3cm]orch.east);
+\draw[arr] (seed) -- (init);
+\draw[arr] (init) -- (classify);
+\draw[arr] (classify) -- (route);
+\draw[arr] (route) -- (host);
+\draw[arr] (route.west) -- ++(-0.7,0) |- (landing.north);
+\draw[arr] (route.east) -- ++(0.7,0) |- (embed.north);
+\draw[arr] (landing.east) to[bend left=12] node[above, note]{host candidates} (host.west);
+\draw[->, >=Stealth, thick, red!60, dashed] (host.east) to[bend left=10] node[above, note]{embedded fallback} (embed.west);
+\draw[arr] (landing.south) -- ++(0,-0.5) |- (evidence.north west);
+\draw[arr] (host.south) -- (evidence.north);
+\draw[arr] (embed.south) -- ++(0,-0.5) |- (evidence.north east);
+\draw[arr] (evidence) -- (validate);
+\draw[arr] (validate) -- (bundle);
+\draw[arr] (bundle) -- (review);
 
 \end{tikzpicture}
-\caption{Full architecture layer stack of the investigation platform.}
-\label{fig:arch-overview}
+}
+\caption{Logical workflow of an evidence-collection run.}
+\label{fig:logical-workflow}
 \end{figure}
+
+In this logical view, the landing-page path discovers host-page candidates, the host-page path attempts direct player activation and stream extraction, and the embedded path acts either as the direct route for embedded players or as the fallback when hosting-page extraction yields only iframe-based evidence. The evidence-source block is kept separate so that DOM observations, screenshots, iframe structure, network activity, and player state appear as validation inputs rather than as implementation technologies.
 
 \section{Architectural layers}
 
@@ -99,6 +87,8 @@ The orchestrator coordinates execution order and specialist handoff. It is inten
 lightweight so routing logic stays understandable and model-intensive work stays in
 specialist agents. The orchestrator calls the classification agent first on every URL,
 then dispatches to the appropriate specialist based on the classification result.
+Agents do not call one another directly: the orchestrator forwards structured handoff
+data built from tool outputs, screenshots, and the remaining run budget.
 
 \subsection{Specialist-agent layer}
 
@@ -128,8 +118,12 @@ runtime hygiene policies that were validated during the internship:
 
 \subsection{Persistence, memory, and observability layer}
 
-This layer stores runs, events, tool calls, LLM calls, and output artifacts. It enables
-post-mortem analysis and supports both short-term and long-term memory strategies.
+This layer stores runs, events, tool calls, LLM calls, screenshots, errors, metrics,
+and structured outputs. It enables post-mortem analysis and supports both short-term
+and long-term memory strategies. The Python architecture does not depend on the
+enterprise production database. The database described in this report is limited to
+observability, evaluation, traces, metrics, screenshots, errors, tool calls, and
+structured outputs.
 
 \subsection{Operator interface layer}
 
@@ -137,63 +131,198 @@ The Next.js operator console provides run launch, live tracing, historical inspe
 and evaluation navigation. It is designed for operational review, not only developer
 debugging.
 
-\section{UML component diagram}
+To keep this chapter focused on the views that are most useful for implementation and
+review, the report emphasizes the logical workflow, component, physical runtime,
+memory, and target cloud deployment views. Together, these diagrams explain how one
+investigation run progresses, how the software modules connect, and how the Python
+reference architecture can be deployed honestly.
 
-Figure~\ref{fig:component} shows the component-level view with explicit interfaces
-between modules.
+\section{Component architecture}
+
+Figure~\ref{fig:component} shows the concrete software modules that implement the
+Python reference platform and the main interfaces between them.
 
 \begin{figure}[H]
 \centering
+\resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
   comp/.style={draw=accent, fill=blue!6, rounded corners=4pt,
-               minimum width=3.0cm, minimum height=1.3cm,
+               minimum width=3.2cm, minimum height=1.0cm,
                font=\small\bfseries, align=center},
-  agent/.style={draw=accent!80, fill=blue!10, rounded corners=4pt,
-                minimum width=2.6cm, minimum height=1.2cm,
+  agent/.style={draw=orange!70, fill=orange!10, rounded corners=4pt,
+                minimum width=2.5cm, minimum height=1.0cm,
                 font=\footnotesize\bfseries, align=center},
-  interf/.style={font=\tiny, gray!80, align=center}
+  store/.style={draw=purple!60, fill=purple!8, rounded corners=4pt,
+                minimum width=3.2cm, minimum height=1.0cm,
+                font=\footnotesize\bfseries, align=center},
+  ext/.style={draw=gray!65, fill=gray!10, rounded corners=4pt,
+              minimum width=3.0cm, minimum height=1.0cm,
+              font=\footnotesize\bfseries, align=center},
+  group/.style={draw=gray!50, dashed, rounded corners=6pt, inner sep=8pt},
+  arr/.style={->, >=Stealth, thick, accent!80},
+  note/.style={font=\tiny, text=gray!70, align=center}
 ]
 
-% Top-level components (centered)
-\node[comp] (console) at (0, 8.0) {Next.js\\Operator Console};
-\node[comp] (api)     at (0, 6.2) {FastAPI\\Backend};
-\node[comp] (orch)    at (0, 4.4) {Orchestrator};
+\node[comp] (console) at (0,7.4) {Next.js\\Operator Console};
+\node[comp] (api) at (0,5.8) {FastAPI\\Control Plane};
+\node[comp] (orch) at (0,4.2) {Run\\Orchestrator};
 
-% Four agents in a row — spaced to fit within margins
-\node[agent] (cls)  at (-5.1, 2.4) {Classification\\Agent};
-\node[agent] (land) at (-1.7, 2.4) {Landing\\Agent};
-\node[agent] (host) at ( 1.7, 2.4) {Hosting\\Agent};
-\node[agent] (emb)  at ( 5.1, 2.4) {Embedded\\Agent};
+\node[agent] (cls)  at (-6.0,2.2) {Classification\\Agent};
+\node[agent] (land) at (-2.0,2.2) {Landing\\Agent};
+\node[agent] (host) at ( 2.0,2.2) {Hosting\\Agent};
+\node[agent] (emb)  at ( 6.0,2.2) {Embedded\\Agent};
+\node[group, fit=(cls)(land)(host)(emb)] (agentsbox) {};
+\node[anchor=south west, font=\small\bfseries, text=accent] at ([xshift=0.1cm,yshift=0.05cm]agentsbox.north west) {Specialist Agents};
 
-% Tool + persistence layer
-\node[comp, fill=green!8] (tools) at (0, 0.6) {Puppeteer\\Tool Layer};
-\node[comp, fill=orange!8] (cdn) at (-5.1, -1.2) {Cloudinary\\Screenshot CDN};
-\node[comp, fill=purple!8] (db)  at (-1.7, -1.2) {PostgreSQL\\Persistence};
-\node[comp, fill=purple!8] (mem) at ( 1.7, -1.2) {Memory\\Store};
-\node[comp, fill=gray!12]  (ad)  at ( 5.1, -1.2) {uBlock / Ghostery\\Ad Filter Layer};
+\node[comp, fill=green!8] (registry) at (-2.4,0.2) {Tool Registry /\\MCP Client};
+\node[comp, fill=green!10] (process) at (2.4,0.2) {Puppeteer Tool\\Process};
+\node[comp, fill=green!14] (browser) at (2.4,-1.6) {Chromium\\Browser};
 
-% Connections
-\draw[myarrow] (console) -- node[right, interf]{HTTP REST + SSE} (api);
-\draw[myarrow] (api)     -- node[right, interf]{run control interface} (orch);
+\node[store] (pg) at (-5.8,-3.7) {PostgreSQL\\Observability Store};
+\node[store, fill=orange!10, draw=orange!60] (cloud) at (-1.8,-3.7) {Cloudinary\\Screenshot Store};
+\node[ext] (llm) at (2.2,-3.7) {LLM Provider\\APIs};
+\node[ext] (whois) at (6.2,-3.7) {WHOIS/IP Lookup\\APIs};
+
+\draw[arr] (console) -- node[right, note]{UI requests} (api);
+\draw[arr] (api) -- node[right, note]{run control} (orch);
 \foreach \ag in {cls, land, host, emb}
-  \draw[myarrow] (orch.south) -- (\ag.north);
+  \draw[arr] (orch.south) -- (\ag.north);
 \foreach \ag in {cls, land, host, emb}
-  \draw[myarrow] (\ag.south) -- (tools.north);
-\draw[myarrow] (tools.south) -- (cdn.north);
-\draw[myarrow] (tools.south) -- (db.north);
-\draw[myarrow] (tools.south) -- (mem.north);
-\draw[myarrow] (tools.south) -- (ad.north);
-
-% Fallback dashed arrow
+  \draw[arr] (\ag.south) -- ++(0,-0.4) |- (registry.north);
+\draw[arr] (registry) -- node[above, note]{tool calls} (process);
+\draw[arr] (process) -- node[right, note]{browser control} (browser);
+\draw[arr] (api.south west) |- node[left, note]{observability} (pg.north);
+\draw[arr] (process.south west) |- node[above, note]{screenshots} (cloud.north);
+\draw[arr] (orch.south east) to[bend left=18] node[right, note]{LLM calls} (llm.north);
+\draw[arr] (orch.east) to[bend left=10] node[right, note]{enrichment} (whois.north);
 \draw[->, >=Stealth, thick, red!60, dashed]
-  (host.east) -- ++(0.4,0) node[right, font=\tiny, red!60]{fallback}
-  -- ++(0.8,0) |- (emb.east);
+  (host.east) to[bend left=10] node[above, note]{fallback} (emb.west);
 
 \end{tikzpicture}
-\caption{UML component diagram: four specialist agents share the Puppeteer tool layer,
-which writes to PostgreSQL, memory, and Cloudinary, and runs behind the ad filter.}
+}
+\caption{Component architecture of the Python reference platform.}
 \label{fig:component}
 \end{figure}
+
+The component view makes the concrete software boundaries explicit: the operator console
+and control plane initiate runs, the orchestrator coordinates specialist agents, the
+Tool Registry / MCP Client standardizes browser-tool access, the Puppeteer process drives
+Chromium, PostgreSQL stores observability data, Cloudinary stores screenshots, and the
+LLM plus WHOIS/IP services remain external dependencies.
+
+\section{Physical and Deployment Architecture}
+
+Figure~\ref{fig:physical-architecture} shows the physical runtime placement of the main
+services used to execute and review the Python reference architecture. Unlike the logical
+workflow and component views, this figure emphasizes where the UI/API service, Python
+agents, browser automation, persistence, and external services sit at runtime.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  runtime/.style={draw=accent, fill=blue!6, rounded corners=4pt,
+                  minimum width=3.7cm, minimum height=1.15cm,
+                  font=\small\bfseries, align=center},
+  store/.style={draw=purple!60, fill=purple!8, rounded corners=4pt,
+                minimum width=3.6cm, minimum height=1.1cm,
+                font=\footnotesize\bfseries, align=center},
+  ext/.style={draw=gray!65, fill=gray!10, rounded corners=4pt,
+              minimum width=3.4cm, minimum height=1.05cm,
+              font=\footnotesize\bfseries, align=center},
+  arr/.style={->, >=Stealth, thick, accent!80},
+  note/.style={font=\tiny, text=gray!70, align=center}
+]
+
+\node[runtime] (user) at (0,4.2) {Operator workstation\\Browser};
+\node[runtime] (app) at (4.4,4.2) {Application service\\Next.js + FastAPI};
+\node[runtime] (worker) at (4.4,1.9) {Agent worker\\Python runtime};
+\node[runtime, fill=green!10, draw=green!60] (browser) at (8.8,1.9) {Browser automation\\Node.js + Chromium};
+
+\node[store] (db) at (0,-0.4) {PostgreSQL\\Observability DB};
+\node[store, fill=orange!10, draw=orange!60] (art) at (4.4,-0.4) {Cloudinary\\Screenshot Store};
+\node[ext] (llm) at (8.8,4.2) {External LLM\\APIs};
+\node[ext] (whois) at (8.8,-0.4) {WHOIS/IP lookup\\services};
+\node[ext] (sites) at (13.2,1.9) {Target streaming\\websites};
+
+\draw[arr] (user) -- node[above, note]{launch / review} (app);
+\draw[arr] (app) -- node[right, note]{run request} (worker);
+\draw[arr] (worker) -- node[above, note]{browser tasks} (browser);
+\draw[arr] (app.south west) |- node[left, note]{history / review} (db.north);
+\draw[arr] (worker.west) -- node[above, note]{events / metrics} (db.east);
+\draw[arr] (browser.west) |- node[right, note]{screenshots} (art.east);
+\draw[arr] (worker.east) to[bend left=12] node[right, note]{prompt / completion} (llm.west);
+\draw[arr] (worker.east) to[bend right=10] node[right, note]{enrichment} (whois.west);
+\draw[arr] (browser) -- node[above, note]{page interaction} (sites);
+
+\end{tikzpicture}
+}
+\caption{Physical runtime view of the Python reference architecture.}
+\label{fig:physical-architecture}
+\end{figure}
+
+This runtime view separates operator access, application control, Python orchestration,
+and browser automation. It also keeps screenshots and observability data outside the
+browser process so that evidence survives container restarts and remains reviewable after
+execution.
+
+\subsection{Target Cloud Deployment Architecture}
+
+The target cloud deployment keeps the same logical roles but introduces queue-driven job
+boundaries between request intake and browser-heavy execution. This is a target cloud
+deployment view rather than the main runtime used during the internship.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  runtime/.style={draw=accent, fill=blue!7, rounded corners=4pt,
+                  minimum width=3.5cm, minimum height=1.05cm,
+                  font=\small\bfseries, align=center},
+  store/.style={draw=purple!60, fill=purple!8, rounded corners=4pt,
+                minimum width=3.5cm, minimum height=1.0cm,
+                font=\footnotesize\bfseries, align=center},
+  ext/.style={draw=gray!65, fill=gray!10, rounded corners=4pt,
+              minimum width=3.3cm, minimum height=1.0cm,
+              font=\footnotesize\bfseries, align=center},
+  arr/.style={->, >=Stealth, thick, accent!80},
+  note/.style={font=\tiny, text=gray!70, align=center}
+]
+
+\node[runtime] (user) at (0,3.6) {Operator workstation\\Browser};
+\node[runtime] (app) at (4.2,3.6) {UI/API service};
+\node[runtime] (queue) at (8.4,3.6) {Queue trigger};
+
+\node[runtime] (agent) at (4.2,1.3) {Agent job};
+\node[runtime, fill=green!10, draw=green!60] (browser) at (8.4,1.3) {Browser job};
+\node[store] (db) at (0,1.3) {PostgreSQL\\Observability DB};
+\node[store, fill=orange!10, draw=orange!60] (art) at (12.6,1.3) {Artifact storage};
+
+\node[ext] (apis) at (4.2,-1.0) {External APIs};
+\node[ext] (sites) at (8.4,-1.0) {Target websites};
+
+\draw[arr] (user) -- node[above, note]{launch / review} (app);
+\draw[arr] (app) -- node[above, note]{enqueue} (queue);
+\draw[arr] (queue) -- node[right, note]{dispatch} (agent);
+\draw[arr] (agent) -- node[above, note]{browser task} (browser);
+\draw[arr] (agent.west) -- node[above, note]{events / metrics} (db.east);
+\draw[arr] (app.west) to[bend left=20] node[above, note]{history} (db.north);
+\draw[arr] (browser.east) -- node[above, note]{artifacts} (art.west);
+\draw[arr] (agent) -- node[left, note]{provider calls} (apis);
+\draw[arr] (browser) -- node[right, note]{page interaction} (sites);
+
+\node[draw=gray!50, dashed, rounded corners=8pt, fit=(app)(queue)(agent)(browser)(db)(art), inner sep=10pt] (cloud) {};
+\node[anchor=south, font=\small\bfseries, text=accent] at ([yshift=0.15cm]cloud.north)
+  {Target cloud deployment};
+
+\end{tikzpicture}
+}
+\caption{Target deployment architecture for future queue-driven extraction jobs.}
+\label{fig:hardware-architecture}
+\end{figure}
+
+During the internship, the company-side operational deployment remained the validated n8n single-agent workflow. The Python architecture was evaluated as a reference implementation and designed to remain compatible with future Azure Container Apps Jobs execution.
+
 
 \section{Memory and knowledge reuse architecture}
 
@@ -240,46 +369,39 @@ Cost control is part of the architecture, not an afterthought. The main mechanis
   \item per-run cost visibility in observability surfaces.
 \end{itemize}
 
-\section{Azure deployment target}
+\section{Architectural transition from the prototype}
 
-The target production model separates interactive services from heavy extraction jobs
-as shown in Figure~\ref{fig:azure-deploy}. The two core Azure components are
-Azure Service Bus~\cite{azure-servicebus} for message-driven work distribution and
-Azure Container Apps Jobs~\cite{azure-jobs} for event-triggered, finite-lifetime
-extraction executions.
+The transition from the validated n8n workflow to the Python reference architecture
+changed the architecture in three practical ways:
 
-\begin{figure}[H]
+\begin{itemize}
+  \item prototype-friendly visual orchestration moved to explicit code boundaries;
+  \item short-lived workflow context moved to persistent memory and observability;
+  \item ad hoc experimentation moved to repeatable engineering surfaces with tests and
+    review tooling.
+\end{itemize}
+
+\begin{table}[H]
 \centering
-\begin{tikzpicture}[node distance=0.7cm and 1.6cm,
-  azbox/.style={draw=blue!60, fill=blue!7, rounded corners=4pt,
-                minimum width=4cm, minimum height=1.1cm,
-                font=\small, align=center}
-]
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Aspect & n8n workflow & Python reference architecture \\
+\midrule
+Orchestration & Visual workflow editor & Explicit Python orchestrator \\
+Memory & Per-workflow context only & Short-term + cross-run observability database \\
+Observability & Limited aggregate logs & Per-event structured traces with cost \\
+Prompt lifecycle & Inline node text & Versioned system prompts per agent \\
+Testing & Manual trigger only & Automated regression tests + eval routes \\
+Cost visibility & Basic & Per-run token/cost tracking \\
+\bottomrule
+\end{tabularx}
+\caption{Architectural changes from the validated n8n workflow to the Python reference
+architecture.}
+\label{tab:arch-transition}
+\end{table}
 
-\node[azbox] (bus) {Azure Service Bus\\Queue};
-\node[azbox, left=2.5cm of bus] (fn) {Azure Function\\(timer trigger)};
-\node[azbox, right=2.5cm of bus] (job) {Container Apps Job\\(event-driven)};
-\node[azbox, above=1.2cm of fn] (db) {PostgreSQL\\(input URLs table)};
-\node[azbox, below=1.2cm of job] (blob) {Blob Storage\\(screenshots)};
-\node[azbox, below=1.2cm of bus] (pg) {PostgreSQL\\(output evidence)};
-\node[azbox, right=2.5cm of job] (api) {FastAPI Service\\+ Next.js Console};
-
-\draw[myarrow] (db) -- node[right, font=\tiny]{new URLs} (fn);
-\draw[myarrow] (fn) -- node[above, font=\tiny]{enqueue} (bus);
-\draw[myarrow] (bus) -- node[above, font=\tiny]{trigger} (job);
-\draw[myarrow] (job) -- node[right, font=\tiny]{screenshots} (blob);
-\draw[myarrow] (job) -- node[right, font=\tiny]{evidence} (pg);
-\draw[myarrow, dashed, gray!60] (api) -- node[above, font=\tiny]{monitor} (job);
-
-\end{tikzpicture}
-\caption{Azure deployment architecture: queue-driven extraction jobs with persistent
-output storage.}
-\label{fig:azure-deploy}
-\end{figure}
-
-\textbf{Important implementation note.} During the internship execution phase, Azure
-Service Bus and Azure Container Apps Jobs were \textbf{documented as target architecture}
-but were \textbf{not used in daily runtime}. Most runs were executed in
-local/containerized environments while preserving cloud-compatible design boundaries.
-
-The n8n prototype confirmed feasibility but had structural limits at scale: workflow context was local to each execution, large flows were hard to debug, and prompt/tool evolution was difficult to govern. The coded platform addresses all three: an explicit Python orchestrator with versioned prompts, persistent memory, and per-event structured traces. That transition is what makes long-term operation feasible as a maintainable evidence collection system.
+This transition documents how the validated workflow can evolve into a more maintainable
+and observable evidence-collection system.

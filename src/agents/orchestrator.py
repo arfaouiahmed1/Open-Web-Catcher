@@ -7,13 +7,13 @@ import json
 import re
 import uuid
 from functools import partial
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 from urllib.parse import urlparse
 
 from langgraph.graph import END, START, StateGraph
 
 from src.memory.long_term import LongTermMemory
-from src.models.enums import AgentType, ExtractionStatus, PageType
+from src.models.enums import AgentType, Confidence, ExtractionStatus, PageType
 from src.models.schemas import (
     ClassificationResult,
     ExtractionResult,
@@ -26,8 +26,12 @@ from src.models.schemas import (
 from src.tools.email_tool import EmailTool
 from src.tools.ipinfo_tool import IPInfoTool
 from src.utils.config import Settings
+from src.utils.instrumentation import (
+    observability_span,
+    set_span_output,
+    using_observability_context,
+)
 from src.utils.logging import get_logger
-from src.utils.instrumentation import observability_span, set_span_output, using_observability_context
 from src.utils.observability import RunObserver, get_observability_status, run_registry
 
 logger = get_logger(__name__)
@@ -39,6 +43,7 @@ class HandoffContext(TypedDict, total=False):
     All fields are optional so callers only populate what they have.
     Use ``render_handoff()`` to convert to a prompt string.
     """
+
     root_url: str
     target_url: str
     target_label: str
@@ -87,46 +92,84 @@ _EMBEDDED_EVIDENCE_CHECKLIST = [
 def render_handoff(ctx: HandoffContext) -> str:
     """Serialize HandoffContext to a human-readable prompt string."""
     lines = ["ORCHESTRATOR HANDOFF"]
-    if ctx.get("root_url"):
-        lines.append(f"- root url: {ctx['root_url']}")
-    if ctx.get("target_url"):
+
+    root_url = ctx.get("root_url")
+    if root_url:
+        lines.append(f"- root url: {root_url}")
+
+    target_url = ctx.get("target_url")
+    if target_url:
         target_label = str(ctx.get("target_label") or "target url")
-        lines.append(f"- {target_label}: {ctx['target_url']}")
-    if ctx.get("page_type"):
-        lines.append(f"- upstream classification: {ctx['page_type']}")
-    if ctx.get("classification_reasoning"):
-        lines.append(f"- classification reasoning: {_truncate(ctx['classification_reasoning'])}")
-    if ctx.get("candidate_title"):
-        lines.append(f"- candidate title: {_truncate(ctx['candidate_title'], max_chars=180)}")
-    if ctx.get("candidate_participants"):
-        lines.append(f"- participants: {_truncate(ctx['candidate_participants'], max_chars=180)}")
-    if ctx.get("landing_route"):
-        lines.append(f"- landing suggested route: {ctx['landing_route']}")
-    if ctx.get("landing_iframes"):
-        lines.append(f"- landing iframes to watch: {', '.join(ctx['landing_iframes'][:4])}")
-    if ctx.get("recovery_url"):
-        lines.append(f"- recovery url: {ctx['recovery_url']}")
-    if ctx.get("route_source"):
-        lines.append(f"- route source: {ctx['route_source']}")
-    if ctx.get("navigation_policy"):
-        lines.append(f"- navigation policy: {ctx['navigation_policy']}")
-    if ctx.get("required_evidence"):
-        lines.append(f"- required evidence: {', '.join(ctx['required_evidence'][:6])}")
-    if ctx.get("source_hosting_url"):
-        lines.append(f"- source hosting page: {ctx['source_hosting_url']}")
-    if ctx.get("source_hosting_status"):
-        lines.append(f"- source hosting status: {ctx['source_hosting_status']}")
-    if ctx.get("source_hosting_decision"):
-        lines.append(f"- source hosting decision: {ctx['source_hosting_decision']}")
-    if ctx.get("source_streams_found"):
-        lines.append(f"- source hosting already found streams: {ctx['source_streams_found']}")
-    if ctx.get("focus"):
-        lines.append(f"- focus: {ctx['focus']}")
-    if ctx.get("pattern_context"):
-        lines.append(f"- pattern context: {ctx['pattern_context']}")
-    if ctx.get("memory_hints"):
+        lines.append(f"- {target_label}: {target_url}")
+
+    page_type = ctx.get("page_type")
+    if page_type:
+        lines.append(f"- upstream classification: {page_type}")
+
+    classification_reasoning = ctx.get("classification_reasoning")
+    if classification_reasoning:
+        lines.append(f"- classification reasoning: {_truncate(classification_reasoning)}")
+
+    candidate_title = ctx.get("candidate_title")
+    if candidate_title:
+        lines.append(f"- candidate title: {_truncate(candidate_title, max_chars=180)}")
+
+    candidate_participants = ctx.get("candidate_participants")
+    if candidate_participants:
+        lines.append(f"- participants: {_truncate(candidate_participants, max_chars=180)}")
+
+    landing_route = ctx.get("landing_route")
+    if landing_route:
+        lines.append(f"- landing suggested route: {landing_route}")
+
+    landing_iframes = ctx.get("landing_iframes")
+    if landing_iframes:
+        lines.append(f"- landing iframes to watch: {', '.join(landing_iframes[:4])}")
+
+    recovery_url = ctx.get("recovery_url")
+    if recovery_url:
+        lines.append(f"- recovery url: {recovery_url}")
+
+    route_source = ctx.get("route_source")
+    if route_source:
+        lines.append(f"- route source: {route_source}")
+
+    navigation_policy = ctx.get("navigation_policy")
+    if navigation_policy:
+        lines.append(f"- navigation policy: {navigation_policy}")
+
+    required_evidence = ctx.get("required_evidence")
+    if required_evidence:
+        lines.append(f"- required evidence: {', '.join(required_evidence[:6])}")
+
+    source_hosting_url = ctx.get("source_hosting_url")
+    if source_hosting_url:
+        lines.append(f"- source hosting page: {source_hosting_url}")
+
+    source_hosting_status = ctx.get("source_hosting_status")
+    if source_hosting_status:
+        lines.append(f"- source hosting status: {source_hosting_status}")
+
+    source_hosting_decision = ctx.get("source_hosting_decision")
+    if source_hosting_decision:
+        lines.append(f"- source hosting decision: {source_hosting_decision}")
+
+    source_streams_found = ctx.get("source_streams_found")
+    if source_streams_found:
+        lines.append(f"- source hosting already found streams: {source_streams_found}")
+
+    focus = ctx.get("focus")
+    if focus:
+        lines.append(f"- focus: {focus}")
+
+    pattern_context = ctx.get("pattern_context")
+    if pattern_context:
+        lines.append(f"- pattern context: {pattern_context}")
+
+    memory_hints = ctx.get("memory_hints")
+    if memory_hints:
         lines.append("- memory check: prior hints found for this domain; use as soft guidance")
-        lines.append(_truncate(ctx["memory_hints"], max_chars=1200))
+        lines.append(_truncate(memory_hints, max_chars=1200))
     return "\n".join(lines)
 
 
@@ -172,12 +215,20 @@ def _emit_orchestrator_decision(
 
 def _collect_embedded_urls(extraction: ExtractionResult) -> list[str]:
     urls = list(extraction.embedded_urls)
+    for key in ("servers_needing_embed", "embedded_urls_for_processing", "embedded_urls"):
+        raw_values = extraction.metadata.get(key, [])
+        if isinstance(raw_values, list):
+            urls.extend(str(value or "").strip() for value in raw_values)
+        elif isinstance(raw_values, str):
+            urls.append(raw_values.strip())
     for server in extraction.servers:
         if server.embedded_url:
             urls.append(server.embedded_url)
         if server.player_iframe_url:
             urls.append(server.player_iframe_url)
     for server in extraction.metadata.get("servers", []):
+        if not isinstance(server, dict):
+            continue
         for key in ("embedded_url", "player_iframe_url"):
             candidate = str(server.get(key) or "").strip()
             if candidate:
@@ -216,7 +267,9 @@ def _looks_like_direct_embed_url(url: str) -> bool:
 
 
 def _normalize_landing_route(route: str) -> str:
-    return "embed_agent" if str(route or "").strip().lower() == "embed_agent" else "stream_extractor"
+    return (
+        "embed_agent" if str(route or "").strip().lower() == "embed_agent" else "stream_extractor"
+    )
 
 
 def _resolve_landing_match_route(match: MatchInfo, *, root_url: str) -> str:
@@ -224,12 +277,15 @@ def _resolve_landing_match_route(match: MatchInfo, *, root_url: str) -> str:
     if route != "embed_agent":
         return "stream_extractor"
 
+    # Only direct player/embed URLs should bypass the hosting agent. Same-site
+    # `/embed` or `/player` URLs are still valid embedded-player targets.
+    if _looks_like_direct_embed_url(match.url):
+        return "embed_agent"
+
     reference_url = match.entry_point or root_url
     if _same_site_or_subdomain(match.url, reference_url):
         return "stream_extractor"
-    if not _looks_like_direct_embed_url(match.url):
-        return "stream_extractor"
-    return "embed_agent"
+    return "stream_extractor"
 
 
 def _truncate(value: Any, *, max_chars: int = 700) -> str:
@@ -276,11 +332,10 @@ def _latest_hosting_context_for_embedded(
 
 def _requires_embedded_followup(extraction: ExtractionResult) -> bool:
     decision = str(extraction.metadata.get("decision", "") or "").strip().lower()
+    embedded_candidates = _collect_embedded_urls(extraction)
     if decision in {"needs_embed_agent", "partial_success_needs_embed"}:
         return True
-    if extraction.status != ExtractionStatus.SUCCESS:
-        return True
-    return not extraction.streams and bool(_collect_embedded_urls(extraction))
+    return not extraction.streams and bool(embedded_candidates)
 
 
 def _build_landing_handoff(
@@ -337,7 +392,9 @@ def _build_embedded_handoff(
     target_url: str,
     memory_hint_text: str,
 ) -> str:
-    source_hosting = _latest_hosting_context_for_embedded(state.get("extraction_results", []), embedded_url=target_url)
+    source_hosting = _latest_hosting_context_for_embedded(
+        state.get("extraction_results", []), embedded_url=target_url
+    )
     match = _match_for_url(state.get("matches", []), target_url)
     ctx: HandoffContext = {
         "root_url": state["url"],
@@ -357,7 +414,9 @@ def _build_embedded_handoff(
     if source_hosting is not None:
         ctx["source_hosting_url"] = source_hosting.url
         ctx["source_hosting_status"] = source_hosting.status.value
-        ctx["source_hosting_decision"] = str(source_hosting.metadata.get("decision", "") or "").strip()
+        ctx["source_hosting_decision"] = str(
+            source_hosting.metadata.get("decision", "") or ""
+        ).strip()
         ctx["source_streams_found"] = len(source_hosting.streams)
         ctx["route_source"] = "hosting output: explicit embedded_url/player_iframe handoff"
     return render_handoff(ctx)
@@ -377,7 +436,16 @@ async def classify_node(
         "Calling classification agent",
         details={"url": state["url"], "reason": "recheck page type before routing"},
     )
-    result = await ClassificationAgent(settings).run(url=state["url"], observer=child)
+    try:
+        result = await ClassificationAgent(settings).run(url=state["url"], observer=child)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Classification agent failed for %s: %s", state["url"], exc)
+        result = ClassificationResult(
+            url=state["url"],
+            page_type=PageType.UNKNOWN,
+            confidence=Confidence.LOW,
+            reasoning=f"Classification failed: {type(exc).__name__}: {str(exc)[:500]}",
+        )
     next_node = route_after_classification({**state, "classification": result})
     _emit_orchestrator_decision(
         observer,
@@ -445,6 +513,7 @@ async def landing_page_node(
         },
     )
     hosting_pages: list[dict[str, Any]] = []
+    extraction_results = list(state["extraction_results"])
     landing_outcome: ExtractionResult | None = None
     try:
         landing_outcome = await LandingPageAgent(settings).run(
@@ -455,6 +524,19 @@ async def landing_page_node(
         hosting_pages = landing_outcome.metadata.get("hosting_pages", [])
     except Exception as exc:
         logger.warning("Landing page agent failed for %s: %s", state["url"], exc)
+        error_text = str(exc)
+        landing_outcome = ExtractionResult(
+            url=state["url"],
+            page_type=PageType.LANDING,
+            status=ExtractionStatus.TIMEOUT
+            if "timed out" in error_text.lower()
+            else ExtractionStatus.FAILED,
+            agent_type=AgentType.LANDING_PAGE,
+            error_message=error_text,
+            metadata={"orchestrator_error": type(exc).__name__},
+        )
+    if landing_outcome is not None:
+        extraction_results.append(landing_outcome)
 
     matches: list[MatchInfo] = []
     for page in hosting_pages:
@@ -471,7 +553,11 @@ async def landing_page_node(
 
     for match in matches:
         resolved_route = _resolve_landing_match_route(match, root_url=state["url"])
-        normalized_match = match.model_copy(update={"route": resolved_route}) if match.route != resolved_route else match
+        normalized_match = (
+            match.model_copy(update={"route": resolved_route})
+            if match.route != resolved_route
+            else match
+        )
         normalized_matches.append(normalized_match)
         if resolved_route == "embed_agent":
             pending_embedded_urls.append(normalized_match.url)
@@ -505,6 +591,7 @@ async def landing_page_node(
         "matches": matches,
         "pending_hosting_urls": pending_hosting_urls,
         "pending_embedded_urls": pending_embedded_urls,
+        "extraction_results": extraction_results,
     }
 
 
@@ -537,7 +624,8 @@ async def hosting_page_node(
             if site_url_pattern:
                 break
 
-    sem = asyncio.Semaphore(settings.max_parallel_hosting_pages)
+    parallel_limit = max(1, int(settings.max_parallel_hosting_pages or 1))
+    sem = asyncio.Semaphore(parallel_limit)
 
     async def _guarded(coro: Any) -> Any:
         async with sem:
@@ -589,18 +677,21 @@ async def hosting_page_node(
     pending_embedded_urls = list(state["pending_embedded_urls"])
 
     for target_url, outcome in zip(target_urls, outcomes, strict=False):
-        if isinstance(outcome, Exception):
+        if isinstance(outcome, BaseException):
             logger.warning("Hosting page agent failed for %s: %s", target_url, outcome)
+            error_text = str(outcome)
             extraction = ExtractionResult(
                 url=target_url,
                 page_type=PageType.HOSTING,
-                status=ExtractionStatus.FAILED,
+                status=ExtractionStatus.TIMEOUT
+                if "timed out" in error_text.lower()
+                else ExtractionStatus.FAILED,
                 agent_type=AgentType.HOSTING_PAGE,
-                error_message=str(outcome),
+                error_message=error_text,
                 metadata={"orchestrator_error": type(outcome).__name__},
             )
         else:
-            extraction = outcome
+            extraction = cast(ExtractionResult, outcome)
 
         extraction_results.append(extraction)
 
@@ -651,7 +742,8 @@ async def embedded_page_node(
         details={"target_count": total_targets, "target_urls": target_urls[:20]},
     )
     tasks = []
-    sem = asyncio.Semaphore(settings.max_parallel_hosting_pages)
+    parallel_limit = max(1, int(settings.max_parallel_hosting_pages or 1))
+    sem = asyncio.Semaphore(parallel_limit)
 
     async def _guarded(coro: Any) -> Any:
         async with sem:
@@ -694,18 +786,21 @@ async def embedded_page_node(
 
     extraction_results = list(state["extraction_results"])
     for target_url, outcome in zip(target_urls, outcomes, strict=False):
-        if isinstance(outcome, Exception):
+        if isinstance(outcome, BaseException):
             logger.warning("Embedded page agent failed for %s: %s", target_url, outcome)
+            error_text = str(outcome)
             extraction = ExtractionResult(
                 url=target_url,
                 page_type=PageType.EMBEDDED,
-                status=ExtractionStatus.FAILED,
+                status=ExtractionStatus.TIMEOUT
+                if "timed out" in error_text.lower()
+                else ExtractionStatus.FAILED,
                 agent_type=AgentType.EMBEDDED_PAGE,
-                error_message=str(outcome),
+                error_message=error_text,
                 metadata={"orchestrator_error": type(outcome).__name__},
             )
         else:
-            extraction = outcome
+            extraction = cast(ExtractionResult, outcome)
         extraction_results.append(extraction)
 
     return {
@@ -769,8 +864,12 @@ async def generate_takedown_emails_node(
     )
     payload = await EmailTool()._arun(
         infringing_url=state["url"],
-        provider_analysis=[provider.model_dump(mode="json") for provider in state["provider_analysis"]],
-        extraction_results=[result.model_dump(mode="json") for result in state["extraction_results"]],
+        provider_analysis=[
+            provider.model_dump(mode="json") for provider in state["provider_analysis"]
+        ],
+        extraction_results=[
+            result.model_dump(mode="json") for result in state["extraction_results"]
+        ],
     )
     try:
         parsed = json.loads(payload)
@@ -842,8 +941,12 @@ def build_graph(settings: Settings, observer: RunObserver | None = None):
         "embedded_page",
         partial(embedded_page_node, settings=settings, observer=observer, memory=memory),
     )
-    graph.add_node("analyze_providers", partial(analyze_providers_node, settings=settings, observer=observer))
-    graph.add_node("generate_takedown_emails", partial(generate_takedown_emails_node, observer=observer))
+    graph.add_node(
+        "analyze_providers", partial(analyze_providers_node, settings=settings, observer=observer)
+    )
+    graph.add_node(
+        "generate_takedown_emails", partial(generate_takedown_emails_node, observer=observer)
+    )
 
     graph.add_edge(START, "classify")
     graph.add_conditional_edges(
@@ -905,7 +1008,9 @@ class OrchestratorAgent:
                 try:
                     memory = LongTermMemory(self.settings.memory_db_path)
                     memory_hints = {
-                        agent_type.value: _memory_hint(memory, url=url, page_type=agent_type.value, limit=2)
+                        agent_type.value: _memory_hint(
+                            memory, url=url, page_type=agent_type.value, limit=2
+                        )
                         for agent_type in (
                             AgentType.CLASSIFICATION,
                             AgentType.LANDING_PAGE,
@@ -965,8 +1070,11 @@ class OrchestratorAgent:
                         "owc.runtime": "langgraph",
                     },
                 ) as span:
-                    final_state = await self.graph.ainvoke(initial_state)
-                    result = _build_pipeline_result(final_state, self.observer.trace().metrics if self.observer else None)
+                    final_state = cast(PipelineState, await self.graph.ainvoke(initial_state))
+                    result = _build_pipeline_result(
+                        final_state,
+                        self.observer.trace().metrics if self.observer else None,
+                    )
                     set_span_output(
                         span,
                         {
@@ -979,11 +1087,17 @@ class OrchestratorAgent:
 
             if self.observer is not None:
                 non_failure_statuses = {ExtractionStatus.SUCCESS, ExtractionStatus.PARTIAL}
-                failure_mode = "" if result.final_status == ExtractionStatus.SUCCESS else result.final_status.value
+                failure_mode = (
+                    ""
+                    if result.final_status == ExtractionStatus.SUCCESS
+                    else result.final_status.value
+                )
                 self.observer.emit(
                     "pipeline_finished",
                     f"Pipeline finished with status {result.final_status}",
-                    status="success" if result.final_status == ExtractionStatus.SUCCESS else "warning",
+                    status="success"
+                    if result.final_status == ExtractionStatus.SUCCESS
+                    else "warning",
                     details={
                         "streams_found": len(result.all_streams),
                         "emails_generated": len(result.takedown_emails),
@@ -1040,7 +1154,11 @@ def _collect_all_streams(extraction_results: list[ExtractionResult]) -> list[Str
                     streams.append(StreamURL(url=url, source_layer=server.label))
         # Backward-compatible fallback for legacy payloads that only kept servers in metadata.
         for server in extraction.metadata.get("servers", []):
-            for url in server.get("m3u8_urls", []) + server.get("mpd_urls", []) + server.get("mp4_urls", []):
+            for url in (
+                server.get("m3u8_urls", [])
+                + server.get("mpd_urls", [])
+                + server.get("mp4_urls", [])
+            ):
                 if url and url not in seen:
                     seen.add(url)
                     streams.append(StreamURL(url=url, source_layer=server.get("label", "")))
@@ -1062,13 +1180,26 @@ def _collect_all_screenshots(extraction_results: list[ExtractionResult]) -> list
 
 
 def _build_pipeline_result(state: PipelineState, metrics: Any | None = None) -> PipelineResult:
-    all_streams = _collect_all_streams(state["extraction_results"])
+    extraction_results = state["extraction_results"]
+    all_streams = _collect_all_streams(extraction_results)
+    all_screenshots = _collect_all_screenshots(extraction_results)
+    pending_followups = bool(state["pending_hosting_urls"] or state["pending_embedded_urls"])
+    has_nonfailed_evidence = any(
+        result.status in {ExtractionStatus.SUCCESS, ExtractionStatus.PARTIAL}
+        or bool(result.streams)
+        or bool(result.screenshots)
+        or bool(result.embedded_urls)
+        or bool(_collect_embedded_urls(result))
+        for result in extraction_results
+    )
+    has_timeout = any(result.status == ExtractionStatus.TIMEOUT for result in extraction_results)
+
     if all_streams:
         final_status = ExtractionStatus.SUCCESS
-    elif state["extraction_results"]:
+    elif pending_followups or has_nonfailed_evidence:
         final_status = ExtractionStatus.PARTIAL
-    elif state["classification"] is not None and state["classification"].page_type == PageType.LANDING:
-        final_status = ExtractionStatus.PARTIAL
+    elif has_timeout:
+        final_status = ExtractionStatus.TIMEOUT
     else:
         final_status = ExtractionStatus.FAILED
 
@@ -1080,7 +1211,7 @@ def _build_pipeline_result(state: PipelineState, metrics: Any | None = None) -> 
         extraction_results=state["extraction_results"],
         final_status=final_status,
         all_streams=all_streams,
-        all_screenshots=_collect_all_screenshots(state["extraction_results"]),
+        all_screenshots=all_screenshots,
         provider_analysis=state["provider_analysis"],
         takedown_emails=state["takedown_emails"],
         metrics=metrics,

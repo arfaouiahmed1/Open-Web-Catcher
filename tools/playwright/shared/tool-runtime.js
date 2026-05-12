@@ -1,11 +1,11 @@
-import crypto from 'node:crypto';
+import crypto from "node:crypto";
 
-import { closeEphemeralBrowser, connectBrowser, getPage } from './browser.js';
-import { screenshotFull, screenshotViewport } from './screenshot.js';
-import { uploadImage } from './upload.js';
+import { closeEphemeralBrowser, connectBrowser, getPage } from "./browser.js";
+import { screenshotFull, screenshotViewport } from "./screenshot.js";
+import { uploadImage } from "./upload.js";
 
 function hashValue(value) {
-  return crypto.createHash('sha1').update(String(value)).digest('hex');
+  return crypto.createHash("sha1").update(String(value)).digest("hex");
 }
 
 const CHALLENGE_PATTERNS = [
@@ -39,16 +39,18 @@ function safeUrlOrigin(url) {
   try {
     return new URL(url).origin;
   } catch {
-    return '';
+    return "";
   }
 }
 
 function decodeUriStringSafe(value) {
-  const text = String(value ?? '');
-  if (!text || text.startsWith('data:')) return text;
-  if (!/%[0-9a-fA-F]{2}/.test(text) && !text.includes('+')) return text;
+  const text = String(value ?? "");
+  if (!text || text.startsWith("data:")) return text;
+  if (!/%[0-9a-fA-F]{2}/.test(text) && !text.includes("+")) return text;
 
-  const candidates = text.includes('+') ? [text.replace(/\+/g, '%20'), text] : [text];
+  const candidates = text.includes("+")
+    ? [text.replace(/\+/g, "%20"), text]
+    : [text];
   for (const candidate of candidates) {
     for (const decoder of [decodeURI, decodeURIComponent]) {
       try {
@@ -63,8 +65,8 @@ function decodeUriStringSafe(value) {
 }
 
 export function decodeUriEverywhere(value, seen = new WeakSet()) {
-  if (typeof value === 'string') return decodeUriStringSafe(value);
-  if (value == null || typeof value !== 'object') return value;
+  if (typeof value === "string") return decodeUriStringSafe(value);
+  if (value == null || typeof value !== "object") return value;
   if (seen.has(value)) return value;
 
   seen.add(value);
@@ -81,31 +83,33 @@ export function decodeUriEverywhere(value, seen = new WeakSet()) {
 }
 
 function encodeElementRef(payload) {
-  return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
 }
 
 function decodeElementRef(elementRef) {
-  return JSON.parse(Buffer.from(elementRef, 'base64url').toString('utf8'));
+  return JSON.parse(Buffer.from(elementRef, "base64url").toString("utf8"));
 }
 
-export function summarizePurpose(url, name = '', width = 0, height = 0) {
+export function summarizePurpose(url, name = "", width = 0, height = 0) {
   const haystack = `${url} ${name}`.toLowerCase();
-  if (/captcha|cloudflare|verify|challenge/.test(haystack)) return 'challenge';
-  if (/ad|banner|doubleclick|googlesyndication|popunder|track/.test(haystack)) return 'ad';
-  if (/embed|player|stream|video/.test(haystack)) return 'player';
-  if (width >= 300 && height >= 180) return 'content';
-  return 'unknown';
+  if (/captcha|cloudflare|verify|challenge/.test(haystack)) return "challenge";
+  if (/ad|banner|doubleclick|googlesyndication|popunder|track/.test(haystack))
+    return "ad";
+  if (/embed|player|stream|video/.test(haystack)) return "player";
+  if (width >= 300 && height >= 180) return "content";
+  return "unknown";
 }
 
 export function detectAccessStateFromSignals({
-  title = '',
-  textSample = '',
-  htmlSample = '',
-  url = '',
+  title = "",
+  textSample = "",
+  htmlSample = "",
+  url = "",
 } = {}) {
-  const haystack = `${title}\n${textSample}\n${htmlSample}\n${url}`.toLowerCase();
+  const haystack =
+    `${title}\n${textSample}\n${htmlSample}\n${url}`.toLowerCase();
   const challengeReasons = [];
-  let suspectedProvider = '';
+  let suspectedProvider = "";
 
   for (const pattern of CHALLENGE_PATTERNS) {
     if (pattern.test(haystack)) {
@@ -113,14 +117,18 @@ export function detectAccessStateFromSignals({
     }
   }
 
-  const hasCloudflareMarker = PROVIDER_PATTERNS.cloudflare.some((pattern) => pattern.test(haystack));
-  const hasGenericChallengeMarker = PROVIDER_PATTERNS.generic_challenge.some((pattern) => pattern.test(haystack));
+  const hasCloudflareMarker = PROVIDER_PATTERNS.cloudflare.some((pattern) =>
+    pattern.test(haystack),
+  );
+  const hasGenericChallengeMarker = PROVIDER_PATTERNS.generic_challenge.some(
+    (pattern) => pattern.test(haystack),
+  );
 
   const challengeDetected = challengeReasons.length > 0;
   if (hasCloudflareMarker) {
-    suspectedProvider = 'cloudflare';
+    suspectedProvider = "cloudflare";
   } else if (hasGenericChallengeMarker) {
-    suspectedProvider = 'generic_challenge';
+    suspectedProvider = "generic_challenge";
   }
 
   const blockReasons = [];
@@ -132,10 +140,10 @@ export function detectAccessStateFromSignals({
 
   const blocked = challengeDetected || blockReasons.length > 0;
   const confidence = challengeDetected
-    ? 'high'
+    ? "high"
     : blockReasons.length > 0
-      ? 'medium'
-      : 'low';
+      ? "medium"
+      : "low";
 
   // Provider markers alone (e.g., analytics/CDN mentions) are not enough to mark a page blocked.
   const reasons = blocked
@@ -145,7 +153,7 @@ export function detectAccessStateFromSignals({
   return {
     blocked,
     challenge_detected: challengeDetected,
-    suspected_provider: blocked ? suspectedProvider || 'none' : 'none',
+    suspected_provider: blocked ? suspectedProvider || "none" : "none",
     confidence,
     reasons,
   };
@@ -156,28 +164,32 @@ async function collectFrameMetrics(frame) {
     return await frame.evaluate(() => {
       const body = document.body;
       const doc = document.documentElement;
-      const text = (body?.innerText || '').replace(/\s+/g, ' ').trim();
+      const text = (body?.innerText || "").replace(/\s+/g, " ").trim();
       return {
-        title: document.title || '',
-        readyState: document.readyState || 'unknown',
+        title: document.title || "",
+        readyState: document.readyState || "unknown",
         textSample: text.slice(0, 1200),
         textLength: text.length,
-        htmlSample: (doc?.outerHTML || '').slice(0, 3000),
-        linkCount: document.querySelectorAll('a[href]').length,
-        buttonCount: document.querySelectorAll('button,[role="button"],[role="tab"],[onclick]').length,
-        inputCount: document.querySelectorAll('input,textarea,select').length,
-        overlayCount: document.querySelectorAll('[class*="overlay"],[class*="modal"],[class*="popup"]').length,
-        videoCount: document.querySelectorAll('video').length,
-        iframeCount: document.querySelectorAll('iframe').length,
+        htmlSample: (doc?.outerHTML || "").slice(0, 3000),
+        linkCount: document.querySelectorAll("a[href]").length,
+        buttonCount: document.querySelectorAll(
+          'button,[role="button"],[role="tab"],[onclick]',
+        ).length,
+        inputCount: document.querySelectorAll("input,textarea,select").length,
+        overlayCount: document.querySelectorAll(
+          '[class*="overlay"],[class*="modal"],[class*="popup"]',
+        ).length,
+        videoCount: document.querySelectorAll("video").length,
+        iframeCount: document.querySelectorAll("iframe").length,
       };
     });
   } catch (error) {
     return {
-      title: '',
-      readyState: 'error',
-      textSample: '',
+      title: "",
+      readyState: "error",
+      textSample: "",
       textLength: 0,
-      htmlSample: '',
+      htmlSample: "",
       linkCount: 0,
       buttonCount: 0,
       inputCount: 0,
@@ -190,7 +202,7 @@ async function collectFrameMetrics(frame) {
 }
 
 async function describeFrame(frame, framePath, rootOrigin, index = 0) {
-  const frameUrl = frame.url() || '';
+  const frameUrl = frame.url() || "";
   const metrics = await collectFrameMetrics(frame);
   let boundingBox = null;
 
@@ -207,16 +219,23 @@ async function describeFrame(frame, framePath, rootOrigin, index = 0) {
   return {
     frame_path: framePath,
     url: frameUrl,
-    name: frame.name() || '',
-    title: metrics.title || '',
-    parent_frame_path: frame.parentFrame() ? framePath.split('.').slice(0, -1).join('.') || 'root' : null,
+    name: frame.name() || "",
+    title: metrics.title || "",
+    parent_frame_path: frame.parentFrame()
+      ? framePath.split(".").slice(0, -1).join(".") || "root"
+      : null,
     child_count: frame.childFrames().length,
     index,
     accessible: !metrics.error,
-    cross_origin: Boolean(rootOrigin && frameUrl && safeUrlOrigin(frameUrl) && safeUrlOrigin(frameUrl) !== rootOrigin),
+    cross_origin: Boolean(
+      rootOrigin &&
+      frameUrl &&
+      safeUrlOrigin(frameUrl) &&
+      safeUrlOrigin(frameUrl) !== rootOrigin,
+    ),
     candidate_purpose: summarizePurpose(
       frameUrl,
-      frame.name() || '',
+      frame.name() || "",
       Math.round(boundingBox?.width || 0),
       Math.round(boundingBox?.height || 0),
     ),
@@ -245,24 +264,30 @@ async function walkFrames(frame, framePath, rootOrigin, collector, index = 0) {
   collector.push(await describeFrame(frame, framePath, rootOrigin, index));
   const children = frame.childFrames();
   for (let index = 0; index < children.length; index += 1) {
-    await walkFrames(children[index], `${framePath}.${index}`, rootOrigin, collector, index);
+    await walkFrames(
+      children[index],
+      `${framePath}.${index}`,
+      rootOrigin,
+      collector,
+      index,
+    );
   }
 }
 
 export async function buildFrameTree(page) {
   const frames = [];
   const rootOrigin = safeUrlOrigin(page.url());
-  await walkFrames(page.mainFrame(), 'root', rootOrigin, frames, 0);
+  await walkFrames(page.mainFrame(), "root", rootOrigin, frames, 0);
   return frames;
 }
 
-export async function resolveFrame(page, framePath = 'root') {
-  if (!framePath || framePath === 'root') {
-    return { ok: true, frame: page.mainFrame(), frame_path: 'root' };
+export async function resolveFrame(page, framePath = "root") {
+  if (!framePath || framePath === "root") {
+    return { ok: true, frame: page.mainFrame(), frame_path: "root" };
   }
 
-  const parts = String(framePath).split('.');
-  if (parts[0] !== 'root') {
+  const parts = String(framePath).split(".");
+  if (parts[0] !== "root") {
     return { ok: false, error: `Invalid frame_path '${framePath}'` };
   }
 
@@ -270,7 +295,10 @@ export async function resolveFrame(page, framePath = 'root') {
   for (let index = 1; index < parts.length; index += 1) {
     const childIndex = Number.parseInt(parts[index], 10);
     if (!Number.isInteger(childIndex) || childIndex < 0) {
-      return { ok: false, error: `Invalid frame_path segment '${parts[index]}'` };
+      return {
+        ok: false,
+        error: `Invalid frame_path segment '${parts[index]}'`,
+      };
     }
     const children = frame.childFrames();
     if (childIndex >= children.length) {
@@ -282,21 +310,23 @@ export async function resolveFrame(page, framePath = 'root') {
   return { ok: true, frame, frame_path: framePath };
 }
 
-export async function buildFrameState(page, framePath = 'root') {
+export async function buildFrameState(page, framePath = "root") {
   const resolved = await resolveFrame(page, framePath);
   if (!resolved.ok) {
     return {
       ok: false,
       frame_path: framePath,
-      dom_epoch: '',
-      page_state_id: '',
+      dom_epoch: "",
+      page_state_id: "",
       error: resolved.error,
     };
   }
 
   const frame = resolved.frame;
   const metrics = await collectFrameMetrics(frame);
-  const domEpoch = hashValue(`${frame.url()}|${metrics.readyState}|${metrics.textSample}|${metrics.htmlSample}`);
+  const domEpoch = hashValue(
+    `${frame.url()}|${metrics.readyState}|${metrics.textSample}|${metrics.htmlSample}`,
+  );
   const pageStateId = hashValue(`${page.url()}|${framePath}|${domEpoch}`);
 
   return {
@@ -322,138 +352,184 @@ function createXpath(node) {
     parts.unshift(`${current.tagName.toLowerCase()}[${idx}]`);
     current = current.parentElement;
   }
-  return `//${parts.join('/')}`;
+  return `//${parts.join("/")}`;
 }
 
 function createSelector(node) {
   if (node.id) return `#${node.id}`;
-  if (node.getAttribute('name')) return `[name="${node.getAttribute('name')}"]`;
-  const classes = (node.className || '').toString().trim().split(/\s+/).filter(Boolean);
-  if (classes.length > 0) return `.${classes.slice(0, 2).join('.')}`;
+  if (node.getAttribute("name")) return `[name="${node.getAttribute("name")}"]`;
+  const classes = (node.className || "")
+    .toString()
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (classes.length > 0) return `.${classes.slice(0, 2).join(".")}`;
   return node.tagName.toLowerCase();
 }
 
 function inferKind(node) {
   const tag = node.tagName.toLowerCase();
-  const type = (node.getAttribute('type') || '').toLowerCase();
-  const role = (node.getAttribute('role') || '').toLowerCase();
-  const classes = (node.className || '').toString().toLowerCase();
+  const type = (node.getAttribute("type") || "").toLowerCase();
+  const role = (node.getAttribute("role") || "").toLowerCase();
+  const classes = (node.className || "").toString().toLowerCase();
 
-  if (tag === 'iframe') return 'iframe';
-  if (tag === 'video') return 'video';
-  if (tag === 'form') return 'form';
-  if (tag === 'select') return 'select';
-  if (type === 'checkbox') return 'checkbox';
-  if (type === 'radio') return 'radio';
-  if (tag === 'input' || tag === 'textarea') return 'input';
-  if (role === 'tab' || classes.includes('tab')) return 'tab';
-  if (classes.includes('overlay') || classes.includes('modal') || classes.includes('popup')) return 'overlay';
-  if (tag === 'a' && node.getAttribute('href')) return 'link';
-  if (tag === 'button' || role === 'button' || node.getAttribute('onclick')) return 'button';
-  return 'element';
+  if (tag === "iframe") return "iframe";
+  if (tag === "video") return "video";
+  if (tag === "form") return "form";
+  if (tag === "select") return "select";
+  if (type === "checkbox") return "checkbox";
+  if (type === "radio") return "radio";
+  if (tag === "input" || tag === "textarea") return "input";
+  if (role === "tab" || classes.includes("tab")) return "tab";
+  if (
+    classes.includes("overlay") ||
+    classes.includes("modal") ||
+    classes.includes("popup")
+  )
+    return "overlay";
+  if (tag === "a" && node.getAttribute("href")) return "link";
+  if (tag === "button" || role === "button" || node.getAttribute("onclick"))
+    return "button";
+  return "element";
 }
 
-export async function collectElements(frame, framePath = 'root') {
-  return frame.evaluate(({ framePathValue }) => {
-    const isVisible = (node) => {
-      const style = window.getComputedStyle(node);
-      const rect = node.getBoundingClientRect();
-      return rect.width > 0
-        && rect.height > 0
-        && style.visibility !== 'hidden'
-        && style.display !== 'none'
-        && style.opacity !== '0';
-    };
-
-    const nodes = Array.from(
-      document.querySelectorAll(
-        'a[href],button,input,textarea,select,video,iframe,form,[role="button"],[role="tab"],[onclick],[class*="tab"],[class*="overlay"],[class*="modal"],[class*="popup"]',
-      ),
-    );
-
-    return nodes.map((node, index) => {
-      const rect = node.getBoundingClientRect();
-      const attrs = {};
-      for (const attr of ['href', 'src', 'name', 'placeholder', 'type', 'role', 'value', 'aria-label', 'data-server', 'data-source']) {
-        const value = node.getAttribute(attr);
-        if (value) attrs[attr] = value;
-      }
-
-      const text = (node.innerText || node.textContent || node.value || '').replace(/\s+/g, ' ').trim().slice(0, 200);
-      const kind = (() => {
-        const tag = node.tagName.toLowerCase();
-        const type = (node.getAttribute('type') || '').toLowerCase();
-        const role = (node.getAttribute('role') || '').toLowerCase();
-        const classes = (node.className || '').toString().toLowerCase();
-
-        if (tag === 'iframe') return 'iframe';
-        if (tag === 'video') return 'video';
-        if (tag === 'form') return 'form';
-        if (tag === 'select') return 'select';
-        if (type === 'checkbox') return 'checkbox';
-        if (type === 'radio') return 'radio';
-        if (tag === 'input' || tag === 'textarea') return 'input';
-        if (role === 'tab' || classes.includes('tab')) return 'tab';
-        if (classes.includes('overlay') || classes.includes('modal') || classes.includes('popup')) return 'overlay';
-        if (tag === 'a' && node.getAttribute('href')) return 'link';
-        if (tag === 'button' || role === 'button' || node.getAttribute('onclick')) return 'button';
-        return 'element';
-      })();
-
-      const xpath = (() => {
-        const parts = [];
-        let current = node;
-        while (current && current.nodeType === 1) {
-          let idx = 1;
-          let sibling = current.previousElementSibling;
-          while (sibling) {
-            if (sibling.tagName === current.tagName) idx += 1;
-            sibling = sibling.previousElementSibling;
-          }
-          parts.unshift(`${current.tagName.toLowerCase()}[${idx}]`);
-          current = current.parentElement;
-        }
-        return `//${parts.join('/')}`;
-      })();
-
-      const selector = (() => {
-        if (node.id) return `#${node.id}`;
-        const name = node.getAttribute('name');
-        if (name) return `[name="${name}"]`;
-        const classes = (node.className || '').toString().trim().split(/\s+/).filter(Boolean);
-        if (classes.length > 0) return `.${classes.slice(0, 2).join('.')}`;
-        return `${node.tagName.toLowerCase()}:nth-of-type(${index + 1})`;
-      })();
-
-      return {
-        kind,
-        tag: node.tagName.toLowerCase(),
-        type: (node.getAttribute('type') || '').toLowerCase(),
-        role: (node.getAttribute('role') || '').toLowerCase(),
-        text,
-        href: node.getAttribute('href') || '',
-        src: node.getAttribute('src') || '',
-        selector,
-        xpath,
-        attrs,
-        visible: isVisible(node),
-        checked: Boolean(node.checked),
-        disabled: Boolean(node.disabled),
-        selected: Boolean(node.selected),
-        value: (node.value || '').slice(0, 200),
-        frame_path: framePathValue,
-        geometry: {
-          x: Math.round(rect.x),
-          y: Math.round(rect.y),
-          width: Math.round(rect.width),
-          height: Math.round(rect.height),
-          center_x: Math.round(rect.x + rect.width / 2),
-          center_y: Math.round(rect.y + rect.height / 2),
-        },
-        nearby_text: (node.parentElement?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 220),
+export async function collectElements(frame, framePath = "root") {
+  return frame.evaluate(
+    ({ framePathValue }) => {
+      const isVisible = (node) => {
+        const style = window.getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.visibility !== "hidden" &&
+          style.display !== "none" &&
+          style.opacity !== "0"
+        );
       };
-    });
-  }, { framePathValue: framePath });
+
+      const nodes = Array.from(
+        document.querySelectorAll(
+          'a[href],button,input,textarea,select,video,iframe,form,[role="button"],[role="tab"],[onclick],[class*="tab"],[class*="overlay"],[class*="modal"],[class*="popup"]',
+        ),
+      );
+
+      return nodes.map((node, index) => {
+        const rect = node.getBoundingClientRect();
+        const attrs = {};
+        for (const attr of [
+          "href",
+          "src",
+          "name",
+          "placeholder",
+          "type",
+          "role",
+          "value",
+          "aria-label",
+          "data-server",
+          "data-source",
+        ]) {
+          const value = node.getAttribute(attr);
+          if (value) attrs[attr] = value;
+        }
+
+        const text = (node.innerText || node.textContent || node.value || "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 200);
+        const kind = (() => {
+          const tag = node.tagName.toLowerCase();
+          const type = (node.getAttribute("type") || "").toLowerCase();
+          const role = (node.getAttribute("role") || "").toLowerCase();
+          const classes = (node.className || "").toString().toLowerCase();
+
+          if (tag === "iframe") return "iframe";
+          if (tag === "video") return "video";
+          if (tag === "form") return "form";
+          if (tag === "select") return "select";
+          if (type === "checkbox") return "checkbox";
+          if (type === "radio") return "radio";
+          if (tag === "input" || tag === "textarea") return "input";
+          if (role === "tab" || classes.includes("tab")) return "tab";
+          if (
+            classes.includes("overlay") ||
+            classes.includes("modal") ||
+            classes.includes("popup")
+          )
+            return "overlay";
+          if (tag === "a" && node.getAttribute("href")) return "link";
+          if (
+            tag === "button" ||
+            role === "button" ||
+            node.getAttribute("onclick")
+          )
+            return "button";
+          return "element";
+        })();
+
+        const xpath = (() => {
+          const parts = [];
+          let current = node;
+          while (current && current.nodeType === 1) {
+            let idx = 1;
+            let sibling = current.previousElementSibling;
+            while (sibling) {
+              if (sibling.tagName === current.tagName) idx += 1;
+              sibling = sibling.previousElementSibling;
+            }
+            parts.unshift(`${current.tagName.toLowerCase()}[${idx}]`);
+            current = current.parentElement;
+          }
+          return `//${parts.join("/")}`;
+        })();
+
+        const selector = (() => {
+          if (node.id) return `#${node.id}`;
+          const name = node.getAttribute("name");
+          if (name) return `[name="${name}"]`;
+          const classes = (node.className || "")
+            .toString()
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean);
+          if (classes.length > 0) return `.${classes.slice(0, 2).join(".")}`;
+          return `${node.tagName.toLowerCase()}:nth-of-type(${index + 1})`;
+        })();
+
+        return {
+          kind,
+          tag: node.tagName.toLowerCase(),
+          type: (node.getAttribute("type") || "").toLowerCase(),
+          role: (node.getAttribute("role") || "").toLowerCase(),
+          text,
+          href: node.getAttribute("href") || "",
+          src: node.getAttribute("src") || "",
+          selector,
+          xpath,
+          attrs,
+          visible: isVisible(node),
+          checked: Boolean(node.checked),
+          disabled: Boolean(node.disabled),
+          selected: Boolean(node.selected),
+          value: (node.value || "").slice(0, 200),
+          frame_path: framePathValue,
+          geometry: {
+            x: Math.round(rect.x),
+            y: Math.round(rect.y),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            center_x: Math.round(rect.x + rect.width / 2),
+            center_y: Math.round(rect.y + rect.height / 2),
+          },
+          nearby_text: (node.parentElement?.innerText || "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 220),
+        };
+      });
+    },
+    { framePathValue: framePath },
+  );
 }
 
 export function augmentElements(elements, pageState) {
@@ -474,51 +550,65 @@ export function augmentElements(elements, pageState) {
   }));
 }
 
-export function filterElements(elements, {
-  kind,
-  text_contains = '',
-  text_regex = '',
-  href_contains = '',
-  href_regex = '',
-  attr = null,
-  attr_name = '',
-  attr_value_contains = '',
-  attr_value_regex = '',
-  visible_only = true,
-  limit = 20,
-} = {}) {
+export function filterElements(
+  elements,
+  {
+    kind,
+    text_contains = "",
+    text_regex = "",
+    href_contains = "",
+    href_regex = "",
+    attr = null,
+    attr_name = "",
+    attr_value_contains = "",
+    attr_value_regex = "",
+    visible_only = true,
+    limit = 20,
+  } = {},
+) {
   const toRegex = (value) => {
     if (!value) return null;
     if (value instanceof RegExp) return value;
     try {
-      return new RegExp(String(value), 'i');
+      return new RegExp(String(value), "i");
     } catch {
       return null;
     }
   };
 
-  const normalizedText = String(text_contains || '').toLowerCase();
+  const normalizedText = String(text_contains || "").toLowerCase();
   const textRegex = toRegex(text_regex);
-  const normalizedHref = String(href_contains || '').toLowerCase();
+  const normalizedHref = String(href_contains || "").toLowerCase();
   const hrefRegex = toRegex(href_regex);
-  const attrName = attr?.name ? String(attr.name) : String(attr_name || '');
+  const attrName = attr?.name ? String(attr.name) : String(attr_name || "");
   const attrValue = attr?.value_contains
     ? String(attr.value_contains).toLowerCase()
-    : String(attr_value_contains || '').toLowerCase();
+    : String(attr_value_contains || "").toLowerCase();
   const attrValueRegex = toRegex(attr?.value_regex || attr_value_regex);
 
   return elements
     .filter((element) => !kind || element.kind === kind)
     .filter((element) => !visible_only || element.visible)
-    .filter((element) => !normalizedText || element.text.toLowerCase().includes(normalizedText))
-    .filter((element) => !textRegex || textRegex.test(String(element.text || '')))
-    .filter((element) => !normalizedHref || element.href.toLowerCase().includes(normalizedHref))
-    .filter((element) => !hrefRegex || hrefRegex.test(String(element.href || '')))
+    .filter(
+      (element) =>
+        !normalizedText || element.text.toLowerCase().includes(normalizedText),
+    )
+    .filter(
+      (element) => !textRegex || textRegex.test(String(element.text || "")),
+    )
+    .filter(
+      (element) =>
+        !normalizedHref || element.href.toLowerCase().includes(normalizedHref),
+    )
+    .filter(
+      (element) => !hrefRegex || hrefRegex.test(String(element.href || "")),
+    )
     .filter((element) => {
       if (!attrName) return true;
-      const value = element.attrs?.[attrName] || '';
+      const value = element.attrs?.[attrName] || "";
       const valueStr = String(value);
-      const containsOk = !attrValue || valueStr.toLowerCase().includes(attrValue);
+      const containsOk =
+        !attrValue || valueStr.toLowerCase().includes(attrValue);
       const regexOk = !attrValueRegex || attrValueRegex.test(valueStr);
       return containsOk && regexOk;
     })
@@ -529,10 +619,14 @@ async function resolveByText(frame, text) {
   const handle = await frame.evaluateHandle((needle) => {
     const normalizedNeedle = needle.toLowerCase();
     const nodes = Array.from(
-      document.querySelectorAll('a[href],button,input,textarea,select,[role="button"],[role="tab"],[onclick],label'),
+      document.querySelectorAll(
+        'a[href],button,input,textarea,select,[role="button"],[role="tab"],[onclick],label',
+      ),
     );
     for (const node of nodes) {
-      const candidate = (node.innerText || node.textContent || node.value || '').replace(/\s+/g, ' ').trim();
+      const candidate = (node.innerText || node.textContent || node.value || "")
+        .replace(/\s+/g, " ")
+        .trim();
       if (candidate.toLowerCase().includes(normalizedNeedle)) {
         return node;
       }
@@ -547,7 +641,7 @@ async function resolveByText(frame, text) {
 }
 
 function deriveFramePath(frame) {
-  if (!frame.parentFrame()) return 'root';
+  if (!frame.parentFrame()) return "root";
 
   const segments = [];
   let current = frame;
@@ -558,7 +652,7 @@ function deriveFramePath(frame) {
     current = parent;
   }
 
-  return segments.length ? `root.${segments.join('.')}` : 'root';
+  return segments.length ? `root.${segments.join(".")}` : "root";
 }
 
 async function tryResolveLocatorInFrame(frame, locator, timeoutMs = 8000) {
@@ -566,7 +660,9 @@ async function tryResolveLocatorInFrame(frame, locator, timeoutMs = 8000) {
 
   if (locator.selector) {
     try {
-      const handle = await frame.waitForSelector(locator.selector, { timeout: timeoutMs });
+      const handle = await frame.waitForSelector(locator.selector, {
+        timeout: timeoutMs,
+      });
       if (handle) {
         return {
           handle,
@@ -575,14 +671,20 @@ async function tryResolveLocatorInFrame(frame, locator, timeoutMs = 8000) {
         };
       }
     } catch (error) {
-      attempts.push({ strategy: 'selector', locator: locator.selector, error: error.message });
+      attempts.push({
+        strategy: "selector",
+        locator: locator.selector,
+        error: error.message,
+      });
     }
   }
 
   if (locator.xpath) {
     try {
       const playwrightXpathSelector = `::-p-xpath(${locator.xpath})`;
-      await frame.waitForSelector(playwrightXpathSelector, { timeout: timeoutMs });
+      await frame.waitForSelector(playwrightXpathSelector, {
+        timeout: timeoutMs,
+      });
       const matches = await frame.$$(playwrightXpathSelector);
       const handle = matches[0] || null;
       if (handle) {
@@ -593,17 +695,26 @@ async function tryResolveLocatorInFrame(frame, locator, timeoutMs = 8000) {
         };
       }
     } catch (error) {
-      attempts.push({ strategy: 'xpath', locator: locator.xpath, error: error.message });
+      attempts.push({
+        strategy: "xpath",
+        locator: locator.xpath,
+        error: error.message,
+      });
     }
   }
 
   if (locator.text) {
     try {
-      await frame.waitForFunction(
-        (needle) => (document.body?.innerText || '').toLowerCase().includes(String(needle).toLowerCase()),
-        { timeout: Math.min(timeoutMs, 2500) },
-        locator.text,
-      ).catch(() => {});
+      await frame
+        .waitForFunction(
+          (needle) =>
+            (document.body?.innerText || "")
+              .toLowerCase()
+              .includes(String(needle).toLowerCase()),
+          { timeout: Math.min(timeoutMs, 2500) },
+          locator.text,
+        )
+        .catch(() => {});
 
       const handle = await resolveByText(frame, locator.text);
       if (handle) {
@@ -614,7 +725,11 @@ async function tryResolveLocatorInFrame(frame, locator, timeoutMs = 8000) {
         };
       }
     } catch (error) {
-      attempts.push({ strategy: 'text', locator: locator.text, error: error.message });
+      attempts.push({
+        strategy: "text",
+        locator: locator.text,
+        error: error.message,
+      });
     }
   }
 
@@ -625,14 +740,17 @@ async function tryResolveLocatorInFrame(frame, locator, timeoutMs = 8000) {
   };
 }
 
-export async function resolveElementTarget(page, {
-  frame_path = 'root',
-  element_ref = '',
-  selector = '',
-  xpath = '',
-  text = '',
-} = {}) {
-  let effectiveFramePath = frame_path || 'root';
+export async function resolveElementTarget(
+  page,
+  {
+    frame_path = "root",
+    element_ref = "",
+    selector = "",
+    xpath = "",
+    text = "",
+  } = {},
+) {
+  let effectiveFramePath = frame_path || "root";
   let locator = { selector, xpath, text };
   let staleRefDetected = false;
   let frameFallbackApplied = false;
@@ -644,7 +762,11 @@ export async function resolveElementTarget(page, {
     try {
       decoded = decodeElementRef(element_ref);
     } catch {
-      return { ok: false, code: 'invalid_element_ref', error: 'Could not decode element_ref' };
+      return {
+        ok: false,
+        code: "invalid_element_ref",
+        error: "Could not decode element_ref",
+      };
     }
 
     effectiveFramePath = decoded.frame_path || effectiveFramePath;
@@ -655,7 +777,11 @@ export async function resolveElementTarget(page, {
     };
 
     const currentState = await buildFrameState(page, effectiveFramePath);
-    if (currentState.ok && decoded.dom_epoch && decoded.dom_epoch !== currentState.dom_epoch) {
+    if (
+      currentState.ok &&
+      decoded.dom_epoch &&
+      decoded.dom_epoch !== currentState.dom_epoch
+    ) {
       staleRefDetected = true;
     }
   }
@@ -663,33 +789,41 @@ export async function resolveElementTarget(page, {
   if (!locator.selector && !locator.xpath && !locator.text) {
     return {
       ok: false,
-      code: 'missing_locator',
-      error: 'No locator was provided (element_ref, selector, xpath, or text is required).',
+      code: "missing_locator",
+      error:
+        "No locator was provided (element_ref, selector, xpath, or text is required).",
       frame_path: effectiveFramePath,
     };
   }
 
   let frameState = await buildFrameState(page, effectiveFramePath);
-  if (!frameState.ok && effectiveFramePath !== 'root') {
-    const rootState = await buildFrameState(page, 'root');
+  if (!frameState.ok && effectiveFramePath !== "root") {
+    const rootState = await buildFrameState(page, "root");
     if (rootState.ok) {
       frameState = rootState;
-      effectiveFramePath = 'root';
+      effectiveFramePath = "root";
       frameFallbackApplied = true;
     }
   }
 
   if (!frameState.ok) {
-    return { ok: false, code: 'frame_not_found', error: frameState.error };
+    return { ok: false, code: "frame_not_found", error: frameState.error };
   }
 
   let resolvedFrame = frameState.frame;
   let resolvedFramePath = effectiveFramePath;
   let locatorUsed = {};
 
-  const primaryResolution = await tryResolveLocatorInFrame(frameState.frame, locator, 8000);
+  const primaryResolution = await tryResolveLocatorInFrame(
+    frameState.frame,
+    locator,
+    8000,
+  );
   resolutionAttempts = resolutionAttempts.concat(
-    (primaryResolution.attempts || []).map((attempt) => ({ frame_path: effectiveFramePath, ...attempt })),
+    (primaryResolution.attempts || []).map((attempt) => ({
+      frame_path: effectiveFramePath,
+      ...attempt,
+    })),
   );
 
   let handle = primaryResolution.handle;
@@ -703,9 +837,16 @@ export async function resolveElementTarget(page, {
 
     for (const fallbackFrame of fallbackFrames) {
       const fallbackFramePath = deriveFramePath(fallbackFrame);
-      const attempt = await tryResolveLocatorInFrame(fallbackFrame, locator, 2000);
+      const attempt = await tryResolveLocatorInFrame(
+        fallbackFrame,
+        locator,
+        2000,
+      );
       resolutionAttempts = resolutionAttempts.concat(
-        (attempt.attempts || []).map((item) => ({ frame_path: fallbackFramePath, ...item })),
+        (attempt.attempts || []).map((item) => ({
+          frame_path: fallbackFramePath,
+          ...item,
+        })),
       );
       if (attempt.handle) {
         handle = attempt.handle;
@@ -721,8 +862,8 @@ export async function resolveElementTarget(page, {
   if (!handle) {
     return {
       ok: false,
-      code: staleRefDetected ? 'stale_ref_not_found' : 'element_not_found',
-      error: 'Could not resolve an element from the provided locator',
+      code: staleRefDetected ? "stale_ref_not_found" : "element_not_found",
+      error: "Could not resolve an element from the provided locator",
       frame_path: effectiveFramePath,
       page_state_id: frameState.page_state_id,
       dom_epoch: frameState.dom_epoch,
@@ -747,27 +888,44 @@ export async function resolveElementTarget(page, {
   };
 }
 
-export async function captureScreenshot(page, {
-  handle = null,
-  mode = 'viewport',
-  fallbackFull = false,
-} = {}) {
+export async function captureScreenshot(
+  page,
+  { handle = null, mode = "viewport", fallbackFull = false } = {},
+) {
   try {
     if (handle) {
-      const buffer = await handle.screenshot({ type: 'png' });
-      const screenshotUrl = await uploadImage(`data:image/png;base64,${buffer.toString('base64')}`);
-      return { ok: true, screenshot_url: screenshotUrl, screenshot_mode: 'element' };
+      const buffer = await handle.screenshot({ type: "png" });
+      const screenshotUrl = await uploadImage(
+        `data:image/png;base64,${buffer.toString("base64")}`,
+      );
+      return {
+        ok: true,
+        screenshot_url: screenshotUrl,
+        screenshot_mode: "element",
+      };
     }
 
-    if (mode === 'full') {
-      return { ok: true, screenshot_url: await screenshotFull(page), screenshot_mode: 'full' };
+    if (mode === "full") {
+      return {
+        ok: true,
+        screenshot_url: await screenshotFull(page),
+        screenshot_mode: "full",
+      };
     }
 
-    return { ok: true, screenshot_url: await screenshotViewport(page), screenshot_mode: 'viewport' };
+    return {
+      ok: true,
+      screenshot_url: await screenshotViewport(page),
+      screenshot_mode: "viewport",
+    };
   } catch (error) {
     if (handle && fallbackFull) {
       try {
-        return { ok: true, screenshot_url: await screenshotViewport(page), screenshot_mode: 'viewport' };
+        return {
+          ok: true,
+          screenshot_url: await screenshotViewport(page),
+          screenshot_mode: "viewport",
+        };
       } catch {
         // fall through
       }
@@ -775,7 +933,7 @@ export async function captureScreenshot(page, {
 
     return {
       ok: false,
-      screenshot_url: '',
+      screenshot_url: "",
       screenshot_mode: mode,
       screenshot_error: error.message,
     };
@@ -792,40 +950,45 @@ export function makeObservedChange(before, after, newTabUrls = []) {
   };
 }
 
-export async function capturePageSnapshot(page, framePath = 'root') {
+export async function capturePageSnapshot(page, framePath = "root") {
   const state = await buildFrameState(page, framePath);
   return {
     url: page.url(),
     frame_path: framePath,
-    dom_epoch: state.dom_epoch || '',
-    page_state_id: state.page_state_id || '',
+    dom_epoch: state.dom_epoch || "",
+    page_state_id: state.page_state_id || "",
   };
 }
 
-export async function buildEnvelope(page, {
-  frame_path = 'root',
-  title = '',
-  ok = true,
-  error = null,
-  warnings = [],
-  observed_change = null,
-  screenshot = null,
-  screenshotHandle = null,
-  screenshotMode = 'viewport',
-  data = {},
-} = {}) {
+export async function buildEnvelope(
+  page,
+  {
+    frame_path = "root",
+    title = "",
+    ok = true,
+    error = null,
+    warnings = [],
+    observed_change = null,
+    screenshot = null,
+    screenshotHandle = null,
+    screenshotMode = "viewport",
+    data = {},
+  } = {},
+) {
   const pageState = await buildFrameState(page, frame_path);
   const accessState = detectAccessStateFromSignals({
-    title: await page.title().catch(() => ''),
-    textSample: pageState.frame_metrics?.textSample || '',
-    htmlSample: pageState.frame_metrics?.htmlSample || '',
+    title: await page.title().catch(() => ""),
+    textSample: pageState.frame_metrics?.textSample || "",
+    htmlSample: pageState.frame_metrics?.htmlSample || "",
     url: page.url(),
   });
-  const screenshotResult = screenshot || await captureScreenshot(page, {
-    handle: screenshotHandle,
-    mode: screenshotMode,
-    fallbackFull: true,
-  });
+  const screenshotResult =
+    screenshot ||
+    (await captureScreenshot(page, {
+      handle: screenshotHandle,
+      mode: screenshotMode,
+      fallbackFull: true,
+    }));
 
   const mergedWarnings = [...warnings];
   let finalOk = ok;
@@ -839,11 +1002,11 @@ export async function buildEnvelope(page, {
   return decodeUriEverywhere({
     ok: finalOk && pageState.ok,
     url: page.url(),
-    title: title || await page.title().catch(() => ''),
+    title: title || (await page.title().catch(() => "")),
     frame_path,
-    screenshot_url: screenshotResult.screenshot_url || '',
-    page_state_id: pageState.page_state_id || '',
-    dom_epoch: pageState.dom_epoch || '',
+    screenshot_url: screenshotResult.screenshot_url || "",
+    page_state_id: pageState.page_state_id || "",
+    dom_epoch: pageState.dom_epoch || "",
     error: pageState.ok ? finalError : pageState.error,
     warnings: mergedWarnings,
     observed_change,
@@ -856,19 +1019,33 @@ export async function buildEnvelope(page, {
  * Playwright: browserSession can be a { browser, context } object OR a WS endpoint string.
  * Tools pass the session object they received from launchEphemeralBrowser/connectBrowser.
  */
-export async function withBrowserSession(browserSession, run, pageOptions = {}) {
+export async function withBrowserSession(
+  browserSession,
+  run,
+  pageOptions = {},
+) {
   let session = browserSession;
   let owned = false;
 
-  if (typeof browserSession === 'string') {
+  if (typeof browserSession === "string") {
     // Legacy path: given a WS endpoint string, connect and own the session.
     session = await connectBrowser(browserSession || undefined);
     owned = true;
   }
 
+  if (!session) {
+    throw new Error(
+      "Browser session is not available for this tool invocation.",
+    );
+  }
+
   try {
     const page = await getPage(session, pageOptions);
-    return await run({ browser: session.browser, context: session.context, page });
+    return await run({
+      browser: session.browser,
+      context: session.context,
+      page,
+    });
   } finally {
     if (owned && session) {
       await closeEphemeralBrowser(session).catch(() => {});
@@ -891,10 +1068,10 @@ export function trackNewTabs(context) {
     }
   };
 
-  context.on('page', listener);
+  context.on("page", listener);
   return {
     new_tab_urls: newTabUrls,
-    dispose: () => context.off('page', listener),
+    dispose: () => context.off("page", listener),
   };
 }
 
@@ -911,17 +1088,20 @@ export async function readElementDetail(page, params = {}) {
       attrs[attr] = node.getAttribute(attr);
     }
 
-    const nearby = node.parentElement?.innerText || '';
+    const nearby = node.parentElement?.innerText || "";
     return {
       tag: node.tagName.toLowerCase(),
-      text: (node.innerText || node.textContent || node.value || '').replace(/\s+/g, ' ').trim().slice(0, 400),
-      html_preview: (node.outerHTML || '').slice(0, 1000),
+      text: (node.innerText || node.textContent || node.value || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 400),
+      html_preview: (node.outerHTML || "").slice(0, 1000),
       attrs,
       state: {
         checked: Boolean(node.checked),
         disabled: Boolean(node.disabled),
         selected: Boolean(node.selected),
-        value: (node.value || '').slice(0, 300),
+        value: (node.value || "").slice(0, 300),
       },
       geometry: {
         x: Math.round(rect.x),
@@ -931,11 +1111,14 @@ export async function readElementDetail(page, params = {}) {
         center_x: Math.round(rect.x + rect.width / 2),
         center_y: Math.round(rect.y + rect.height / 2),
       },
-      nearby_text: nearby.replace(/\s+/g, ' ').trim().slice(0, 400),
+      nearby_text: nearby.replace(/\s+/g, " ").trim().slice(0, 400),
     };
   }, resolved.handle);
 
-  const screenshot = await captureScreenshot(page, { handle: resolved.handle, fallbackFull: true });
+  const screenshot = await captureScreenshot(page, {
+    handle: resolved.handle,
+    fallbackFull: true,
+  });
   await resolved.handle.dispose().catch(() => {});
 
   return {
@@ -956,7 +1139,7 @@ export async function readElementDetail(page, params = {}) {
 export async function getMediaSummary(frame) {
   try {
     return await frame.evaluate(() => {
-      const videos = Array.from(document.querySelectorAll('video')).slice(0, 5);
+      const videos = Array.from(document.querySelectorAll("video")).slice(0, 5);
       const libraries = {
         jwplayer: Boolean(window.jwplayer),
         videojs: Boolean(window.videojs),
@@ -969,7 +1152,7 @@ export async function getMediaSummary(frame) {
         player_libraries: libraries,
         videos: videos.map((video, index) => ({
           index,
-          current_src: video.currentSrc || video.src || '',
+          current_src: video.currentSrc || video.src || "",
           paused: Boolean(video.paused),
           ready_state: Number(video.readyState || 0),
           network_state: Number(video.networkState || 0),

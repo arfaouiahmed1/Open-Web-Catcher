@@ -26,7 +26,7 @@ from src.evaluation.datasets import build_dataset_examples, export_dataset_examp
 from src.evaluation.deepeval_bridge import EXPECTED_TOOLS_BY_PROFILE
 from src.evaluation.scoring import evaluate_case_artifact
 from src.evaluation.tracing import setup_tracing_from_settings
-from src.models.enums import AgentType, Confidence, ExtractionStatus
+from src.models.enums import ExtractionStatus
 from src.models.schemas import (
     AgentTestRequest,
     ClassificationResult,
@@ -261,15 +261,21 @@ DEEPEVAL_DEFAULT_METRICS = [
 ]
 
 
-def get_settings() -> Settings:
+def get_settings(force_reload: bool = False) -> Settings:
     global _settings
-    if _settings is None:
+    if _settings is None or force_reload:
         _settings = Settings.from_yaml()
         try:
             _settings.save_browser_runtime_bridge()
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not refresh browser runtime bridge on startup: %s", exc)
     return _settings
+
+
+def reset_settings_cache() -> None:
+    """Reset the cached settings to force reload from disk on next access."""
+    global _settings
+    _settings = None
 
 
 def _playground_tool_session_key(profile: str, settings: Settings) -> str:
@@ -643,27 +649,25 @@ async def _execute_evaluation_case(
 
 def _deepeval_lab_payload(settings: Settings) -> dict[str, Any]:
     deepeval_available = importlib.util.find_spec("deepeval") is not None
-    openai_available = importlib.util.find_spec("openai") is not None
-    openrouter_api_key_configured = bool(
-        os.environ.get("OPENROUTER_API_KEY") or settings.openrouter_api_key
-    )
+    gemini_package_available = importlib.util.find_spec("langchain_google_genai") is not None
+    google_api_key_configured = bool(os.environ.get("GOOGLE_API_KEY") or settings.google_api_key)
     warnings: list[str] = []
 
     if not deepeval_available:
         warnings.append("deepeval is not installed in the current Python environment.")
-    if not openai_available:
-        warnings.append("The openai package used by the OpenRouter judge is not installed.")
-    if not openrouter_api_key_configured:
+    if not gemini_package_available:
         warnings.append(
-            "OPENROUTER_API_KEY is not configured, so the LLM-judge metrics cannot run."
+            "langchain-google-genai is not installed, so Gemini judge metrics cannot run."
         )
+    if not google_api_key_configured:
+        warnings.append("GOOGLE_API_KEY is not configured, so the LLM-judge metrics cannot run.")
 
     return {
-        "ready": deepeval_available and openai_available and openrouter_api_key_configured,
+        "ready": deepeval_available and gemini_package_available and google_api_key_configured,
         "deepeval_available": deepeval_available,
-        "openai_package_available": openai_available,
-        "openrouter_api_key_configured": openrouter_api_key_configured,
-        "judge_model": os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini"),
+        "gemini_package_available": gemini_package_available,
+        "google_api_key_configured": google_api_key_configured,
+        "judge_model": os.environ.get("GEMINI_JUDGE_MODEL", "gemini-2.5-flash"),
         "metrics": DEEPEVAL_DEFAULT_METRICS,
         "profiles": [
             {"profile": profile, "expected_tools": tools}
@@ -744,7 +748,10 @@ def _sync_provider_pricing_to_db(
     provider: str,
     max_models: int | None = None,
 ) -> dict[str, Any]:
-    effective_provider = (provider or settings.llm_provider or "").strip().lower()
+    effective_provider = (provider or settings.llm_provider or "google").strip().lower()
+    if effective_provider not in {"google", "gemini", "google_genai"}:
+        raise NotImplementedError("Provider pricing sync supports Google Gemini only.")
+    effective_provider = "google"
     rows = fetch_provider_pricing(
         settings,
         provider=effective_provider,
@@ -775,18 +782,8 @@ def _pricing_sync_provider_ids() -> list[str]:
 
 def _provider_api_key_available(settings: Settings, provider: str) -> bool:
     provider_key = str(provider or "").strip().lower()
-    if provider_key == "google":
+    if provider_key in {"google", "gemini", "google_genai"}:
         return bool(str(settings.google_api_key or "").strip())
-    if provider_key == "google-vertex":
-        return bool(str(settings.google_vertex_api_key or "").strip())
-    if provider_key == "openai":
-        return bool(str(settings.openai_api_key or "").strip())
-    if provider_key == "anthropic":
-        return bool(str(settings.anthropic_api_key or "").strip())
-    if provider_key == "openrouter":
-        return bool(str(settings.openrouter_api_key or "").strip())
-    if provider_key == "nvidia":
-        return bool(str(settings.nvidia_api_key or "").strip())
     return False
 
 
@@ -802,11 +799,15 @@ def _provider_pricing_status_payload(session, settings: Settings) -> dict[str, d
     status: dict[str, dict[str, Any]] = {}
     for provider_key in _pricing_sync_provider_ids():
         provider_rows = grouped.get(provider_key, [])
-        updated_at = max((row.updated_at for row in provider_rows if getattr(row, "updated_at", None)), default=None)
+        updated_at = max(
+            (row.updated_at for row in provider_rows if getattr(row, "updated_at", None)),
+            default=None,
+        )
         status[provider_key] = {
             "provider": provider_key,
             "api_key_set": _provider_api_key_available(settings, provider_key),
-            "configured": provider_key == "openrouter" or _provider_api_key_available(settings, provider_key),
+            "configured": provider_key == "openrouter"
+            or _provider_api_key_available(settings, provider_key),
             "model_count": len(provider_rows),
             "available": len(provider_rows) > 0,
             "last_sync_at": updated_at.isoformat() if updated_at else "",
@@ -818,12 +819,9 @@ def _auto_sync_provider_pricing(settings: Settings) -> None:
     if not settings.provider_pricing_sync_enabled:
         return
 
-    provider = (settings.llm_provider or "").strip().lower()
-    if provider != "openrouter" and not _provider_api_key_available(settings, provider):
-        logger.info("Provider pricing sync skipped: provider '%s' is not configured.", provider)
-        return
-    if provider == "openrouter" and not (settings.openrouter_api_key or "").strip():
-        logger.info("Provider pricing sync skipped: OPENROUTER_API_KEY is not set.")
+    provider = "google"
+    if not _provider_api_key_available(settings, provider):
+        logger.info("Provider pricing sync skipped: GOOGLE_API_KEY is not configured.")
         return
 
     try:
@@ -1059,21 +1057,37 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
 def _background_job_result_summary(job: Any) -> dict[str, Any]:
     result = getattr(job, "result_json", None)
     snapshot = result if isinstance(result, dict) else {}
-    classification = snapshot.get("classification") if isinstance(snapshot.get("classification"), dict) else {}
-    extraction_results = snapshot.get("extraction_results") if isinstance(snapshot.get("extraction_results"), list) else []
-    first_extraction = extraction_results[0] if extraction_results and isinstance(extraction_results[0], dict) else {}
+    classification = (
+        snapshot.get("classification") if isinstance(snapshot.get("classification"), dict) else {}
+    )
+    extraction_results = (
+        snapshot.get("extraction_results")
+        if isinstance(snapshot.get("extraction_results"), list)
+        else []
+    )
+    first_extraction = (
+        extraction_results[0]
+        if extraction_results and isinstance(extraction_results[0], dict)
+        else {}
+    )
     metrics = snapshot.get("metrics") if isinstance(snapshot.get("metrics"), dict) else {}
     raw_events = snapshot.get("events")
     if not isinstance(raw_events, list):
         raw_trace = snapshot.get("trace") if isinstance(snapshot.get("trace"), dict) else {}
         raw_events = raw_trace.get("events") if isinstance(raw_trace.get("events"), list) else []
-    events = [normalize_runtime_event_payload(event) for event in raw_events if isinstance(event, dict)]
+    events = [
+        normalize_runtime_event_payload(event) for event in raw_events if isinstance(event, dict)
+    ]
 
     screenshots = _extract_screenshot_urls_from_value(snapshot.get("all_screenshots", []))
     _extract_screenshot_urls_from_value(snapshot, screenshots)
     streams = snapshot.get("all_streams") if isinstance(snapshot.get("all_streams"), list) else []
     if not streams and first_extraction:
-        streams = first_extraction.get("streams") if isinstance(first_extraction.get("streams"), list) else []
+        streams = (
+            first_extraction.get("streams")
+            if isinstance(first_extraction.get("streams"), list)
+            else []
+        )
 
     page_type = str(
         snapshot.get("page_type")
@@ -1125,7 +1139,9 @@ def _background_job_result_summary(job: Any) -> dict[str, Any]:
             )
         )
 
-    final_status = str(snapshot.get("final_status") or _background_job_display_status(job) or "").strip()
+    final_status = str(
+        snapshot.get("final_status") or _background_job_display_status(job) or ""
+    ).strip()
     if final_status == "succeeded":
         final_status = "success"
 
@@ -1238,9 +1254,15 @@ def _background_llm_rows(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         seq += 1
         details = event.get("details") if isinstance(event.get("details"), dict) else {}
-        usage = details.get("usage_metadata") if isinstance(details.get("usage_metadata"), dict) else {}
+        usage = (
+            details.get("usage_metadata") if isinstance(details.get("usage_metadata"), dict) else {}
+        )
         if not usage:
-            usage = details.get("usage_metadata_json") if isinstance(details.get("usage_metadata_json"), dict) else {}
+            usage = (
+                details.get("usage_metadata_json")
+                if isinstance(details.get("usage_metadata_json"), dict)
+                else {}
+            )
         cost_source = str(details.get("cost_source") or usage.get("cost_source") or "")
         rows.append(
             {
@@ -1288,7 +1310,9 @@ def _background_tool_rows(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "seq": seq,
                 "actor": str(event.get("actor") or ""),
                 "tool_name": str(details.get("tool_name") or ""),
-                "args": details.get("tool_args") if isinstance(details.get("tool_args"), dict) else {},
+                "args": details.get("tool_args")
+                if isinstance(details.get("tool_args"), dict)
+                else {},
                 "created_at": str(event.get("timestamp") or event.get("created_at") or ""),
             }
             continue
@@ -1314,7 +1338,12 @@ def _background_tool_rows(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "duration_seconds": _safe_float(details.get("duration_seconds")),
                 "result_preview": str(details.get("result_preview") or ""),
                 "error_text": str(details.get("result_preview") or "") if status == "error" else "",
-                "created_at": str((started or {}).get("created_at") or event.get("timestamp") or event.get("created_at") or ""),
+                "created_at": str(
+                    (started or {}).get("created_at")
+                    or event.get("timestamp")
+                    or event.get("created_at")
+                    or ""
+                ),
             }
         )
     for started in pending.values():
@@ -1379,8 +1408,7 @@ def _background_result_payload(result: PipelineResult, trace: RunTrace | None) -
     payload = result.model_dump(mode="json")
     if trace is not None:
         payload["events"] = [
-            normalize_runtime_event_payload(event.model_dump(mode="json"))
-            for event in trace.events
+            normalize_runtime_event_payload(event.model_dump(mode="json")) for event in trace.events
         ]
         payload["telemetry_status"] = "trace_payload"
         payload["telemetry_message"] = "Run telemetry was mirrored into the background job result."
@@ -1431,18 +1459,31 @@ def _build_trace_detail_payload(
         "total_new_input_tokens": int(metrics.total_new_input_tokens or 0) if metrics else 0,
         "total_tokens_out": int(metrics.total_tokens_out or 0) if metrics else 0,
         "total_cache_hit_calls": int(metrics.total_cache_hit_calls or 0) if metrics else 0,
-        "estimated_input_cost_usd": float(metrics.estimated_input_cost_usd or 0.0) if metrics else 0.0,
-        "estimated_cached_input_cost_usd": float(metrics.estimated_cached_input_cost_usd or 0.0) if metrics else 0.0,
-        "estimated_cache_write_cost_usd": float(metrics.estimated_cache_write_cost_usd or 0.0) if metrics else 0.0,
-        "estimated_output_cost_usd": float(metrics.estimated_output_cost_usd or 0.0) if metrics else 0.0,
-        "estimated_total_cost_usd": float(metrics.estimated_total_cost_usd or 0.0) if metrics else 0.0,
+        "estimated_input_cost_usd": float(metrics.estimated_input_cost_usd or 0.0)
+        if metrics
+        else 0.0,
+        "estimated_cached_input_cost_usd": float(metrics.estimated_cached_input_cost_usd or 0.0)
+        if metrics
+        else 0.0,
+        "estimated_cache_write_cost_usd": float(metrics.estimated_cache_write_cost_usd or 0.0)
+        if metrics
+        else 0.0,
+        "estimated_output_cost_usd": float(metrics.estimated_output_cost_usd or 0.0)
+        if metrics
+        else 0.0,
+        "estimated_total_cost_usd": float(metrics.estimated_total_cost_usd or 0.0)
+        if metrics
+        else 0.0,
         "total_cost_usd": float(metrics.estimated_total_cost_usd or 0.0) if metrics else 0.0,
         "total_messages": int(metrics.total_messages or 0) if metrics else 0,
         "created_at": trace.started_at.isoformat(),
         "started_at": trace.started_at.isoformat(),
         "finished_at": trace.finished_at.isoformat() if trace.finished_at else "",
         "root_actor": trace.root_actor,
-        "job_type": str((job_state or {}).get("job_type") or ("workflow" if trace.root_actor == "orchestrator" else "agent")),
+        "job_type": str(
+            (job_state or {}).get("job_type")
+            or ("workflow" if trace.root_actor == "orchestrator" else "agent")
+        ),
         "attempts": int((job_state or {}).get("attempts", 0) or 0),
         "max_attempts": int((job_state or {}).get("max_attempts", 0) or 0),
         "job_state": str((job_state or {}).get("display_status") or status),
@@ -1453,12 +1494,10 @@ def _build_trace_detail_payload(
             or "unknown"
         ),
         "classification_confidence": str(
-            snapshot_payload.get("classification", {}).get("confidence")
-            or ""
+            snapshot_payload.get("classification", {}).get("confidence") or ""
         ),
         "classification_reasoning": str(
-            snapshot_payload.get("classification", {}).get("reasoning")
-            or ""
+            snapshot_payload.get("classification", {}).get("reasoning") or ""
         ),
         "source": "active_trace",
     }
@@ -1483,7 +1522,9 @@ def _build_trace_detail_payload(
         },
         "tool_calls": [],
         "llm_calls": [],
-        "events": [normalize_runtime_event_payload(event.model_dump(mode="json")) for event in trace.events],
+        "events": [
+            normalize_runtime_event_payload(event.model_dump(mode="json")) for event in trace.events
+        ],
         "job": job_state,
         "job_state": job_state,
         "source": "active_trace",
@@ -1589,15 +1630,17 @@ def _restore_trace_from_db(run_id: str) -> bool:
     observability = get_observability_status(get_settings())
     metrics_payload = snapshot.get("metrics") if isinstance(snapshot, dict) else {}
     started_at = (
-        metrics_payload.get("started_at")
-        if isinstance(metrics_payload, dict)
-        else None
-    ) or getattr(job, "started_at", None) or getattr(job, "created_at", None)
+        (metrics_payload.get("started_at") if isinstance(metrics_payload, dict) else None)
+        or getattr(job, "started_at", None)
+        or getattr(job, "created_at", None)
+    )
     trace_payload = {
         "run_id": run_id,
         "root_actor": job.actor or ("orchestrator" if job.job_type == "workflow" else "agent"),
         "started_at": started_at,
-        "finished_at": metrics_payload.get("finished_at") if isinstance(metrics_payload, dict) else None,
+        "finished_at": metrics_payload.get("finished_at")
+        if isinstance(metrics_payload, dict)
+        else None,
         "events": events,
         "metrics": metrics_payload if isinstance(metrics_payload, dict) else {},
         "observability": observability.model_dump(),
@@ -1907,11 +1950,25 @@ def _is_valid_screenshot_url(value: str) -> bool:
         return False
     path = (parsed.path or "").lower()
     query = (parsed.query or "").lower()
-    if any(path.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg")):
+    if any(
+        path.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg")
+    ):
         return True
     if "/image/" in path or "/images/" in path or "image/upload" in path:
         return True
-    if any(token in query for token in ("format=png", "format=jpg", "format=jpeg", "format=webp", "fm=png", "fm=jpg", "fm=jpeg", "fm=webp")):
+    if any(
+        token in query
+        for token in (
+            "format=png",
+            "format=jpg",
+            "format=jpeg",
+            "format=webp",
+            "fm=png",
+            "fm=jpg",
+            "fm=jpeg",
+            "fm=webp",
+        )
+    ):
         return True
     return False
 
@@ -3037,7 +3094,9 @@ async def ui_cancel_active_runs():
         for run_id in run_ids:
             job_repo.mark_cancelled(run_id, reason=reason)
     except SQLAlchemyError as exc:
-        logger.debug("Skipping bulk cancellation persistence because the job table is unavailable: %s", exc)
+        logger.debug(
+            "Skipping bulk cancellation persistence because the job table is unavailable: %s", exc
+        )
     finally:
         session.close()
 
@@ -3114,7 +3173,7 @@ def _enqueue_background_job(
                         url,
                         prompt_override=str((payload or {}).get("prompt_override", "") or ""),
                     )
-                )
+                ),
             )
         return {
             "run_id": run_id,
@@ -3322,6 +3381,7 @@ class ModelConfigRequest(BaseModel):
     tool_result_cache_min_identical_observations: int | None = None
     thinking_enabled: bool | None = None
     thinking_budget_tokens: int | None = None
+    max_parallel_hosting_pages: int | None = None
     browser_engine: str | None = None
     disabled_tools_by_profile: dict | None = None
     disabled_tools_by_browser_profile: dict | None = None
@@ -3361,6 +3421,7 @@ def _ui_config_payload(
         "thinking_enabled": getattr(settings, "thinking_enabled", False),
         "thinking_budget_tokens": getattr(settings, "thinking_budget_tokens", 8000),
         "browser_engine": settings.browser_engine,
+        "max_parallel_hosting_pages": getattr(settings, "max_parallel_hosting_pages", 5),
         "mcp_server_url_puppeteer": settings.mcp_server_url_puppeteer,
         "mcp_server_url_playwright": settings.mcp_server_url_playwright,
         "disabled_tools_by_profile": settings.disabled_tools_by_profile,
@@ -3410,7 +3471,9 @@ def ui_update_config(body: ModelConfigRequest):
     s = get_settings()
     if body.llm_provider:
         if str(body.llm_provider).strip().lower() != "google":
-            raise HTTPException(status_code=400, detail="Only the Google Gemini provider is supported.")
+            raise HTTPException(
+                status_code=400, detail="Only the Google Gemini provider is supported."
+            )
         s.llm_provider = body.llm_provider
     if body.agent_model:
         s.agent_model = body.agent_model
@@ -3448,6 +3511,8 @@ def ui_update_config(body: ModelConfigRequest):
         s.thinking_enabled = body.thinking_enabled
     if body.thinking_budget_tokens is not None:
         s.thinking_budget_tokens = max(1000, min(32000, int(body.thinking_budget_tokens)))
+    if body.max_parallel_hosting_pages is not None:
+        s.max_parallel_hosting_pages = max(1, int(body.max_parallel_hosting_pages))
     if body.browser_engine in ("puppeteer", "playwright"):
         s.browser_engine = body.browser_engine
         s.mcp_server_url = (
@@ -3486,6 +3551,8 @@ def ui_update_config(body: ModelConfigRequest):
     config_persisted = True
     try:
         persist_path = str(s.save_yaml())
+        # Reset the global settings cache so the next run loads the updated settings
+        reset_settings_cache()
     except Exception as exc:
         config_persisted = False
         persist_error = str(exc)
@@ -3549,7 +3616,13 @@ def ui_update_pricing(config: PricingConfig):
 @app.post("/ui/pricing/sync")
 def ui_sync_pricing(req: PricingSyncRequest):
     settings = get_settings()
-    provider = (req.provider or settings.llm_provider or "").strip().lower()
+    provider = (req.provider or settings.llm_provider or "google").strip().lower()
+    if provider not in {"", "all", "google", "gemini", "google_genai"}:
+        raise HTTPException(
+            status_code=400, detail="Provider pricing sync supports Google Gemini only."
+        )
+    if provider in {"gemini", "google_genai"}:
+        provider = "google"
     max_models = req.max_models
 
     try:
@@ -3557,18 +3630,7 @@ def ui_sync_pricing(req: PricingSyncRequest):
             providers = _pricing_sync_provider_ids()
             results: list[dict[str, Any]] = []
             for item in providers:
-                if item != "openrouter" and not _provider_api_key_available(settings, item):
-                    results.append(
-                        {
-                            "provider": item,
-                            "synced": 0,
-                            "stored": 0,
-                            "models": [],
-                            "error": "provider_api_key_missing",
-                        }
-                    )
-                    continue
-                if item == "openrouter" and not (settings.openrouter_api_key or "").strip():
+                if not _provider_api_key_available(settings, item):
                     results.append(
                         {
                             "provider": item,
@@ -3621,12 +3683,16 @@ def ui_estimate_costs(
 
     settings = get_settings()
     pricing = resolve_model_pricing(settings, model, provider)
-    pricing_source = "database" if (
-        float(pricing.get("input_per_million", 0.0) or 0.0) > 0
-        or float(pricing.get("output_per_million", 0.0) or 0.0) > 0
-        or float(pricing.get("cached_input_per_million", 0.0) or 0.0) > 0
-        or float(pricing.get("cache_write_per_million", 0.0) or 0.0) > 0
-    ) else "no_pricing_available"
+    pricing_source = (
+        "database"
+        if (
+            float(pricing.get("input_per_million", 0.0) or 0.0) > 0
+            or float(pricing.get("output_per_million", 0.0) or 0.0) > 0
+            or float(pricing.get("cached_input_per_million", 0.0) or 0.0) > 0
+            or float(pricing.get("cache_write_per_million", 0.0) or 0.0) > 0
+        )
+        else "no_pricing_available"
+    )
 
     if pricing_source == "no_pricing_available":
         return {

@@ -54,39 +54,56 @@ const FORCED_WINDOWS_PLATFORM_VERSION = '10.0.0';
 const FORCED_LANGUAGE = 'en-US,en;q=0.9';
 const UBOL_EXTENSION_DIR = String(process.env.OWC_UBOL_EXTENSION_DIR || '/app/tools/puppeteer/extensions/ubol').trim();
 const DEFAULT_LAUNCH_ARGS = [
+  // ── Required in Docker / n8n containers ─────────────────────────────────────
   '--no-sandbox',
+  '--disable-setuid-sandbox',
   '--disable-dev-shm-usage',
+  '--no-zygote',
 
-  // ── Window / viewport ───────────────────────────────────────────────────────
-  // Modern headless mode does NOT honour defaultViewport alone for rendering — the
-  // actual paint buffer is taken from the OS window size. Set it explicitly
-  // so layout, media queries, and video players all render at 1920×1080.
-  `--window-size=${FORCED_VIEWPORT.width},${FORCED_VIEWPORT.height}`,
-  '--window-position=0,0',
+  // ── Stable rendering ────────────────────────────────────────────────────────
+  '--window-size=1920,1080',
   '--force-device-scale-factor=2',
+  '--force-color-profile=srgb',
+  '--lang=en-US,en',
+  '--no-first-run',
+  '--no-default-browser-check',
+  '--disable-default-apps',
 
-  // ── Anti-bot ────────────────────────────────────────────────────────────────
+  // ── Keep page active ────────────────────────────────────────────────────────
+  '--disable-background-timer-throttling',
+  '--disable-backgrounding-occluded-windows',
+  '--disable-renderer-backgrounding',
+  '--disable-hang-monitor',
+  '--disable-prompt-on-repost',
+  '--disable-ipc-flooding-protection',
 
-  // ── GPU / video decode ───────────────────────────────────────────────────────
+  // ── Automation signal reduction ─────────────────────────────────────────────
+  '--disable-blink-features=AutomationControlled',
+
+  // ── GPU / video decode ──────────────────────────────────────────────────────
   // Do NOT use --disable-gpu — it kills video frame compositing.
   // Software rasterisation still decodes H.264/AAC when running real Chrome.
   '--use-gl=swiftshader',
   '--use-angle=swiftshader-webgl',
   '--enable-webgl',
 
-  // ── Media / autoplay ────────────────────────────────────────────────────────
+  // ── Media autoplay / playback ───────────────────────────────────────────────
   '--autoplay-policy=no-user-gesture-required',
+  '--disable-features=PreloadMediaEngagementData,MediaEngagementBypassAutoplayPolicies',
+  '--disable-features=AudioServiceOutOfProcess',
+  '--use-fake-ui-for-media-stream',
+  '--allow-running-insecure-content',
   // Keep the software video decoder path; do NOT try hardware on Linux headless.
-  // NOTE: IsolateOrigins and site-per-process intentionally omitted — disabling them
-  // broke cross-origin iframe auth flows that video player embeds depend on.
   '--disable-features=UseChromeOSDirectVideoDecoder',
 
-  // ── Stability ────────────────────────────────────────────────────────────────
-  '--no-first-run',
-  '--no-default-browser-check',
-  '--disable-background-timer-throttling',
-  '--disable-backgrounding-occluded-windows',
-  '--disable-renderer-backgrounding',
+  // ── Cross-origin iframe tolerance ───────────────────────────────────────────
+  '--disable-features=IsolateOrigins,site-per-process',
+  '--disable-site-isolation-trials',
+  '--disable-web-security',
+  '--disable-features=BlockInsecurePrivateNetworkRequests',
+
+  // ── Keep audio muted (remove if real audio is needed) ─────────────────────────
+  '--mute-audio',
 ];
 
 const pageFingerprintState = new WeakMap();

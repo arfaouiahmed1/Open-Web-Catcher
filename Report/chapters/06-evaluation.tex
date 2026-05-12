@@ -72,30 +72,80 @@ Figure~\ref{fig:eval-protocol}.
 \label{fig:eval-protocol}
 \end{figure}
 
-\section{Evaluation dimensions}
+\section{Target-family coverage in manual campaigns}
+
+The manual campaign set included recurrent patterns from regional WordPress-style portals
+(go4koora-like) and global mirror indexes (streamed-style). The objective was not
+domain-specific hardcoding, but behavior coverage across recurring failure modes.
 
 \begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3cm}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.3cm}
                               >{\raggedright\arraybackslash}X
                               >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
-Dimension & What is measured & Why it matters \\
+Target family & Recurrent break behavior tested & Expected agent behavior \\
 \midrule
-Routing quality & correctness of page-type and specialist selection &
-  misrouting invalidates downstream extraction \\
-Extraction quality & stream evidence completeness and validity &
-  core objective of the platform \\
-Fallback quality & hosting to embedded recovery success &
-  measures platform recovery depth \\
-Runtime reliability & stability under UI drift and anti-bot pressure &
-  indicates operational robustness \\
-Cost and cache behavior & token usage, cache ratio, model impact &
-  determines scalability and sustainability \\
+WordPress-style regional portals & popup-first activation, selector drift, tokenized
+  stream generation & hosting loop with popup recovery, post-action validation, and
+  deferred harvest \\
+Global mirror indexes & provider heterogeneity, dead mirrors, nested iframe delegation &
+  ranking and pruning at host stage plus embedded fallback for deep frame recovery \\
 \bottomrule
 \end{tabularx}
-\caption{Evaluation dimensions used for this project.}
+\caption{Manual campaign coverage by site-family behavior.}
+\label{tab:family-coverage}
+\end{table}
+
+\section{Evaluation dimensions}
+
+The Python reference architecture evaluates behavior through structured evaluation cases,
+suites, runs, case-level results, and assertion results. Each case can define expected
+status, expected page type, minimum stream thresholds, hosting or embedded URL
+thresholds, required tools, forbidden tools, expected failure modes, provider-analysis
+checks, and confidence thresholds. This framing is consistent with DSRM-style artifact
+evaluation and with recent web-agent research that emphasizes grounded browser
+interaction, stepwise task completion, and environment-aware behavior rather than only
+final-text correctness~\cite{hevner-ds,peffers-dsrm,react,webarena,mind2web,webvoyager,browsergym}.
+
+At implementation level, the evaluator stores structured runtime and scoring fields such
+as tool-accuracy, reliability, latency, and cost. In the report, these are presented
+through the more explicit metric names below so that the evaluation reads as a
+deterministic engineering assessment rather than as a large-scale benchmark.
+
+In the current implementation, page-role classification and specialist selection were
+evaluated together under one manual campaign metric: \emph{Page-Type Routing Accuracy},
+defined as the percentage of evaluated URLs for which the system selected the correct
+specialist workflow based on manual page-role verification. \emph{Misrouting Rate} is the
+complement of this metric.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.7cm}
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Dimension & Main metrics \\
+\midrule
+Page-role and routing quality & page-type routing accuracy, misrouting rate \\
+Landing-page exploration quality & host-candidate recall, host-candidate precision,
+  tab coverage rate \\
+Player and stream extraction quality & player activation success rate, manifest
+  recovery rate, first-server success rate \\
+Fallback quality & server-fallback success rate, embedded-fallback recovery rate \\
+Tool-use quality & tool selection accuracy, sequencing compliance, premature harvest
+  rate, tool budget compliance \\
+Evidence acceptance quality & schema validity rate, stream evidence validity rate,
+  artifact support rate, trace support rate \\
+Runtime and cost behavior & average tool calls, average tokens, cache hit ratio,
+  tokens per accepted evidence bundle \\
+Failure-mode coverage & popup failure rate, iframe-depth failure rate, token-expiry
+  failure rate, anti-bot blocked rate \\
+\bottomrule
+\end{tabularx}
+\caption{Evaluation dimensions and primary metrics used in the manual campaigns and
+reference-set analyses.}
 \label{tab:eval-dimensions}
 \end{table}
 
@@ -111,8 +161,20 @@ cards without a full page reload.
 \subsection{Evaluation methodology}
 
 Each prompt version was run 10 times on the same target site during a live event window
-(at least 5 matches visible across tabs). The metric was \emph{candidate URL recall}:
-the ratio of discovered hosting URLs to total actual hosting URLs across all tabs.
+(at least 5 matches visible across tabs). The primary manual campaign metric was
+\emph{Host-Candidate Recall}: the ratio between valid hosting-page URLs discovered by the
+landing agent and the total manually verified hosting-page URLs available across visible
+tabs, hidden tabs, and dynamically loaded listing sections.
+
+Complementary landing-stage metrics were used diagnostically during the same review
+process: \emph{Host-Candidate Precision} (valid host-page URLs divided by all URLs
+returned by the landing agent), \emph{Tab Coverage Rate} (relevant tabs inspected
+divided by total relevant tabs), \emph{Dynamic Content Coverage} (dynamic or lazy-loaded
+sections revealed divided by total relevant dynamic sections), and
+\emph{Candidate Deduplication Rate} (duplicate candidate URLs removed divided by total
+raw candidate URLs). Because the reference set was small, Table~\ref{tab:nav-recall}
+reports Host-Candidate Recall as the main numerical metric, while the other measures
+were used to explain misses, duplicates, and hidden-content failures.
 
 \subsection{Results}
 
@@ -124,14 +186,15 @@ the ratio of discovered hosting URLs to total actual hosting URLs across all tab
                               >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
-Prompt version & Avg. candidates found & Actual total & Recall \\
+Prompt version & Avg. host candidates found & Manually verified total & Host-Candidate Recall \\
 \midrule
 Intent-based (v1) & 3.2 & 8 & 40\% \\
 ReAct (v2) & 6.8 & 8 & 85\% \\
 ReAct + budget cap (v3) & 7.1 & 8 & 89\% \\
 \bottomrule
 \end{tabularx}
-\caption{Navigation use case: candidate URL recall by prompt version.}
+\caption{Navigation use case: Host-Candidate Recall by prompt version on the manual
+reference site.}
 \label{tab:nav-recall}
 \end{table}
 
@@ -153,6 +216,22 @@ The remaining 11\% gap in v3 recall came from two patterns:
 
 \section{Prompt evaluation: player activation use case}
 
+This section uses manual campaign metrics on a small reference set rather than a
+large-scale benchmark. The main definitions were: \emph{Player Activation Success Rate},
+the percentage of runs where the agent changed the player from idle or blocked to active,
+loading, or playing; \emph{Manifest Recovery Rate}, the percentage of runs where a valid
+\texttt{.m3u8}, \texttt{.mpd}, \texttt{.mp4}, \texttt{.webm}, or embedded-player evidence
+URL was recovered from browser-observed state, network capture, or stored
+artifacts~\cite{puppeteer,cdp,hls-rfc,dash-standard}; \emph{First-Server Success Rate}, the percentage
+of successful runs where evidence was recovered from the first attempted server;
+\emph{Server-Fallback Success Rate}, the percentage of recovered cases that required
+secondary server buttons; \emph{Embedded-Fallback Recovery Rate}, the percentage of
+host-page failures recovered by switching to embedded-player analysis; and
+\emph{Evidence Completeness Rate}, the percentage of accepted outputs containing a stream
+URL, artifact or screenshot, tool trace, and final status. In the scenario tables below,
+the reported numerical value is Manifest Recovery Rate, while the other measures were
+used across the broader reference set and hard-failure analysis.
+
 \subsection{Scenario A: AlbaPlayer on host page}
 
 \textbf{Setup.} An AlbaPlayer instance embedded in an iframe within a host page. The
@@ -166,7 +245,7 @@ manifest request.
                               >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
-Prompt version & Behavior observed & m3u8 recovery rate \\
+Prompt version & Behavior observed & Manifest Recovery Rate \\
 \midrule
 Intent-based (v1) & Harvested without clicking play; 0 streams returned &
   0\% (10/10 failures) \\
@@ -176,7 +255,7 @@ ReAct + popup handler (v3) & v2 plus auto-close of new tab; js\_click fallback &
   90\% (9/10 successes) \\
 \bottomrule
 \end{tabularx}
-\caption{Player activation (AlbaPlayer): m3u8 recovery rate by prompt version.}
+\caption{Player activation (AlbaPlayer): Manifest Recovery Rate by prompt version.}
 \label{tab:alba-recovery}
 \end{table}
 
@@ -199,7 +278,7 @@ The manifest URL contains a short-lived signed token as a query parameter.
                               >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
-Prompt version & Behavior observed & m3u8 recovery rate \\
+Prompt version & Behavior observed & Manifest Recovery Rate \\
 \midrule
 ReAct v2 & Clicked play, harvested immediately with 1s wait; token not yet issued &
   40\% \\
@@ -209,7 +288,7 @@ ReAct v3 + perf API & Also scanned performance.getEntriesByType for retroactive
   manifest entries & 85\% \\
 \bottomrule
 \end{tabularx}
-\caption{Tokenized player (Clappr): m3u8 recovery rate under signed token flow.}
+\caption{Tokenized player (Clappr): Manifest Recovery Rate under signed-token flow.}
 \label{tab:token-recovery}
 \end{table}
 
@@ -222,12 +301,33 @@ the agent called harvest.
 
 \subsection{What was measured}
 
-Tool use evaluation inspected the agent's tool call logs to answer three questions:
-\begin{enumerate}
-  \item Did the agent call the \emph{right} tool for each step (tool selection accuracy)?
-  \item Did the agent call tools in the \emph{right order} (tool sequencing)?
-  \item Did the agent call \emph{too many} tools before giving up (tool budget compliance)?
-\end{enumerate}
+Tool use evaluation inspected the agent's tool-call logs and associated screenshots. The
+main manual campaign and reference-set metrics were:
+\begin{itemize}
+  \item \textbf{Tool Selection Accuracy:} percentage of reviewed steps where the agent
+    chose the appropriate browser tool for the local objective;
+  \item \textbf{Tool Sequencing Compliance:} percentage of accepted runs where tools
+    appeared in a valid evidence-oriented order;
+  \item \textbf{Required Tool Coverage:} percentage of evaluated cases in which all
+    tools marked as required for the case were actually present in the execution trace;
+  \item \textbf{Forbidden Tool Violation Rate:} percentage of evaluated cases in which a
+    tool listed as forbidden appeared in the trace;
+  \item \textbf{Tool Error Rate:} proportion of evaluated runs containing recorded tool
+    errors that affected extraction reliability;
+  \item \textbf{Premature Harvest Rate:} percentage of host or embedded attempts where
+    \texttt{harvest()} was called before player activation or state verification;
+  \item \textbf{Navigation/Interaction Confusion Rate:} percentage of same-page tab or
+    JavaScript events incorrectly handled with \texttt{navigate()} instead of
+    \texttt{interact()};
+  \item \textbf{Screenshot Overuse Rate:} percentage of runs where repeated
+    \texttt{screenshot()} calls were used as a wait substitute beyond expected evidence
+    checkpoints;
+  \item \textbf{Average Tool Calls per Accepted Result:} mean number of tool
+    invocations in runs that passed evidence acceptance.
+\end{itemize}
+
+These metrics were derived from reference-set review rather than a large-scale automated
+benchmark, so they should be interpreted as auditable engineering evaluation metrics.
 
 \subsection{Common tool misuse patterns observed}
 
@@ -280,20 +380,130 @@ Clarified \texttt{navigate} vs \texttt{interact} & 30\% nav/interact confusion &
 \label{tab:desc-effect}
 \end{table}
 
-\subsection{Token-based evaluation}
+\subsection{Trace-Based Evaluation and Evidence Acceptance}
 
-Beyond success rate, every run was analyzed for token efficiency. The key metrics
-tracked were:
+The system does not only inspect the final agent answer. It evaluates the output
+together with the execution trace. This makes it possible to check whether the agent
+actually used the required browser tools before claiming success, whether forbidden or
+unsafe tools were avoided, whether stream evidence exists when a successful status is
+returned, and whether tool errors affected the reliability of the result.
+
+Because the system is an agentic browser workflow rather than a classical predictive
+model, evaluation was organized around task completion, evidence quality, tool behavior,
+and operational cost. The objective was not only to determine whether the final output
+was correct, but also whether the agent reached that output through an auditable
+sequence of browser actions and evidence artifacts.
+
+During evaluation, raw agent outputs were not accepted blindly. A lightweight,
+deterministic validation strategy was used as an acceptance gate, and the same logic is
+also the basis of the rule-based evaluator in the Python reference architecture. The
+goal was not to build a second advanced LLM judge, but to reduce the risk of accepting
+malformed, unsupported, or weakly evidenced outputs as final evidence.
+
+After an agent returned structured JSON, the evaluation flow checked whether the result
+was usable before recording it as evidence. The checks focused on deterministic
+assertions over final status, page type, evidence thresholds, and the tool trace rather
+than another model-based judge, because repeatability and auditability were more
+important than adding another probabilistic decision layer. This lightweight layer does
+not eliminate unsupported outputs; it narrows the set of results that can be accepted
+without immediate manual correction.
+
+The internal score related to unsupported-answer risk is therefore interpreted in this
+report through \emph{Invalid Output Rate} and \emph{Partial Evidence Rate}, not as a claim
+of formal large-scale hallucination benchmarking.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.1cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Validation check & Purpose & Example failure detected \\
+\midrule
+JSON schema check & Ensure machine-readable output & Missing \texttt{streams} or
+  \texttt{page\_type} field \\
+Expected status check & Match returned status to observed outcome & Blocked page marked
+  as success \\
+Expected page-type check & Match output to page role & \texttt{landing\_page} treated as
+  \texttt{host\_page} \\
+Stream evidence threshold & Require valid media evidence for successful result & Success
+  returned with no valid \texttt{.m3u8}/\texttt{.mpd}/media URL \\
+Hosting candidate threshold & Enforce minimum landing-stage candidate output & Listing
+  page returns too few verified host URLs \\
+Embedded URL threshold & Enforce minimum embedded fallback evidence & Embedded fallback
+  returns no embedded-player URL \\
+Required tool coverage & Verify required browser actions occurred & Success claimed with
+  no required \texttt{inspect()} or \texttt{harvest()} trace \\
+Forbidden tool violation & Detect disallowed or unsafe actions & Case used a forbidden
+  tool despite evaluator constraint \\
+Tool error accounting & Reduce confidence when tool failures occurred & Tool errors
+  accumulated but result still appeared successful \\
+Artifact support check & Require screenshot or stored artifact support & Stream found but
+  no screenshot or stored artifact \\
+Trace support check & Prevent unsupported claims & Claims playback but no relevant trace \\
+\bottomrule
+\end{tabularx}
+\caption{Trace-based evaluation checks applied before accepting agent outputs as
+evidence.}
+\label{tab:validation-checks}
+\end{table}
+
+The acceptance logic inspected deterministic properties drawn from the output schema, the
+evidence payload, and the recorded tool trace:
+\begin{itemize}
+  \item \textbf{JSON schema validation:} required fields had to be present and
+    machine-readable;
+  \item \textbf{expected status matching:} returned status had to match the observed
+    outcome recorded in the run;
+  \item \textbf{expected page-type matching:} the selected specialist workflow and
+    output page role had to agree with the reviewed page type;
+  \item \textbf{stream and URL threshold checks:} successful results had to satisfy
+    minimum stream, hosting URL, or embedded URL expectations defined for the case;
+  \item \textbf{artifact support:} important claims, especially player activation and
+    stream recovery claims, were expected to have a screenshot URL or stored artifact;
+  \item \textbf{trace support:} accepted outputs had to be backed by relevant browser
+    actions in the execution trace;
+  \item \textbf{required/forbidden tool assertions:} cases could require specific tools
+    and reject the presence of forbidden tools;
+  \item \textbf{tool-error accounting:} tool errors were recorded and used to lower the
+    reliability of otherwise plausible results.
+\end{itemize}
+
+The lightweight validation metrics tracked during evaluation, or used as report-level
+interpretations of the underlying rule-based assertions, were:
+\begin{itemize}
+  \item \textbf{Schema Validity Rate};
+  \item \textbf{Expected Status Match Rate};
+  \item \textbf{Expected Page-Type Match Rate};
+  \item \textbf{Stream Evidence Validity Rate};
+  \item \textbf{Hosting Candidate Threshold Pass Rate};
+  \item \textbf{Embedded URL Threshold Pass Rate};
+  \item \textbf{Artifact Support Rate};
+  \item \textbf{Trace Support Rate};
+  \item \textbf{Invalid Output Rate};
+  \item \textbf{Partial Evidence Rate}.
+\end{itemize}
+
+This validation layer does not replace human review. Instead, it acts as a first
+acceptance gate that converts raw agent output into an auditable result. Outputs that
+fail validation are either rejected, marked as partial evidence, or sent to manual
+review.
+
+\subsection{Average tool calls and token-efficiency context}
+
+Beyond task success, runs were also analyzed for tool-loop depth and token efficiency.
+The main quantitative indicators were:
 
 \begin{itemize}
-  \item \textbf{Total tokens per run:} sum of input + output tokens across all LLM
-    calls in the run;
-  \item \textbf{Cache hit ratio:} fraction of input tokens served from the provider
+  \item \textbf{Average Tokens per Run:} sum of input and output tokens across all LLM
+    calls in a run, averaged over the evaluated reference set;
+  \item \textbf{Tokens per Accepted Evidence Bundle:} total run tokens divided by the
+    number of accepted evidence outputs;
+  \item \textbf{Cache Hit Ratio:} fraction of input tokens served from the provider
     cache rather than recomputed;
-  \item \textbf{Tokens per successful extraction:} total run tokens divided by number
-    of confirmed m3u8 URLs found;
-  \item \textbf{Tool call count:} total number of tool invocations per run (proxy for
-    agent loop depth).
+  \item \textbf{Average Tool Calls per Accepted Result:} average number of browser-tool
+    invocations in accepted runs.
 \end{itemize}
 
 \begin{table}[H]
@@ -312,7 +522,7 @@ Embedded fallback & \textasciitilde{}110k & 6--10 \\
 Infrastructure enrichment & \textasciitilde{}8k & 1--2 \\
 \bottomrule
 \end{tabularx}
-\caption{Average token consumption and tool call count by run phase.}
+\caption{Average token consumption and tool-call depth by run phase.}
 \label{tab:token-by-phase}
 \end{table}
 
@@ -325,12 +535,13 @@ the agent exits immediately without trying remaining servers.
 \section{Prompt iteration evaluation}
 
 Each significant prompt change was evaluated against a fixed reference set of 20 URLs
-covering both site families. The evaluation recorded: stream recovery rate, navigation
-recall, tool call count, and first-server success rate.
+covering both site families. The evaluation recorded: Manifest Recovery Rate,
+Host-Candidate Recall, Average Tool Calls per Accepted Result, and First-Server Success
+Rate.
 
 \begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{1.5cm}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{1.8cm}
                               >{\raggedright\arraybackslash}X
                               >{\raggedright\arraybackslash}X
                               >{\centering\arraybackslash}p{2.2cm}}
@@ -436,6 +647,16 @@ requested before \texttt{harvest()} was called.
 
 \section{Cost and cache evaluation}
 
+Runtime and cost reporting was kept lightweight, deterministic, and trace-linked. At
+implementation level, each evaluation run records latency and cost fields; at report
+level, these are interpreted as \emph{Average Runtime per Run} and \emph{Cost per
+Accepted Result}. Together with \emph{Average Tool Calls per Accepted Result},
+\emph{Average Tokens per Run}, and \emph{Cache Hit Ratio}, these measures characterize
+the operational footprint of the reference architecture on the evaluated reference set.
+Where the report gives numeric examples below, they should be interpreted as manual
+campaign metrics or representative heavy-run observations rather than large-scale
+production statistics.
+
 \subsection{Cache behavior}
 
 Representative heavy-run pattern used for reporting (observed in late n8n-phase
@@ -457,14 +678,76 @@ campaigns and in the new Python implementation):
 \rowcolor{accent!8}
 Metric & Interpretation & Example value \\
 \midrule
-Total token context & aggregate context processed in heavy run scenarios & \textasciitilde{}800k \\
+Representative total tokens in heavy run & aggregate context processed in complex run
+  scenarios & \textasciitilde{}800k \\
 Cached token volume & portion served from cache layers & \textasciitilde{}690k \\
-Cache effectiveness & practical reuse level across phases & \textasciitilde{}80\%+ \\
+Cache Hit Ratio & practical reuse level across phases & \textasciitilde{}80\%+ \\
 \bottomrule
 \end{tabularx}
 \caption{Representative cache and token pattern from project runs.}
 \label{tab:cache-token}
 \end{table}
+
+\subsection{Cache utilization by run phase}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  ybar stacked,
+  bar width=1.4cm,
+  width=12cm, height=7cm,
+  symbolic x coords={Classification, Landing, Hosting, Embedded, Enrichment},
+  xtick=data,
+  ymin=0, ymax=300,
+  ylabel={Approx. token volume (k)},
+  xlabel={Run phase},
+  legend style={at={(0.01,0.97)}, anchor=north west},
+  grid=major, grid style={dashed,gray!30},
+  title={Token consumption: cached vs non-cached by run phase}
+]
+\addplot[fill=green!60, draw=green!80] coordinates {
+  (Classification,18)(Landing,42)(Hosting,370)(Embedded,220)(Enrichment,40)
+};
+\addplot[fill=orange!60, draw=orange!80] coordinates {
+  (Classification,7)(Landing,18)(Hosting,60)(Embedded,35)(Enrichment,10)
+};
+\legend{Cached tokens (k), Non-cached tokens (k)}
+\end{axis}
+\end{tikzpicture}
+\caption{Approximate token distribution by phase: hosting and embedded phases dominate
+total usage due to longer tool loops.}
+\label{fig:token-phases}
+\end{figure}
+
+\subsection{Cost scaling behavior}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=12cm, height=7cm,
+  xlabel={Number of hosting pages per run},
+  ylabel={Relative cost (normalized)},
+  xmin=1, xmax=10,
+  ymin=0, ymax=5,
+  legend style={at={(0.05,0.95)}, anchor=north west},
+  grid=major, grid style={dashed, gray!30},
+  title={Cost scaling with hosting page count and server attempts}
+]
+\addplot[thick, blue!70, mark=square*] coordinates {
+  (1,0.4)(2,0.8)(3,1.3)(4,1.9)(5,2.5)(6,3.1)(7,3.6)(8,4.0)(9,4.4)(10,4.7)
+};
+\addplot[thick, orange!80, mark=triangle*, dashed] coordinates {
+  (1,0.6)(2,1.2)(3,1.9)(4,2.7)(5,3.4)(6,4.0)(7,4.5)(8,4.8)(9,4.9)(10,5.0)
+};
+\legend{1 server per host page, 3 servers per host page}
+\end{axis}
+\end{tikzpicture}
+\caption{Cost scaling with hosting page count: more pages and more server attempts
+significantly increase total run cost.}
+\label{fig:cost-scaling}
+\end{figure}
 
 \begin{table}[H]
 \centering
@@ -487,23 +770,112 @@ More embedded fallbacks & deeper frame analysis cost &
 \label{tab:scaling}
 \end{table}
 
+\section{n8n phase limitations observed during evaluation}
+
+The early phase validated feasibility, but long campaigns revealed practical limits:
+
+\begin{itemize}
+  \item weaker long-memory behavior across runs;
+  \item parallel branch complexity under long full-workflow executions;
+  \item more operational difficulty diagnosing long chained failures;
+  \item harder governance of large prompt/tool evolution over time.
+\end{itemize}
+
+These observations motivated the Python reference architecture as a more maintainable
+evolution path.
+
 \section{Overall evaluation summary}
 
-Across all dimensions measured, the transition from intent-based to ReAct-style prompts
-delivered the largest single improvement. Routing accuracy settled at around 95\%,
-navigation recall went from 40\% to 89\%, and tokenized stream recovery went from roughly
-25\% to 85\% by v3. Table~\ref{tab:prompt-history} in the prompt iteration section shows
-the progression version by version.
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  ybar,
+  bar width=0.85cm,
+  width=13cm, height=7.5cm,
+  symbolic x coords={Page-Type Routing, Host-Candidate Recall,
+                     Player Activation, Popup-Interference Recovery,
+                     Tokenized-Stream Recovery},
+  xtick=data,
+  x tick label style={rotate=30, anchor=east, font=\footnotesize},
+  ymin=0, ymax=100,
+  ylabel={Success rate (\%)},
+  legend style={at={(0.98,0.97)}, anchor=north east, font=\footnotesize},
+  nodes near coords,
+  every node near coord/.append style={font=\tiny},
+  grid=major, grid style={dashed, gray!30},
+  title={Platform evaluation: key metrics by category}
+]
+\addplot[fill=orange!50, draw=orange!70] coordinates {
+  (Page-Type Routing,   91)
+  (Host-Candidate Recall,  40)
+  (Player Activation,     0)
+  (Popup-Interference Recovery,     20)
+  (Tokenized-Stream Recovery,  25)
+};
+\addplot[fill=blue!50, draw=blue!70] coordinates {
+  (Page-Type Routing,   93)
+  (Host-Candidate Recall,  85)
+  (Player Activation,    70)
+  (Popup-Interference Recovery,     55)
+  (Tokenized-Stream Recovery,  40)
+};
+\addplot[fill=green!50, draw=green!70] coordinates {
+  (Page-Type Routing,   95)
+  (Host-Candidate Recall,  89)
+  (Player Activation,    90)
+  (Popup-Interference Recovery,     78)
+  (Tokenized-Stream Recovery,  85)
+};
+\legend{Intent-based v1, ReAct v2, ReAct v3 (current)}
+\end{axis}
+\end{tikzpicture}
+\caption{Overall platform evaluation: approximate manual campaign metrics across key
+dimensions by prompt version.}
+\label{fig:eval-summary}
+\end{figure}
 
-\section{Discussion and observed strengths}
+\section{Current strengths}
 
-Looking at the evaluation results as a whole, a few things stand out. The explicit hosting-to-embedded fallback was probably the single most important architectural decision in terms of coverage: without it, anything involving a nested iframe chain just fails. Screenshot-grounded validation proved its worth too — before adding get\_media\_state and mandatory pre-harvest screenshots, it was impossible to tell from logs alone whether a server switch had actually done anything. The tool architecture also held up better than expected on unknown page structures; the multi-strategy interact fallback (selector, text, coordinates, js\_click) handled most selector drift without any prompt changes.
+\begin{itemize}
+  \item explicit hosting-to-embedded fallback improves hard-case recovery;
+  \item screenshot reasoning improves confidence and auditability;
+  \item tool architecture supports unknown page structures better than static extraction;
+  \item cost and cache visibility allows practical optimization.
+\end{itemize}
 
-On the limitations side, the honest assessment is that anti-bot behavior is a moving target. Adblock filter lists needed refreshing multiple times over the evaluation period. Some Cloudflare-gated sessions still produce partial evidence that requires a human to judge. Tokenized stream timing is the most fragile piece — the 2-second post-play wait works for most providers but there are edge cases where the token exchange takes longer. And anything beyond a 3-level iframe chain hits the embedded agent's tool budget before it finds the actual player.
+\section{Limitations}
 
-The prompt evolution from intent-based to ReAct-style was the most impactful change in terms of raw metrics, but it took several iterations to get the stopping criteria right. The budget cap in v3 was not obvious — it only became necessary after seeing agents burn through 20+ tool calls on paginated sites that had no additional content to find.
+\begin{itemize}
+  \item anti-bot behavior changes continuously;
+  \item some sessions still require manual verification;
+  \item tokenized stream logic can remain unstable across events;
+  \item some deeply nested iframe chains (4+ levels) exceed the embedded agent's default
+    tool budget.
+\end{itemize}
+
+\section{Discussion}
+
+Evaluation confirms that the system handles difficult streaming websites effectively. The key success factor is not one extraction trick, but
+a combination of reasoning agents, layered tools, screenshot-grounded decisions, and
+explicit fallback from hosting to embedded analysis.
+
+The evaluation also showed that invalid or unsupported outputs must not be counted as
+successes. Runs that produced malformed JSON, weak evidence, inconsistent page-type
+results, or claims not backed by tool traces or artifacts were reclassified as
+\texttt{partial\_success} or failure rather than success.
+
+The prompt evolution from intent-based to ReAct-style was the single biggest improvement
+in system reliability, accounting for the majority of the gain seen from v1 to v3 across
+all evaluated dimensions. The addition of the popup handler and the deferred harvest
+wait were the two most impactful targeted improvements within the ReAct framework.
+
+Cost remains the primary operational constraint. The observed 80\%+ cache hit rate
+makes long runs viable, but the cost scaling with hosting-page and server count means
+that ranking and pruning heuristics are as important as prompt quality for large-scale
+operation.
 
 Chapter~7 draws on these evaluation results to summarize the project's contributions,
 reflect on the methodology, and outline the short-term improvements and research
-directions that would extend the platform toward production-grade, fully cloud-native
-operation.
+directions that would extend the reference architecture toward a future cloud-native
+deployment target.

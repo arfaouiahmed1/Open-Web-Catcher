@@ -22,124 +22,112 @@ From repeated runs, the main difficulties were:
 
 \section{From deterministic scripts to adaptive agents}
 
-The fundamental challenge is that no single rule generalizes across all the page structures
-encountered. A static scraper excels on predictable pages with stable selectors, but breaks
-when layout or anti-bot behavior changes. The solution is an adaptive system that can
-\emph{observe}, \emph{reason}, and \emph{act} iteratively, adjusting strategy based on
-what it actually finds on the page. Large language model based autonomous agents have been shown to handle precisely this
-kind of open-ended, multi-step decision-making in environments where the state space is
-too large to enumerate in advance~\cite{agent-survey}. Benchmark environments such as
-WebArena~\cite{webarena} have demonstrated that LLM-driven agents can navigate realistic
-web interfaces, execute multi-step tasks, and generalize across different website
-structures without site-specific hand-coding.
+The core difficulty in this domain is that no fixed rule generalizes across all page
+structures. A deterministic scraper works well on stable pages with known selectors, but
+fails when controls appear only after interaction, when the useful player is buried in an
+iframe chain, or when the site changes behavior between sessions. For this reason, the
+project moved toward an adaptive browser-assisted approach in which the system observes the
+current page state, chooses the next action, and re-evaluates the result before proceeding.
+Research on agentic reasoning and realistic web benchmarks such as WebArena supports this
+kind of iterative decision-making on dynamic interfaces~\cite{agent-survey,webarena}.
 
-Figure~\ref{fig:classic-pattern} illustrates the conceptual contrast between a
-fixed workflow and an agent-based loop.
+\section{ReAct as the operating pattern}
 
-\begin{figure}[H]
+In practice, the specialist agents follow a ReAct-style loop~\cite{react}: observe the
+current browser state, reason about the next step, act through a browser tool, and check
+whether the action produced useful evidence. This operating pattern is better suited to
+streaming sites than a linear workflow because it can recover from false clicks, inactive
+server buttons, popup interruptions, and empty first attempts.
+
+The practical advantages for this project are straightforward:
+\begin{itemize}
+  \item the next action depends on the actual page state, not on a fixed branch decided in advance;
+  \item every important step can be validated through DOM, screenshot, or network evidence;
+  \item the run can stop early when evidence is found, or fall back when the current path fails.
+\end{itemize}
+
+\section{Observed website families in practice}
+
+During manual and semi-automated campaigns, a broad range of streaming-site structures
+were encountered. They can be organized into two main axes: \emph{simple/static sites}
+(those with predictable HTML and stable selectors) and \emph{complex/interactive sites}
+(those requiring JavaScript navigation and dynamic interaction to reveal content).
+
+\subsection{Simple sites: WordPress-template regional aggregators}
+
+A large percentage of regional Arabic-language football streaming portals are built
+on the same WordPress theme family. Several sites in this category were observed to
+share identical CSS class names, the same component hierarchy, and even the same
+player plugin (AlbaPlayer or Clappr embedded via a shortcode). This made them the
+easiest target family: once a selector pattern was confirmed on one site, it often
+transferred directly to another within the same template cluster.
+
+Operational traits:
+\begin{itemize}
+  \item match pages from repeating templates where visible layout is stable;
+  \item server buttons with predictable class names (\texttt{.server-btn},
+    \texttt{.stream-link}) that can be targeted by selector;
+  \item ad and redirect logic injected by plugins or external \texttt{<script>} tags;
+  \item occasional template refresh that preserves URL structure but updates class names.
+\end{itemize}
+
+These sites are called ``simple'' because a well-formed selector-based interact call
+succeeds on the first attempt in the majority of runs.
+
+\subsection{Complex sites: JavaScript-heavy interactive portals}
+
+Complex sites require navigational interaction before useful content becomes visible.
+Common patterns include:
+
+\begin{itemize}
+  \item \textbf{Tab-gated match listings:} the landing page shows only live matches by
+    default; other events are behind tab controls that trigger JavaScript fetches
+    (no page reload) when clicked;
+  \item \textbf{Dynamic server loading:} server options are not in the initial HTML but
+    are injected by an XHR response triggered by selecting a server tab;
+  \item \textbf{Scroll-gated content:} match cards below the fold are lazy-loaded and
+    only appear after a scroll event reaches a threshold;
+  \item \textbf{Login-wall or subscription interstitials:} some mirrors show a blurred
+    player until a fake login form is dismissed.
+\end{itemize}
+
+These sites require the landing or hosting agent to perform a multi-step navigation
+loop (inspect $\to$ interact $\to$ re-inspect) before extraction can begin.
+
+\subsection{Global link-hub aggregators}
+
+Global indexes (such as streamed-style hubs) frequently act as routing layers rather
+than final player pages. They are neither purely Arabic nor purely WordPress; their
+structure is custom but their routing behavior is consistent:
+
+\begin{itemize}
+  \item large event listings with many outbound host domains;
+  \item per-event pages that aggregate multiple mirrors with inconsistent UI patterns;
+  \item rapid provider rotation where one mirror fails while another becomes active;
+  \item mixed language/region metadata that complicates deterministic field extraction.
+\end{itemize}
+
+\begin{table}[H]
 \centering
-\begin{tikzpicture}[node distance=0.55cm and 2.2cm]
-
-% === LEFT SIDE: Workflow ===
-\node[draw=gray!70, fill=gray!10, rounded corners, minimum width=5.2cm,
-      minimum height=7.2cm, label={[font=\bfseries\small]above:AI Workflow}] (wfbox) at (0,0) {};
-
-\node[flowbox, minimum width=4.4cm, fill=green!15, draw=green!50] (start) at (0,2.5)
-  {Start};
-\node[flowbox, minimum width=4.4cm, below=0.45cm of start] (taskA)
-  {Task A};
-\node[decisionbox, minimum width=3.8cm, below=0.5cm of taskA] (dec)
-  {Decision};
-\node[flowbox, minimum width=1.8cm, below left=0.6cm and 0.6cm of dec] (taskB)
-  {Task B};
-\node[flowbox, minimum width=1.8cm, below right=0.6cm and 0.6cm of dec] (taskC)
-  {Task C};
-\node[flowbox, minimum width=4.4cm, fill=green!15, draw=green!50,
-      below=0.45cm of taskB, xshift=0.6cm] (endwf)
-  {End};
-
-\draw[myarrow] (start) -- (taskA);
-\draw[myarrow] (taskA) -- (dec);
-\draw[myarrow] (dec) -- node[left,font=\tiny]{Yes} (taskB);
-\draw[myarrow] (dec) -- node[right,font=\tiny]{No}  (taskC);
-\draw[myarrow] (taskB) -- (endwf);
-\draw[myarrow] (taskC) -- (endwf);
-
-% === RIGHT SIDE: Agent ===
-\node[draw=accent!70, fill=blue!5, rounded corners, minimum width=5.4cm,
-      minimum height=7.2cm, label={[font=\bfseries\small]above:AI Agent}] (agbox) at (7.2,0) {};
-
-\node[flowbox, minimum width=4.6cm, fill=orange!15, draw=orange!50] (env) at (7.2,2.5)
-  {Environment};
-\node[flowbox, minimum width=4.6cm, fill=blue!15, draw=blue!50,
-      below=0.5cm of env] (proc)
-  {ProcessInput};
-\node[flowbox, minimum width=4.6cm, fill=blue!15, draw=blue!50,
-      below=0.45cm of proc] (decide)
-  {DecideAction};
-\node[flowbox, minimum width=4.6cm, fill=blue!15, draw=blue!50,
-      below=0.45cm of decide] (exec)
-  {ExecuteAction};
-\node[flowbox, minimum width=4.6cm, fill=green!15, draw=green!50,
-      below=0.45cm of exec] (fb)
-  {Feedback};
-
-\draw[myarrow] (env) -- node[right,font=\tiny]{Receives} (proc);
-\draw[myarrow] (proc) -- node[right,font=\tiny]{Decides} (decide);
-\draw[myarrow] (decide) -- node[right,font=\tiny]{Executes} (exec);
-\draw[myarrow] (exec) -- node[right,font=\tiny]{Feeds back} (fb);
-\draw[myarrow] (fb.east) -- ++(0.4,0) -- ++(0,3.85) -- (env.east);
-\draw[myarrow] (fb.west) -- ++(-0.4,0) -- ++(0,3.85) -- (env.west)
-  node[midway, left, font=\tiny, align=right]{Updates\\state};
-
-\end{tikzpicture}
-\caption{Classic pattern: fixed workflow (left) versus adaptive agent loop (right).}
-\label{fig:classic-pattern}
-\end{figure}
-
-\section{The ReAct framework}
-
-The Reasoning and Acting (ReAct) framework~\cite{react} structures agent behavior as an
-interleaved loop of thought, action, and observation, as shown in
-Figure~\ref{fig:react-loop}.
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[node distance=1.2cm and 1.6cm]
-
-\node[flowbox, minimum width=3.4cm, fill=blue!15, draw=blue!50] (obs)
-  {\textbf{Observe}\\{\footnotesize HTML, screenshot,}\\{\footnotesize network signals}};
-\node[flowbox, minimum width=3.4cm, fill=orange!10, draw=orange!60,
-      right=2cm of obs] (think)
-  {\textbf{Think}\\{\footnotesize LLM reasons about}\\{\footnotesize current state}};
-\node[flowbox, minimum width=3.4cm, fill=green!10, draw=green!60,
-      right=2cm of think] (act)
-  {\textbf{Act}\\{\footnotesize Call browser tool}\\{\footnotesize (click, harvest\ldots)}};
-\node[flowbox, minimum width=3.4cm, fill=purple!10, draw=purple!60,
-      below=1.5cm of act] (reflect)
-  {\textbf{Reflect}\\{\footnotesize Memory update,}\\{\footnotesize error check}};
-
-\node[flowbox, minimum width=3.4cm, fill=green!20, draw=green!70,
-      left=2cm of reflect] (done)
-  {\textbf{Done?}\\{\footnotesize Evidence found}\\{\footnotesize or budget hit}};
-
-\draw[myarrow] (obs)     -- (think);
-\draw[myarrow] (think)   -- (act);
-\draw[myarrow] (act)     -- (reflect);
-\draw[myarrow] (reflect) -- (done);
-\draw[myarrow] (done.west) -- ++(-0.8,0) |- (obs.south)
-  node[near start, above, font=\tiny]{Loop again};
-
-\node[draw=accent, fill=yellow!10, rounded corners, font=\small,
-      right=0.5cm of reflect, yshift=0.5cm, xshift=0.6cm]
-  {\emph{exit when objective met}};
-
-\end{tikzpicture}
-\caption{The ReAct loop as implemented in each specialist agent.}
-\label{fig:react-loop}
-\end{figure}
-
-ReAct works well here because each observation is a fresh browser state — new HTML, new screenshot, updated network events captured after the last action. The agent doesn't reason from a snapshot taken at page load; it reasons from what the page looks like right now. That means it can notice when a server click opened an ad popup instead of activating the player, or when the player is still showing an idle state after what looked like a successful play click. The loop gives the agent a chance to recover rather than committing to an incorrect first read.
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.2cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Site type & Extraction difficulty & Selector stability & Agent needed \\
+\midrule
+WordPress regional (Arabic) & Low--Medium & High (shared CSS classes) &
+  Hosting agent with basic interact \\
+JS-interactive portals & High & Low (dynamic injection) &
+  Landing + hosting with nav loops \\
+Global link-hub & Medium--High & Medium (custom but repeating) &
+  Full pipeline with embedded fallback \\
+\bottomrule
+\end{tabularx}
+\caption{Site-family classification by extraction difficulty and agent strategy.}
+\label{tab:site-families}
+\end{table}
 
 \section{Three-layer page taxonomy}
 
@@ -163,9 +151,9 @@ Extraction target: hosting-page URLs and match metadata.}};
 {\footnotesize Server switchers, player container, single-match focus.
 Extraction target: m3u8/mpd streams or embedded URL.}};
 
-\node[sysbox, minimum width=3.8cm, minimum height=2.6cm, fill=green!8, align=left,
-      text width=3.4cm, right=1.6cm of host] (emb)
-{\textbf{embed\_video\_page}\\[2pt]
+\node[sysbox, minimum width=4.2cm, minimum height=2.6cm, fill=green!8, align=left,
+      text width=3.8cm, right=1.2cm of host] (emb)
+{{\small\bfseries embed\_video\_page}\\[2pt]
 {\footnotesize Minimal player UI, iframe-origin.
 Extraction target: final stream manifest after play activation.}};
 
@@ -201,74 +189,223 @@ For this project, plain HTML retrieval is insufficient for five concrete reasons
 
 This is why browser-assisted extraction is not optional in this domain.
 
-\section{Tool comparison: n8n, Azure Logic Apps, and Azure AI Agents}
+\section{Page taxonomy with examples, inputs, and outputs}
 
-During the internship, three orchestration tools were evaluated specifically for
-LLM-driven web scraping on Puppeteer with Azure Container Apps Jobs.
+The system works on four page types.
+
+\subsection{\texttt{landing\_page}}
+
+Role: discover candidate hosting pages and match-level context.
+
+Typical signals: match cards or rows, team name pairs, date/time tabs, score indicators,
+links containing ``matches'', ``live'', or ``events'' path segments.
+
+Expected outputs: ranked list of hosting-page URLs, extracted match metadata (teams,
+leagues, broadcasters), navigation evidence (screenshots, link structure).
+
+\subsection{\texttt{host\_page}}
+
+Role: activate servers/players and extract stream evidence from hosting context.
+
+Typical signals: single-match focus, server-switch buttons (serv1/serv2/serv3 labels),
+a visible player container, embedded iframe with albaplayer/clappr/hls.js, beIN Sports
+logo watermark.
+
+Expected outputs: stream manifests (m3u8/mpd), per-server evidence, iframe embed URL
+for fallback, screenshots confirming active play state.
+
+\subsection{\texttt{embed\_video\_page}}
+
+Role: extract streams from iframe-centered player pages and fallback contexts.
+
+Typical signals: minimal page with single player occupying most of the viewport, no
+navigation or ads, play button in center, network requests include \texttt{.ts} segments.
+
+Expected outputs: final stream manifests after play activation, player-state diagnostics,
+iframe content diagnostics.
+
+\subsection{\texttt{other}}
+
+Role: filter noise pages (ads, unrelated redirects, irrelevant content) to protect
+runtime budget.
 
 \begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{4.2cm}
-                              >{\centering\arraybackslash}p{2.8cm}
-                              >{\centering\arraybackslash}p{2.8cm}
-                              >{\centering\arraybackslash}X}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{4.5cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
-Capability & n8n & Azure Logic Apps & Azure AI Agents \\
+Page type & Typical input state & Expected output \\
 \midrule
-Run scraper container job
-  & \sstar\sstar\sstar\hstar\hstar
-  & \sstar\sstar\sstar\sstar\sstar
-  & \sstar\sstar\sstar\sstar\sstar \\
-Retry failures
-  & \sstar\sstar\sstar\sstar\hstar
-  & \sstar\sstar\sstar\sstar\sstar
-  & \sstar\sstar\sstar\sstar\sstar \\
-Extract data with LLM
-  & \sstar\sstar\sstar\sstar\hstar
-  & \sstar\sstar\sstar\sstar\hstar
-  & \sstar\sstar\sstar\sstar\sstar \\
-Manage cross-run memory
-  & \sstar\hstar\hstar\hstar\hstar
-  & \sstar\hstar\hstar\hstar\hstar
-  & \sstar\sstar\sstar\sstar\sstar \\
-Handle dynamic sites
-  & \sstar\sstar\hstar\hstar\hstar
-  & \sstar\sstar\hstar\hstar\hstar
-  & \sstar\sstar\sstar\sstar\sstar \\
-Handle thousands of req/day
-  & \sstar\sstar\sstar\hstar\hstar
-  & \sstar\sstar\sstar\sstar\sstar
-  & \sstar\sstar\sstar\sstar\hstar \\
-Lowest cost
-  & \sstar\sstar\sstar\sstar\sstar
-  & \sstar\sstar\sstar\sstar\sstar
-  & \sstar\sstar\hstar\hstar\hstar \\
-Automation power
-  & \sstar\sstar\sstar\hstar\hstar
-  & \sstar\sstar\sstar\sstar\hstar
-  & \sstar\sstar\sstar\sstar\sstar \\
+\texttt{landing\_page} & URL with listing layout, cards/rows, date tabs, multilingual
+  labels & ranked hosting candidates, optional match metadata, navigation evidence \\
+\texttt{host\_page} & URL with one match context, server switchers, player container &
+  streams (or strong candidates), server-level evidence, screenshots \\
+\texttt{embed\_video\_page} & URL/frame containing reduced player UI and runtime media
+  logic & final stream manifests/files, player-state diagnostics, iframe diagnostics \\
+\texttt{other} & URL with non-investigative role & filtered decision with reason for
+  skip/deprioritization \\
 \bottomrule
 \end{tabularx}
-\caption{Comparative rating of orchestration tools for this use case
-(\sstar\sstar\sstar\sstar\sstar\ = best, \sstar\hstar\hstar\hstar\hstar\ = weakest).}
-\label{tab:tool-compare}
+\caption{Page-type input/output expectations used by the pipeline.}
+\label{tab:page-types-io}
 \end{table}
 
-\textbf{Decision rationale.} n8n was used first because it is free, self-hostable,
-and excellent for rapid experimentation with visual workflow logic. Azure Logic Apps
-was evaluated as the most cost-effective Azure-native orchestrator. Azure AI Agents
-(AI Foundry) offered the best built-in memory, planning, and tool-calling features but
-at the highest complexity and cost.
+\section{From the n8n phase to the new Python project}
 
-The final architecture moved away from n8n's visual workflow chains toward a coded
-platform because: n8n workflows became large and difficult to reason about as prompts
-and tools evolved; parallel branches increased recovery complexity; and memory behavior
-was mostly local to a single execution run. The coded Python platform preserves n8n's
-rapid-iteration lessons while giving engineering-grade control over memory, tracing, and
-cost.
+The company initially requested an n8n-based phase to validate feasibility quickly on
+real targets. That phase successfully confirmed the concept, but it also exposed
+limitations that became critical at scale:
 
-\section{Technologies used and why they mattered}
+\begin{itemize}
+  \item memory was mostly local to one workflow execution;
+  \item long end-to-end flows were hard to keep stable when many hosting pages/servers
+    were involved;
+  \item parallel branches increased operational complexity and recovery difficulty;
+  \item large workflows became difficult to maintain and reason about as prompts/tools
+    evolved.
+\end{itemize}
+
+This is why the work moved to the new Python-based implementation with explicit memory,
+stronger observability, better runtime control, and clearer engineering boundaries.
+
+\section{Difficulties faced and what was done}
+
+\subsection{Nested iframes and frame ambiguity}
+
+\textbf{Difficulty.} Useful players were often hidden several levels deep, and top-level
+signals were misleading.
+
+\textbf{Handling.} Frame-tree inspection plus iframe diagnostics, combined with targeted
+interactions and post-action re-inspection.
+
+\subsection{Popups, overlays, and click traps}
+
+\textbf{Difficulty.} Blocking overlays interrupted server switching and fake controls
+diverted the run.
+
+\textbf{Handling.} Fallback click strategy with text matching, visibility checks,
+scroll-and-click, and JavaScript click as final fallback.
+
+\subsection{Tokenized and hidden stream paths}
+
+\textbf{Difficulty.} Some pages did not expose a direct \texttt{m3u8} in initial HTML;
+stream access was generated after runtime token exchange.
+
+\textbf{Handling.} Stream extraction was moved to runtime evidence layers: CDP
+request/response monitoring, player API inspection, performance resource scans, and
+post-activation harvesting.
+
+\subsection{Anti-bot pressure}
+
+\textbf{Difficulty.} Repetitive automation patterns triggered challenges and degraded
+extraction continuity.
+
+\textbf{Handling.} Normal-user behavioral pacing, reduced automation signals, adaptive
+retries, and evidence-first fallback when full extraction was blocked.
+
+\section{How target websites intentionally break extraction}
+
+Across both site families, the following break tactics were observed repeatedly:
+
+\begin{itemize}
+  \item multi-step redirect chains designed to open popups before revealing the real
+    player;
+  \item nested iframe delegation across different domains to hide where the final media
+    request originates;
+  \item short-lived signed stream URLs (token + expiry) generated only after user-like
+    interaction;
+  \item bait resources and noisy assets that look important but are unrelated to the
+    playable stream;
+  \item anti-bot challenge pages that change response content when automation signals
+    are detected.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.1cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Break tactic & Typical symptom in run traces & Agent/tool response \\
+\midrule
+Popup-first flow & click opens ad tab and original page remains blocked & close
+  extraneous targets, return focus, continue interaction on original page \\
+Iframe nesting & top frame appears idle while playable state exists deeper &
+  frame-tree diagnostics plus targeted frame-level actions \\
+Tokenized manifests & no direct \texttt{m3u8} in HTML or first requests & activate
+  player first, then harvest runtime network/player evidence \\
+Challenge gating & alternate content, delayed controls, or interstitial loop &
+  human-like pacing, retry strategy, and evidence-preserving fallback \\
+\bottomrule
+\end{tabularx}
+\caption{Observed break tactics and corresponding navigation strategy.}
+\label{tab:break-tactics-map}
+\end{table}
+
+\section{Screenshot storage: Cloudinary CDN}
+
+Each agent calls \texttt{screenshot()} after key state transitions. The resulting
+images serve as primary evidence: they confirm player activation, show server labels,
+and provide human-auditable context for any extracted stream URL.
+
+Screenshots are stored using the \textbf{Cloudinary} media CDN. After Puppeteer
+captures a PNG buffer, the tool uploads it to Cloudinary via their Upload API and
+receives back a persistent URL. This URL is stored alongside the run event in
+PostgreSQL and displayed in the operator console.
+
+\textbf{Why Cloudinary rather than local storage?}
+\begin{itemize}
+  \item screenshots are immediately accessible from the operator console without
+    needing to serve files from the backend;
+  \item Cloudinary applies automatic compression and resizing via URL parameters,
+    keeping evidence lightweight without losing diagnostic quality;
+  \item the CDN URL is stable and can be embedded in takedown emails as external
+    evidence links;
+  \item it decouples screenshot storage from the backend container, simplifying
+    cloud deployment where ephemeral container storage would otherwise lose evidence.
+\end{itemize}
+
+\section{Ad blocking with uBlock Origin}
+
+Illegal streaming sites monetize through aggressive advertising. This creates two
+problems for automated extraction:
+
+\begin{enumerate}
+  \item popups and interstitial ads occupy new browser contexts and divert the agent's
+    interaction away from the real player controls;
+  \item redirect chains triggered by ad click events can leave the original page
+    in an unusable state.
+\end{enumerate}
+
+The browser profile uses \texttt{uBlock Origin} as the main preventive layer, while the
+agents keep explicit popup-recovery behavior for cases where extension-level filtering is
+not sufficient.
+
+\subsection{uBlock Origin}
+
+uBlock Origin operates as a Chromium extension loaded at browser launch. It intercepts
+network requests at the extension level, blocking ad server domains, tracking pixels,
+and ad-injecting scripts before they execute. This prevents the majority of popup-opening
+ad scripts from running at all.
+
+Configuration points tuned during the internship:
+\begin{itemize}
+  \item filter list selection: EasyList + EasyPrivacy as the baseline, supplemented by
+    regional filter lists relevant to Arabic streaming domains;
+  \item dynamic filtering: specific CDN domains used for player content were
+    \emph{whitelisted} to prevent false positives that blocked player assets;
+  \item the extension was loaded via \texttt{--load-extension} and
+    \texttt{--disable-extensions-except} Puppeteer flags to avoid fingerprint signals.
+\end{itemize}
+
+\textbf{Limitation of extension filtering.} No extension is a complete solution. Sites
+that serve ad content from the same domain as player content cannot be filtered without
+breaking the player. This is why the hosting and embedded agents retain explicit popup
+handling logic (detect new tab $\to$ close $\to$ retry) as a fallback even when
+ad-blocking is active.
 
 \begin{table}[H]
 \centering
@@ -277,44 +414,32 @@ cost.
                               >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
-Technology & Role in the project & Why it was useful \\
+Layer & Primary mechanism & Coverage \\
 \midrule
-\texttt{n8n}~\cite{n8n} & Early orchestration phase requested by the company & Rapid validation of
-  workflow logic and prompt/tool sequencing \\
-\texttt{Puppeteer}~\cite{puppeteer} & Browser execution layer & JavaScript rendering,
-  \texttt{evaluate()}-based state probing, interaction, CDP network interception~\cite{cdp},
-  and evidence capture \\
-\texttt{FastAPI}~\cite{fastapi} & Runtime API and orchestration surface & Clear run lifecycle,
-  observability, and evaluation endpoints \\
-\texttt{Next.js}~\cite{nextjs} & Operator interface & Live runs, traces, and review workflows via SSE \\
-\texttt{PostgreSQL} & Persistent storage & Structured run events, evidence, and traces \\
-\texttt{Cloudinary}~\cite{cloudinary} & Screenshot CDN & Persistent, CDN-served screenshot evidence
-  without requiring container storage \\
-\texttt{uBlock Origin}~\cite{ublock} & Ad and tracker blocking (extension) & Prevents majority of
-  popup-triggering ad scripts at the network request level \\
-\texttt{Ghostery}~\cite{ghostery} & Tracker-level ad blocking (extension) & Blocks first-visit popup
-  triggers missed by network-level filters \\
-\texttt{Docker} & Runtime packaging & Reproducible browser-heavy execution environment \\
-\texttt{Azure} & Target deployment model & Queue and job architecture for scalable
-  event-driven execution \\
+uBlock Origin & Network request interception at extension level & Ad servers, tracking pixels, injected ad scripts \\
+Popup handler (agent) & Detect new browser context and close it & Same-domain ads that extensions cannot filter \\
 \bottomrule
 \end{tabularx}
-\caption{Technology stack and operational value.}
-\label{tab:stack-value}
+\caption{Ad containment strategy used in the platform after removing the secondary extension layer.}
+\label{tab:adblock}
 \end{table}
 
+\section{Techniques used inside tools (Puppeteer and \texttt{evaluate()})}
 
-\section{Common break tactics and the platform's responses}
+Tooling techniques used repeatedly included:
 
-Piracy sites use a fairly consistent set of tactics to make extraction difficult. Redirect chains open ad popups before the real player appears. Nested iframes hide the actual media request several layers deep, often across different domains. Stream URLs are signed and short-lived, only generated after runtime JavaScript logic runs. Bait resources — assets with names that look like stream manifests — appear in network traffic alongside the real thing. And Cloudflare-style challenge pages serve completely different HTML when automation signals are detected.
+\begin{itemize}
+  \item \texttt{page.evaluate(...)} for runtime DOM/player state extraction;
+  \item network interception and response metadata inspection;
+  \item frame-aware interactions and diagnostics;
+  \item screenshot capture after each critical transition;
+  \item retroactive resource checks through performance APIs.
+\end{itemize}
 
-The handling strategies are summarized in Table~\ref{tab:difficulty-handling}.
+\section{Continuous tuning as an operating requirement}
 
-\section{Ad blocking and continuous anti-bot adaptation}
-
-Illegal streaming sites monetize through aggressive advertising, and this creates a real problem for automation: popups open new browser contexts and divert interaction away from the actual player, while redirect chains triggered by ad clicks can leave the original page unusable. Two Chromium extensions handle most of this at the network level: uBlock Origin blocks ad server domains and injected scripts before they execute, while Ghostery covers tracker-triggered popup behavior on first page visit. Neither extension is a complete solution — sites that serve ads from the same domain as player content can't be filtered without breaking the player — so the hosting and embedded agents retain explicit popup handling logic as a fallback.
-
-Anti-bot adaptation is not a one-time setup. Fingerprint profiles, adblock filter lists, and interaction timing all required periodic adjustment throughout the internship; the environment changes too often for a static configuration to stay reliable.
+The report treats anti-bot adaptation and adblock tuning as continuous operations. The
+environment changes too often for a one-time technical setup.
 
 \begin{table}[H]
 \centering

@@ -11,10 +11,12 @@
 \usepackage{longtable}
 \usepackage{tabularx}
 \usepackage{array}
+\usepackage{etoolbox}
 \usepackage{float}
 \usepackage{enumitem}
 \usepackage{xcolor}
 \usepackage{colortbl}
+\usepackage{caption}
 \usepackage{hyperref}
 \usepackage{xurl}
 \usepackage{listings}
@@ -49,6 +51,12 @@
 \setlist{nosep}
 \urlstyle{tt}
 \Urlmuskip=0mu plus 2mu\relax
+\captionsetup[table]{font=small,skip=6pt}
+\AtBeginEnvironment{tabularx}{%
+  \small
+  \setlength{\tabcolsep}{5pt}%
+  \renewcommand{\arraystretch}{1.15}%
+}
 
 \definecolor{codebg}{RGB}{247,247,247}
 \definecolor{codeframe}{RGB}{220,220,220}
@@ -421,11 +429,11 @@ Ce formulaire doit être introduit après la page de garde / This form must be i
 \pagenumbering{roman}
 
 \chapter*{Abstract}
-This report presents the design and implementation of a multi-agent AI platform for collecting evidence from illegal streaming websites. The work was carried out during an internship at Soft Stars for the client beIN SPORTS. The objective was to build a system capable of visiting target websites, classifying their pages, extracting stream URLs and hosting infrastructure details, and producing structured, auditable evidence to support downstream legal and operational action.
+This report presents the design, development, and evaluation of an agentic evidence-collection system for illegal streaming websites. The work was carried out during an internship at Soft Stars for the client beIN SPORTS. The objective was to support rights-enforcement workflows by visiting target websites, classifying their pages, extracting hosting and stream evidence, and preserving auditable outputs such as screenshots, traces, and structured results.
 
-The project evolved in two stages. The first stage used n8n as a rapid experimentation environment for validating prompts, browser interactions, and end-to-end workflow logic. The second stage replaced the prototype with a code-based platform built around FastAPI, Next.js, Puppeteer-driven browser tools, structured observability, short-term and long-term memory, and first-party evaluation tooling.
+The internship produced two related artifacts: a validated \textbf{n8n} workflow, from which one operational agent was deployed in the company context, and a \textbf{Python}-based reference architecture designed to improve maintainability, observability, memory, evaluation, and future scalability. The company-side operational outcome therefore remained a focused single-agent workflow, while the broader FastAPI/Puppeteer multi-agent implementation is presented as an academic and engineering reference architecture derived from the validated n8n workflow.
 
-The final system routes each input URL through specialized agents for classification, landing-page exploration, hosting-page extraction, and embedded-player analysis. The platform includes provider lookup, runtime telemetry, cost tracking, and an operator console for monitoring live and historical runs. For deployment, the solution is containerized and prepared for Azure, with event-driven execution through Azure Container Apps Jobs and Azure Service Bus.
+The proposed architecture organizes evidence collection around specialized reasoning agents, browser automation tools, structured outputs, trace storage, screenshot capture, and evaluation metrics. Its target deployment model separates API services, browser workers, observability storage, screenshot storage, and queue-based execution for future Azure Container Apps Jobs operation. The Python architecture does not depend on the enterprise production database; the database described in this report is limited to observability, evaluation, traces, metrics, screenshots, errors, tool calls, and structured outputs.
 
 \chapter*{Acknowledgements}
 I would like to thank my academic and professional supervisors for their guidance throughout this internship. I also thank the Soft Stars team for the technical discussions, feedback, and trust that made this work possible.
@@ -442,9 +450,6 @@ I would like to thank my academic and professional supervisors for their guidanc
 \input{chapters/05-implementation}
 \input{chapters/06-evaluation}
 \input{chapters/07-conclusion}
-
-\appendix
-\input{chapters/appendix-a-inventory}
 
 \chapter*{References}
 \addcontentsline{toc}{chapter}{References}
@@ -497,8 +502,8 @@ Available: \url{https://arxiv.org/abs/2312.11805}
 
 \bibitem{puppeteer}
 Google Chrome Developers,
-\emph{Puppeteer: A Node.js Library for Controlling Headless Chrome},
-Google, 2024.
+\emph{Puppeteer API Reference},
+Official documentation, 2026.
 Available: \url{https://pptr.dev}
 
 \bibitem{webarena}
@@ -508,10 +513,26 @@ D. Fried, U. Alon, and G. Neubig,
 in \emph{Proceedings of ICLR}, 2024.
 Available: \url{https://arxiv.org/abs/2307.13854}
 
+\bibitem{mind2web}
+X. Deng, Y. Gu, B. Zheng, S. Chen, S. Stevens, B. Wang, H. Sun, and Y. Su,
+``Mind2Web: Towards a Generalist Agent for the Web,''
+in \emph{Advances in Neural Information Processing Systems (NeurIPS)}, 2023.
+
+\bibitem{webvoyager}
+H. He, W. Yao, K. Ma, W. Yu, Y. Dai, H. Zhang, Z. Lan, and D. Yu,
+``WebVoyager: Building an End-to-End Web Agent with Large Multimodal Models,''
+in \emph{Proceedings of the 62nd Annual Meeting of the Association for Computational
+Linguistics (ACL)}, 2024.
+
+\bibitem{browsergym}
+T. Le Sellier de Chezelles, M. Gasse, A. Drouin, and others,
+``The BrowserGym Ecosystem for Web Agent Research,''
+\emph{arXiv preprint arXiv:2412.05467}, 2024.
+
 \bibitem{cdp}
-Google,
-\emph{Chrome DevTools Protocol Documentation},
-Google Developers, 2024.
+Chrome DevTools Protocol,
+\emph{Chrome DevTools Protocol: Network Domain},
+Official documentation, 2026.
 Available: \url{https://chromedevtools.github.io/devtools-protocol/}
 
 % ---- Methodology ----
@@ -521,6 +542,18 @@ R. Wirth and J. Hipp,
 ``CRISP-DM: Towards a Standard Process Model for Data Mining,''
 in \emph{Proceedings of the 4th International Conference on the Practical
 Application of Knowledge Discovery and Data Mining (PAKDD)}, 2000, pp.~29--39.
+
+\bibitem{hevner-ds}
+A. R. Hevner, S. T. March, J. Park, and S. Ram,
+``Design Science in Information Systems Research,''
+\emph{MIS Quarterly}, vol.~28, no.~1, pp.~75--105, 2004.
+Available: \url{https://www.jstor.org/stable/25148625}
+
+\bibitem{peffers-dsrm}
+K. Peffers, T. Tuunanen, M. A. Rothenberger, and S. Chatterjee,
+``A Design Science Research Methodology for Information Systems Research,''
+\emph{Journal of Management Information Systems}, vol.~24, no.~3, pp.~45--77, 2007.
+Available: \url{https://doi.org/10.2753/MIS0742-1222240302}
 
 % ---- Web Technologies and APIs ----
 
@@ -557,8 +590,8 @@ Available: \url{https://learn.microsoft.com/en-us/azure/service-bus-messaging/}
 
 \bibitem{cloudinary}
 Cloudinary,
-\emph{Cloudinary Image and Video Upload, Storage, Optimization and CDN},
-Cloudinary, 2024.
+\emph{Cloudinary Upload API Documentation},
+Official documentation, 2026.
 Available: \url{https://cloudinary.com/documentation}
 
 % ---- Streaming Protocols and Media ----
@@ -569,6 +602,12 @@ R. Pantos and W. May,
 Internet Engineering Task Force (IETF), August 2017.
 Available: \url{https://www.rfc-editor.org/rfc/rfc8216}
 
+\bibitem{dash-standard}
+ISO/IEC,
+\emph{Information technology --- Dynamic adaptive streaming over HTTP (DASH) --- Part 1:
+Media presentation description and segment formats}, ISO/IEC 23009-1,
+2022.
+
 % ---- Ad Blocking and Privacy Tools ----
 
 \bibitem{ublock}
@@ -576,12 +615,6 @@ R. Hill,
 \emph{uBlock Origin: An Efficient Blocker for Chromium and Firefox},
 GitHub, 2024.
 Available: \url{https://github.com/gorhill/uBlock}
-
-\bibitem{ghostery}
-Cliqz/Ghostery,
-\emph{Ghostery: Privacy Ad Blocker Extension},
-Ghostery Inc., 2024.
-Available: \url{https://www.ghostery.com}
 
 % ---- Sports Rights and Content Protection ----
 

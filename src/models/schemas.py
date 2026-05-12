@@ -9,8 +9,8 @@ from pydantic import BaseModel, Field
 
 from src.models.enums import AgentType, Confidence, ExtractionStatus, PageType
 
-
 # ── Classification ────────────────────────────────────────────────────────────
+
 
 class ClassificationResult(BaseModel):
     url: str
@@ -22,15 +22,17 @@ class ClassificationResult(BaseModel):
 
 # ── Streams ───────────────────────────────────────────────────────────────────
 
+
 class StreamURL(BaseModel):
     url: str
-    protocol: str = ""          # hls / dash / mp4 / etc.
+    protocol: str = ""  # hls / dash / mp4 / etc.
     quality: str = ""
-    source_layer: str = ""      # which server/layer captured it
+    source_layer: str = ""  # which server/layer captured it
     captured_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 # ── Per-URL extraction results ────────────────────────────────────────────────
+
 
 class ServerResult(BaseModel):
     label: str = "default"
@@ -40,11 +42,11 @@ class ServerResult(BaseModel):
     mp4_urls: list[str] = Field(default_factory=list)
     stream_urls: list[str] = Field(default_factory=list)
     primary_stream: str | None = None
-    screenshot_url: str | None = None     # Cloudinary URL
-    embedded_url: str | None = None       # set when needs_embed_agent
+    screenshot_url: str | None = None  # Cloudinary URL
+    embedded_url: str | None = None  # set when needs_embed_agent
     embedded_url_source: str | None = None
     player_iframe_url: str | None = None
-    status: str = "failed"                # success / failed / needs_embed_agent
+    status: str = "failed"  # success / failed / needs_embed_agent
     down_reason: str | None = None
     activation_attempts: int = 0
     player_state: str | None = None
@@ -60,8 +62,8 @@ class ExtractionResult(BaseModel):
     status: ExtractionStatus
     servers: list[ServerResult] = Field(default_factory=list)
     streams: list[StreamURL] = Field(default_factory=list)
-    screenshots: list[str] = Field(default_factory=list)   # Cloudinary URLs
-    embedded_urls: list[str] = Field(default_factory=list) # iframes needing embedded agent
+    screenshots: list[str] = Field(default_factory=list)  # Cloudinary URLs
+    embedded_urls: list[str] = Field(default_factory=list)  # iframes needing embedded agent
     agent_type: AgentType
     tool_calls_used: int = 0
     duration_seconds: float = 0.0
@@ -71,31 +73,36 @@ class ExtractionResult(BaseModel):
 
 # ── Match/channel info from landing agent ─────────────────────────────────────
 
+
 class MatchInfo(BaseModel):
     """A single watchable item discovered by the Landing Page Agent."""
+
     url: str
     title: str = ""
-    participants: str | None = None    # "Team A vs Team B"
+    participants: str | None = None  # "Team A vs Team B"
     channel: str | None = None
     sport: str | None = None
     league: str | None = None
-    status: str = "unknown"            # live / upcoming / replay / unknown
+    status: str = "unknown"  # live / upcoming / replay / unknown
     scheduled_time: str | None = None
-    confidence: int = 70               # 0-100
-    route: str = "stream_extractor"    # stream_extractor = hosting-first, embed_agent = direct embedded URL only
+    confidence: int = 70  # 0-100
+    route: str = "stream_extractor"  # stream_extractor = hosting-first, embed_agent = direct embedded URL only
     iframes: list[str] = Field(default_factory=list)
     entry_point: str = ""
+    patterns: dict[str, Any] = Field(default_factory=dict)
 
 
 # ── Provider / Whois analysis ─────────────────────────────────────────────────
 
+
 class ProviderInfo(BaseModel):
     """IPInfo / Whois result for a single stream URL."""
+
     stream_url: str
     ip: str = ""
     hostname: str = ""
-    org: str = ""          # e.g. "AS12345 SomeHostingProvider"
-    provider: str = ""     # cleaned provider name
+    org: str = ""  # e.g. "AS12345 SomeHostingProvider"
+    provider: str = ""  # cleaned provider name
     country: str = ""
     region: str = ""
     city: str = ""
@@ -105,14 +112,16 @@ class ProviderInfo(BaseModel):
 
 # ── Takedown emails ───────────────────────────────────────────────────────────
 
+
 class TakedownEmail(BaseModel):
     """A takedown notice email (not sent — written for human review)."""
+
     provider: str
     abuse_email: str
     subject: str
     body: str
     # Evidence attached
-    infringing_url: str           # original streaming site URL
+    infringing_url: str  # original streaming site URL
     stream_urls: list[str] = Field(default_factory=list)
     screenshot_urls: list[str] = Field(default_factory=list)
     server_labels: list[str] = Field(default_factory=list)
@@ -121,6 +130,7 @@ class TakedownEmail(BaseModel):
 
 
 # ── Pipeline result ───────────────────────────────────────────────────────────
+
 
 class ModelUsage(BaseModel):
     model_name: str
@@ -173,7 +183,7 @@ class PipelineResult(BaseModel):
 
     # Stage results
     classification: ClassificationResult | None = None
-    matches: list[MatchInfo] = Field(default_factory=list)          # from landing agent
+    matches: list[MatchInfo] = Field(default_factory=list)  # from landing agent
     extraction_results: list[ExtractionResult] = Field(default_factory=list)  # per match URL
 
     # Aggregated output
