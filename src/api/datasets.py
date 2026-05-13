@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+import time as _time
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from src.storage.database import get_session
@@ -14,6 +18,7 @@ from src.storage.repositories import BackgroundJobRepository
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 DEFAULT_SITES_CSV = Path(__file__).resolve().parents[2] / "datasets" / "sites.csv"
+_SSE_KEEPALIVE_SECONDS = 20.0
 
 
 class SiteUpdate(BaseModel):
@@ -57,6 +62,104 @@ def _with_repo(callback):
 
 def _seed_default_sites_if_empty(repo: DatasetRepository) -> None:
     repo.ensure_seeded_from_csv(DEFAULT_SITES_CSV)
+
+
+def _dataset_stream_snapshot() -> dict[str, Any]:
+    session = get_session()
+    try:
+        repo = DatasetRepository(session)
+        _seed_default_sites_if_empty(repo)
+        stats = repo.site_stats()
+        batches_payload = repo.list_batches(limit=24, offset=0)
+        batches = batches_payload.get("batches", []) if isinstance(batches_payload, dict) else []
+        active_jobs = BackgroundJobRepository(session).list_active(limit=300)
+        latest_batch = batches[0] if batches else {}
+        batch_fingerprint = [
+            {
+                "batch_id": str(item.get("batch_id", "") or ""),
+                "status": str(item.get("status", "") or ""),
+                "requested_count": int(item.get("requested_count", 0) or 0),
+                "completed_count": int(item.get("completed_count", 0) or 0),
+                "success_rate": float(item.get("success_rate", 0) or 0),
+                "created_at": item.get("created_at"),
+                "updated_at": item.get("updated_at"),
+                "finished_at": item.get("finished_at"),
+            }
+            for item in batches
+        ]
+        return {
+            "stats": {
+                "total": int(stats.get("total", 0) or 0),
+                "unlabeled": int(stats.get("unlabeled", 0) or 0),
+                "successful_runs": int(stats.get("successful_runs", 0) or 0),
+                "total_runs": int(stats.get("total_runs", 0) or 0),
+                "success_rate": float(stats.get("success_rate", 0) or 0),
+            },
+            "batches_total": int(batches_payload.get("total", len(batches)) or 0)
+            if isinstance(batches_payload, dict)
+            else len(batches),
+            "latest_batch": {
+                "batch_id": str(latest_batch.get("batch_id", "") or ""),
+                "status": str(latest_batch.get("status", "") or ""),
+                "created_at": latest_batch.get("created_at"),
+                "updated_at": latest_batch.get("updated_at"),
+            },
+            "batch_fingerprint": batch_fingerprint,
+            "active_jobs": len(active_jobs),
+            "active_run_ids": sorted(
+                str(item.run_id or "") for item in active_jobs if str(item.run_id or "").strip()
+            )[:120],
+        }
+    finally:
+        session.close()
+
+
+async def _stream_dataset_changes(request: Request):
+    last_signature = ""
+    first_tick = True
+    keepalive_last = _time.monotonic()
+    try:
+        while True:
+            if await request.is_disconnected():
+                return
+            snapshot = _dataset_stream_snapshot()
+            signature = json.dumps(snapshot, sort_keys=True, default=str)
+            if first_tick or signature != last_signature:
+                payload = {
+                    "type": "dataset_snapshot",
+                    "changed": not first_tick and signature != last_signature,
+                    "snapshot": snapshot,
+                    "timestamp": _time.time(),
+                }
+                yield f"data: {json.dumps(payload, default=str)}\n\n"
+                last_signature = signature
+                first_tick = False
+            await asyncio.sleep(1.2)
+            if _time.monotonic() - keepalive_last > _SSE_KEEPALIVE_SECONDS:
+                yield ": heartbeat\n\n"
+                keepalive_last = _time.monotonic()
+    except (asyncio.CancelledError, GeneratorExit):
+        return
+    except Exception as exc:
+        payload = {
+            "type": "dataset_stream_error",
+            "error": str(exc),
+            "completed": True,
+        }
+        yield f"data: {json.dumps(payload, default=str)}\n\n"
+
+
+@router.get("/stream")
+async def stream_dataset_changes(request: Request):
+    return StreamingResponse(
+        _stream_dataset_changes(request),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/meta")

@@ -59,6 +59,10 @@ function compactJson(value) {
   }
 }
 
+function cleanInlineText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
 function latestEvent(events, predicate) {
   return [...events].reverse().find(predicate);
 }
@@ -92,10 +96,15 @@ function decisionReason(event) {
   );
 }
 
-function buildGraph(events, rootActor) {
+function buildGraph(events, rootActor, agentRollups = []) {
   const normalized = normalizeTraceEvents(events);
   const stageView = buildStageView(normalized);
   const stageMap = new Map(stageView.stages.map((stage) => [stage.stage, stage]));
+  const rollupMap = new Map();
+  for (const row of agentRollups || []) {
+    const key = String(row?.agent_type || row?.actor || "").trim().toLowerCase();
+    if (key) rollupMap.set(key, row);
+  }
   const pipelineStarted = latestEvent(normalized, (event) => event.kind === "pipeline_started");
   const pipelineTerminal = latestEvent(normalized, (event) =>
     ["pipeline_finished", "pipeline_failed", "run_cancelled", "cancel_requested"].includes(
@@ -159,17 +168,40 @@ function buildGraph(events, rootActor) {
       llmCalls: 0,
       frames: [],
     };
-    const latest = latestEvent(view.events || [], () => true);
-    const llmEvents = (view.events || []).filter((event) => event.kind === "llm_response");
+    const stageEvents = view.events || [];
+    const latest = latestEvent(stageEvents, () => true);
+    const rollup = rollupMap.get(stage) || null;
+    const llmEvents = stageEvents.filter((event) => String(event.kind || "").startsWith("llm_"));
+    const llmAttempts =
+      stageEvents.filter((event) => event.kind === "llm_turn_started").length ||
+      llmEvents.length;
+    const latestModelEvent = latestEvent(
+      stageEvents,
+      (event) =>
+        String(event.kind || "").startsWith("llm_") &&
+        (event?.details?.provider || event?.details?.model_name),
+    );
+    const providerModel = cleanInlineText(
+      `${latestModelEvent?.details?.provider || ""} ${latestModelEvent?.details?.model_name || ""}`,
+    );
     return {
       id: stage,
       stage,
       label: STAGE_LABELS[stage] || stage,
-      status: view.status || "idle",
-      detail: latest?.message || view.liveLabel || "No events recorded for this agent.",
+      status: view.status || rollup?.status || "idle",
+      detail:
+        latest?.message ||
+        cleanInlineText(rollup?.output_summary || "") ||
+        view.liveLabel ||
+        "No events recorded for this agent.",
       toolCalls: view.toolCalls || [],
       llmCalls: llmEvents,
+      llmAttempts,
       frames: view.frames || [],
+      providerModel,
+      outputSummary: cleanInlineText(rollup?.output_summary || ""),
+      recentMilestones: stageEvents.slice(-3).reverse(),
+      durationSeconds: Number(rollup?.duration_seconds || 0),
     };
   });
 
@@ -192,7 +224,7 @@ function buildGraph(events, rootActor) {
     },
     agentNodes,
     totalTools: stageView.toolCalls.length,
-    totalLlm: agentNodes.reduce((sum, node) => sum + node.llmCalls.length, 0),
+    totalLlm: agentNodes.reduce((sum, node) => sum + Number(node.llmAttempts || 0), 0),
   };
 }
 
@@ -212,7 +244,7 @@ function GraphNode({ node, icon: Icon = Bot, wide = false }) {
   const details = [node.detail, compactJson(node.details)].filter(Boolean).join("\n\n");
   return (
     <div
-      className={`relative rounded-[10px] border bg-card px-3 py-3 shadow-sm ${wide ? "w-[270px]" : "w-[196px]"}`}
+      className={`relative w-full max-w-full rounded-[10px] border bg-card px-3 py-3 shadow-sm ${wide ? "sm:w-[270px]" : "sm:w-[196px]"}`}
       style={{
         borderColor:
           node.status === "idle"
@@ -271,7 +303,7 @@ function MicroNode({ type, label, count, status = "done", detail = "" }) {
   const color = type === "llm" ? "var(--violet)" : type === "tool" ? "var(--sky)" : "var(--mint)";
   return (
     <div
-      className="flex min-w-[138px] items-center gap-2 rounded-[8px] border bg-background/90 px-2 py-1.5"
+      className="flex min-w-0 items-center gap-2 rounded-[8px] border bg-background/90 px-2 py-1.5 sm:min-w-[128px]"
       style={{
         borderColor: count > 0 ? `color-mix(in oklch, ${color} 36%, var(--line))` : "var(--line)",
       }}
@@ -295,14 +327,27 @@ function AgentBranch({ node }) {
     .filter(Boolean)
     .join("\n");
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="flex w-full max-w-[260px] flex-col items-center gap-2">
       <GraphNode node={node} icon={Bot} />
       <Connector vertical active={node.status !== "idle"} />
-      <div className="flex flex-col gap-1.5">
+      <div className="flex w-full flex-col gap-1.5">
+        {node.providerModel ? (
+          <div
+            className="rounded-[8px] border px-2.5 py-1.5 font-mono text-[10px]"
+            style={{
+              borderColor: "var(--line)",
+              background: "color-mix(in oklch, var(--card) 90%, transparent)",
+              color: "var(--mute-2)",
+            }}
+            title={node.providerModel}
+          >
+            {node.providerModel}
+          </div>
+        ) : null}
         <MicroNode
           type="llm"
-          label="Model calls"
-          count={(node.llmCalls || []).length}
+          label="Model attempts"
+          count={Number(node.llmAttempts || 0)}
           detail={llmDetail}
         />
         <MicroNode
@@ -317,21 +362,51 @@ function AgentBranch({ node }) {
           count={(node.frames || []).length}
           detail="Screenshots and visual frames captured for this agent."
         />
+        {node.outputSummary || node.recentMilestones?.length ? (
+          <details
+            className="rounded-[10px] border bg-background/90 px-2.5 py-2 text-[10.5px]"
+            style={{ borderColor: "var(--line)" }}
+          >
+            <summary className="cursor-pointer font-semibold text-foreground/85">
+              Stage details
+            </summary>
+            {node.outputSummary ? (
+              <div className="mt-2 text-muted-foreground">
+                <span className="font-semibold text-foreground/80">Output:</span> {node.outputSummary}
+              </div>
+            ) : null}
+            {node.durationSeconds > 0 ? (
+              <div className="mt-2 text-muted-foreground">
+                <span className="font-semibold text-foreground/80">Duration:</span> {node.durationSeconds.toFixed(1)}s
+              </div>
+            ) : null}
+            {node.recentMilestones?.length ? (
+              <div className="mt-2 space-y-1.5 text-muted-foreground">
+                <div className="font-semibold text-foreground/80">Recent milestones</div>
+                {node.recentMilestones.map((event, index) => (
+                  <div key={`${node.stage}-${event.seq || event.timestamp || index}`} className="rounded-[8px] bg-muted/25 px-2 py-1.5">
+                    {cleanInlineText(event.message || event.kind || "Event")}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </details>
+        ) : null}
       </div>
     </div>
   );
 }
 
-export function OrchestratorGraph({ events = [], rootActor = "orchestrator" }) {
-  const graph = buildGraph(events, rootActor);
+export function OrchestratorGraph({ events = [], rootActor = "orchestrator", agentRollups = [] }) {
+  const graph = buildGraph(events, rootActor, agentRollups);
   return (
     <Card className="overflow-hidden shadow-card">
       <CardHeader className="border-b border-border px-4 py-3">
         <div className="flex flex-wrap items-start gap-2">
           <div>
-            <CardTitle className="text-sm">Workflow graph</CardTitle>
+            <CardTitle className="text-sm">Agent desk</CardTitle>
             <CardDescription>
-              Event-derived ingress, orchestrator routing, agent branches, model calls, tools, and artifacts.
+              Workflow graph with stage branches, model attempts, tool work, artifacts, and expandable run details.
             </CardDescription>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -349,21 +424,23 @@ export function OrchestratorGraph({ events = [], rootActor = "orchestrator" }) {
       </CardHeader>
       <CardContent className="p-0">
         <div
-          className="overflow-x-auto"
+          className="overflow-hidden"
           style={{
             backgroundImage:
               "radial-gradient(circle, color-mix(in oklch, var(--mute-3) 32%, transparent) 1px, transparent 1px)",
             backgroundSize: "18px 18px",
           }}
         >
-          <div className="min-w-[1120px] px-6 py-8">
+          <div className="px-3 py-5 sm:px-5 sm:py-6">
             <div className="flex flex-col items-center gap-5">
-              <div className="flex flex-wrap items-center justify-center gap-3">
+              <div className="grid w-full grid-cols-1 items-stretch justify-center gap-3 sm:grid-cols-2">
                 {graph.ingressNodes.map((node, index) => (
-                  <div key={node.id} className="flex items-center">
+                  <div key={node.id} className="flex items-center justify-center">
                     <GraphNode node={node} icon={node.icon} />
                     {index < graph.ingressNodes.length - 1 ? (
-                      <Connector active={node.status !== "idle"} />
+                      <div className="hidden sm:block">
+                        <Connector active={node.status !== "idle"} />
+                      </div>
                     ) : null}
                   </div>
                 ))}
@@ -378,9 +455,9 @@ export function OrchestratorGraph({ events = [], rootActor = "orchestrator" }) {
               <Connector vertical active={graph.orchestrator.status !== "idle"} />
 
               <div className="relative mx-auto w-full max-w-[1060px] pt-3">
-                <div className="absolute left-[12.5%] right-[12.5%] top-0 border-t border-dashed border-border" />
-                <div className="pointer-events-none absolute left-1/2 top-0 h-4 w-px -translate-x-1/2 border-l border-dashed border-border" />
-                <div className="grid grid-cols-4 gap-4">
+                <div className="absolute left-[12.5%] right-[12.5%] top-0 hidden border-t border-dashed border-border lg:block" />
+                <div className="pointer-events-none absolute left-1/2 top-0 hidden h-4 w-px -translate-x-1/2 border-l border-dashed border-border lg:block" />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   {graph.agentNodes.map((node) => (
                     <div key={node.id} className="flex flex-col items-center gap-2">
                       <Connector vertical active={node.status !== "idle"} />

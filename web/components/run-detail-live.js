@@ -21,7 +21,8 @@ import {
   summarizeRunState,
 } from "@/lib/run-trace";
 import { buildAutoDecisionSync } from "@/lib/run-log-sync";
-import { BrowserLiveView } from "@/components/console/run-detail/browser-live-view";
+import { BrowserLiveView, ScreenshotGallery } from "@/components/console/run-detail/browser-live-view";
+import { StreamProviderTab } from "@/components/console/run-detail/stream-provider-tab";
 import { OrchestratorDecisionFeed } from "@/components/orchestrator-decision-feed";
 import { DecisionLogPanel } from "@/components/run-log-panels";
 import { OrchestratorGraph } from "@/components/orchestrator-graph";
@@ -339,10 +340,14 @@ function ActivityBanner({ state }) {
 
 export function RunDetailLive({
   runId,
+  runUrl = "",
+  providerUrls = [],
+  snapshotScreenshots = [],
   activeTrace = null,
   persistedEvents = [],
   persistedToolCalls = [],
   initialDecisions = [],
+  agentRollups = [],
   metrics = null,
   onMetricsChange = null,
   defaultStreaming = null,
@@ -503,6 +508,18 @@ export function RunDetailLive({
       }),
     [decisionCount, toolCallFeedRows.length, normalizedEvents.length, runState],
   );
+  const primaryTabs = useMemo(() => {
+    if (!Array.isArray(providerUrls) || !providerUrls.length) return tabState.primaryTabs;
+    return [
+      ...tabState.primaryTabs,
+      {
+        value: "providers",
+        label: "Provider Intel",
+        count: providerUrls.length,
+        tone: "signal",
+      },
+    ];
+  }, [providerUrls, tabState.primaryTabs]);
 
   useEffect(() => {
     if (!runId) return undefined;
@@ -576,7 +593,7 @@ export function RunDetailLive({
 
         <div ref={tabListRef} className="max-w-full overflow-x-auto">
           <TabsList className="h-auto w-max min-w-full flex-nowrap justify-start gap-1 border-0 bg-transparent p-0 shadow-none">
-            {tabState.primaryTabs.map((entry) => (
+            {primaryTabs.map((entry) => (
               <TabsTrigger key={entry.value} value={entry.value}>
                 {entry.label}
                 {entry.count > 0 ? (
@@ -631,10 +648,18 @@ export function RunDetailLive({
 
         <TabsContent value="summary" className="space-y-4">
           {runId ? (
-            <BrowserLiveView runId={runId} events={normalizedEvents} autoRefresh={isLive} />
+            <BrowserLiveView
+              runId={runId}
+              events={normalizedEvents}
+              persistedScreenshots={snapshotScreenshots}
+              autoRefresh={isLive}
+            />
           ) : null}
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-            <OrchestratorGraph events={normalizedEvents} rootActor={rootActor} />
+          {snapshotScreenshots.length ? (
+            <ScreenshotGallery screenshots={snapshotScreenshots} />
+          ) : null}
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)]">
+            <OrchestratorGraph events={normalizedEvents} rootActor={rootActor} agentRollups={agentRollups} />
             <Card className="overflow-hidden shadow-card">
               <CardHeader className="border-b border-border px-4 py-3">
                 <CardTitle className="text-sm">Routing decisions</CardTitle>
@@ -642,38 +667,28 @@ export function RunDetailLive({
                   Orchestrator intent and handoff reasoning without the full raw event stream.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="max-h-[540px] overflow-y-auto px-4 py-4">
+              <CardContent className="max-h-[360px] overflow-y-auto px-4 py-4">
                 <OrchestratorDecisionFeed events={normalizedEvents} isStreaming={isLive} />
               </CardContent>
             </Card>
           </div>
         </TabsContent>
 
-        <TabsContent value="ops" className="space-y-4">
-          <Tabs defaultValue="decisions" className="space-y-4">
-            <TabsList>
-              {tabState.opsTabs.map((entry) => (
-                <TabsTrigger key={entry.value} value={entry.value}>
-                  {entry.label}
-                  {entry.count > 0 ? (
-                    <Badge tone={entry.tone} className="ml-1 px-1.5 py-0 text-[10px]">
-                      {entry.count}
-                    </Badge>
-                  ) : null}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            <TabsContent value="decisions">
-              <DecisionLogPanel
-                runId={runId}
-                initialItems={initialDecisions}
-                events={normalizedEvents}
-                isStreaming={isLive}
-                refreshToken={logSyncVersion}
-              />
-            </TabsContent>
-          </Tabs>
+        <TabsContent value="decisions" className="space-y-4">
+          <DecisionLogPanel
+            runId={runId}
+            initialItems={initialDecisions}
+            events={normalizedEvents}
+            isStreaming={isLive}
+            refreshToken={logSyncVersion}
+          />
         </TabsContent>
+
+        {providerUrls.length ? (
+          <TabsContent value="providers">
+            <StreamProviderTab runId={runId} runUrl={runUrl} streamUrls={providerUrls} />
+          </TabsContent>
+        ) : null}
       </CardContent>
       </Tabs>
     </Card>

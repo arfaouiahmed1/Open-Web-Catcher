@@ -36,13 +36,3 @@ agent/tool activity
   -> OperatorConsoleRepository queries
   -> Next.js dashboards and drill-downs
 ```
-
-## Evaluation Flow
-
-```text
-evaluation suite
-  -> synthetic / mocked / live execution
-  -> rule-based scoring
-  -> evaluation_runs + evaluation_case_results
-  -> evaluation dashboard
-```

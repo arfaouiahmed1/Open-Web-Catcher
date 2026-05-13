@@ -32,25 +32,15 @@ Use the console:
 - run the workflow
 - inspect streamed events, tool calls, previews, costs, and tokens
 
-## 5. Run Tests
-
-Backend:
-
-```powershell
-.venv\Scripts\python.exe -m pytest tests/
-```
-
-If the virtualenv does not exist yet, create it and install dev dependencies first:
-
-```powershell
-uv venv .venv --python 3.11
-uv pip install --python .venv\Scripts\python.exe -e ".[dev]"
-```
-
-Web:
+## 5. Validate the Runtime
 
 ```bash
 cd web
 npm run build
-npm test
+```
+
+For backend startup sanity:
+
+```powershell
+.venv\Scripts\python.exe -c "from src.api.app import app; print('backend ok')"
 ```

@@ -10,10 +10,6 @@ from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from src.models.schemas import (
-    EvaluationCase,
-    EvaluationCaseResult,
-    EvaluationRun,
-    EvaluationSuite,
     PricingConfig,
     ProviderInfo,
 )
@@ -24,10 +20,6 @@ from src.storage.models import (
     DatasetBatchRecord,
     DatasetSiteRecord,
     DatasetSiteRunRecord,
-    EvaluationCaseRecord,
-    EvaluationCaseResultRecord,
-    EvaluationRunRecord,
-    EvaluationSuiteRecord,
     LLMCallRecord,
     MemoryEntryRecord,
     MemoryHintUsedRecord,
@@ -132,10 +124,6 @@ class OperatorConsoleRepository:
         "provider_analyses": ProviderAnalysisRecord,
         "takedown_emails": TakedownEmailRecord,
         "pricing_configs": PricingConfigRecord,
-        "evaluation_suites": EvaluationSuiteRecord,
-        "evaluation_cases": EvaluationCaseRecord,
-        "evaluation_runs": EvaluationRunRecord,
-        "evaluation_case_results": EvaluationCaseResultRecord,
         "dataset_sites": DatasetSiteRecord,
         "dataset_batches": DatasetBatchRecord,
         "dataset_site_runs": DatasetSiteRunRecord,
@@ -232,12 +220,6 @@ class OperatorConsoleRepository:
             self._session.query(PipelineRunRecord)
             .order_by(PipelineRunRecord.created_at.desc())
             .limit(max(limit, 1))
-            .all()
-        )
-        eval_runs = (
-            self._session.query(EvaluationRunRecord)
-            .order_by(EvaluationRunRecord.started_at.desc())
-            .limit(50)
             .all()
         )
 
@@ -351,26 +333,6 @@ class OperatorConsoleRepository:
         top_tool_rows = self._merged_top_tool_rows(limit=10)
 
         trend_buckets = self._daily_trend(window_days=7)
-
-        eval_summary = {
-            "total_runs": len(eval_runs),
-            "latest_success_rate": float(eval_runs[0].success_rate or 0.0) if eval_runs else 0.0,
-            "latest_hallucination_rate": float(eval_runs[0].hallucination_rate or 0.0)
-            if eval_runs
-            else 0.0,
-            "latest_tool_accuracy_rate": float(eval_runs[0].tool_accuracy_rate or 0.0)
-            if eval_runs
-            else 0.0,
-            "latest_reliability_rate": float(eval_runs[0].reliability_rate or 0.0)
-            if eval_runs
-            else 0.0,
-            "avg_success_rate": round(
-                sum(float(row.success_rate or 0.0) for row in eval_runs) / len(eval_runs),
-                4,
-            )
-            if eval_runs
-            else 0.0,
-        }
 
         background_totals = self._session.query(
             func.coalesce(func.sum(case((BackgroundJobRecord.status == "queued", 1), else_=0)), 0),
@@ -555,7 +517,6 @@ class OperatorConsoleRepository:
                 for tool_name, count, successes, errors, avg_duration in top_tool_rows
             ],
             "recent_runs": [self._run_row(row) for row in recent_runs],
-            "evaluation_summary": eval_summary,
             "active_runs": active_traces,
         }
 
@@ -1171,273 +1132,6 @@ class OperatorConsoleRepository:
         self._session.commit()
         return True
 
-    def ensure_default_evaluation_suites(self) -> list[EvaluationSuite]:
-        suites = (
-            self._session.query(EvaluationSuiteRecord)
-            .order_by(EvaluationSuiteRecord.id.asc())
-            .all()
-        )
-        if suites:
-            return self.list_evaluation_suites()
-
-        baseline = EvaluationSuiteRecord(
-            name="Operator Baseline",
-            description="Hybrid reliability suite for workflow success, hallucination checks, and tool usage discipline.",
-            mode="hybrid",
-            config_json={"recommended": True},
-        )
-        self._session.add(baseline)
-        self._session.flush()
-        self._session.add_all(
-            [
-                EvaluationCaseRecord(
-                    suite_id=baseline.id,
-                    name="Synthetic workflow sanity",
-                    description="Checks a synthetic successful workflow artifact for evidence-backed output.",
-                    mode="synthetic",
-                    target_type="workflow",
-                    input_json={
-                        "artifact": {
-                            "final_status": "success",
-                            "all_streams": [{"url": "https://cdn.example.com/master.m3u8"}],
-                            "provider_analysis": [{"provider": "Example CDN"}],
-                            "takedown_emails": [{"abuse_email": "abuse@example.com"}],
-                        },
-                        "trace": {
-                            "events": [
-                                {"kind": "tool_call_started", "details": {"tool_name": "open_url"}},
-                                {
-                                    "kind": "tool_call_started",
-                                    "details": {"tool_name": "capture_streams"},
-                                },
-                            ]
-                        },
-                    },
-                    assertions_json={
-                        "expected_final_status": "success",
-                        "min_streams": 1,
-                        "required_tools": ["open_url", "capture_streams"],
-                        "forbidden_tools": ["delete_data"],
-                    },
-                ),
-                EvaluationCaseRecord(
-                    suite_id=baseline.id,
-                    name="Mocked tool reliability",
-                    description="Exercises tool reliability scoring against a mocked trace with one transient error.",
-                    mode="mocked",
-                    target_type="tool",
-                    input_json={
-                        "artifact": {"result": {"ok": True}},
-                        "trace": {
-                            "events": [
-                                {
-                                    "kind": "tool_call_started",
-                                    "details": {"tool_name": "query_elements"},
-                                },
-                                {
-                                    "kind": "tool_call_finished",
-                                    "status": "error",
-                                    "details": {"tool_name": "query_elements"},
-                                },
-                                {
-                                    "kind": "tool_call_started",
-                                    "details": {"tool_name": "query_elements"},
-                                },
-                                {
-                                    "kind": "tool_call_finished",
-                                    "status": "success",
-                                    "details": {"tool_name": "query_elements"},
-                                },
-                            ]
-                        },
-                    },
-                    assertions_json={
-                        "required_tools": ["query_elements"],
-                        "max_tool_errors": 1,
-                    },
-                ),
-            ]
-        )
-        self._session.commit()
-        return self.list_evaluation_suites()
-
-    def list_evaluation_suites(self) -> list[EvaluationSuite]:
-        suites = (
-            self._session.query(EvaluationSuiteRecord)
-            .order_by(EvaluationSuiteRecord.created_at.desc())
-            .all()
-        )
-        result: list[EvaluationSuite] = []
-        for suite in suites:
-            cases = (
-                self._session.query(EvaluationCaseRecord)
-                .filter_by(suite_id=suite.id)
-                .order_by(EvaluationCaseRecord.created_at.asc())
-                .all()
-            )
-            result.append(
-                EvaluationSuite(
-                    id=suite.id,
-                    name=suite.name,
-                    description=suite.description,
-                    mode=suite.mode,
-                    active=suite.active,
-                    config=suite.config_json or {},
-                    cases=[
-                        EvaluationCase(
-                            id=case.id,
-                            suite_id=suite.id,
-                            name=case.name,
-                            description=case.description,
-                            mode=case.mode,
-                            target_type=case.target_type,
-                            active=case.active,
-                            input=case.input_json or {},
-                            assertions=case.assertions_json or {},
-                            metadata=case.metadata_json or {},
-                        )
-                        for case in cases
-                    ],
-                )
-            )
-        return result
-
-    def list_evaluation_runs(self, limit: int = 20) -> list[dict[str, Any]]:
-        rows = (
-            self._session.query(EvaluationRunRecord)
-            .order_by(EvaluationRunRecord.started_at.desc())
-            .limit(max(limit, 1))
-            .all()
-        )
-        return [self._serialize_model(row) for row in rows]
-
-    def create_evaluation_run(
-        self, suite_id: int | None, name: str, mode: str, run_id: str
-    ) -> EvaluationRunRecord:
-        row = EvaluationRunRecord(
-            suite_id=suite_id,
-            run_id=run_id,
-            name=name,
-            mode=mode,
-            status="running",
-            started_at=datetime.utcnow(),
-        )
-        self._session.add(row)
-        self._session.commit()
-        self._session.refresh(row)
-        return row
-
-    def finalize_evaluation_run(
-        self,
-        run_id: str,
-        *,
-        case_results: list[EvaluationCaseResult],
-        summary: dict[str, Any],
-        status: str = "completed",
-    ) -> EvaluationRun:
-        row = self._session.query(EvaluationRunRecord).filter_by(run_id=run_id).first()
-        if row is None:
-            raise ValueError(f"Evaluation run '{run_id}' not found")
-
-        self._session.query(EvaluationCaseResultRecord).filter_by(evaluation_run_id=row.id).delete()
-        pass_count = 0
-        for result in case_results:
-            if result.status == "passed":
-                pass_count += 1
-            self._session.add(
-                EvaluationCaseResultRecord(
-                    evaluation_run_id=row.id,
-                    case_id=result.case_id,
-                    status=result.status,
-                    target_type=result.target_type,
-                    latency_ms=result.latency_ms,
-                    total_cost_usd=result.total_cost_usd,
-                    hallucination_score=result.hallucination_score,
-                    tool_accuracy_score=result.tool_accuracy_score,
-                    reliability_score=result.reliability_score,
-                    assertion_results_json=[
-                        item.model_dump(mode="json") for item in result.assertion_results
-                    ],
-                    output_json=result.output,
-                    trace_json=result.trace,
-                )
-            )
-
-        count = len(case_results)
-        row.status = status
-        row.case_count = count
-        row.pass_count = pass_count
-        row.success_rate = round(pass_count / count, 4) if count else 0.0
-        row.hallucination_rate = (
-            round(sum(1.0 - item.hallucination_score for item in case_results) / count, 4)
-            if count
-            else 0.0
-        )
-        row.tool_accuracy_rate = (
-            round(sum(item.tool_accuracy_score for item in case_results) / count, 4)
-            if count
-            else 0.0
-        )
-        row.reliability_rate = (
-            round(sum(item.reliability_score for item in case_results) / count, 4) if count else 0.0
-        )
-        row.avg_latency_ms = (
-            round(sum(item.latency_ms for item in case_results) / count, 3) if count else 0.0
-        )
-        row.avg_cost_usd = (
-            round(sum(item.total_cost_usd for item in case_results) / count, 6) if count else 0.0
-        )
-        row.summary_json = summary
-        row.finished_at = datetime.utcnow()
-        self._session.commit()
-        return self.get_evaluation_run(run_id)
-
-    def get_evaluation_run(self, run_id: str) -> EvaluationRun:
-        row = self._session.query(EvaluationRunRecord).filter_by(run_id=run_id).first()
-        if row is None:
-            raise ValueError(f"Evaluation run '{run_id}' not found")
-        case_rows = (
-            self._session.query(EvaluationCaseResultRecord, EvaluationCaseRecord)
-            .outerjoin(
-                EvaluationCaseRecord, EvaluationCaseRecord.id == EvaluationCaseResultRecord.case_id
-            )
-            .filter(EvaluationCaseResultRecord.evaluation_run_id == row.id)
-            .order_by(EvaluationCaseResultRecord.created_at.asc())
-            .all()
-        )
-        return EvaluationRun(
-            run_id=row.run_id,
-            suite_id=row.suite_id,
-            name=row.name,
-            mode=row.mode,
-            status=row.status,
-            success_rate=row.success_rate,
-            hallucination_rate=row.hallucination_rate,
-            tool_accuracy_rate=row.tool_accuracy_rate,
-            reliability_rate=row.reliability_rate,
-            avg_latency_ms=row.avg_latency_ms,
-            avg_cost_usd=row.avg_cost_usd,
-            case_count=row.case_count,
-            pass_count=row.pass_count,
-            summary=row.summary_json or {},
-            case_results=[
-                EvaluationCaseResult(
-                    case_id=case.id if case else result.case_id,
-                    case_name=case.name if case else "",
-                    status=result.status,
-                    target_type=result.target_type,
-                    latency_ms=result.latency_ms,
-                    total_cost_usd=result.total_cost_usd,
-                    hallucination_score=result.hallucination_score,
-                    tool_accuracy_score=result.tool_accuracy_score,
-                    reliability_score=result.reliability_score,
-                    assertion_results=result.assertion_results_json or [],
-                    output=result.output_json or {},
-                    trace=result.trace_json or {},
-                )
-                for result, case in case_rows
-            ],
-        )
 
     def record_tool_playground_call(
         self,

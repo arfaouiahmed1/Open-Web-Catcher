@@ -36,10 +36,6 @@ The backend entrypoint is [`src/api/app.py`](../../src/api/app.py). It serves th
 - `GET /ui/pricing`
 - `PUT /ui/pricing`
 - `POST /ui/pricing/sync`
-- `GET /ui/evaluations/suites`
-- `GET /ui/evaluations/runs`
-- `GET /ui/evaluations/runs/{run_id}`
-- `POST /ui/evaluations/run`
 - `GET /ui/database/tables`
 - `GET /ui/database/{table}`
 
@@ -67,11 +63,13 @@ Common event kinds include:
 - `tool_session_closed`
 - `llm_turn_started`
 - `llm_response`
+- `llm_retry_scheduled`
 - `llm_timeout`
 - `llm_rate_limited`
 - `llm_error`
 - `tool_call_started`
 - `tool_call_finished`
+- `agent_stop_requested`
 - `agent_finished`
 - `agent_failed`
 - `pipeline_started`
@@ -102,13 +100,4 @@ The backend computes first-party usage estimates from:
 - pricing rows in Postgres
 - `MODEL_PRICING_JSON` defaults from config
 
-## Evaluations
-
-Evaluation runs support:
-
-- `synthetic`
-- `mocked`
-- `hybrid`
-- `live`
-
-Scoring is rule-based and stored in Postgres. It does not claim access to hidden chain-of-thought.
+Runtime events now also carry retry metadata and structured stop reasons for long-running agents, including cache-assisted no-progress exits and transient provider retry scheduling.

@@ -30,18 +30,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.2",
-    "pytest-asyncio>=0.23",
-    "pytest-cov>=5.0",
-    "pytest-mock>=3.14",
     "ruff>=0.5",
     "mypy>=1.10",
-    "ipykernel>=6.29",
-    "jupyter>=1.0",
-    "pandas>=2.2",
-    "matplotlib>=3.9",
-    "seaborn>=0.13",
-    "deepeval>=1.0",
 ]
 
 [project.scripts]
@@ -62,10 +52,3 @@ select = ["E", "F", "I", "UP"]
 python_version = "3.11"
 strict = false
 ignore_missing_imports = true
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
-markers = [
-    "deepeval: integration-style metric tests that can be skipped in fast CI",
-]

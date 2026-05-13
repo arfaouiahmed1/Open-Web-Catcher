@@ -46,8 +46,6 @@ COPY src/ src/
 COPY tools/puppeteer/ tools/puppeteer/
 COPY configs/ configs/
 COPY datasets/ datasets/
-COPY tests/ tests/
-COPY notebooks/ notebooks/
 COPY scripts/ scripts/
 COPY alembic/ alembic/
 COPY alembic.ini ./

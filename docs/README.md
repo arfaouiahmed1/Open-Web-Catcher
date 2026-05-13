@@ -5,7 +5,7 @@ This documentation matches the current product state:
 - Next.js operator console
 - FastAPI execution backend
 - internal observability and pricing
-- Postgres-backed dashboards and evaluations
+- Postgres-backed dashboards and runtime history
 
 ## API
 
@@ -32,11 +32,6 @@ This documentation matches the current product state:
 
 - [Browser Tools](./tools/browser-tools.md)
 - [Python Tools](./tools/python-tools.md)
-
-## Evaluation Assets
-
-- [Notebook Lab](C:/Users/ahmed/Desktop/PFE%20New%20Test/notebooks/06_agent_evaluation_lab.ipynb)
-- [CSV Templates](C:/Users/ahmed/Desktop/PFE%20New%20Test/data/evals/README.md)
 
 ## Historical Notes
 

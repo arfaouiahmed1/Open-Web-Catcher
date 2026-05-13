@@ -119,6 +119,17 @@ function formatDuration(seconds) {
   return `${Math.floor(value / 60)}m ${Math.round(value % 60)}s`;
 }
 
+function formatRelativeTime(value) {
+  if (!value) return "never";
+  const ts = new Date(value).getTime();
+  if (!Number.isFinite(ts)) return "--";
+  const deltaSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (deltaSec < 5) return "just now";
+  if (deltaSec < 60) return `${deltaSec}s ago`;
+  if (deltaSec < 3600) return `${Math.floor(deltaSec / 60)}m ago`;
+  return `${Math.floor(deltaSec / 3600)}h ago`;
+}
+
 function compactRunId(runId) {
   const value = String(runId || "");
   return value ? `${value.slice(0, 12)}...` : "--";
@@ -209,6 +220,23 @@ function MetricTile({ icon: Icon, label, value, detail }) {
       </div>
       <div className="mt-2 text-xl font-semibold text-foreground">{value}</div>
       {detail ? <div className="mt-1 text-xs text-muted-foreground">{detail}</div> : null}
+    </div>
+  );
+}
+
+function InlineError({ message, onRetry, retryLabel = "Retry" }) {
+  if (!message) return null;
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+      <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="break-words">{message}</div>
+        {onRetry ? (
+          <Button size="sm" variant="outline" className="mt-2 h-7" onClick={onRetry}>
+            {retryLabel}
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -438,11 +466,15 @@ function SiteDetailSheet({
                         return (
                           <TableRow
                             key={row.run_id}
-                            className={row.run_id === selectedRunId ? "bg-muted/40" : undefined}
+                            className={`${row.run_id === selectedRunId ? "bg-muted/40" : ""} [&>td]:py-2.5`}
                           >
                             <TableCell className="align-top">
-                              <Link href={`/runs/${row.run_id}`} className="font-mono text-xs text-primary hover:underline">
-                                {compactRunId(row.run_id)}
+                              <Link
+                                href={`/runs/${row.run_id}`}
+                                className="block max-w-[280px] break-all font-mono text-[11px] text-primary hover:underline"
+                                title={row.run_id}
+                              >
+                                {row.run_id}
                               </Link>
                               <div className="mt-1 text-xs text-muted-foreground">
                                 {formatDate(row.created_at)}
@@ -688,6 +720,8 @@ export function RunsPage() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [isPricingLoading, setIsPricingLoading] = useState(true);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [lastSyncAt, setLastSyncAt] = useState("");
+  const [syncMode, setSyncMode] = useState("stream");
 
   const languages = meta.languages || FALLBACK_LANGUAGES;
   const labels = meta.labels || FALLBACK_LABELS;
@@ -748,6 +782,7 @@ export function RunsPage() {
       setSelectedSiteIds((current) =>
         current.filter((id) => (sitesPayload.sites || []).some((site) => site.id === id)),
       );
+      setLastSyncAt(new Date().toISOString());
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Failed to load runs dashboard");
     } finally {
@@ -775,9 +810,64 @@ export function RunsPage() {
   }, []);
 
   useEffect(() => {
-    if (!hasActiveDatasetWork) return undefined;
-    const timer = setInterval(() => setRefreshTick((value) => value + 1), AUTO_REFRESH_MS);
-    return () => clearInterval(timer);
+    let closed = false;
+    let source = null;
+    let reconnectTimer = null;
+    let fallbackTimer = null;
+
+    const stopFallback = () => {
+      if (fallbackTimer) {
+        window.clearInterval(fallbackTimer);
+        fallbackTimer = null;
+      }
+    };
+
+    const startFallback = () => {
+      if (fallbackTimer) return;
+      setSyncMode("fallback");
+      fallbackTimer = window.setInterval(
+        () => setRefreshTick((value) => value + 1),
+        hasActiveDatasetWork ? AUTO_REFRESH_MS : 15000,
+      );
+    };
+
+    const connect = () => {
+      if (closed) return;
+      source = new EventSource(apiUrl("/api/datasets/stream"));
+      source.onopen = () => {
+        setSyncMode("stream");
+        stopFallback();
+      };
+      source.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data || "{}");
+          if (payload?.type === "dataset_snapshot" && payload?.changed) {
+            setRefreshTick((value) => value + 1);
+          }
+        } catch {}
+      };
+      source.onerror = () => {
+        if (source) {
+          source.close();
+          source = null;
+        }
+        startFallback();
+        if (!closed && !reconnectTimer) {
+          reconnectTimer = window.setTimeout(() => {
+            reconnectTimer = null;
+            connect();
+          }, 6000);
+        }
+      };
+    };
+
+    connect();
+    return () => {
+      closed = true;
+      if (source) source.close();
+      stopFallback();
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+    };
   }, [hasActiveDatasetWork]);
 
   useEffect(() => {
@@ -855,8 +945,11 @@ export function RunsPage() {
       .then((payload) => {
         if (!cancelled) setRunDetail(payload);
       })
-      .catch(() => {
-        if (!cancelled) setRunDetail(null);
+      .catch((error) => {
+        if (!cancelled) {
+          setRunDetail(null);
+          setActionError(error instanceof Error ? error.message : "Failed to load selected run detail");
+        }
       })
       .finally(() => {
         if (!cancelled) setRunDetailLoading(false);
@@ -1026,9 +1119,16 @@ export function RunsPage() {
 
   async function cancelRun(runId) {
     setHistoryBusyRunId(runId);
+    setActionError("");
     try {
-      await fetch(apiUrl(`/ui/runs/${runId}/cancel`), { method: "POST" });
+      const response = await fetch(apiUrl(`/ui/runs/${runId}/cancel`), { method: "POST" });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || `Failed to stop run (${response.status})`);
+      }
       setRefreshTick((value) => value + 1);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to stop run");
     } finally {
       setHistoryBusyRunId("");
     }
@@ -1036,9 +1136,16 @@ export function RunsPage() {
 
   async function deleteRun(runId) {
     setHistoryBusyRunId(runId);
+    setActionError("");
     try {
-      await fetch(apiUrl(`/ui/runs/${runId}`), { method: "DELETE" });
+      const response = await fetch(apiUrl(`/ui/runs/${runId}`), { method: "DELETE" });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || `Failed to delete run (${response.status})`);
+      }
       setRefreshTick((value) => value + 1);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to delete run");
     } finally {
       setHistoryBusyRunId("");
     }
@@ -1082,12 +1189,11 @@ export function RunsPage() {
           }
         />
 
-        {actionError ? (
-          <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{actionError}</span>
-          </div>
-        ) : null}
+        <InlineError
+          message={actionError}
+          onRetry={() => setRefreshTick((value) => value + 1)}
+          retryLabel="Retry sync"
+        />
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <MetricTile icon={Globe2} label="Websites" value={formatNumber(stats.total || siteTotal)} detail={`${formatNumber(stats.unlabeled || 0)} unlabeled`} />
@@ -1100,6 +1206,20 @@ export function RunsPage() {
             detail={isPricingLoading ? "Loading provider pricing..." : "Loaded from provider pricing API and stored pricing"}
           />
           <MetricTile icon={Clock} label="Latest batch" value={batches[0]?.status ? datasetStatusLabel(batches[0].status) : "--"} detail={batches[0]?.created_at ? formatDate(batches[0].created_at) : "No batch yet"} />
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2 text-xs">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <span className={`h-2 w-2 rounded-full ${hasActiveDatasetWork ? "bg-emerald-500" : "bg-muted-foreground/50"}`} />
+            {syncMode === "stream"
+              ? "Live sync via server events (updates on change)"
+              : hasActiveDatasetWork
+                ? `Fallback polling every ${Math.round(AUTO_REFRESH_MS / 1000)}s while work is active`
+                : "Fallback polling every 15s while idle"}
+          </div>
+          <div className="text-muted-foreground">
+            Last sync: {formatRelativeTime(lastSyncAt)} {lastSyncAt ? `(${formatDate(lastSyncAt)})` : ""}
+          </div>
         </div>
 
         <Tabs value={tab} onValueChange={setTab}>
@@ -1170,6 +1290,7 @@ export function RunsPage() {
             </Card>
 
             <Card className="overflow-hidden">
+              <div className="max-h-[62vh] overflow-auto">
               <Table>
                 <TableHeader className="bg-muted/40">
                   <TableRow>
@@ -1198,7 +1319,7 @@ export function RunsPage() {
                       const status = datasetRunStatus(latest);
                       const cost = effectiveRunCost(latest, pricingMap);
                       return (
-                        <TableRow key={site.id}>
+                        <TableRow key={site.id} className="[&>td]:py-2.5">
                           <TableCell className="align-top">
                             <Checkbox checked={selectedSiteIds.includes(site.id)} onCheckedChange={(checked) => toggleSite(site.id, checked === true)} aria-label={`Select ${site.url}`} />
                           </TableCell>
@@ -1224,8 +1345,12 @@ export function RunsPage() {
                               <div>
                                 <Badge tone={statusToneForDataset(status)}>{datasetStatusLabel(status)}</Badge>
                                 <div className="mt-1">
-                                  <Link href={`/runs/${latest.run_id}`} className="font-mono text-xs text-primary hover:underline">
-                                    {compactRunId(latest.run_id)}
+                                  <Link
+                                    href={`/runs/${latest.run_id}`}
+                                    className="block max-w-[260px] break-all font-mono text-[11px] text-primary hover:underline"
+                                    title={latest.run_id}
+                                  >
+                                    {latest.run_id}
                                   </Link>
                                 </div>
                                 <div className="mt-0.5 text-xs text-muted-foreground">
@@ -1276,13 +1401,22 @@ export function RunsPage() {
                     })
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={8} className="py-14 text-center text-sm text-muted-foreground">
-                        No websites match the current filters.
+                      <TableCell colSpan={8} className="py-14 text-center">
+                        <div className="space-y-2">
+                          <div className="text-sm font-medium text-foreground">No websites match the current filters</div>
+                          <div className="text-xs text-muted-foreground">Try clearing search, language, or label filters.</div>
+                          <div>
+                            <Button variant="outline" size="sm" onClick={() => { setQuery(""); setLanguage(""); setLabel(""); }}>
+                              Reset filters
+                            </Button>
+                          </div>
+                        </div>
                       </TableCell>
                     </TableRow>
                   )}
                 </TableBody>
               </Table>
+              </div>
             </Card>
           </TabsContent>
 
@@ -1302,11 +1436,11 @@ export function RunsPage() {
                 <TableBody>
                   {batches.length ? (
                     batches.map((batch) => (
-                      <TableRow
-                        key={batch.batch_id}
-                        className={batch.batch_id === selectedBatchId ? "bg-muted/40" : undefined}
-                        onClick={() => openBatch(batch.batch_id)}
-                      >
+                        <TableRow
+                          key={batch.batch_id}
+                          className={`${batch.batch_id === selectedBatchId ? "bg-muted/40" : ""} [&>td]:py-2.5`}
+                          onClick={() => openBatch(batch.batch_id)}
+                        >
                         <TableCell className="cursor-pointer">
                           <div className="font-mono text-xs">{compactRunId(batch.batch_id)}</div>
                           <div className="mt-1 text-xs text-muted-foreground">{batch.batch_name || "Untitled batch"}</div>
@@ -1320,8 +1454,16 @@ export function RunsPage() {
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={2} className="py-10 text-center text-sm text-muted-foreground">
-                        No batches have been launched yet.
+                      <TableCell colSpan={2} className="py-10 text-center">
+                        <div className="space-y-2">
+                          <div className="text-sm font-medium text-foreground">No batches have been launched yet</div>
+                          <div className="text-xs text-muted-foreground">Select websites in the dataset tab and launch a workflow batch.</div>
+                          <div>
+                            <Button size="sm" variant="outline" onClick={() => setTab("sites")}>
+                              Open websites tab
+                            </Button>
+                          </div>
+                        </div>
                       </TableCell>
                     </TableRow>
                   )}
@@ -1358,6 +1500,7 @@ export function RunsPage() {
                     </div>
                     <BatchProgress batch={batchDetail} />
                     <div className="overflow-hidden rounded-lg border">
+                      <div className="max-h-[56vh] overflow-auto">
                       <Table>
                         <TableHeader className="bg-muted/40">
                           <TableRow>
@@ -1376,7 +1519,7 @@ export function RunsPage() {
                               const cost = effectiveRunCost(row, pricingMap);
                               const models = summarizeModelUsage(row.model_usage || EMPTY_ARRAY);
                               return (
-                                <TableRow key={row.run_id}>
+                                <TableRow key={row.run_id} className="[&>td]:py-2.5">
                                   <TableCell className="max-w-[320px] align-top">
                                     <div className="truncate text-sm font-medium" title={row.url}>{row.url}</div>
                                     <div className="mt-1 flex gap-1.5">
@@ -1403,7 +1546,9 @@ export function RunsPage() {
                                   <TableCell className="align-top">
                                     <Button asChild size="sm" variant="outline">
                                       <Link href={`/runs/${row.run_id}`}>
-                                        {compactRunId(row.run_id)}
+                                        <span className="max-w-[220px] truncate font-mono text-[11px]" title={row.run_id}>
+                                          {row.run_id}
+                                        </span>
                                       </Link>
                                     </Button>
                                   </TableCell>
@@ -1419,6 +1564,7 @@ export function RunsPage() {
                           )}
                         </TableBody>
                       </Table>
+                      </div>
                     </div>
                   </>
                 ) : isBatchLoading ? (
@@ -1458,12 +1604,16 @@ export function RunsPage() {
                 <TableBody>
                   {runHistory.length ? (
                     runHistory.map((row) => (
-                      <TableRow key={row.run_id}>
+                      <TableRow key={row.run_id} className="[&>td]:py-2.5">
                         <TableCell className="align-top">
-                          <Link href={`/runs/${row.run_id}`} className="font-mono text-xs text-primary hover:underline">
-                            {compactRunId(row.run_id)}
+                          <Link
+                            href={`/runs/${row.run_id}`}
+                            className="block max-w-[360px] break-all font-mono text-[11px] text-primary hover:underline"
+                            title={row.run_id}
+                          >
+                            {row.run_id}
                           </Link>
-                          <div className="mt-1 max-w-[360px] truncate text-xs text-muted-foreground" title={row.url}>
+                          <div className="mt-0.5 max-w-[360px] truncate text-[11px] text-muted-foreground" title={row.url}>
                             {row.url}
                           </div>
                         </TableCell>
@@ -1472,7 +1622,7 @@ export function RunsPage() {
                         </TableCell>
                         <TableCell className="align-top text-xs text-muted-foreground">
                           <div>{row.root_actor || "--"}</div>
-                          <div className="mt-1">{[row.primary_provider, row.primary_model].filter(Boolean).join(" / ") || "--"}</div>
+                          <div className="mt-0.5">{[row.primary_provider, row.primary_model].filter(Boolean).join(" / ") || "--"}</div>
                         </TableCell>
                         <TableCell className="align-top text-right tabular-nums text-xs">
                           {formatNumber((row.total_tokens_in || 0) + (row.total_tokens_out || 0))}
@@ -1487,6 +1637,14 @@ export function RunsPage() {
                                 <Eye className="h-3.5 w-3.5" />
                                 View
                               </Link>
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={!row.url || historyBusyRunId === row.run_id}
+                              onClick={() => createBatch({ urls: [row.url] })}
+                            >
+                              Restart
                             </Button>
                             {canCancelRun(row) ? (
                               <Button size="sm" variant="outline" disabled={historyBusyRunId === row.run_id} onClick={() => cancelRun(row.run_id)}>

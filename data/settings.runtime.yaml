@@ -15,7 +15,7 @@ agent_model_config:
   orchestrator:
     model: gemini-flash-lite-latest
     provider: google
-agent_timeout_seconds: 300
+agent_timeout_seconds: 2700
 browser_engine: puppeteer
 browser_runtime:
   playwright:
@@ -113,9 +113,6 @@ browser_runtime:
     streaming_safe_mode: adaptive
     ubol_enabled: true
 classification_max_tool_calls: 5
-deepeval_model: google/gemma-4-31b-it:free
-deepeval_provider: openrouter
-deepeval_temperature: 0.0
 disabled_tools_by_browser_profile:
   playwright:
     classification: []
@@ -184,6 +181,57 @@ orchestrator_model: gemini-flash-lite-latest
 provider_cache_enabled: true
 thinking_budget_tokens: 8000
 thinking_enabled: true
+agent_runtime_config:
+  classification:
+    tool_timeout_seconds: 45
+    llm_turn_timeout_seconds: 180
+    agent_timeout_seconds: 1800
+    llm_retry_attempts: 3
+    llm_retry_base_delay_seconds: 2.0
+    llm_retry_max_delay_seconds: 20.0
+    repeated_tool_call_limit: 2
+    no_progress_turn_limit: 2
+    tool_result_cache_min_identical_observations: 2
+  landing:
+    tool_timeout_seconds: 60
+    llm_turn_timeout_seconds: 240
+    agent_timeout_seconds: 2700
+    llm_retry_attempts: 3
+    llm_retry_base_delay_seconds: 2.0
+    llm_retry_max_delay_seconds: 20.0
+    repeated_tool_call_limit: 3
+    no_progress_turn_limit: 3
+    tool_result_cache_min_identical_observations: 2
+  hosting:
+    tool_timeout_seconds: 60
+    llm_turn_timeout_seconds: 240
+    agent_timeout_seconds: 2700
+    llm_retry_attempts: 3
+    llm_retry_base_delay_seconds: 2.0
+    llm_retry_max_delay_seconds: 20.0
+    repeated_tool_call_limit: 3
+    no_progress_turn_limit: 3
+    tool_result_cache_min_identical_observations: 2
+  embedded:
+    tool_timeout_seconds: 60
+    llm_turn_timeout_seconds: 240
+    agent_timeout_seconds: 2700
+    llm_retry_attempts: 3
+    llm_retry_base_delay_seconds: 2.0
+    llm_retry_max_delay_seconds: 20.0
+    repeated_tool_call_limit: 3
+    no_progress_turn_limit: 3
+    tool_result_cache_min_identical_observations: 2
+  orchestrator:
+    tool_timeout_seconds: 60
+    llm_turn_timeout_seconds: 240
+    agent_timeout_seconds: 7200
+    llm_retry_attempts: 3
+    llm_retry_base_delay_seconds: 2.0
+    llm_retry_max_delay_seconds: 20.0
+    repeated_tool_call_limit: 3
+    no_progress_turn_limit: 3
+    tool_result_cache_min_identical_observations: 2
 tool_result_cache_enabled: true
-tool_result_cache_min_identical_observations: 1
-tool_timeout_seconds: 30
+tool_result_cache_min_identical_observations: 2
+tool_timeout_seconds: 60

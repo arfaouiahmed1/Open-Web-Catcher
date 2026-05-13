@@ -162,6 +162,7 @@ class HostingPageAgent:
                         bootstrap_context_first=True,
                         bootstrap_memory_lookup_first=True,
                         bootstrap_memory_page_type=AgentType.HOSTING_PAGE.value,
+                        runtime_profile=AgentType.HOSTING_PAGE.value,
                     )
 
                 output = result.parse_json()

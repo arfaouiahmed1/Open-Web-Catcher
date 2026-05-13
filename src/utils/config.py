@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import AliasChoices, Field
@@ -63,6 +64,122 @@ def build_browser_runtime_sync_status(
         "active_runtime_source": "runtime_yaml" if source_path == Path(runtime_yaml_path) else "base_yaml",
         "stale": stale,
     }
+
+
+_RUNTIME_PROFILE_KEYS = ("classification", "landing", "hosting", "embedded", "orchestrator")
+_RUNTIME_PROFILE_ALIASES = {
+    "classification_agent": "classification",
+    "landing_page": "landing",
+    "landing_page_agent": "landing",
+    "hosting_page": "hosting",
+    "hosting_page_agent": "hosting",
+    "embedded_page": "embedded",
+    "embedded_page_agent": "embedded",
+    "workflow": "orchestrator",
+}
+_RUNTIME_NUMERIC_FIELDS = {
+    "tool_timeout_seconds": int,
+    "llm_turn_timeout_seconds": int,
+    "agent_timeout_seconds": int,
+    "llm_retry_attempts": int,
+    "llm_retry_base_delay_seconds": float,
+    "llm_retry_max_delay_seconds": float,
+    "repeated_tool_call_limit": int,
+    "no_progress_turn_limit": int,
+    "tool_result_cache_min_identical_observations": int,
+}
+
+
+def normalize_runtime_profile(value: str) -> str:
+    normalized = str(value or "").strip().lower().replace("-", "_")
+    return _RUNTIME_PROFILE_ALIASES.get(normalized, normalized)
+
+
+def normalize_agent_runtime_config(value: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, dict):
+        return {}
+
+    normalized: dict[str, dict[str, Any]] = {}
+    for raw_profile, raw_fields in value.items():
+        profile = normalize_runtime_profile(str(raw_profile or ""))
+        if profile not in _RUNTIME_PROFILE_KEYS or not isinstance(raw_fields, dict):
+            continue
+
+        cleaned: dict[str, Any] = {}
+        for field, caster in _RUNTIME_NUMERIC_FIELDS.items():
+            if field not in raw_fields or raw_fields[field] is None:
+                continue
+            try:
+                cleaned[field] = caster(raw_fields[field])
+            except (TypeError, ValueError):
+                continue
+
+        if "tool_timeout_seconds" in cleaned:
+            cleaned["tool_timeout_seconds"] = max(1, int(cleaned["tool_timeout_seconds"]))
+        if "llm_turn_timeout_seconds" in cleaned:
+            cleaned["llm_turn_timeout_seconds"] = max(5, int(cleaned["llm_turn_timeout_seconds"]))
+        if "agent_timeout_seconds" in cleaned:
+            cleaned["agent_timeout_seconds"] = max(30, int(cleaned["agent_timeout_seconds"]))
+        if "llm_retry_attempts" in cleaned:
+            cleaned["llm_retry_attempts"] = max(1, int(cleaned["llm_retry_attempts"]))
+        if "llm_retry_base_delay_seconds" in cleaned:
+            cleaned["llm_retry_base_delay_seconds"] = max(
+                0.0, float(cleaned["llm_retry_base_delay_seconds"])
+            )
+        if "llm_retry_max_delay_seconds" in cleaned:
+            cleaned["llm_retry_max_delay_seconds"] = max(
+                0.0, float(cleaned["llm_retry_max_delay_seconds"])
+            )
+        if "repeated_tool_call_limit" in cleaned:
+            cleaned["repeated_tool_call_limit"] = max(1, int(cleaned["repeated_tool_call_limit"]))
+        if "no_progress_turn_limit" in cleaned:
+            cleaned["no_progress_turn_limit"] = max(1, int(cleaned["no_progress_turn_limit"]))
+        if "tool_result_cache_min_identical_observations" in cleaned:
+            cleaned["tool_result_cache_min_identical_observations"] = max(
+                2, int(cleaned["tool_result_cache_min_identical_observations"])
+            )
+
+        if cleaned:
+            normalized[profile] = cleaned
+
+    return normalized
+
+
+def resolve_agent_runtime_config(settings: "Settings", profile: str) -> dict[str, Any]:
+    normalized_profile = normalize_runtime_profile(profile)
+    if normalized_profile not in _RUNTIME_PROFILE_KEYS:
+        normalized_profile = "orchestrator"
+
+    base_tool_timeout = max(1, int(getattr(settings, "tool_timeout_seconds", 30) or 30))
+    base_agent_timeout = max(30, int(getattr(settings, "agent_timeout_seconds", 2700) or 2700))
+    defaults: dict[str, Any] = {
+        "tool_timeout_seconds": base_tool_timeout,
+        "llm_turn_timeout_seconds": max(5, base_tool_timeout * 3),
+        "agent_timeout_seconds": base_agent_timeout,
+        "llm_retry_attempts": 3,
+        "llm_retry_base_delay_seconds": 2.0,
+        "llm_retry_max_delay_seconds": 20.0,
+        "repeated_tool_call_limit": 3,
+        "no_progress_turn_limit": 3,
+        "tool_result_cache_min_identical_observations": max(
+            2,
+            int(getattr(settings, "tool_result_cache_min_identical_observations", 2) or 2),
+        ),
+    }
+
+    if normalized_profile == "classification":
+        defaults["agent_timeout_seconds"] = max(defaults["agent_timeout_seconds"], 1800)
+    elif normalized_profile in {"landing", "hosting", "embedded"}:
+        defaults["agent_timeout_seconds"] = max(defaults["agent_timeout_seconds"], 2700)
+    elif normalized_profile == "orchestrator":
+        defaults["agent_timeout_seconds"] = max(defaults["agent_timeout_seconds"], 7200)
+
+    overrides = normalize_agent_runtime_config(getattr(settings, "agent_runtime_config", {})).get(
+        normalized_profile, {}
+    )
+    resolved = {**defaults, **overrides}
+    resolved["profile"] = normalized_profile
+    return resolved
 
 
 class Settings(BaseSettings):
@@ -156,7 +273,7 @@ class Settings(BaseSettings):
     orchestrator_max_tool_calls: int = 60
 
     tool_timeout_seconds: int = 30
-    agent_timeout_seconds: int = 300
+    agent_timeout_seconds: int = 2700
     background_job_retention_days: int = 30
 
     memory_enabled: bool = True
@@ -172,6 +289,7 @@ class Settings(BaseSettings):
     gemini_explicit_cache_refresh_lead_seconds: int = 120
     tool_result_cache_enabled: bool = True
     tool_result_cache_min_identical_observations: int = 2
+    agent_runtime_config: dict = Field(default_factory=dict)
 
     # Per-profile disabled tool names: {"landing": ["screenshot", "play_media"], ...}
     disabled_tools_by_profile: dict = Field(default_factory=dict)
@@ -182,11 +300,6 @@ class Settings(BaseSettings):
 
     thinking_enabled: bool = False
     thinking_budget_tokens: int = 8000
-
-    # Evaluation defaults stay aligned with the primary Gemini provider surface.
-    deepeval_provider: str = "google"
-    deepeval_model: str = "gemini-2.5-flash"
-    deepeval_temperature: float = 0.0
 
     @classmethod
     def from_yaml(
@@ -249,15 +362,13 @@ class Settings(BaseSettings):
         existing["gemini_explicit_cache_refresh_lead_seconds"] = self.gemini_explicit_cache_refresh_lead_seconds
         existing["tool_result_cache_enabled"] = self.tool_result_cache_enabled
         existing["tool_result_cache_min_identical_observations"] = self.tool_result_cache_min_identical_observations
+        existing["agent_runtime_config"] = normalize_agent_runtime_config(self.agent_runtime_config)
         existing["disabled_tools_by_profile"] = self.disabled_tools_by_profile
         existing["disabled_tools_by_browser_profile"] = self.disabled_tools_by_browser_profile
         existing["browser_runtime"] = self.browser_runtime
         existing["max_parallel_hosting_pages"] = self.max_parallel_hosting_pages
         existing["thinking_enabled"] = self.thinking_enabled
         existing["thinking_budget_tokens"] = self.thinking_budget_tokens
-        existing["deepeval_provider"] = self.deepeval_provider
-        existing["deepeval_model"] = self.deepeval_model
-        existing["deepeval_temperature"] = self.deepeval_temperature
 
         try:
             primary_path.parent.mkdir(parents=True, exist_ok=True)

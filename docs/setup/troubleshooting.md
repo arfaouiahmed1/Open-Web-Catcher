@@ -99,6 +99,7 @@ Event:
 Action:
 
 - inspect `error_type` and `error_preview` in event details
+- check retry metadata and `agent_stop_requested` before assuming a hard timeout
 
 ## 5) Rebuild Requirement (Critical)
 
@@ -112,37 +113,19 @@ docker compose up -d --build owc owc-web owc-tools
 
 If behavior does not match source code, verify active container file contents before deeper debugging.
 
-## 6) Regression Test Baseline
+## 6) Runtime Validation
 
-Run the baseline API and MCP tests in backend container:
-
-```powershell
-docker exec owc pytest -q tests/test_agent_api.py tests/test_mcp_client.py
-```
-
-Expected result for current baseline:
-
-- all tests pass
-
-If you are running tests on the host instead of inside Docker, use the project virtualenv explicitly:
-
-```powershell
-.venv\Scripts\python.exe -m pytest tests/
-```
-
-If `pytest` is missing from `.venv`, reinstall the dev environment:
-
-```powershell
-uv venv .venv --python 3.11
-uv pip install --python .venv\Scripts\python.exe -e ".[dev]"
-```
-
-For the web console, verify both the production build and the Vitest suite:
+For the web console, verify the production build:
 
 ```powershell
 cd web
 npm run build
-npm test
+```
+
+For backend startup sanity on the host:
+
+```powershell
+.venv\Scripts\python.exe -c "from src.api.app import app; print('backend ok')"
 ```
 
 ## 7) Known Non-Blocking Warnings

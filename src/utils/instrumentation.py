@@ -116,6 +116,9 @@ def resolve_model_pricing_config(settings: Settings) -> dict[str, dict[str, Any]
 # Maps preview/experimental model names to stable equivalents for pricing lookups.
 # Only used when no direct pricing entry exists for the model.
 _MODEL_PRICING_ALIASES: dict[str, str] = {
+    "gemini-flash-lite-latest": "gemini-2.5-flash-lite",
+    "gemini-flash-latest": "gemini-2.5-flash",
+    "gemini-pro-latest": "gemini-2.5-pro",
     "gemini-3-flash-preview": "gemini-2.5-flash",
     "gemini-3-flash-preview-05-20": "gemini-2.5-flash",
     "gemini-3-pro-preview": "gemini-2.5-pro",

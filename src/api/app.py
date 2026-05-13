@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
-import os
 import time as _time
 import uuid
 from contextlib import asynccontextmanager, suppress
@@ -22,20 +20,11 @@ from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.agents.errors import RunCancelledError
-from src.evaluation.datasets import build_dataset_examples, export_dataset_examples
-from src.evaluation.deepeval_bridge import EXPECTED_TOOLS_BY_PROFILE
-from src.evaluation.scoring import evaluate_case_artifact
-from src.evaluation.tracing import setup_tracing_from_settings
 from src.models.enums import ExtractionStatus
 from src.models.schemas import (
     AgentTestRequest,
     ClassificationResult,
     DatabaseTableResponse,
-    EvaluationAssertionResult,
-    EvaluationCase,
-    EvaluationCaseResult,
-    EvaluationRunRequest,
-    EvaluationSuite,
     ExtractionResult,
     OperatorOverview,
     PipelineResult,
@@ -45,6 +34,7 @@ from src.models.schemas import (
     WorkflowRunRequest,
 )
 from src.storage.database import create_tables, get_session
+from src.storage.dataset_examples import build_dataset_examples, export_dataset_examples
 from src.storage.dataset_repository import DatasetRepository
 from src.storage.models import PricingConfigRecord
 from src.storage.repositories import (
@@ -57,7 +47,13 @@ from src.utils.browser_runtime import (
     normalize_browser_runtime,
     normalize_disabled_tools_by_browser_profile,
 )
-from src.utils.config import Settings, build_browser_runtime_sync_status
+from src.utils.config import (
+    Settings,
+    build_browser_runtime_sync_status,
+    normalize_agent_runtime_config,
+    normalize_runtime_profile,
+    resolve_agent_runtime_config,
+)
 from src.utils.console_state import (
     JOB_ACTIVE_STATUSES,
     JOB_TERMINAL_STATUSES,
@@ -226,44 +222,6 @@ class RunAutoLogsSyncRequest(BaseModel):
 
 
 PROMPTS_DIR = Path("configs/prompts").resolve()
-EVALUATION_MODES = {"hybrid", "synthetic", "mocked", "live"}
-DEEPEVAL_DEFAULT_METRICS = [
-    {
-        "id": "hallucination",
-        "label": "Hallucination",
-        "threshold": 0.5,
-        "kind": "llm_judge",
-        "description": "Flags unsupported stream, provider, and evidence claims.",
-    },
-    {
-        "id": "faithfulness",
-        "label": "Faithfulness",
-        "threshold": 0.7,
-        "kind": "llm_judge",
-        "description": "Checks whether takedown output stays grounded in tool evidence.",
-    },
-    {
-        "id": "tool_correctness",
-        "label": "Tool correctness",
-        "threshold": 0.6,
-        "kind": "deterministic",
-        "description": "Verifies that the expected browser tools were actually used.",
-    },
-    {
-        "id": "answer_relevancy",
-        "label": "Answer relevancy",
-        "threshold": 0.7,
-        "kind": "llm_judge",
-        "description": "Measures whether the final output stays relevant to the source URL.",
-    },
-    {
-        "id": "task_completion",
-        "label": "Task completion",
-        "threshold": 0.6,
-        "kind": "llm_judge",
-        "description": "Measures whether the pipeline completed the takedown workflow goal.",
-    },
-]
 
 
 def get_settings(force_reload: bool = False) -> Settings:
@@ -417,275 +375,6 @@ async def _invoke_named_tool(
 
 def _cors_origins(settings: Settings) -> list[str]:
     return [item.strip() for item in settings.ui_cors_origins.split(",") if item.strip()]
-
-
-def _normalize_evaluation_mode(value: str) -> str:
-    normalized = str(value or "hybrid").strip().lower() or "hybrid"
-    if normalized not in EVALUATION_MODES:
-        raise HTTPException(status_code=400, detail=f"Unsupported evaluation mode '{value}'")
-    return normalized
-
-
-def _normalize_manual_batch_urls(values: list[str], *, max_urls: int = 40) -> list[str]:
-    normalized: list[str] = []
-    seen: set[str] = set()
-
-    for raw_value in values or []:
-        url = str(raw_value or "").strip()
-        if not url:
-            continue
-        parsed = urlparse(url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise HTTPException(status_code=400, detail=f"Invalid website URL '{url}'")
-        if url in seen:
-            continue
-        seen.add(url)
-        normalized.append(url)
-
-    if not normalized:
-        raise HTTPException(
-            status_code=400, detail="Provide at least one website URL for the manual batch."
-        )
-    if len(normalized) > max_urls:
-        raise HTTPException(
-            status_code=400, detail=f"Manual batches are limited to {max_urls} websites per run."
-        )
-    return normalized
-
-
-def _manual_batch_case_name(url: str, index: int) -> str:
-    host = (urlparse(url).netloc or "").replace("www.", "").strip()
-    return host or f"website-{index:02d}"
-
-
-def _build_manual_evaluation_suite(req: EvaluationRunRequest) -> EvaluationSuite:
-    urls = _normalize_manual_batch_urls(req.urls)
-    batch_name = str(req.batch_name or "").strip()
-    effective_mode = _normalize_evaluation_mode(req.mode)
-    if effective_mode not in {"hybrid", "live"}:
-        raise HTTPException(
-            status_code=400,
-            detail="Manual website batches only support 'live' or 'hybrid' mode.",
-        )
-    return EvaluationSuite(
-        name=batch_name or f"Manual Website Batch ({len(urls)})",
-        description=f"Ad hoc website batch submitted from the operator console ({len(urls)} targets).",
-        mode="live" if effective_mode == "hybrid" else effective_mode,
-        active=True,
-        config={
-            "origin": "manual_batch",
-            "input_urls": urls,
-            "submitted_from": "ui",
-        },
-        cases=[
-            EvaluationCase(
-                name=_manual_batch_case_name(url, index + 1),
-                description=url,
-                mode="live",
-                target_type="workflow",
-                active=True,
-                input={"url": url},
-                assertions={
-                    "required_tools": ["open_url"],
-                    "forbidden_tools": ["delete_data"],
-                },
-                metadata={
-                    "origin": "manual_batch",
-                    "url": url,
-                    "host": _manual_batch_case_name(url, index + 1),
-                },
-            )
-            for index, url in enumerate(urls)
-        ],
-    )
-
-
-def _evaluation_failure_result(
-    case: EvaluationCase,
-    *,
-    message: str,
-    artifact: dict[str, Any] | None = None,
-    trace: dict[str, Any] | None = None,
-    latency_ms: float = 0.0,
-    total_cost_usd: float = 0.0,
-) -> EvaluationCaseResult:
-    safe_artifact = dict(artifact or {})
-    if case.input.get("url") and not safe_artifact.get("url"):
-        safe_artifact["url"] = case.input.get("url")
-    safe_artifact.setdefault("final_status", "failed")
-    safe_artifact.setdefault("status", "failed")
-    safe_artifact.setdefault("error_message", message)
-
-    return EvaluationCaseResult(
-        case_id=case.id,
-        case_name=case.name,
-        status="failed",
-        target_type=case.target_type,
-        latency_ms=latency_ms,
-        total_cost_usd=total_cost_usd,
-        hallucination_score=1.0,
-        tool_accuracy_score=0.0,
-        reliability_score=0.0,
-        assertion_results=[
-            EvaluationAssertionResult(
-                name="runtime_error",
-                passed=False,
-                expected="case execution completes",
-                actual=message,
-                message="The evaluation case raised an exception before it could be scored normally.",
-            )
-        ],
-        output=safe_artifact,
-        trace=trace or {"events": []},
-    )
-
-
-async def _execute_evaluation_case(
-    case: EvaluationCase,
-    *,
-    requested_mode: str,
-    settings: Settings,
-    run_id: str,
-) -> EvaluationCaseResult:
-    artifact: dict[str, Any] = {}
-    trace_payload: dict[str, Any] = {}
-    latency_ms = 0.0
-    total_cost = 0.0
-    observer = None
-    mode = case.mode if requested_mode == "hybrid" else requested_mode
-
-    try:
-        if mode in {"synthetic", "mocked"}:
-            artifact = case.input.get("artifact", {})
-            trace_payload = case.input.get("trace", {})
-        elif case.target_type == "workflow":
-            observer = run_registry.create(
-                run_id=str(uuid.uuid4()),
-                root_actor="orchestrator",
-                observability=get_observability_status(settings),
-            )
-            from src.agents.orchestrator import run_pipeline as _run_pipeline
-
-            result = await _run_pipeline(
-                url=case.input.get("url", ""), settings=settings, observer=observer
-            )
-            await _persist_pipeline_result(result)
-            artifact = result.model_dump(mode="json")
-            trace_model = observer.trace()
-            trace_payload = trace_model.model_dump(mode="json")
-            latency_ms = (
-                trace_model.metrics.total_duration_seconds if trace_model.metrics else 0.0
-            ) * 1000.0
-            total_cost = (
-                trace_model.metrics.estimated_total_cost_usd if trace_model.metrics else 0.0
-            )
-        elif case.target_type == "agent":
-            agent_name = case.input.get("agent", "classification")
-            observer = run_registry.create(
-                run_id=str(uuid.uuid4()),
-                root_actor=agent_name,
-                observability=get_observability_status(settings),
-            )
-            observer.set_url(case.input.get("url", ""))
-            result = await _run_selected_agent(agent_name, case.input.get("url", ""), observer)
-            observer.finish(success=True, failure_mode="")
-            artifact = result.model_dump(mode="json") if hasattr(result, "model_dump") else {}
-            trace_model = observer.trace()
-            trace_payload = trace_model.model_dump(mode="json")
-            latency_ms = (
-                trace_model.metrics.total_duration_seconds if trace_model.metrics else 0.0
-            ) * 1000.0
-            total_cost = (
-                trace_model.metrics.estimated_total_cost_usd if trace_model.metrics else 0.0
-            )
-        elif case.target_type == "tool":
-            artifact = {
-                "result": (
-                    await _execute_tool_call_with_telemetry(
-                        case.input.get("profile", "hosting"),
-                        case.input.get("tool_name", ""),
-                        case.input.get("args", {}),
-                        origin="evaluation",
-                        related_run_id=run_id,
-                    )
-                )["result"]
-            }
-            trace_payload = {"events": []}
-        else:
-            raise ValueError(f"Unsupported evaluation target_type '{case.target_type}'")
-
-        return evaluate_case_artifact(
-            case,
-            artifact=artifact,
-            trace=trace_payload,
-            latency_ms=latency_ms,
-            total_cost_usd=total_cost,
-        )
-    except Exception as exc:  # noqa: BLE001
-        if observer is not None and not trace_payload:
-            try:
-                trace_model = observer.trace()
-            except Exception:  # noqa: BLE001
-                trace_model = None
-            if trace_model is not None:
-                trace_payload = trace_model.model_dump(mode="json")
-                latency_ms = (
-                    trace_model.metrics.total_duration_seconds if trace_model.metrics else 0.0
-                ) * 1000.0
-                total_cost = (
-                    trace_model.metrics.estimated_total_cost_usd if trace_model.metrics else 0.0
-                )
-
-        logger.exception(
-            "Evaluation case execution failed | eval_run=%s | case=%s | target_type=%s | mode=%s",
-            run_id,
-            case.name,
-            case.target_type,
-            mode,
-        )
-        return _evaluation_failure_result(
-            case,
-            message=str(exc) or exc.__class__.__name__,
-            artifact=artifact,
-            trace=trace_payload,
-            latency_ms=latency_ms,
-            total_cost_usd=total_cost,
-        )
-
-
-def _deepeval_lab_payload(settings: Settings) -> dict[str, Any]:
-    deepeval_available = importlib.util.find_spec("deepeval") is not None
-    gemini_package_available = importlib.util.find_spec("langchain_google_genai") is not None
-    google_api_key_configured = bool(os.environ.get("GOOGLE_API_KEY") or settings.google_api_key)
-    warnings: list[str] = []
-
-    if not deepeval_available:
-        warnings.append("deepeval is not installed in the current Python environment.")
-    if not gemini_package_available:
-        warnings.append(
-            "langchain-google-genai is not installed, so Gemini judge metrics cannot run."
-        )
-    if not google_api_key_configured:
-        warnings.append("GOOGLE_API_KEY is not configured, so the LLM-judge metrics cannot run.")
-
-    return {
-        "ready": deepeval_available and gemini_package_available and google_api_key_configured,
-        "deepeval_available": deepeval_available,
-        "gemini_package_available": gemini_package_available,
-        "google_api_key_configured": google_api_key_configured,
-        "judge_model": os.environ.get("GEMINI_JUDGE_MODEL", "gemini-2.5-flash"),
-        "metrics": DEEPEVAL_DEFAULT_METRICS,
-        "profiles": [
-            {"profile": profile, "expected_tools": tools}
-            for profile, tools in EXPECTED_TOOLS_BY_PROFILE.items()
-        ],
-        "commands": {
-            "pytest": "pytest tests/test_deepeval_metrics.py -v",
-            "pytest_skip_marker": 'pytest -m "not deepeval"',
-            "deepeval": "deepeval test run tests/test_deepeval_metrics.py",
-        },
-        "warnings": warnings,
-    }
 
 
 def _merged_pricing_config(settings: Settings, config: PricingConfig) -> dict[str, dict[str, Any]]:
@@ -959,7 +648,6 @@ async def lifespan(app: FastAPI):
     global _background_worker_task
     settings = get_settings()
     setup_logging(level=settings.log_level, log_file=settings.log_file)
-    setup_tracing_from_settings(settings)
     create_tables()
     recovered_jobs = _recover_background_jobs()
     cleanup = {"runtime_events_deleted": 0, "run_screenshots_deleted": 0}
@@ -1696,11 +1384,7 @@ async def _background_workflow(run_id: str, url: str) -> dict[str, Any]:
         _trace_persist_loop(run_id, root_actor="orchestrator", url=url)
     )
     try:
-        timeout_seconds = max(1, int(settings.agent_timeout_seconds))
-        result = await asyncio.wait_for(
-            _run_pipeline(url=url, settings=settings, observer=observer),
-            timeout=timeout_seconds,
-        )
+        result = await _run_pipeline(url=url, settings=settings, observer=observer)
         trace = run_registry.get(run_id)
         await _persist_pipeline_result(result)
         return {"ok": True, "result": _background_result_payload(result, trace)}
@@ -1750,7 +1434,8 @@ async def _background_agent(
     observer.set_url(url)
     persist_task = asyncio.create_task(_trace_persist_loop(run_id, root_actor=agent, url=url))
     try:
-        timeout_seconds = max(1, int(settings.agent_timeout_seconds))
+        runtime_settings = resolve_agent_runtime_config(settings, normalize_runtime_profile(agent))
+        timeout_seconds = max(30, int(runtime_settings["agent_timeout_seconds"]))
         result = await asyncio.wait_for(
             _run_selected_agent(
                 agent,
@@ -3394,9 +3079,7 @@ class ModelConfigRequest(BaseModel):
     disabled_tools_by_profile: dict | None = None
     disabled_tools_by_browser_profile: dict | None = None
     browser_runtime: dict | None = None
-    deepeval_provider: str | None = None
-    deepeval_model: str | None = None
-    deepeval_temperature: float | None = None
+    agent_runtime_config: dict | None = None
 
 
 class PricingSyncRequest(BaseModel):
@@ -3439,9 +3122,9 @@ def _ui_config_payload(
         ),
         "browser_runtime": normalize_browser_runtime(getattr(settings, "browser_runtime", {})),
         "browser_runtime_sync_status": build_browser_runtime_sync_status(),
-        "deepeval_provider": getattr(settings, "deepeval_provider", "google"),
-        "deepeval_model": getattr(settings, "deepeval_model", "gemini-2.5-flash"),
-        "deepeval_temperature": getattr(settings, "deepeval_temperature", 0.0),
+        "agent_runtime_config": normalize_agent_runtime_config(
+            getattr(settings, "agent_runtime_config", {})
+        ),
         "api_keys": {
             "google": bool(settings.google_api_key),
         },
@@ -3512,7 +3195,7 @@ def ui_update_config(body: ModelConfigRequest):
         s.tool_result_cache_enabled = body.tool_result_cache_enabled
     if body.tool_result_cache_min_identical_observations is not None:
         s.tool_result_cache_min_identical_observations = max(
-            1,
+            2,
             int(body.tool_result_cache_min_identical_observations),
         )
     if body.thinking_enabled is not None:
@@ -3546,12 +3229,8 @@ def ui_update_config(body: ModelConfigRequest):
         s.browser_runtime = normalize_browser_runtime(body.browser_runtime)
     else:
         s.browser_runtime = normalize_browser_runtime(getattr(s, "browser_runtime", {}))
-    if body.deepeval_provider is not None:
-        s.deepeval_provider = "google"
-    if body.deepeval_model is not None:
-        s.deepeval_model = body.deepeval_model
-    if body.deepeval_temperature is not None:
-        s.deepeval_temperature = max(0.0, float(body.deepeval_temperature))
+    if body.agent_runtime_config is not None:
+        s.agent_runtime_config = normalize_agent_runtime_config(body.agent_runtime_config)
     if body.agent_model_config is None:
         s.agent_model_config = normalize_agent_model_config(s, getattr(s, "agent_model_config", {}))
     persist_path = ""
@@ -3743,100 +3422,6 @@ def ui_estimate_costs(
         "total_cost_usd": costs["estimated_total_cost_usd"],
         "pricing_source": pricing_source,
     }
-
-
-@app.get("/ui/evaluations/suites")
-def ui_evaluation_suites():
-    session = get_session()
-    try:
-        repo = OperatorConsoleRepository(session)
-        repo.ensure_default_evaluation_suites()
-        return {
-            "suites": [suite.model_dump(mode="json") for suite in repo.list_evaluation_suites()]
-        }
-    finally:
-        session.close()
-
-
-@app.get("/ui/evaluations/lab")
-def ui_evaluation_lab():
-    return _deepeval_lab_payload(get_settings())
-
-
-@app.get("/ui/evaluations/runs")
-def ui_evaluation_runs(limit: int = 20):
-    session = get_session()
-    try:
-        return {"runs": OperatorConsoleRepository(session).list_evaluation_runs(limit=limit)}
-    finally:
-        session.close()
-
-
-@app.get("/ui/evaluations/runs/{run_id}")
-def ui_evaluation_run_detail(run_id: str):
-    session = get_session()
-    try:
-        repo = OperatorConsoleRepository(session)
-        try:
-            return repo.get_evaluation_run(run_id).model_dump(mode="json")
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-    finally:
-        session.close()
-
-
-@app.post("/ui/evaluations/run")
-async def ui_evaluation_run(req: EvaluationRunRequest):
-    settings = get_settings()
-    session = get_session()
-    repo = OperatorConsoleRepository(session)
-    try:
-        requested_mode = _normalize_evaluation_mode(req.mode)
-        if req.urls:
-            suite = _build_manual_evaluation_suite(req)
-            suite_source = "manual_batch"
-        else:
-            suites = repo.ensure_default_evaluation_suites()
-            suite = next(
-                (item for item in suites if item.id == req.suite_id), suites[0] if suites else None
-            )
-            suite_source = "saved_suite"
-            if suite is None:
-                raise HTTPException(status_code=404, detail="No evaluation suites available")
-
-        run_id = str(uuid.uuid4())
-        run_name = str(req.batch_name or "").strip() or suite.name
-        repo.create_evaluation_run(
-            suite.id, run_name, requested_mode if requested_mode != "hybrid" else suite.mode, run_id
-        )
-
-        case_results: list[EvaluationCaseResult] = []
-        for case in [item for item in suite.cases if item.active]:
-            case_results.append(
-                await _execute_evaluation_case(
-                    case,
-                    requested_mode=requested_mode,
-                    settings=settings,
-                    run_id=run_id,
-                )
-            )
-
-        summary = {
-            "suite_name": run_name,
-            "mode": requested_mode if requested_mode != "hybrid" else suite.mode,
-            "case_count": len(case_results),
-            "pass_count": sum(1 for item in case_results if item.status == "passed"),
-            "source": suite_source,
-            "input_urls": [
-                case.input.get("url")
-                for case in suite.cases
-                if case.active and case.input.get("url")
-            ],
-        }
-        finalized = repo.finalize_evaluation_run(run_id, case_results=case_results, summary=summary)
-        return finalized.model_dump(mode="json")
-    finally:
-        session.close()
 
 
 @app.get("/ui/prompts")

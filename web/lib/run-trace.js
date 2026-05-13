@@ -363,7 +363,7 @@ function isScreenshotValue(value) {
     const parsed = new URL(text);
     const path = String(parsed.pathname || "").toLowerCase();
     const query = String(parsed.search || "").toLowerCase();
-    if (/\.(png|jpe?g|webp|gif|bmp|svg)$/.test(path)) return true;
+    if (/\.(png|jpe?g|webp|gif|bmp)$/.test(path)) return true;
     if (path.includes("/image/") || path.includes("/images/") || path.includes("image/upload")) {
       return true;
     }
@@ -390,6 +390,11 @@ export function collectScreenshotUrls(value, out = new Set()) {
   if (value == null) return out;
 
   if (typeof value === "string") {
+    if (isScreenshotValue(value)) {
+      out.add(value.trim());
+      return out;
+    }
+
     try {
       collectScreenshotUrls(JSON.parse(value), out);
       return out;

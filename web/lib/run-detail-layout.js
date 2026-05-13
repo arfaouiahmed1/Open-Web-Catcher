@@ -30,14 +30,11 @@ export function buildRunDetailTabState({
                 : "default",
       },
       {
-        value: "ops",
+        value: "decisions",
         label: "Decisions",
         count: decisionCount,
         tone: "signal",
       },
-    ],
-    opsTabs: [
-      { value: "decisions", label: "Decisions", count: decisionCount, tone: "signal" },
     ],
   };
 }

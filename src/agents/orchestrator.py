@@ -907,12 +907,6 @@ def route_after_landing(state: PipelineState) -> str:
 
 
 def route_after_hosting(state: PipelineState) -> str:
-    if state["pending_embedded_urls"] and state["extraction_results"]:
-        latest = state["extraction_results"][-1]
-        if latest.page_type == PageType.HOSTING and (
-            latest.status == ExtractionStatus.FAILED or _requires_embedded_followup(latest)
-        ):
-            return "embedded_page"
     if state["pending_hosting_urls"]:
         return "hosting_page"
     if state["pending_embedded_urls"]:

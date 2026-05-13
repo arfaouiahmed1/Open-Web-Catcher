@@ -20,11 +20,6 @@ export const SERVER_TAB_FIELDS = {
     "browser_engine",
     "browser_runtime",
   ],
-  evaluation: [
-    "deepeval_provider",
-    "deepeval_model",
-    "deepeval_temperature",
-  ],
   "mcp-tools": [
     "disabled_tools_by_browser_profile",
   ],
@@ -113,9 +108,6 @@ export function buildServerConfigDraft(state) {
     browser_engine: state.browserEngine || "puppeteer",
     disabled_tools_by_browser_profile: state.disabledToolsByBrowserProfile || {},
     browser_runtime: normalizeBrowserRuntimeForSave(state.browserRuntime),
-    deepeval_provider: state.deepevalProvider || "google",
-    deepeval_model: state.deepevalModel || "gemini-2.5-flash",
-    deepeval_temperature: Number.parseFloat(state.deepevalTemperature || "0") || 0,
   };
 }
 
@@ -139,9 +131,6 @@ export function snapshotServerConfig(payload) {
     browser_engine: payload?.browser_engine || "puppeteer",
     disabled_tools_by_browser_profile: payload?.disabled_tools_by_browser_profile || {},
     browser_runtime: normalizeBrowserRuntimeForSave(payload?.browser_runtime),
-    deepeval_provider: payload?.deepeval_provider || "google",
-    deepeval_model: payload?.deepeval_model || "gemini-2.5-flash",
-    deepeval_temperature: Number.parseFloat(String(payload?.deepeval_temperature ?? "0")) || 0,
   });
 }
 
@@ -155,7 +144,6 @@ export function getDirtyTabs(baseline, draft) {
     return {
       models: false,
       browser: false,
-      evaluation: false,
       "mcp-tools": false,
     };
   }

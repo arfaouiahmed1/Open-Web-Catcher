@@ -188,6 +188,7 @@ function StageTrigger({ stage, active, autoSelected, count, status, phase }) {
 export function BrowserLiveView({
   runId,
   events = [],
+  persistedScreenshots = [],
   autoRefresh = true,
   standalone = false,
   onClose,
@@ -214,12 +215,28 @@ export function BrowserLiveView({
   const availableFrames = selectedStageData?.frames ?? EMPTY_ARRAY;
   const latestFrame = selectedStageData?.latestFrame || null;
   const anyFrames = stages.some((stage) => (stage.frames || []).length > 0);
+  const persistedFallbackFrames = useMemo(
+    () =>
+      (Array.isArray(persistedScreenshots) ? persistedScreenshots : EMPTY_ARRAY)
+        .filter((src) => typeof src === "string" && src.trim())
+        .map((src, index) => ({
+          url: src.trim(),
+          seq: index + 1,
+          actor: "persisted",
+          stage: selectedStage,
+          toolName: "persisted capture",
+          target: "",
+          timestamp: "",
+        })),
+    [persistedScreenshots, selectedStage],
+  );
+  const effectiveFrames = availableFrames.length ? availableFrames : persistedFallbackFrames;
   const statusLabel =
     selectedStageData?.liveLabel || selectedStageData?.status || "idle";
   const selectedPhase =
     selectedStageData?.livePhase || selectedStageData?.status || "idle";
   const stageColor = stageTone(selectedStage);
-  const frameCount = availableFrames.length || (fallbackScreenshot ? 1 : 0);
+  const frameCount = effectiveFrames.length || (fallbackScreenshot ? 1 : 0);
 
   useEffect(() => {
     if (!manualMode) {
@@ -232,14 +249,14 @@ export function BrowserLiveView({
     if (
       !manualMode ||
       !selectedFrameUrl ||
-      !availableFrames.some((frame) => frame.url === selectedFrameUrl)
+      !effectiveFrames.some((frame) => frame.url === selectedFrameUrl)
     ) {
-      setSelectedFrameUrl(nextUrl);
+      setSelectedFrameUrl(nextUrl || effectiveFrames[effectiveFrames.length - 1]?.url || "");
     }
-  }, [availableFrames, latestFrame, manualMode, selectedFrameUrl]);
+  }, [effectiveFrames, latestFrame, manualMode, selectedFrameUrl]);
 
   useEffect(() => {
-    if (anyFrames || (!standalone && !runId)) return undefined;
+    if ((availableFrames.length > 0 && !standalone) || (!standalone && !runId)) return undefined;
 
     let cancelled = false;
     let timer = null;
@@ -279,19 +296,25 @@ export function BrowserLiveView({
       cancelled = true;
       if (timer) window.clearInterval(timer);
     };
-  }, [anyFrames, autoRefresh, refreshNonce, runId, standalone]);
+  }, [availableFrames.length, autoRefresh, refreshNonce, runId, standalone]);
 
   const activeFrame =
-    availableFrames.find((frame) => frame.url === selectedFrameUrl) ||
-    latestFrame;
-  const activeUrl = activeFrame?.url || (!anyFrames ? fallbackScreenshot : "");
+    effectiveFrames.find((frame) => frame.url === selectedFrameUrl) ||
+    latestFrame ||
+    effectiveFrames[effectiveFrames.length - 1] ||
+    null;
+  const activeUrl = activeFrame?.url || fallbackScreenshot || "";
   const activeImageMaxHeight = isFullscreen ? "calc(100vh - 280px)" : 420;
 
   function handleStageChange(nextStage) {
     const next = stageByName.get(nextStage);
     setManualMode(true);
     setManualStage(nextStage);
-    setSelectedFrameUrl(next?.latestFrame?.url || "");
+    setSelectedFrameUrl(
+      next?.latestFrame?.url ||
+      persistedFallbackFrames[persistedFallbackFrames.length - 1]?.url ||
+      "",
+    );
   }
 
   return (
@@ -304,7 +327,13 @@ export function BrowserLiveView({
         background: "var(--card)",
       }}
     >
-      <CardHeader className="space-y-4 border-b px-4 py-4">
+      <CardHeader
+        className="space-y-4 border-b px-4 py-4"
+        style={{
+          background:
+            "linear-gradient(180deg, color-mix(in oklch, var(--signal) 8%, transparent), transparent 78%)",
+        }}
+      >
         <div className="flex flex-wrap items-start gap-3">
           <div className="flex min-w-0 flex-1 items-start gap-3">
             <div
@@ -322,6 +351,9 @@ export function BrowserLiveView({
                 <Badge tone={manualMode ? "violet" : "success"}>
                   {manualMode ? "manual" : "auto"}
                 </Badge>
+                {availableFrames.length === 0 && persistedFallbackFrames.length > 0 ? (
+                  <Badge tone="default">persisted fallback</Badge>
+                ) : null}
                 <Badge tone={frameCount > 0 ? "signal" : "default"}>
                   {formatNumber(frameCount)} frame{frameCount === 1 ? "" : "s"}
                 </Badge>
@@ -428,11 +460,12 @@ export function BrowserLiveView({
 
       <CardContent className="space-y-4 px-4 py-4">
         <div
-          className="relative flex items-center justify-center overflow-hidden rounded-xl border"
+          className="relative flex items-center justify-center overflow-hidden rounded-[18px] border"
           style={{
             minHeight: isFullscreen ? "calc(100vh - 220px)" : 320,
             borderColor: "var(--line)",
-            background: "#050508",
+            background:
+              "radial-gradient(circle at top, rgba(255,255,255,0.06), transparent 28%), #050508",
           }}
         >
           {activeUrl ? (
@@ -448,11 +481,17 @@ export function BrowserLiveView({
                 frame={
                   activeFrame || {
                     stage: selectedStage,
-                    toolName: "",
+                    toolName: persistedFallbackFrames.length ? "persisted capture" : "",
                     target: "",
                   }
                 }
-                status={statusLabel}
+                status={
+                  availableFrames.length > 0
+                    ? statusLabel
+                    : persistedFallbackFrames.length > 0
+                      ? "persisted"
+                      : statusLabel
+                }
               />
             </>
           ) : (
@@ -482,13 +521,13 @@ export function BrowserLiveView({
           )}
         </div>
 
-        {availableFrames.length > 1 || (!anyFrames && fallbackScreenshot) ? (
+        {effectiveFrames.length > 1 || fallbackScreenshot ? (
           <ScrollArea className="w-full rounded-xl border border-border bg-muted/20">
             <ScrollAreaViewport className="w-full">
               <div className="flex gap-2 p-2">
-                {(availableFrames.length
-                  ? availableFrames
-                  : [{ url: fallbackScreenshot, seq: 0, stage: selectedStage }]
+                {(effectiveFrames.length
+                  ? effectiveFrames
+                  : [{ url: fallbackScreenshot, seq: 0, stage: selectedStage, toolName: "latest capture" }]
                 ).map((frame, index) => (
                   <button
                     key={`${frame.url}-${frame.seq}-${index}`}
@@ -525,6 +564,18 @@ export function BrowserLiveView({
       </CardContent>
 
       <CardFooter className="flex flex-wrap items-center gap-3 border-t px-4 py-3">
+        <Badge tone="default" className="px-2 py-0 text-[10px]">
+          {availableFrames.length > 0
+            ? "Event frame"
+            : persistedFallbackFrames.length > 0
+              ? "Persisted frame"
+              : fallbackScreenshot
+                ? "Fallback screenshot"
+                : "No frame"}
+        </Badge>
+        <Badge tone={phaseTone(selectedPhase)} className="px-2 py-0 text-[10px]">
+          {STAGE_LABELS[selectedStage]} / {statusLabel}
+        </Badge>
         <span className="font-mono text-[10px]" style={{ color: "var(--mute-3)" }}>
           {activeFrame?.timestamp
             ? `Updated ${new Date(activeFrame.timestamp).toLocaleTimeString()}`

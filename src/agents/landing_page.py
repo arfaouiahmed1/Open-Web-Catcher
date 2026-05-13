@@ -417,6 +417,7 @@ class LandingPageAgent:
                         bootstrap_context_first=True,
                         bootstrap_memory_lookup_first=True,
                         bootstrap_memory_page_type=AgentType.LANDING_PAGE.value,
+                        runtime_profile=AgentType.LANDING_PAGE.value,
                     )
 
                 output_json = result.parse_json()

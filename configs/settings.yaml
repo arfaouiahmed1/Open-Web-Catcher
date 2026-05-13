@@ -19,13 +19,64 @@ hosting_page_max_tool_calls: 20
 embedded_page_max_tool_calls: 20
 
 # Timeouts
-tool_timeout_seconds: 30
-agent_timeout_seconds: 300
+tool_timeout_seconds: 60
+agent_timeout_seconds: 2700
 
 # Prompt/tool caching
 provider_cache_enabled: true
 tool_result_cache_enabled: true
 tool_result_cache_min_identical_observations: 2
+agent_runtime_config:
+  classification:
+    tool_timeout_seconds: 45
+    llm_turn_timeout_seconds: 180
+    agent_timeout_seconds: 1800
+    llm_retry_attempts: 3
+    llm_retry_base_delay_seconds: 2.0
+    llm_retry_max_delay_seconds: 20.0
+    repeated_tool_call_limit: 2
+    no_progress_turn_limit: 2
+    tool_result_cache_min_identical_observations: 2
+  landing:
+    tool_timeout_seconds: 60
+    llm_turn_timeout_seconds: 240
+    agent_timeout_seconds: 2700
+    llm_retry_attempts: 3
+    llm_retry_base_delay_seconds: 2.0
+    llm_retry_max_delay_seconds: 20.0
+    repeated_tool_call_limit: 3
+    no_progress_turn_limit: 3
+    tool_result_cache_min_identical_observations: 2
+  hosting:
+    tool_timeout_seconds: 60
+    llm_turn_timeout_seconds: 240
+    agent_timeout_seconds: 2700
+    llm_retry_attempts: 3
+    llm_retry_base_delay_seconds: 2.0
+    llm_retry_max_delay_seconds: 20.0
+    repeated_tool_call_limit: 3
+    no_progress_turn_limit: 3
+    tool_result_cache_min_identical_observations: 2
+  embedded:
+    tool_timeout_seconds: 60
+    llm_turn_timeout_seconds: 240
+    agent_timeout_seconds: 2700
+    llm_retry_attempts: 3
+    llm_retry_base_delay_seconds: 2.0
+    llm_retry_max_delay_seconds: 20.0
+    repeated_tool_call_limit: 3
+    no_progress_turn_limit: 3
+    tool_result_cache_min_identical_observations: 2
+  orchestrator:
+    tool_timeout_seconds: 60
+    llm_turn_timeout_seconds: 240
+    agent_timeout_seconds: 7200
+    llm_retry_attempts: 3
+    llm_retry_base_delay_seconds: 2.0
+    llm_retry_max_delay_seconds: 20.0
+    repeated_tool_call_limit: 3
+    no_progress_turn_limit: 3
+    tool_result_cache_min_identical_observations: 2
 
 # Logging
 log_level: "INFO"

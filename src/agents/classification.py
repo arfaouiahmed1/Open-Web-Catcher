@@ -122,6 +122,7 @@ class ClassificationAgent:
                         bootstrap_context_first=True,
                         bootstrap_memory_lookup_first=True,
                         bootstrap_memory_page_type=AgentType.CLASSIFICATION.value,
+                        runtime_profile=AgentType.CLASSIFICATION.value,
                     )
                 parsed = _parse_output(result.final_text, url)
                 remember_agent_run(

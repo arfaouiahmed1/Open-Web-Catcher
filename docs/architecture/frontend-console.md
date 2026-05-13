@@ -9,7 +9,6 @@ This document describes the current operator console structure in `web/` and whe
 - `/runs`: persisted run explorer with filtering, comparison, cancellation, and deletion
 - `/runs/[runId]`: run detail view for live traces, outputs, screenshots, costs, and telemetry tables
 - `/datasets`: Postgres-backed dataset management and batch execution
-- `/evaluations`: evaluation suite setup and score review
 - `/tools`: direct MCP tool workbench
 - `/providers`: provider lookup and history
 - `/database`: read-only database explorer

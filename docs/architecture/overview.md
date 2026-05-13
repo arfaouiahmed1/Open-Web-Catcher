@@ -29,7 +29,7 @@
 
 ## Responsibility Split
 
-- Python owns agent execution, orchestration, persistence, evaluations, and observability
+- Python owns agent execution, orchestration, persistence, and observability
 - Node owns browser automation and MCP tool exposure
 - Next.js owns the operator-facing interface
 
@@ -38,4 +38,4 @@
 Two layers are kept:
 
 - legacy run snapshots for compatibility
-- normalized observability tables for dashboards, drill-downs, and evaluations
+- normalized observability tables for dashboards and drill-downs

@@ -164,6 +164,7 @@ class EmbeddedPageAgent:
                         bootstrap_context_first=True,
                         bootstrap_memory_lookup_first=True,
                         bootstrap_memory_page_type=AgentType.EMBEDDED_PAGE.value,
+                        runtime_profile=AgentType.EMBEDDED_PAGE.value,
                     )
 
                 output = result.parse_json()

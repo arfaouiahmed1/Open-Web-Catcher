@@ -1518,9 +1518,6 @@ export function SettingsPage() {
   const [thinkingEnabled, setThinkingEnabled] = useState(false);
   const [thinkingBudgetTokens, setThinkingBudgetTokens] = useState("8000");
   const [maxParallelHostingPages, setMaxParallelHostingPages] = useState("5");
-  const [deepevalProvider, setDeepevalProvider] = useState("google");
-  const [deepevalModel, setDeepevalModel] = useState("gemini-2.5-flash");
-  const [deepevalTemperature, setDeepevalTemperature] = useState("0");
   const [browserEngine, setBrowserEngine] = useState("puppeteer");
   const [browserSettingsTab, setBrowserSettingsTab] = useState("puppeteer");
   const [browserRuntime, setBrowserRuntime] = useState(cloneBrowserRuntime());
@@ -1731,17 +1728,11 @@ export function SettingsPage() {
         browserEngine,
         browserRuntime,
         disabledToolsByBrowserProfile,
-        deepevalProvider,
-        deepevalModel,
-        deepevalTemperature,
       }),
     [
       agentModelConfig,
       browserEngine,
       browserRuntime,
-      deepevalModel,
-      deepevalProvider,
-      deepevalTemperature,
       disabledToolsByBrowserProfile,
       fallbackTemperature,
       geminiExplicitCacheEnabled,
@@ -1877,9 +1868,6 @@ export function SettingsPage() {
     setThinkingEnabled(Boolean(payload.thinking_enabled ?? false));
     setThinkingBudgetTokens(String(payload.thinking_budget_tokens ?? 8000));
     setMaxParallelHostingPages(String(payload.max_parallel_hosting_pages ?? 5));
-    setDeepevalProvider(payload.deepeval_provider || "google");
-    setDeepevalModel(payload.deepeval_model || "gemini-2.5-flash");
-    setDeepevalTemperature(String(payload.deepeval_temperature ?? 0));
     setBrowserEngine(payload.browser_engine || "puppeteer");
     setBrowserSettingsTab(payload.browser_engine || "puppeteer");
     setBrowserRuntime(normalizeBrowserRuntime(payload.browser_runtime));
@@ -2105,12 +2093,6 @@ export function SettingsPage() {
         return {
           browser_engine: serverDraft.browser_engine,
           browser_runtime: serverDraft.browser_runtime,
-        };
-      case "evaluation":
-        return {
-          deepeval_provider: serverDraft.deepeval_provider,
-          deepeval_model: serverDraft.deepeval_model,
-          deepeval_temperature: serverDraft.deepeval_temperature,
         };
       case "mcp-tools":
         return {
@@ -3701,265 +3683,6 @@ export function SettingsPage() {
                     }
                     description="Collect cross-origin stream diagnostics and flag suspicious missing CORS headers."
                   />
-                </div>
-              </FieldGroup>
-            </section>
-          ) : null}
-
-          {activeTab === "evaluation" ? (
-            <section className="space-y-5">
-              <FieldGroup
-                title="Judge Model"
-                description="A separate LLM that scores pipeline outputs for hallucination, relevancy, faithfulness, and tool accuracy. GPT-4o or Claude Sonnet 3.5 recommended."
-                accent="var(--violet)"
-              >
-                {/* Provider selector cards */}
-                <div>
-                  <label
-                    className="mb-2.5 block text-[10px] font-semibold uppercase tracking-[0.14em]"
-                    style={{ color: "var(--mute-2)" }}
-                  >
-                    Provider
-                  </label>
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                    {[
-                      {
-                        value: "openai",
-                        label: "OpenAI",
-                        model: "gpt-4o",
-                        color: "var(--mint)",
-                      },
-                      {
-                        value: "anthropic",
-                        label: "Anthropic",
-                        model: "claude-3-5-sonnet",
-                        color: "var(--signal)",
-                      },
-                      {
-                        value: "google",
-                        label: "Google",
-                        model: "gemini-2.5-pro",
-                        color: "var(--sky)",
-                      },
-                      {
-                        value: "openrouter",
-                        label: "OpenRouter",
-                        model: "any model",
-                        color: "var(--violet)",
-                      },
-                    ].map((item) => {
-                      const isActive = deepevalProvider === item.value;
-                      return (
-                        <button
-                          key={item.value}
-                          type="button"
-                          onClick={() => setDeepevalProvider(item.value)}
-                          className="rounded-[12px] border p-3 text-left transition-all duration-150"
-                          style={
-                            isActive
-                              ? {
-                                  borderColor: `color-mix(in oklch, ${item.color} 40%, transparent)`,
-                                  background: `color-mix(in oklch, ${item.color} 8%, transparent)`,
-                                  boxShadow: `0 0 0 1px color-mix(in oklch, ${item.color} 18%, transparent)`,
-                                }
-                              : {
-                                  borderColor: "var(--line)",
-                                  background: "rgba(255,255,255,0.02)",
-                                }
-                          }
-                        >
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="h-2 w-2 shrink-0 rounded-full"
-                              style={{
-                                background: isActive
-                                  ? item.color
-                                  : "var(--mute-3)",
-                              }}
-                            />
-                            <span
-                              className="text-[13px] font-semibold"
-                              style={{
-                                color: isActive ? item.color : "var(--ink)",
-                              }}
-                            >
-                              {item.label}
-                            </span>
-                          </div>
-                          <div
-                            className="mt-1.5 font-mono text-[10.5px]"
-                            style={{
-                              color: isActive
-                                ? `color-mix(in oklch, ${item.color} 70%, var(--mute))`
-                                : "var(--mute-2)",
-                            }}
-                          >
-                            {item.model}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Model ID + Temperature side by side */}
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Input
-                    label="Model ID"
-                    value={deepevalModel}
-                    onChange={(e) => setDeepevalModel(e.target.value)}
-                    placeholder="gpt-4o"
-                    description="Exact model ID passed to the judge provider."
-                    className="h-10 border-[var(--line-hi)] bg-muted/30 font-mono text-[13px] text-[var(--ink)]"
-                  />
-
-                  <div className="space-y-2">
-                    <Slider
-                      label="Temperature"
-                      value={Number(deepevalTemperature) || 0}
-                      onChange={(next) => setDeepevalTemperature(next)}
-                      min={0}
-                      max={2}
-                      step={0.05}
-                      description="0 = deterministic · 2 = creative"
-                    />
-                    <p
-                      className="text-[10.5px]"
-                      style={{ color: "var(--mute-2)" }}
-                    >
-                      0 recommended for consistent evaluation scoring.
-                    </p>
-                  </div>
-                </div>
-              </FieldGroup>
-
-              <FieldGroup
-                title="Metrics"
-                description="DeepEval metrics automatically scored against every evaluation case."
-                accent="var(--sky)"
-              >
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                  {[
-                    {
-                      name: "Hallucination",
-                      desc: "Detects fabricated facts in generated output",
-                      color: "var(--rose)",
-                    },
-                    {
-                      name: "Answer Relevancy",
-                      desc: "Measures output relevance to the input question",
-                      color: "var(--sky)",
-                    },
-                    {
-                      name: "Faithfulness",
-                      desc: "Factual consistency relative to retrieved context",
-                      color: "var(--mint)",
-                    },
-                    {
-                      name: "Contextual Recall",
-                      desc: "Coverage of ground truth in retrieved context",
-                      color: "var(--violet)",
-                    },
-                    {
-                      name: "Tool Accuracy",
-                      desc: "Correct tool calls made vs expected set",
-                      color: "var(--signal)",
-                    },
-                    {
-                      name: "Reliability",
-                      desc: "Consistent outputs across repeated executions",
-                      color: "var(--signal-2)",
-                    },
-                  ].map((metric) => (
-                    <div
-                      key={metric.name}
-                      className="flex items-start gap-2.5 rounded-[10px] border px-3 py-2.5"
-                      style={{
-                        borderColor: "var(--line)",
-                        background: "rgba(255,255,255,0.015)",
-                      }}
-                    >
-                      <span
-                        className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full"
-                        style={{ background: metric.color }}
-                      />
-                      <div>
-                        <div
-                          className="text-[12.5px] font-semibold"
-                          style={{ color: "var(--ink)" }}
-                        >
-                          {metric.name}
-                        </div>
-                        <div
-                          className="mt-0.5 text-[11px] leading-snug"
-                          style={{ color: "var(--mute)" }}
-                        >
-                          {metric.desc}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </FieldGroup>
-
-              <FieldGroup
-                title="Quick Start"
-                description="Run DeepEval evaluations against your pipeline outputs."
-                accent="var(--mint)"
-              >
-                <div
-                  className="overflow-hidden rounded-[12px] border"
-                  style={{
-                    borderColor: "var(--line)",
-                    background: "rgba(0,0,0,0.22)",
-                  }}
-                >
-                  <div
-                    className="flex items-center gap-2 border-b px-4 py-2.5"
-                    style={{
-                      borderColor: "var(--line)",
-                      background: "rgba(255,255,255,0.02)",
-                    }}
-                  >
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ background: "var(--rose)" }}
-                    />
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ background: "var(--signal)" }}
-                    />
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ background: "var(--mint)" }}
-                    />
-                    <span
-                      className="ml-2 font-mono text-[10px]"
-                      style={{ color: "var(--mute-2)" }}
-                    >
-                      terminal
-                    </span>
-                  </div>
-                  <div className="space-y-1.5 p-4">
-                    {[
-                      "pip install deepeval",
-                      "deepeval login",
-                      "deepeval test run tests/test_model.py",
-                    ].map((cmd) => (
-                      <div
-                        key={cmd}
-                        className="flex items-center gap-3 font-mono text-[12.5px]"
-                      >
-                        <span
-                          className="select-none"
-                          style={{ color: "var(--signal)" }}
-                        >
-                          $
-                        </span>
-                        <span style={{ color: "var(--ink-dim)" }}>{cmd}</span>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               </FieldGroup>
             </section>

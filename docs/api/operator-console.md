@@ -1,6 +1,6 @@
 # Operator Console
 
-The operator console lives in [`web/`](../../web) and is served on port `3001`.
+The operator console lives in [`web/`](../../web) and is served on port `3000`.
 
 ## Pages
 
@@ -11,7 +11,6 @@ The operator console lives in [`web/`](../../web) and is served on port `3001`.
 - `/providers` provider intel
 - `/runs` runs explorer
 - `/runs/[runId]` run detail
-- `/evaluations` evaluation lab
 - `/database` database explorer
 - `/datasets` Postgres-backed dataset management and batch runs
 - `/prompts` prompt management
@@ -37,7 +36,6 @@ The console is built for operator workflows:
 - structured live event streaming
 - token and cost visibility
 - drill-down into runs, tools, and LLM activity
-- evaluation scoring and success rates
 - clean Postgres inspection without direct SQL
 
 ## Live Streaming
@@ -92,10 +90,10 @@ The overview page reads from normalized Postgres tables and calculates:
 - duration
 - result payload
 - error text
-- origin (`playground` or `evaluation`)
+- origin (`playground`)
 - related run id when applicable
 
-`GET /ui/tools/history` returns persisted operator and evaluation tool-call history for the console.
+`GET /ui/tools/history` returns persisted operator tool-call history for the console.
 
 ## Provider Intel
 
@@ -110,7 +108,7 @@ The response includes:
 
 ## Database Explorer
 
-The database explorer is read-only and limited to allowlisted tables exposed by the backend. It includes the normalized observability tables plus pricing, evaluation, and tool-playground history tables.
+The database explorer is read-only and limited to allowlisted tables exposed by the backend. It includes the normalized observability tables plus pricing and tool-playground history tables.
 
 ## Pricing
 
@@ -125,14 +123,4 @@ Model provider/model runtime config can also be managed from the console via:
 - `GET /ui/config`
 - `PUT /ui/config`
 
-## Evaluations
-
-The evaluation lab surfaces:
-
-- success rate
-- hallucination rate
-- tool accuracy rate
-- reliability rate
-- average latency
-- average cost
-- per-case assertion outcomes
+Run detail and overview surfaces focus on runtime health, provider and tool behavior, token usage, and cost telemetry.

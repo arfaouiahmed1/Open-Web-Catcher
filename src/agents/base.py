@@ -22,7 +22,7 @@ from src.agents.cache import (
     _create_gemini_cached_content_resource,
 )
 from src.agents.errors import BudgetExceededError, RunCancelledError
-from src.utils.config import Settings
+from src.utils.config import Settings, resolve_agent_runtime_config
 from src.utils.instrumentation import (
     observability_span,
     resolve_model_pricing,
@@ -33,6 +33,7 @@ from src.utils.instrumentation import (
 from src.utils.logging import get_logger
 from src.utils.observability import RunObserver
 from src.utils.provider_models import (
+    normalize_gemini_model_id,
     resolve_agent_model_selection,
     resolve_llm_tuning,
     resolve_model_context_window,
@@ -144,6 +145,10 @@ class AgentGraphState(TypedDict):
     tool_calls_made: int
     max_tool_calls: int
     budget_exhausted: bool
+    stop_reason: str
+    last_tool_batch_signature: str
+    repeated_tool_batch_count: int
+    no_progress_turn_count: int
 
 
 def _json_ready(value: Any) -> Any:
@@ -426,6 +431,56 @@ def _assert_not_cancelled(observer: RunObserver | None, phase: str) -> None:
     raise RunCancelledError(reason)
 
 
+def _looks_like_site_down_error(result_content: str) -> bool:
+    text = str(result_content or "").lower()
+    if not text:
+        return False
+    markers = (
+        "site can't be reached",
+        "err_name_not_resolved",
+        "dns_probe_finished",
+        "connection refused",
+        "connection reset",
+        "timed out",
+        "503 service unavailable",
+        "502 bad gateway",
+        "504 gateway timeout",
+        "net::err_",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _is_retryable_llm_error(exc: Exception) -> bool:
+    error_text = str(exc or "").lower()
+    retry_markers = (
+        "503",
+        "service unavailable",
+        "resource_exhausted",
+        "retrydelay",
+        "rate limit",
+        "temporarily unavailable",
+        "connection reset",
+        "connection aborted",
+        "connection error",
+        "remoteprotocolerror",
+        "readtimeout",
+        "connecttimeout",
+        "internal server error",
+        "deadline exceeded",
+    )
+    fatal_markers = (
+        "invalid argument",
+        "permission denied",
+        "unauthenticated",
+        "api key",
+        "json",
+        "schema",
+    )
+    if any(marker in error_text for marker in fatal_markers):
+        return False
+    return any(marker in error_text for marker in retry_markers)
+
+
 def _last_ai_message(messages: list[BaseMessage]) -> AIMessage | None:
     for message in reversed(messages):
         if isinstance(message, AIMessage):
@@ -569,6 +624,7 @@ def build_llm(
             fallback_model,
         )
         model_name = fallback_model
+    model_name = normalize_gemini_model_id(model_name)
     tuning = resolve_llm_tuning(
         settings,
         provider="google",
@@ -621,6 +677,7 @@ async def run_agent_loop(
     bootstrap_context_first: bool = False,
     bootstrap_memory_lookup_first: bool = False,
     bootstrap_memory_page_type: str = "",
+    runtime_profile: str = "",
 ) -> AgentLoopResult:
     """Run an async LangGraph agent loop with structured tool calling."""
     prompt_meta = dict(prompt_metadata or {})
@@ -628,6 +685,7 @@ async def run_agent_loop(
     llm_with_tools = llm.bind_tools(tools)
     # Gemini-only runtime. Keep canonical provider stable for metrics/caching.
     model_name = getattr(llm, "model", None) or getattr(llm, "model_name", None) or ""
+    model_name = normalize_gemini_model_id(str(model_name or ""))
     configured_provider = str(settings.llm_provider or "google").strip().lower()
     if configured_provider not in {"google", "gemini", "google_genai"}:
         logger.warning(
@@ -635,6 +693,10 @@ async def run_agent_loop(
             configured_provider,
         )
     provider = "google_genai"
+    runtime_settings = resolve_agent_runtime_config(
+        settings,
+        runtime_profile or (observer.actor if observer is not None else run_name),
+    )
     model_context_window = resolve_model_context_window(model_name, provider)
     google_explicit_cache_compatible = True
     gemini_cached_content_source = "none"
@@ -670,11 +732,23 @@ async def run_agent_loop(
         prompt_metadata=prompt_meta,
         provider_cache_invoke_kwargs=provider_cache_invoke_kwargs,
     )
-    tool_timeout_seconds = max(1, int(settings.tool_timeout_seconds))
-    llm_timeout_seconds = max(5, tool_timeout_seconds * 3)
+    tool_timeout_seconds = max(1, int(runtime_settings["tool_timeout_seconds"]))
+    llm_timeout_seconds = max(5, int(runtime_settings["llm_turn_timeout_seconds"]))
+    agent_timeout_seconds = max(30, int(runtime_settings["agent_timeout_seconds"]))
+    llm_retry_attempts = max(1, int(runtime_settings["llm_retry_attempts"]))
+    llm_retry_base_delay_seconds = max(
+        0.0, float(runtime_settings["llm_retry_base_delay_seconds"])
+    )
+    llm_retry_max_delay_seconds = max(
+        llm_retry_base_delay_seconds,
+        float(runtime_settings["llm_retry_max_delay_seconds"]),
+    )
+    repeated_tool_call_limit = max(1, int(runtime_settings["repeated_tool_call_limit"]))
+    no_progress_turn_limit = max(1, int(runtime_settings["no_progress_turn_limit"]))
     tool_cache = ToolResultCache(
         min_identical_observations=max(
-            int(settings.tool_result_cache_min_identical_observations or 2), 2
+            int(runtime_settings["tool_result_cache_min_identical_observations"] or 2),
+            2,
         )
     )
     llm_cache_hit_calls = 0
@@ -698,6 +772,13 @@ async def run_agent_loop(
                 "gemini_cached_content": str(prompt_meta.get("gemini_cached_content", "") or "")[
                     :200
                 ],
+                "runtime_profile": runtime_settings["profile"],
+                "tool_timeout_seconds": tool_timeout_seconds,
+                "llm_turn_timeout_seconds": llm_timeout_seconds,
+                "agent_timeout_seconds": agent_timeout_seconds,
+                "llm_retry_attempts": llm_retry_attempts,
+                "repeated_tool_call_limit": repeated_tool_call_limit,
+                "no_progress_turn_limit": no_progress_turn_limit,
                 "tool_result_cache_enabled": bool(settings.tool_result_cache_enabled),
                 "tool_result_cache_min_identical_observations": tool_cache._min_obs,
                 "bootstrap_url": bootstrap_url,
@@ -826,6 +907,85 @@ async def run_agent_loop(
                 )
             )
 
+    async def _invoke_llm_with_retries(
+        invoke_coro: Callable[[], Any],
+        *,
+        phase: str,
+        message_count: int,
+    ) -> tuple[AIMessage, int]:
+        last_exc: Exception | None = None
+        for attempt in range(1, llm_retry_attempts + 1):
+            _assert_not_cancelled(observer, phase)
+            try:
+                response: AIMessage = await asyncio.wait_for(
+                    invoke_coro(),
+                    timeout=llm_timeout_seconds,
+                )
+                return response, attempt
+            except asyncio.TimeoutError as exc:
+                last_exc = exc
+                retryable = attempt < llm_retry_attempts
+                if observer is not None and retryable:
+                    delay = min(
+                        llm_retry_max_delay_seconds,
+                        llm_retry_base_delay_seconds * (2 ** (attempt - 1)),
+                    )
+                    observer.emit(
+                        "llm_retry_scheduled",
+                        f"Retrying model call after timeout ({attempt}/{llm_retry_attempts})",
+                        status="warning",
+                        details={
+                            "provider": provider,
+                            "model_name": model_name,
+                            "phase": phase,
+                            "attempt": attempt,
+                            "max_attempts": llm_retry_attempts,
+                            "message_count": message_count,
+                            "timeout_seconds": llm_timeout_seconds,
+                            "retry_delay_seconds": delay,
+                            "reason": "timeout",
+                        },
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise asyncio.TimeoutError(
+                    f"LLM call timed out after {llm_timeout_seconds}s"
+                ) from exc
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                retry_delay = _extract_retry_seconds(str(exc))
+                retryable = _is_retryable_llm_error(exc) and attempt < llm_retry_attempts
+                if retryable:
+                    delay = float(
+                        retry_delay
+                        if retry_delay is not None
+                        else min(
+                            llm_retry_max_delay_seconds,
+                            llm_retry_base_delay_seconds * (2 ** (attempt - 1)),
+                        )
+                    )
+                    if observer is not None:
+                        observer.emit(
+                            "llm_retry_scheduled",
+                            f"Retrying model call after provider failure ({attempt}/{llm_retry_attempts})",
+                            status="warning",
+                            details={
+                                "provider": provider,
+                                "model_name": model_name,
+                                "phase": phase,
+                                "attempt": attempt,
+                                "max_attempts": llm_retry_attempts,
+                                "message_count": message_count,
+                                "retry_delay_seconds": delay,
+                                "error_type": type(exc).__name__,
+                                "error_preview": str(exc)[:1200],
+                            },
+                        )
+                    await asyncio.sleep(delay)
+                    continue
+                raise
+        raise last_exc or RuntimeError("LLM call failed")
+
     async def llm_node(state: AgentGraphState) -> dict[str, Any]:
         _assert_not_cancelled(observer, "agent loop")
         invocation_messages = list(state["messages"])
@@ -862,13 +1022,14 @@ async def run_agent_loop(
                     },
                 )
             try:
-                response: AIMessage = await asyncio.wait_for(
-                    llm_with_tools.ainvoke(
+                response, attempt_count = await _invoke_llm_with_retries(
+                    lambda: llm_with_tools.ainvoke(
                         invocation_messages,
                         config={"run_name": run_name},
                         **provider_cache_invoke_kwargs,
                     ),
-                    timeout=llm_timeout_seconds,
+                    phase="llm_turn",
+                    message_count=message_count,
                 )
             except asyncio.TimeoutError as exc:
                 if observer is not None:
@@ -881,6 +1042,7 @@ async def run_agent_loop(
                             "model_name": model_name,
                             "message_count": message_count,
                             "timeout_seconds": llm_timeout_seconds,
+                            "attempts": llm_retry_attempts,
                         },
                     )
                 raise RuntimeError(f"LLM turn timed out after {llm_timeout_seconds}s") from exc
@@ -983,6 +1145,7 @@ async def run_agent_loop(
                     ),
                     "prompt": prompt_meta,
                     "turn_context_preview": turn_context[:600],
+                    "attempt_count": attempt_count,
                     "cache_hit": bool(cache_metrics.get("cache_hit", False)),
                     "cached_input_tokens": _to_int(cache_metrics.get("cached_input_tokens")),
                     "new_input_tokens": _to_int(cache_metrics.get("new_input_tokens")),
@@ -1031,6 +1194,10 @@ async def run_agent_loop(
         tool_messages: list[ToolMessage] = []
         tool_calls_made = state["tool_calls_made"]
         budget_exhausted = len(response.tool_calls) > len(allowed_tool_calls)
+        cache_hits_this_turn = 0
+        state_mutated = False
+        site_down_detected = False
+        batch_signatures: list[str] = []
 
         for tc in allowed_tool_calls:
             tool_name = str(tc.get("name", ""))
@@ -1040,6 +1207,9 @@ async def run_agent_loop(
             )
             tool_id = str(tc.get("id", ""))
             tool_calls_made += 1
+            batch_signatures.append(
+                json.dumps({"tool_name": tool_name, "tool_args": tool_args}, sort_keys=True, default=str)
+            )
 
             logger.debug(
                 "Tool call [%d/%d]: %s(%s)",
@@ -1087,6 +1257,7 @@ async def run_agent_loop(
             ) as tool_span:
                 tool = tool_map.get(tool_name)
                 cache_hit = False
+                cache_status = "disabled"
                 cache_eligible = bool(
                     settings.tool_result_cache_enabled
                 ) and tool_cache.is_eligible(tool_name)
@@ -1094,11 +1265,14 @@ async def run_agent_loop(
                     result_content = json.dumps({"error": f"Unknown tool: {tool_name}"})
                     tool_status = "error"
                 else:
-                    cached = tool_cache.get(tool_name, tool_args) if cache_eligible else None
+                    cached, cache_status = (
+                        tool_cache.get(tool_name, tool_args) if cache_eligible else (None, "ineligible")
+                    )
                     if cached is not None:
                         result_content = cached
                         tool_status = "success"
                         cache_hit = True
+                        cache_hits_this_turn += 1
                     else:
                         try:
                             try:
@@ -1131,6 +1305,11 @@ async def run_agent_loop(
 
                         if cache_eligible and tool_status == "success":
                             tool_cache.update(tool_name, tool_args, result_content)
+                if tool_status == "success" and cache_helpers._is_state_mutating_tool(tool_name):
+                    tool_cache.invalidate(reason=f"{tool_name}_success")
+                    state_mutated = True
+                if tool_status == "error" and _looks_like_site_down_error(result_content):
+                    site_down_detected = True
 
                 tool_duration = round(time.perf_counter() - started_at, 3)
                 set_span_attributes(
@@ -1139,6 +1318,7 @@ async def run_agent_loop(
                         "owc.tool_status": tool_status,
                         "owc.tool_duration_seconds": tool_duration,
                         "owc.tool_cache_hit": cache_hit,
+                        "owc.tool_cache_generation": tool_cache.generation,
                     },
                 )
                 set_span_output(tool_span, result_content[:4000])
@@ -1159,6 +1339,10 @@ async def run_agent_loop(
                         "message_count": len(state["messages"]) + len(tool_messages),
                         "cache_hit": cache_hit,
                         "cache_eligible": cache_eligible,
+                        "cache_status": cache_status,
+                        "cache_generation": tool_cache.generation,
+                        "cache_invalidations": tool_cache.invalidations,
+                        "cache_last_invalidation_reason": tool_cache.last_invalidation_reason,
                     },
                 )
             if working_memory is not None:
@@ -1170,22 +1354,71 @@ async def run_agent_loop(
                 )
                 working_memory.ingest_tool_result(tool_name, tool_args, result_content)
 
+        batch_signature = "|".join(batch_signatures)
+        repeated_tool_batch_count = (
+            state.get("repeated_tool_batch_count", 0) + 1
+            if batch_signature and batch_signature == state.get("last_tool_batch_signature", "")
+            else 1
+        )
+        no_progress_turn_count = (
+            state.get("no_progress_turn_count", 0) + 1
+            if allowed_tool_calls and not state_mutated and cache_hits_this_turn == len(allowed_tool_calls)
+            else 0
+        )
+        stop_reason = ""
+        if site_down_detected:
+            stop_reason = "site_down"
+        elif repeated_tool_batch_count >= repeated_tool_call_limit:
+            stop_reason = "no_progress"
+        elif no_progress_turn_count >= no_progress_turn_limit:
+            stop_reason = "no_progress"
+
+        if stop_reason and observer is not None:
+            observer.emit(
+                "agent_stop_requested",
+                f"{run_name} requested final answer due to {stop_reason.replace('_', ' ')}",
+                status="warning",
+                details={
+                    "stop_reason": stop_reason,
+                    "repeated_tool_batch_count": repeated_tool_batch_count,
+                    "no_progress_turn_count": no_progress_turn_count,
+                    "repeated_tool_call_limit": repeated_tool_call_limit,
+                    "no_progress_turn_limit": no_progress_turn_limit,
+                    "cache_hits_this_turn": cache_hits_this_turn,
+                    "tool_calls_in_turn": len(allowed_tool_calls),
+                },
+            )
+
         return {
             "messages": tool_messages,
             "tool_calls_made": tool_calls_made,
             "budget_exhausted": budget_exhausted or tool_calls_made >= state["max_tool_calls"],
+            "stop_reason": stop_reason,
+            "last_tool_batch_signature": batch_signature,
+            "repeated_tool_batch_count": repeated_tool_batch_count,
+            "no_progress_turn_count": no_progress_turn_count,
         }
 
     async def budget_exhausted_node(state: AgentGraphState) -> dict[str, Any]:
-        logger.info("Budget exhausted (%d calls). Forcing final answer.", state["tool_calls_made"])
+        stop_reason = str(state.get("stop_reason", "") or "")
+        logger.info(
+            "Finalizing agent loop (%d calls, reason=%s).",
+            state["tool_calls_made"],
+            stop_reason or "budget_exhausted",
+        )
         if observer is not None:
             observer.emit(
                 "budget_exhausted",
-                "Tool-call budget exhausted; requesting final answer",
+                (
+                    "Stopping repeated tool loop; requesting final answer"
+                    if stop_reason
+                    else "Tool-call budget exhausted; requesting final answer"
+                ),
                 status="warning",
                 details={
                     "tool_calls_made": state["tool_calls_made"],
                     "max_tool_calls": state["max_tool_calls"],
+                    "stop_reason": stop_reason or "budget_exhausted",
                 },
             )
             observer.record_message("human")
@@ -1194,6 +1427,16 @@ async def run_agent_loop(
         if turn_context_provider is not None:
             final_context = str(turn_context_provider(state) or "").strip()
         budget_content = budget_exhausted_message
+        if stop_reason == "no_progress":
+            budget_content = (
+                "Stop now. Recent tool turns are no longer producing new evidence. "
+                "Use the current evidence and output the required final JSON."
+            )
+        elif stop_reason == "site_down":
+            budget_content = (
+                "Stop now. The target appears unavailable or unreachable from the collected evidence. "
+                "Output the required final JSON using only the evidence gathered so far."
+            )
         if final_context:
             budget_content += (
                 "\n\nCURRENT WORKING STATE\n"
@@ -1212,17 +1455,18 @@ async def run_agent_loop(
             attributes={
                 "owc.run_name": run_name,
                 "owc.tool_calls_made": state["tool_calls_made"],
-                "owc.reason": "budget_exhausted",
+                "owc.reason": stop_reason or "budget_exhausted",
             },
         ) as final_span:
             try:
-                final: AIMessage = await asyncio.wait_for(
-                    llm.ainvoke(
+                final, final_attempt_count = await _invoke_llm_with_retries(
+                    lambda: llm.ainvoke(
                         [*state["messages"], budget_message],
                         config={"run_name": f"{run_name}_final"},
                         **provider_cache_invoke_kwargs,
                     ),
-                    timeout=llm_timeout_seconds,
+                    phase="budget_exhausted_final_answer",
+                    message_count=len(state["messages"]) + 1,
                 )
             except asyncio.TimeoutError as exc:
                 if observer is not None:
@@ -1235,6 +1479,7 @@ async def run_agent_loop(
                             "model_name": model_name,
                             "timeout_seconds": llm_timeout_seconds,
                             "phase": "budget_exhausted_final_answer",
+                            "attempts": llm_retry_attempts,
                         },
                     )
                 raise RuntimeError(
@@ -1315,6 +1560,7 @@ async def run_agent_loop(
                     "tool_calls_payload": _json_ready(final.tool_calls or []),
                     "has_text": bool(final.content),
                     "message_count": len(state["messages"]) + 1,
+                    "attempt_count": final_attempt_count,
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                     "context_window": model_context_window,
@@ -1370,7 +1616,11 @@ async def run_agent_loop(
         return "tools"
 
     def route_after_tools(state: AgentGraphState) -> str:
-        return "budget_exhausted" if state.get("budget_exhausted", False) else "llm"
+        return (
+            "budget_exhausted"
+            if state.get("budget_exhausted", False) or state.get("stop_reason", "")
+            else "llm"
+        )
 
     graph = StateGraph(AgentGraphState)
     graph.add_node("llm", llm_node)
@@ -1395,6 +1645,10 @@ async def run_agent_loop(
         "tool_calls_made": 0,
         "max_tool_calls": max_tool_calls,
         "budget_exhausted": False,
+        "stop_reason": "",
+        "last_tool_batch_signature": "",
+        "repeated_tool_batch_count": 0,
+        "no_progress_turn_count": 0,
     }
 
     context_metadata = {
@@ -1427,7 +1681,7 @@ async def run_agent_loop(
             },
         ) as loop_span:
             recursion_limit = max(25, (max_tool_calls + bootstrap_tool_calls + 3) * 4)
-            graph_timeout_seconds = max(1, int(settings.agent_timeout_seconds or 300))
+            graph_timeout_seconds = agent_timeout_seconds
             try:
                 final_state = await asyncio.wait_for(
                     compiled.ainvoke(
@@ -1447,6 +1701,7 @@ async def run_agent_loop(
                             "max_tool_calls": max_tool_calls,
                             "bootstrap_tool_calls": bootstrap_tool_calls,
                             "recursion_limit": recursion_limit,
+                            "runtime_profile": runtime_settings["profile"],
                         },
                     )
                 raise RuntimeError(f"{run_name} timed out after {graph_timeout_seconds}s") from exc
@@ -1462,7 +1717,9 @@ async def run_agent_loop(
             )
             llm_tool_calls_made = int(final_state["tool_calls_made"])
             total_tool_calls_made = llm_tool_calls_made + bootstrap_tool_calls
-            stop_reason = "budget_exhausted" if budget_was_exhausted else "completed"
+            stop_reason = str(final_state.get("stop_reason", "") or "")
+            if not stop_reason:
+                stop_reason = "budget_exhausted" if budget_was_exhausted else "completed"
 
             if observer is not None:
                 observer.emit(
@@ -1478,9 +1735,12 @@ async def run_agent_loop(
                         "llm_cached_input_tokens": llm_cached_input_tokens,
                         "llm_new_input_tokens": llm_new_input_tokens,
                         "tool_cache_hits": tool_cache.hits,
+                        "tool_cache_misses": tool_cache.misses,
+                        "tool_cache_bypasses": tool_cache.bypasses,
                         "tool_cache_writes": tool_cache.writes,
+                        "tool_cache_invalidations": tool_cache.invalidations,
                     },
-                    status="warning" if budget_was_exhausted else "success",
+                    status="warning" if stop_reason != "completed" else "success",
                 )
 
             set_span_output(
@@ -1496,7 +1756,10 @@ async def run_agent_loop(
                     "llm_cached_input_tokens": llm_cached_input_tokens,
                     "llm_new_input_tokens": llm_new_input_tokens,
                     "tool_cache_hits": tool_cache.hits,
+                    "tool_cache_misses": tool_cache.misses,
+                    "tool_cache_bypasses": tool_cache.bypasses,
                     "tool_cache_writes": tool_cache.writes,
+                    "tool_cache_invalidations": tool_cache.invalidations,
                     "runtime": "langgraph",
                 },
             )

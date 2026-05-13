@@ -13,28 +13,11 @@ from src.models.schemas import PipelineResult
 from src.utils.config import Settings
 from src.utils.instrumentation import resolve_dataset_dir, resolve_default_dataset_name
 
-DEFAULT_CASES_PATH = Path("data/test_cases/sites.json")
-
 
 class DatasetExample(BaseModel):
     input: dict[str, Any]
     output: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-def load_test_cases(path: str | Path = DEFAULT_CASES_PATH) -> list[dict[str, Any]]:
-    p = Path(path)
-    if not p.exists():
-        return []
-    with open(p, encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_test_cases(cases: list[dict[str, Any]], path: str | Path = DEFAULT_CASES_PATH) -> None:
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    with open(p, "w", encoding="utf-8") as f:
-        json.dump(cases, f, indent=2, ensure_ascii=False)
 
 
 def pipeline_result_to_dataset_example(result: PipelineResult) -> DatasetExample:
@@ -94,3 +77,11 @@ def export_dataset_examples(
             f.write(example.model_dump_json())
             f.write("\n")
     return export_path
+
+
+def load_json_rows(path: str | Path) -> list[dict[str, Any]]:
+    target = Path(path)
+    if not target.exists():
+        return []
+    with open(target, encoding="utf-8") as f:
+        return json.load(f)

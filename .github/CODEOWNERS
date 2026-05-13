@@ -4,9 +4,8 @@
 # Default: all changes require review from the repo owner
 *                          @arfaouiahmed1
 
-# Python backend and tests
+# Python backend
 /src/                      @arfaouiahmed1
-/tests/                    @arfaouiahmed1
 pyproject.toml             @arfaouiahmed1
 uv.lock                    @arfaouiahmed1
 

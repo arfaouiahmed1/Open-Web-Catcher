@@ -330,6 +330,15 @@ AGENT_MODEL_ALIASES = {
     "orchestrator_agent": "orchestrator",
 }
 
+_GEMINI_MODEL_ALIASES = {
+    "gemini-flash-lite-latest": "gemini-2.5-flash-lite",
+    "gemini-flash-latest": "gemini-2.5-flash",
+    "gemini-pro-latest": "gemini-2.5-pro",
+    "google/gemini-flash-lite-latest": "google/gemini-2.5-flash-lite",
+    "google/gemini-flash-latest": "google/gemini-2.5-flash",
+    "google/gemini-pro-latest": "google/gemini-2.5-pro",
+}
+
 
 def normalize_llm_tuning(value: Any) -> dict[str, dict[str, dict[str, Any]]]:
     """Normalize persisted LLM tuning config."""
@@ -906,9 +915,16 @@ _CONTEXT_WINDOW_PREFIXES: list[tuple[str, int]] = [
 ]
 
 
+def normalize_gemini_model_id(model_id: str) -> str:
+    key = str(model_id or "").strip().lower()
+    if not key:
+        return ""
+    return _GEMINI_MODEL_ALIASES.get(key, key)
+
+
 def resolve_model_context_window(model_id: str, provider: str = "") -> int | None:
     """Return context window token limit for a model. Returns None if unknown."""
-    key = (model_id or "").strip().lower()
+    key = normalize_gemini_model_id((model_id or "").strip().lower())
     if not key:
         return None
     if key in _CONTEXT_WINDOW_FALLBACKS:
