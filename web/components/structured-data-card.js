@@ -136,9 +136,9 @@ export function StructuredDataCard({ title, description, data, limit = 8, emptyL
           </div>
         ) : mode === "json" && !isPrimitive(normalized) ? (
           <ScrollArea className="max-h-[460px] rounded-lg border border-border bg-muted/20">
-            <pre className="whitespace-pre-wrap break-words p-3 font-mono text-[11.5px] leading-relaxed text-foreground/85">
-              {JSON.stringify(normalized, null, 2)}
-            </pre>
+            <pre className="whitespace-pre p-3 font-mono text-[11.5px] leading-relaxed text-foreground/85 overflow-x-auto">
+                  {JSON.stringify(normalized, null, 2)}
+                </pre>
           </ScrollArea>
         ) : Array.isArray(normalized) ? (
           <div className="space-y-3">

@@ -524,7 +524,7 @@ export function BrowserLiveView({
         {effectiveFrames.length > 1 || fallbackScreenshot ? (
           <ScrollArea className="w-full rounded-xl border border-border bg-muted/20">
             <ScrollAreaViewport className="w-full">
-              <div className="flex gap-2 p-2">
+              <div className="flex gap-2 p-2 flex-nowrap overflow-x-auto">
                 {(effectiveFrames.length
                   ? effectiveFrames
                   : [{ url: fallbackScreenshot, seq: 0, stage: selectedStage, toolName: "latest capture" }]
@@ -669,7 +669,7 @@ export function ScreenshotGallery({ screenshots = [] }) {
         {screenshots.length > 1 ? (
           <ScrollArea className="w-full rounded-xl border border-border bg-muted/20">
             <ScrollAreaViewport className="w-full">
-              <div className="flex gap-2 p-2">
+              <div className="flex gap-2 p-2 flex-nowrap overflow-x-auto">
                 {screenshots.map((src, index) => (
                   <button
                     key={`${src}-${index}`}

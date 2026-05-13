@@ -69,3 +69,5 @@ htmlcov/
 
 # Cloudinary temp files
 *.tmp
+data/browser.runtime.json
+data/site_memory_profiles.json

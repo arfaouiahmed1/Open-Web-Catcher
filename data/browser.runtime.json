@@ -103,9 +103,9 @@
     }
   },
   "runtime_sync": {
-    "source_path": "C:\\Users\\ahmed\\Desktop\\PFE New Test\\data\\settings.runtime.yaml",
-    "bridge_path": "C:\\Users\\ahmed\\Desktop\\PFE New Test\\data\\browser.runtime.json",
-    "synced_at": "2026-05-13T17:51:28.269957+00:00",
+    "source_path": "/app/data/settings.runtime.yaml",
+    "bridge_path": "/app/data/browser.runtime.json",
+    "synced_at": "2026-05-13T18:04:21.276530+00:00",
     "active_runtime_source": "runtime_yaml"
   }
 }

@@ -41,7 +41,7 @@ function JsonBlock({ label, value }) {
         {label}
       </div>
       <pre
-        className="max-h-52 overflow-auto rounded-lg border border-border bg-muted/20 p-2 text-[11px] whitespace-pre-wrap break-words text-foreground/80"
+        className="max-h-52 overflow-auto rounded-lg border border-border bg-muted/20 p-2 text-[11px] whitespace-pre text-foreground/80"
       >
         {text}
       </pre>
@@ -129,7 +129,7 @@ function ToolCallRow({ call }) {
           ) : null}
 
           {(call.screenshots || []).length > 1 ? (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex gap-2 overflow-x-auto">
               {call.screenshots.map((url, index) => (
                 <button
                   key={`${url}-${index}`}
