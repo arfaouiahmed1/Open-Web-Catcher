@@ -20,31 +20,6 @@ PROVIDER_METADATA: dict[str, dict[str, str]] = {
         "name": "Google Gemini",
         "key_env": "GOOGLE_API_KEY",
     },
-    "google-vertex": {
-        "id": "google-vertex",
-        "name": "Google Vertex AI",
-        "key_env": "GOOGLE_VERTEX_API_KEY",
-    },
-    "openai": {
-        "id": "openai",
-        "name": "OpenAI",
-        "key_env": "OPENAI_API_KEY",
-    },
-    "anthropic": {
-        "id": "anthropic",
-        "name": "Anthropic",
-        "key_env": "ANTHROPIC_API_KEY",
-    },
-    "openrouter": {
-        "id": "openrouter",
-        "name": "OpenRouter",
-        "key_env": "OPENROUTER_API_KEY",
-    },
-    "nvidia": {
-        "id": "nvidia",
-        "name": "NVIDIA NIM",
-        "key_env": "NVIDIA_API_KEY",
-    },
 }
 
 
@@ -54,36 +29,6 @@ FALLBACK_MODELS: dict[str, list[dict[str, Any]]] = {
         {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "description": "Balanced quality and speed.", "context_window": 1_048_576},
         {"id": "gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash-Lite", "description": "Lower-cost Gemini option.", "context_window": 1_048_576},
         {"id": "gemini-2.0-flash", "label": "Gemini 2.0 Flash", "description": "Fast Gemini model.", "context_window": 1_048_576},
-    ],
-    "google-vertex": [
-        {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "description": "Most capable Gemini via Vertex AI.", "context_window": 1_048_576},
-        {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "description": "Balanced Gemini via Vertex AI.", "context_window": 1_048_576},
-        {"id": "gemini-2.0-flash", "label": "Gemini 2.0 Flash", "description": "Fast Gemini via Vertex AI.", "context_window": 1_048_576},
-    ],
-    "openai": [
-        {"id": "gpt-5", "label": "gpt-5", "description": "Reasoning-capable flagship model."},
-        {"id": "gpt-5-mini", "label": "gpt-5-mini", "description": "Smaller GPT-5 variant."},
-        {"id": "gpt-4.1", "label": "gpt-4.1", "description": "General-purpose OpenAI model."},
-        {"id": "gpt-4o-mini", "label": "gpt-4o-mini", "description": "Lower-cost multimodal model."},
-    ],
-    "anthropic": [
-        {"id": "claude-opus-4-20250514", "label": "Claude Opus 4", "description": "Most capable Claude model."},
-        {"id": "claude-sonnet-4-20250514", "label": "Claude Sonnet 4", "description": "Balanced Claude model."},
-        {"id": "claude-3-7-sonnet-latest", "label": "Claude 3.7 Sonnet", "description": "Earlier Sonnet generation."},
-        {"id": "claude-3-5-haiku-latest", "label": "Claude 3.5 Haiku", "description": "Faster Claude model."},
-    ],
-    "openrouter": [
-        {"id": "openai/gpt-5", "label": "OpenAI / GPT-5", "description": "OpenAI model through OpenRouter."},
-        {"id": "openai/gpt-5-mini", "label": "OpenAI / GPT-5 Mini", "description": "Smaller OpenAI model through OpenRouter."},
-        {"id": "anthropic/claude-sonnet-4", "label": "Anthropic / Claude Sonnet 4", "description": "Anthropic model through OpenRouter."},
-        {"id": "google/gemini-2.5-flash", "label": "Google / Gemini 2.5 Flash", "description": "Gemini model through OpenRouter."},
-    ],
-    "nvidia": [
-        {"id": "z-ai/glm4.7", "label": "GLM-4.7 (Thinking)", "description": "ZhipuAI GLM-4.7 with optional chain-of-thought reasoning."},
-        {"id": "nvidia/llama-3.1-nemotron-ultra-253b-v1", "label": "Llama 3.1 Nemotron Ultra 253B", "description": "NVIDIA fine-tuned Llama 3.1."},
-        {"id": "meta/llama-4-scout-17b-16e-instruct", "label": "Llama 4 Scout 17B", "description": "Meta Llama 4 Scout via NVIDIA NIM."},
-        {"id": "nvidia/nemotron-4-340b-instruct", "label": "Nemotron 4 340B Instruct", "description": "NVIDIA flagship instruction model."},
-        {"id": "mistralai/mistral-nemo-12b-instruct", "label": "Mistral NeMo 12B", "description": "Mistral NeMo via NVIDIA NIM."},
     ],
 }
 
@@ -108,6 +53,38 @@ def _fallback_model_rows(provider: str, max_models: int) -> list[dict[str, Any]]
             }
         )
     return rows
+
+
+def _saved_catalog_rows(settings: Settings, provider: str, max_models: int) -> list[dict[str, Any]]:
+    cache = getattr(settings, "provider_model_catalog_cache", {})
+    if not isinstance(cache, dict):
+        return []
+    provider_cache = cache.get(provider)
+    if not isinstance(provider_cache, dict):
+        return []
+    raw_models = provider_cache.get("models")
+    if not isinstance(raw_models, list):
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for item in raw_models[: max(1, int(max_models or 200))]:
+        if not isinstance(item, dict):
+            continue
+        model_id = str(item.get("id") or "").strip()
+        if not model_id:
+            continue
+        rows.append(
+            {
+                **item,
+                "id": model_id,
+                "label": str(item.get("label") or model_id).strip(),
+                "description": str(item.get("description") or "").strip(),
+                "default_parameters": dict(item.get("default_parameters") or {}),
+                "defaults_source": "saved_catalog",
+                "catalog_source": "saved_catalog",
+            }
+        )
+    return _dedupe_models(rows)
 
 
 PROVIDER_TUNING_FIELDS: dict[str, list[dict[str, Any]]] = {
@@ -456,6 +433,10 @@ def normalize_agent_model_config(settings: Settings, value: Any) -> dict[str, di
         if not agent_id or not isinstance(raw_config, dict):
             continue
         provider = str(raw_config.get("provider") or normalized[agent_id]["provider"] or base_provider).strip().lower()
+        if provider in {"gemini", "google_genai"}:
+            provider = "google"
+        if provider != "google":
+            provider = base_provider
         model = str(raw_config.get("model") or normalized[agent_id]["model"] or "").strip()
         normalized[agent_id] = {
             "provider": provider or base_provider,
@@ -486,17 +467,25 @@ def get_provider_model_catalog(settings: Settings, provider: str, max_models: in
 
     metadata = dict(PROVIDER_METADATA[normalized_provider])
     api_key = _provider_api_key(settings, normalized_provider)
+    saved_rows = _saved_catalog_rows(settings, normalized_provider, max_models)
     fallback_rows = _fallback_model_rows(normalized_provider, max_models)
     if normalized_provider != "openrouter" and not api_key:
+        source = (
+            "saved_catalog"
+            if saved_rows
+            else "fallback_catalog"
+            if fallback_rows
+            else "unavailable"
+        )
         return {
             **metadata,
             "provider": normalized_provider,
             "api_key_set": False,
             "available": False,
-            "source": "fallback_catalog" if fallback_rows else "unavailable",
+            "source": source,
             "error": f"{metadata['key_env']} is not set. Live catalog unavailable.",
-            "models": fallback_rows,
-            "defaults_source": "fallback_catalog" if fallback_rows else "unavailable",
+            "models": saved_rows or fallback_rows,
+            "defaults_source": source,
             "live_catalog_available": False,
             "hyperparameters": PROVIDER_TUNING_FIELDS.get(normalized_provider, []),
         }
@@ -507,8 +496,8 @@ def get_provider_model_catalog(settings: Settings, provider: str, max_models: in
         error = ""
         available = True
     except ProviderModelCatalogError as exc:
-        models = fallback_rows
-        source = "fallback_catalog" if fallback_rows else "unavailable"
+        models = saved_rows or fallback_rows
+        source = "saved_catalog" if saved_rows else "fallback_catalog" if fallback_rows else "unavailable"
         error = str(exc)
         available = False
 
@@ -534,18 +523,9 @@ def fetch_provider_models(settings: Settings, provider: str, max_models: int = 2
 
     if normalized_provider == "google":
         return _fetch_google_models(settings, limit)
-    if normalized_provider == "google-vertex":
-        return _fetch_google_vertex_models(settings, limit)
-    if normalized_provider == "openai":
-        return _fetch_openai_models(settings, limit)
-    if normalized_provider == "anthropic":
-        return _fetch_anthropic_models(settings, limit)
-    if normalized_provider == "openrouter":
-        return _fetch_openrouter_models(settings, limit)
-    if normalized_provider == "nvidia":
-        return _fetch_nvidia_models(settings, limit)
-
-    raise ProviderModelCatalogError(f"Unsupported provider '{provider}'.")
+    raise ProviderModelCatalogError(
+        f"Unsupported provider '{provider}'. Only Google Gemini is supported."
+    )
 
 
 def _fetch_google_models(settings: Settings, max_models: int) -> list[dict[str, Any]]:
@@ -843,16 +823,6 @@ def _provider_api_key(settings: Settings, provider: str) -> str:
     normalized_provider = (provider or "").strip().lower()
     if normalized_provider == "google":
         return str(settings.google_api_key or "").strip()
-    if normalized_provider == "google-vertex":
-        return str(settings.google_vertex_api_key or "").strip()
-    if normalized_provider == "openai":
-        return str(settings.openai_api_key or "").strip()
-    if normalized_provider == "anthropic":
-        return str(settings.anthropic_api_key or "").strip()
-    if normalized_provider == "openrouter":
-        return str(settings.openrouter_api_key or "").strip()
-    if normalized_provider == "nvidia":
-        return str(settings.nvidia_api_key or "").strip()
     return ""
 
 # Hardcoded context window fallbacks for providers whose APIs don't expose it.
@@ -949,6 +919,11 @@ def normalize_gemini_model_id(model_id: str) -> str:
     if not key:
         return ""
     return _GEMINI_MODEL_ALIASES.get(key, key)
+
+
+def is_google_genai_model_id(model_id: str) -> bool:
+    normalized = normalize_gemini_model_id(model_id)
+    return normalized.startswith(("gemini-", "gemma-", "google/gemini-", "google/gemma-"))
 
 
 def resolve_model_context_window(model_id: str, provider: str = "") -> int | None:

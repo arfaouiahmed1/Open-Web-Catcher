@@ -15,7 +15,7 @@ import {
   statusLabel,
   statusTone as runStatusTone,
 } from "@/lib/run-status";
-import { actorToStage, normalizeTraceEvents, STAGE_LABELS } from "@/lib/run-trace";
+import { actorToStage, getRunTerminalState, normalizeTraceEvents, STAGE_LABELS } from "@/lib/run-trace";
 import { RunDetailLive } from "@/components/run-detail-live";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -470,12 +470,16 @@ export function RunDetailPage() {
 
   const jobStatus = String(payload?.job_state?.status || payload?.job?.status || payload?.run?.job_state || "").toLowerCase();
   const runStatus = String(payload?.run?.final_status || payload?.run?.status || "").toLowerCase();
+  const activeTraceTerminalState = useMemo(
+    () => getRunTerminalState(payload?.active_trace?.events || EMPTY_ARRAY),
+    [payload?.active_trace?.events],
+  );
   const shouldRefresh = useMemo(
     () =>
-      Boolean(payload?.active_trace) ||
+      (Boolean(payload?.active_trace) && !activeTraceTerminalState.isTerminal) ||
       ["queued", "running", "retrying", "leased"].includes(jobStatus) ||
       ["queued", "running", "retrying"].includes(runStatus),
-    [jobStatus, payload?.active_trace, runStatus],
+    [activeTraceTerminalState.isTerminal, jobStatus, payload?.active_trace, runStatus],
   );
 
   useEffect(() => {
@@ -517,6 +521,7 @@ export function RunDetailPage() {
     [normalizedTraceEvents, trace],
   );
   const runEvents = isActiveTrace ? normalizedTraceEvents : normalizedPersistedEvents;
+  const runTerminalState = useMemo(() => getRunTerminalState(runEvents), [runEvents]);
   const llmCalls = useMemo(() => extractLlmResponses(runEvents), [runEvents]);
   const llmTelemetryRows = useMemo(() => buildLlmRows(runEvents), [runEvents]);
   const providerSnapshot = useMemo(
@@ -896,7 +901,7 @@ export function RunDetailPage() {
         runId={runId}
         run={run}
         runMode={getRunMode(jobState)}
-        live={isActiveTrace}
+        live={isActiveTrace && !runTerminalState.isTerminal}
         failureHeadline={failureHeadline}
         failureNarrative={failureNarrative}
         primaryMetrics={heroMetrics}
@@ -965,7 +970,7 @@ export function RunDetailPage() {
         persistedEvents={runEvents}
         persistedToolCalls={toolCalls}
         initialDecisions={payload?.decisions || EMPTY_ARRAY}
-        defaultStreaming={isActiveTrace}
+        defaultStreaming={isActiveTrace && !runTerminalState.isTerminal}
         rootActor={run.root_actor || normalizedTrace?.root_actor || ""}
         agentRollups={agentRollups}
       />

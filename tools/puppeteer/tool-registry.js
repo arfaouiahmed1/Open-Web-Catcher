@@ -158,11 +158,16 @@ const selectorSchema = z
   .default("")
   .describe("CSS selector");
 const xpathSchema = z.string().optional().default("").describe("XPath locator");
+const nodeIdSchema = z.string().optional().default("").describe("Node id returned by context_tree/node_index");
 const textSchema = z
   .string()
   .optional()
   .default("")
   .describe("Visible text fragment");
+const htmlModeSchema = z
+  .enum(["outer", "inner"])
+  .optional()
+  .default("outer");
 const waitMsSchema = z
   .number()
   .optional()
@@ -203,11 +208,13 @@ function spec(summary, inputExample, outputExample, zodSchema, handlerFactory) {
 
 const TOOL_SPECS = {
   get_page_context: spec(
-    "Use when you need a fast, broad page scan before taking actions. Returns compact context: frame tree, media/player signals, forms, overlays, pagination hints, top candidates, and screenshot.",
+    "Use when you need a fast, broad page scan before taking actions. Returns a compact structural tree, a small node index, actionable handles, frame catalog, and compact summaries.",
     { frame_path: "root" },
     {
       ok: true,
       frame_path: "root",
+      context_tree: { node_id: "node-1", semantic_kind: "region" },
+      action_targets: [{ node_id: "node-7", element_ref: "..." }],
       screenshot_url: "https://res.cloudinary.com/...",
       page_summary: { links: 8 },
     },
@@ -216,7 +223,7 @@ const TOOL_SPECS = {
       toolImpls.get_page_context({ ...args, browserWsEndpoint }),
   ),
   query_elements: spec(
-    "Use when you already know what to target (kind/text/attrs) and need element_ref handles for follow-up actions. Supports regex matching for noisy pages.",
+    "Use when you already know what to target and need element_ref handles for follow-up actions. Searches the normalized node index and can be scoped to a specific subtree.",
     {
       frame_path: "root",
       kind: "link",
@@ -224,13 +231,14 @@ const TOOL_SPECS = {
       text_regex: "(watch|play|live)",
       attr_name: "data-server",
       attr_value_regex: "server\\s*[0-9]+",
+      scope_node_id: "node-12",
       visible_only: true,
       limit: 10,
     },
     {
       ok: true,
       total_matches: 3,
-      matches: [{ kind: "link", text: "Watch now", element_ref: "..." }],
+      matches: [{ semantic_kind: "link", text_preview: "Watch now", element_ref: "..." }],
       screenshot_url: "https://res.cloudinary.com/...",
     },
     {
@@ -243,11 +251,17 @@ const TOOL_SPECS = {
           "checkbox",
           "radio",
           "select",
-          "video",
+          "media",
           "iframe",
           "form",
           "tab",
-          "overlay",
+          "table",
+          "row",
+          "cell",
+          "heading",
+          "container",
+          "region",
+          "element",
         ])
         .optional(),
       text_contains: z.string().optional().default(""),
@@ -257,6 +271,11 @@ const TOOL_SPECS = {
       attr_name: z.string().optional().default(""),
       attr_value_contains: z.string().optional().default(""),
       attr_value_regex: z.string().optional().default(""),
+      scope_node_id: nodeIdSchema,
+      scope_element_ref: elementRefSchema,
+      scope_selector: selectorSchema,
+      scope_xpath: xpathSchema,
+      scope_text: textSchema,
       visible_only: z.boolean().optional().default(true),
       limit: z.number().optional().default(20),
     },
@@ -264,19 +283,25 @@ const TOOL_SPECS = {
       toolImpls.query_elements({ ...args, browserWsEndpoint }),
   ),
   get_element_detail: spec(
-    "Use when you need to verify one candidate element before clicking/typing. Returns rich detail including geometry, attrs, nearby context, and screenshot.",
-    { frame_path: "root", element_ref: "..." },
+    "Use when you need localized DOM detail under one element such as a div, table, grid, container, header, footer, link, or iframe root. Returns a bounded subtree, small descendant summaries, and optional raw HTML.",
+    { frame_path: "root", element_ref: "...", include_html: false, max_subtree_depth: 4 },
     {
       ok: true,
       detail: { tag: "a", text: "Watch now" },
+      subtree: { node_id: "scoped-0", semantic_kind: "link" },
       screenshot_url: "https://res.cloudinary.com/...",
     },
     {
       frame_path: framePathSchema,
+      node_id: nodeIdSchema,
       element_ref: elementRefSchema,
       selector: selectorSchema,
       xpath: xpathSchema,
       text: textSchema,
+      include_html: z.boolean().optional().default(false),
+      html_mode: htmlModeSchema,
+      max_subtree_depth: z.number().optional().default(4),
+      max_children_per_node: z.number().optional().default(25),
     },
     (browserWsEndpoint, toolImpls) => (args) =>
       toolImpls.get_element_detail({ ...args, browserWsEndpoint }),
@@ -294,11 +319,12 @@ const TOOL_SPECS = {
       toolImpls.get_media_state({ ...args, browserWsEndpoint }),
   ),
   get_frame_tree: spec(
-    "Use when iframe routing is unclear and you need deterministic frame_path values. Returns full frame tree with purpose hints.",
+    "Use when iframe routing is unclear and you need deterministic frame_path values. Returns the frame tree plus frame-root follow-up handles.",
     {},
     {
       ok: true,
       frame_tree: [{ frame_path: "root.0", candidate_purpose: "player" }],
+      frame_catalog: [{ frame_path: "root.0", follow_up: { frame_root_ref: "..." } }],
       screenshot_url: "https://res.cloudinary.com/...",
     },
     {},
@@ -642,7 +668,7 @@ const TOOL_SPECS = {
       toolImpls.navigate({ ...args, browserWsEndpoint }),
   ),
   inspect: spec(
-    "Observe the current page with a clean browser-observation schema including metadata, DOM tree, links, interactive elements, media, frames, scripts, storage, snapshots, and compatibility aliases for existing agents.",
+    "Observe the current page with a compact tree-first browser-observation schema for early inspection. Returns only the high-signal structure, actionable handles, frame catalog, and lean compatibility aliases.",
     {
       url: "https://example.com/watch",
       wait_ms: 1500,
@@ -659,6 +685,8 @@ const TOOL_SPECS = {
     {
       schema_version: "clean_browser_observation/v1",
       page: { final_url: "https://example.com/watch", title: "Watch" },
+      context_tree: { node_id: "node-1", semantic_kind: "region" },
+      node_index: [{ node_id: "node-7", semantic_kind: "link", element_ref: "..." }],
       document_stats: { link_count: 12 },
       screenshot_url: "https://res.cloudinary.com/...",
       stats: { buttons: 5 },
@@ -809,7 +837,7 @@ const TOOL_SPECS = {
       toolImpls.harvest({ ...args, browserWsEndpoint }),
   ),
   memory_lookup: spec(
-    "Read long-memory profile hints for the current domain/page_type before expensive exploration. Returns remembered selectors, pagination/url patterns, critical links, and related profiles.",
+    "Read long-memory profile hints for the current domain/page_type before expensive exploration. Use remembered selectors and patterns as hints; do not navigate directly from remembered concrete URLs.",
     {
       url: "https://example.com/watch/123",
       page_type: "hosting_page",
@@ -824,7 +852,7 @@ const TOOL_SPECS = {
       profile: { selectors: ["selector=.server-btn"] },
       related_profiles: [],
       memory_first_recommendation:
-        "Use remembered selectors/url patterns first.",
+        "Use remembered selectors/url patterns first. Do not open remembered concrete URLs directly.",
     },
     {
       url: z.string().describe("Target URL or domain for memory lookup"),

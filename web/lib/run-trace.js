@@ -22,6 +22,15 @@ const RUN_FAILURE_KINDS = new Set([
   "llm_rate_limited",
 ]);
 
+const RUN_TERMINAL_KINDS = new Set([
+  "pipeline_finished",
+  "pipeline_failed",
+  "agent_finished",
+  "agent_failed",
+  "run_cancelled",
+  "cancel_requested",
+]);
+
 function seqNumber(event) {
   return Number(event?.seq || 0);
 }
@@ -59,6 +68,40 @@ export function normalizeTraceEvents(events = []) {
   return (Array.isArray(events) ? events : [])
     .map((event) => normalizeTraceEvent(event))
     .filter(Boolean);
+}
+
+export function getRunTerminalState(events = []) {
+  const normalized = normalizeTraceEvents(events);
+  const terminal = latestEvent(normalized, (event) => RUN_TERMINAL_KINDS.has(event?.kind)) || null;
+  if (!terminal) {
+    return {
+      isTerminal: false,
+      status: "running",
+      terminal: null,
+    };
+  }
+
+  if (terminal.kind === "run_cancelled" || terminal.kind === "cancel_requested") {
+    return {
+      isTerminal: true,
+      status: "cancelled",
+      terminal,
+    };
+  }
+
+  if (terminal.kind === "pipeline_failed" || terminal.kind === "agent_failed") {
+    return {
+      isTerminal: true,
+      status: "failed",
+      terminal,
+    };
+  }
+
+  return {
+    isTerminal: true,
+    status: "completed",
+    terminal,
+  };
 }
 
 function eventFallbackKey(event) {
@@ -617,9 +660,15 @@ export function extractToolCalls(events = []) {
   });
 }
 
-function stageStatus(events) {
+function stageStatus(events, runTerminalState = null) {
   const relevant = (events || []).filter((event) => event && typeof event === "object");
   if (!relevant.length) return "idle";
+
+  if (runTerminalState?.status === "cancelled") return "cancelled";
+  if (runTerminalState?.status === "failed") {
+    const stageFailure = [...relevant].reverse().find((event) => event.kind === "agent_failed");
+    if (stageFailure) return "failed";
+  }
 
   const lastTerminal = [...relevant].reverse().find((event) =>
     ["agent_finished", "agent_failed", "run_cancelled", "cancel_requested"].includes(event.kind)
@@ -634,6 +683,7 @@ function stageStatus(events) {
 }
 
 export function buildStageView(events = []) {
+  const runTerminalState = getRunTerminalState(events);
   const toolCalls = extractToolCalls(events);
   const llmCalls = extractLlmResponses(events);
   const stageMap = Object.fromEntries(
@@ -712,12 +762,15 @@ export function buildStageView(events = []) {
       lastLlmStart && (!lastLlmTerminal || seqNumber(lastLlmStart) > seqNumber(lastLlmTerminal))
         ? 1
         : 0;
-    const status = stageStatus(stageEvents);
+    const status = stageStatus(stageEvents, runTerminalState);
     let livePhase = "idle";
     let liveLabel = "waiting";
     if (lastFailure) {
       livePhase = "failed";
       liveLabel = "failed";
+    } else if (runTerminalState.status === "cancelled" && stageEvents.length) {
+      livePhase = "cancelled";
+      liveLabel = "cancelled";
     } else if (pendingLlmCount > 0) {
       livePhase = "llm";
       liveLabel = "model running";
@@ -908,6 +961,7 @@ export function summarizeRunState(events = []) {
     };
   }
 
+  const runTerminalState = getRunTerminalState(normalized);
   const toolCalls = extractToolCalls(normalized);
   const pendingTool = [...toolCalls].reverse().find((call) => call.status === "running") || null;
   const llmResponses = extractLlmResponses(normalized);
@@ -942,16 +996,9 @@ export function summarizeRunState(events = []) {
     ) || null;
 
   let active = null;
-  let status = "running";
-  if (failureEvent) {
-    status = "failed";
-  } else if (terminal?.kind === "run_cancelled" || terminal?.kind === "cancel_requested") {
-    status = "cancelled";
-  } else if (
-    terminal?.kind === "pipeline_finished" ||
-    terminal?.kind === "agent_finished"
-  ) {
-    status = "completed";
+  let status = failureEvent ? "failed" : runTerminalState.status;
+  if (!failureEvent && !runTerminalState.isTerminal) {
+    status = "running";
   }
 
   if (failureEvent) {
@@ -962,6 +1009,27 @@ export function summarizeRunState(events = []) {
       title: "Run failed",
       message: eventErrorMessage(failureEvent),
       event: failureEvent,
+    };
+  } else if (runTerminalState.status === "cancelled") {
+    active = {
+      type: "cancelled",
+      stage: actorToStage(runTerminalState.terminal?.actor),
+      actor: String(runTerminalState.terminal?.actor || ""),
+      title: "Run cancelled",
+      message:
+        eventErrorMessage(runTerminalState.terminal) ||
+        runTerminalState.terminal?.message ||
+        "Execution was cancelled.",
+      event: runTerminalState.terminal,
+    };
+  } else if (runTerminalState.status === "completed") {
+    active = {
+      type: "done",
+      stage: actorToStage(runTerminalState.terminal?.actor),
+      actor: String(runTerminalState.terminal?.actor || ""),
+      title: "Run finished",
+      message: runTerminalState.terminal?.message || "Execution completed.",
+      event: runTerminalState.terminal,
     };
   } else if (llmRunning) {
     const details = lastLlmStart?.details || {};
@@ -986,18 +1054,6 @@ export function summarizeRunState(events = []) {
       title: "Tool running",
       message: [pendingTool.toolName, pendingTool.target].filter(Boolean).join(" / "),
       event: pendingTool.startedEvent,
-    };
-  } else if (
-    terminal?.kind === "pipeline_finished" ||
-    terminal?.kind === "agent_finished"
-  ) {
-    active = {
-      type: "done",
-      stage: actorToStage(terminal.actor),
-      actor: String(terminal.actor || ""),
-      title: "Run finished",
-      message: terminal.message || "Execution completed.",
-      event: terminal,
     };
   }
 

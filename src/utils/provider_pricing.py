@@ -599,46 +599,18 @@ def fetch_provider_pricing(
     """Fetch provider pricing as PricingConfig rows.
 
     Sources:
-    - OpenRouter: `/models` API response.
-    - OpenAI: provider pricing documentation.
-    - Anthropic: provider pricing documentation.
     - Google Gemini: provider pricing documentation.
-    - Google Vertex AI: same pricing as Gemini.
     """
     normalized = _normalize_provider(provider)
     effective_max_models = max(1, int(max_models))
     effective_timeout = max(1, int(timeout_seconds))
 
-    if normalized == "openrouter":
-        return _fetch_openrouter_pricing(
-            settings,
-            timeout_seconds=effective_timeout,
-            max_models=effective_max_models,
-        )
-    if normalized == "openai":
-        return _fetch_openai_pricing(
-            timeout_seconds=effective_timeout,
-            max_models=effective_max_models,
-        )
-    if normalized == "anthropic":
-        return _fetch_anthropic_pricing(
-            timeout_seconds=effective_timeout,
-            max_models=effective_max_models,
-        )
-    if normalized in {"google", "google_vertex", "google-vertex"}:
+    if normalized in {"google", "google_vertex", "google-vertex", "gemini", "google_genai"}:
         return _fetch_google_pricing(
-            provider="google-vertex" if normalized in {"google_vertex", "google-vertex"} else "google",
+            provider="google",
             timeout_seconds=effective_timeout,
             max_models=effective_max_models,
         )
-    if normalized == "nvidia":
-        return _fetch_nvidia_pricing(
-            settings,
-            timeout_seconds=effective_timeout,
-            max_models=effective_max_models,
-        )
-
     raise NotImplementedError(
-        "Provider pricing sync supports: google, google-vertex, openai, anthropic, openrouter, nvidia "
-        f"(got '{normalized or 'unknown'}')."
+        f"Provider pricing sync supports only Google Gemini (got '{normalized or 'unknown'}')."
     )

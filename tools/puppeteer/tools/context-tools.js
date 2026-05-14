@@ -1,98 +1,23 @@
 import {
-  augmentElements,
   buildEnvelope,
   buildFrameState,
   buildFrameTree,
-  collectElements,
-  filterElements,
   getMediaSummary,
   readElementDetail,
   withBrowserSession,
 } from '../shared/tool-runtime.js';
-
-function summarizeKinds(elements) {
-  const counts = {};
-  for (const element of elements) {
-    counts[element.kind] = (counts[element.kind] || 0) + 1;
-  }
-  return counts;
-}
-
-function compactElements(elements, limit = 8) {
-  return elements.slice(0, limit).map((element) => ({
-    kind: element.kind,
-    text: element.text,
-    href: element.href,
-    src: element.src,
-    selector: element.selector,
-    xpath: element.xpath,
-    frame_path: element.frame_path,
-    geometry: element.geometry,
-    element_ref: element.element_ref,
-  }));
-}
-
-function summarizeDedupedLinks(elements, limit = 60) {
-  const buckets = new Map();
-  for (const element of elements) {
-    if (element.kind !== 'link' || !element.href) continue;
-    const href = String(element.href).trim();
-    if (!href) continue;
-    const key = href;
-    if (!buckets.has(key)) {
-      buckets.set(key, {
-        href,
-        occurrences: 0,
-        visible_occurrences: 0,
-        sample_texts: [],
-      });
-    }
-    const row = buckets.get(key);
-    row.occurrences += 1;
-    if (element.visible) row.visible_occurrences += 1;
-    if (element.text && row.sample_texts.length < 3 && !row.sample_texts.includes(element.text)) {
-      row.sample_texts.push(element.text);
-    }
-  }
-
-  return Array.from(buckets.values())
-    .sort((a, b) => b.occurrences - a.occurrences)
-    .slice(0, limit);
-}
-
-function suggestRevealActions(elements) {
-  const revealPatterns = /(show more|load more|see more|more servers|next|older|expand|view all|watch now|play)/i;
-  const candidates = elements.filter((element) =>
-    ['button', 'tab', 'link'].includes(element.kind)
-    && revealPatterns.test(String(element.text || '')));
-
-  return compactElements(candidates, 12);
-}
-
-function summarizePagination(elements) {
-  const paginationMatches = elements.filter((element) =>
-    element.kind === 'link'
-    && (
-      /next|prev|page|\d+/.test((element.text || '').toLowerCase())
-      || /pagination|page/.test(element.selector || '')
-    ));
-
-  return {
-    detected: paginationMatches.length > 0,
-    candidates: compactElements(paginationMatches, 6),
-  };
-}
-
-function summarizeForms(elements) {
-  const forms = elements.filter((element) => element.kind === 'form');
-  const inputs = elements.filter((element) => ['input', 'checkbox', 'radio', 'select'].includes(element.kind));
-  return {
-    form_count: forms.length,
-    input_count: inputs.length,
-    top_forms: compactElements(forms, 4),
-    top_inputs: compactElements(inputs, 6),
-  };
-}
+import {
+  buildFrameCatalog,
+  buildNormalizedTreeArtifacts,
+  compactActionTargets,
+  compactContextTree,
+  compactFrameCatalog,
+  compactNodeIndex,
+  findNodeById,
+  summarizeNodeKinds,
+  summarizeScopedCollections,
+} from './context-tree.js';
+import { extractPageObservation } from './inspect.js';
 
 function normalizeLimit(limit, fallback = 20, max = 200) {
   const parsed = Number.parseInt(String(limit), 10);
@@ -100,29 +25,68 @@ function normalizeLimit(limit, fallback = 20, max = 200) {
   return Math.min(parsed, max);
 }
 
-function dedupeByElementRef(elements) {
-  const seen = new Set();
-  const output = [];
-  for (const element of elements) {
-    if (!element?.element_ref || seen.has(element.element_ref)) continue;
-    seen.add(element.element_ref);
-    output.push(element);
-  }
-  return output;
+function compactNodes(nodes, limit = 8) {
+  return nodes.slice(0, limit).map((node) => ({
+    node_id: node.node_id,
+    semantic_kind: node.semantic_kind,
+    tag: node.tag,
+    name: node.name,
+    text_preview: node.text_preview,
+    href: node.href || '',
+    src: node.src || '',
+    selector: node.selector,
+    xpath: node.xpath,
+    frame_path: node.frame_path,
+    bbox: node.bbox,
+    element_ref: node.element_ref,
+    visible: Boolean(node.visible),
+    counts: node.counts || {},
+  }));
 }
 
-function toSafeRegex(pattern) {
-  if (!pattern) {
-    return null;
+function summarizeDedupedLinks(nodes, limit = 60) {
+  const buckets = new Map();
+  for (const node of nodes) {
+    if (node.semantic_kind !== 'link') continue;
+    const href = String(node.href || '').trim();
+    if (!href) continue;
+    if (!buckets.has(href)) {
+      buckets.set(href, {
+        href,
+        occurrences: 0,
+        visible_occurrences: 0,
+        sample_texts: [],
+      });
+    }
+    const row = buckets.get(href);
+    row.occurrences += 1;
+    if (node.visible) row.visible_occurrences += 1;
+    if (node.text_preview && row.sample_texts.length < 3 && !row.sample_texts.includes(node.text_preview)) {
+      row.sample_texts.push(node.text_preview);
+    }
   }
-  if (pattern instanceof RegExp) {
-    return pattern;
-  }
-  try {
-    return new RegExp(String(pattern), 'i');
-  } catch {
-    return null;
-  }
+  return Array.from(buckets.values()).sort((a, b) => b.occurrences - a.occurrences).slice(0, limit);
+}
+
+function summarizePagination(nodes) {
+  const matches = nodes.filter((node) =>
+    ['link', 'button', 'tab'].includes(node.semantic_kind)
+    && /next|prev|page|older|newer|\b\d+\b/i.test(`${node.text_preview || ''} ${node.selector || ''}`));
+  return {
+    detected: matches.length > 0,
+    candidates: compactNodes(matches, 6),
+  };
+}
+
+function summarizeForms(nodes) {
+  const forms = nodes.filter((node) => node.tag === 'form' || node.semantic_kind === 'region');
+  const inputs = nodes.filter((node) => ['input', 'select', 'checkbox', 'radio'].includes(node.semantic_kind));
+  return {
+    form_count: forms.filter((node) => node.tag === 'form').length,
+    input_count: inputs.length,
+    top_forms: compactNodes(forms, 4),
+    top_inputs: compactNodes(inputs, 6),
+  };
 }
 
 function tokenizeNeedle(value) {
@@ -134,7 +98,22 @@ function tokenizeNeedle(value) {
     .slice(0, 12);
 }
 
-function scoreElementForQuery(element, {
+function toSafeRegex(pattern) {
+  if (!pattern) return null;
+  if (pattern instanceof RegExp) return pattern;
+  try {
+    return new RegExp(String(pattern), 'i');
+  } catch {
+    return null;
+  }
+}
+
+function kindMatches(node, kind) {
+  if (!kind) return true;
+  return node.semantic_kind === kind || node.tag === kind;
+}
+
+function scoreNodeForQuery(node, {
   kind,
   text_contains,
   text_regex,
@@ -145,103 +124,154 @@ function scoreElementForQuery(element, {
   attr_value_regex,
 }) {
   let score = 0;
-  const text = String(element.text || '').toLowerCase();
-  const nearby = String(element.nearby_text || '').toLowerCase();
-  const href = String(element.href || '').toLowerCase();
+  const text = String(node.text_preview || '').toLowerCase();
+  const name = String(node.name || '').toLowerCase();
+  const href = String(node.href || node.src || '').toLowerCase();
   const textRegex = toSafeRegex(text_regex);
   const hrefRegex = toSafeRegex(href_regex);
   const attrValueRegex = toSafeRegex(attr_value_regex);
 
-  if (kind && element.kind === kind) score += 6;
+  if (kindMatches(node, kind)) score += 6;
 
   if (text_contains) {
     const needle = String(text_contains).toLowerCase();
     if (text.includes(needle)) score += 10;
-    else if (nearby.includes(needle)) score += 6;
-
-    const tokens = tokenizeNeedle(needle);
-    for (const token of tokens) {
-      if (text.includes(token)) score += 2;
-      else if (nearby.includes(token)) score += 1;
+    else if (name.includes(needle)) score += 6;
+    for (const token of tokenizeNeedle(needle)) {
+      if (text.includes(token) || name.includes(token)) score += 2;
     }
   }
 
-  if (href_contains && href.includes(String(href_contains).toLowerCase())) {
-    score += 8;
-  }
-  if (hrefRegex && hrefRegex.test(String(element.href || ''))) {
-    score += 8;
-  }
+  if (href_contains && href.includes(String(href_contains).toLowerCase())) score += 8;
+  if (hrefRegex && hrefRegex.test(String(node.href || node.src || ''))) score += 8;
 
   if (textRegex) {
-    const textMatch = textRegex.test(String(element.text || ''));
-    const nearbyMatch = textRegex.test(String(element.nearby_text || ''));
-    if (textMatch) {
-      score += 10;
-    } else if (nearbyMatch) {
-      score += 5;
-    }
+    if (textRegex.test(String(node.text_preview || ''))) score += 10;
+    else if (textRegex.test(String(node.name || ''))) score += 5;
   }
 
   if (attr_name) {
-    const attrValue = String(element.attrs?.[attr_name] || '').toLowerCase();
+    const attrValue = String(node.attributes?.[attr_name] || '').toLowerCase();
     if (attrValue) score += 3;
-    if (attr_value_contains && attrValue.includes(String(attr_value_contains).toLowerCase())) {
-      score += 5;
-    }
-    if (attrValueRegex && attrValueRegex.test(String(element.attrs?.[attr_name] || ''))) {
-      score += 5;
-    }
+    if (attr_value_contains && attrValue.includes(String(attr_value_contains).toLowerCase())) score += 5;
+    if (attrValueRegex && attrValueRegex.test(String(node.attributes?.[attr_name] || ''))) score += 5;
   }
 
-  if (element.visible) score += 3;
-  if (element.kind === 'button' || element.kind === 'link' || element.kind === 'tab') score += 2;
-
+  if (node.visible) score += 3;
+  if (node.semantic_kind === 'button' || node.semantic_kind === 'link' || node.semantic_kind === 'tab') score += 2;
   return score;
 }
 
-function rankMatches(elements, query) {
-  return [...elements]
-    .map((element) => ({
-      element,
-      score: scoreElementForQuery(element, query),
-    }))
+function rankMatches(nodes, query) {
+  return [...nodes]
+    .map((node) => ({ node, score: scoreNodeForQuery(node, query) }))
+    .filter((entry) => entry.score > 0 || !query.kind)
     .sort((a, b) => b.score - a.score)
-    .map((entry) => entry.element);
+    .map((entry) => entry.node);
 }
 
-function tokenFallbackMatches(elements, {
-  kind,
-  text_contains,
-  href_contains,
-  attr_name,
-  attr_value_contains,
-}) {
-  const tokens = tokenizeNeedle(text_contains);
-  if (!tokens.length) return [];
+function dedupeByElementRef(nodes) {
+  const seen = new Set();
+  const output = [];
+  for (const node of nodes) {
+    if (!node?.element_ref || seen.has(node.element_ref)) continue;
+    seen.add(node.element_ref);
+    output.push(node);
+  }
+  return output;
+}
 
-  const normalizedHref = String(href_contains || '').toLowerCase();
-  const normalizedAttrValue = String(attr_value_contains || '').toLowerCase();
-
-  return elements.filter((element) => {
-    if (kind && element.kind !== kind) return false;
-
-    const textHaystack = `${String(element.text || '').toLowerCase()} ${String(element.nearby_text || '').toLowerCase()}`;
-    const tokenHit = tokens.some((token) => textHaystack.includes(token));
-    if (!tokenHit) return false;
-
-    if (normalizedHref && !String(element.href || '').toLowerCase().includes(normalizedHref)) {
-      return false;
-    }
-
-    if (attr_name) {
-      const attrValue = String(element.attrs?.[attr_name] || '').toLowerCase();
-      if (!attrValue) return false;
-      if (normalizedAttrValue && !attrValue.includes(normalizedAttrValue)) return false;
-    }
-
-    return true;
+async function buildNormalizedFrameObservation(frame, frameState, config = {}) {
+  const observation = await frame.evaluate(extractPageObservation, {
+    max_depth: config.max_depth ?? 5,
+    max_children_per_node: config.max_children_per_node ?? 35,
+    max_links: config.max_links ?? 160,
+    max_interactive_elements: config.max_interactive_elements ?? 160,
+    max_tables: config.max_tables ?? 20,
+    max_table_rows: config.max_table_rows ?? 30,
+    max_table_cells: config.max_table_cells ?? 12,
+    max_iframes: config.max_iframes ?? 20,
+    max_videos: config.max_videos ?? 12,
+    max_audio: config.max_audio ?? 12,
+    max_images: config.max_images ?? 60,
+    max_sources: config.max_sources ?? 60,
+    max_tracks: config.max_tracks ?? 40,
+    max_forms: config.max_forms ?? 16,
+    max_form_inputs: config.max_form_inputs ?? 20,
+    include_shadow_dom: config.include_shadow_dom ?? true,
+    treeOnly: false,
   });
+
+  const normalized = buildNormalizedTreeArtifacts(observation.tree, {
+    frame_path: frameState.frame_path,
+    dom_epoch: frameState.dom_epoch,
+    page_state_id: frameState.page_state_id,
+  });
+
+  return { observation, normalized };
+}
+
+async function resolveScopeNode(page, frame_path, node_id) {
+  const frameState = await buildFrameState(page, frame_path);
+  if (!frameState.ok) {
+    return { ok: false, error: frameState.error, frame_path };
+  }
+  const { normalized } = await buildNormalizedFrameObservation(frameState.frame, frameState, {
+    max_depth: 6,
+    max_children_per_node: 45,
+  });
+  const node = findNodeById(normalized.node_index, node_id);
+  if (!node) {
+    return { ok: false, error: `Could not find node_id '${node_id}' in frame '${frame_path}'`, frame_path };
+  }
+  return { ok: true, node };
+}
+
+async function scopedNodeIndexFromDetail(page, {
+  frame_path = 'root',
+  element_ref = '',
+  selector = '',
+  xpath = '',
+  text = '',
+  max_subtree_depth = 6,
+  max_children_per_node = 60,
+}) {
+  const detail = await readElementDetail(page, {
+    frame_path,
+    element_ref,
+    selector,
+    xpath,
+    text,
+    include_html: false,
+    max_subtree_depth,
+    max_children_per_node,
+  });
+  if (!detail.ok) return detail;
+  const subtree = detail.detail?.subtree || null;
+  if (!subtree) {
+    return {
+      ok: true,
+      frame_path: detail.frame_path,
+      page_state_id: detail.page_state_id,
+      dom_epoch: detail.dom_epoch,
+      node_index: [],
+      detail,
+    };
+  }
+  const normalized = buildNormalizedTreeArtifacts(subtree, {
+    frame_path: detail.frame_path,
+    dom_epoch: detail.dom_epoch,
+    page_state_id: detail.page_state_id,
+  });
+  return {
+    ok: true,
+    frame_path: detail.frame_path,
+    page_state_id: detail.page_state_id,
+    dom_epoch: detail.dom_epoch,
+    node_index: normalized.node_index,
+    context_tree: normalized.context_tree,
+    detail,
+  };
 }
 
 export async function getPageContext({
@@ -259,53 +289,58 @@ export async function getPageContext({
       });
     }
 
-    const rawElements = await collectElements(frameState.frame, frame_path);
-    const elements = augmentElements(rawElements, frameState);
-    const frameTree = await buildFrameTree(page);
+    const { normalized } = await buildNormalizedFrameObservation(frameState.frame, frameState);
+    const frame_tree = await buildFrameTree(page);
+    const frame_catalog = buildFrameCatalog(frame_tree);
     const media = await getMediaSummary(frameState.frame);
-
-    const links = elements.filter((element) => element.kind === 'link');
-    const buttons = elements.filter((element) => ['button', 'tab'].includes(element.kind));
-    const hiddenInteractive = elements.filter((element) => !element.visible && ['link', 'button', 'tab'].includes(element.kind));
-    const overlays = elements.filter((element) => element.kind === 'overlay');
-    const videos = elements.filter((element) => element.kind === 'video');
-    const iframes = frameTree.filter((frame) =>
-      frame.frame_path !== frame_path
-      && (
-        frame_path === 'root'
-        || frame.frame_path.startsWith(`${frame_path}.`)
-      ));
+    const links = normalized.node_index.filter((node) => node.semantic_kind === 'link');
+    const buttons = normalized.node_index.filter((node) => ['button', 'tab'].includes(node.semantic_kind));
+    const overlays = normalized.node_index.filter((node) =>
+      ['region', 'container'].includes(node.semantic_kind)
+      && /(overlay|modal|popup)/i.test(`${node.name || ''} ${node.selector || ''}`));
 
     return buildEnvelope(page, {
       frame_path,
       data: {
-        frame_tree: frameTree,
+        context_tree: compactContextTree(normalized.context_tree, {
+          maxDepth: 3,
+          maxChildrenPerNode: 6,
+          textLimit: 60,
+        }),
+        node_index: compactNodeIndex(normalized.node_index, {
+          limit: 24,
+          textLimit: 60,
+        }),
+        action_targets: compactActionTargets(normalized.action_targets, {
+          limit: 12,
+          textLimit: 60,
+        }),
+        frame_catalog: compactFrameCatalog(frame_catalog, { limit: 8 }),
+        frame_tree_summary: {
+          total_frames: frame_tree.length,
+          accessible_frames: frame_catalog.filter((frame) => frame.accessible).length,
+          player_like_frames: frame_catalog.filter((frame) => frame.purpose_hint === 'player').length,
+        },
         page_summary: {
-          counts_by_kind: summarizeKinds(elements),
+          counts_by_kind: summarizeNodeKinds(normalized.node_index),
           links: links.length,
           buttons: buttons.length,
           overlays: overlays.length,
-          videos: videos.length,
-          iframes: frameTree.length - 1,
+          videos: media.video_count,
+          iframes: frame_tree.length - 1,
         },
-        pagination: summarizePagination(elements),
-        forms: summarizeForms(elements),
+        pagination: summarizePagination(normalized.node_index),
+        forms: summarizeForms(normalized.node_index),
         player_media_signals: {
           ...media,
           has_video: media.video_count > 0,
           has_player_library: Object.values(media.player_libraries || {}).some(Boolean),
-          has_iframe_player_hint: iframes.some((frame) => frame.candidate_purpose === 'player'),
+          has_iframe_player_hint: frame_tree.some((frame) => frame.candidate_purpose === 'player'),
         },
-        top_links: compactElements(links, 8),
-        top_buttons: compactElements(buttons, 8),
-        hidden_interactive_candidates: compactElements(hiddenInteractive, 10),
-        deduped_links: summarizeDedupedLinks(elements, 80),
-        reveal_actions: suggestRevealActions(elements),
-        top_overlays: compactElements(overlays, 5),
-        top_candidates: compactElements(
-          elements.filter((element) => ['link', 'button', 'tab', 'video', 'overlay', 'iframe'].includes(element.kind)),
-          30,
-        ),
+        top_links: compactNodes(links, 4),
+        top_buttons: compactNodes(buttons, 4),
+        deduped_links: summarizeDedupedLinks(normalized.node_index, 12),
+        top_candidates: compactNodes(normalized.action_targets, 8),
       },
     });
   });
@@ -324,6 +359,11 @@ export async function queryElements({
   attr_value_regex = '',
   visible_only = true,
   limit = 20,
+  scope_node_id = '',
+  scope_element_ref = '',
+  scope_selector = '',
+  scope_xpath = '',
+  scope_text = '',
   browserWsEndpoint,
 } = {}) {
   return withBrowserSession(browserWsEndpoint, async ({ page }) => {
@@ -336,114 +376,130 @@ export async function queryElements({
       });
     }
 
-    const rawElements = await collectElements(frameState.frame, frame_path);
-    const elements = augmentElements(rawElements, frameState);
+    let nodes = [];
+    let scope_summary = null;
+    if (scope_node_id || scope_element_ref || scope_selector || scope_xpath || scope_text) {
+      let scopeLocators = {
+        element_ref: scope_element_ref,
+        selector: scope_selector,
+        xpath: scope_xpath,
+        text: scope_text,
+      };
+      if (scope_node_id) {
+        const resolvedScope = await resolveScopeNode(page, frame_path, scope_node_id);
+        if (!resolvedScope.ok) {
+          return buildEnvelope(page, {
+            frame_path,
+            ok: false,
+            error: resolvedScope.error,
+          });
+        }
+        scopeLocators = {
+          element_ref: resolvedScope.node.element_ref,
+          selector: resolvedScope.node.selector,
+          xpath: resolvedScope.node.xpath,
+          text: resolvedScope.node.text_preview,
+        };
+      }
+
+      const scoped = await scopedNodeIndexFromDetail(page, {
+        frame_path,
+        ...scopeLocators,
+      });
+      if (!scoped.ok) {
+        return buildEnvelope(page, {
+          frame_path,
+          ok: false,
+          error: scoped.error,
+        });
+      }
+      nodes = scoped.node_index;
+      scope_summary = {
+        frame_path: scoped.frame_path,
+        node_count: scoped.node_index.length,
+        context_tree: scoped.context_tree,
+      };
+    } else {
+      const { normalized } = await buildNormalizedFrameObservation(frameState.frame, frameState, {
+        max_depth: 6,
+        max_children_per_node: 45,
+      });
+      nodes = normalized.node_index;
+    }
+
     const normalizedLimit = normalizeLimit(limit);
     const normalizedAttr = attr
       || (attr_name ? { name: attr_name, value_contains: attr_value_contains, value_regex: attr_value_regex } : null);
     const effectiveAttrName = String(normalizedAttr?.name || attr_name || '');
     const effectiveAttrValueContains = String(normalizedAttr?.value_contains || attr_value_contains || '');
     const effectiveAttrValueRegex = String(normalizedAttr?.value_regex || attr_value_regex || '');
-    const allLimit = Math.max(elements.length, 1);
     const fallback_notes = [];
-
     const textRegex = toSafeRegex(text_regex);
-    if (text_regex && !textRegex) {
-      fallback_notes.push(`Ignored invalid text_regex pattern: ${text_regex}`);
-    }
+    if (text_regex && !textRegex) fallback_notes.push(`Ignored invalid text_regex pattern: ${text_regex}`);
     const hrefRegex = toSafeRegex(href_regex);
-    if (href_regex && !hrefRegex) {
-      fallback_notes.push(`Ignored invalid href_regex pattern: ${href_regex}`);
-    }
+    if (href_regex && !hrefRegex) fallback_notes.push(`Ignored invalid href_regex pattern: ${href_regex}`);
     const attrValueRegex = toSafeRegex(effectiveAttrValueRegex);
     if (effectiveAttrValueRegex && !attrValueRegex) {
       fallback_notes.push(`Ignored invalid attr_value_regex pattern: ${effectiveAttrValueRegex}`);
     }
 
-    const primaryMatches = filterElements(elements, {
-      kind,
-      text_contains,
-      text_regex: textRegex,
-      href_contains,
-      href_regex: hrefRegex,
-      attr: normalizedAttr,
-      attr_name: effectiveAttrName,
-      attr_value_contains: effectiveAttrValueContains,
-      attr_value_regex: attrValueRegex,
-      visible_only,
-      limit: allLimit,
+    const visibleNodes = visible_only ? nodes.filter((node) => node.visible) : nodes;
+    const primaryMatches = visibleNodes.filter((node) => {
+      if (!kindMatches(node, kind)) return false;
+      if (text_contains) {
+        const haystack = `${node.text_preview || ''} ${node.name || ''}`.toLowerCase();
+        if (!haystack.includes(String(text_contains).toLowerCase())) return false;
+      }
+      if (textRegex && !textRegex.test(String(node.text_preview || node.name || ''))) return false;
+      if (href_contains) {
+        const href = String(node.href || node.src || '').toLowerCase();
+        if (!href.includes(String(href_contains).toLowerCase())) return false;
+      }
+      if (hrefRegex && !hrefRegex.test(String(node.href || node.src || ''))) return false;
+      if (effectiveAttrName) {
+        const attrValue = String(node.attributes?.[effectiveAttrName] || '');
+        if (!attrValue) return false;
+        if (effectiveAttrValueContains && !attrValue.toLowerCase().includes(effectiveAttrValueContains.toLowerCase())) return false;
+        if (attrValueRegex && !attrValueRegex.test(attrValue)) return false;
+      }
+      return true;
     });
 
-    let strategy = 'strict';
-    let matchesAll = primaryMatches;
+    let strategy = visible_only ? 'strict_visible' : 'strict';
+    let matches = primaryMatches;
 
-    if (!matchesAll.length && visible_only) {
-      const relaxedVisibilityMatches = filterElements(elements, {
-        kind,
-        text_contains,
-        text_regex: textRegex,
-        href_contains,
-        href_regex: hrefRegex,
-        attr: normalizedAttr,
-        attr_name: effectiveAttrName,
-        attr_value_contains: effectiveAttrValueContains,
-        attr_value_regex: attrValueRegex,
-        visible_only: false,
-        limit: allLimit,
-      });
-
-      if (relaxedVisibilityMatches.length) {
-        matchesAll = relaxedVisibilityMatches;
+    if (!matches.length && visible_only) {
+      matches = nodes.filter((node) => kindMatches(node, kind));
+      if (matches.length) {
         strategy = 'relaxed_visibility';
         fallback_notes.push('No visible matches; included hidden candidates.');
       }
     }
 
-    if (!matchesAll.length && text_contains) {
-      const tokenMatches = tokenFallbackMatches(elements, {
-        kind,
-        text_contains,
-        href_contains,
-        attr_name: effectiveAttrName,
-        attr_value_contains: effectiveAttrValueContains,
+    if (!matches.length && text_contains) {
+      const tokens = tokenizeNeedle(text_contains);
+      matches = nodes.filter((node) => {
+        if (!kindMatches(node, kind)) return false;
+        const haystack = `${node.text_preview || ''} ${node.name || ''}`.toLowerCase();
+        return tokens.some((token) => haystack.includes(token));
       });
-      if (tokenMatches.length) {
-        matchesAll = tokenMatches;
+      if (matches.length) {
         strategy = 'token_text_fallback';
         fallback_notes.push('Strict text matching returned no results; token fallback used.');
       }
     }
 
-    const rankedMatches = rankMatches(dedupeByElementRef(matchesAll), {
+    const rankedMatches = rankMatches(dedupeByElementRef(matches), {
       kind,
       text_contains,
-      text_regex: textRegex,
+      text_regex,
       href_contains,
-      href_regex: hrefRegex,
+      href_regex,
       attr_name: effectiveAttrName,
       attr_value_contains: effectiveAttrValueContains,
-      attr_value_regex: attrValueRegex,
+      attr_value_regex: effectiveAttrValueRegex,
     });
     const returnedMatches = rankedMatches.slice(0, normalizedLimit);
-
-    const suggestions = compactElements(
-      rankMatches(
-        dedupeByElementRef(
-          elements.filter((element) => (!kind || element.kind === kind)),
-        ),
-        {
-          kind,
-          text_contains,
-          text_regex: textRegex,
-          href_contains,
-          href_regex: hrefRegex,
-          attr_name: effectiveAttrName,
-          attr_value_contains: effectiveAttrValueContains,
-          attr_value_regex: attrValueRegex,
-        },
-      ),
-      Math.min(12, normalizedLimit),
-    );
 
     return buildEnvelope(page, {
       frame_path,
@@ -457,18 +513,18 @@ export async function queryElements({
           attr: normalizedAttr,
           visible_only,
           limit: normalizedLimit,
-          attr_value_regex: effectiveAttrValueRegex,
+          scope_node_id,
         },
+        scope: scope_summary,
         search_strategy: strategy,
         total_matches: rankedMatches.length,
         returned_matches: returnedMatches.length,
         fallback_notes,
         available_counts: {
-          total_elements: elements.length,
-          by_kind: summarizeKinds(elements),
+          total_nodes: nodes.length,
+          by_kind: summarizeNodeKinds(nodes),
         },
-        matches: compactElements(returnedMatches, normalizedLimit),
-        suggestions: rankedMatches.length ? [] : suggestions,
+        matches: compactNodes(returnedMatches, normalizedLimit),
       },
     });
   });
@@ -476,14 +532,44 @@ export async function queryElements({
 
 export async function getElementDetail({
   frame_path = 'root',
+  node_id = '',
   element_ref = '',
   selector = '',
   xpath = '',
   text = '',
+  include_html = false,
+  html_mode = 'outer',
+  max_subtree_depth = 4,
+  max_children_per_node = 25,
   browserWsEndpoint,
 } = {}) {
   return withBrowserSession(browserWsEndpoint, async ({ page }) => {
-    const detail = await readElementDetail(page, { frame_path, element_ref, selector, xpath, text });
+    let effectiveLocators = { element_ref, selector, xpath, text };
+    if (node_id && !element_ref && !selector && !xpath && !text) {
+      const resolvedScope = await resolveScopeNode(page, frame_path, node_id);
+      if (!resolvedScope.ok) {
+        return buildEnvelope(page, {
+          frame_path,
+          ok: false,
+          error: resolvedScope.error,
+        });
+      }
+      effectiveLocators = {
+        element_ref: resolvedScope.node.element_ref,
+        selector: resolvedScope.node.selector,
+        xpath: resolvedScope.node.xpath,
+        text: resolvedScope.node.text_preview,
+      };
+    }
+
+    const detail = await readElementDetail(page, {
+      frame_path,
+      ...effectiveLocators,
+      include_html,
+      html_mode,
+      max_subtree_depth,
+      max_children_per_node,
+    });
     if (!detail.ok) {
       return buildEnvelope(page, {
         frame_path: detail.frame_path || frame_path,
@@ -498,12 +584,54 @@ export async function getElementDetail({
       });
     }
 
+    const normalized = detail.detail?.subtree
+      ? buildNormalizedTreeArtifacts(detail.detail.subtree, {
+        frame_path: detail.frame_path,
+        dom_epoch: detail.dom_epoch,
+        page_state_id: detail.page_state_id,
+      })
+      : { context_tree: null, node_index: [], action_targets: [] };
+    const collections = summarizeScopedCollections(normalized.node_index);
+    const rootDetail = normalized.context_tree || null;
+
     return buildEnvelope(page, {
       frame_path: detail.frame_path,
       screenshot: detail.screenshot,
       screenshotMode: 'element',
       data: {
-        detail: detail.detail,
+        detail: {
+          tag: detail.detail?.tag || rootDetail?.tag || '',
+          text: detail.detail?.text || rootDetail?.text_preview || '',
+          html_preview: detail.detail?.html_preview || '',
+          attrs: detail.detail?.attrs || rootDetail?.attributes || {},
+          state: detail.detail?.state || {},
+          geometry: detail.detail?.geometry || rootDetail?.bbox || {},
+          selector: detail.detail?.selector || rootDetail?.selector || '',
+          xpath: detail.detail?.xpath || rootDetail?.xpath || '',
+          visible: detail.detail?.visible ?? rootDetail?.visible ?? true,
+          nearby_text: detail.detail?.nearby_text || '',
+        },
+        subtree: compactContextTree(normalized.context_tree, {
+          maxDepth: Math.min(Number(max_subtree_depth || 4), 4),
+          maxChildrenPerNode: Math.min(Number(max_children_per_node || 25), 12),
+          textLimit: 80,
+          includeBBox: true,
+        }),
+        subtree_summary: {
+          total_nodes: normalized.node_index.length,
+          counts_by_kind: summarizeNodeKinds(normalized.node_index),
+        },
+        action_targets: compactActionTargets(normalized.action_targets, {
+          limit: Math.min(Number(max_children_per_node || 25), 10),
+          textLimit: 70,
+        }),
+        links: compactNodes(collections.links, 8),
+        interactives: compactNodes(collections.interactives, 8),
+        tables: compactNodes(collections.tables, 4),
+        iframes: compactNodes(collections.iframes, 4),
+        media: compactNodes(collections.media, 4),
+        html: include_html ? detail.detail?.html || '' : '',
+        html_mode: include_html ? html_mode : '',
         locator_used: detail.locator_used || {},
         stale_ref_detected: Boolean(detail.stale_ref_detected),
         frame_fallback_applied: Boolean(detail.frame_fallback_applied),
@@ -550,11 +678,14 @@ export async function getMediaState({
 export async function getFrameTree({
   browserWsEndpoint,
 } = {}) {
-  return withBrowserSession(browserWsEndpoint, async ({ page }) =>
-    buildEnvelope(page, {
+  return withBrowserSession(browserWsEndpoint, async ({ page }) => {
+    const frame_tree = await buildFrameTree(page);
+    return buildEnvelope(page, {
       frame_path: 'root',
       data: {
-        frame_tree: await buildFrameTree(page),
+        frame_tree,
+        frame_catalog: buildFrameCatalog(frame_tree),
       },
-    }));
+    });
+  });
 }

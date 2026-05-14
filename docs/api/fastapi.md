@@ -90,7 +90,7 @@ The operator console can read and update active provider/model settings:
 
 Current direct API sync support:
 
-- `openrouter`
+- `google` (Gemini)
 
 ## Cost and Token Accounting
 

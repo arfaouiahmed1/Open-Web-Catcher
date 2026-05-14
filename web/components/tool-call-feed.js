@@ -1,11 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Camera, ChevronDown, ExternalLink, Wrench } from "lucide-react";
+import { Camera, ChevronDown, ExternalLink, FilterX, Wrench } from "lucide-react";
 
-import { formatNumber, safeJson } from "@/lib/utils";
+import { filterToolCalls } from "@/lib/run-detail-filters";
 import { STAGE_LABELS } from "@/lib/run-trace";
+import { formatNumber } from "@/lib/utils";
+import { StructuredDataCard } from "@/components/structured-data-card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -14,6 +17,7 @@ function toneForStatus(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "error" || normalized === "failed") {
     return {
+      badge: "danger",
       text: "var(--rose)",
       border: "color-mix(in oklch, var(--rose) 24%, transparent)",
       bg: "color-mix(in oklch, var(--rose) 8%, transparent)",
@@ -21,30 +25,37 @@ function toneForStatus(status) {
   }
   if (normalized === "running") {
     return {
+      badge: "signal",
       text: "var(--signal)",
       border: "color-mix(in oklch, var(--signal) 24%, transparent)",
       bg: "color-mix(in oklch, var(--signal) 9%, transparent)",
     };
   }
+  if (normalized === "cancelled") {
+    return {
+      badge: "warning",
+      text: "var(--signal)",
+      border: "color-mix(in oklch, var(--signal) 24%, transparent)",
+      bg: "color-mix(in oklch, var(--signal) 8%, transparent)",
+    };
+  }
   return {
+    badge: "success",
     text: "var(--mint)",
     border: "color-mix(in oklch, var(--mint) 24%, transparent)",
     bg: "color-mix(in oklch, var(--mint) 8%, transparent)",
   };
 }
 
-function JsonBlock({ label, value }) {
-  const text = useMemo(() => safeJson(value), [value]);
+function SummaryStrip({ total, filtered, actors = [], stages = [] }) {
   return (
-    <div>
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
-        {label}
-      </div>
-      <pre
-        className="max-h-52 overflow-auto rounded-lg border border-border bg-muted/20 p-2 text-[11px] whitespace-pre text-foreground/80"
-      >
-        {text}
-      </pre>
+    <div className="flex flex-wrap items-center gap-2">
+      <Badge tone="default" className="font-mono">
+        {formatNumber(filtered)}
+        {filtered !== total ? ` / ${formatNumber(total)}` : ""} calls
+      </Badge>
+      {actors.length ? <Badge tone="default">{formatNumber(actors.length)} actors</Badge> : null}
+      {stages.length ? <Badge tone="default">{formatNumber(stages.length)} stages</Badge> : null}
     </div>
   );
 }
@@ -54,13 +65,17 @@ function ToolCallRow({ call }) {
   const [activeScreenshot, setActiveScreenshot] = useState(call.screenshots?.[0] || "");
   const tone = toneForStatus(call.status);
   const stageLabel = STAGE_LABELS[call.stage] || call.actor || "Agent";
-  const hasDetails = Boolean((call.args && Object.keys(call.args).length) || call.result || (call.screenshots || []).length);
+  const hasDetails = Boolean(
+    (call.args && Object.keys(call.args).length) ||
+      call.result ||
+      (call.screenshots || []).length,
+  );
 
   return (
     <Card className="overflow-hidden shadow-card" style={{ borderColor: tone.border, background: tone.bg }}>
       <button
         type="button"
-        onClick={() => hasDetails && setExpanded((value) => !value)}
+        onClick={() => hasDetails && setExpanded((current) => !current)}
         className="flex w-full items-start gap-3 px-3 py-3 text-left"
         disabled={!hasDetails}
       >
@@ -76,19 +91,20 @@ function ToolCallRow({ call }) {
             <span className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: tone.text }}>
               {stageLabel}
             </span>
-            <span
-              className="rounded-full border border-border bg-muted/40 px-2 py-0.5 font-mono text-[10px] text-foreground/80"
-            >
+            {call.actor ? (
+              <Badge tone="default" className="font-mono">
+                {call.actor}
+              </Badge>
+            ) : null}
+            <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 font-mono text-[10px] text-foreground/80">
               {call.toolName}
             </span>
             {call.startSeq ? (
-              <span className="font-mono text-[10px] text-muted-foreground/60">
-                #{call.startSeq}
-              </span>
+              <span className="font-mono text-[10px] text-muted-foreground/60">#{call.startSeq}</span>
             ) : null}
-            <span className="ml-auto font-mono text-[10px]" style={{ color: tone.text }}>
+            <Badge tone={tone.badge} className="ml-auto uppercase">
               {String(call.status || "success")}
-            </span>
+            </Badge>
           </div>
 
           {call.target ? (
@@ -97,9 +113,13 @@ function ToolCallRow({ call }) {
             </div>
           ) : null}
 
-          <div className="mt-1 flex flex-wrap items-center gap-3 font-mono text-[10px] text-muted-foreground/60">
+          <div className="mt-1 flex flex-wrap items-center gap-3 font-mono text-[10px] text-muted-foreground/70">
             {call.durationSeconds ? <span>{Number(call.durationSeconds).toFixed(2)}s</span> : null}
-            {(call.screenshots || []).length ? <span>{formatNumber(call.screenshots.length)} shot{call.screenshots.length === 1 ? "" : "s"}</span> : null}
+            {(call.screenshots || []).length ? (
+              <span>
+                {formatNumber(call.screenshots.length)} shot{call.screenshots.length === 1 ? "" : "s"}
+              </span>
+            ) : null}
           </div>
         </div>
 
@@ -148,39 +168,46 @@ function ToolCallRow({ call }) {
             </div>
           ) : null}
 
-          {call.args && Object.keys(call.args).length ? <JsonBlock label="Inputs" value={call.args} /> : null}
-          {call.result ? <JsonBlock label="Result" value={call.result} /> : null}
+          {call.args && Object.keys(call.args).length ? (
+            <StructuredDataCard
+              title="Inputs"
+              data={call.args}
+              defaultMode="table"
+              search
+              compact
+            />
+          ) : null}
+          {call.result ? (
+            <StructuredDataCard
+              title="Result"
+              data={call.result}
+              defaultMode="table"
+              search
+              compact
+            />
+          ) : null}
         </div>
       ) : null}
     </Card>
   );
 }
 
-export function ToolCallFeed({ toolCalls = [], title = "Tool Calls", emptyLabel = "Tool calls will appear here.", maxHeight = 540 }) {
-  const [query, setQuery] = useState("");
+export function ToolCallFeed({
+  toolCalls = [],
+  title = "Tool Calls",
+  emptyLabel = "Tool calls will appear here.",
+  maxHeight = 540,
+  sharedFilters = null,
+  onSharedFiltersChange = null,
+  actorOptions = [],
+  stageOptions = [],
+}) {
+  const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const filtered = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    return toolCalls.filter((call) => {
-      if (statusFilter && String(call.status || "").toLowerCase() !== statusFilter) {
-        return false;
-      }
-      if (!term) return true;
-      return [
-        call.toolName,
-        call.target,
-        call.actor,
-        call.stage,
-        call.status,
-        safeJson(call.args),
-        safeJson(call.result),
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(term);
-    });
-  }, [query, statusFilter, toolCalls]);
+  const filtered = useMemo(
+    () => filterToolCalls(toolCalls, sharedFilters || {}, { search, status: statusFilter }),
+    [search, sharedFilters, statusFilter, toolCalls],
+  );
   const statuses = useMemo(
     () =>
       Array.from(
@@ -192,29 +219,71 @@ export function ToolCallFeed({ toolCalls = [], title = "Tool Calls", emptyLabel 
       ).sort(),
     [toolCalls],
   );
+  const filteredActors = useMemo(
+    () => Array.from(new Set(filtered.map((call) => String(call.actor || "").trim()).filter(Boolean))),
+    [filtered],
+  );
+  const filteredStages = useMemo(
+    () => Array.from(new Set(filtered.map((call) => String(call.stage || "").trim()).filter(Boolean))),
+    [filtered],
+  );
+
+  const hasAnyFilters = Boolean(
+    search ||
+      statusFilter ||
+      sharedFilters?.actor ||
+      sharedFilters?.stage,
+  );
+
+  function resetFilters() {
+    setSearch("");
+    setStatusFilter("");
+    onSharedFiltersChange?.({ actor: "", stage: "" });
+  }
 
   return (
     <Card className="overflow-hidden shadow-card">
       <CardHeader className="space-y-3 border-b border-border px-4 py-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Wrench className="h-4 w-4 text-primary" />
-          <CardTitle className="text-[12px] font-semibold uppercase tracking-[0.12em] text-primary">
-            {title}
-          </CardTitle>
-          <Badge tone="default" className="ml-auto font-mono">
-            {formatNumber(filtered.length)}
-            {filtered.length !== toolCalls.length ? ` / ${formatNumber(toolCalls.length)}` : ""}
-          </Badge>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Wrench className="h-4 w-4 text-primary" />
+              <CardTitle className="text-[12px] font-semibold uppercase tracking-[0.12em] text-primary">
+                {title}
+              </CardTitle>
+            </div>
+            <CardDescription className="mt-1 text-xs">
+              Track tool activity by actor, stage, status, target, and payload content.
+            </CardDescription>
+          </div>
+          <SummaryStrip total={toolCalls.length} filtered={filtered.length} actors={filteredActors} stages={filteredStages} />
         </div>
-        <CardDescription className="text-xs">
-          Search by tool, actor, target, or payload and filter by status.
-        </CardDescription>
         <div className="flex flex-wrap items-center gap-2">
           <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search tool calls"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search tool, target, payload, or actor"
             className="h-8 min-w-[220px] flex-1 text-xs"
+          />
+          <Select
+            value={sharedFilters?.actor || ""}
+            onChange={(value) => onSharedFiltersChange?.({ actor: value, stage: sharedFilters?.stage || "" })}
+            options={[
+              { value: "", label: "All actors" },
+              ...actorOptions.map((actor) => ({ value: actor, label: actor })),
+            ]}
+            placeholder="Actor"
+            className="min-w-[170px]"
+          />
+          <Select
+            value={sharedFilters?.stage || ""}
+            onChange={(value) => onSharedFiltersChange?.({ actor: sharedFilters?.actor || "", stage: value })}
+            options={[
+              { value: "", label: "All stages" },
+              ...stageOptions,
+            ]}
+            placeholder="Stage"
+            className="min-w-[170px]"
           />
           {statuses.length > 1 ? (
             <Select
@@ -230,6 +299,12 @@ export function ToolCallFeed({ toolCalls = [], title = "Tool Calls", emptyLabel 
               placeholder="Status"
               className="min-w-[160px]"
             />
+          ) : null}
+          {hasAnyFilters ? (
+            <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground" onClick={resetFilters}>
+              <FilterX className="mr-1 h-3 w-3" />
+              Reset
+            </Button>
           ) : null}
         </div>
       </CardHeader>

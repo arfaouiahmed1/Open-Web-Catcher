@@ -50,6 +50,24 @@ function toFrameFocus(frame) {
   };
 }
 
+function normalizedTargets(data = {}) {
+  const nodeIndex = Array.isArray(data.node_index) ? data.node_index : [];
+  return nodeIndex.map((entry) => ({
+    text: entry.text_preview || entry.name || "",
+    selector: entry.selector || "",
+    xpath: entry.xpath || "",
+    href: entry.href || "",
+    frame_path: entry.frame_path || "root",
+    data: entry.attributes || {},
+    kind: entry.semantic_kind || entry.tag || "",
+    x: Math.round(entry.bbox?.x || 0),
+    y: Math.round(entry.bbox?.y || 0),
+    width: Math.round(entry.bbox?.width || 0),
+    height: Math.round(entry.bbox?.height || 0),
+    visible: Boolean(entry.visible),
+  }));
+}
+
 function buildRequestsByFrame(requests = []) {
   const counts = new Map();
   for (const request of requests) {
@@ -63,7 +81,8 @@ function buildRequestsByFrame(requests = []) {
 }
 
 function collectSourceControlCandidates(data) {
-  const rootTargets = [...(data.buttons || []), ...(data.elements || [])];
+  const normalized = normalizedTargets(data);
+  const rootTargets = normalized.length ? normalized : [...(data.buttons || []), ...(data.elements || [])];
   const frameTargets = (data.frame_tree || []).flatMap((frame) => [
     ...(frame.buttons || frame.sample_buttons || []),
     ...(frame.links || frame.sample_links || []),
@@ -79,7 +98,7 @@ function collectSourceControlCandidates(data) {
       ),
     (entry) =>
       `${entry.frame_path || "root"}|${entry.selector || ""}|${entry.xpath || ""}|${entry.text || ""}`,
-  );
+  ).slice(0, 24);
 }
 
 function collectPlayerTargets(data) {
@@ -98,6 +117,7 @@ function collectPlayerTargets(data) {
   }));
 
   const fromElements = [
+    ...(normalizedTargets(data).length ? normalizedTargets(data) : []),
     ...(data.buttons || []),
     ...(data.elements || []),
   ].filter((entry) =>
@@ -110,7 +130,7 @@ function collectPlayerTargets(data) {
     [...fromVideos, ...fromElements],
     (entry) =>
       `${entry.frame_path || "root"}|${entry.selector || ""}|${entry.xpath || ""}|${entry.text || ""}`,
-  );
+  ).slice(0, 16);
 }
 
 export async function inspectEmbedded(params = {}) {
@@ -131,14 +151,34 @@ export async function inspectEmbedded(params = {}) {
     include_network: params.include_network ?? true,
     include_response_bodies: params.include_response_bodies ?? false,
     include_frames: params.include_frames ?? true,
+    response_profile: "internal_rich",
   });
 
   const frameTree = Array.isArray(data.frame_tree) ? data.frame_tree : [];
   const requests = data.network?.requests || [];
   const responses = data.network?.responses || [];
-  const rankedFrames = [...frameTree]
+  const rankedFrames = (Array.isArray(data.frame_catalog) && data.frame_catalog.length
+    ? data.frame_catalog.map((frame) => ({
+      frame_path: frame.frame_path,
+      parent_frame_path: frame.parent_frame_path,
+      depth: frame.depth,
+      url: frame.url,
+      purpose_hint: frame.purpose_hint,
+      score: frameFocusScore(frame),
+      video_count: frame.counts?.videos || 0,
+      total_buttons: frame.counts?.buttons || 0,
+      total_links: frame.counts?.links || 0,
+      total_iframes: frame.counts?.iframes || 0,
+      has_server_controls: frame.has_server_controls,
+      has_player_library: frame.has_player_library,
+      player_libraries_detail: frame.player_libraries_detail || {},
+      links: [],
+      buttons: [],
+      error: frame.accessible ? null : "frame_inaccessible",
+    }))
+    : [...frameTree]
     .sort((a, b) => frameFocusScore(b) - frameFocusScore(a))
-    .map(toFrameFocus);
+    .map(toFrameFocus));
   const mediaLikeRequests = requests.filter((request) =>
     STREAM_PATTERN.test(`${request.url || ""} ${request.resource_type || ""}`),
   );
@@ -147,12 +187,26 @@ export async function inspectEmbedded(params = {}) {
   );
 
   return {
-    ...data,
+    schema_version: data.schema_version,
+    page: data.page,
+    load_state: data.load_state,
+    access_state: data.access_state,
+    screenshot_url: data.screenshot_url,
+    context_tree: data.context_tree,
+    node_index: data.node_index,
+    action_targets: data.action_targets,
+    frame_catalog: data.frame_catalog,
+    page_summary: data.page_summary,
+    document_stats: data.document_stats,
+    outline: data.outline,
+    hosting_signals: data.hosting_signals,
+    videos: data.videos,
+    buttons: data.buttons,
     context_type: "embedded",
     inspect_profile: "embedded",
     focus: {
-      primary: ["nested_frames", "network", "media"],
-      secondary: ["interactive_elements", "links"],
+      primary: ["nested_frames", "player_targets", "media"],
+      secondary: ["network_summary", "tree"],
     },
     nested_iframe_summary: {
       total_frames: frameTree.length,
@@ -175,9 +229,9 @@ export async function inspectEmbedded(params = {}) {
       total_requests: requests.length,
       total_responses: responses.length,
       resource_summary: data.network?.resource_summary || {},
-      requests_by_frame: buildRequestsByFrame(requests),
-      media_like_requests: mediaLikeRequests,
-      media_like_responses: mediaLikeResponses,
+      requests_by_frame: buildRequestsByFrame(requests).slice(0, 8),
+      media_like_requests: mediaLikeRequests.slice(0, 16),
+      media_like_responses: mediaLikeResponses.slice(0, 16),
     },
     source_control_candidates: collectSourceControlCandidates(data),
     player_targets: collectPlayerTargets(data),

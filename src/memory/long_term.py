@@ -511,11 +511,6 @@ class LongTermMemory:
                 "- latest successful step playbook: "
                 + " -> ".join(f"`{step}`" for step in latest_step_playbook[:8])
             )
-        if target_counts:
-            lines.append(
-                "- repeated navigation targets: "
-                + ", ".join(f"`{target}`" for target, _ in target_counts.most_common(4))
-            )
         if selector_counts:
             lines.append(
                 "- repeated selectors/text targets: "
@@ -541,10 +536,12 @@ class LongTermMemory:
                 "- repeated pagination url patterns: "
                 + ", ".join(f"`{pattern}`" for pattern, _ in pagination_counts.most_common(4))
             )
-        if critical_link_counts:
+        if target_counts or critical_link_counts:
             lines.append(
-                "- critical links seen before: "
-                + ", ".join(f"`{link}`" for link, _ in critical_link_counts.most_common(5))
+                f"- remembered concrete links/navigation targets exist: `{sum(target_counts.values()) + sum(critical_link_counts.values())}`"
+            )
+            lines.append(
+                "- use remembered concrete URLs only to infer patterns; do not navigate directly from memory alone"
             )
         if profile:
             lines.append(
@@ -567,27 +564,10 @@ class LongTermMemory:
                     "- remembered route/url patterns: "
                     + ", ".join(f"`{item}`" for item in _coerce_string_list(profile.get("url_patterns", []))[:5])
                 )
-            if profile.get("navigation_hints"):
-                lines.append(
-                    "- remembered navigation playbook: "
-                    + ", ".join(f"`{item}`" for item in _coerce_string_list(profile.get("navigation_hints", []))[:5])
-                )
-            if profile.get("critical_links"):
-                lines.append(
-                    "- remembered critical links: "
-                    + ", ".join(f"`{item}`" for item in _coerce_string_list(profile.get("critical_links", []))[:6])
-                )
             if profile.get("hosting_candidate_urls"):
                 landing_candidates = _coerce_string_list(profile.get("hosting_candidate_urls", []))
                 lines.append(
-                    f"- remembered landing hosting candidates: `{len(landing_candidates)}`"
-                    + (
-                        " (sample: "
-                        + ", ".join(f"`{item}`" for item in landing_candidates[:5])
-                        + ")"
-                        if landing_candidates
-                        else ""
-                    )
+                    f"- remembered landing hosting candidates count: `{len(landing_candidates)}`"
                 )
             if profile.get("server_records"):
                 server_records = _coerce_string_list(profile.get("server_records", []))

@@ -12,25 +12,27 @@ import {
 } from "lucide-react";
 
 import { apiFetch, apiUrl } from "@/lib/api";
+import { buildRunDetailFilterOptions } from "@/lib/run-detail-filters";
 import { buildRunDetailTabState } from "@/lib/run-detail-layout";
 import {
   buildStageView,
   extractToolCalls,
+  getRunTerminalState,
   normalizeTraceEvents,
   STAGE_LABELS,
   summarizeRunState,
 } from "@/lib/run-trace";
 import { buildAutoDecisionSync } from "@/lib/run-log-sync";
-import { BrowserLiveView, ScreenshotGallery } from "@/components/console/run-detail/browser-live-view";
+import { BrowserLiveView } from "@/components/console/run-detail/browser-live-view";
 import { StreamProviderTab } from "@/components/console/run-detail/stream-provider-tab";
-import { OrchestratorDecisionFeed } from "@/components/orchestrator-decision-feed";
 import { DecisionLogPanel } from "@/components/run-log-panels";
 import { OrchestratorGraph } from "@/components/orchestrator-graph";
 import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
 import { ToolCallFeed } from "@/components/tool-call-feed";
+import { StructuredDataCard } from "@/components/structured-data-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -169,38 +171,37 @@ function FailureDetailsCard({ failure }) {
                   View full error details
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone="danger" className="font-mono uppercase">
-                      {failure.kind || "failure"}
-                    </Badge>
-                    {failure.actor ? (
-                      <Badge tone="default" className="font-mono">{failure.actor}</Badge>
-                    ) : null}
-                  </div>
-                  <DialogTitle className="mt-2 text-sm font-medium">{errorPreview}</DialogTitle>
-                  <DialogDescription className="font-mono text-[11px]">
-                    {event?.timestamp ? new Date(event.timestamp).toLocaleString() : ""}
-                  </DialogDescription>
-                </DialogHeader>
-                <Separator />
-                {stack ? (
-                  <ScrollArea className="max-h-[260px] rounded-md border border-border bg-muted/30">
-                    <pre className="whitespace-pre-wrap break-all p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
-                      {stack}
-                    </pre>
-                  </ScrollArea>
-                ) : null}
-                <div className="space-y-1">
-                  <div className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                    Event details
-                  </div>
-                  <ScrollArea className="max-h-[280px] rounded-md border border-border bg-muted/30">
-                    <pre className="whitespace-pre-wrap break-all p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
-                      {JSON.stringify(details, null, 2)}
-                    </pre>
-                  </ScrollArea>
+              <DialogContent className="max-w-4xl p-0">
+                <div className="border-b border-border px-5 py-4">
+                  <DialogHeader>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone="danger" className="font-mono uppercase">
+                        {failure.kind || "failure"}
+                      </Badge>
+                      {failure.actor ? (
+                        <Badge tone="default" className="font-mono">{failure.actor}</Badge>
+                      ) : null}
+                    </div>
+                    <DialogTitle className="mt-2 text-sm font-medium">{errorPreview}</DialogTitle>
+                    <DialogDescription className="font-mono text-[11px]">
+                      {event?.timestamp ? new Date(event.timestamp).toLocaleString() : ""}
+                    </DialogDescription>
+                  </DialogHeader>
+                </div>
+                <div className="space-y-4 px-5 py-4">
+                  {stack ? (
+                    <ScrollArea className="max-h-[260px] rounded-md border border-border bg-muted/30">
+                      <pre className="whitespace-pre-wrap break-all p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
+                        {stack}
+                      </pre>
+                    </ScrollArea>
+                  ) : null}
+                  <StructuredDataCard
+                    title="Event details"
+                    data={details}
+                    defaultMode="table"
+                    search
+                  />
                 </div>
               </DialogContent>
             </Dialog>
@@ -257,6 +258,11 @@ function ActivityBanner({ state }) {
     tone = "var(--rose)";
     title = active.title;
     detail = active.message || "The latest trace event reports a failure.";
+  } else if (active?.type === "cancelled") {
+    icon = AlertTriangle;
+    tone = "var(--signal)";
+    title = active.title;
+    detail = active.message || "Execution was cancelled.";
   } else if (active?.type === "llm") {
     icon = Cpu;
     tone = "var(--violet)";
@@ -323,7 +329,7 @@ function ActivityBanner({ state }) {
         </div>
       </div>
 
-      {recent && active?.type !== "failed" ? (
+      {recent && active?.type !== "failed" && active?.type !== "cancelled" ? (
         <div className="min-w-[210px] rounded-[10px] border px-3 py-2 text-[11px]" style={{ borderColor: "var(--line)", background: "rgba(0,0,0,0.08)" }}>
           <div style={{ color: "var(--mute-3)" }}>Last completed</div>
           <div className="mt-1 font-medium" style={{ color: "var(--ink-dim)" }}>
@@ -355,7 +361,6 @@ export function RunDetailLive({
 }) {
   const eventMapRef = useRef(null);
   const expectedCloseRef = useRef(false);
-  const headerRef = useRef(null);
   const tabListRef = useRef(null);
   const lastAutoSyncSignatureRef = useRef("");
   const [eventVersion, setEventVersion] = useState(0);
@@ -367,6 +372,7 @@ export function RunDetailLive({
   const [actionError, setActionError] = useState("");
   const [streamError, setStreamError] = useState("");
   const [logSyncVersion, setLogSyncVersion] = useState(0);
+  const [sharedFilters, setSharedFilters] = useState({ actor: "", stage: "" });
 
   if (eventMapRef.current === null) {
     eventMapRef.current = seedMap(activeTrace?.events || persistedEvents || []);
@@ -424,7 +430,7 @@ export function RunDetailLive({
       expectedCloseRef.current = true;
       source.close();
     };
-  }, [liveStream, runId, onMetricsChange]);
+  }, [liveStream, onMetricsChange, runId]);
 
   async function cancelRun() {
     if (!runId || isCancelling) return;
@@ -457,6 +463,7 @@ export function RunDetailLive({
   );
 
   const normalizedEvents = useMemo(() => normalizeTraceEvents(events), [events]);
+  const terminalState = useMemo(() => getRunTerminalState(normalizedEvents), [normalizedEvents]);
   const autoDecisionItems = useMemo(
     () => buildAutoDecisionSync(normalizedEvents),
     [normalizedEvents],
@@ -480,6 +487,16 @@ export function RunDetailLive({
   }, [persistedToolCalls, toolCallRows]);
   const runState = useMemo(() => summarizeRunState(normalizedEvents), [normalizedEvents]);
   const stageView = useMemo(() => buildStageView(normalizedEvents), [normalizedEvents]);
+  const filterOptions = useMemo(
+    () =>
+      buildRunDetailFilterOptions({
+        events: normalizedEvents,
+        toolCalls: toolCallFeedRows,
+        agentRollups,
+        decisions: initialDecisions,
+      }),
+    [agentRollups, initialDecisions, normalizedEvents, toolCallFeedRows],
+  );
   const activeStages = useMemo(
     () =>
       (stageView?.stages || []).filter(
@@ -487,12 +504,13 @@ export function RunDetailLive({
       ),
     [stageView],
   );
+  const showActivityBanner = !(runState?.active?.type === "failed" && runState?.failure);
   const rootActor =
     rootActorOverride ||
     activeTrace?.root_actor ||
     events.find((event) => event?.actor)?.actor ||
     "orchestrator";
-  const isLive = liveStream;
+  const isLive = liveStream && !terminalState.isTerminal;
   const decisionCount = Math.max(
     initialDecisions.length,
     autoDecisionItems.length,
@@ -504,9 +522,10 @@ export function RunDetailLive({
         taskCount: 0,
         toolCallCount: toolCallFeedRows.length,
         eventCount: normalizedEvents.length,
+        screenshotCount: snapshotScreenshots.length,
         runState,
       }),
-    [decisionCount, toolCallFeedRows.length, normalizedEvents.length, runState],
+    [decisionCount, normalizedEvents.length, runState, snapshotScreenshots.length, toolCallFeedRows.length],
   );
   const primaryTabs = useMemo(() => {
     if (!Array.isArray(providerUrls) || !providerUrls.length) return tabState.primaryTabs;
@@ -545,9 +564,13 @@ export function RunDetailLive({
   }, [autoDecisionItems, runId]);
 
   useEffect(() => {
-    if (headerRef.current) {
-      headerRef.current.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
+    if (terminalState.isTerminal && liveStream) {
+      expectedCloseRef.current = true;
+      setLiveStream(false);
     }
+  }, [liveStream, terminalState.isTerminal]);
+
+  useEffect(() => {
     const active = tabListRef.current?.querySelector("[data-state='active']");
     if (active && typeof active.scrollIntoView === "function") {
       active.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
@@ -557,7 +580,7 @@ export function RunDetailLive({
   return (
     <Card className="overflow-hidden shadow-card">
       <Tabs value={tab} onValueChange={setTab}>
-      <CardHeader ref={headerRef} className="border-b bg-muted/20 px-4 py-3">
+      <CardHeader className="border-b bg-muted/20 px-4 py-3">
         <div
         className="grid gap-2 rounded-[12px] border px-3 py-2.5 lg:grid-cols-[1fr_auto]"
         style={{
@@ -569,8 +592,11 @@ export function RunDetailLive({
         <div className="flex flex-wrap items-center gap-2">
         <Badge tone={isLive ? "signal" : "default"} className="gap-1.5 font-mono uppercase">
           {isLive ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-          {isLive ? "live updates" : "persisted"}
+          {isLive ? "live updates" : terminalState.isTerminal ? terminalState.status : "persisted"}
         </Badge>
+        {terminalState.status === "cancelled" ? <Badge tone="warning">trace closed</Badge> : null}
+        {terminalState.status === "failed" ? <Badge tone="danger">trace closed</Badge> : null}
+        {terminalState.status === "completed" ? <Badge tone="success">trace closed</Badge> : null}
 
         {runId && isLive ? (
           <Button
@@ -609,7 +635,7 @@ export function RunDetailLive({
       </CardHeader>
 
       <CardContent className="space-y-4 px-4 pb-4 pt-0">
-        <ActivityBanner state={runState} />
+        {showActivityBanner ? <ActivityBanner state={runState} /> : null}
 
         <StageStatusRow stages={activeStages} />
 
@@ -632,46 +658,53 @@ export function RunDetailLive({
 
         <TabsContent value="events">
           {normalizedEvents.length ? (
-            <RuntimeEventsPanel events={normalizedEvents} title="Event Stream" />
+            <RuntimeEventsPanel
+              events={normalizedEvents}
+              title="Event Stream"
+              sharedFilters={sharedFilters}
+              onSharedFiltersChange={setSharedFilters}
+              actorOptions={filterOptions.actors}
+              stageOptions={filterOptions.stages}
+              terminalStatus={terminalState.status}
+            />
           ) : (
-            <PanelLoadingSkeleton label={isLive ? "Waiting for first event..." : "No events yet"} />
+            <PanelLoadingSkeleton
+              label={
+                terminalState.status === "cancelled"
+                  ? "Run cancelled before any events were persisted."
+                  : isLive
+                    ? "Waiting for first event..."
+                    : "No events yet"
+              }
+            />
           )}
         </TabsContent>
 
         <TabsContent value="tools">
           {toolCallFeedRows.length ? (
-            <ToolCallFeed toolCalls={toolCallFeedRows} title="Tool Calls" />
+            <ToolCallFeed
+              toolCalls={toolCallFeedRows}
+              title="Tool Calls"
+              sharedFilters={sharedFilters}
+              onSharedFiltersChange={setSharedFilters}
+              actorOptions={filterOptions.actors}
+              stageOptions={filterOptions.stages}
+            />
           ) : (
-            <PanelLoadingSkeleton label={isLive ? "Waiting for tool calls..." : "No tool calls yet"} />
+            <PanelLoadingSkeleton
+              label={
+                terminalState.status === "cancelled"
+                  ? "Run cancelled before any tool calls were persisted."
+                  : isLive
+                    ? "Waiting for tool calls..."
+                    : "No tool calls yet"
+              }
+            />
           )}
         </TabsContent>
 
         <TabsContent value="summary" className="space-y-4">
-          {runId ? (
-            <BrowserLiveView
-              runId={runId}
-              events={normalizedEvents}
-              persistedScreenshots={snapshotScreenshots}
-              autoRefresh={isLive}
-            />
-          ) : null}
-          {snapshotScreenshots.length ? (
-            <ScreenshotGallery screenshots={snapshotScreenshots} />
-          ) : null}
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.85fr)]">
-            <OrchestratorGraph events={normalizedEvents} rootActor={rootActor} agentRollups={agentRollups} />
-            <Card className="overflow-hidden shadow-card">
-              <CardHeader className="border-b border-border px-4 py-3">
-                <CardTitle className="text-sm">Routing decisions</CardTitle>
-                <CardDescription>
-                  Orchestrator intent and handoff reasoning without the full raw event stream.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="max-h-[360px] overflow-y-auto px-4 py-4">
-                <OrchestratorDecisionFeed events={normalizedEvents} isStreaming={isLive} />
-              </CardContent>
-            </Card>
-          </div>
+          <OrchestratorGraph events={normalizedEvents} rootActor={rootActor} agentRollups={agentRollups} />
         </TabsContent>
 
         <TabsContent value="decisions" className="space-y-4">
@@ -681,7 +714,30 @@ export function RunDetailLive({
             events={normalizedEvents}
             isStreaming={isLive}
             refreshToken={logSyncVersion}
+            sharedFilters={sharedFilters}
+            onSharedFiltersChange={setSharedFilters}
+            actorOptions={filterOptions.actors}
+            stageOptions={filterOptions.stages}
           />
+        </TabsContent>
+
+        <TabsContent value="screenshots" className="space-y-4">
+          {runId ? (
+            <BrowserLiveView
+              runId={runId}
+              events={normalizedEvents}
+              persistedScreenshots={snapshotScreenshots}
+              autoRefresh={isLive}
+            />
+          ) : (
+            <PanelLoadingSkeleton
+              label={
+                terminalState.status === "cancelled"
+                  ? "Run cancelled before screenshot history was expanded."
+                  : "No screenshots captured yet"
+              }
+            />
+          )}
         </TabsContent>
 
         {providerUrls.length ? (

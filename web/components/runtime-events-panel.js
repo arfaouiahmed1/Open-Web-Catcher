@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Eye, Filter as FilterIcon, Search } from "lucide-react";
+import { Eye, FilterX, Search } from "lucide-react";
 
+import { filterRuntimeEvents } from "@/lib/run-detail-filters";
 import { formatNumber } from "@/lib/utils";
 import { normalizeTraceEvents } from "@/lib/run-trace";
 import { StructuredDataCard } from "@/components/structured-data-card";
@@ -19,7 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
+import { Select } from "@/components/ui/select";
 
 function statusTone(status, kind) {
   const s = String(status || "").trim().toLowerCase();
@@ -86,38 +87,33 @@ function EventDetailDialog({ event }) {
           Details
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone={tone} className="font-mono uppercase tracking-wide">
-              {event?.kind || "event"}
-            </Badge>
-            {event?.actor ? (
-              <Badge tone={actorTone(event.actor)}>{event.actor}</Badge>
-            ) : null}
-            {event?.status ? (
-              <Badge tone={tone}>{event.status}</Badge>
-            ) : null}
-            <span className="ml-auto font-mono text-[10.5px] text-muted-foreground">
-              #{event?.seq ?? "--"}
-            </span>
-          </div>
-          <DialogTitle className="mt-2 text-sm font-medium">
-            {event?.message || "(no message)"}
-          </DialogTitle>
-          <DialogDescription className="font-mono text-[11px]">
-            {fmtTimestamp(event?.timestamp)}
-            {event?.timestamp ? (
-              <span className="ml-2 text-muted-foreground/70">{fmtRelative(event.timestamp)}</span>
-            ) : null}
-          </DialogDescription>
-        </DialogHeader>
-        <Separator />
-        <StructuredDataCard
-          title="Details payload"
-          data={details}
-          emptyLabel="No structured details for this event."
-        />
+      <DialogContent className="max-w-4xl p-0">
+        <div className="border-b border-border px-5 py-4">
+          <DialogHeader>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={tone} className="font-mono uppercase tracking-wide">
+                {event?.kind || "event"}
+              </Badge>
+              {event?.actor ? <Badge tone={actorTone(event.actor)}>{event.actor}</Badge> : null}
+              {event?.status ? <Badge tone={tone}>{event.status}</Badge> : null}
+              <span className="ml-auto font-mono text-[10.5px] text-muted-foreground">#{event?.seq ?? "--"}</span>
+            </div>
+            <DialogTitle className="mt-2 text-base font-medium">{event?.message || "(no message)"}</DialogTitle>
+            <DialogDescription className="font-mono text-[11px]">
+              {fmtTimestamp(event?.timestamp)}
+              {event?.timestamp ? <span className="ml-2 text-muted-foreground/70">{fmtRelative(event.timestamp)}</span> : null}
+            </DialogDescription>
+          </DialogHeader>
+        </div>
+        <div className="px-5 py-4">
+          <StructuredDataCard
+            title="Details payload"
+            data={details}
+            emptyLabel="No structured details for this event."
+            defaultMode="table"
+            search
+          />
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -128,7 +124,7 @@ function EventRow({ event, index }) {
   const aTone = actorTone(event?.actor);
   const seq = event?.seq ?? index + 1;
   return (
-    <div className="grid items-start gap-2 border-b border-border/60 px-4 py-2.5 transition-colors hover:bg-muted/30 md:grid-cols-[64px_minmax(180px,200px)_1fr_auto]">
+    <div className="grid items-start gap-2 border-b border-border/60 px-4 py-2.5 transition-colors hover:bg-muted/30 md:grid-cols-[64px_minmax(180px,220px)_1fr_auto]">
       <div className="font-mono text-[10px] text-muted-foreground/60">#{seq}</div>
       <div className="flex flex-col gap-1">
         <Badge tone={tone} className="w-fit font-mono uppercase tracking-wide">
@@ -178,17 +174,15 @@ export function RuntimeEventsPanel({
   title = "Runtime log",
   description = "Normalized runtime events and agent lifecycle logs.",
   maxRows = 200,
+  sharedFilters = null,
+  onSharedFiltersChange = null,
+  actorOptions = [],
+  stageOptions = [],
+  terminalStatus = "",
 }) {
   const normalized = useMemo(() => normalizeTraceEvents(events), [events]);
-  const [filter, setFilter] = useState("");
-  const [actorFilter, setActorFilter] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [kindFilter, setKindFilter] = useState("");
-
-  const actors = useMemo(() => {
-    const set = new Set();
-    for (const event of normalized) if (event?.actor) set.add(event.actor);
-    return Array.from(set).sort();
-  }, [normalized]);
 
   const kinds = useMemo(() => {
     const set = new Set();
@@ -196,29 +190,18 @@ export function RuntimeEventsPanel({
     return Array.from(set).sort();
   }, [normalized]);
 
-  const filtered = useMemo(() => {
-    const term = filter.trim().toLowerCase();
-    return normalized.filter((event) => {
-      if (actorFilter && event.actor !== actorFilter) return false;
-      if (kindFilter && event.kind !== kindFilter) return false;
-      if (!term) return true;
-      const haystack = [event.kind, event.actor, event.status, event.message, JSON.stringify(event.details || {})]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(term);
-    });
-  }, [actorFilter, filter, kindFilter, normalized]);
-
+  const filtered = useMemo(
+    () => filterRuntimeEvents(normalized, sharedFilters || {}, { search: searchTerm, kind: kindFilter }),
+    [kindFilter, normalized, searchTerm, sharedFilters],
+  );
   const display = useMemo(() => filtered.slice(-maxRows).reverse(), [filtered, maxRows]);
+  const hasFilters = Boolean(searchTerm || kindFilter || sharedFilters?.actor || sharedFilters?.stage);
 
   function resetFilters() {
-    setFilter("");
-    setActorFilter("");
+    setSearchTerm("");
     setKindFilter("");
+    onSharedFiltersChange?.({ actor: "", stage: "" });
   }
-
-  const hasFilters = Boolean(filter || actorFilter || kindFilter);
 
   return (
     <Card className="overflow-hidden shadow-card">
@@ -228,53 +211,61 @@ export function RuntimeEventsPanel({
             <CardTitle className="text-sm font-medium">{title}</CardTitle>
             <CardDescription className="text-xs">{description}</CardDescription>
           </div>
-          <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-muted-foreground">
             <Badge tone="default" className="font-mono">
               {formatNumber(filtered.length)}
               {filtered.length !== normalized.length ? ` / ${formatNumber(normalized.length)}` : ""} events
             </Badge>
+            {terminalStatus === "cancelled" ? <Badge tone="warning">terminal: cancelled</Badge> : null}
+            {terminalStatus === "failed" ? <Badge tone="danger">terminal: failed</Badge> : null}
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-[200px] flex-1">
+          <div className="relative min-w-[220px] flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="Filter by message, kind, actor, details..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Filter by message, kind, actor, or details"
               className="h-8 pl-9 text-xs"
             />
           </div>
+          <Select
+            value={sharedFilters?.actor || ""}
+            onChange={(value) => onSharedFiltersChange?.({ actor: value, stage: sharedFilters?.stage || "" })}
+            options={[
+              { value: "", label: "All actors" },
+              ...actorOptions.map((actor) => ({ value: actor, label: actor })),
+            ]}
+            placeholder="Actor"
+            className="min-w-[170px]"
+          />
+          <Select
+            value={sharedFilters?.stage || ""}
+            onChange={(value) => onSharedFiltersChange?.({ actor: sharedFilters?.actor || "", stage: value })}
+            options={[
+              { value: "", label: "All stages" },
+              ...stageOptions,
+            ]}
+            placeholder="Stage"
+            className="min-w-[170px]"
+          />
           {kinds.length > 1 ? (
-            <select
+            <Select
               value={kindFilter}
-              onChange={(e) => setKindFilter(e.target.value)}
-              className="h-8 rounded-md border border-border bg-background px-2 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-              title="Filter by kind"
-            >
-              <option value="">All kinds</option>
-              {kinds.map((k) => (
-                <option key={k} value={k}>{k}</option>
-              ))}
-            </select>
-          ) : null}
-          {actors.length > 1 ? (
-            <select
-              value={actorFilter}
-              onChange={(e) => setActorFilter(e.target.value)}
-              className="h-8 rounded-md border border-border bg-background px-2 font-mono text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-              title="Filter by actor"
-            >
-              <option value="">All actors</option>
-              {actors.map((a) => (
-                <option key={a} value={a}>{a}</option>
-              ))}
-            </select>
+              onChange={(value) => setKindFilter(value)}
+              options={[
+                { value: "", label: "All kinds" },
+                ...kinds.map((kind) => ({ value: kind, label: kind })),
+              ]}
+              placeholder="Kind"
+              className="min-w-[180px]"
+            />
           ) : null}
           {hasFilters ? (
             <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground" onClick={resetFilters}>
-              <FilterIcon className="mr-1 h-3 w-3" />
+              <FilterX className="mr-1 h-3 w-3" />
               Reset
             </Button>
           ) : null}
@@ -285,7 +276,9 @@ export function RuntimeEventsPanel({
         <CardContent className="px-4 py-10 text-center text-sm text-muted-foreground">
           {normalized.length
             ? "No events match the current filters."
-            : "No runtime events recorded yet. Live and persisted events stream here."}
+            : terminalStatus === "cancelled"
+              ? "This run was cancelled before any runtime events were persisted."
+              : "No runtime events recorded yet. Live and persisted events stream here."}
         </CardContent>
       ) : (
         <ScrollArea className="h-[560px] max-h-[70vh] overflow-y-auto">

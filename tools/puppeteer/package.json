@@ -10,7 +10,8 @@
   "main": "mcp-server.js",
   "scripts": {
     "start": "node mcp-server.js",
-    "dev": "node --watch mcp-server.js"
+    "dev": "node --watch mcp-server.js",
+    "test": "node --test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.0",

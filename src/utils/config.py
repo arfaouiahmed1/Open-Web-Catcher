@@ -194,6 +194,7 @@ class Settings(BaseSettings):
     gemini_temperature: float = 0.0
     llm_tuning: dict = Field(default_factory=dict)
     agent_model_config: dict = Field(default_factory=dict)
+    provider_model_catalog_cache: dict = Field(default_factory=dict)
 
     google_api_key: str = ""
     google_vertex_api_key: str = ""
@@ -356,6 +357,7 @@ class Settings(BaseSettings):
         existing["gemini_temperature"] = self.gemini_temperature
         existing["llm_tuning"] = self.llm_tuning
         existing["agent_model_config"] = self.agent_model_config
+        existing["provider_model_catalog_cache"] = self.provider_model_catalog_cache
         existing["provider_cache_enabled"] = self.provider_cache_enabled
         existing["gemini_explicit_cache_enabled"] = self.gemini_explicit_cache_enabled
         existing["gemini_explicit_cache_ttl_seconds"] = self.gemini_explicit_cache_ttl_seconds

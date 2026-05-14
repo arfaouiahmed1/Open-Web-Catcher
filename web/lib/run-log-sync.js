@@ -1,4 +1,4 @@
-import { normalizeTraceEvents } from "@/lib/run-trace";
+import { normalizeTraceEvents } from "./run-trace.js";
 
 function shortText(value, max = 260) {
   const text = String(value || "").trim();
@@ -126,39 +126,40 @@ function maybeHttp(value) {
   return text;
 }
 
-function collectUrls(value, out) {
+function collectProviderLikeUrls(value, out) {
   if (!value) return;
   if (typeof value === "string") {
     const direct = maybeHttp(value);
     if (direct) out.add(direct);
-    const matches = value.match(/https?:\/\/[^\s"'<>]+/gi) || [];
-    for (const match of matches) {
-      const url = maybeHttp(match);
-      if (url) out.add(url);
-    }
     return;
   }
   if (Array.isArray(value)) {
-    for (const item of value) collectUrls(item, out);
+    for (const item of value) collectProviderLikeUrls(item, out);
     return;
   }
   if (typeof value !== "object") return;
   for (const [key, nested] of Object.entries(value)) {
-    if (/(^|_)(url|href|stream|playlist|iframe)(s|_url|_urls)?$/i.test(key)) {
-      collectUrls(nested, out);
-    } else if (key === "details" || key === "result" || key === "result_full" || key === "payload") {
-      collectUrls(nested, out);
+    if (
+      /(^|_)(stream|playlist|provider|embed|iframe|playback|manifest|m3u8|mpd|hls|dash)(s|_url|_urls)?$/i.test(key) ||
+      /^all_streams$/i.test(key)
+    ) {
+      collectProviderLikeUrls(nested, out);
+    } else if (
+      key === "provider_analysis" ||
+      key === "all_streams" ||
+      key === "stream_candidates" ||
+      key === "stream_matches"
+    ) {
+      collectProviderLikeUrls(nested, out);
     }
   }
 }
 
 export function collectRunProviderUrls({ runUrl = "", snapshot = {}, events = [] } = {}) {
   const seen = new Set();
-  collectUrls(runUrl, seen);
-  collectUrls(snapshot, seen);
+  collectProviderLikeUrls(snapshot, seen);
   for (const event of normalizeTraceEvents(events)) {
-    collectUrls(event.details, seen);
-    collectUrls(event.message, seen);
+    collectProviderLikeUrls(event.details, seen);
   }
   return Array.from(seen).slice(0, 40);
 }

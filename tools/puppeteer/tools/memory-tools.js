@@ -358,7 +358,7 @@ export async function memoryLookup({
     profile: exact,
     related_profiles: relatedProfiles,
     memory_first_recommendation: exact
-      ? 'Use remembered selectors/url patterns first, then escalate to heavy tools only if hints fail.'
+      ? 'Use remembered selectors/url patterns first, then escalate to heavy tools only if hints fail. Do not open remembered concrete URLs directly.'
       : 'No exact profile found; gather lightweight evidence and store new selectors/patterns with memory_update.',
   };
 }

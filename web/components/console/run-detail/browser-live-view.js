@@ -332,7 +332,7 @@ export function BrowserLiveView({
     if (target && typeof target.scrollIntoView === "function") {
       target.scrollIntoView({
         behavior: "smooth",
-        inline: "end",
+        inline: "center",
         block: "nearest",
       });
     }

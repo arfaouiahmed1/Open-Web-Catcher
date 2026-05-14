@@ -651,10 +651,11 @@ function normalizeAgentModelConfig(
   const next = {};
   AGENT_SLOTS.forEach(({ id }) => {
     const row = config[id];
+    const normalizedProvider = String(
+      row?.provider || defaults[id].provider || fallbackProvider,
+    ).toLowerCase();
     next[id] = {
-      provider: String(
-        row?.provider || defaults[id].provider || fallbackProvider,
-      ).toLowerCase(),
+      provider: normalizedProvider === "google" ? "google" : fallbackProvider,
       model: String(row?.model || defaults[id].model || ""),
     };
   });
@@ -807,6 +808,7 @@ function ensureSelectedOption(options, value) {
 
 function sourceTone(source) {
   if (source === "provider_api") return "ok";
+  if (source === "saved_catalog") return "ok";
   if (source === "fallback_catalog") return "warn";
   if (source === "unavailable") return "error";
   return "warn";
@@ -814,6 +816,7 @@ function sourceTone(source) {
 
 function sourceLabel(source) {
   if (source === "provider_api") return "Live provider catalog";
+  if (source === "saved_catalog") return "Saved Gemini snapshot";
   if (source === "fallback_catalog") return "Fallback catalog";
   if (source === "unavailable") return "Catalog unavailable";
   return "Stored catalog";
@@ -824,13 +827,6 @@ function pricingStatusTone(status) {
   if (status.model_count > 0) return "success";
   if (status.api_key_set) return "warning";
   return "default";
-}
-
-function providerOptionRows() {
-  return PROVIDERS.map((provider) => ({
-    value: provider.id,
-    label: provider.name,
-  }));
 }
 
 function KeyStatus({ set }) {
@@ -1394,6 +1390,88 @@ function CompactStat({ label, value, tone = "default" }) {
   );
 }
 
+function SettingsWorkspaceCard({
+  eyebrow = "",
+  title,
+  description = "",
+  actions = null,
+  className = "",
+  children,
+}) {
+  return (
+    <Card className={cn("overflow-hidden rounded-[20px] border border-border/70 bg-card/95 shadow-[0_18px_48px_-36px_rgba(0,0,0,0.55)]", className)}>
+      {(eyebrow || title || description || actions) ? (
+        <div className="border-b border-border/70 px-5 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              {eyebrow ? (
+                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/75">
+                  {eyebrow}
+                </div>
+              ) : null}
+              {title ? <div className="text-[15px] font-semibold text-foreground">{title}</div> : null}
+              {description ? <p className="max-w-2xl text-[12px] leading-relaxed text-muted-foreground">{description}</p> : null}
+            </div>
+            {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+          </div>
+        </div>
+      ) : null}
+      <CardContent className="p-5">{children}</CardContent>
+    </Card>
+  );
+}
+
+function AgentAssignmentGrid({ assignments = [], selectedModelId = "", onSelectModel = null }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {assignments.map((assignment) => {
+        const modelId = assignment.selection?.model || "";
+        const isSelected = selectedModelId && modelId === selectedModelId;
+        return (
+          <button
+            key={assignment.id}
+            type="button"
+            onClick={() => {
+              if (modelId && onSelectModel) onSelectModel(modelId);
+            }}
+            className={cn(
+              "rounded-[16px] border px-3.5 py-3 text-left transition-colors",
+              isSelected
+                ? "border-primary/35 bg-primary/8"
+                : "border-border/70 bg-background/55 hover:bg-muted/35",
+              !modelId && "cursor-default hover:bg-background/55",
+            )}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[13px] font-semibold text-foreground">{assignment.label}</div>
+                <div className="mt-0.5 text-[11px] text-muted-foreground">{assignment.note}</div>
+              </div>
+              {isSelected ? <Badge tone="signal">selected</Badge> : null}
+            </div>
+            <div className="mt-3 space-y-2">
+              <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Backend model</div>
+                <div className="mt-1 truncate font-mono text-[11.5px] text-foreground">
+                  {modelId || "Not set"}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+                <Badge tone="default" className="px-1.5 py-0.5 text-[9px]">
+                  {assignment.selection?.provider || "google"}
+                </Badge>
+                {assignment.modelMeta?.context_window ? (
+                  <span className="font-mono">{assignment.modelMeta.context_window.toLocaleString()} ctx</span>
+                ) : null}
+              </div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function BrowserRuntimeInput({
   label,
   value,
@@ -1906,28 +1984,6 @@ export function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function updateAgentProvider(agentId, nextProvider) {
-    setConfigErr("");
-    const catalog = await loadProviderCatalog(nextProvider).catch(() => null);
-    const firstModel = catalog?.models?.[0]?.id || "";
-    setAgentModelConfig((current) => {
-      const next = { ...current };
-      const existing = current[agentId] || {
-        provider: nextProvider,
-        model: "",
-      };
-      const currentModel = existing.model || "";
-      const available = catalog?.models?.some(
-        (item) => item.id === currentModel,
-      );
-      next[agentId] = {
-        provider: nextProvider,
-        model: available ? currentModel : firstModel,
-      };
-      return next;
-    });
-  }
-
   function updateAgentModel(agentId, modelId) {
     setAgentModelConfig((current) => ({
       ...current,
@@ -2390,7 +2446,9 @@ export function SettingsPage() {
                         <div className="flex items-start gap-2 rounded-lg border border-primary/35 bg-primary/10 px-3 py-2.5 text-sm text-primary">
                           <Key className="mt-0.5 size-4 shrink-0" />
                           <span>
-                            <strong>{activeProvider.keyEnv}</strong> not set. Live Gemini model defaults and capabilities only load when the API key is available.
+                            <strong>{activeProvider.keyEnv}</strong> not set. {activeCatalog?.source === "saved_catalog"
+                              ? "Using the last saved Gemini defaults snapshot."
+                              : "Live Gemini defaults are unavailable; fallback defaults are shown."}
                           </span>
                         </div>
                       ) : null}
@@ -2833,20 +2891,12 @@ export function SettingsPage() {
                       </div>
 
                       <div className="space-y-4">
-                        {/* Provider — label only, no key shown */}
                         <div className="space-y-1">
                           <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                             Provider
                           </label>
-                          <div className="relative">
-                            <Select
-                              value={selection.provider}
-                              onChange={(next) =>
-                                updateAgentProvider(slot.id, next)
-                              }
-                              options={providerOptionRows()}
-                              placeholder="Select provider"
-                            />
+                          <div className="h-10 rounded-md border border-input bg-muted/35 px-3 text-sm font-medium leading-10 text-foreground">
+                            Google Gemini
                           </div>
                         </div>
 

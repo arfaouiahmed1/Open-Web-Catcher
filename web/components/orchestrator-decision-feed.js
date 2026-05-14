@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { StructuredDataCard } from "@/components/structured-data-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -28,11 +29,10 @@ const ORCHESTRATOR_KINDS = new Set([
   "handoff",
 ]);
 
-function isOrchestratorEvent(event) {
+export function isOrchestratorEvent(event) {
   if (!event) return false;
   if (ORCHESTRATOR_KINDS.has(event.kind)) return true;
   if (event.actor === "orchestrator") return true;
-  // Catch routing decisions that may be labelled differently
   if (typeof event.kind === "string" && event.kind.includes("route")) return true;
   if (typeof event.kind === "string" && event.kind.includes("handoff")) return true;
   return false;
@@ -86,7 +86,7 @@ function decisionReason(event) {
   );
 }
 
-function DecisionCard({ event, index, isNew }) {
+function DecisionCard({ event, isNew = false }) {
   const [expanded, setExpanded] = useState(false);
   const { icon: Icon, color, label } = decisionMeta(event);
   const hasDetails = event.details && Object.keys(event.details).length > 0;
@@ -102,7 +102,6 @@ function DecisionCard({ event, index, isNew }) {
       )}
       style={{ borderLeftWidth: 2, borderLeftColor: color }}
     >
-      {/* Icon */}
       <span
         className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
         style={{ background: `color-mix(in oklch, ${color} 15%, transparent)`, color }}
@@ -113,36 +112,29 @@ function DecisionCard({ event, index, isNew }) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[12.5px] font-semibold text-foreground">{label}</span>
-          {event.actor && event.actor !== "orchestrator" && (
-            <Badge tone="default" className="text-[10px] px-1.5 py-0">
+          {event.actor && event.actor !== "orchestrator" ? (
+            <Badge tone="default" className="px-1.5 py-0 text-[10px]">
               {event.actor}
             </Badge>
-          )}
-          {event.status && (
+          ) : null}
+          {event.status ? (
             <Badge
               tone={
-                event.status === "success" ? "mint"
-                : event.status === "error" || event.status === "failed" ? "rose"
-                : "default"
+                event.status === "success"
+                  ? "mint"
+                  : event.status === "error" || event.status === "failed"
+                    ? "rose"
+                    : "default"
               }
-              className="text-[10px] px-1.5 py-0"
+              className="px-1.5 py-0 text-[10px]"
             >
               {event.status}
             </Badge>
-          )}
-          {time && (
-            <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground">
-              {time}
-            </span>
-          )}
+          ) : null}
+          {time ? <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground">{time}</span> : null}
         </div>
 
-        {event.message && (
-          <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-            {event.message}
-          </p>
-        )}
-
+        {event.message ? <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{event.message}</p> : null}
         {intent ? (
           <p className="mt-1 text-[11.5px] text-foreground/90">
             <span className="font-semibold">Next:</span> {String(intent)}
@@ -154,24 +146,30 @@ function DecisionCard({ event, index, isNew }) {
           </p>
         ) : null}
 
-        {hasDetails && (
+        {hasDetails ? (
           <div className="mt-2">
             <Button
               variant="ghost"
               size="sm"
               className="h-6 gap-1 px-1.5 text-[10.5px] text-muted-foreground"
-              onClick={() => setExpanded((v) => !v)}
+              onClick={() => setExpanded((current) => !current)}
             >
               {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
               {expanded ? "Hide" : "Show"} details
             </Button>
-            {expanded && (
-              <pre className="mt-1.5 overflow-x-auto rounded-md bg-muted/50 px-3 py-2 font-mono text-[10.5px] text-foreground/80">
-                {JSON.stringify(event.details, null, 2)}
-              </pre>
-            )}
+            {expanded ? (
+              <div className="mt-2">
+                <StructuredDataCard
+                  title="Decision payload"
+                  data={event.details}
+                  defaultMode="table"
+                  search
+                  compact
+                />
+              </div>
+            ) : null}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -197,7 +195,7 @@ export function OrchestratorDecisionFeed({ events = [], isStreaming = false }) {
           )}
         </span>
         <p className="text-sm text-muted-foreground">
-          {isStreaming ? "Waiting for orchestrator decisions…" : "No orchestrator events recorded"}
+          {isStreaming ? "Waiting for orchestrator decisions..." : "No orchestrator events recorded"}
         </p>
       </div>
     );
@@ -209,20 +207,15 @@ export function OrchestratorDecisionFeed({ events = [], isStreaming = false }) {
         <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
           {decisions.length} decision{decisions.length !== 1 ? "s" : ""}
         </span>
-        {isStreaming && (
+        {isStreaming ? (
           <span className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" />
             live
           </span>
-        )}
+        ) : null}
       </div>
-      {decisions.map((event, i) => (
-        <DecisionCard
-          key={event.seq ?? `${event.timestamp}-${i}`}
-          event={event}
-          index={i}
-          isNew={false}
-        />
+      {decisions.map((event, index) => (
+        <DecisionCard key={event.seq ?? `${event.timestamp}-${index}`} event={event} isNew={false} />
       ))}
     </div>
   );

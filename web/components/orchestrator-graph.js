@@ -5,33 +5,26 @@ import {
   CheckCircle2,
   Code2,
   Cpu,
+  GitBranch,
   Loader2,
   MousePointerClick,
-  Network,
   Route,
+  ScanSearch,
   XCircle,
 } from "lucide-react";
 
-import { buildStageView, normalizeTraceEvents, STAGE_LABELS } from "@/lib/run-trace";
+import { buildStageView, getRunTerminalState, normalizeTraceEvents, STAGE_LABELS } from "@/lib/run-trace";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 const AGENT_STAGES = ["classification", "landing", "hosting", "embedded"];
 
 function toneForStatus(status) {
-  if (status === "done" || status === "success") return "success";
+  if (status === "done" || status === "success" || status === "completed") return "success";
   if (status === "running" || status === "active") return "signal";
   if (status === "failed" || status === "error") return "danger";
-  if (status === "warning" || status === "partial" || status === "cancelled") return "warning";
+  if (status === "cancelled" || status === "warning" || status === "partial") return "warning";
   return "default";
-}
-
-function nodeColor(status, fallback = "var(--mute-3)") {
-  if (status === "done" || status === "success") return "var(--mint)";
-  if (status === "running" || status === "active") return "var(--signal)";
-  if (status === "failed" || status === "error") return "var(--rose)";
-  if (status === "warning" || status === "partial" || status === "cancelled") return "var(--signal)";
-  return fallback;
 }
 
 function stageColor(stage) {
@@ -45,22 +38,14 @@ function stageColor(stage) {
 
 function statusIcon(status, Icon = Bot) {
   if (status === "running" || status === "active") return <Loader2 className="h-4 w-4 animate-spin" />;
-  if (status === "done" || status === "success") return <CheckCircle2 className="h-4 w-4" />;
+  if (status === "done" || status === "success" || status === "completed") return <CheckCircle2 className="h-4 w-4" />;
   if (status === "failed" || status === "error") return <XCircle className="h-4 w-4" />;
   return <Icon className="h-4 w-4" />;
 }
 
-function compactJson(value) {
-  if (!value || typeof value !== "object") return "";
-  try {
-    return JSON.stringify(value, null, 2).slice(0, 1200);
-  } catch {
-    return "";
-  }
-}
-
-function cleanInlineText(value) {
-  return String(value || "").replace(/\s+/g, " ").trim();
+function cleanInlineText(value, fallback = "") {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text || fallback;
 }
 
 function latestEvent(events, predicate) {
@@ -96,70 +81,87 @@ function decisionReason(event) {
   );
 }
 
-function buildGraph(events, rootActor, agentRollups = []) {
+function buildBoard(events, rootActor, agentRollups = []) {
   const normalized = normalizeTraceEvents(events);
   const stageView = buildStageView(normalized);
+  const terminalState = getRunTerminalState(normalized);
   const stageMap = new Map(stageView.stages.map((stage) => [stage.stage, stage]));
   const rollupMap = new Map();
   for (const row of agentRollups || []) {
     const key = String(row?.agent_type || row?.actor || "").trim().toLowerCase();
     if (key) rollupMap.set(key, row);
   }
+
   const pipelineStarted = latestEvent(normalized, (event) => event.kind === "pipeline_started");
-  const pipelineTerminal = latestEvent(normalized, (event) =>
-    ["pipeline_finished", "pipeline_failed", "run_cancelled", "cancel_requested"].includes(
-      event.kind,
-    ),
-  );
-  const orchestratorDecisions = normalized.filter((event) => event.kind === "orchestrator_decision");
-  const latestDecision = orchestratorDecisions.at(-1);
+  const pipelineTerminal = terminalState.terminal;
   const runtimeReady = firstEvent(
     normalized,
     (event) =>
       event.kind !== "pipeline_started" &&
       (event.actor === "orchestrator" ||
         Boolean(event.actor && AGENT_STAGES.some((stage) => String(event.actor).toLowerCase().includes(stage))) ||
-        [
-          "agent_started",
-          "tool_call_started",
-          "tool_call_finished",
-          "llm_turn_started",
-          "llm_response",
-        ].includes(event.kind)),
+        ["agent_started", "tool_call_started", "tool_call_finished", "llm_turn_started", "llm_response"].includes(event.kind)),
   );
+  const orchestratorDecisions = normalized.filter((event) => event.kind === "orchestrator_decision");
+  const latestDecision = orchestratorDecisions.at(-1);
 
-  const ingressNodes = [
+  const topCards = [
     {
       id: "request",
       label: "Run request",
       icon: MousePointerClick,
       status: pipelineStarted ? "done" : "idle",
-      detail: pipelineStarted?.message || "Waiting for workflow start.",
+      detail: cleanInlineText(pipelineStarted?.message, "Waiting for workflow start."),
+      accent: "var(--sky)",
+      meta: pipelineStarted?.timestamp ? new Date(pipelineStarted.timestamp).toLocaleTimeString() : "",
     },
     {
       id: "runtime",
-      label: "Runtime active",
+      label: "Runtime",
       icon: Code2,
-      status: runtimeReady ? "done" : pipelineStarted ? "running" : "idle",
-      detail:
-        runtimeReady?.message ||
-        (pipelineStarted
-          ? "Waiting for the first orchestrator, agent, model, or tool event."
-          : "Runtime has not started."),
+      status:
+        terminalState.status === "cancelled"
+          ? "cancelled"
+          : terminalState.status === "failed"
+            ? "failed"
+            : runtimeReady
+              ? "done"
+              : pipelineStarted
+                ? "running"
+                : "idle",
+      detail: cleanInlineText(
+        runtimeReady?.message,
+        pipelineStarted ? "Runtime waiting for the first agent/model/tool event." : "Runtime has not started.",
+      ),
+      accent: "var(--signal)",
+      meta: runtimeReady?.timestamp ? new Date(runtimeReady.timestamp).toLocaleTimeString() : "",
+    },
+    {
+      id: "orchestrator",
+      label: "Orchestrator",
+      icon: Route,
+      status:
+        terminalState.status === "completed"
+          ? "done"
+          : terminalState.status === "failed"
+            ? "failed"
+            : terminalState.status === "cancelled"
+              ? "cancelled"
+              : pipelineStarted
+                ? "running"
+                : "idle",
+      detail: cleanInlineText(
+        latestDecision?.message || pipelineTerminal?.message,
+        rootActor || "orchestrator",
+      ),
+      accent: "var(--signal)",
+      meta: decisionIntent(latestDecision) || "",
+      note: decisionReason(latestDecision) || "",
+      count: orchestratorDecisions.length,
     },
   ];
 
-  const orchestratorStatus = pipelineTerminal
-    ? pipelineTerminal.kind === "pipeline_failed"
-      ? "failed"
-      : pipelineTerminal.kind === "run_cancelled" || pipelineTerminal.kind === "cancel_requested"
-        ? "cancelled"
-        : "done"
-    : pipelineStarted
-      ? "running"
-      : "idle";
-
-  const agentNodes = AGENT_STAGES.map((stage) => {
+  const stages = AGENT_STAGES.map((stage) => {
     const view = stageMap.get(stage) || {
       stage,
       status: "idle",
@@ -167,307 +169,198 @@ function buildGraph(events, rootActor, agentRollups = []) {
       toolCalls: [],
       llmCalls: 0,
       frames: [],
+      liveLabel: "idle",
+      livePhase: "idle",
     };
     const stageEvents = view.events || [];
     const latest = latestEvent(stageEvents, () => true);
     const rollup = rollupMap.get(stage) || null;
-    const llmEvents = stageEvents.filter((event) => String(event.kind || "").startsWith("llm_"));
-    const llmAttempts =
-      stageEvents.filter((event) => event.kind === "llm_turn_started").length ||
-      llmEvents.length;
+    const llmAttempts = stageEvents.filter((event) => event.kind === "llm_turn_started").length;
+    const recentMilestones = stageEvents
+      .filter((event) => event.kind !== "tool_session_ready")
+      .slice(-3)
+      .reverse();
     const latestModelEvent = latestEvent(
       stageEvents,
       (event) =>
         String(event.kind || "").startsWith("llm_") &&
         (event?.details?.provider || event?.details?.model_name),
     );
-    const providerModel = cleanInlineText(
-      `${latestModelEvent?.details?.provider || ""} ${latestModelEvent?.details?.model_name || ""}`,
-    );
+
     return {
       id: stage,
       stage,
       label: STAGE_LABELS[stage] || stage,
-      status: view.status || rollup?.status || "idle",
-      detail:
-        latest?.message ||
-        cleanInlineText(rollup?.output_summary || "") ||
-        view.liveLabel ||
-        "No events recorded for this agent.",
-      toolCalls: view.toolCalls || [],
-      llmCalls: llmEvents,
-      llmAttempts,
-      frames: view.frames || [],
-      providerModel,
+      status: view.status || "idle",
+      liveLabel: view.liveLabel || view.status || "idle",
+      accent: stageColor(stage),
+      providerModel: cleanInlineText(
+        `${latestModelEvent?.details?.provider || ""} ${latestModelEvent?.details?.model_name || ""}`,
+      ),
+      detail: cleanInlineText(
+        latest?.message || rollup?.output_summary || "",
+        view.status === "idle" ? "No stage activity recorded." : "Stage activity recorded.",
+      ),
       outputSummary: cleanInlineText(rollup?.output_summary || ""),
-      recentMilestones: stageEvents.slice(-3).reverse(),
       durationSeconds: Number(rollup?.duration_seconds || 0),
+      llmAttempts,
+      toolCount: (view.toolCalls || []).length,
+      frameCount: (view.frames || []).length,
+      recentMilestones,
     };
   });
 
   return {
-    ingressNodes,
-    orchestrator: {
-      id: "orchestrator",
-      label: "Orchestrator",
-      status: orchestratorStatus,
-      detail:
-        latestDecision?.message ||
-        pipelineTerminal?.message ||
-        pipelineStarted?.message ||
-        rootActor ||
-        "orchestrator",
-      decisionCount: orchestratorDecisions.length,
-      details: latestDecision?.details || pipelineTerminal?.details || {},
-      nextTarget: decisionIntent(latestDecision),
-      reason: decisionReason(latestDecision),
-    },
-    agentNodes,
+    topCards,
+    stages,
     totalTools: stageView.toolCalls.length,
-    totalLlm: agentNodes.reduce((sum, node) => sum + Number(node.llmAttempts || 0), 0),
+    totalLlm: stages.reduce((sum, node) => sum + Number(node.llmAttempts || 0), 0),
+    terminalStatus: terminalState.status,
   };
 }
 
-function Connector({ vertical = false, active = false }) {
+function StatPill({ label, value, tone = "default" }) {
   return (
-    <div
-      className={vertical ? "mx-auto h-10 w-px border-l border-dashed" : "h-px w-12 border-t border-dashed"}
-      style={{
-        borderColor: active ? "color-mix(in oklch, var(--signal) 52%, var(--line))" : "var(--line)",
-      }}
-    />
+    <Badge tone={tone} className="px-2 py-0 text-[10px]">
+      {label} {value}
+    </Badge>
   );
 }
 
-function GraphNode({ node, icon: Icon = Bot, wide = false }) {
-  const color = nodeColor(node.status, stageColor(node.stage));
-  const details = [node.detail, compactJson(node.details)].filter(Boolean).join("\n\n");
+function TopCard({ card }) {
+  const color = card.accent || "var(--signal)";
+  const Icon = card.icon || Bot;
   return (
     <div
-      className={`relative w-full max-w-full rounded-[10px] border bg-card px-3 py-3 shadow-sm ${wide ? "sm:w-[270px]" : "sm:w-[196px]"}`}
+      className="rounded-[16px] border px-4 py-3"
       style={{
-        borderColor:
-          node.status === "idle"
-            ? "var(--line)"
-            : `color-mix(in oklch, ${color} 42%, var(--line))`,
-        boxShadow:
-          node.status === "running" || node.status === "active"
-            ? `0 0 0 1px color-mix(in oklch, ${color} 28%, transparent)`
-            : undefined,
+        borderColor: `color-mix(in oklch, ${color} 26%, var(--line))`,
+        background: `linear-gradient(180deg, color-mix(in oklch, ${color} 10%, transparent), color-mix(in oklch, var(--card) 94%, transparent) 58%)`,
       }}
-      title={details || node.label}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-start gap-3">
         <span
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px]"
-          style={{
-            background: `color-mix(in oklch, ${color} 14%, transparent)`,
-            color,
-          }}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+          style={{ background: `color-mix(in oklch, ${color} 16%, transparent)`, color }}
         >
-          {statusIcon(node.status, Icon)}
+          {statusIcon(card.status, Icon)}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[12px] font-semibold text-foreground">{node.label}</div>
-          <div className="truncate font-mono text-[10px] text-muted-foreground">{node.status}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-sm font-semibold text-foreground">{card.label}</div>
+            <Badge tone={toneForStatus(card.status)} className="uppercase">
+              {card.status}
+            </Badge>
+            {typeof card.count === "number" && card.count > 0 ? <Badge tone="default">{card.count}</Badge> : null}
+          </div>
+          <div className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{card.detail}</div>
+          {card.meta ? <div className="mt-2 font-mono text-[10px] text-muted-foreground/80">{card.meta}</div> : null}
+          {card.note ? <div className="mt-1 text-[11px] text-muted-foreground">{card.note}</div> : null}
         </div>
-        <Badge tone={toneForStatus(node.status)} className="px-1.5 py-0 text-[9px] uppercase">
-          {node.status === "idle" ? "idle" : node.status}
-        </Badge>
       </div>
-      {node.detail ? (
-        <div className="mt-2 line-clamp-2 text-[10.5px] leading-relaxed text-muted-foreground">
-          {node.detail}
-        </div>
-      ) : null}
-      {node.nextTarget || node.reason ? (
-        <div className="mt-2 space-y-1 rounded-[8px] border border-border/70 bg-muted/25 px-2.5 py-2 text-[10px] leading-relaxed text-muted-foreground">
-          {node.nextTarget ? (
-            <div>
-              <span className="font-semibold text-foreground/80">Next:</span> {node.nextTarget}
-            </div>
-          ) : null}
-          {node.reason ? (
-            <div>
-              <span className="font-semibold text-foreground/80">Why:</span> {node.reason}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
     </div>
   );
 }
 
-function MicroNode({ type, label, count, status = "done", detail = "" }) {
-  const Icon = type === "llm" ? Cpu : type === "tool" ? Code2 : Network;
-  const color = type === "llm" ? "var(--violet)" : type === "tool" ? "var(--sky)" : "var(--mint)";
+function StageCard({ node }) {
   return (
     <div
-      className="flex min-w-0 items-center gap-2 rounded-[8px] border bg-background/90 px-2 py-1.5 sm:min-w-[128px]"
+      className="rounded-[18px] border px-4 py-4 shadow-sm"
       style={{
-        borderColor: count > 0 ? `color-mix(in oklch, ${color} 36%, var(--line))` : "var(--line)",
+        borderColor: `color-mix(in oklch, ${node.accent} 24%, var(--line))`,
+        background: `linear-gradient(180deg, color-mix(in oklch, ${node.accent} 10%, transparent), color-mix(in oklch, var(--card) 94%, transparent) 52%)`,
       }}
-      title={detail || `${label}: ${count}`}
     >
-      <span className="flex h-6 w-6 items-center justify-center rounded-[6px]" style={{ color }}>
-        {statusIcon(count > 0 ? status : "idle", Icon)}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-[10.5px] text-foreground/85">{label}</span>
-      <span className="font-mono text-[10px] text-muted-foreground">{count}</span>
-    </div>
-  );
-}
-
-function AgentBranch({ node }) {
-  const toolDetail = (node.toolCalls || [])
-    .map((tool) => `${tool.toolName || tool.tool_name || "tool"}: ${tool.status || "unknown"}`)
-    .join("\n");
-  const llmDetail = (node.llmCalls || [])
-    .map((event) => `${event.details?.provider || ""} ${event.details?.model_name || ""}`.trim())
-    .filter(Boolean)
-    .join("\n");
-  return (
-    <div className="flex w-full max-w-[260px] flex-col items-center gap-2">
-      <GraphNode node={node} icon={Bot} />
-      <Connector vertical active={node.status !== "idle"} />
-      <div className="flex w-full flex-col gap-1.5">
-        {node.providerModel ? (
-          <div
-            className="rounded-[8px] border px-2.5 py-1.5 font-mono text-[10px]"
-            style={{
-              borderColor: "var(--line)",
-              background: "color-mix(in oklch, var(--card) 90%, transparent)",
-              color: "var(--mute-2)",
-            }}
-            title={node.providerModel}
-          >
-            {node.providerModel}
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: node.accent }}>
+              {node.label}
+            </span>
+            <Badge tone={toneForStatus(node.status)} className="uppercase">
+              {node.liveLabel}
+            </Badge>
           </div>
-        ) : null}
-        <MicroNode
-          type="llm"
-          label="Model attempts"
-          count={Number(node.llmAttempts || 0)}
-          detail={llmDetail}
-        />
-        <MicroNode
-          type="tool"
-          label="MCP tools"
-          count={(node.toolCalls || []).length}
-          detail={toolDetail}
-        />
-        <MicroNode
-          type="artifact"
-          label="Artifacts"
-          count={(node.frames || []).length}
-          detail="Screenshots and visual frames captured for this agent."
-        />
-        {node.outputSummary || node.recentMilestones?.length ? (
-          <details
-            className="rounded-[10px] border bg-background/90 px-2.5 py-2 text-[10.5px]"
-            style={{ borderColor: "var(--line)" }}
-          >
-            <summary className="cursor-pointer font-semibold text-foreground/85">
-              Stage details
-            </summary>
-            {node.outputSummary ? (
-              <div className="mt-2 text-muted-foreground">
-                <span className="font-semibold text-foreground/80">Output:</span> {node.outputSummary}
-              </div>
-            ) : null}
-            {node.durationSeconds > 0 ? (
-              <div className="mt-2 text-muted-foreground">
-                <span className="font-semibold text-foreground/80">Duration:</span> {node.durationSeconds.toFixed(1)}s
-              </div>
-            ) : null}
-            {node.recentMilestones?.length ? (
-              <div className="mt-2 space-y-1.5 text-muted-foreground">
-                <div className="font-semibold text-foreground/80">Recent milestones</div>
-                {node.recentMilestones.map((event, index) => (
-                  <div key={`${node.stage}-${event.seq || event.timestamp || index}`} className="rounded-[8px] bg-muted/25 px-2 py-1.5">
-                    {cleanInlineText(event.message || event.kind || "Event")}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </details>
-        ) : null}
+          {node.providerModel ? (
+            <div className="mt-2 font-mono text-[10.5px] text-muted-foreground">{node.providerModel}</div>
+          ) : null}
+        </div>
+        <span
+          className="flex h-9 w-9 items-center justify-center rounded-xl"
+          style={{ background: `color-mix(in oklch, ${node.accent} 16%, transparent)`, color: node.accent }}
+        >
+          {statusIcon(node.status, ScanSearch)}
+        </span>
       </div>
+
+      <div className="mt-3 text-[12px] leading-relaxed text-foreground/90">{node.detail}</div>
+      {node.outputSummary && node.outputSummary !== node.detail ? (
+        <div className="mt-2 rounded-[12px] border border-border/70 bg-background/50 px-3 py-2 text-[11px] text-muted-foreground">
+          {node.outputSummary}
+        </div>
+      ) : null}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <StatPill label="LLM" value={node.llmAttempts} tone="violet" />
+        <StatPill label="Tools" value={node.toolCount} tone="signal" />
+        <StatPill label="Shots" value={node.frameCount} tone="default" />
+        {node.durationSeconds > 0 ? <StatPill label="Sec" value={node.durationSeconds.toFixed(1)} tone="default" /> : null}
+      </div>
+
+      {node.recentMilestones.length ? (
+        <div className="mt-4 space-y-2">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Recent milestones</div>
+          {node.recentMilestones.map((event, index) => (
+            <div
+              key={`${node.stage}-${event.seq || event.timestamp || index}`}
+              className="rounded-[12px] border border-border/70 bg-background/55 px-3 py-2 text-[11px] text-muted-foreground"
+            >
+              {cleanInlineText(event.message || event.kind || "Event")}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
 
 export function OrchestratorGraph({ events = [], rootActor = "orchestrator", agentRollups = [] }) {
-  const graph = buildGraph(events, rootActor, agentRollups);
+  const board = buildBoard(events, rootActor, agentRollups);
+
   return (
     <Card className="overflow-hidden shadow-card">
-      <CardHeader className="border-b border-border px-4 py-3">
-        <div className="flex flex-wrap items-start gap-2">
+      <CardHeader className="border-b border-border px-4 py-4">
+        <div className="flex flex-wrap items-start gap-3">
           <div>
             <CardTitle className="text-sm">Agent desk</CardTitle>
             <CardDescription>
-              Workflow graph with stage branches, model attempts, tool work, artifacts, and expandable run details.
+              Compact execution board for orchestration, stage progress, model attempts, tools, and captured frames.
             </CardDescription>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <Badge tone="warning" className="font-mono">
-              {graph.orchestrator.decisionCount} decisions
+            <Badge tone={toneForStatus(board.terminalStatus)} className="uppercase">
+              {board.terminalStatus}
             </Badge>
             <Badge tone="violet" className="font-mono">
-              {graph.totalLlm} LLM
+              {board.totalLlm} LLM
             </Badge>
             <Badge tone="signal" className="font-mono">
-              {graph.totalTools} tools
+              {board.totalTools} tools
             </Badge>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-0">
-        <div
-          className="overflow-hidden"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle, color-mix(in oklch, var(--mute-3) 32%, transparent) 1px, transparent 1px)",
-            backgroundSize: "18px 18px",
-          }}
-        >
-          <div className="px-3 py-5 sm:px-5 sm:py-6">
-            <div className="flex flex-col items-center gap-5">
-              <div className="grid w-full grid-cols-1 items-stretch justify-center gap-3 sm:grid-cols-2">
-                {graph.ingressNodes.map((node, index) => (
-                  <div key={node.id} className="flex items-center justify-center">
-                    <GraphNode node={node} icon={node.icon} />
-                    {index < graph.ingressNodes.length - 1 ? (
-                      <div className="hidden sm:block">
-                        <Connector active={node.status !== "idle"} />
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
+      <CardContent className="space-y-4 p-4">
+        <div className="grid gap-3 xl:grid-cols-3">
+          {board.topCards.map((card) => (
+            <TopCard key={card.id} card={card} />
+          ))}
+        </div>
 
-              <Connector vertical active={graph.orchestrator.status !== "idle"} />
-
-              <div className="flex justify-center">
-                <GraphNode node={graph.orchestrator} icon={Route} wide />
-              </div>
-
-              <Connector vertical active={graph.orchestrator.status !== "idle"} />
-
-              <div className="relative mx-auto w-full max-w-[1060px] pt-3">
-                <div className="absolute left-[12.5%] right-[12.5%] top-0 hidden border-t border-dashed border-border lg:block" />
-                <div className="pointer-events-none absolute left-1/2 top-0 hidden h-4 w-px -translate-x-1/2 border-l border-dashed border-border lg:block" />
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  {graph.agentNodes.map((node) => (
-                    <div key={node.id} className="flex flex-col items-center gap-2">
-                      <Connector vertical active={node.status !== "idle"} />
-                      <AgentBranch node={node} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
+        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+          {board.stages.map((node) => (
+            <StageCard key={node.id} node={node} />
+          ))}
         </div>
       </CardContent>
     </Card>

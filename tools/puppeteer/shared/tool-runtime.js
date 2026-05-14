@@ -80,11 +80,11 @@ export function decodeUriEverywhere(value, seen = new WeakSet()) {
   return decoded;
 }
 
-function encodeElementRef(payload) {
+export function encodeElementRef(payload) {
   return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
 }
 
-function decodeElementRef(elementRef) {
+export function decodeElementRef(elementRef) {
   return JSON.parse(Buffer.from(elementRef, 'base64url').toString('utf8'));
 }
 
@@ -888,17 +888,96 @@ export async function readElementDetail(page, params = {}) {
     return { ok: false, ...resolved };
   }
 
-  const detail = await resolved.frame.evaluate((node) => {
-    const rect = node.getBoundingClientRect();
-    const attrs = {};
-    for (const attr of node.getAttributeNames()) {
-      attrs[attr] = node.getAttribute(attr);
-    }
+  const includeHtml = Boolean(params.include_html);
+  const htmlMode = String(params.html_mode || 'outer').toLowerCase() === 'inner' ? 'inner' : 'outer';
+  const maxDepth = Math.max(0, Number(params.max_subtree_depth ?? 4));
+  const maxChildrenPerNode = Math.max(1, Number(params.max_children_per_node ?? 25));
 
+  const detail = await resolved.frame.evaluate((node, options) => {
+    const normalizeText = (value, max = 400) =>
+      String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+    const getAttributes = (target) => {
+      const attrs = {};
+      for (const attr of target.getAttributeNames()) {
+        attrs[attr] = target.getAttribute(attr);
+      }
+      return attrs;
+    };
+    const getSelector = (target) => {
+      if (target.id) return `#${target.id}`;
+      if (target.getAttribute('name')) return `[name="${target.getAttribute('name')}"]`;
+      const classes = String(target.className || '').trim().split(/\s+/).filter(Boolean);
+      if (classes.length > 0) return `.${classes.slice(0, 2).join('.')}`;
+      return target.tagName.toLowerCase();
+    };
+    const getXpath = (target) => {
+      const parts = [];
+      let current = target;
+      while (current && current.nodeType === 1) {
+        let idx = 1;
+        let sibling = current.previousElementSibling;
+        while (sibling) {
+          if (sibling.tagName === current.tagName) idx += 1;
+          sibling = sibling.previousElementSibling;
+        }
+        parts.unshift(`${current.tagName.toLowerCase()}[${idx}]`);
+        current = current.parentElement;
+      }
+      return `//${parts.join('/')}`;
+    };
+    const isVisible = (target) => {
+      const style = window.getComputedStyle(target);
+      const rect = target.getBoundingClientRect();
+      return rect.width > 0
+        && rect.height > 0
+        && style.visibility !== 'hidden'
+        && style.display !== 'none'
+        && style.opacity !== '0';
+    };
+    const toBox = (target) => {
+      const rect = target.getBoundingClientRect();
+      return {
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      };
+    };
+    const serializeNode = (target, depth = 0, path = '0') => {
+      if (!(target instanceof Element)) return null;
+      const attributes = getAttributes(target);
+      const children = [];
+      if (depth < options.maxDepth) {
+        const rawChildren = Array.from(target.children || []).slice(0, options.maxChildrenPerNode);
+        rawChildren.forEach((child, index) => {
+          const value = serializeNode(child, depth + 1, `${path}.${index}`);
+          if (value) children.push(value);
+        });
+      }
+      return {
+        node_id: `scoped-${path}`,
+        tag: target.tagName.toLowerCase(),
+        selector: getSelector(target),
+        xpath: getXpath(target),
+        text: normalizeText(target.innerText || target.textContent || target.value || '', 400),
+        text_preview: normalizeText(target.innerText || target.textContent || target.value || '', 220),
+        attributes,
+        visible: isVisible(target),
+        bbox: toBox(target),
+        children,
+      };
+    };
+
+    const rect = node.getBoundingClientRect();
+    const attrs = getAttributes(node);
     const nearby = node.parentElement?.innerText || '';
+    const subtree = serializeNode(node, 0, '0');
+    const html = options.includeHtml
+      ? (options.htmlMode === 'inner' ? node.innerHTML || '' : node.outerHTML || '')
+      : '';
     return {
       tag: node.tagName.toLowerCase(),
-      text: (node.innerText || node.textContent || node.value || '').replace(/\s+/g, ' ').trim().slice(0, 400),
+      text: normalizeText(node.innerText || node.textContent || node.value || '', 400),
       html_preview: (node.outerHTML || '').slice(0, 1000),
       attrs,
       state: {
@@ -915,9 +994,19 @@ export async function readElementDetail(page, params = {}) {
         center_x: Math.round(rect.x + rect.width / 2),
         center_y: Math.round(rect.y + rect.height / 2),
       },
-      nearby_text: nearby.replace(/\s+/g, ' ').trim().slice(0, 400),
+      selector: getSelector(node),
+      xpath: getXpath(node),
+      visible: isVisible(node),
+      nearby_text: normalizeText(nearby, 400),
+      subtree,
+      html,
     };
-  }, resolved.handle);
+  }, resolved.handle, {
+    includeHtml,
+    htmlMode,
+    maxDepth,
+    maxChildrenPerNode,
+  });
 
   const screenshot = await captureScreenshot(page, { handle: resolved.handle, fallbackFull: true });
   await resolved.handle.dispose().catch(() => {});

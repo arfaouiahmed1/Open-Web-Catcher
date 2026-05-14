@@ -81,9 +81,9 @@ function candidateScore(candidate) {
 }
 
 function toCandidate(link, pageUrl) {
-  const url = link.href || link.url || "";
+  const url = link.href || link.url || link.src || "";
   const text = normalizeWhitespace(
-    link.text || link.ancestor_text_preview || "",
+    link.text || link.text_preview || link.name || link.ancestor_text_preview || "",
   );
   const metadata = inferMetadata(text, url);
   return {
@@ -133,9 +133,22 @@ export async function inspectLanding(params = {}) {
     include_network: params.include_network ?? false,
     include_response_bodies: params.include_response_bodies ?? false,
     include_frames: params.include_frames ?? false,
+    response_profile: "internal_rich",
   });
 
-  const allLinks = Array.isArray(data.links) ? data.links : [];
+  const normalizedLinks = Array.isArray(data.node_index)
+    ? data.node_index.filter((entry) => entry.semantic_kind === "link")
+    : [];
+  const allLinks = normalizedLinks.length
+    ? normalizedLinks.map((entry) => ({
+      href: entry.href || "",
+      text: entry.text_preview || entry.name || "",
+      selector: entry.selector || "",
+      xpath: entry.xpath || "",
+      frame_path: entry.frame_path || "root",
+      bbox: entry.bbox || null,
+    }))
+    : (Array.isArray(data.links) ? data.links : []);
   const hosting_candidate_links = dedupeByUrl(
     allLinks
       .map((link) => toCandidate(link, data.url || data.page?.final_url || ""))
@@ -143,7 +156,7 @@ export async function inspectLanding(params = {}) {
       .filter((entry) => !NOISE_PATTERN.test(`${entry.text} ${entry.url}`))
       .map((entry) => ({ ...entry, relevance_score: candidateScore(entry) }))
       .sort((a, b) => b.relevance_score - a.relevance_score),
-  );
+  ).slice(0, 40);
 
   const candidateDomains = [];
   const seenDomains = new Set();
@@ -155,12 +168,28 @@ export async function inspectLanding(params = {}) {
   }
 
   return {
-    ...data,
+    schema_version: data.schema_version,
+    page: data.page,
+    load_state: data.load_state,
+    access_state: data.access_state,
+    screenshot_url: data.screenshot_url,
+    context_tree: data.context_tree,
+    node_index: data.node_index,
+    action_targets: data.action_targets,
+    frame_catalog: data.frame_catalog,
+    page_summary: data.page_summary,
+    document_stats: data.document_stats,
+    outline: data.outline,
+    pagination: data.pagination,
+    hosting_signals: data.hosting_signals,
+    contentLinks: data.contentLinks,
+    navLinks: data.navLinks,
+    buttons: data.buttons,
     context_type: "landing",
     inspect_profile: "landing",
     focus: {
-      primary: ["metadata", "links"],
-      minimized: ["network", "frames"],
+      primary: ["tree", "links", "patterns"],
+      minimized: ["network", "frames", "raw_dom"],
     },
     hosting_candidate_links,
     landing_summary: {

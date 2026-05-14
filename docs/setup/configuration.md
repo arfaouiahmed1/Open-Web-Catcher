@@ -48,7 +48,7 @@ Costs come from either:
 
 Stored pricing rows are loaded at startup and merged into runtime pricing defaults.
 
-Provider API sync support is currently implemented for `openrouter`.
+Provider API sync support is Gemini-only (`google`).
 
 ## YAML Overrides
 

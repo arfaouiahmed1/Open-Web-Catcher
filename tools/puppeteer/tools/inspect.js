@@ -1,8 +1,18 @@
 import {
+  buildFrameState,
   detectAccessStateFromSignals,
   withBrowserSession,
 } from "../shared/tool-runtime.js";
 import { screenshotViewport } from "../shared/screenshot.js";
+import {
+  buildFrameCatalog,
+  buildNormalizedTreeArtifacts,
+  compactActionTargets,
+  compactContextTree,
+  compactFrameCatalog,
+  compactNodeIndex,
+  summarizeNodeKinds,
+} from "./context-tree.js";
 
 const DEFAULT_CONFIG = {
   url: "",
@@ -33,6 +43,7 @@ const DEFAULT_CONFIG = {
   allow_safe_interactions: false,
   safe_interaction_limit: 0,
   scanMode: "default",
+  response_profile: "public_compact",
   include_screenshot: true,
 };
 
@@ -140,6 +151,10 @@ export function normalizeInspectConfig(params = {}) {
       normalizeWhitespace(
         params.scanMode || params.scan_mode || DEFAULT_CONFIG.scanMode,
       ).toLowerCase() || "default",
+    response_profile:
+      normalizeWhitespace(
+        params.response_profile || params.responseProfile || DEFAULT_CONFIG.response_profile,
+      ).toLowerCase() || "public_compact",
     include_screenshot: toBoolean(
       params.include_screenshot,
       DEFAULT_CONFIG.include_screenshot,
@@ -526,7 +541,7 @@ export function buildDataResponses(responseLog = []) {
   return out;
 }
 
-function extractPageObservation(configInput = {}) {
+export function extractPageObservation(configInput = {}) {
   const config = {
     max_depth: Number(configInput.max_depth || 0),
     max_children_per_node: Number(configInput.max_children_per_node || 0),
@@ -769,6 +784,7 @@ function extractPageObservation(configInput = {}) {
       node_id: getNodeId(node),
       tag,
       selector: getSelector(node),
+      xpath: getXPath(node),
       text: ownText(node),
       text_preview: ownText(node),
       attributes: getAttributes(node),
@@ -1836,7 +1852,7 @@ function buildLegacyCompatibilityView(
     elements,
     frame_tree: frameRecords,
     page_digest: {
-      text_sample: pageDigest.text_sample || "",
+      text_sample: normalizeWhitespace(pageDigest.text_sample || "").slice(0, 180),
       text_hash: textHash(pageDigest.text_sample || ""),
       html_size: Number(pageDigest.html_size || 0),
       node_count: Number(
@@ -1936,6 +1952,145 @@ function inferFramePurpose(summary, url) {
   if (/match|fixture|schedule|channels|league/.test(haystack)) return "listing";
   if (/ad|banner|doubleclick|analytics|track/.test(haystack)) return "ad";
   return "unknown";
+}
+
+function compactLegacyEntries(items = [], limit = 12) {
+  return (Array.isArray(items) ? items : []).slice(0, limit).map((entry) => ({
+    text: normalizeWhitespace(entry.text || entry.name || ""),
+    href: entry.href || entry.url || "",
+    src: entry.src || "",
+    selector: entry.selector || "",
+    xpath: entry.xpath || "",
+    frame_path: entry.frame_path || "root",
+    x: Math.round(entry.x || entry.bbox?.x || 0),
+    y: Math.round(entry.y || entry.bbox?.y || 0),
+    width: Math.round(entry.width || entry.bbox?.width || 0),
+    height: Math.round(entry.height || entry.bbox?.height || 0),
+    visible: entry.visible ?? true,
+  }));
+}
+
+function compactPaginationSummary(pagination = {}, { limit = 6, textLimit = 72 } = {}) {
+  const elements = Array.isArray(pagination.elements) ? pagination.elements : [];
+  const seen = new Set();
+  const compacted = [];
+
+  for (const entry of elements) {
+    const key = `${entry.href || ""}|${entry.selector || ""}|${normalizeWhitespace(entry.text || "")}`;
+    if (!key.trim() || seen.has(key)) continue;
+    seen.add(key);
+    compacted.push({
+      text: normalizeWhitespace(entry.text || "").slice(0, textLimit),
+      href: entry.href || "",
+      selector: entry.selector || "",
+      xpath: entry.xpath || "",
+    });
+    if (compacted.length >= limit) break;
+  }
+
+  return {
+    detected: Boolean(pagination.detected),
+    type: pagination.type || null,
+    total_candidates: elements.length,
+    elements: compacted,
+  };
+}
+
+function compactNetworkForOutput(network = {}, { includeDetails = false } = {}) {
+  const requests = Array.isArray(network.requests) ? network.requests : [];
+  const responses = Array.isArray(network.responses) ? network.responses : [];
+  const summary = {
+    resource_summary: network.resource_summary || {},
+    total_requests: requests.length,
+    total_responses: responses.length,
+  };
+  if (!includeDetails) return summary;
+  return {
+    ...summary,
+    requests: requests.slice(0, 30),
+    responses: responses.slice(0, 30),
+  };
+}
+
+function trimProjectedTree(node, { maxDepth = 3, maxChildrenPerNode = 6 } = {}) {
+  if (!node || typeof node !== "object") return null;
+  const visit = (entry, depth = 0) => {
+    if (!entry || typeof entry !== "object") return null;
+    const next = { ...entry };
+    const rawChildren = Array.isArray(entry.children) ? entry.children : [];
+    if (depth >= maxDepth) {
+      delete next.children;
+      if (rawChildren.length) next.child_count = rawChildren.length;
+      return next;
+    }
+    const children = rawChildren
+      .slice(0, maxChildrenPerNode)
+      .map((child) => visit(child, depth + 1))
+      .filter(Boolean);
+    if (children.length) next.children = children;
+    else delete next.children;
+    if (rawChildren.length > children.length) {
+      next.truncated_children = rawChildren.length - children.length;
+    }
+    return next;
+  };
+  return visit(node, 0);
+}
+
+function estimateJsonBytes(value) {
+  try {
+    return Buffer.byteLength(JSON.stringify(value), "utf8");
+  } catch {
+    return 0;
+  }
+}
+
+function minimizeNodeEntries(nodes = [], { keepSelectors = true } = {}) {
+  return (Array.isArray(nodes) ? nodes : []).map((node) => {
+    const next = {
+      node_id: node.node_id,
+      frame_path: node.frame_path,
+      semantic_kind: node.semantic_kind,
+      tag: node.tag,
+      name: node.name,
+      text_preview: node.text_preview,
+      visible: node.visible,
+    };
+    if (keepSelectors) {
+      next.selector = node.selector || "";
+      next.xpath = node.xpath || "";
+    }
+    if (node.href) next.href = node.href;
+    if (node.src) next.src = node.src;
+    return next;
+  });
+}
+
+function enforcePublicCompactBudget(response, maxBytes = 90000) {
+  const output = { ...response };
+  if (estimateJsonBytes(output) <= maxBytes) return output;
+
+  output.node_index = minimizeNodeEntries(output.node_index?.slice(0, 16) || []);
+  output.action_targets = minimizeNodeEntries(output.action_targets?.slice(0, 8) || []);
+  output.frame_catalog = (output.frame_catalog || []).slice(0, 6);
+  output.context_tree = trimProjectedTree(output.context_tree, { maxDepth: 2, maxChildrenPerNode: 4 });
+  output.pagination = compactPaginationSummary(output.pagination, { limit: 4, textLimit: 56 });
+  output.outline = {
+    headings: Array.isArray(output.outline?.headings) ? output.outline.headings.slice(0, 3) : [],
+    landmarks: Array.isArray(output.outline?.landmarks) ? output.outline.landmarks.slice(0, 3) : [],
+  };
+  if (estimateJsonBytes(output) <= maxBytes) return output;
+
+  output.node_index = minimizeNodeEntries(output.node_index?.slice(0, 10) || [], { keepSelectors: false });
+  output.action_targets = minimizeNodeEntries(output.action_targets?.slice(0, 6) || [], { keepSelectors: true });
+  output.frame_catalog = (output.frame_catalog || []).slice(0, 4);
+  output.context_tree = trimProjectedTree(output.context_tree, { maxDepth: 2, maxChildrenPerNode: 3 });
+  output.pagination = compactPaginationSummary(output.pagination, { limit: 3, textLimit: 48 });
+  output.outline = {
+    headings: Array.isArray(output.outline?.headings) ? output.outline.headings.slice(0, 2) : [],
+    landmarks: Array.isArray(output.outline?.landmarks) ? output.outline.landmarks.slice(0, 2) : [],
+  };
+  return output;
 }
 
 async function extractFrameObservations(page, config) {
@@ -2050,6 +2205,7 @@ export function buildInspectResponse({
   requestedUrl,
   finalUrl,
   pageContext,
+  pageState,
   loadState,
   observation,
   frames,
@@ -2076,8 +2232,44 @@ export function buildInspectResponse({
     pageDigest,
     frameRecords,
   );
-
-  return {
+  const normalized =
+    observation?.tree
+      ? buildNormalizedTreeArtifacts(observation.tree, {
+        frame_path: pageState?.frame_path || "root",
+        dom_epoch: pageState?.dom_epoch || "",
+        page_state_id: pageState?.page_state_id || "",
+      })
+      : { context_tree: null, node_index: [], action_targets: [] };
+  const frame_catalog = buildFrameCatalog(frameRecords || []);
+  const compact_context_tree = compactContextTree(normalized.context_tree, {
+    maxDepth: config.scanMode === "default" ? 3 : 4,
+    maxChildrenPerNode: config.scanMode === "default" ? 6 : 8,
+    textLimit: 60,
+  });
+  const compact_node_index = compactNodeIndex(normalized.node_index, {
+    limit: config.scanMode === "default" ? 24 : 36,
+    textLimit: 60,
+  });
+  const compact_action_targets = compactActionTargets(normalized.action_targets, {
+    limit: config.scanMode === "default" ? 12 : 16,
+    textLimit: 60,
+  });
+  const compact_frame_catalog = compactFrameCatalog(frame_catalog, {
+    limit: config.scanMode === "default" ? 8 : 10,
+  });
+  const page_summary = {
+    counts_by_kind: summarizeNodeKinds(normalized.node_index),
+    total_nodes: normalized.node_index.length,
+    actionable_targets: normalized.action_targets.length,
+    links: legacy.contentLinks.length,
+    buttons: legacy.buttons.length,
+    iframes: legacy.iframes.length,
+    videos: legacy.videos.length,
+    forms: Number(observation?.forms?.length || 0),
+    tables: Number(observation?.tables?.length || 0),
+    frames: compact_frame_catalog.length,
+  };
+  const baseResponse = {
     schema_version: OBSERVATION_SCHEMA_VERSION,
     page: {
       requested_url: requestedUrl || finalUrl || "",
@@ -2093,66 +2285,26 @@ export function buildInspectResponse({
       load: Boolean(loadState?.load),
       network_idle_reached: Boolean(loadState?.network_idle_reached),
       waited_ms: Number(loadState?.waited_ms || 0),
-      console_errors: loadState?.console_errors || [],
-      page_errors: loadState?.page_errors || [],
+      console_error_count: Array.isArray(loadState?.console_errors) ? loadState.console_errors.length : 0,
+      page_error_count: Array.isArray(loadState?.page_errors) ? loadState.page_errors.length : 0,
     },
-    metadata: observation?.metadata || {},
-    document_stats: observation?.document_stats || {},
-    outline: observation?.outline || { headings: [], landmarks: [] },
-    tree: observation?.tree || null,
-    regions: observation?.regions || [],
-    repeated_structures: observation?.repeated_structures || [],
-    tables: observation?.tables || [],
-    links: observation?.links || [],
-    interactive_elements: observation?.interactive_elements || [],
-    forms: observation?.forms || [],
-    media: observation?.media || {
-      iframes: [],
-      videos: [],
-      audio: [],
-      images: [],
-      sources: [],
-      tracks: [],
-    },
-    frames: frames || [],
-    shadow_roots: observation?.shadow_roots || [],
-    scripts: observation?.scripts || {
-      external: [],
-      inline_summaries: [],
-      script_url_strings: [],
-      script_object_keys: [],
-    },
-    network: network || { resource_summary: {}, requests: [], responses: [] },
-    data_responses: dataResponses || [],
-    mutation_observations: mutationObservations || [],
-    storage: storage || {
-      local_storage_keys: [],
-      session_storage_keys: [],
-      cookies_summary: [],
-    },
-    snapshots: snapshots || {
-      initial_tree: null,
-      after_wait_tree: null,
-      after_scroll_tree: null,
-      after_interaction_tree: null,
-    },
-    pruning: observation?.pruning || {},
-
+    inspect_profile: config.scanMode || "default",
+    page_summary,
+    context_tree: compact_context_tree,
+    node_index: compact_node_index,
+    action_targets: compact_action_targets,
+    frame_catalog: compact_frame_catalog,
     url: finalUrl || requestedUrl || "",
     title,
     screenshot_url: screenshotUrl || "",
-    contentLinks: legacy.contentLinks,
-    navLinks: legacy.navLinks,
-    buttons: legacy.buttons,
-    iframes: legacy.iframes,
+    contentLinks: compactLegacyEntries(legacy.contentLinks, 16),
+    navLinks: compactLegacyEntries(legacy.navLinks, 10),
+    buttons: compactLegacyEntries(legacy.buttons, 12),
+    iframes: compactLegacyEntries(legacy.iframes, 10),
     hosting_signals: legacy.hosting_signals,
-    popups: legacy.popups,
-    dom_skeleton: legacy.dom_skeleton,
+    popups: compactLegacyEntries(legacy.popups, 8),
     pagination: legacy.pagination,
-    videos: legacy.videos,
-    elements: legacy.elements,
-    frame_tree: legacy.frame_tree,
-    lazy_load_warmup: null,
+    videos: compactLegacyEntries(legacy.videos, 8),
     page_digest: legacy.page_digest,
     stats: {
       content_links: legacy.contentLinks.length,
@@ -2166,12 +2318,75 @@ export function buildInspectResponse({
       frames_with_video: legacy.frame_tree.filter(
         (frame) => frame.video_count > 0,
       ).length,
-      lazy_load_clicks: 0,
-      lazy_load_scroll_steps: 0,
     },
     access_state: accessState,
-    inspect_config: config,
   };
+
+  if (String(config.response_profile || "").toLowerCase() === "internal_rich") {
+    return {
+      ...baseResponse,
+      metadata: observation?.metadata || {},
+      document_stats: observation?.document_stats || {},
+      outline: observation?.outline || { headings: [], landmarks: [] },
+      frame_tree: legacy.frame_tree,
+      network: network || { resource_summary: {}, requests: [], responses: [] },
+      network_summary: compactNetworkForOutput(network, { includeDetails: false }),
+      data_responses: (dataResponses || []).slice(0, 20),
+      mutation_observations: (mutationObservations || []).slice(0, 8),
+      elements: compactLegacyEntries(legacy.elements, 20),
+      frames: Array.isArray(frames) ? frames.slice(0, 8) : [],
+      inspect_config: {
+        scanMode: config.scanMode,
+        wait_ms: config.wait_ms,
+        include_network: Boolean(config.include_network),
+        include_frames: Boolean(config.include_frames),
+      },
+    };
+  }
+
+  return enforcePublicCompactBudget({
+    ...baseResponse,
+    document_stats: {
+      link_count: Number(observation?.document_stats?.link_count || 0),
+      original_node_count: Number(observation?.document_stats?.original_node_count || 0),
+    },
+    outline: {
+      headings: Array.isArray(observation?.outline?.headings) ? observation.outline.headings.slice(0, 3) : [],
+      landmarks: Array.isArray(observation?.outline?.landmarks) ? observation.outline.landmarks.slice(0, 3) : [],
+    },
+    network_summary: compactNetworkForOutput(network, { includeDetails: false }),
+    context_tree: trimProjectedTree(baseResponse.context_tree, {
+      maxDepth: 2,
+      maxChildrenPerNode: 5,
+    }),
+    node_index: baseResponse.node_index.slice(0, 18),
+    action_targets: baseResponse.action_targets.slice(0, 8),
+    frame_catalog: baseResponse.frame_catalog.slice(0, 6),
+    contentLinks: [],
+    buttons: [],
+    navLinks: [],
+    iframes: [],
+    popups: [],
+    videos: [],
+    pagination: compactPaginationSummary(baseResponse.pagination, {
+      limit: 6,
+      textLimit: 64,
+    }),
+    page_digest: {
+      text_hash: baseResponse.page_digest?.text_hash || 0,
+      html_size: baseResponse.page_digest?.html_size || 0,
+      node_count: baseResponse.page_digest?.node_count || 0,
+    },
+    stats: {
+      content_links: baseResponse.stats.content_links,
+      nav_links: baseResponse.stats.nav_links,
+      buttons: baseResponse.stats.buttons,
+      iframes: baseResponse.stats.iframes,
+      videos: baseResponse.stats.videos,
+      frames_total: baseResponse.stats.frames_total,
+      frames_with_video: baseResponse.stats.frames_with_video,
+    },
+  });
 }
 
 export async function inspect(params = {}) {
@@ -2293,6 +2508,7 @@ export async function inspect(params = {}) {
           html_size: 0,
           node_count: 0,
         }));
+      const pageState = await buildFrameState(page, "root");
 
       return buildInspectResponse({
         config,
@@ -2302,6 +2518,7 @@ export async function inspect(params = {}) {
           ...pageContext,
           timestamp: new Date().toISOString(),
         },
+        pageState,
         loadState: {
           domcontentloaded: ["interactive", "complete"].includes(
             pageContext.readyState,

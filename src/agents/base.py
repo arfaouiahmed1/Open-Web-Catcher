@@ -33,6 +33,7 @@ from src.utils.instrumentation import (
 from src.utils.logging import get_logger
 from src.utils.observability import RunObserver
 from src.utils.provider_models import (
+    is_google_genai_model_id,
     normalize_gemini_model_id,
     resolve_agent_model_selection,
     resolve_llm_tuning,
@@ -496,6 +497,43 @@ def _serialize_tool_output(raw: Any) -> str:
     return json.dumps(raw, default=str)
 
 
+def _summarize_memory_lookup_payload(raw: str) -> str:
+    try:
+        payload = json.loads(str(raw or ""))
+    except Exception:
+        return str(raw or "")[:2000]
+
+    profile = payload.get("profile") if isinstance(payload, dict) else {}
+    related_profiles = payload.get("related_profiles") if isinstance(payload, dict) else []
+    profile = profile if isinstance(profile, dict) else {}
+    related_profiles = related_profiles if isinstance(related_profiles, list) else []
+
+    summary = {
+        "ok": bool(payload.get("ok")) if isinstance(payload, dict) else False,
+        "domain": str(payload.get("domain") or "") if isinstance(payload, dict) else "",
+        "page_type": str(payload.get("page_type") or "") if isinstance(payload, dict) else "",
+        "profile_found": bool(payload.get("profile_found")) if isinstance(payload, dict) else False,
+        "memory_first_recommendation": str(payload.get("memory_first_recommendation") or "")[:300]
+        if isinstance(payload, dict)
+        else "",
+        "profile_summary": {
+            "revision": int(profile.get("revision") or 0) if profile else 0,
+            "selectors": list(profile.get("selectors", [])[:6]) if profile else [],
+            "url_patterns": list(profile.get("url_patterns", [])[:6]) if profile else [],
+            "pagination_url_patterns": list(profile.get("pagination_url_patterns", [])[:4]) if profile else [],
+            "server_labels": list(profile.get("server_labels", [])[:6]) if profile else [],
+            "stream_hosts": list(profile.get("stream_hosts", [])[:6]) if profile else [],
+            "ui_signals": list(profile.get("ui_signals", [])[:6]) if profile else [],
+            "hosting_candidate_count": len(profile.get("hosting_candidate_urls", []) or []) if profile else 0,
+            "has_navigation_hints": bool(profile.get("navigation_hints")) if profile else False,
+            "has_critical_links": bool(profile.get("critical_links")) if profile else False,
+            "memory_url_usage_rule": "use saved patterns/selectors as hints; do not navigate directly to remembered concrete URLs",
+        },
+        "related_profile_count": len(related_profiles),
+    }
+    return json.dumps(summary, ensure_ascii=False)
+
+
 async def _invoke_tool(tool: BaseTool, tool_args: dict[str, Any]) -> Any:
     """Invoke a tool in the most compatible async-safe way possible."""
     try:
@@ -614,12 +652,12 @@ def build_llm(
 
     selection_model = selection.get("model") if provider_is_supported else ""
     model_name = model_override or selection_model or settings.agent_model
-    if not str(model_name or "").strip().lower().startswith("gemini-"):
+    if not is_google_genai_model_id(str(model_name or "")):
         fallback_model = str(settings.agent_model or "").strip()
-        if not fallback_model.lower().startswith("gemini-"):
-            fallback_model = str(settings.gemini_model or "").strip() or "gemini-2.5-flash"
+        if not is_google_genai_model_id(fallback_model):
+            fallback_model = str(settings.gemini_model or "").strip()
         logger.warning(
-            "Ignoring non-Gemini model '%s'; using '%s'.",
+            "Ignoring non-Google model '%s'; using '%s'.",
             model_name,
             fallback_model,
         )
@@ -867,12 +905,13 @@ async def run_agent_loop(
             memory_lookup_args["page_type"] = resolved_bootstrap_page_type
 
         status_mem, result_mem = await _run_bootstrap_tool("memory_lookup", memory_lookup_args)
+        summarized_memory = _summarize_memory_lookup_payload(result_mem)
         bootstrap_messages.append(
             HumanMessage(
                 content=(
                     "BOOTSTRAP RESULT (memory_lookup):\n"
                     f"status={status_mem}\n"
-                    f"payload={result_mem[:6000]}"
+                    f"payload={summarized_memory[:4000]}"
                 )
             )
         )

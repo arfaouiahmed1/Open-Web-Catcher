@@ -153,9 +153,7 @@ export function StreamProviderTab({ runId, runUrl, streamUrls = [] }) {
   }
 
   useEffect(() => {
-    const urls = Array.isArray(streamUrls) && streamUrls.length
-      ? streamUrls
-      : (runUrl ? [runUrl] : []);
+    const urls = Array.isArray(streamUrls) ? streamUrls.filter(Boolean) : [];
     if (!urls.length) {
       setData(null);
       setHasRun(true);
@@ -168,7 +166,7 @@ export function StreamProviderTab({ runId, runUrl, streamUrls = [] }) {
   const rows = data?.rows || [];
   const topProviders = data?.top_providers || [];
   const topCountries = data?.top_countries || [];
-  const hasLookupUrls = (Array.isArray(streamUrls) && streamUrls.length > 0) || Boolean(runUrl);
+  const hasLookupUrls = Array.isArray(streamUrls) && streamUrls.length > 0;
 
   const resolveRate = stats.total_urls
     ? Math.round(((stats.resolved_ips || 0) / stats.total_urls) * 100)
@@ -194,12 +192,12 @@ export function StreamProviderTab({ runId, runUrl, streamUrls = [] }) {
           <h2 className="text-base font-semibold text-foreground">Provider Intelligence</h2>
           <p className="mt-0.5 text-sm text-muted-foreground">
             {hasLookupUrls
-              ? `Resolved from run URLs and detected stream targets (${formatNumber((streamUrls || []).length || (runUrl ? 1 : 0))} candidate URLs).`
+              ? `Resolved from detected stream and provider targets (${formatNumber((streamUrls || []).length)} candidate URLs).`
               : "No run URLs available for provider resolution yet."}
           </p>
         </div>
         {hasLookupUrls ? (
-          <Button variant="outline" size="sm" onClick={() => runLookup(streamUrls.length ? streamUrls : [runUrl])} disabled={isLoading}>
+          <Button variant="outline" size="sm" onClick={() => runLookup(streamUrls)} disabled={isLoading}>
             <Wifi className="mr-1.5 h-3.5 w-3.5" />
             Re-resolve
           </Button>
