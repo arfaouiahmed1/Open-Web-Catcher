@@ -807,12 +807,14 @@ function ensureSelectedOption(options, value) {
 
 function sourceTone(source) {
   if (source === "provider_api") return "ok";
+  if (source === "fallback_catalog") return "warn";
   if (source === "unavailable") return "error";
   return "warn";
 }
 
 function sourceLabel(source) {
   if (source === "provider_api") return "Live provider catalog";
+  if (source === "fallback_catalog") return "Fallback catalog";
   if (source === "unavailable") return "Catalog unavailable";
   return "Stored catalog";
 }
@@ -1535,6 +1537,7 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [savedTab, setSavedTab] = useState("");
   const [configErr, setConfigErr] = useState("");
+  const [saveMismatchWarning, setSaveMismatchWarning] = useState("");
 
   const apiKeys = config?.api_keys || {};
   const activeProvider =
@@ -2110,6 +2113,7 @@ export function SettingsPage() {
 
     setSaving(true);
     setConfigErr("");
+    setSaveMismatchWarning("");
     try {
       const response = await fetch(apiUrl("/ui/config"), {
         method: "PUT",
@@ -2119,6 +2123,25 @@ export function SettingsPage() {
       const payload = await response.json();
       if (!response.ok)
         throw new Error(payload.detail || `Status ${response.status}`);
+      if (tabId === "models") {
+        const requestedSnapshot = snapshotServerConfig({
+          ...serverDraft,
+          ...payloadToSave,
+        });
+        const returnedSnapshot = snapshotServerConfig(payload);
+        const requestedModel = requestedSnapshot.agent_model;
+        const returnedModel = returnedSnapshot.agent_model;
+        const requestedOrchestrator = requestedSnapshot.orchestrator_model;
+        const returnedOrchestrator = returnedSnapshot.orchestrator_model;
+        if (
+          requestedModel !== returnedModel ||
+          requestedOrchestrator !== returnedOrchestrator
+        ) {
+          setSaveMismatchWarning(
+            `Server applied different model values (agent=${returnedModel || "n/a"}, orchestrator=${returnedOrchestrator || "n/a"}).`,
+          );
+        }
+      }
       await hydrateConfig(payload);
       await loadPricingStatus();
       if (payload.config_persisted === false) {
@@ -2144,6 +2167,21 @@ export function SettingsPage() {
     (!config || TAB_DETAILS[activeTab]?.storage === "server");
 
   const hasDirty = Object.values(dirtyTabs).some(Boolean);
+  const activeGlobalModel = agentModelConfig?.classification?.model || "";
+  const activeOrchestratorModel = agentModelConfig?.orchestrator?.model || "";
+
+  function applySelectedCatalogModelAsGlobalDefault() {
+    const modelId = String(selectedCatalogModelId || "").trim();
+    if (!modelId) return;
+    setConfigErr("");
+    setSaveMismatchWarning("");
+    setAgentModelConfig((current) => {
+      const next = { ...current };
+      next.classification = { ...(next.classification || { provider, model: "" }), provider, model: modelId };
+      next.orchestrator = { ...(next.orchestrator || { provider, model: "" }), provider, model: modelId };
+      return next;
+    });
+  }
 
   return (
     <div className="space-y-6">
@@ -2214,6 +2252,11 @@ export function SettingsPage() {
           otherDirtyCount={otherDirtyCount}
         />
         <ErrorNotice message={showConfigError ? configErr : ""} />
+        {activeTab === "models" && saveMismatchWarning ? (
+          <div className="rounded-xl border border-amber-300/50 bg-amber-100/50 px-4 py-3 text-[13px] text-amber-900">
+            {saveMismatchWarning}
+          </div>
+        ) : null}
 
         <div key={activeTab} className="animate-fade-up space-y-8">
           {activeTab === "models" ? (
@@ -2227,7 +2270,61 @@ export function SettingsPage() {
                 <TabsContent value="providers" className="space-y-4">
                   <SectionHeader>Gemini Control Plane</SectionHeader>
 
-                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(340px,0.9fr)]">
+                  <Card className="rounded-[16px] border">
+                    <CardContent className="space-y-4 p-5">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="text-sm font-semibold text-foreground">
+                            Active global model
+                          </div>
+                          <div className="font-mono text-xs text-muted-foreground">
+                            {activeGlobalModel || "Not set"}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            Orchestrator baseline:{" "}
+                            <span className="font-mono">{activeOrchestratorModel || "Not set"}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge tone={currentTabDirty ? "warning" : "success"}>
+                            {currentTabDirty ? "Unsaved model changes" : "Models synced"}
+                          </Badge>
+                          {activeCatalog?.defaults_source ? (
+                            <Badge
+                              tone={
+                                sourceTone(activeCatalog.defaults_source) === "ok"
+                                  ? "success"
+                                  : sourceTone(activeCatalog.defaults_source) === "error"
+                                    ? "destructive"
+                                    : "warning"
+                              }
+                            >
+                              Defaults source: {sourceLabel(activeCatalog.defaults_source)}
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={applySelectedCatalogModelAsGlobalDefault}
+                          disabled={!selectedCatalogModelId}
+                        >
+                          Apply as global default
+                        </Button>
+                        <span className="text-xs text-muted-foreground">
+                          Precedence: Agent override &gt; model override &gt; provider default &gt; Gemini live/fallback default.
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <details className="rounded-[16px] border border-border bg-card" open={false}>
+                    <summary className="cursor-pointer list-none px-5 py-3 text-sm font-semibold text-foreground">
+                      Advanced: Catalog, defaults inspector, and pricing
+                    </summary>
+                    <div className="grid gap-4 border-t px-5 py-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(340px,0.9fr)]">
                     <FieldGroup
                       title="Models & Live Defaults"
                       description="Browse the live Gemini catalog, inspect per-model defaults from Gemini itself, and compare them with your active overrides."
@@ -2616,13 +2713,19 @@ export function SettingsPage() {
                         </div>
                       </FieldGroup>
                     </div>
-                  </div>
+                    </div>
+                  </details>
 
-                  <FieldGroup
-                    title="Overrides"
-                    description="These controls sit on top of Gemini live defaults. Use provider defaults for broad steering and model overrides only where you need a deliberate deviation."
-                    accent="var(--signal)"
-                  >
+                  <details className="rounded-[16px] border border-border bg-card">
+                    <summary className="cursor-pointer list-none px-5 py-3 text-sm font-semibold text-foreground">
+                      Advanced: Overrides
+                    </summary>
+                    <div className="border-t px-5 py-4">
+                    <FieldGroup
+                      title="Overrides"
+                      description="These controls sit on top of Gemini live defaults. Use provider defaults for broad steering and model overrides only where you need a deliberate deviation."
+                      accent="var(--signal)"
+                    >
                     <TuningCard
                       title={`${activeProvider.name} provider defaults`}
                       description="Applied to Gemini requests before model-specific overrides."
@@ -2667,7 +2770,9 @@ export function SettingsPage() {
                         </div>
                       );
                     })}
-                  </FieldGroup>
+                    </FieldGroup>
+                    </div>
+                  </details>
                 </TabsContent>
 
                 <TabsContent value="agents" className="space-y-4">

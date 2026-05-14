@@ -112,10 +112,16 @@ export function buildServerConfigDraft(state) {
 }
 
 export function snapshotServerConfig(payload) {
+  const classificationModel =
+    payload?.agent_model_config?.classification?.model || payload?.agent_model || "";
+  const orchestratorModel =
+    payload?.agent_model_config?.orchestrator?.model ||
+    payload?.orchestrator_model ||
+    classificationModel;
   return sortValue({
     llm_provider: payload?.llm_provider || "google",
-    agent_model: payload?.agent_model || "",
-    orchestrator_model: payload?.orchestrator_model || "",
+    agent_model: classificationModel,
+    orchestrator_model: orchestratorModel,
     gemini_temperature: Number.parseFloat(String(payload?.gemini_temperature ?? "0")) || 0,
     llm_tuning: payload?.llm_tuning || {},
     agent_model_config: payload?.agent_model_config || {},

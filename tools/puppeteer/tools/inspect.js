@@ -6,9 +6,24 @@ import { screenshotViewport } from "../shared/screenshot.js";
 
 const DEFAULT_CONFIG = {
   url: "",
-  wait_ms: 1500,
-  max_depth: 0,
-  max_children_per_node: 0,
+  wait_ms: 1200,
+  max_depth: 8,
+  max_children_per_node: 60,
+  max_links: 450,
+  max_interactive_elements: 450,
+  max_tables: 40,
+  max_table_rows: 80,
+  max_table_cells: 20,
+  max_iframes: 80,
+  max_videos: 50,
+  max_audio: 50,
+  max_images: 220,
+  max_sources: 220,
+  max_tracks: 120,
+  max_forms: 50,
+  max_form_inputs: 45,
+  max_frames: 24,
+  frame_eval_timeout_ms: 9000,
   include_network: true,
   include_response_bodies: false,
   include_frames: true,
@@ -27,6 +42,8 @@ const normalizeWhitespace = (value) =>
   String(value ?? "")
     .replace(/\s+/g, " ")
     .trim();
+const sleep = (ms) =>
+  new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
 
 function toBoolean(value, fallback) {
   if (typeof value === "boolean") return value;
@@ -52,6 +69,41 @@ export function normalizeInspectConfig(params = {}) {
       params.max_children_per_node,
       DEFAULT_CONFIG.max_children_per_node,
       0,
+    ),
+    max_links: toInteger(params.max_links, DEFAULT_CONFIG.max_links, 1),
+    max_interactive_elements: toInteger(
+      params.max_interactive_elements,
+      DEFAULT_CONFIG.max_interactive_elements,
+      1,
+    ),
+    max_tables: toInteger(params.max_tables, DEFAULT_CONFIG.max_tables, 1),
+    max_table_rows: toInteger(
+      params.max_table_rows,
+      DEFAULT_CONFIG.max_table_rows,
+      1,
+    ),
+    max_table_cells: toInteger(
+      params.max_table_cells,
+      DEFAULT_CONFIG.max_table_cells,
+      1,
+    ),
+    max_iframes: toInteger(params.max_iframes, DEFAULT_CONFIG.max_iframes, 1),
+    max_videos: toInteger(params.max_videos, DEFAULT_CONFIG.max_videos, 1),
+    max_audio: toInteger(params.max_audio, DEFAULT_CONFIG.max_audio, 1),
+    max_images: toInteger(params.max_images, DEFAULT_CONFIG.max_images, 1),
+    max_sources: toInteger(params.max_sources, DEFAULT_CONFIG.max_sources, 1),
+    max_tracks: toInteger(params.max_tracks, DEFAULT_CONFIG.max_tracks, 1),
+    max_forms: toInteger(params.max_forms, DEFAULT_CONFIG.max_forms, 1),
+    max_form_inputs: toInteger(
+      params.max_form_inputs,
+      DEFAULT_CONFIG.max_form_inputs,
+      1,
+    ),
+    max_frames: toInteger(params.max_frames, DEFAULT_CONFIG.max_frames, 1),
+    frame_eval_timeout_ms: toInteger(
+      params.frame_eval_timeout_ms,
+      DEFAULT_CONFIG.frame_eval_timeout_ms,
+      1000,
     ),
     include_network: toBoolean(
       params.include_network,
@@ -478,6 +530,19 @@ function extractPageObservation(configInput = {}) {
   const config = {
     max_depth: Number(configInput.max_depth || 0),
     max_children_per_node: Number(configInput.max_children_per_node || 0),
+    max_links: Number(configInput.max_links || 0),
+    max_interactive_elements: Number(configInput.max_interactive_elements || 0),
+    max_tables: Number(configInput.max_tables || 0),
+    max_table_rows: Number(configInput.max_table_rows || 0),
+    max_table_cells: Number(configInput.max_table_cells || 0),
+    max_iframes: Number(configInput.max_iframes || 0),
+    max_videos: Number(configInput.max_videos || 0),
+    max_audio: Number(configInput.max_audio || 0),
+    max_images: Number(configInput.max_images || 0),
+    max_sources: Number(configInput.max_sources || 0),
+    max_tracks: Number(configInput.max_tracks || 0),
+    max_forms: Number(configInput.max_forms || 0),
+    max_form_inputs: Number(configInput.max_form_inputs || 0),
     include_shadow_dom: Boolean(configInput.include_shadow_dom),
     treeOnly: Boolean(configInput.treeOnly),
   };
@@ -488,6 +553,8 @@ function extractPageObservation(configInput = {}) {
       .trim();
   const unlimitedDepth = config.max_depth <= 0;
   const unlimitedChildren = config.max_children_per_node <= 0;
+  const limitCollection = (items, max) =>
+    max > 0 ? items.slice(0, max) : items;
   const keptHiddenMeaningfully = true;
   const removedTags = new Set(["script", "style", "noscript", "template"]);
   const meaningfulTags = new Set([
@@ -851,7 +918,10 @@ function extractPageObservation(configInput = {}) {
   }
 
   function extractLinks() {
-    return Array.from(document.querySelectorAll("a[href]")).map((a) => ({
+    return limitCollection(
+      Array.from(document.querySelectorAll("a[href]")),
+      config.max_links,
+    ).map((a) => ({
       href: a.href || "",
       raw_href: a.getAttribute("href") || "",
       text: allText(a),
@@ -869,7 +939,10 @@ function extractPageObservation(configInput = {}) {
   function extractInteractive() {
     const selector =
       'button,a[href],input,textarea,select,[role="button"],[role="tab"],[onclick],[data-server],[data-source],[data-embed],summary,details';
-    return Array.from(document.querySelectorAll(selector)).map((el) => {
+    return limitCollection(
+      Array.from(document.querySelectorAll(selector)),
+      config.max_interactive_elements,
+    ).map((el) => {
       const style = window.getComputedStyle(el);
       return {
         node_id: getNodeId(el),
@@ -893,16 +966,25 @@ function extractPageObservation(configInput = {}) {
   }
 
   function extractTables() {
-    return Array.from(document.querySelectorAll("table")).map(
+    return limitCollection(
+      Array.from(document.querySelectorAll("table")),
+      config.max_tables,
+    ).map(
       (table, tableIndex) => {
         const headers = Array.from(table.querySelectorAll("thead th")).map(
           (th) => allText(th),
         );
-        const rows = Array.from(table.querySelectorAll("tbody tr, tr")).map(
+        const rows = limitCollection(
+          Array.from(table.querySelectorAll("tbody tr, tr")),
+          config.max_table_rows,
+        ).map(
           (row, rowIndex) => ({
             row_index: rowIndex,
             selector: getSelector(row),
-            cells: Array.from(row.querySelectorAll("th,td")).map(
+            cells: limitCollection(
+              Array.from(row.querySelectorAll("th,td")),
+              config.max_table_cells,
+            ).map(
               (cell, columnIndex) => ({
                 column: headers[columnIndex] || `col_${columnIndex + 1}`,
                 text: allText(cell),
@@ -940,7 +1022,10 @@ function extractPageObservation(configInput = {}) {
 
   function extractMedia() {
     return {
-      iframes: Array.from(document.querySelectorAll("iframe")).map(
+      iframes: limitCollection(
+        Array.from(document.querySelectorAll("iframe")),
+        config.max_iframes,
+      ).map(
         (frame, index) => ({
           frame_id: `iframe-${index + 1}`,
           node_id: getNodeId(frame),
@@ -963,7 +1048,10 @@ function extractPageObservation(configInput = {}) {
           frame_url_after_load: null,
         }),
       ),
-      videos: Array.from(document.querySelectorAll("video")).map((video) => ({
+      videos: limitCollection(
+        Array.from(document.querySelectorAll("video")),
+        config.max_videos,
+      ).map((video) => ({
         node_id: getNodeId(video),
         selector: getSelector(video),
         xpath: getXPath(video),
@@ -989,7 +1077,10 @@ function extractPageObservation(configInput = {}) {
           type: source.type || source.getAttribute("type") || "",
         })),
       })),
-      audio: Array.from(document.querySelectorAll("audio")).map((audio) => ({
+      audio: limitCollection(
+        Array.from(document.querySelectorAll("audio")),
+        config.max_audio,
+      ).map((audio) => ({
         node_id: getNodeId(audio),
         selector: getSelector(audio),
         xpath: getXPath(audio),
@@ -1006,7 +1097,10 @@ function extractPageObservation(configInput = {}) {
         visible: isVisible(audio),
         bbox: getBBox(audio),
       })),
-      images: Array.from(document.querySelectorAll("img")).map((img) => ({
+      images: limitCollection(
+        Array.from(document.querySelectorAll("img")),
+        config.max_images,
+      ).map((img) => ({
         node_id: getNodeId(img),
         selector: getSelector(img),
         xpath: getXPath(img),
@@ -1017,7 +1111,10 @@ function extractPageObservation(configInput = {}) {
         visible: isVisible(img),
         bbox: getBBox(img),
       })),
-      sources: Array.from(document.querySelectorAll("source")).map(
+      sources: limitCollection(
+        Array.from(document.querySelectorAll("source")),
+        config.max_sources,
+      ).map(
         (source) => ({
           selector: getSelector(source),
           xpath: getXPath(source),
@@ -1026,7 +1123,10 @@ function extractPageObservation(configInput = {}) {
           type: source.type || source.getAttribute("type") || "",
         }),
       ),
-      tracks: Array.from(document.querySelectorAll("track")).map((track) => ({
+      tracks: limitCollection(
+        Array.from(document.querySelectorAll("track")),
+        config.max_tracks,
+      ).map((track) => ({
         selector: getSelector(track),
         xpath: getXPath(track),
         src: track.src || track.getAttribute("src") || "",
@@ -1038,14 +1138,15 @@ function extractPageObservation(configInput = {}) {
   }
 
   function extractForms() {
-    return Array.from(document.forms).map((form, formIndex) => ({
+    return limitCollection(Array.from(document.forms), config.max_forms).map((form, formIndex) => ({
       form_id: `form-${formIndex + 1}`,
       selector: getSelector(form),
       method: (form.getAttribute("method") || form.method || "").toLowerCase(),
       action: form.action || form.getAttribute("action") || "",
       text_preview: allText(form),
-      inputs: Array.from(
-        form.querySelectorAll("input,textarea,select,button"),
+      inputs: limitCollection(
+        Array.from(form.querySelectorAll("input,textarea,select,button")),
+        config.max_form_inputs,
       ).map((input) => ({
         selector: getSelector(input),
         xpath: getXPath(input),
@@ -1843,15 +1944,25 @@ async function extractFrameObservations(page, config) {
   const pathMap = buildFramePathMap(page);
   const frames = [];
   const frameRecords = [];
+  const frameLimit = Math.max(1, Number(config.max_frames || 0));
+  const evalTimeoutMs = Math.max(1000, Number(config.frame_eval_timeout_ms || 0));
+  const pageFrames = page.frames();
+  const targetFrames =
+    frameLimit > 0 ? pageFrames.slice(0, frameLimit) : pageFrames;
 
-  for (const frame of page.frames()) {
+  for (const frame of targetFrames) {
     const framePath = pathMap.get(frame) || "root";
     const parentFrame = frame.parentFrame();
     const parentPath = parentFrame ? pathMap.get(parentFrame) || "root" : null;
     const offset = await computeFrameOffset(frame);
 
     try {
-      const observation = await frame.evaluate(extractPageObservation, config);
+      const observation = await Promise.race([
+        frame.evaluate(extractPageObservation, config),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error("frame_eval_timeout")), evalTimeoutMs);
+        }),
+      ]);
       frames.push({
         frame_id: framePath,
         parent_frame_id: parentPath,
@@ -1881,7 +1992,8 @@ async function extractFrameObservations(page, config) {
           offset,
         ),
       );
-    } catch {
+    } catch (error) {
+      const errorMessage = String(error?.message || "frame_evaluate_failed");
       frames.push({
         frame_id: framePath,
         parent_frame_id: parentPath,
@@ -1925,7 +2037,7 @@ async function extractFrameObservations(page, config) {
         sample_buttons: [],
         links: [],
         buttons: [],
-        error: "frame_evaluate_failed",
+        error: errorMessage,
       });
     }
   }
@@ -2102,7 +2214,11 @@ export async function inspect(params = {}) {
       initialTree = await extractTreeSnapshot(page, config);
 
       if (config.wait_ms > 0) {
-        await page.waitForTimeout(config.wait_ms).catch(() => {});
+        if (typeof page.waitForTimeout === "function") {
+          await page.waitForTimeout(config.wait_ms).catch(() => {});
+        } else {
+          await sleep(config.wait_ms);
+        }
         await page
           .waitForNetworkIdle({
             idleTime: 500,

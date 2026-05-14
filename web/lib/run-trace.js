@@ -386,35 +386,97 @@ function isScreenshotValue(value) {
   return false;
 }
 
+const SCREENSHOT_SINGLE_KEYS = ["screenshot_url", "screenshot"];
+const SCREENSHOT_MULTI_KEYS = ["screenshot_urls", "screenshots", "all_screenshots"];
+const SCREENSHOT_WRAPPER_KEYS = [
+  "result_full",
+  "result_preview",
+  "result",
+  "output",
+  "payload",
+  "data",
+  "details",
+  "details_json",
+  "response",
+  "record",
+  "content",
+  "text",
+  "message",
+];
+
+function addScreenshotCandidate(value, out) {
+  if (!isScreenshotValue(value)) return false;
+  out.add(String(value).trim());
+  return true;
+}
+
+function parseJsonCandidates(text) {
+  const candidates = [];
+
+  try {
+    candidates.push(JSON.parse(text));
+  } catch {
+    // keep trying
+  }
+
+  try {
+    const unescaped = text.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+    if (unescaped !== text) candidates.push(JSON.parse(unescaped));
+  } catch {
+    // keep trying
+  }
+
+  return candidates;
+}
+
+function extractEmbeddedScreenshotStrings(text, out) {
+  const pattern =
+    /(?:\\?"(?:screenshot_url|screenshot)\\?"\s*:\s*\\?")(https?:\/\/[^"\\]+|data:image\/[^"\\]+)(?:\\?")/g;
+  for (const match of text.matchAll(pattern)) {
+    addScreenshotCandidate(match[1], out);
+  }
+}
+
+function collectScreenshotFromObject(value, out) {
+  if (!value || typeof value !== "object") return;
+
+  const itemType = String(value.type || "").toLowerCase();
+  if (itemType === "image" && typeof value.data === "string" && value.data.trim()) {
+    const mime =
+      String(value.mimeType || value.mime_type || "image/png").trim() || "image/png";
+    addScreenshotCandidate(`data:${mime};base64,${value.data.trim()}`, out);
+  }
+
+  for (const key of SCREENSHOT_SINGLE_KEYS) {
+    addScreenshotCandidate(value[key], out);
+  }
+
+  for (const key of SCREENSHOT_MULTI_KEYS) {
+    const urls = value[key];
+    if (Array.isArray(urls)) {
+      for (const url of urls) addScreenshotCandidate(url, out);
+    }
+  }
+
+  for (const key of SCREENSHOT_WRAPPER_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(value, key)) {
+      collectScreenshotUrls(value[key], out);
+    }
+  }
+}
+
 export function collectScreenshotUrls(value, out = new Set()) {
   if (value == null) return out;
 
   if (typeof value === "string") {
-    if (isScreenshotValue(value)) {
-      out.add(value.trim());
-      return out;
-    }
+    const text = value.trim();
+    if (!text) return out;
+    if (addScreenshotCandidate(text, out)) return out;
 
-    try {
-      collectScreenshotUrls(JSON.parse(value), out);
-      return out;
-    } catch {
-      // keep walking
+    for (const candidate of parseJsonCandidates(text)) {
+      collectScreenshotUrls(candidate, out);
     }
-
-    try {
-      const unescaped = value.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
-      collectScreenshotUrls(JSON.parse(unescaped), out);
-      return out;
-    } catch {
-      // keep walking
-    }
-
-    const pattern = /(?:\\?"screenshot_url\\?"\s*:\s*\\?")(https?:\/\/[^"\\]+|data:image\/[^"\\]+)(?:\\?")/g;
-    for (const match of value.matchAll(pattern)) {
-      const url = String(match[1] || "").trim();
-      if (isScreenshotValue(url)) out.add(url);
-    }
+    extractEmbeddedScreenshotStrings(text, out);
     return out;
   }
 
@@ -424,19 +486,7 @@ export function collectScreenshotUrls(value, out = new Set()) {
   }
 
   if (typeof value === "object") {
-    const screenshotUrl = value.screenshot_url;
-    if (isScreenshotValue(screenshotUrl)) out.add(String(screenshotUrl).trim());
-
-    const screenshotUrls = value.screenshot_urls;
-    if (Array.isArray(screenshotUrls)) {
-      for (const item of screenshotUrls) {
-        if (isScreenshotValue(item)) out.add(String(item).trim());
-      }
-    }
-
-    for (const nested of Object.values(value)) {
-      collectScreenshotUrls(nested, out);
-    }
+    collectScreenshotFromObject(value, out);
   }
 
   return out;

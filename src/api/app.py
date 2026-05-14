@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time as _time
 import uuid
 from contextlib import asynccontextmanager, suppress
@@ -1665,38 +1666,77 @@ def _is_valid_screenshot_url(value: str) -> bool:
     return False
 
 
+_SCREENSHOT_SINGLE_KEYS = ("screenshot_url", "screenshot")
+_SCREENSHOT_MULTI_KEYS = ("screenshot_urls", "screenshots", "all_screenshots")
+_SCREENSHOT_WRAPPER_KEYS = (
+    "result_full",
+    "result_preview",
+    "result",
+    "output",
+    "payload",
+    "data",
+    "details",
+    "details_json",
+    "response",
+    "record",
+    "content",
+    "text",
+    "message",
+)
+_EMBEDDED_SCREENSHOT_RE = re.compile(
+    r'(?:\\?"(?:screenshot_url|screenshot)\\?"\s*:\s*\\?")(https?:\/\/[^"\\]+|data:image\/[^"\\]+)(?:\\?")'
+)
+
+
+def _json_string_candidates(value: str) -> list[Any]:
+    candidates: list[Any] = []
+    text = str(value or "").strip()
+    if not text:
+        return candidates
+    try:
+        candidates.append(json.loads(text))
+    except Exception:
+        pass
+    try:
+        unescaped = text.replace('\\"', '"').replace("\\\\", "\\")
+        if unescaped != text:
+            candidates.append(json.loads(unescaped))
+    except Exception:
+        pass
+    return candidates
+
+
 def _extract_screenshot_url_from_value(value: Any) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        text = value.strip()
-        if _is_valid_screenshot_url(text):
-            return text
-        try:
-            parsed = json.loads(text)
-            return _extract_screenshot_url_from_value(parsed)
-        except Exception:
-            return ""
-    if isinstance(value, list):
-        for item in value:
-            nested = _extract_screenshot_url_from_value(item)
-            if nested:
-                return nested
-        return ""
-    if isinstance(value, dict):
-        direct = value.get("screenshot_url")
-        if isinstance(direct, str) and _is_valid_screenshot_url(direct):
-            return direct.strip()
-        urls = value.get("screenshot_urls")
-        if isinstance(urls, list):
+    urls = _extract_screenshot_urls_from_value(value, [])
+    return urls[0] if urls else ""
+
+
+def _append_screenshot(value: Any, out: list[str]) -> None:
+    text = str(value or "").strip()
+    if text and _is_valid_screenshot_url(text) and text not in out:
+        out.append(text)
+
+
+def _collect_from_object(value: dict[str, Any], out: list[str]) -> None:
+    item_type = str(value.get("type") or "").strip().lower()
+    if item_type == "image":
+        data = str(value.get("data") or "").strip()
+        if data:
+            mime = str(value.get("mimeType") or value.get("mime_type") or "image/png").strip() or "image/png"
+            _append_screenshot(f"data:{mime};base64,{data}", out)
+
+    for key in _SCREENSHOT_SINGLE_KEYS:
+        _append_screenshot(value.get(key), out)
+
+    for key in _SCREENSHOT_MULTI_KEYS:
+        urls = value.get(key)
+        if isinstance(urls, (list, tuple, set)):
             for url in urls:
-                if isinstance(url, str) and _is_valid_screenshot_url(url):
-                    return url.strip()
-        for nested in value.values():
-            candidate = _extract_screenshot_url_from_value(nested)
-            if candidate:
-                return candidate
-    return ""
+                _append_screenshot(url, out)
+
+    for key in _SCREENSHOT_WRAPPER_KEYS:
+        if key in value:
+            _extract_screenshot_urls_from_value(value.get(key), out)
 
 
 def _extract_screenshot_urls_from_value(value: Any, out: list[str] | None = None) -> list[str]:
@@ -1704,34 +1744,26 @@ def _extract_screenshot_urls_from_value(value: Any, out: list[str] | None = None
         out = []
     if value is None:
         return out
+
     if isinstance(value, str):
         text = value.strip()
-        if _is_valid_screenshot_url(text):
-            if text not in out:
-                out.append(text)
-            return out
-        try:
-            parsed = json.loads(text)
-        except Exception:
-            parsed = None
-        if parsed is not None:
-            _extract_screenshot_urls_from_value(parsed, out)
+        if text:
+            _append_screenshot(text, out)
+            if not _is_valid_screenshot_url(text):
+                for parsed in _json_string_candidates(text):
+                    _extract_screenshot_urls_from_value(parsed, out)
+                for match in _EMBEDDED_SCREENSHOT_RE.finditer(text):
+                    _append_screenshot(match.group(1), out)
         return out
+
     if isinstance(value, (list, tuple, set)):
         for item in value:
             _extract_screenshot_urls_from_value(item, out)
         return out
+
     if isinstance(value, dict):
-        for key in ("screenshot_url", "screenshot"):
-            candidate = value.get(key)
-            if isinstance(candidate, str) and _is_valid_screenshot_url(candidate):
-                text = candidate.strip()
-                if text not in out:
-                    out.append(text)
-        for key in ("screenshot_urls", "screenshots", "all_screenshots"):
-            _extract_screenshot_urls_from_value(value.get(key), out)
-        for nested in value.values():
-            _extract_screenshot_urls_from_value(nested, out)
+        _collect_from_object(value, out)
+
     return out
 
 

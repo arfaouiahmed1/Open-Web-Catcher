@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ExternalLink,
   Maximize2,
@@ -193,6 +193,7 @@ export function BrowserLiveView({
   standalone = false,
   onClose,
 }) {
+  const thumbnailStripRef = useRef(null);
   const [manualMode, setManualMode] = useState(false);
   const [manualStage, setManualStage] = useState("classification");
   const [selectedFrameUrl, setSelectedFrameUrl] = useState("");
@@ -231,6 +232,15 @@ export function BrowserLiveView({
     [persistedScreenshots, selectedStage],
   );
   const effectiveFrames = availableFrames.length ? availableFrames : persistedFallbackFrames;
+  const thumbnailFrames = useMemo(
+    () =>
+      effectiveFrames.length
+        ? effectiveFrames
+        : fallbackScreenshot
+          ? [{ url: fallbackScreenshot, seq: 0, stage: selectedStage, toolName: "latest capture" }]
+          : EMPTY_ARRAY,
+    [effectiveFrames, fallbackScreenshot, selectedStage],
+  );
   const statusLabel =
     selectedStageData?.liveLabel || selectedStageData?.status || "idle";
   const selectedPhase =
@@ -305,6 +315,28 @@ export function BrowserLiveView({
     null;
   const activeUrl = activeFrame?.url || fallbackScreenshot || "";
   const activeImageMaxHeight = isFullscreen ? "calc(100vh - 280px)" : 420;
+  const activeThumbIndex = useMemo(() => {
+    if (!thumbnailFrames.length || !activeUrl) return -1;
+    for (let index = thumbnailFrames.length - 1; index >= 0; index -= 1) {
+      if (thumbnailFrames[index]?.url === activeUrl) return index;
+    }
+    return -1;
+  }, [activeUrl, thumbnailFrames]);
+
+  useEffect(() => {
+    if (manualMode || !autoRefresh) return;
+    if (!thumbnailStripRef.current || activeThumbIndex < 0) return;
+    const target = thumbnailStripRef.current.querySelector(
+      `[data-frame-index="${activeThumbIndex}"]`,
+    );
+    if (target && typeof target.scrollIntoView === "function") {
+      target.scrollIntoView({
+        behavior: "smooth",
+        inline: "end",
+        block: "nearest",
+      });
+    }
+  }, [activeThumbIndex, autoRefresh, manualMode, thumbnailFrames.length]);
 
   function handleStageChange(nextStage) {
     const next = stageByName.get(nextStage);
@@ -524,13 +556,11 @@ export function BrowserLiveView({
         {effectiveFrames.length > 1 || fallbackScreenshot ? (
           <ScrollArea className="w-full rounded-xl border border-border bg-muted/20">
             <ScrollAreaViewport className="w-full">
-              <div className="flex gap-2 p-2 flex-nowrap overflow-x-auto">
-                {(effectiveFrames.length
-                  ? effectiveFrames
-                  : [{ url: fallbackScreenshot, seq: 0, stage: selectedStage, toolName: "latest capture" }]
-                ).map((frame, index) => (
+              <div ref={thumbnailStripRef} className="flex gap-2 p-2 flex-nowrap overflow-x-auto">
+                {thumbnailFrames.map((frame, index) => (
                   <button
                     key={`${frame.url}-${frame.seq}-${index}`}
+                    data-frame-index={index}
                     type="button"
                     onClick={() => {
                       setManualMode(true);

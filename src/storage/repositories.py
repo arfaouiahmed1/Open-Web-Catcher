@@ -38,6 +38,26 @@ from src.utils.observability import RunTrace
 
 
 _SCREENSHOT_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg")
+_SCREENSHOT_SINGLE_KEYS = ("screenshot_url", "screenshot")
+_SCREENSHOT_MULTI_KEYS = ("screenshot_urls", "screenshots", "all_screenshots")
+_SCREENSHOT_WRAPPER_KEYS = (
+    "result_full",
+    "result_preview",
+    "result",
+    "output",
+    "payload",
+    "data",
+    "details",
+    "details_json",
+    "response",
+    "record",
+    "content",
+    "text",
+    "message",
+)
+_EMBEDDED_SCREENSHOT_RE = re.compile(
+    r'(?:\\?"(?:screenshot_url|screenshot)\\?"\s*:\s*\\?")(https?:\/\/[^"\\]+|data:image\/[^"\\]+)(?:\\?")'
+)
 
 
 def serialize_runtime_event_record(row: RuntimeEventRecord) -> dict[str, Any]:
@@ -124,18 +144,17 @@ def _collect_screenshot_urls(value: Any, out: list[str] | None = None) -> list[s
 
     if isinstance(value, str):
         text = value.strip()
-        if _is_screenshot_url(text):
-            if text not in out:
-                out.append(text)
-            return out
-        try:
-            import json
-
-            parsed = json.loads(text)
-        except Exception:
-            parsed = None
-        if parsed is not None:
-            _collect_screenshot_urls(parsed, out)
+        if text:
+            if _is_screenshot_url(text):
+                if text not in out:
+                    out.append(text)
+                return out
+            for parsed in _json_string_candidates(text):
+                _collect_screenshot_urls(parsed, out)
+            for match in _EMBEDDED_SCREENSHOT_RE.finditer(text):
+                candidate = str(match.group(1) or "").strip()
+                if _is_screenshot_url(candidate) and candidate not in out:
+                    out.append(candidate)
         return out
 
     if isinstance(value, (list, tuple, set)):
@@ -144,17 +163,61 @@ def _collect_screenshot_urls(value: Any, out: list[str] | None = None) -> list[s
         return out
 
     if isinstance(value, dict):
-        for key in ("screenshot_url", "screenshot"):
-            candidate = value.get(key)
-            if _is_screenshot_url(candidate):
-                text = str(candidate).strip()
-                if text not in out:
-                    out.append(text)
-        for key in ("screenshot_urls", "screenshots", "all_screenshots"):
-            _collect_screenshot_urls(value.get(key), out)
-        for nested in value.values():
-            _collect_screenshot_urls(nested, out)
+        _collect_screenshot_urls_from_object(value, out)
     return out
+
+
+def _json_string_candidates(value: str) -> list[Any]:
+    candidates: list[Any] = []
+    text = str(value or "").strip()
+    if not text:
+        return candidates
+    try:
+        import json
+
+        candidates.append(json.loads(text))
+    except Exception:
+        pass
+    try:
+        import json
+
+        unescaped = text.replace('\\"', '"').replace("\\\\", "\\")
+        if unescaped != text:
+            candidates.append(json.loads(unescaped))
+    except Exception:
+        pass
+    return candidates
+
+
+def _collect_screenshot_urls_from_object(value: dict[str, Any], out: list[str]) -> None:
+    item_type = str(value.get("type") or "").strip().lower()
+    if item_type == "image":
+        data = str(value.get("data") or "").strip()
+        if data:
+            mime = str(value.get("mimeType") or value.get("mime_type") or "image/png").strip() or "image/png"
+            candidate = f"data:{mime};base64,{data}"
+            if _is_screenshot_url(candidate) and candidate not in out:
+                out.append(candidate)
+
+    for key in _SCREENSHOT_SINGLE_KEYS:
+        candidate = value.get(key)
+        if _is_screenshot_url(candidate):
+            text = str(candidate).strip()
+            if text not in out:
+                out.append(text)
+
+    for key in _SCREENSHOT_MULTI_KEYS:
+        urls = value.get(key)
+        if isinstance(urls, (list, tuple, set)):
+            for candidate in urls:
+                if _is_screenshot_url(candidate):
+                    text = str(candidate).strip()
+                    if text not in out:
+                        out.append(text)
+
+    for key in _SCREENSHOT_WRAPPER_KEYS:
+        if key in value:
+            _collect_screenshot_urls(value.get(key), out)
 
 
 def _trace_screenshot_urls(trace: RunTrace | None) -> list[str]:

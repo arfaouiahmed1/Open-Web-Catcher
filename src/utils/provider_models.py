@@ -88,6 +88,28 @@ FALLBACK_MODELS: dict[str, list[dict[str, Any]]] = {
 }
 
 
+def _fallback_model_rows(provider: str, max_models: int) -> list[dict[str, Any]]:
+    """Return normalized fallback rows with explicit fallback metadata."""
+
+    rows: list[dict[str, Any]] = []
+    for item in FALLBACK_MODELS.get(provider, [])[: max(1, int(max_models or 200))]:
+        model_id = str(item.get("id") or "").strip()
+        if not model_id:
+            continue
+        rows.append(
+            {
+                **item,
+                "id": model_id,
+                "label": str(item.get("label") or model_id).strip(),
+                "description": str(item.get("description") or "").strip(),
+                "default_parameters": dict(item.get("default_parameters") or {}),
+                "defaults_source": "fallback_catalog",
+                "catalog_source": "fallback_catalog",
+            }
+        )
+    return rows
+
+
 PROVIDER_TUNING_FIELDS: dict[str, list[dict[str, Any]]] = {
     "google": [
         {
@@ -464,15 +486,18 @@ def get_provider_model_catalog(settings: Settings, provider: str, max_models: in
 
     metadata = dict(PROVIDER_METADATA[normalized_provider])
     api_key = _provider_api_key(settings, normalized_provider)
+    fallback_rows = _fallback_model_rows(normalized_provider, max_models)
     if normalized_provider != "openrouter" and not api_key:
         return {
             **metadata,
             "provider": normalized_provider,
             "api_key_set": False,
             "available": False,
-            "source": "unavailable",
+            "source": "fallback_catalog" if fallback_rows else "unavailable",
             "error": f"{metadata['key_env']} is not set. Live catalog unavailable.",
-            "models": [],
+            "models": fallback_rows,
+            "defaults_source": "fallback_catalog" if fallback_rows else "unavailable",
+            "live_catalog_available": False,
             "hyperparameters": PROVIDER_TUNING_FIELDS.get(normalized_provider, []),
         }
 
@@ -482,8 +507,8 @@ def get_provider_model_catalog(settings: Settings, provider: str, max_models: in
         error = ""
         available = True
     except ProviderModelCatalogError as exc:
-        models = []
-        source = "unavailable"
+        models = fallback_rows
+        source = "fallback_catalog" if fallback_rows else "unavailable"
         error = str(exc)
         available = False
 
@@ -495,6 +520,8 @@ def get_provider_model_catalog(settings: Settings, provider: str, max_models: in
         "source": source,
         "error": error,
         "models": models,
+        "defaults_source": source,
+        "live_catalog_available": available,
         "hyperparameters": PROVIDER_TUNING_FIELDS.get(normalized_provider, []),
     }
 
@@ -558,6 +585,8 @@ def _fetch_google_models(settings: Settings, max_models: int) -> list[dict[str, 
                     "supported_generation_methods": actions,
                     "capabilities": _extract_google_model_capabilities(model_id, actions),
                     "release_channel": _google_model_release_channel(model_id),
+                    "defaults_source": "provider_api",
+                    "catalog_source": "provider_api",
                 }
             )
             if len(rows) >= max_models:
