@@ -230,6 +230,1538 @@ log_level: INFO
 max_parallel_hosting_pages: 1
 orchestrator_model: gemma-4-31b-it
 provider_cache_enabled: true
+provider_model_catalog_cache:
+  google:
+    cached_at: '2026-05-14T16:07:37.004851+00:00'
+    models:
+    - capabilities:
+        allowed_tuning_keys: &id001
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: supported
+        supports_batch: true
+        supports_explicit_cache: true
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id001
+        explicit_cache: supported
+        thinking_controls: supported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Stable version of Gemini 2.5 Flash, our mid-size multimodal model
+        that supports up to 1 million tokens, released in June of 2025.
+      id: gemini-2.5-flash
+      label: Gemini 2.5 Flash
+      output_limit: 65536
+      release_channel: stable
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - createCachedContent
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id002
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: supported
+        supports_batch: true
+        supports_explicit_cache: true
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id002
+        explicit_cache: supported
+        thinking_controls: supported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Stable release (June 17th, 2025) of Gemini 2.5 Pro
+      id: gemini-2.5-pro
+      label: Gemini 2.5 Pro
+      output_limit: 65536
+      release_channel: stable
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - createCachedContent
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id003
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: supported
+        supports_batch: true
+        supports_explicit_cache: true
+        supports_generate_content: true
+        supports_thinking_controls: false
+        supports_token_count: true
+        thinking_status: unsupported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id003
+        explicit_cache: supported
+        thinking_controls: unsupported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 8192
+        temperature: 1
+        top_k: 40
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 2.0 Flash
+      id: gemini-2.0-flash
+      label: Gemini 2.0 Flash
+      output_limit: 8192
+      release_channel: stable
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - createCachedContent
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id004
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: supported
+        supports_batch: true
+        supports_explicit_cache: true
+        supports_generate_content: true
+        supports_thinking_controls: false
+        supports_token_count: true
+        thinking_status: unsupported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id004
+        explicit_cache: supported
+        thinking_controls: unsupported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 8192
+        temperature: 1
+        top_k: 40
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Stable version of Gemini 2.0 Flash, our fast and versatile multimodal
+        model for scaling across diverse tasks, released in January of 2025.
+      id: gemini-2.0-flash-001
+      label: Gemini 2.0 Flash 001
+      output_limit: 8192
+      release_channel: stable
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - createCachedContent
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id005
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: supported
+        supports_batch: true
+        supports_explicit_cache: true
+        supports_generate_content: true
+        supports_thinking_controls: false
+        supports_token_count: true
+        thinking_status: unsupported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id005
+        explicit_cache: supported
+        thinking_controls: unsupported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 8192
+        temperature: 1
+        top_k: 40
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Stable version of Gemini 2.0 Flash-Lite
+      id: gemini-2.0-flash-lite-001
+      label: Gemini 2.0 Flash-Lite 001
+      output_limit: 8192
+      release_channel: stable
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - createCachedContent
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id006
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: supported
+        supports_batch: true
+        supports_explicit_cache: true
+        supports_generate_content: true
+        supports_thinking_controls: false
+        supports_token_count: true
+        thinking_status: unsupported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id006
+        explicit_cache: supported
+        thinking_controls: unsupported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 8192
+        temperature: 1
+        top_k: 40
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 2.0 Flash-Lite
+      id: gemini-2.0-flash-lite
+      label: Gemini 2.0 Flash-Lite
+      output_limit: 8192
+      release_channel: stable
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - createCachedContent
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id007
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: false
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id007
+        explicit_cache: unsupported
+        thinking_controls: supported
+      context_window: 8192
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 16384
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 2.5 Flash Preview TTS
+      id: gemini-2.5-flash-preview-tts
+      label: Gemini 2.5 Flash Preview TTS
+      output_limit: 16384
+      release_channel: preview
+      supported_generation_methods:
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id008
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: true
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id008
+        explicit_cache: unsupported
+        thinking_controls: supported
+      context_window: 8192
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 16384
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 2.5 Pro Preview TTS
+      id: gemini-2.5-pro-preview-tts
+      label: Gemini 2.5 Pro Preview TTS
+      output_limit: 16384
+      release_channel: preview
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id009
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: false
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: false
+        supports_token_count: true
+        thinking_status: unsupported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id009
+        explicit_cache: unsupported
+        thinking_controls: unsupported
+      context_window: 262144
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 32768
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemma 4 26B A4B IT
+      id: gemma-4-26b-a4b-it
+      label: Gemma 4 26B A4B IT
+      output_limit: 32768
+      release_channel: stable
+      supported_generation_methods:
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id010
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: false
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: false
+        supports_token_count: true
+        thinking_status: unsupported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id010
+        explicit_cache: unsupported
+        thinking_controls: unsupported
+      context_window: 262144
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 32768
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemma 4 31B IT
+      id: gemma-4-31b-it
+      label: Gemma 4 31B IT
+      output_limit: 32768
+      release_channel: stable
+      supported_generation_methods:
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id011
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: supported
+        supports_batch: true
+        supports_explicit_cache: true
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id011
+        explicit_cache: supported
+        thinking_controls: supported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Latest release of Gemini Flash
+      id: gemini-flash-latest
+      label: Gemini Flash Latest
+      output_limit: 65536
+      release_channel: stable
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - createCachedContent
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id012
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: supported
+        supports_batch: true
+        supports_explicit_cache: true
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id012
+        explicit_cache: supported
+        thinking_controls: supported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Latest release of Gemini Flash-Lite
+      id: gemini-flash-lite-latest
+      label: Gemini Flash-Lite Latest
+      output_limit: 65536
+      release_channel: stable
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - createCachedContent
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id013
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: supported
+        supports_batch: true
+        supports_explicit_cache: true
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id013
+        explicit_cache: supported
+        thinking_controls: supported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Latest release of Gemini Pro
+      id: gemini-pro-latest
+      label: Gemini Pro Latest
+      output_limit: 65536
+      release_channel: stable
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - createCachedContent
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id014
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: supported
+        supports_batch: true
+        supports_explicit_cache: true
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id014
+        explicit_cache: supported
+        thinking_controls: supported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Stable version of Gemini 2.5 Flash-Lite, released in July of 2025
+      id: gemini-2.5-flash-lite
+      label: Gemini 2.5 Flash-Lite
+      output_limit: 65536
+      release_channel: stable
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - createCachedContent
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id015
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: true
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id015
+        explicit_cache: unsupported
+        thinking_controls: supported
+      context_window: 32768
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 32768
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 2.5 Flash Preview Image
+      id: gemini-2.5-flash-image
+      label: Nano Banana
+      output_limit: 32768
+      release_channel: stable
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id016
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: supported
+        supports_batch: true
+        supports_explicit_cache: true
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id016
+        explicit_cache: supported
+        thinking_controls: supported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 3 Pro Preview
+      id: gemini-3-pro-preview
+      label: Gemini 3 Pro Preview
+      output_limit: 65536
+      release_channel: preview
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - createCachedContent
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id017
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: supported
+        supports_batch: true
+        supports_explicit_cache: true
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id017
+        explicit_cache: supported
+        thinking_controls: supported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 3 Flash Preview
+      id: gemini-3-flash-preview
+      label: Gemini 3 Flash Preview
+      output_limit: 65536
+      release_channel: preview
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - createCachedContent
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id018
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: supported
+        supports_batch: true
+        supports_explicit_cache: true
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id018
+        explicit_cache: supported
+        thinking_controls: supported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 3.1 Pro Preview
+      id: gemini-3.1-pro-preview
+      label: Gemini 3.1 Pro Preview
+      output_limit: 65536
+      release_channel: preview
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - createCachedContent
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id019
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: supported
+        supports_batch: true
+        supports_explicit_cache: true
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id019
+        explicit_cache: supported
+        thinking_controls: supported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 3.1 Pro Preview optimized for custom tool usage
+      id: gemini-3.1-pro-preview-customtools
+      label: Gemini 3.1 Pro Preview Custom Tools
+      output_limit: 65536
+      release_channel: preview
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - createCachedContent
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id020
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: supported
+        supports_batch: true
+        supports_explicit_cache: true
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id020
+        explicit_cache: supported
+        thinking_controls: supported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 3.1 Flash Lite Preview
+      id: gemini-3.1-flash-lite-preview
+      label: Gemini 3.1 Flash Lite Preview
+      output_limit: 65536
+      release_channel: preview
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - createCachedContent
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id021
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: supported
+        supports_batch: true
+        supports_explicit_cache: true
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id021
+        explicit_cache: supported
+        thinking_controls: supported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 3.1 Flash Lite
+      id: gemini-3.1-flash-lite
+      label: Gemini 3.1 Flash Lite
+      output_limit: 65536
+      release_channel: stable
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - createCachedContent
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id022
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: true
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id022
+        explicit_cache: unsupported
+        thinking_controls: supported
+      context_window: 131072
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 32768
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 3 Pro Image Preview
+      id: gemini-3-pro-image-preview
+      label: Nano Banana Pro
+      output_limit: 32768
+      release_channel: preview
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id023
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: true
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: false
+        supports_token_count: true
+        thinking_status: unsupported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id023
+        explicit_cache: unsupported
+        thinking_controls: unsupported
+      context_window: 131072
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 32768
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 3 Pro Image Preview
+      id: nano-banana-pro-preview
+      label: Nano Banana Pro
+      output_limit: 32768
+      release_channel: preview
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id024
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: true
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id024
+        explicit_cache: unsupported
+        thinking_controls: supported
+      context_window: 65536
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 3.1 Flash Image Preview.
+      id: gemini-3.1-flash-image-preview
+      label: Nano Banana 2
+      output_limit: 65536
+      release_channel: preview
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id025
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: false
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: false
+        supports_token_count: true
+        thinking_status: unsupported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id025
+        explicit_cache: unsupported
+        thinking_controls: unsupported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Lyria 3 30s model Preview
+      id: lyria-3-clip-preview
+      label: Lyria 3 Clip Preview
+      output_limit: 65536
+      release_channel: preview
+      supported_generation_methods:
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id026
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: false
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: false
+        supports_token_count: true
+        thinking_status: unsupported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id026
+        explicit_cache: unsupported
+        thinking_controls: unsupported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Lyria 3 Pro Preview
+      id: lyria-3-pro-preview
+      label: Lyria 3 Pro Preview
+      output_limit: 65536
+      release_channel: preview
+      supported_generation_methods:
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id027
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: true
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id027
+        explicit_cache: unsupported
+        thinking_controls: supported
+      context_window: 8192
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 16384
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 3.1 Flash TTS Preview
+      id: gemini-3.1-flash-tts-preview
+      label: Gemini 3.1 Flash TTS Preview
+      output_limit: 16384
+      release_channel: preview
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id028
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: false
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: false
+        supports_token_count: true
+        thinking_status: unsupported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id028
+        explicit_cache: unsupported
+        thinking_controls: unsupported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini Robotics-ER 1.5 Preview
+      id: gemini-robotics-er-1.5-preview
+      label: Gemini Robotics-ER 1.5 Preview
+      output_limit: 65536
+      release_channel: preview
+      supported_generation_methods:
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id029
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: supported
+        supports_batch: true
+        supports_explicit_cache: true
+        supports_generate_content: true
+        supports_thinking_controls: false
+        supports_token_count: true
+        thinking_status: unsupported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id029
+        explicit_cache: supported
+        thinking_controls: unsupported
+      context_window: 131072
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini Robotics-ER 1.6 Preview
+      id: gemini-robotics-er-1.6-preview
+      label: Gemini Robotics-ER 1.6 Preview
+      output_limit: 65536
+      release_channel: preview
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - createCachedContent
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id030
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: false
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id030
+        explicit_cache: unsupported
+        thinking_controls: supported
+      context_window: 131072
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 2.5 Computer Use Preview 10-2025
+      id: gemini-2.5-computer-use-preview-10-2025
+      label: Gemini 2.5 Computer Use Preview 10-2025
+      output_limit: 65536
+      release_channel: preview
+      supported_generation_methods:
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id031
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: false
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: false
+        supports_token_count: true
+        thinking_status: unsupported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id031
+        explicit_cache: unsupported
+        thinking_controls: unsupported
+      context_window: 131072
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Preview release (April 21st, 2026) of Deep Research Max
+      id: deep-research-max-preview-04-2026
+      label: Deep Research Max Preview (Apr-21-2026)
+      output_limit: 65536
+      release_channel: preview
+      supported_generation_methods:
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id032
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: false
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: false
+        supports_token_count: true
+        thinking_status: unsupported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id032
+        explicit_cache: unsupported
+        thinking_controls: unsupported
+      context_window: 131072
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Preview release (April 21th, 2026) of Deep Research
+      id: deep-research-preview-04-2026
+      label: Deep Research Preview (Apr-21-2026)
+      output_limit: 65536
+      release_channel: preview
+      supported_generation_methods:
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id033
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: false
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: false
+        supports_token_count: true
+        thinking_status: unsupported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id033
+        explicit_cache: unsupported
+        thinking_controls: unsupported
+      context_window: 131072
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Preview release (December 12th, 2025) of Deep Research Pro
+      id: deep-research-pro-preview-12-2025
+      label: Deep Research Pro Preview (Dec-12-2025)
+      output_limit: 65536
+      release_channel: preview
+      supported_generation_methods:
+      - countTokens
+      - generateContent
+    source: provider_api
 thinking_budget_tokens: 8000
 thinking_enabled: true
 tool_result_cache_enabled: true

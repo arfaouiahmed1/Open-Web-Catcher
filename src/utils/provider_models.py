@@ -33,6 +33,111 @@ FALLBACK_MODELS: dict[str, list[dict[str, Any]]] = {
 }
 
 
+GOOGLE_MODEL_TUNING_KEYS = ("temperature", "top_p", "top_k", "max_output_tokens")
+
+
+def _source_provenance_label(source: str) -> str:
+    normalized = str(source or "").strip().lower()
+    if normalized == "provider_api":
+        return "Live from Google"
+    if normalized == "saved_catalog":
+        return "Saved snapshot"
+    if normalized == "fallback_catalog":
+        return "Fallback"
+    return "Unknown"
+
+
+def _thinking_support_from_model_name(model_id: str) -> tuple[bool, str]:
+    normalized = normalize_gemini_model_id(model_id)
+    if normalized.startswith(("gemini-2.5", "gemini-3", "google/gemini-2.5", "google/gemini-3")):
+        return True, "Heuristic"
+    if normalized.startswith(("gemma-", "google/gemma-")):
+        return False, "Heuristic"
+    return False, "Heuristic"
+
+
+def _normalize_google_model_row(
+    item: dict[str, Any],
+    *,
+    catalog_source: str,
+    defaults_source: str,
+) -> dict[str, Any]:
+    model_id = str(item.get("id") or "").strip()
+    if not model_id:
+        return {}
+
+    action_rows = item.get("supported_generation_methods") or item.get("supportedActions") or []
+    actions = sorted(
+        {
+            str(action or "").strip()
+            for action in action_rows
+            if str(action or "").strip()
+        }
+    )
+    default_parameters = dict(item.get("default_parameters") or {})
+    default_parameter_provenance = {
+        key: str(value)
+        for key, value in dict(item.get("default_parameter_provenance") or {}).items()
+        if key in GOOGLE_MODEL_TUNING_KEYS and value
+    }
+    for key in default_parameters:
+        default_parameter_provenance.setdefault(key, _source_provenance_label(defaults_source))
+
+    capabilities = dict(item.get("capabilities") or {})
+    capability_provenance = {
+        key: str(value)
+        for key, value in dict(item.get("capability_provenance") or {}).items()
+        if value
+    }
+    capability_provenance.setdefault("supports_generate_content", _source_provenance_label(catalog_source))
+    capability_provenance.setdefault("supports_token_count", _source_provenance_label(catalog_source))
+    capability_provenance.setdefault("supports_explicit_cache", _source_provenance_label(catalog_source))
+    capability_provenance.setdefault("supports_batch", _source_provenance_label(catalog_source))
+
+    if "supports_thinking_controls" not in capabilities:
+        supports_thinking, provenance = _thinking_support_from_model_name(model_id)
+        capabilities["supports_thinking_controls"] = supports_thinking
+        capability_provenance["supports_thinking_controls"] = provenance
+    else:
+        capability_provenance.setdefault("supports_thinking_controls", _source_provenance_label(catalog_source))
+
+    allowed_tuning_keys = [
+        key for key in GOOGLE_MODEL_TUNING_KEYS if default_parameters.get(key) is not None
+    ]
+    if not allowed_tuning_keys:
+        allowed_tuning_keys = list(GOOGLE_MODEL_TUNING_KEYS)
+    capabilities["allowed_tuning_keys"] = allowed_tuning_keys
+    capability_provenance["allowed_tuning_keys"] = (
+        _source_provenance_label(defaults_source) if default_parameters else "Heuristic"
+    )
+
+    capabilities["thinking_status"] = (
+        "supported" if capabilities.get("supports_thinking_controls") else "unsupported"
+    )
+    capabilities["explicit_cache_status"] = (
+        "supported" if capabilities.get("supports_explicit_cache") else "unsupported"
+    )
+
+    return {
+        **item,
+        "id": model_id,
+        "label": str(item.get("label") or model_id).strip(),
+        "description": str(item.get("description") or "").strip(),
+        "supported_generation_methods": actions,
+        "default_parameters": default_parameters,
+        "default_parameter_provenance": default_parameter_provenance,
+        "capabilities": capabilities,
+        "capability_provenance": capability_provenance,
+        "catalog_source": catalog_source,
+        "defaults_source": defaults_source,
+        "compatibility": {
+            "thinking_controls": capabilities["thinking_status"],
+            "explicit_cache": capabilities["explicit_cache_status"],
+            "allowed_tuning_keys": allowed_tuning_keys,
+        },
+    }
+
+
 def _fallback_model_rows(provider: str, max_models: int) -> list[dict[str, Any]]:
     """Return normalized fallback rows with explicit fallback metadata."""
 
@@ -41,17 +146,13 @@ def _fallback_model_rows(provider: str, max_models: int) -> list[dict[str, Any]]
         model_id = str(item.get("id") or "").strip()
         if not model_id:
             continue
-        rows.append(
-            {
-                **item,
-                "id": model_id,
-                "label": str(item.get("label") or model_id).strip(),
-                "description": str(item.get("description") or "").strip(),
-                "default_parameters": dict(item.get("default_parameters") or {}),
-                "defaults_source": "fallback_catalog",
-                "catalog_source": "fallback_catalog",
-            }
+        normalized = _normalize_google_model_row(
+            item,
+            catalog_source="fallback_catalog",
+            defaults_source="fallback_catalog",
         )
+        if normalized:
+            rows.append(normalized)
     return rows
 
 
@@ -73,17 +174,13 @@ def _saved_catalog_rows(settings: Settings, provider: str, max_models: int) -> l
         model_id = str(item.get("id") or "").strip()
         if not model_id:
             continue
-        rows.append(
-            {
-                **item,
-                "id": model_id,
-                "label": str(item.get("label") or model_id).strip(),
-                "description": str(item.get("description") or "").strip(),
-                "default_parameters": dict(item.get("default_parameters") or {}),
-                "defaults_source": "saved_catalog",
-                "catalog_source": "saved_catalog",
-            }
+        normalized = _normalize_google_model_row(
+            item,
+            catalog_source="saved_catalog",
+            defaults_source=str(item.get("defaults_source") or "saved_catalog"),
         )
+        if normalized:
+            rows.append(normalized)
     return _dedupe_models(rows)
 
 
@@ -458,6 +555,191 @@ def resolve_agent_model_selection(settings: Settings, agent_id: str) -> dict[str
     return {"provider": base_provider, "model": base_model}
 
 
+def find_provider_model_entry(
+    settings: Settings,
+    *,
+    provider: str,
+    model_id: str,
+    max_models: int = 400,
+) -> dict[str, Any] | None:
+    normalized_provider = str(provider or "google").strip().lower() or "google"
+    normalized_model = normalize_gemini_model_id(model_id)
+    if not normalized_model:
+        return None
+
+    rows = _saved_catalog_rows(settings, normalized_provider, max_models) or _fallback_model_rows(
+        normalized_provider, max_models
+    )
+    for row in rows:
+        if normalize_gemini_model_id(str(row.get("id") or "")) == normalized_model:
+            return row
+    return None
+
+
+def resolve_google_model_runtime_profile(
+    settings: Settings,
+    *,
+    model_id: str,
+    provider: str = "google",
+) -> dict[str, Any]:
+    normalized_model = normalize_gemini_model_id(model_id)
+    model_entry = find_provider_model_entry(
+        settings,
+        provider=provider,
+        model_id=normalized_model,
+    )
+    if model_entry:
+        capabilities = dict(model_entry.get("capabilities") or {})
+        compatibility = dict(model_entry.get("compatibility") or {})
+        return {
+            "model_id": normalized_model,
+            "resolved_from_catalog": True,
+            "catalog_source": model_entry.get("catalog_source", "unknown"),
+            "defaults_source": model_entry.get("defaults_source", "unknown"),
+            "capabilities": capabilities,
+            "compatibility": compatibility,
+            "allowed_tuning_keys": list(
+                compatibility.get("allowed_tuning_keys")
+                or capabilities.get("allowed_tuning_keys")
+                or GOOGLE_MODEL_TUNING_KEYS
+            ),
+            "supports_thinking_controls": bool(
+                capabilities.get("supports_thinking_controls", False)
+            ),
+            "supports_explicit_cache": bool(
+                capabilities.get("supports_explicit_cache", False)
+            ),
+            "entry": model_entry,
+        }
+
+    supports_thinking_controls, thinking_provenance = _thinking_support_from_model_name(
+        normalized_model
+    )
+    return {
+        "model_id": normalized_model,
+        "resolved_from_catalog": False,
+        "catalog_source": "unverified_manual",
+        "defaults_source": "unverified_manual",
+        "capabilities": {
+            "supports_thinking_controls": supports_thinking_controls,
+            "supports_explicit_cache": False,
+            "allowed_tuning_keys": list(GOOGLE_MODEL_TUNING_KEYS),
+        },
+        "compatibility": {
+            "thinking_controls": "supported" if supports_thinking_controls else "unsupported",
+            "explicit_cache": "unsupported",
+            "allowed_tuning_keys": list(GOOGLE_MODEL_TUNING_KEYS),
+        },
+        "capability_provenance": {
+            "supports_thinking_controls": thinking_provenance,
+            "supports_explicit_cache": "Heuristic",
+            "allowed_tuning_keys": "Heuristic",
+        },
+        "allowed_tuning_keys": list(GOOGLE_MODEL_TUNING_KEYS),
+        "supports_thinking_controls": supports_thinking_controls,
+        "supports_explicit_cache": False,
+        "entry": None,
+    }
+
+
+def collect_model_config_warnings(settings: Settings) -> list[dict[str, Any]]:
+    warnings: list[dict[str, Any]] = []
+    for agent_id in AGENT_MODEL_IDS:
+        selection = resolve_agent_model_selection(settings, agent_id)
+        model_name = str(selection.get("model") or "").strip()
+        if not model_name:
+            continue
+        profile = resolve_google_model_runtime_profile(
+            settings,
+            model_id=model_name,
+            provider=selection.get("provider") or "google",
+        )
+        if settings.thinking_enabled and not profile["supports_thinking_controls"]:
+            warnings.append(
+                {
+                    "agent_id": agent_id,
+                    "model": profile["model_id"],
+                    "type": "thinking_disabled_for_model",
+                    "message": (
+                        f"{agent_id.capitalize()} uses {profile['model_id']}; "
+                        "thinking controls will be ignored for this model."
+                    ),
+                    "provenance": (profile.get("entry") or {}).get("capability_provenance", {}).get(
+                        "supports_thinking_controls",
+                        profile.get("capability_provenance", {}).get(
+                            "supports_thinking_controls", "Heuristic"
+                        ),
+                    ),
+                }
+            )
+        if settings.gemini_explicit_cache_enabled and not profile["supports_explicit_cache"]:
+            warnings.append(
+                {
+                    "agent_id": agent_id,
+                    "model": profile["model_id"],
+                    "type": "explicit_cache_unavailable_for_model",
+                    "message": (
+                        f"{agent_id.capitalize()} uses {profile['model_id']}; "
+                        "explicit cache is unavailable for this model."
+                    ),
+                    "provenance": (profile.get("entry") or {}).get("capability_provenance", {}).get(
+                        "supports_explicit_cache",
+                        profile.get("capability_provenance", {}).get(
+                            "supports_explicit_cache", "Heuristic"
+                        ),
+                    ),
+                }
+            )
+    return warnings
+
+
+def build_model_selection_details(settings: Settings) -> dict[str, Any]:
+    warning_map: dict[str, list[dict[str, Any]]] = {}
+    for item in collect_model_config_warnings(settings):
+        warning_map.setdefault(str(item.get("agent_id") or ""), []).append(item)
+
+    details: dict[str, Any] = {}
+    for agent_id in AGENT_MODEL_IDS:
+        selection = resolve_agent_model_selection(settings, agent_id)
+        model_name = str(selection.get("model") or "").strip()
+        if not model_name:
+            details[agent_id] = {
+                "provider": selection.get("provider") or "google",
+                "model": "",
+                "catalog_status": "missing",
+                "warnings": [],
+            }
+            continue
+        profile = resolve_google_model_runtime_profile(
+            settings,
+            model_id=model_name,
+            provider=selection.get("provider") or "google",
+        )
+        matched_entry = profile.get("entry") or {}
+        details[agent_id] = {
+            "provider": selection.get("provider") or "google",
+            "model": profile["model_id"],
+            "label": str(matched_entry.get("label") or profile["model_id"]),
+            "catalog_status": (
+                "verified" if profile.get("resolved_from_catalog") else "unverified_manual"
+            ),
+            "catalog_source": profile.get("catalog_source"),
+            "defaults_source": profile.get("defaults_source"),
+            "capabilities": dict(profile.get("capabilities") or {}),
+            "capability_provenance": dict(
+                matched_entry.get("capability_provenance")
+                or profile.get("capability_provenance")
+                or {}
+            ),
+            "default_parameters": dict(matched_entry.get("default_parameters") or {}),
+            "default_parameter_provenance": dict(
+                matched_entry.get("default_parameter_provenance") or {}
+            ),
+            "warnings": warning_map.get(agent_id, []),
+        }
+    return details
+
+
 def get_provider_model_catalog(settings: Settings, provider: str, max_models: int = 200) -> dict[str, Any]:
     """Return provider metadata, live model options, and tuning schema."""
 
@@ -555,19 +837,27 @@ def _fetch_google_models(settings: Settings, max_models: int) -> list[dict[str, 
             if not model_id:
                 continue
             rows.append(
-                {
-                    "id": model_id,
-                    "label": str(item.get("displayName") or model_id).strip(),
-                    "description": str(item.get("description") or "").strip(),
-                    "context_window": item.get("inputTokenLimit"),
-                    "output_limit": item.get("outputTokenLimit"),
-                    "default_parameters": _extract_google_model_defaults(item),
-                    "supported_generation_methods": actions,
-                    "capabilities": _extract_google_model_capabilities(model_id, actions),
-                    "release_channel": _google_model_release_channel(model_id),
-                    "defaults_source": "provider_api",
-                    "catalog_source": "provider_api",
-                }
+                _normalize_google_model_row(
+                    {
+                        "id": model_id,
+                        "label": str(item.get("displayName") or model_id).strip(),
+                        "description": str(item.get("description") or "").strip(),
+                        "context_window": item.get("inputTokenLimit"),
+                        "output_limit": item.get("outputTokenLimit"),
+                        "default_parameters": _extract_google_model_defaults(item),
+                        "default_parameter_provenance": _extract_google_default_parameter_provenance(
+                            item
+                        ),
+                        "supported_generation_methods": actions,
+                        "capabilities": _extract_google_model_capabilities(model_id, actions),
+                        "capability_provenance": _extract_google_capability_provenance(
+                            model_id, actions
+                        ),
+                        "release_channel": _google_model_release_channel(model_id),
+                    },
+                    catalog_source="provider_api",
+                    defaults_source="provider_api",
+                )
             )
             if len(rows) >= max_models:
                 break
@@ -592,15 +882,43 @@ def _extract_google_model_defaults(item: dict[str, Any]) -> dict[str, Any]:
     return defaults
 
 
+def _extract_google_default_parameter_provenance(item: dict[str, Any]) -> dict[str, str]:
+    provenance: dict[str, str] = {}
+    for source_key, target_key in (
+        ("temperature", "temperature"),
+        ("topP", "top_p"),
+        ("topK", "top_k"),
+        ("outputTokenLimit", "max_output_tokens"),
+    ):
+        if item.get(source_key) is not None:
+            provenance[target_key] = "Live from Google"
+    return provenance
+
+
 def _extract_google_model_capabilities(model_id: str, actions: list[Any]) -> dict[str, bool]:
     normalized = str(model_id or "").strip().lower()
     action_set = {str(action or "").strip() for action in actions if str(action or "").strip()}
+    supports_thinking_controls, _ = _thinking_support_from_model_name(normalized)
     return {
         "supports_generate_content": "generateContent" in action_set,
         "supports_token_count": "countTokens" in action_set,
         "supports_explicit_cache": "createCachedContent" in action_set,
         "supports_batch": "batchGenerateContent" in action_set,
-        "supports_thinking_controls": normalized.startswith("gemini-2.5") or normalized.startswith("gemini-3"),
+        "supports_thinking_controls": supports_thinking_controls,
+    }
+
+
+def _extract_google_capability_provenance(model_id: str, actions: list[Any]) -> dict[str, str]:
+    action_set = {str(action or "").strip() for action in actions if str(action or "").strip()}
+    _, thinking_provenance = _thinking_support_from_model_name(model_id)
+    return {
+        "supports_generate_content": "Live from Google"
+        if "generateContent" in action_set
+        else "Live from Google",
+        "supports_token_count": "Live from Google",
+        "supports_explicit_cache": "Live from Google",
+        "supports_batch": "Live from Google",
+        "supports_thinking_controls": thinking_provenance,
     }
 
 

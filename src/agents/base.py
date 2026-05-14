@@ -35,6 +35,7 @@ from src.utils.observability import RunObserver
 from src.utils.provider_models import (
     is_google_genai_model_id,
     normalize_gemini_model_id,
+    resolve_google_model_runtime_profile,
     resolve_agent_model_selection,
     resolve_llm_tuning,
     resolve_model_context_window,
@@ -669,6 +670,11 @@ def build_llm(
         model_name=model_name,
         agent_id=agent_id or "",
     )
+    model_runtime_profile = resolve_google_model_runtime_profile(
+        settings,
+        model_id=model_name,
+        provider="google",
+    )
     temp = (
         temperature
         if temperature is not None
@@ -676,11 +682,11 @@ def build_llm(
     )
 
     gemini_kwargs: dict[str, Any] = _filter_llm_kwargs(
-        tuning, {"top_p", "top_k", "max_output_tokens"}
+        tuning, set(model_runtime_profile.get("allowed_tuning_keys") or {"top_p", "top_k", "max_output_tokens"})
     )
     if "max_output_tokens" in gemini_kwargs:
         gemini_kwargs["max_tokens"] = gemini_kwargs.pop("max_output_tokens")
-    if settings.thinking_enabled:
+    if settings.thinking_enabled and model_runtime_profile.get("supports_thinking_controls"):
         gemini_kwargs["thinking_budget"] = settings.thinking_budget_tokens
 
     google_api_key = str(settings.google_api_key or "").strip() or None

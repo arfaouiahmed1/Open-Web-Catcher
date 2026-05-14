@@ -300,7 +300,7 @@ const BUILTIN_PROXY_SOURCE_OPTIONS = [
 ];
 
 const SETTINGS_TABS = [
-  { id: "models", label: "Gemini Models" },
+  { id: "models", label: "Google Models" },
   { id: "browser", label: "Browser" },
   { id: "display", label: "Display" },
   { id: "api-keys", label: "API Keys" },
@@ -319,9 +319,9 @@ const SETTINGS_TAB_ICONS = {
 
 const TAB_DETAILS = {
   models: {
-    title: "Gemini Models",
+    title: "Google Models",
     description:
-      "Set Gemini model assignments, caching behavior, and reasoning defaults for the active runtime.",
+      "Assign live Google models, inspect direct-from-Google defaults, and verify what the runtime actually applies.",
     storage: "server",
     saveLabel: "Save model settings",
   },
@@ -402,6 +402,12 @@ const EMPTY_TUNING = {
   model_overrides: {},
   agent_overrides: {},
 };
+
+const MODEL_WORKSPACE_VIEWS = [
+  { id: "assignments", label: "Assignments" },
+  { id: "runtime", label: "Runtime Controls" },
+  { id: "catalog", label: "Catalog & Costs" },
+];
 
 const DEFAULT_BROWSER_RUNTIME = {
   puppeteer: {
@@ -816,10 +822,78 @@ function sourceTone(source) {
 
 function sourceLabel(source) {
   if (source === "provider_api") return "Live provider catalog";
-  if (source === "saved_catalog") return "Saved Gemini snapshot";
+  if (source === "saved_catalog") return "Saved Google snapshot";
   if (source === "fallback_catalog") return "Fallback catalog";
+  if (source === "unverified_manual") return "Manual model ID";
   if (source === "unavailable") return "Catalog unavailable";
   return "Stored catalog";
+}
+
+function provenanceLabel(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "Unknown";
+  return normalized;
+}
+
+function capabilityTone(status) {
+  if (status === "supported") return "success";
+  if (status === "unsupported") return "warning";
+  if (status === "unverified") return "default";
+  return "default";
+}
+
+function capabilityStatusLabel(value, fallback = "Unavailable") {
+  if (value === true || value === "supported") return "Supported";
+  if (value === false || value === "unsupported") return fallback;
+  if (value === "unverified") return "Unverified";
+  return fallback;
+}
+
+function buildCompatibilityWarnings({
+  thinkingEnabled,
+  explicitCacheEnabled,
+  selections,
+  catalogModels,
+}) {
+  const catalogMap = new Map(
+    (catalogModels || []).map((model) => [String(model.id || "").toLowerCase(), model]),
+  );
+  const warnings = [];
+  (selections || []).forEach((selection) => {
+    const modelId = String(selection?.selection?.model || "").trim();
+    if (!modelId) return;
+    const modelMeta = catalogMap.get(modelId.toLowerCase()) || null;
+    const capabilities = getModelCapabilities(modelMeta);
+    const label = selection?.label || selection?.id || "Agent";
+    const status = modelMeta ? "verified" : "unverified";
+    if (thinkingEnabled && modelMeta && capabilities.supports_thinking_controls === false) {
+      warnings.push({
+        id: `${selection.id}-thinking`,
+        tone: "warning",
+        message: `${label} uses ${modelId}; thinking controls will be ignored for this model.`,
+      });
+    } else if (thinkingEnabled && !modelMeta) {
+      warnings.push({
+        id: `${selection.id}-thinking-unverified`,
+        tone: "default",
+        message: `${label} uses ${modelId}; thinking support is unverified until Google returns metadata for it.`,
+      });
+    }
+    if (explicitCacheEnabled && modelMeta && capabilities.supports_explicit_cache === false) {
+      warnings.push({
+        id: `${selection.id}-cache`,
+        tone: "warning",
+        message: `${label} uses ${modelId}; explicit cache is unavailable for this model.`,
+      });
+    } else if (explicitCacheEnabled && !modelMeta && status === "unverified") {
+      warnings.push({
+        id: `${selection.id}-cache-unverified`,
+        tone: "default",
+        message: `${label} uses ${modelId}; explicit cache support is unverified until Google returns metadata for it.`,
+      });
+    }
+  });
+  return warnings;
 }
 
 function pricingStatusTone(status) {
@@ -864,6 +938,28 @@ function ErrorNotice({ message }) {
     <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-[13px] text-destructive">
       <AlertCircle className="mt-0.5 size-4 shrink-0" />
       <span className="leading-relaxed">{message}</span>
+    </div>
+  );
+}
+
+function WarningNotice({ items = [] }) {
+  if (!items.length) return null;
+  return (
+    <div className="space-y-2">
+      {items.map((item) => (
+        <div
+          key={item.id || item.message}
+          className={cn(
+            "flex items-start gap-2 rounded-xl border px-4 py-3 text-[13px]",
+            item.tone === "warning"
+              ? "border-amber-300/50 bg-amber-100/50 text-amber-900"
+              : "border-border/70 bg-muted/30 text-foreground",
+          )}
+        >
+          <AlertCircle className="mt-0.5 size-4 shrink-0" />
+          <span className="leading-relaxed">{item.message}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1605,10 +1701,13 @@ export function SettingsPage() {
     useState(normalizeDisabledToolsByBrowserProfile({}));
   const [activeMcpBrowserTab, setActiveMcpBrowserTab] = useState("puppeteer");
   const [activeProfileTab, setActiveProfileTab] = useState("classification");
+  const [activeModelWorkspaceView, setActiveModelWorkspaceView] =
+    useState("assignments");
   const [mcpToolQuery, setMcpToolQuery] = useState("");
   const [providerCatalogs, setProviderCatalogs] = useState({});
   const [catalogQuery, setCatalogQuery] = useState("");
   const [selectedCatalogModelId, setSelectedCatalogModelId] = useState("");
+  const [catalogAssignmentTarget, setCatalogAssignmentTarget] = useState("global");
   const [catalogLoading, setCatalogLoading] = useState("");
   const [pricingStatus, setPricingStatus] = useState({});
   const [pricingSyncLoading, setPricingSyncLoading] = useState("");
@@ -1616,6 +1715,7 @@ export function SettingsPage() {
   const [savedTab, setSavedTab] = useState("");
   const [configErr, setConfigErr] = useState("");
   const [saveMismatchWarning, setSaveMismatchWarning] = useState("");
+  const [modelConfigWarnings, setModelConfigWarnings] = useState([]);
 
   const apiKeys = config?.api_keys || {};
   const activeProvider =
@@ -1678,6 +1778,10 @@ export function SettingsPage() {
   const enabledToolCount =
     (MCP_TOOLS_BY_PROFILE[activeProfileTab] || []).length -
     activeMcpDisabledTools.length;
+  const modelSelectionDetails = useMemo(
+    () => config?.model_selection_details || {},
+    [config?.model_selection_details],
+  );
 
   const modelOverrideTargets = useMemo(() => {
     const byModel = new Map();
@@ -1763,7 +1867,7 @@ export function SettingsPage() {
             : providerDefault !== undefined && providerDefault !== ""
               ? providerDefault
               : liveDefault;
-        let source = "Gemini live default";
+        let source = "Google live default";
         if (overrideValue !== undefined && overrideValue !== "") source = "Model override";
         else if (providerDefault !== undefined && providerDefault !== "") source = "Provider default";
         return {
@@ -1785,10 +1889,65 @@ export function SettingsPage() {
       selectedModelFields.map((field) => ({
         label: field.label,
         value: formatParameterValue(getModelDefaultValue(selectedCatalogModel, field.key)),
-        note: "Pulled from Gemini catalog",
+        note: provenanceLabel(
+          selectedCatalogModel?.default_parameter_provenance?.[field.key] ||
+            "Pulled from Google catalog",
+        ),
       })),
     [selectedCatalogModel, selectedModelFields],
   );
+  const assignmentRows = useMemo(
+    () =>
+      AGENT_SLOTS.map((slot) => {
+        const selection = agentModelConfig[slot.id] || { provider, model: "" };
+        const detail = modelSelectionDetails[slot.id] || {};
+        const modelMeta =
+          catalogModels.find(
+            (item) =>
+              String(item.id || "").toLowerCase() ===
+              String(selection.model || "").toLowerCase(),
+          ) || null;
+        return {
+          ...slot,
+          selection,
+          detail,
+          modelMeta,
+        };
+      }),
+    [agentModelConfig, catalogModels, modelSelectionDetails, provider],
+  );
+  const draftCompatibilityWarnings = useMemo(
+    () =>
+      buildCompatibilityWarnings({
+        thinkingEnabled,
+        explicitCacheEnabled: geminiExplicitCacheEnabled,
+        selections: assignmentRows,
+        catalogModels,
+      }),
+    [assignmentRows, catalogModels, geminiExplicitCacheEnabled, thinkingEnabled],
+  );
+  const mergedModelWarnings = useMemo(() => {
+    const rows = [];
+    const seen = new Set();
+    const pushUnique = (item) => {
+      const message = String(item?.message || "").trim();
+      if (!message || seen.has(message)) return;
+      seen.add(message);
+      rows.push(item);
+    };
+    draftCompatibilityWarnings.forEach(pushUnique);
+    (modelConfigWarnings || []).forEach((item, index) =>
+      pushUnique({
+        id: `${item.type || "warning"}-${item.agent_id || index}`,
+        tone:
+          item.type?.includes("unavailable") || item.type?.includes("disabled")
+            ? "warning"
+            : "default",
+        message: item.message || String(item),
+      }),
+    );
+    return rows;
+  }, [draftCompatibilityWarnings, modelConfigWarnings]);
 
   const serverDraft = useMemo(
     () =>
@@ -1958,6 +2117,7 @@ export function SettingsPage() {
         payload.disabled_tools_by_profile || {},
       ),
     );
+    setModelConfigWarnings(payload.model_config_warnings || []);
     setActiveMcpBrowserTab(payload.browser_engine || "puppeteer");
     setSavedTab("");
 
@@ -2197,6 +2357,11 @@ export function SettingsPage() {
             `Server applied different model values (agent=${returnedModel || "n/a"}, orchestrator=${returnedOrchestrator || "n/a"}).`,
           );
         }
+        setModelConfigWarnings(
+          payload.apply_adjustments ||
+            payload.model_config_warnings ||
+            [],
+        );
       }
       await hydrateConfig(payload);
       await loadPricingStatus();
@@ -2237,6 +2402,18 @@ export function SettingsPage() {
       next.orchestrator = { ...(next.orchestrator || { provider, model: "" }), provider, model: modelId };
       return next;
     });
+  }
+
+  function applySelectedCatalogModelToTarget() {
+    const modelId = String(selectedCatalogModelId || "").trim();
+    if (!modelId) return;
+    setConfigErr("");
+    setSaveMismatchWarning("");
+    if (catalogAssignmentTarget === "global") {
+      applySelectedCatalogModelAsGlobalDefault();
+      return;
+    }
+    updateAgentModel(catalogAssignmentTarget, modelId);
   }
 
   return (
@@ -2317,667 +2494,593 @@ export function SettingsPage() {
         <div key={activeTab} className="animate-fade-up space-y-8">
           {activeTab === "models" ? (
             <section className="space-y-4">
-              <Tabs defaultValue="providers" className="w-full">
-                <TabsList className="h-auto w-full justify-start gap-1 p-1">
-                  <TabsTrigger value="providers">Gemini</TabsTrigger>
-                  <TabsTrigger value="agents">Agent Models</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="providers" className="space-y-4">
-                  <SectionHeader>Gemini Control Plane</SectionHeader>
-
-                  <Card className="rounded-[16px] border">
-                    <CardContent className="space-y-4 p-5">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="space-y-1">
-                          <div className="text-sm font-semibold text-foreground">
-                            Active global model
-                          </div>
-                          <div className="font-mono text-xs text-muted-foreground">
-                            {activeGlobalModel || "Not set"}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            Orchestrator baseline:{" "}
-                            <span className="font-mono">{activeOrchestratorModel || "Not set"}</span>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge tone={currentTabDirty ? "warning" : "success"}>
-                            {currentTabDirty ? "Unsaved model changes" : "Models synced"}
-                          </Badge>
-                          {activeCatalog?.defaults_source ? (
-                            <Badge
-                              tone={
-                                sourceTone(activeCatalog.defaults_source) === "ok"
-                                  ? "success"
-                                  : sourceTone(activeCatalog.defaults_source) === "error"
-                                    ? "destructive"
-                                    : "warning"
-                              }
-                            >
-                              Defaults source: {sourceLabel(activeCatalog.defaults_source)}
-                            </Badge>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={applySelectedCatalogModelAsGlobalDefault}
-                          disabled={!selectedCatalogModelId}
-                        >
-                          Apply as global default
-                        </Button>
-                        <span className="text-xs text-muted-foreground">
-                          Precedence: Agent override &gt; model override &gt; provider default &gt; Gemini live/fallback default.
-                        </span>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <details className="rounded-[16px] border border-border bg-card" open={false}>
-                    <summary className="cursor-pointer list-none px-5 py-3 text-sm font-semibold text-foreground">
-                      Advanced: Catalog, defaults inspector, and pricing
-                    </summary>
-                    <div className="grid gap-4 border-t px-5 py-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(340px,0.9fr)]">
-                    <FieldGroup
-                      title="Models & Live Defaults"
-                      description="Browse the live Gemini catalog, inspect per-model defaults from Gemini itself, and compare them with your active overrides."
-                      accent="var(--signal)"
+              <SettingsWorkspaceCard
+                eyebrow="Live Google control plane"
+                title="Model assignments that stay current"
+                description="Assignments is the operator view. Runtime Controls holds cache and reasoning knobs. Catalog & Costs pulls the live Google catalog so new models appear as soon as Google exposes them."
+                actions={
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={currentTabDirty ? "warning" : "success"}>
+                      {currentTabDirty ? "Unsaved model changes" : "Saved to runtime config"}
+                    </Badge>
+                    <Badge
+                      tone={
+                        sourceTone(activeCatalog?.source || "unavailable") === "ok"
+                          ? "success"
+                          : sourceTone(activeCatalog?.source || "unavailable") === "error"
+                            ? "destructive"
+                            : "warning"
+                      }
                     >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge tone={activeCatalog?.available ? "success" : activeCatalog ? "warning" : "default"}>
-                            {activeCatalog?.available ? "Catalog ready" : activeCatalog ? "Catalog unavailable" : "Loading..."}
-                          </Badge>
-                          <Badge tone={pricingStatusTone(activePricingStatus)}>
-                            {activePricingStatus?.model_count > 0
-                              ? `${activePricingStatus.model_count} priced models`
-                              : activePricingStatus?.api_key_set
-                                ? "Pricing not synced"
-                                : "Pricing unavailable"}
-                          </Badge>
-                          <Badge tone={apiKeys[provider] ? "success" : "default"}>
-                            {apiKeys[provider] ? "Gemini key connected" : "Gemini key missing"}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => loadProviderCatalog(provider, { force: true })}
-                            disabled={catalogLoading === provider}
-                          >
-                            {catalogLoading === provider ? (
-                              <>
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                Refreshing
-                              </>
-                            ) : (
-                              <>
-                                <RefreshCw className="h-3.5 w-3.5" />
-                                Refresh catalog
-                              </>
-                            )}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => syncPricing(provider)}
-                            disabled={pricingSyncLoading === provider}
-                          >
-                            {pricingSyncLoading === provider ? (
-                              <>
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                Syncing pricing
-                              </>
-                            ) : (
-                              <>
-                                <RefreshCw className="h-3.5 w-3.5" />
-                                Sync pricing
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                      </div>
+                      {sourceLabel(activeCatalog?.source || "unavailable")}
+                    </Badge>
+                  </div>
+                }
+              >
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <CompactStat label="Selected global" value={activeGlobalModel || "Not set"} tone="primary" />
+                    <CompactStat label="Saved global" value={config?.agent_model || "Not set"} />
+                    <CompactStat label="Effective orchestrator" value={modelSelectionDetails?.orchestrator?.model || activeOrchestratorModel || "Not set"} />
+                    <CompactStat label="Live models" value={String(catalogModels.length || 0)} />
+                  </div>
+                  <MiniSegment
+                    options={MODEL_WORKSPACE_VIEWS}
+                    active={activeModelWorkspaceView}
+                    onChange={setActiveModelWorkspaceView}
+                  />
+                </div>
+              </SettingsWorkspaceCard>
 
-                      {!apiKeys[provider] ? (
-                        <div className="flex items-start gap-2 rounded-lg border border-primary/35 bg-primary/10 px-3 py-2.5 text-sm text-primary">
-                          <Key className="mt-0.5 size-4 shrink-0" />
-                          <span>
-                            <strong>{activeProvider.keyEnv}</strong> not set. {activeCatalog?.source === "saved_catalog"
-                              ? "Using the last saved Gemini defaults snapshot."
-                              : "Live Gemini defaults are unavailable; fallback defaults are shown."}
-                          </span>
-                        </div>
-                      ) : null}
+              {saveMismatchWarning ? (
+                <WarningNotice items={[{ id: "save-mismatch", tone: "warning", message: saveMismatchWarning }]} />
+              ) : null}
+              <WarningNotice items={mergedModelWarnings} />
 
-                      {activeCatalog?.error ? (
-                        <div className="rounded-lg border border-destructive/35 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
-                          {activeCatalog.error}
-                        </div>
-                      ) : null}
+              {activeModelWorkspaceView === "assignments" ? (
+                <div className="space-y-4">
+                  <SettingsWorkspaceCard
+                    eyebrow="Apply state"
+                    title="Selected, saved, and effective runtime state"
+                    description="The form state can differ from saved config until you save. Effective runtime state comes back from the backend after re-hydration."
+                  >
+                    <div className="grid gap-4 lg:grid-cols-3">
+                      <ParameterSummaryCard
+                        title="Selected in form"
+                        icon={Cpu}
+                        tone="primary"
+                        rows={[
+                          { label: "Global default", value: activeGlobalModel || "Not set", note: "Current unsaved form state" },
+                          { label: "Orchestrator", value: activeOrchestratorModel || "Not set", note: "Current unsaved form state" },
+                        ]}
+                      />
+                      <ParameterSummaryCard
+                        title="Saved to config"
+                        icon={Save}
+                        rows={[
+                          { label: "Global default", value: config?.agent_model || "Not set", note: "Last backend config payload" },
+                          { label: "Orchestrator", value: config?.orchestrator_model || "Not set", note: "Last backend config payload" },
+                        ]}
+                      />
+                      <ParameterSummaryCard
+                        title="Effective runtime"
+                        icon={CheckCircle2}
+                        rows={[
+                          { label: "Classification", value: modelSelectionDetails?.classification?.model || "Not set", note: sourceLabel(modelSelectionDetails?.classification?.catalog_source) },
+                          { label: "Orchestrator", value: modelSelectionDetails?.orchestrator?.model || "Not set", note: sourceLabel(modelSelectionDetails?.orchestrator?.catalog_source) },
+                        ]}
+                      />
+                    </div>
+                  </SettingsWorkspaceCard>
 
-                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                        <ModelFact label="Provider" value={activeProvider.name} tone="primary" />
-                        <ModelFact label="Live models" value={String(catalogModels.length || 0)} />
-                        <ModelFact
-                          label="Priced models"
-                          value={String(activePricingStatus?.model_count || 0)}
-                        />
-                        <ModelFact
-                          label="Last pricing sync"
-                          value={activePricingStatus?.last_sync_at || "Not recorded"}
-                        />
-                      </div>
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    {assignmentRows.map((slot) => {
+                      const selection = slot.selection || { provider, model: "" };
+                      const slotCatalog = providerCatalogs[selection.provider] || null;
+                      const slotOptions = ensureSelectedOption(
+                        (slotCatalog?.models || []).map((model) => ({
+                          value: model.id,
+                          label: model.label || model.id,
+                        })),
+                        selection.model,
+                      );
+                      const selectedModelMeta = slot.modelMeta;
+                      const slotFields = (slotCatalog?.hyperparameters || []).filter((field) =>
+                        fieldMatchesModel(field, selection.model),
+                      );
+                      const slotOverrides = llmTuning.agent_overrides[slot.id] || {};
+                      const slotDetail = slot.detail || {};
+                      const slotCapabilities = getModelCapabilities(selectedModelMeta);
+                      const isManual = slotDetail.catalog_status === "unverified_manual" || (!selectedModelMeta && selection.model);
 
-                      <div className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(320px,1.05fr)]">
-                        <div className="space-y-3">
-                          <div className="relative">
-                            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                            <Input
-                              value={catalogQuery}
-                              onChange={(event) => setCatalogQuery(event.target.value)}
-                              placeholder="Search Gemini models"
-                              className="h-10 pl-9"
+                      return (
+                        <SettingsWorkspaceCard
+                          key={slot.id}
+                          eyebrow={slot.note}
+                          title={slot.label}
+                          description="Per-agent model routing with direct Google catalog metadata when available."
+                          actions={
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge tone="default">{selection.provider || "google"}</Badge>
+                              <Badge tone={isManual ? "default" : "success"}>
+                                {isManual ? "Manual ID" : sourceLabel(slotDetail.catalog_source || slotCatalog?.source)}
+                              </Badge>
+                            </div>
+                          }
+                        >
+                          <div className="space-y-4">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <Select
+                                label="Live Google model"
+                                value={selection.model}
+                                onChange={(next) => updateAgentModel(slot.id, next)}
+                                options={slotOptions}
+                                searchable
+                                placeholder="Select model"
+                                emptyMessage="No Google models available"
+                              />
+                              <Input
+                                label="Manual model ID"
+                                value={selection.model}
+                                onChange={(event) => updateAgentModel(slot.id, event.target.value)}
+                                placeholder="Use a newly released or manual Google model ID"
+                                className="h-10 font-mono text-[12px]"
+                              />
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                              <ModelFact label="Selected model" value={selection.model || "Not set"} tone="primary" />
+                              <ModelFact label="Catalog status" value={isManual ? "Unverified manual ID" : "Verified"} />
+                              <ModelFact label="Thinking" value={capabilityStatusLabel(slotCapabilities.supports_thinking_controls, "Ignored")} />
+                              <ModelFact label="Explicit cache" value={capabilityStatusLabel(slotCapabilities.supports_explicit_cache)} />
+                            </div>
+
+                            {selectedModelMeta ? (
+                              <div className="rounded-xl border border-border/70 bg-muted/15 p-4">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge tone={releaseChannelTone(selectedModelMeta.release_channel)}>
+                                    {selectedModelMeta.release_channel || "stable"}
+                                  </Badge>
+                                  <Badge tone={capabilityTone(selectedModelMeta.compatibility?.thinking_controls)}>
+                                    thinking {capabilityStatusLabel(selectedModelMeta.compatibility?.thinking_controls, "ignored").toLowerCase()}
+                                  </Badge>
+                                  <Badge tone={capabilityTone(selectedModelMeta.compatibility?.explicit_cache)}>
+                                    cache {capabilityStatusLabel(selectedModelMeta.compatibility?.explicit_cache).toLowerCase()}
+                                  </Badge>
+                                </div>
+                                <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
+                                  {selectedModelMeta.description || "No Google description returned for this model."}
+                                </p>
+                                <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+                                  <span className="font-mono">{formatTokenCount(selectedModelMeta.context_window)} ctx</span>
+                                  <span className="font-mono">{formatTokenCount(selectedModelMeta.output_limit)} out</span>
+                                  <span>Defaults: {sourceLabel(selectedModelMeta.defaults_source)}</span>
+                                </div>
+                              </div>
+                            ) : selection.model ? (
+                              <div className="rounded-xl border border-border/70 bg-muted/15 p-4 text-[12px] text-muted-foreground">
+                                This model is not in the current Google catalog response yet. It can still be saved, but capabilities remain unverified until Google returns metadata for it.
+                              </div>
+                            ) : null}
+
+                            <TuningCard
+                              title={`${slot.label} override`}
+                              description="Applied after provider defaults and model defaults."
+                              values={slotOverrides}
+                              fields={slotFields}
+                              onChange={(field, value) => updateAgentOverride(slot.id, field, value)}
+                              onClear={() => clearAgentOverride(slot.id)}
+                              clearLabel="Clear override"
                             />
                           </div>
-                          <div className="space-y-2 rounded-2xl border border-border/70 bg-muted/15 p-2">
-                            {filteredCatalogModels.length ? (
-                              filteredCatalogModels.map((model) => {
-                                const isSelected = model.id === selectedCatalogModelId;
-                                const capabilities = getModelCapabilities(model);
-                                const isAssigned = modelOverrideTargets.some((target) => target.id === model.id);
-                                return (
-                                  <button
-                                    key={model.id}
-                                    type="button"
-                                    onClick={() => setSelectedCatalogModelId(model.id)}
-                                    className={cn(
-                                      "w-full rounded-xl border px-3 py-3 text-left transition-colors",
-                                      isSelected
-                                        ? "border-primary/40 bg-primary/8"
-                                        : "border-border/60 bg-background hover:bg-muted/35",
-                                    )}
-                                  >
-                                    <div className="flex items-start justify-between gap-3">
-                                      <div className="min-w-0">
-                                        <div className="flex flex-wrap items-center gap-2">
-                                          <div className="text-sm font-semibold text-foreground">{model.label || model.id}</div>
-                                          <Badge tone={releaseChannelTone(model.release_channel)} className="px-1.5 py-0.5 text-[9px] uppercase tracking-wide">
-                                            {model.release_channel || "stable"}
-                                          </Badge>
-                                          {isAssigned ? (
-                                            <Badge tone="signal" className="px-1.5 py-0.5 text-[9px]">
-                                              in use
-                                            </Badge>
-                                          ) : null}
-                                        </div>
-                                        <div className="mt-1 font-mono text-[11px] text-muted-foreground">
-                                          {model.id}
-                                        </div>
-                                      </div>
-                                      {isSelected ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" /> : null}
-                                    </div>
-                                    <div className="mt-2 line-clamp-2 text-[11.5px] leading-relaxed text-muted-foreground">
-                                      {model.description || "No provider description returned."}
-                                    </div>
-                                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                                      <Badge tone="default" className="px-1.5 py-0.5 text-[9px]">
-                                        {formatTokenCount(model.context_window)} ctx
-                                      </Badge>
-                                      <Badge tone="default" className="px-1.5 py-0.5 text-[9px]">
-                                        {formatTokenCount(model.output_limit)} out
-                                      </Badge>
-                                      {capabilities.supports_explicit_cache ? (
-                                        <Badge tone="success" className="px-1.5 py-0.5 text-[9px]">
-                                          cache
-                                        </Badge>
-                                      ) : null}
-                                      {capabilities.supports_thinking_controls ? (
-                                        <Badge tone="signal" className="px-1.5 py-0.5 text-[9px]">
-                                          thinking
-                                        </Badge>
-                                      ) : null}
-                                    </div>
-                                  </button>
-                                );
-                              })
-                            ) : (
-                              <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-                                No Gemini models match this search.
-                              </div>
-                            )}
-                          </div>
+                        </SettingsWorkspaceCard>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              {activeModelWorkspaceView === "runtime" ? (
+                <div className="space-y-4">
+                  <FieldGroup
+                    title="Runtime Defaults"
+                    description="Global settings applied before per-model and per-agent overrides."
+                    accent="var(--signal)"
+                  >
+                    <div className="grid gap-6 sm:grid-cols-2">
+                      <div>
+                        <div className="mb-3 flex items-center gap-2">
+                          <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                            Fallback Temperature
+                          </span>
+                          <HelpIcon tip="Used only when Google does not return a model-specific default and no override is set." />
                         </div>
+                        <Slider
+                          value={Number(fallbackTemperature) || 0}
+                          onChange={(next) => setFallbackTemperature(next)}
+                          min={0}
+                          max={2}
+                          step={0.1}
+                          description="Direct Google defaults still take precedence when present."
+                        />
+                      </div>
+                      <div>
+                        <div className="mb-3 flex items-center gap-2">
+                          <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                            Tool Cache Stabilization
+                          </span>
+                          <HelpIcon tip="How many identical consecutive tool results must be seen before the response is cached." />
+                        </div>
+                        <Slider
+                          value={Number(toolCacheStable) || 1}
+                          onChange={(next) => setToolCacheStable(next)}
+                          min={1}
+                          max={10}
+                          step={1}
+                          description="Higher values are more conservative."
+                        />
+                      </div>
+                    </div>
 
-                        <div className="space-y-4">
-                          {selectedCatalogModel ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <ToggleRow
+                        label="Provider prompt caching"
+                        checked={providerCacheEnabled}
+                        onChange={setProviderCacheEnabled}
+                        description="Use Google-native cache hits for repeated shared prompt context."
+                      />
+                      <ToggleRow
+                        label="Deterministic tool result cache"
+                        checked={toolCacheEnabled}
+                        onChange={setToolCacheEnabled}
+                        description="Cache repeated browser-tool responses within the same run session."
+                      />
+                    </div>
+                  </FieldGroup>
+
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    <FieldGroup
+                      title="Explicit Cache"
+                      description="Server-side cached context for repeated Google model runs."
+                      accent="var(--violet)"
+                    >
+                      <ToggleRow
+                        label="Enabled"
+                        checked={geminiExplicitCacheEnabled}
+                        onChange={setGeminiExplicitCacheEnabled}
+                        description="Auto-adjusted at runtime when a selected model does not support explicit cache."
+                      />
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <BrowserRuntimeInput
+                          label="Cache TTL (seconds)"
+                          value={geminiExplicitCacheTtl}
+                          onChange={setGeminiExplicitCacheTtl}
+                          type="number"
+                          min="60"
+                          step="60"
+                          description="How long the server keeps the cached context alive."
+                        />
+                        <BrowserRuntimeInput
+                          label="Refresh lead (seconds)"
+                          value={geminiExplicitCacheRefreshLead}
+                          onChange={setGeminiExplicitCacheRefreshLead}
+                          type="number"
+                          min="5"
+                          step="5"
+                          description="How early the runtime pre-warms a replacement cache."
+                        />
+                      </div>
+                    </FieldGroup>
+
+                    <FieldGroup
+                      title="Thinking"
+                      description="Global reasoning control. Unsupported models keep the selection but ignore the thinking budget."
+                      accent="var(--sky)"
+                    >
+                      <ToggleRow
+                        label="Enable thinking"
+                        checked={thinkingEnabled}
+                        onChange={setThinkingEnabled}
+                        description="Only applied where the selected Google model supports it."
+                      />
+                      {thinkingEnabled ? (
+                        <div className="max-w-sm">
+                          <BrowserRuntimeInput
+                            label="Thinking budget (tokens)"
+                            value={thinkingBudgetTokens}
+                            onChange={setThinkingBudgetTokens}
+                            type="number"
+                            min="1000"
+                            max="32000"
+                            step="1000"
+                            description="Higher values allow deeper reasoning with higher cost."
+                          />
+                        </div>
+                      ) : null}
+                    </FieldGroup>
+                  </div>
+
+                  <FieldGroup
+                    title="Overrides and Parallelism"
+                    description="Use overrides sparingly. Google live defaults remain the base layer."
+                    accent="var(--mint)"
+                  >
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      <TuningCard
+                        title={`${activeProvider.name} provider defaults`}
+                        description="Applied before model-specific and agent-specific overrides."
+                        values={llmTuning.provider_defaults[provider] || {}}
+                        fields={providerDefaultFields}
+                        onChange={updateAgentProviderDefault}
+                      />
+                      <div className="space-y-4">
+                        <BrowserRuntimeInput
+                          label="Max parallel hosting pages"
+                          value={maxParallelHostingPages}
+                          onChange={setMaxParallelHostingPages}
+                          type="number"
+                          min="1"
+                          max="20"
+                          step="1"
+                          description="Caps simultaneous hosting-page and embedded-page executions."
+                        />
+                        {modelOverrideTargets.map((target) => {
+                          const fields = (activeCatalog?.hyperparameters || []).filter((field) =>
+                            fieldMatchesModel(field, target.id),
+                          );
+                          const values =
+                            llmTuning.model_overrides[modelOverrideKey(provider, target.id)] || {};
+                          return (
+                            <TuningCard
+                              key={target.id}
+                              title={`Model override - ${target.title}`}
+                              description={target.description}
+                              values={values}
+                              fields={fields}
+                              onChange={(field, value) => updateModelOverride(target.id, field, value)}
+                              onClear={() => clearModelOverride(target.id)}
+                              clearLabel="Clear override"
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </FieldGroup>
+                </div>
+              ) : null}
+
+              {activeModelWorkspaceView === "catalog" ? (
+                <div className="space-y-4">
+                  <SettingsWorkspaceCard
+                    eyebrow="Direct from Google"
+                    title="Live catalog and defaults"
+                    description="This view is fed by the Google models API first, then saved snapshot, then fallback catalog. If Google adds a model later today, it should show up here on load or refresh."
+                    actions={
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => loadProviderCatalog(provider, { force: true })}
+                          disabled={catalogLoading === provider}
+                        >
+                          {catalogLoading === provider ? (
                             <>
-                              <Card className="rounded-[16px] border">
-                                <CardContent className="space-y-4 p-5">
-                                  <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <div className="space-y-1">
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <h3 className="text-lg font-semibold text-foreground">
-                                          {selectedCatalogModel.label || selectedCatalogModel.id}
-                                        </h3>
-                                        <Badge tone={releaseChannelTone(selectedCatalogModel.release_channel)}>
-                                          {selectedCatalogModel.release_channel || "stable"}
-                                        </Badge>
-                                      </div>
-                                      <div className="font-mono text-[11px] text-muted-foreground">
-                                        {selectedCatalogModel.id}
-                                      </div>
-                                      <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                                        {selectedCatalogModel.description || "No provider description returned."}
-                                      </p>
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      {modelOverrideTargets.some((target) => target.id === selectedCatalogModel.id) ? (
-                                        <Badge tone="signal">Assigned to agents</Badge>
-                                      ) : null}
-                                      <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => applyLiveDefaultsToModelOverride(selectedCatalogModel)}
-                                        disabled={!selectedModelFields.length}
-                                      >
-                                        <Sparkles className="h-3.5 w-3.5" />
-                                        Copy Gemini defaults
-                                      </Button>
-                                    </div>
-                                  </div>
-
-                                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                                    <ModelFact label="Context window" value={formatTokenCount(selectedCatalogModel.context_window)} />
-                                    <ModelFact label="Output limit" value={formatTokenCount(selectedCatalogModel.output_limit)} />
-                                    <ModelFact label="Cache API" value={getModelCapabilities(selectedCatalogModel).supports_explicit_cache ? "Supported" : "Unavailable"} />
-                                    <ModelFact label="Thinking controls" value={getModelCapabilities(selectedCatalogModel).supports_thinking_controls ? "Supported" : "Check docs"} />
-                                  </div>
-
-                                  <div className="flex flex-wrap items-center gap-1.5">
-                                    {(selectedCatalogModel.supported_generation_methods || []).map((method) => (
-                                      <Badge key={method} tone="default" className="px-1.5 py-0.5 text-[9px]">
-                                        {method}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                </CardContent>
-                              </Card>
-
-                              <div className="grid gap-4 xl:grid-cols-2">
-                                <ParameterSummaryCard
-                                  title="Gemini live defaults"
-                                  icon={Sparkles}
-                                  tone="primary"
-                                  rows={selectedModelDefaultRows}
-                                />
-                                <ParameterSummaryCard
-                                  title="Effective request values"
-                                  icon={SlidersHorizontal}
-                                  rows={selectedModelEffectiveRows}
-                                />
-                              </div>
-
-                              <CostEstimator provider={provider} model={selectedCatalogModel.id} />
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              Refreshing
                             </>
                           ) : (
-                            <Card className="rounded-[16px] border border-dashed">
-                              <CardContent className="px-5 py-10 text-center text-sm text-muted-foreground">
-                                Select a Gemini model to inspect live defaults, capabilities, and estimated costs.
-                              </CardContent>
-                            </Card>
+                            <>
+                              <RefreshCw className="h-3.5 w-3.5" />
+                              Refresh live catalog
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => syncPricing(provider)}
+                          disabled={pricingSyncLoading === provider}
+                        >
+                          {pricingSyncLoading === provider ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              Syncing pricing
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="h-3.5 w-3.5" />
+                              Sync pricing
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    }
+                  >
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      <ModelFact label="Catalog source" value={sourceLabel(activeCatalog?.source || "unavailable")} tone="primary" />
+                      <ModelFact label="Defaults source" value={sourceLabel(activeCatalog?.defaults_source || "unavailable")} />
+                      <ModelFact label="Priced models" value={String(activePricingStatus?.model_count || 0)} />
+                      <ModelFact label="Last pricing sync" value={activePricingStatus?.last_sync_at || "Not recorded"} />
+                    </div>
+
+                    {!apiKeys[provider] ? (
+                      <div className="flex items-start gap-2 rounded-lg border border-primary/35 bg-primary/10 px-3 py-2.5 text-sm text-primary">
+                        <Key className="mt-0.5 size-4 shrink-0" />
+                        <span>
+                          <strong>{activeProvider.keyEnv}</strong> not set. {activeCatalog?.source === "saved_catalog"
+                            ? "Using the last saved Google snapshot."
+                            : "Live Google defaults are unavailable; fallback rows are shown."}
+                        </span>
+                      </div>
+                    ) : null}
+
+                    {activeCatalog?.error ? (
+                      <div className="rounded-lg border border-destructive/35 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
+                        {activeCatalog.error}
+                      </div>
+                    ) : null}
+
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(360px,1.08fr)]">
+                      <div className="space-y-3">
+                        <div className="relative">
+                          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            value={catalogQuery}
+                            onChange={(event) => setCatalogQuery(event.target.value)}
+                            placeholder="Search Google models"
+                            className="h-10 pl-9"
+                          />
+                        </div>
+                        <div className="space-y-2 rounded-2xl border border-border/70 bg-muted/15 p-2">
+                          {filteredCatalogModels.length ? (
+                            filteredCatalogModels.map((model) => {
+                              const isSelected = model.id === selectedCatalogModelId;
+                              const capabilities = getModelCapabilities(model);
+                              const isAssigned = modelOverrideTargets.some((target) => target.id === model.id);
+                              return (
+                                <button
+                                  key={model.id}
+                                  type="button"
+                                  onClick={() => setSelectedCatalogModelId(model.id)}
+                                  className={cn(
+                                    "w-full rounded-xl border px-3 py-3 text-left transition-colors",
+                                    isSelected
+                                      ? "border-primary/40 bg-primary/8"
+                                      : "border-border/60 bg-background hover:bg-muted/35",
+                                  )}
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <div className="text-sm font-semibold text-foreground">{model.label || model.id}</div>
+                                        <Badge tone={releaseChannelTone(model.release_channel)} className="px-1.5 py-0.5 text-[9px] uppercase tracking-wide">
+                                          {model.release_channel || "stable"}
+                                        </Badge>
+                                        {isAssigned ? <Badge tone="signal" className="px-1.5 py-0.5 text-[9px]">in use</Badge> : null}
+                                      </div>
+                                      <div className="mt-1 font-mono text-[11px] text-muted-foreground">{model.id}</div>
+                                    </div>
+                                    {isSelected ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" /> : null}
+                                  </div>
+                                  <div className="mt-2 line-clamp-2 text-[11.5px] leading-relaxed text-muted-foreground">
+                                    {model.description || "No Google description returned."}
+                                  </div>
+                                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                                    <Badge tone="default" className="px-1.5 py-0.5 text-[9px]">{formatTokenCount(model.context_window)} ctx</Badge>
+                                    <Badge tone="default" className="px-1.5 py-0.5 text-[9px]">{formatTokenCount(model.output_limit)} out</Badge>
+                                    <Badge tone={capabilityTone(model.compatibility?.thinking_controls)} className="px-1.5 py-0.5 text-[9px]">
+                                      thinking {capabilityStatusLabel(capabilities.supports_thinking_controls, "off").toLowerCase()}
+                                    </Badge>
+                                  </div>
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+                              No Google models match this search.
+                            </div>
                           )}
                         </div>
                       </div>
-                    </FieldGroup>
-
-                    <div className="space-y-4">
-                      <FieldGroup
-                        title="Runtime Defaults"
-                        description="Global settings applied before per-model and per-agent overrides."
-                        accent="var(--signal)"
-                      >
-                        <div className="grid gap-6 sm:grid-cols-2">
-                          <div>
-                            <div className="mb-3 flex items-center gap-2">
-                              <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                                Fallback Temperature
-                              </span>
-                              <HelpIcon tip="Global temperature applied when no provider-specific or model-specific override is set." />
-                            </div>
-                            <Slider
-                              value={Number(fallbackTemperature) || 0}
-                              onChange={(next) => setFallbackTemperature(next)}
-                              min={0}
-                              max={2}
-                              step={0.1}
-                              description="Used only when the request does not already resolve to a Gemini default or explicit override."
-                            />
-                          </div>
-                          <div>
-                            <div className="mb-3 flex items-center gap-2">
-                              <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                                Tool Cache Stabilization
-                              </span>
-                              <HelpIcon tip="How many identical consecutive tool results must be seen before the response is cached." />
-                            </div>
-                            <Slider
-                              value={Number(toolCacheStable) || 1}
-                              onChange={(next) => setToolCacheStable(next)}
-                              min={1}
-                              max={10}
-                              step={1}
-                              description="Higher values are more conservative."
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <ToggleRow
-                            label="Provider prompt caching"
-                            checked={providerCacheEnabled}
-                            onChange={setProviderCacheEnabled}
-                            description="Use Gemini-native cache hits for repeated shared prompt context."
-                          />
-                          <ToggleRow
-                            label="Deterministic tool result cache"
-                            checked={toolCacheEnabled}
-                            onChange={setToolCacheEnabled}
-                            description="Cache repeated browser-tool responses within the same run session."
-                          />
-                        </div>
-                      </FieldGroup>
-
-                      <FieldGroup
-                        title="Gemini Explicit Cache"
-                        description="Server-side cached context for repeated Gemini runs."
-                        accent="var(--violet)"
-                      >
-                        <ToggleRow
-                          label="Enabled"
-                          checked={geminiExplicitCacheEnabled}
-                          onChange={setGeminiExplicitCacheEnabled}
-                          description="Activate explicit cached content for Gemini runs."
-                        />
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <BrowserRuntimeInput
-                            label="Cache TTL (seconds)"
-                            value={geminiExplicitCacheTtl}
-                            onChange={setGeminiExplicitCacheTtl}
-                            type="number"
-                            min="60"
-                            step="60"
-                            description="How long the server keeps the cached context alive."
-                          />
-                          <BrowserRuntimeInput
-                            label="Refresh lead (seconds)"
-                            value={geminiExplicitCacheRefreshLead}
-                            onChange={setGeminiExplicitCacheRefreshLead}
-                            type="number"
-                            min="5"
-                            step="5"
-                            description="How early the runtime pre-warms a replacement cache."
-                          />
-                        </div>
-                      </FieldGroup>
-
-                      <FieldGroup
-                        title="Extended Thinking"
-                        description="Enable Gemini reasoning budgets for supported models."
-                        accent="var(--sky)"
-                      >
-                        <ToggleRow
-                          label="Enable thinking"
-                          checked={thinkingEnabled}
-                          onChange={setThinkingEnabled}
-                          description="Turns on Gemini reasoning budgets where the selected model supports them."
-                        />
-                        {thinkingEnabled ? (
-                          <div className="max-w-sm">
-                            <BrowserRuntimeInput
-                              label="Thinking budget (tokens)"
-                              value={thinkingBudgetTokens}
-                              onChange={setThinkingBudgetTokens}
-                              type="number"
-                              min="1000"
-                              max="32000"
-                              step="1000"
-                              description="Higher values allow deeper reasoning with higher cost."
-                            />
-                          </div>
-                        ) : null}
-                      </FieldGroup>
-
-                      <FieldGroup
-                        title="Parallelism"
-                        description="Concurrency limits for hosting and embedded extraction."
-                        accent="var(--mint)"
-                      >
-                        <div className="max-w-sm">
-                          <BrowserRuntimeInput
-                            label="Max parallel hosting pages"
-                            value={maxParallelHostingPages}
-                            onChange={setMaxParallelHostingPages}
-                            type="number"
-                            min="1"
-                            max="20"
-                            step="1"
-                            description="Caps simultaneous hosting-page and embedded-page executions."
-                          />
-                        </div>
-                      </FieldGroup>
-                    </div>
-                    </div>
-                  </details>
-
-                  <details className="rounded-[16px] border border-border bg-card">
-                    <summary className="cursor-pointer list-none px-5 py-3 text-sm font-semibold text-foreground">
-                      Advanced: Overrides
-                    </summary>
-                    <div className="border-t px-5 py-4">
-                    <FieldGroup
-                      title="Overrides"
-                      description="These controls sit on top of Gemini live defaults. Use provider defaults for broad steering and model overrides only where you need a deliberate deviation."
-                      accent="var(--signal)"
-                    >
-                    <TuningCard
-                      title={`${activeProvider.name} provider defaults`}
-                      description="Applied to Gemini requests before model-specific overrides."
-                      values={llmTuning.provider_defaults[provider] || {}}
-                      fields={providerDefaultFields}
-                      onChange={updateAgentProviderDefault}
-                    />
-
-                    {modelOverrideTargets.map((target) => {
-                      const fields = (activeCatalog?.hyperparameters || []).filter(
-                        (field) => fieldMatchesModel(field, target.id),
-                      );
-                      const values =
-                        llmTuning.model_overrides[
-                          modelOverrideKey(provider, target.id)
-                        ] || {};
-                      const modelMeta = catalogModels.find((item) => item.id === target.id);
-                      return (
-                        <div key={target.id} className="space-y-3">
-                          <TuningCard
-                            title={`Model override - ${target.title}`}
-                            description={`${target.description} Gemini live defaults remain visible in the model inspector above.`}
-                            values={values}
-                            fields={fields}
-                            onChange={(field, value) =>
-                              updateModelOverride(target.id, field, value)
-                            }
-                            onClear={() => clearModelOverride(target.id)}
-                            clearLabel="Clear override"
-                          />
-                          {modelMeta ? (
-                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                              {fields.map((field) => (
-                                <ModelFact
-                                  key={`${target.id}-${field.key}`}
-                                  label={`${field.label} default`}
-                                  value={formatParameterValue(getModelDefaultValue(modelMeta, field.key))}
-                                />
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                    </FieldGroup>
-                    </div>
-                  </details>
-                </TabsContent>
-
-                <TabsContent value="agents" className="space-y-4">
-                  <SectionHeader>Per-Agent Models</SectionHeader>
-                  <div className="grid gap-4 lg:grid-cols-2">
-                {AGENT_SLOTS.map((slot) => {
-                  const selection = agentModelConfig[slot.id] || {
-                    provider,
-                    model: "",
-                  };
-                  const slotCatalog =
-                    providerCatalogs[selection.provider] || null;
-                  const slotOptions = ensureSelectedOption(
-                    (slotCatalog?.models || []).map((model) => ({
-                      value: model.id,
-                      label: model.label || model.id,
-                    })),
-                    selection.model,
-                  );
-                  const selectedModelMeta = (slotCatalog?.models || []).find(
-                    (m) => m.id === selection.model,
-                  );
-                  const slotFields = (
-                    slotCatalog?.hyperparameters || []
-                  ).filter((field) =>
-                    fieldMatchesModel(field, selection.model),
-                  );
-                  const slotOverrides =
-                    llmTuning.agent_overrides[slot.id] || {};
-
-                  return (
-                    <div
-                      key={slot.id}
-                      className="space-y-4 rounded-lg border border-border bg-card p-5"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-base font-semibold text-foreground">
-                            {slot.label}
-                          </div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {slot.note}
-                          </div>
-                        </div>
-                        {slotCatalog ? (
-                          <Badge
-                            tone={
-                              sourceTone(slotCatalog.source) === "ok"
-                                ? "success"
-                                : sourceTone(slotCatalog.source) === "error"
-                                  ? "destructive"
-                                  : "warning"
-                            }
-                          >
-                            {sourceLabel(slotCatalog.source)}
-                          </Badge>
-                        ) : null}
-                      </div>
 
                       <div className="space-y-4">
-                        <div className="space-y-1">
-                          <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                            Provider
-                          </label>
-                          <div className="h-10 rounded-md border border-input bg-muted/35 px-3 text-sm font-medium leading-10 text-foreground">
-                            Google Gemini
-                          </div>
-                        </div>
+                        {selectedCatalogModel ? (
+                          <>
+                            <SettingsWorkspaceCard
+                              eyebrow="Selected model"
+                              title={selectedCatalogModel.label || selectedCatalogModel.id}
+                              description={selectedCatalogModel.description || "No Google description returned for this model."}
+                              actions={
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge tone={releaseChannelTone(selectedCatalogModel.release_channel)}>
+                                    {selectedCatalogModel.release_channel || "stable"}
+                                  </Badge>
+                                  <Badge tone="default">{sourceLabel(selectedCatalogModel.catalog_source)}</Badge>
+                                </div>
+                              }
+                            >
+                              <div className="space-y-4">
+                                <div className="font-mono text-[11px] text-muted-foreground">
+                                  {selectedCatalogModel.id}
+                                </div>
+                                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                  <ModelFact label="Context window" value={formatTokenCount(selectedCatalogModel.context_window)} />
+                                  <ModelFact label="Output limit" value={formatTokenCount(selectedCatalogModel.output_limit)} />
+                                  <ModelFact label="Cache API" value={capabilityStatusLabel(getModelCapabilities(selectedCatalogModel).supports_explicit_cache)} />
+                                  <ModelFact label="Thinking controls" value={capabilityStatusLabel(getModelCapabilities(selectedCatalogModel).supports_thinking_controls, "Ignored")} />
+                                </div>
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                  <Select
+                                    label="Assign selected model to"
+                                    value={catalogAssignmentTarget}
+                                    onChange={setCatalogAssignmentTarget}
+                                    options={[
+                                      { value: "global", label: "Global default" },
+                                      ...AGENT_SLOTS.map((slot) => ({
+                                        value: slot.id,
+                                        label: slot.label,
+                                      })),
+                                    ]}
+                                  />
+                                  <div className="flex items-end gap-2">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      onClick={applySelectedCatalogModelToTarget}
+                                      disabled={!selectedCatalogModelId}
+                                    >
+                                      Apply assignment
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => applyLiveDefaultsToModelOverride(selectedCatalogModel)}
+                                      disabled={!selectedModelFields.length}
+                                    >
+                                      <Sparkles className="h-3.5 w-3.5" />
+                                      Copy Google defaults
+                                    </Button>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {(selectedCatalogModel.supported_generation_methods || []).map((method) => (
+                                    <Badge key={method} tone="default" className="px-1.5 py-0.5 text-[9px]">
+                                      {method}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            </SettingsWorkspaceCard>
 
-                        {/* Model */}
-                        <div className="space-y-1">
-                          <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                            Model
-                          </label>
-                          <Select
-                            value={selection.model}
-                            onChange={(next) => updateAgentModel(slot.id, next)}
-                            options={slotOptions}
-                            searchable
-                            placeholder="Select model"
-                            emptyMessage="No models available for this provider"
-                          />
-                        </div>
+                            <div className="grid gap-4 xl:grid-cols-2">
+                              <ParameterSummaryCard
+                                title="Google defaults"
+                                icon={Sparkles}
+                                tone="primary"
+                                rows={selectedModelDefaultRows}
+                              />
+                              <ParameterSummaryCard
+                                title="Effective request values"
+                                icon={SlidersHorizontal}
+                                rows={selectedModelEffectiveRows}
+                              />
+                            </div>
 
-                        {/* Selected model detail */}
-                        {selectedModelMeta && (selectedModelMeta.description || selectedModelMeta.context_window) ? (
-                          <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-[11.5px]">
-                            {selectedModelMeta.description ? (
-                              <p className="text-muted-foreground">{selectedModelMeta.description}</p>
-                            ) : null}
-                            {selectedModelMeta.context_window ? (
-                              <p className="mt-0.5 font-mono text-[10.5px] text-muted-foreground/70">
-                                {selectedModelMeta.context_window.toLocaleString()} token context
-                              </p>
-                            ) : null}
-                          </div>
-                        ) : null}
-
-                        {/* Custom model ID — optional */}
-                        <div className="space-y-1">
-                          <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                            Custom model ID <span className="font-normal text-muted-foreground/60">(optional)</span>
-                          </label>
-                          <Input
-                            value={selection.model}
-                            onChange={(event) =>
-                              updateAgentModel(slot.id, event.target.value)
-                            }
-                            placeholder="Manual model name"
-                            className="h-10 font-mono text-[12px]"
-                          />
-                        </div>
+                            <CostEstimator provider={provider} model={selectedCatalogModel.id} />
+                          </>
+                        ) : (
+                          <Card className="rounded-[16px] border border-dashed">
+                            <CardContent className="px-5 py-10 text-center text-sm text-muted-foreground">
+                              Select a Google model to inspect live defaults, capability provenance, and estimated costs.
+                            </CardContent>
+                          </Card>
+                        )}
                       </div>
-
-                      {slotCatalog?.error ? (
-                        <div
-                          className="rounded-lg border px-3 py-2.5 text-[12px]"
-                          style={{
-                            borderColor:
-                              "color-mix(in oklch, var(--signal) 35%, transparent)",
-                            background:
-                              "color-mix(in oklch, var(--signal) 8%, transparent)",
-                            color: "var(--ink-dim)",
-                          }}
-                        >
-                          {slotCatalog.error}
-                        </div>
-                      ) : null}
-
-                      <TuningCard
-                        title={`${slot.label} override`}
-                        description="Applied after provider defaults and model overrides."
-                        values={slotOverrides}
-                        fields={slotFields}
-                        onChange={(field, value) =>
-                          updateAgentOverride(slot.id, field, value)
-                        }
-                        onClear={() => clearAgentOverride(slot.id)}
-                        clearLabel="Clear override"
-                      />
                     </div>
-                  );
-                })}
-                  </div>
-                </TabsContent>
-
-              </Tabs>
+                  </SettingsWorkspaceCard>
+                </div>
+              ) : null}
             </section>
           ) : null}
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
@@ -17,6 +17,8 @@ from src.utils.config import (
     normalize_agent_runtime_config,
 )
 from src.utils.provider_models import (
+    build_model_selection_details,
+    collect_model_config_warnings,
     get_provider_model_catalog,
     normalize_agent_model_config,
     normalize_llm_tuning,
@@ -94,6 +96,8 @@ def ui_config_payload(
         "api_keys": {
             "google": bool(settings.google_api_key),
         },
+        "model_selection_details": build_model_selection_details(settings),
+        "model_config_warnings": collect_model_config_warnings(settings),
     }
     if config_persisted is not None:
         payload["config_persisted"] = config_persisted
@@ -228,6 +232,7 @@ def apply_ui_config_update(
         config_persist_error=persist_error,
     )
     payload["pricing_sync"] = pricing_sync
+    payload["apply_adjustments"] = payload.get("model_config_warnings", [])
     return payload
 
 
@@ -251,7 +256,7 @@ def get_ui_provider_models(
     if payload.get("source") == "provider_api" and isinstance(models, list) and models:
         cache = dict(getattr(settings, "provider_model_catalog_cache", {}) or {})
         cache[normalized_provider] = {
-            "cached_at": datetime.now(datetime.UTC).isoformat(),
+            "cached_at": datetime.now(timezone.utc).isoformat(),
             "source": payload.get("source", "provider_api"),
             "models": models,
         }
