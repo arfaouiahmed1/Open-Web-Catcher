@@ -13,12 +13,14 @@ from sqlalchemy.orm import Session
 
 from src.storage.models import (
     AgentRunRecord,
+    BackgroundJobRecord,
     DatasetBatchRecord,
     DatasetSiteRecord,
     DatasetSiteRunRecord,
     PipelineRunRecord,
     RunModelUsageRecord,
 )
+from src.utils.console_state import normalize_job_display_status, normalize_run_display_status
 
 LANGUAGES = [
     "english",
@@ -64,6 +66,11 @@ def _serialize_model(row: Any) -> dict[str, Any]:
 
 def _serialize_datetime(value: Any) -> str:
     return value.isoformat() if isinstance(value, datetime) else ""
+
+
+def _terminal_site_status(value: str) -> str:
+    status = str(value or "").strip().lower()
+    return status if status in TERMINAL_SITE_RUN_STATUSES else ""
 
 
 class DatasetRepository:
@@ -555,6 +562,21 @@ class DatasetRepository:
             batch.started_at = batch.started_at or now
         self._session.commit()
 
+    def mark_site_run_cancelled(self, run_id: str, *, reason: str = "") -> None:
+        row = self._session.query(DatasetSiteRunRecord).filter_by(run_id=run_id).first()
+        if row is None:
+            return
+        now = datetime.utcnow()
+        row.status = "cancelled"
+        row.final_status = "cancelled"
+        row.error_text = str(reason or "")
+        row.started_at = row.started_at or now
+        row.finished_at = now
+        if row.site_id is not None:
+            self._refresh_site_metrics(row.site_id)
+        self._refresh_batch_metrics(row.batch_id)
+        self._session.commit()
+
     def finalize_site_run(
         self,
         run_id: str,
@@ -604,15 +626,79 @@ class DatasetRepository:
 
     def _batch_payload(self, row: DatasetBatchRecord, *, include_runs: bool) -> dict[str, Any]:
         payload = _serialize_model(row)
-        payload["success_rate"] = round((float(row.passed_count or 0) / float(row.completed_count or 1)) * 100.0, 1) if row.completed_count else 0.0
+        runs = (
+            self._session.query(DatasetSiteRunRecord)
+            .filter_by(batch_id=row.id)
+            .order_by(DatasetSiteRunRecord.created_at.asc(), DatasetSiteRunRecord.id.asc())
+            .all()
+        )
+        run_payloads = [self._site_run_payload(item) for item in runs]
+        completed = [
+            item
+            for item in run_payloads
+            if _terminal_site_status(item.get("final_status") or item.get("status"))
+        ]
+        passed_count = len(
+            [
+                item
+                for item in completed
+                if _terminal_site_status(item.get("final_status") or item.get("status"))
+                in SUCCESS_FINAL_STATUSES
+            ]
+        )
+        failed_count = len(
+            [
+                item
+                for item in completed
+                if _terminal_site_status(item.get("final_status") or item.get("status")) == "failed"
+            ]
+        )
+        cancelled_count = len(
+            [
+                item
+                for item in completed
+                if _terminal_site_status(item.get("final_status") or item.get("status")) == "cancelled"
+            ]
+        )
+        if not run_payloads:
+            batch_status = "queued"
+        elif any(str(item.get("status", "") or "").strip().lower() == "running" for item in run_payloads):
+            batch_status = "running"
+        elif any(str(item.get("status", "") or "").strip().lower() == "queued" for item in run_payloads):
+            batch_status = "queued"
+        elif len(completed) == len(run_payloads):
+            if cancelled_count == len(run_payloads):
+                batch_status = "cancelled"
+            elif passed_count == len(run_payloads):
+                batch_status = "success"
+            elif passed_count > 0:
+                batch_status = "partial"
+            else:
+                batch_status = "failed"
+        else:
+            batch_status = "running"
+
+        payload["requested_count"] = len(run_payloads)
+        payload["completed_count"] = len(completed)
+        payload["passed_count"] = passed_count
+        payload["failed_count"] = failed_count
+        payload["cancelled_count"] = cancelled_count
+        payload["status"] = batch_status
+        payload["success_rate"] = (
+            round((float(passed_count) / float(len(completed) or 1)) * 100.0, 1) if completed else 0.0
+        )
+        if len(completed) == len(run_payloads) and completed:
+            finished_values = [
+                item.get("finished_at")
+                for item in completed
+                if str(item.get("finished_at", "") or "").strip()
+            ]
+            if finished_values:
+                payload["finished_at"] = max(finished_values)
+        for item in run_payloads:
+            item["batch_status"] = batch_status
         if include_runs:
-            runs = (
-                self._session.query(DatasetSiteRunRecord)
-                .filter_by(batch_id=row.id)
-                .order_by(DatasetSiteRunRecord.created_at.asc(), DatasetSiteRunRecord.id.asc())
-                .all()
-            )
-            payload["runs"] = [self._site_run_payload(item) for item in runs]
+            payload["runs"] = run_payloads
         return payload
 
     def _latest_site_run_payload(self, site_id: int) -> dict[str, Any] | None:
@@ -635,8 +721,14 @@ class DatasetRepository:
             payload["batch_name"] = batch.batch_name
             payload["batch_status"] = batch.status
         pipeline = self._session.query(PipelineRunRecord).filter_by(run_id=row.run_id).first()
+        job = self._session.query(BackgroundJobRecord).filter_by(run_id=row.run_id).first()
         model_usage: list[dict[str, Any]] = []
         agent_rows: list[dict[str, Any]] = []
+        persisted_status = _terminal_site_status(payload.get("final_status") or payload.get("status"))
+        job_display_status = normalize_job_display_status(str(job.status or "")) if job is not None else ""
+        resolved_status = str(payload.get("status", "") or "").strip().lower() or "queued"
+        resolved_final_status = persisted_status
+        derived_error = str(payload.get("error_text", "") or "")
         if pipeline is not None:
             model_usage_rows = (
                 self._session.query(RunModelUsageRecord)
@@ -657,10 +749,30 @@ class DatasetRepository:
                     .all()
                 )
             ]
+            pipeline_status = normalize_run_display_status(
+                str(pipeline.final_status or ""),
+                success=bool(pipeline.success),
+                failure_mode=str(pipeline.failure_mode or ""),
+                job_status="",
+            )
+            if _terminal_site_status(pipeline_status):
+                resolved_status = pipeline_status
+                resolved_final_status = pipeline_status
+            elif job_display_status:
+                resolved_status = job_display_status
+                if _terminal_site_status(job_display_status):
+                    resolved_final_status = job_display_status
+            if not derived_error and resolved_status in FAILED_FINAL_STATUSES:
+                derived_error = (
+                    str(getattr(job, "error_text", "") or "")
+                    or str(pipeline.classification_reasoning or "")
+                    or str(pipeline.failure_mode or "")
+                )
             payload["run"] = {
                 "run_id": pipeline.run_id,
                 "url": pipeline.root_url,
-                "final_status": pipeline.final_status,
+                "status": resolved_status,
+                "final_status": resolved_final_status or pipeline_status,
                 "success": pipeline.success,
                 "page_type": pipeline.page_type,
                 "stream_count": int(pipeline.stream_count or 0),
@@ -679,14 +791,24 @@ class DatasetRepository:
                 "finished_at": _serialize_datetime(pipeline.finished_at),
                 "created_at": _serialize_datetime(pipeline.created_at),
             }
+            payload["status"] = resolved_status
             payload["final_status"] = payload["run"]["final_status"] or payload.get("final_status", "")
             payload["stream_count"] = payload["run"]["stream_count"]
             payload["total_cost_usd"] = float(payload["run"]["estimated_total_cost_usd"] or payload.get("total_cost_usd") or 0.0)
             payload["total_tokens"] = payload["run"]["total_tokens"]
             payload["duration_seconds"] = payload["run"]["duration_seconds"]
         else:
+            if job_display_status:
+                resolved_status = job_display_status
+                if _terminal_site_status(job_display_status):
+                    resolved_final_status = job_display_status
+            payload["status"] = resolved_status
+            payload["final_status"] = resolved_final_status or payload.get("final_status") or payload.get("status") or ""
             payload["total_tokens"] = 0
             payload["duration_seconds"] = 0.0
+        if not derived_error and resolved_status in FAILED_FINAL_STATUSES:
+            derived_error = str(getattr(job, "error_text", "") or "")
+        payload["error_text"] = derived_error
         payload["model_usage"] = model_usage
         payload["agent_runs"] = agent_rows
         return payload

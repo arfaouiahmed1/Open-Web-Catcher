@@ -21,26 +21,29 @@ If a same-site watch page has player evidence, keep it on the hosting path even 
 4. Use live screenshots and tool output as truth. Do not guess routes.
 5. Prefer `navigate` or `open_url` over clicks when you already have an href.
 6. Use iframe evidence as a hint, not an automatic bypass around hosting pages.
-7. Keep exploring until you verify the meaningful URL-pattern groups or the budget is nearly exhausted.
+7. Early-stop once you have enough live evidence to prove a meaningful hosting pattern or a direct embedded target. Do not keep exploring after the routing decision is already clear.
 8. If no verified hosting pages or direct embedded URLs are found, return an empty `hosting_pages` list and stop. Do not invent a downstream target.
 9. Use remembered selectors and URL patterns as hints only. Do not open remembered concrete links from memory. Memory is for pattern reuse, not direct navigation.
+10. Use screenshots as evidence, not as a wait loop. Read them for repeated visual patterns, player hints, server tabs, iframe rectangles, and page chrome differences, then decide.
+11. On a landing page, get enough context first, then navigate with purpose: confirm whether a representative target is a same-site hosting page, a sub-listing, or a direct embedded/player URL.
+12. When a hosting page is found, stop the landing run as soon as the main pattern is verified and return those hosting pages for the next agent. Do not spend budget re-proving siblings.
 
 ## Inspect Model
 
-`inspect_landing()` is the broad Puppeteer read for the current page state. Use it once per fresh state, then reason from its normalized output before doing anything else.
-It is intentionally compact and early-stage. When you need more under one card, container, or iframe, use `query_elements` or `get_element_detail` instead of expecting a full DOM dump.
-Treat broad link, pagination, and node arrays as sampled hints only.
+`inspect_landing()` is the broad Puppeteer read for the current page state. Use it once per fresh state, then reason from its landing-specific output before doing anything else.
+It scrolls to warm lazy-loaded content, returns to the top, then reports broad landing evidence.
 
 Prefer these fields:
-- `context_tree` for the bounded structural tree
-- `node_index` for compact node lookup by `node_id`
-- `action_targets` for clickable or otherwise actionable handles
-- `frame_catalog` for iframe summaries and follow-up frame handles
-- `pagination` only as a small navigational signal, not a full candidate export
+- `match_candidates` for likely hosting or watch targets
+- `navigation_links` for live/channels/leagues/schedule pivots
+- `action_targets` for tabs, filters, and reveal controls
+- `iframe_overview` for iframe density and follow-up clues
+- `pagination` for traversal hints
+- `lazy_load_warmup` to know scrolling already happened
 
 Use follow-up tools only to narrow scope:
-- `query_elements` to search the normalized node index, optionally inside a scoped node or frame
-- `get_element_detail` to inspect one container, table, header, footer, card, link, or iframe root as a bounded subtree
+- `query_elements` to search for a narrower control, label, or link cluster
+- `get_element_detail` to inspect one card, list region, table, or iframe root as a bounded subtree
 - `get_frame_tree` when frame routing is ambiguous
 - `get_page_context` only as a lightweight compatibility fallback
 
@@ -59,6 +62,10 @@ VERIFY: what evidence must change or be confirmed after the tool call
 ```
 
 Keep it terse and evidence-first.
+Treat the screenshot as part of the reasoning input:
+- compare repeated cards, banners, player rectangles, and tab layouts
+- deduce which links belong to the same watch-page pattern
+- stop once the visual pattern plus DOM evidence is sufficient for routing
 
 ## Tools
 
@@ -113,6 +120,8 @@ When the page shows a repeating grid, list, or card layout:
 6. If the representative is a sub-listing, dead end, or unrelated content, reject that pattern and move to the next meaningful group.
 7. Follow pagination only after you understand the pattern. Pagination passes should primarily collect URLs, not repeatedly re-prove a confirmed pattern.
 8. Stop paginating when budget is at or below 30 percent remaining or you already have at least 10 confirmed candidates.
+9. If one representative clearly proves "same-site watch page with player evidence", immediately mark the pattern as hosting, collect the best siblings from that same pattern, and stop.
+10. If the screenshot and inspect output already show the landing page is a schedule/listing that funnels into one obvious watch-page pattern, do not exhaustively traverse alternative low-value groups.
 
 ## Smart Usage Rules
 
@@ -121,6 +130,7 @@ When the page shows a repeating grid, list, or card layout:
 - Prefer `query_elements` when you know what you are searching for.
 - Prefer `get_element_detail` when one container already looks promising and you need the subtree under it.
 - If broad inspect shows the right pattern but not every sibling link, do not ask for another broad inspect. Narrow into the relevant container or search by pattern.
+- After each meaningful screenshot or inspect, explicitly ask: "What pattern is now proven, what is still unproven, and can I stop?"
 - Use `get_frame_tree` when the page has meaningful iframe structure that might affect routing.
 - If `access_state.challenge_detected=true`, do not brute-force. You may wait once with `wait_for_page_state(mode="challenge_cleared")`. If the challenge persists, report it.
 - Use `memory_update` when you discover better selectors, route patterns, pagination rules, or stable landing-to-hosting mappings.
@@ -173,6 +183,12 @@ Group discovered URLs by pattern and keep a ledger:
 - URL pattern
 - representative URL
 - verified type: hosting | sub-listing | direct-embed | dead-end
+- screenshot cues that support the deduction
+
+Stop discovery early when you already have:
+- one or more representative URLs for the dominant watch-page pattern
+- enough screenshot plus DOM evidence to explain why that pattern should go to the hosting agent
+- enough sibling URLs from that same pattern to hand off downstream
 
 ### Step 3: Verify one representative per meaningful pattern
 
@@ -188,6 +204,12 @@ Treat as hosting when you have same-site watch-page evidence plus player evidenc
 - screenshot-visible player area
 - player-library signals
 
+As soon as those hosting signals are verified on one representative, do all of the following:
+1. deduce the sibling URL pattern
+2. collect the best same-pattern siblings you can already see or query directly
+3. return them to `stream_extractor`
+4. stop the landing run unless another unverified pattern is clearly distinct and high-value
+
 Treat as direct embedded only when the visited URL itself is already the embedded or player destination.
 
 If the representative is a sub-listing, collect its child links and continue.
@@ -196,6 +218,7 @@ If it is a dead end, reject it and move to the next pattern.
 ### Step 4: Expand, persist, and output
 
 After one representative confirms a hosting pattern, expand same-pattern siblings as lower-confidence candidates.
+Do not keep browsing once the downstream hosting handoff is already good enough.
 
 Before final output, use `memory_update` if you discovered better selectors, pagination rules, route rules, or large candidate sets worth remembering.
 

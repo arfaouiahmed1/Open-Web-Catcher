@@ -31,19 +31,19 @@ Never convert this into a hosting-page crawl.
 
 ## Inspect Model
 
-`inspect_embedded()` is the broad Puppeteer read for the current page state. Use it once per fresh state, then reason from its normalized output.
-It is intentionally compact and should only establish the player shell, frame candidates, and source-control regions. Use scoped follow-up tools for deeper DOM detail.
-Treat broad arrays as sampled hints only, especially for controls and frame follow-up.
+`inspect_embedded()` is the broad Puppeteer read for the current page state. Use it once per fresh state, then reason from its embedded-specific output.
+It scrolls to warm lazy-loaded content, returns to the top, then reports broad embedded-player evidence.
 
 Prefer these fields:
-- `context_tree` for the bounded player-page structure
-- `node_index` for node lookup by `node_id`
-- `action_targets` for play buttons, overlays, tabs, and source controls
-- `frame_catalog` for frame summaries and frame-root handles
+- `source_controls` for source/server switching targets
+- `player_targets` for play buttons and video candidates
+- `frame_focus_order` for the best nested frames to inspect or target
+- `videos`, `hosting_signals`, and `iframe_context` for direct player evidence
+- `lazy_load_warmup` to confirm the page was already warmed before deciding to scroll again
 
 Use follow-up tools only to narrow scope:
 - `get_frame_tree` when frame routing or nesting is ambiguous
-- `query_elements` for targeted search over nodes when you know what control you need
+- `query_elements` for targeted search when you know what control you need
 - `get_element_detail` for a localized subtree under one frame root, player shell, server list, or controls region
 - `get_page_context` only as a lightweight compatibility fallback
 

@@ -25,22 +25,22 @@ Read the screenshot after each call. Screenshot truth beats optimistic tool outp
 
 ## Inspect Model
 
-`inspect()` is the broad Puppeteer page read. Treat it as the primary structural snapshot for the current page state.
-It is intentionally compact and non-exhaustive. If you need a missing subtree or finer node metadata, use a scoped follow-up tool instead of asking broad inspect to do more.
-Treat broad arrays as samples, not exhaustive exports.
+`inspect()` is the broad Puppeteer page read. Treat it as the primary snapshot for the current page state.
+It scrolls to warm lazy-loaded content, returns to the top, then reports broad page evidence.
 
 From `inspect()`, prefer to reason from:
-- `context_tree` for the bounded DOM structure
-- `node_index` for compact node lookup
-- `action_targets` for actionable handles that match interaction tools
-- `frame_catalog` for iframe and frame routing
-- `pagination` only as a tiny navigational hint, not as a full link inventory
+- `contentLinks` for watch/listing links visible in the main content area
+- `navLinks` for channels, categories, schedule, and section navigation
+- `buttons` and `elements` for actionable controls
+- `iframes`, `frame_tree`, and `hosting_signals` for player and embed routing
+- `pagination` for page traversal hints
+- `lazy_load_warmup` to confirm that scrolling already happened before you decide to scroll again
 
 Use follow-up tools only to narrow scope:
-- `query_elements` for targeted search over normalized nodes
-- `get_element_detail` for localized subtree detail on a specific node, element, container, table, header, footer, link, or iframe root
-- `get_frame_tree` for frame summaries and frame-root handles when frame ownership is unclear
-- `get_page_context` only for a lightweight compatibility read if broad inspect is unavailable or clearly stale
+- `query_elements` for targeted search once broad inspect tells you what to look for
+- `get_element_detail` for localized subtree detail on one container, link cluster, iframe root, or blocker
+- `get_frame_tree` for frame summaries when frame ownership is unclear
+- `get_page_context` only for a lighter compatibility read when you need quick top candidates instead of another broad inspect
 
 ## Token Efficiency Policy
 
@@ -51,7 +51,7 @@ Use follow-up tools only to narrow scope:
 - Do not navigate directly to a remembered concrete URL, sample link, or saved candidate just because memory returned it.
 - One broad inspect per page state: do not re-run `inspect` unless navigation, interaction, or a meaningful DOM change occurred.
 - Prefer scoped follow-up tools over another broad scan.
-- Do not expect `inspect` to dump all links, cards, or pagination targets. If the sample hints at a useful region, drill into that region with a scoped tool.
+- Do not assume you still need to scroll first. `inspect` already warms lazy content and resets to the top.
 - If remembered selectors or route hints still fit, validate them with the lightest possible read.
 - If you detect selector, navigation, or layout drift compared to remembered hints, call `memory_update` with the new pattern and a concise `refresh_reason`.
 

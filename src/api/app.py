@@ -1935,6 +1935,23 @@ async def _stream_trace(run_id: str, request: Request | None = None):
                     job = BackgroundJobRepository(session).get_by_run_id(run_id)
                     if job is not None:
                         display_status = _background_job_display_status(job)
+                        detail_payload = OperatorConsoleRepository(session).get_run_detail(run_id)
+                        if detail_payload is not None:
+                            persisted_status = normalize_run_display_status(
+                                str(
+                                    ((detail_payload.get("run") or {}).get("final_status"))
+                                    or detail_payload.get("final_status")
+                                    or ""
+                                ),
+                                success=(detail_payload.get("run") or {}).get("success"),
+                                failure_mode=str(
+                                    ((detail_payload.get("run") or {}).get("failure_mode"))
+                                    or ""
+                                ),
+                                job_status="",
+                            )
+                            if persisted_status in {"success", "partial", "failed", "cancelled"}:
+                                display_status = persisted_status
                         synthetic_events: list[dict[str, Any]] = []
                         if job.status in JOB_TERMINAL_STATUSES:
                             event_kind = ""
@@ -2411,10 +2428,22 @@ def ui_runs(
             run_id = str(row.get("run_id", "") or "")
             job = job_map.get(run_id)
             if job is not None:
+                persisted_display_status = str(
+                    row.get("persisted_final_status", "")
+                    or row.get("final_status", "")
+                    or row.get("status", "")
+                    or ""
+                ).strip().lower()
+                persisted_terminal = persisted_display_status in {
+                    "success",
+                    "partial",
+                    "failed",
+                    "cancelled",
+                }
                 row = {
                     **row,
-                    "status": _background_job_display_status(job),
-                    "final_status": _background_job_display_status(job),
+                    "status": row.get("status") if persisted_terminal else _background_job_display_status(job),
+                    "final_status": row.get("final_status") if persisted_terminal else _background_job_display_status(job),
                     "job_state": _background_job_display_status(job),
                     "job": _background_job_state(job),
                     "root_actor": str(job.actor or row.get("root_actor", "") or ""),
@@ -2785,8 +2814,9 @@ async def ui_cancel_run(run_id: str):
     try:
         job_repo = BackgroundJobRepository(session)
         job = job_repo.get_by_run_id(run_id)
-        if job is not None:
+        if job is not None and str(job.status or "") not in JOB_TERMINAL_STATUSES:
             job_repo.mark_cancelled(run_id, reason=reason)
+            DatasetRepository(session).mark_site_run_cancelled(run_id, reason=reason)
             success = True
     except SQLAlchemyError as exc:
         logger.debug("Skipping background-job cancellation persistence for %s: %s", run_id, exc)
@@ -2808,8 +2838,10 @@ async def ui_cancel_active_runs():
     try:
         job_repo = BackgroundJobRepository(session)
         run_ids = [str(item.run_id) for item in job_repo.list_active(limit=500) if item.run_id]
+        dataset_repo = DatasetRepository(session)
         for run_id in run_ids:
             job_repo.mark_cancelled(run_id, reason=reason)
+            dataset_repo.mark_site_run_cancelled(run_id, reason=reason)
     except SQLAlchemyError as exc:
         logger.debug(
             "Skipping bulk cancellation persistence because the job table is unavailable: %s", exc
@@ -3229,6 +3261,7 @@ def ui_estimate_costs(
     from src.utils.instrumentation import estimate_usage_cost, resolve_model_pricing
 
     settings = get_settings()
+    _refresh_pricing_from_db(settings)
     pricing = resolve_model_pricing(settings, model, provider)
     pricing_source = (
         "database"

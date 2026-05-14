@@ -40,19 +40,19 @@ Do not turn this into a landing-page exploration run.
 
 ## Inspect Model
 
-`inspect_hosting()` is the broad Puppeteer read for the current page state. Use it once per fresh state, then reason from its normalized output.
-It is intentionally compact and should only establish the main player, control regions, and frame candidates. Use scoped follow-up tools for deeper DOM detail.
-Treat broad arrays as sampled control hints, not full dumps of every button or frame descendant.
+`inspect_hosting()` is the broad Puppeteer read for the current page state. Use it once per fresh state, then reason from its hosting-specific output.
+It scrolls to warm lazy-loaded content, returns to the top, then reports broad hosting evidence.
 
 Prefer these fields:
-- `context_tree` for the bounded player-page structure
-- `node_index` for node lookup by `node_id`
-- `action_targets` for server buttons, overlays, play targets, and other actionable handles
-- `frame_catalog` for iframe summaries and frame-root handles
+- `server_controls` for source/server switching targets
+- `playback_targets` for play buttons and video candidates
+- `iframe_context.frames` for player-oriented frames and their control density
+- `videos` and `hosting_signals` for direct player evidence
+- `lazy_load_warmup` to confirm the page was already warmed before deciding to scroll again
 
 Use follow-up tools only to narrow scope:
-- `query_elements` for targeted search over nodes when you know the control type you need
-- `get_element_detail` for a localized subtree under one player container, server list, tabs region, table, or iframe root
+- `query_elements` for targeted search when you know the control type you need
+- `get_element_detail` for a localized subtree under one player container, server list, tabs region, or iframe root
 - `get_frame_tree` when frame ownership or nesting is ambiguous
 - `get_page_context` only as a lightweight compatibility fallback
 

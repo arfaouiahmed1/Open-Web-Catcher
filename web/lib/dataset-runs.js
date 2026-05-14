@@ -1,3 +1,4 @@
+import { apiFetch } from "@/lib/api";
 import { estimateRunCost, synthCallsFromModelUsage } from "@/lib/pricing";
 
 export function toNumber(value, fallback = 0) {
@@ -68,6 +69,78 @@ export function effectiveRunCost(row = {}, pricingMap = null) {
           ? "partial"
           : "none",
   };
+}
+
+function estimateEntryQuery(entry = {}) {
+  const inputTokens = toNumber(entry.input_tokens, 0);
+  const cachedInputTokens = toNumber(entry.cached_input_tokens, 0);
+  const cacheWriteInputTokens = toNumber(entry.cache_creation_input_tokens, 0);
+  const newInputTokens = toNumber(
+    entry.new_input_tokens,
+    Math.max(inputTokens - cachedInputTokens - cacheWriteInputTokens, 0),
+  );
+  return {
+    provider: String(entry.provider || "").trim(),
+    model: String(entry.model_name || "").trim(),
+    input_tokens: String(Math.max(newInputTokens, 0)),
+    output_tokens: String(toNumber(entry.output_tokens, 0)),
+    cached_input_tokens: String(Math.max(cachedInputTokens, 0)),
+    cache_write_input_tokens: String(Math.max(cacheWriteInputTokens, 0)),
+  };
+}
+
+export async function estimateRunCostFromApi(modelUsage = []) {
+  const rows = (modelUsage || []).filter((entry) => {
+    const provider = String(entry?.provider || "").trim();
+    const model = String(entry?.model_name || "").trim();
+    return Boolean(provider && model);
+  });
+  if (!rows.length) {
+    return {
+      total: 0,
+      input: 0,
+      cached: 0,
+      cacheWrite: 0,
+      output: 0,
+      calls: 0,
+      priced: 0,
+      source: "none",
+    };
+  }
+
+  const results = await Promise.allSettled(
+    rows.map(async (entry) => {
+      const params = new URLSearchParams(estimateEntryQuery(entry));
+      return apiFetch(`/ui/settings/estimate-costs?${params.toString()}`);
+    }),
+  );
+
+  const totals = {
+    total: 0,
+    input: 0,
+    cached: 0,
+    cacheWrite: 0,
+    output: 0,
+    calls: rows.length,
+    priced: 0,
+    source: "none",
+  };
+  for (const result of results) {
+    if (result.status !== "fulfilled") continue;
+    const payload = result.value || {};
+    if (payload.pricing_source === "no_pricing_available") continue;
+    totals.total += toNumber(payload.total_cost_usd, 0);
+    totals.input += toNumber(payload.input_cost_usd, 0);
+    totals.cached += toNumber(payload.cached_input_cost_usd, 0);
+    totals.cacheWrite += toNumber(payload.cache_write_cost_usd, 0);
+    totals.output += toNumber(payload.output_cost_usd, 0);
+    totals.priced += 1;
+  }
+
+  if (totals.priced === rows.length) totals.source = "estimated";
+  else if (totals.priced > 0) totals.source = "estimated_partial";
+  else totals.source = "unavailable";
+  return totals;
 }
 
 export function summarizeModelUsage(modelUsage = []) {

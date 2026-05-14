@@ -32,7 +32,7 @@ export function SheetContent({ className, children, side = "right", ...props }) 
       <SheetOverlay />
       <DialogPrimitive.Content
         className={cn(
-          "fixed z-50 bg-background p-6 shadow-lg data-[state=open]:animate-fade-up",
+          "fixed z-50 bg-background p-6 shadow-lg data-[state=open]:animate-fade-in-soft",
           sheetVariants[side],
           className,
         )}

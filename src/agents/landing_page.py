@@ -28,9 +28,11 @@ PROMPT_PATH = Path("configs/prompts/landing_page_v1.md")
 _AGENT_CONTRACT = """\
 - find and return hosting page URLs from the landing page
 - use navigation and page-inspection tools as needed, but stay within budget
+- inspect screenshots and page structure for repeated watch-page patterns, then stop early once the routing decision is well supported
 - respect the final JSON/output format defined in the base policy
 - do not fabricate hosting links; only return verified live-page findings
 - default downstream route is `stream_extractor`; use `embed_agent` only when the discovered URL is already a direct embedded/player URL
+- once a hosting pattern is verified, collect the best same-pattern siblings, hand them off downstream, and stop instead of re-proving low-value alternatives
 - if no verified hosting or direct embedded targets remain, return an empty result and stop instead of inventing a next hop
 """
 

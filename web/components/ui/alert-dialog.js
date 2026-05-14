@@ -15,7 +15,7 @@ export function AlertDialogContent({ className, ...props }) {
       <AlertDialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" />
       <AlertDialogPrimitive.Content
         className={cn(
-          "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 rounded-xl border border-border bg-background p-6 shadow-lg data-[state=open]:animate-fade-up",
+          "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 rounded-xl border border-border bg-background p-6 shadow-lg data-[state=open]:animate-fade-in-soft",
           className,
         )}
         {...props}

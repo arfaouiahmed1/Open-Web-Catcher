@@ -77,7 +77,7 @@ def resolve_model_pricing_config(settings: Settings) -> dict[str, dict[str, Any]
         _clean_value(os.getenv("MODEL_PRICING_JSON")),
         settings.model_pricing_json,
     ]
-    parsed: dict[str, Any] = {}
+    parsed_sources: list[dict[str, Any]] = []
     for raw in raw_candidates:
         if not raw:
             continue
@@ -86,11 +86,16 @@ def resolve_model_pricing_config(settings: Settings) -> dict[str, dict[str, Any]
         except json.JSONDecodeError:
             continue
         if isinstance(candidate, dict):
-            parsed = candidate
-            break
+            parsed_sources.append(candidate)
 
-    if not parsed:
+    if not parsed_sources:
         return {}
+
+    parsed: dict[str, Any] = {}
+    for candidate in parsed_sources:
+        # Runtime-refreshed settings should override stale env defaults while
+        # still inheriting any rows only present in the env payload.
+        parsed.update(candidate)
 
     normalized: dict[str, dict[str, Any]] = {}
     for model_name, config in parsed.items():
@@ -98,6 +103,8 @@ def resolve_model_pricing_config(settings: Settings) -> dict[str, dict[str, Any]
             continue
 
         provider = str(config.get("provider", "") or "").strip().lower()
+        if provider in {"google_genai", "gemini"}:
+            provider = "google"
         model_key = model_name.strip().lower()
         payload = {
             "provider": provider,

@@ -28,6 +28,7 @@ import {
 import { apiFetch, apiUrl } from "@/lib/api";
 import {
   datasetRunStatus,
+  estimateRunCostFromApi,
   effectiveRunCost,
   runTokenTotal,
   statusToneForDataset,
@@ -133,6 +134,25 @@ function formatRelativeTime(value) {
 function compactRunId(runId) {
   const value = String(runId || "");
   return value ? `${value.slice(0, 12)}...` : "--";
+}
+
+function loggedDatasetRunCost(row = {}) {
+  const run = row.run || {};
+  return (
+    toNumber(run.estimated_total_cost_usd, 0)
+    || toNumber(row.total_cost_usd, 0)
+    || toNumber(row.estimated_total_cost_usd, 0)
+  );
+}
+
+function batchCostSourceLabel(source) {
+  if (source === "logged") return "logged";
+  if (source === "estimated") return "estimated";
+  if (source === "estimated_partial") return "partially estimated";
+  if (source === "estimating") return "estimating";
+  if (source === "unavailable") return "pricing unavailable";
+  if (source === "partial") return "partial pricing";
+  return "no pricing";
 }
 
 function languageOptions(metaLanguages = [], includeAll = false, includeCustom = false) {
@@ -719,6 +739,7 @@ export function RunsPage() {
   const [historyBusyRunId, setHistoryBusyRunId] = useState("");
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [isPricingLoading, setIsPricingLoading] = useState(true);
+  const [batchEstimatedCosts, setBatchEstimatedCosts] = useState({});
   const [refreshTick, setRefreshTick] = useState(0);
   const [lastSyncAt, setLastSyncAt] = useState("");
   const [syncMode, setSyncMode] = useState("stream");
@@ -808,6 +829,62 @@ export function RunsPage() {
       cancelled = true;
     };
   }, []);
+
+  const batchRuns = batchDetail?.runs || EMPTY_ARRAY;
+
+  useEffect(() => {
+    let cancelled = false;
+    const rowsToEstimate = batchRuns.filter(
+      (row) => !loggedDatasetRunCost(row) && (row.model_usage || EMPTY_ARRAY).length > 0,
+    );
+    if (!rowsToEstimate.length) {
+      setBatchEstimatedCosts({});
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    async function loadBatchEstimates() {
+      const entries = await Promise.all(
+        rowsToEstimate.map(async (row) => [
+          row.run_id,
+          await estimateRunCostFromApi(row.model_usage || EMPTY_ARRAY),
+        ]),
+      );
+      if (cancelled) return;
+      setBatchEstimatedCosts(Object.fromEntries(entries));
+    }
+
+    loadBatchEstimates().catch(() => {
+      if (!cancelled) setBatchEstimatedCosts({});
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [batchRuns]);
+
+  const displayBatchRunCost = useCallback((row) => {
+    const logged = loggedDatasetRunCost(row);
+    if (logged > 0) {
+      return {
+        total: logged,
+        source: "logged",
+      };
+    }
+    const estimated = batchEstimatedCosts[row?.run_id];
+    if (estimated) return estimated;
+    if ((row?.model_usage || EMPTY_ARRAY).length > 0) {
+      return {
+        total: 0,
+        source: "estimating",
+      };
+    }
+    const fallback = effectiveRunCost(row, pricingMap);
+    return {
+      total: fallback.total,
+      source: fallback.source,
+    };
+  }, [batchEstimatedCosts, pricingMap]);
 
   useEffect(() => {
     let closed = false;
@@ -1153,11 +1230,10 @@ export function RunsPage() {
 
   const allVisibleSelected = sites.length > 0 && selectedSiteIds.length === sites.length;
   const selectedUrls = selectedSites.map((site) => site.url).filter(Boolean);
-  const batchRuns = batchDetail?.runs || EMPTY_ARRAY;
   const batchTotals = useMemo(() => {
     return batchRuns.reduce(
       (acc, row) => {
-        const cost = effectiveRunCost(row, pricingMap);
+        const cost = displayBatchRunCost(row);
         acc.cost += cost.total;
         acc.tokens += runTokenTotal(row);
         acc.streams += toNumber(row.stream_count || row.run?.stream_count, 0);
@@ -1165,7 +1241,7 @@ export function RunsPage() {
       },
       { cost: 0, tokens: 0, streams: 0 },
     );
-  }, [batchRuns, pricingMap]);
+  }, [batchRuns, displayBatchRunCost]);
 
   return (
     <TooltipProvider>
@@ -1516,7 +1592,7 @@ export function RunsPage() {
                           {batchRuns.length ? (
                             batchRuns.map((row) => {
                               const status = datasetRunStatus(row);
-                              const cost = effectiveRunCost(row, pricingMap);
+                              const cost = displayBatchRunCost(row);
                               const models = summarizeModelUsage(row.model_usage || EMPTY_ARRAY);
                               return (
                                 <TableRow key={row.run_id} className="[&>td]:py-2.5">
@@ -1536,12 +1612,21 @@ export function RunsPage() {
                                     <div className="mt-1 max-w-[260px] truncate" title={models.join(", ")}>
                                       {models.join(", ") || "No model usage"}
                                     </div>
+                                    <div className="mt-1 text-[11px]">
+                                      Cost: {cost.source === "estimating" ? "Estimating..." : formatCurrency(cost.total)}
+                                      <span className="ml-1 text-muted-foreground">
+                                        {batchCostSourceLabel(cost.source)}
+                                      </span>
+                                    </div>
                                   </TableCell>
                                   <TableCell className="align-top text-right tabular-nums text-xs">
                                     {formatNumber(runTokenTotal(row))}
                                   </TableCell>
                                   <TableCell className="align-top text-right tabular-nums text-xs">
-                                    {formatCurrency(cost.total)}
+                                    {cost.source === "estimating" ? "--" : formatCurrency(cost.total)}
+                                    <div className="text-[11px] text-muted-foreground">
+                                      {batchCostSourceLabel(cost.source)}
+                                    </div>
                                   </TableCell>
                                   <TableCell className="align-top">
                                     <Button asChild size="sm" variant="outline">

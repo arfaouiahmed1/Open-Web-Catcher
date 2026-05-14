@@ -1,26 +1,27 @@
 import { inspect } from "./inspect.js";
 
-const HOSTING_PATTERN =
-  /(watch|live|stream|match|fixture|event|game|player|embed|server|channel|vs|versus|kickoff|league|cup|sports?)/i;
+const MATCH_PATTERN =
+  /(watch|live|stream|match|fixture|kickoff|vs|versus|channel|game|event|play|league|cup|sports?)/i;
 const NOISE_PATTERN =
-  /(login|sign in|signup|register|privacy|terms|cookie|contact|about|help|faq|telegram|discord|twitter|facebook|instagram|whatsapp|tiktok|youtube)/i;
+  /(login|sign in|signup|register|privacy|terms|cookie|contact|about|help|faq|telegram|discord|twitter|facebook|instagram)/i;
 
-const normalizeWhitespace = (value) =>
-  String(value ?? "")
-    .replace(/\s+/g, " ")
-    .trim();
+const clean = (value, max = 160) =>
+  String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
 
-function normalizeDomain(url) {
-  try {
-    const domain = new URL(String(url || "")).hostname.toLowerCase();
-    return domain.startsWith("www.") ? domain.slice(4) : domain;
-  } catch {
-    return "";
+function dedupeBy(items, keyFn) {
+  const seen = new Set();
+  const result = [];
+  for (const item of items || []) {
+    const key = keyFn(item);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
   }
+  return result;
 }
 
 function inferMetadata(text, url) {
-  const normalized = normalizeWhitespace(text);
+  const normalized = clean(text, 180);
   const metadata = {
     participants: null,
     status: /\blive\b/i.test(normalized)
@@ -39,7 +40,7 @@ function inferMetadata(text, url) {
     /([\w .'-]{2,})\s+(?:vs|v|versus)\s+([\w .'-]{2,})/i,
   );
   if (participantsMatch) {
-    metadata.participants = `${normalizeWhitespace(participantsMatch[1])} vs ${normalizeWhitespace(participantsMatch[2])}`;
+    metadata.participants = `${clean(participantsMatch[1], 60)} vs ${clean(participantsMatch[2], 60)}`;
   }
 
   const timeMatch = normalized.match(/\b(\d{1,2}:\d{2}\s?(?:am|pm)?)\b/i);
@@ -48,17 +49,17 @@ function inferMetadata(text, url) {
   }
 
   const channelMatch = normalized.match(
-    /(?:channel|tv)\s*[:\-]?\s*([\w .'-]{2,80})/i,
+    /(?:channel|tv)\s*[:\-]?\s*([\w .'-]{2,40})/i,
   );
   if (channelMatch) {
-    metadata.channel = normalizeWhitespace(channelMatch[1]);
+    metadata.channel = clean(channelMatch[1], 40);
   }
 
   const competitionMatch = normalized.match(
-    /(?:league|cup|championship|tournament)\s*[:\-]?\s*([\w .'-]{2,120})/i,
+    /(?:league|cup|championship|tournament)\s*[:\-]?\s*([\w .'-]{2,50})/i,
   );
   if (competitionMatch) {
-    metadata.competition = normalizeWhitespace(competitionMatch[1]);
+    metadata.competition = clean(competitionMatch[1], 50);
   }
 
   if (!metadata.channel && /channel|tv/i.test(url || "")) {
@@ -71,137 +72,167 @@ function inferMetadata(text, url) {
 function candidateScore(candidate) {
   const haystack = `${candidate.text} ${candidate.url}`.toLowerCase();
   let score = 0;
-  if (HOSTING_PATTERN.test(haystack)) score += 8;
+  if (MATCH_PATTERN.test(haystack)) score += 8;
   if (/\b(vs|versus)\b/.test(haystack)) score += 6;
   if (/\blive\b/.test(haystack)) score += 5;
   if (/watch|play|stream/.test(haystack)) score += 4;
+  if (candidate.frame_path !== "root") score += 2;
   if (candidate.metadata?.participants) score += 4;
-  if (candidate.same_origin) score += 2;
   return score;
 }
 
-function toCandidate(link, pageUrl) {
-  const url = link.href || link.url || link.src || "";
-  const text = normalizeWhitespace(
-    link.text || link.text_preview || link.name || link.ancestor_text_preview || "",
-  );
-  const metadata = inferMetadata(text, url);
+function normalizeLink(entry, source, framePath = "root") {
   return {
-    url,
-    text,
-    selector: link.selector || "",
-    xpath: link.xpath || "",
-    x: Math.round(link.bbox?.x || link.x || 0),
-    y: Math.round(link.bbox?.y || link.y || 0),
-    width: Math.round(link.bbox?.width || link.width || 0),
-    height: Math.round(link.bbox?.height || link.height || 0),
-    frame_path: link.frame_path || "root",
-    region_selector: link.region_selector || "",
-    same_origin: normalizeDomain(url) === normalizeDomain(pageUrl),
-    metadata,
-    relevance_score: 0,
+    url: entry.href || entry.url || "",
+    text: clean(entry.text, 180),
+    selector: entry.selector || "",
+    xpath: entry.xpath || "",
+    x: Math.round(entry.x || 0),
+    y: Math.round(entry.y || 0),
+    width: Math.round(entry.width || 0),
+    height: Math.round(entry.height || 0),
+    frame_path: framePath,
+    source,
   };
 }
 
-function dedupeByUrl(items) {
-  const seen = new Set();
-  const out = [];
-  for (const item of items) {
-    const key = String(item.url || "").trim();
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
-  }
-  return out;
+function toNavLink(entry) {
+  return {
+    url: entry.href || "",
+    text: clean(entry.text, 120),
+    selector: entry.selector || "",
+    xpath: entry.xpath || "",
+    x: Math.round(entry.x || 0),
+    y: Math.round(entry.y || 0),
+  };
+}
+
+function toActionTarget(entry) {
+  return {
+    kind: entry.kind || entry.type || entry.tag || "unknown",
+    text: clean(entry.text, 120),
+    selector: entry.selector || "",
+    xpath: entry.xpath || "",
+    x: Math.round(entry.x || 0),
+    y: Math.round(entry.y || 0),
+    width: Math.round(entry.width || 0),
+    height: Math.round(entry.height || 0),
+    frame_path: entry.frame_path || "root",
+  };
+}
+
+function toFrameOverview(frame) {
+  return {
+    frame_path: frame.frame_path,
+    parent_frame_path: frame.parent_frame_path,
+    depth: frame.depth,
+    url: frame.url,
+    purpose_hint: frame.purpose_hint,
+    video_count: frame.video_count,
+    total_links: frame.total_links,
+    total_buttons: frame.total_buttons,
+    has_server_controls: frame.has_server_controls,
+    sample_links: (frame.sample_links || []).map((entry) => ({
+      url: entry.href || "",
+      text: clean(entry.text, 120),
+      selector: entry.selector || "",
+      xpath: entry.xpath || "",
+      x: Math.round(entry.x || 0),
+      y: Math.round(entry.y || 0),
+    })),
+  };
 }
 
 export async function inspectLanding(params = {}) {
   const data = await inspect({
     ...params,
     scanMode: "landing",
-    max_depth: params.max_depth ?? 6,
-    max_children_per_node: params.max_children_per_node ?? 40,
-    max_links: params.max_links ?? 320,
-    max_interactive_elements: params.max_interactive_elements ?? 280,
-    max_images: params.max_images ?? 140,
-    max_sources: params.max_sources ?? 140,
-    max_forms: params.max_forms ?? 20,
-    max_form_inputs: params.max_form_inputs ?? 24,
-    max_table_rows: params.max_table_rows ?? 40,
-    max_frames: params.max_frames ?? 10,
-    frame_eval_timeout_ms: params.frame_eval_timeout_ms ?? 7000,
-    include_network: params.include_network ?? false,
-    include_response_bodies: params.include_response_bodies ?? false,
-    include_frames: params.include_frames ?? false,
-    response_profile: "internal_rich",
+    scroll: params.scroll ?? true,
+    scroll_steps: params.scroll_steps ?? 14,
   });
 
-  const normalizedLinks = Array.isArray(data.node_index)
-    ? data.node_index.filter((entry) => entry.semantic_kind === "link")
-    : [];
-  const allLinks = normalizedLinks.length
-    ? normalizedLinks.map((entry) => ({
-      href: entry.href || "",
-      text: entry.text_preview || entry.name || "",
-      selector: entry.selector || "",
-      xpath: entry.xpath || "",
-      frame_path: entry.frame_path || "root",
-      bbox: entry.bbox || null,
-    }))
-    : (Array.isArray(data.links) ? data.links : []);
-  const hosting_candidate_links = dedupeByUrl(
-    allLinks
-      .map((link) => toCandidate(link, data.url || data.page?.final_url || ""))
+  const rootMatchLinks = (data.contentLinks || []).map((entry) =>
+    normalizeLink(entry, "root-content", "root"),
+  );
+  const iframeMatchLinks = (data.frame_tree || []).flatMap((frame) =>
+    (frame.sample_links || []).map((entry) =>
+      normalizeLink(entry, "iframe-sample", frame.frame_path),
+    ),
+  );
+
+  const match_candidates = dedupeBy(
+    [...rootMatchLinks, ...iframeMatchLinks]
       .filter((entry) => entry.url && !entry.url.startsWith("javascript:"))
       .filter((entry) => !NOISE_PATTERN.test(`${entry.text} ${entry.url}`))
+      .map((entry) => ({ ...entry, metadata: inferMetadata(entry.text, entry.url) }))
       .map((entry) => ({ ...entry, relevance_score: candidateScore(entry) }))
       .sort((a, b) => b.relevance_score - a.relevance_score),
-  ).slice(0, 40);
+    (entry) => `${entry.frame_path}|${entry.url}`,
+  );
 
-  const candidateDomains = [];
-  const seenDomains = new Set();
-  for (const entry of hosting_candidate_links) {
-    const domain = normalizeDomain(entry.url);
-    if (!domain || seenDomains.has(domain)) continue;
-    seenDomains.add(domain);
-    candidateDomains.push(domain);
-  }
+  const navigation_links = dedupeBy(
+    (data.navLinks || [])
+      .map(toNavLink)
+      .filter((entry) => entry.url)
+      .filter((entry) => !NOISE_PATTERN.test(`${entry.text} ${entry.url}`)),
+    (entry) => entry.url,
+  );
+
+  const action_targets = dedupeBy(
+    [
+      ...(data.buttons || []),
+      ...(data.elements || []).filter((entry) =>
+        ["button", "tab", "select"].includes(entry.kind || entry.type),
+      ),
+    ]
+      .map(toActionTarget)
+      .filter((entry) => entry.selector || entry.xpath || entry.text),
+    (entry) => `${entry.frame_path}|${entry.selector}|${entry.xpath}|${entry.text}`,
+  );
+
+  const iframeFrames = (data.frame_tree || [])
+    .filter((frame) => !frame.is_main_frame)
+    .sort(
+      (a, b) =>
+        b.total_links + b.video_count + b.total_buttons -
+        (a.total_links + a.video_count + a.total_buttons),
+    )
+    .map(toFrameOverview);
+
+  const maxDepth = (data.frame_tree || []).reduce(
+    (max, frame) => Math.max(max, frame.depth || 0),
+    0,
+  );
 
   return {
-    schema_version: data.schema_version,
-    page: data.page,
-    load_state: data.load_state,
-    access_state: data.access_state,
-    screenshot_url: data.screenshot_url,
-    context_tree: data.context_tree,
-    node_index: data.node_index,
-    action_targets: data.action_targets,
-    frame_catalog: data.frame_catalog,
-    page_summary: data.page_summary,
-    document_stats: data.document_stats,
-    outline: data.outline,
-    pagination: data.pagination,
-    hosting_signals: data.hosting_signals,
-    contentLinks: data.contentLinks,
-    navLinks: data.navLinks,
-    buttons: data.buttons,
     context_type: "landing",
-    inspect_profile: "landing",
-    focus: {
-      primary: ["tree", "links", "patterns"],
-      minimized: ["network", "frames", "raw_dom"],
+    url: data.url,
+    title: data.title,
+    screenshot_url: data.screenshot_url,
+    hosting_signals: data.hosting_signals,
+    lazy_load_warmup: data.lazy_load_warmup,
+    pagination: data.pagination,
+    popups: data.popups || [],
+    match_candidates,
+    navigation_links,
+    action_targets,
+    iframe_overview: {
+      total_frames: (data.frame_tree || []).length,
+      max_depth: maxDepth,
+      frames_with_video: (data.frame_tree || []).filter(
+        (frame) => frame.video_count > 0,
+      ).length,
+      frames_with_links: (data.frame_tree || []).filter(
+        (frame) => frame.total_links > 0,
+      ).length,
+      frames: iframeFrames,
     },
-    hosting_candidate_links,
-    landing_summary: {
-      total_links: allLinks.length,
-      hosting_candidate_count: hosting_candidate_links.length,
-      same_origin_candidates: hosting_candidate_links.filter(
-        (entry) => entry.same_origin,
-      ).length,
-      third_party_candidates: hosting_candidate_links.filter(
-        (entry) => !entry.same_origin,
-      ).length,
-      candidate_domains: candidateDomains,
+    stats: {
+      ...(data.stats || {}),
+      match_candidates: match_candidates.length,
+      navigation_links: navigation_links.length,
+      action_targets: action_targets.length,
+      iframe_frames_reported: iframeFrames.length,
     },
   };
 }

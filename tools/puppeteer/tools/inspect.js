@@ -1,172 +1,174 @@
-import {
-  buildFrameState,
-  detectAccessStateFromSignals,
-  withBrowserSession,
-} from "../shared/tool-runtime.js";
-import { screenshotViewport } from "../shared/screenshot.js";
-import {
-  buildFrameCatalog,
-  buildNormalizedTreeArtifacts,
-  compactActionTargets,
-  compactContextTree,
-  compactFrameCatalog,
-  compactNodeIndex,
-  summarizeNodeKinds,
-} from "./context-tree.js";
+/**
+ * tools/inspect.js - Full DOM scan + player signal detection + screenshot.
+ *
+ * Returns structured, high-ceiling context used by profile-specific inspect tools.
+ */
 
-const DEFAULT_CONFIG = {
-  url: "",
-  wait_ms: 1200,
-  max_depth: 8,
-  max_children_per_node: 60,
-  max_links: 450,
-  max_interactive_elements: 450,
-  max_tables: 40,
-  max_table_rows: 80,
-  max_table_cells: 20,
-  max_iframes: 80,
-  max_videos: 50,
-  max_audio: 50,
-  max_images: 220,
-  max_sources: 220,
-  max_tracks: 120,
-  max_forms: 50,
-  max_form_inputs: 45,
-  max_frames: 24,
-  frame_eval_timeout_ms: 9000,
-  include_network: true,
-  include_response_bodies: false,
-  include_frames: true,
-  include_shadow_dom: true,
-  scroll: false,
-  scroll_steps: 0,
-  allow_safe_interactions: false,
-  safe_interaction_limit: 0,
-  scanMode: "default",
-  response_profile: "public_compact",
-  include_screenshot: true,
+import { connectBrowser, getPage } from "../shared/browser.js";
+import { screenshotViewport } from "../shared/screenshot.js";
+
+const LIMITS = {
+  contentLinks: 1200,
+  navLinks: 500,
+  buttons: 800,
+  iframes: 220,
+  popups: 80,
+  paginationElements: 120,
+  videos: 180,
+  elements: 1600,
+  frameTree: 180,
+  frameSampleLinks: 180,
+  frameSampleButtons: 180,
 };
 
-const OBSERVATION_SCHEMA_VERSION = "clean_browser_observation/v1";
+const clean = (value, max = 160) =>
+  String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
 
-const normalizeWhitespace = (value) =>
-  String(value ?? "")
-    .replace(/\s+/g, " ")
-    .trim();
-const sleep = (ms) =>
-  new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+async function warmLazyContent(page, { scanMode = "default", scrollSteps = 12 } = {}) {
+  const effectiveSteps = Math.max(1, Math.min(Number(scrollSteps || 12), 40));
+  return page
+    .evaluate(
+      async ({ mode, maxSteps }) => {
+        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+        const visible = (el) => {
+          if (!(el instanceof Element)) return false;
+          const rect = el.getBoundingClientRect();
+          const style = window.getComputedStyle(el);
+          return (
+            rect.width > 0 &&
+            rect.height > 0 &&
+            style.display !== "none" &&
+            style.visibility !== "hidden" &&
+            style.opacity !== "0"
+          );
+        };
 
-function toBoolean(value, fallback) {
-  if (typeof value === "boolean") return value;
-  if (value == null || value === "") return fallback;
-  const normalized = String(value).trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) return true;
-  if (["0", "false", "no", "off"].includes(normalized)) return false;
-  return fallback;
-}
+        const scrollStep = Math.max(Math.floor(window.innerHeight * 0.85), 360);
+        const clickLabels = [];
+        const clickSelectors = [
+          "button",
+          "a[href]",
+          "[role='button']",
+          "[data-action]",
+          "[data-testid]",
+          "[class*='more']",
+          "[class*='load']",
+          "[class*='show']",
+          "[class*='next']",
+          "[aria-expanded]",
+        ].join(",");
+        const clickPattern =
+          /(load more|show more|view more|see more|more matches|more events|more streams|expand|show all|view all|watch now|play now|more channels|next)/i;
+        let scrollCount = 0;
+        let clicked = 0;
+        const initialHeight = Math.max(
+          document.body?.scrollHeight || 0,
+          document.documentElement?.scrollHeight || 0,
+        );
 
-function toInteger(value, fallback, min = 0) {
-  const parsed = Number.parseInt(String(value ?? ""), 10);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(min, parsed);
-}
+        for (let pass = 0; pass < 4; pass += 1) {
+          const clickCandidates = Array.from(document.querySelectorAll(clickSelectors))
+            .filter(visible)
+            .filter((node) =>
+              clickPattern.test(
+                (node.innerText ||
+                  node.textContent ||
+                  node.getAttribute("aria-label") ||
+                  "").trim(),
+              ),
+            )
+            .slice(0, 20);
 
-export function normalizeInspectConfig(params = {}) {
-  return {
-    url: String(params.url || "").trim(),
-    wait_ms: toInteger(params.wait_ms, DEFAULT_CONFIG.wait_ms, 0),
-    max_depth: toInteger(params.max_depth, DEFAULT_CONFIG.max_depth, 0),
-    max_children_per_node: toInteger(
-      params.max_children_per_node,
-      DEFAULT_CONFIG.max_children_per_node,
-      0,
-    ),
-    max_links: toInteger(params.max_links, DEFAULT_CONFIG.max_links, 1),
-    max_interactive_elements: toInteger(
-      params.max_interactive_elements,
-      DEFAULT_CONFIG.max_interactive_elements,
-      1,
-    ),
-    max_tables: toInteger(params.max_tables, DEFAULT_CONFIG.max_tables, 1),
-    max_table_rows: toInteger(
-      params.max_table_rows,
-      DEFAULT_CONFIG.max_table_rows,
-      1,
-    ),
-    max_table_cells: toInteger(
-      params.max_table_cells,
-      DEFAULT_CONFIG.max_table_cells,
-      1,
-    ),
-    max_iframes: toInteger(params.max_iframes, DEFAULT_CONFIG.max_iframes, 1),
-    max_videos: toInteger(params.max_videos, DEFAULT_CONFIG.max_videos, 1),
-    max_audio: toInteger(params.max_audio, DEFAULT_CONFIG.max_audio, 1),
-    max_images: toInteger(params.max_images, DEFAULT_CONFIG.max_images, 1),
-    max_sources: toInteger(params.max_sources, DEFAULT_CONFIG.max_sources, 1),
-    max_tracks: toInteger(params.max_tracks, DEFAULT_CONFIG.max_tracks, 1),
-    max_forms: toInteger(params.max_forms, DEFAULT_CONFIG.max_forms, 1),
-    max_form_inputs: toInteger(
-      params.max_form_inputs,
-      DEFAULT_CONFIG.max_form_inputs,
-      1,
-    ),
-    max_frames: toInteger(params.max_frames, DEFAULT_CONFIG.max_frames, 1),
-    frame_eval_timeout_ms: toInteger(
-      params.frame_eval_timeout_ms,
-      DEFAULT_CONFIG.frame_eval_timeout_ms,
-      1000,
-    ),
-    include_network: toBoolean(
-      params.include_network,
-      DEFAULT_CONFIG.include_network,
-    ),
-    include_response_bodies: toBoolean(
-      params.include_response_bodies,
-      DEFAULT_CONFIG.include_response_bodies,
-    ),
-    include_frames: toBoolean(
-      params.include_frames,
-      DEFAULT_CONFIG.include_frames,
-    ),
-    include_shadow_dom: toBoolean(
-      params.include_shadow_dom,
-      DEFAULT_CONFIG.include_shadow_dom,
-    ),
-    scroll: toBoolean(params.scroll, DEFAULT_CONFIG.scroll),
-    scroll_steps: toInteger(
-      params.scroll_steps,
-      DEFAULT_CONFIG.scroll_steps,
-      0,
-    ),
-    allow_safe_interactions: toBoolean(
-      params.allow_safe_interactions,
-      DEFAULT_CONFIG.allow_safe_interactions,
-    ),
-    safe_interaction_limit: toInteger(
-      params.safe_interaction_limit,
-      DEFAULT_CONFIG.safe_interaction_limit,
-      0,
-    ),
-    scanMode:
-      normalizeWhitespace(
-        params.scanMode || params.scan_mode || DEFAULT_CONFIG.scanMode,
-      ).toLowerCase() || "default",
-    response_profile:
-      normalizeWhitespace(
-        params.response_profile || params.responseProfile || DEFAULT_CONFIG.response_profile,
-      ).toLowerCase() || "public_compact",
-    include_screenshot: toBoolean(
-      params.include_screenshot,
-      DEFAULT_CONFIG.include_screenshot,
-    ),
-  };
+          for (const node of clickCandidates) {
+            try {
+              node.scrollIntoView({ block: "center", inline: "nearest" });
+              await sleep(120);
+              node.click();
+              clicked += 1;
+              clickLabels.push(
+                (
+                  node.innerText ||
+                  node.textContent ||
+                  node.getAttribute("aria-label") ||
+                  ""
+                )
+                  .replace(/\s+/g, " ")
+                  .trim()
+                  .slice(0, 120),
+              );
+              await sleep(260);
+            } catch {
+              // ignore
+            }
+          }
+
+          const interestingSections = Array.from(
+            document.querySelectorAll(
+              "main section, main article, [class*='match'], [class*='event'], [class*='card'], [class*='player'], [data-testid*='card'], [data-testid*='match']",
+            ),
+          )
+            .filter(visible)
+            .slice(0, mode === "landing" ? 60 : 35);
+
+          for (const section of interestingSections) {
+            try {
+              section.scrollIntoView({ block: "center", inline: "nearest" });
+              await sleep(80);
+            } catch {
+              // ignore
+            }
+          }
+
+          let dynamicHeight = Math.max(
+            document.body?.scrollHeight || 0,
+            document.documentElement?.scrollHeight || 0,
+          );
+          while (window.scrollY + window.innerHeight < dynamicHeight - 24) {
+            window.scrollBy({ top: scrollStep, left: 0, behavior: "instant" });
+            scrollCount += 1;
+            await sleep(mode === "landing" ? 170 : 190);
+            dynamicHeight = Math.max(
+              document.body?.scrollHeight || 0,
+              document.documentElement?.scrollHeight || 0,
+            );
+            if (scrollCount >= maxSteps) break;
+          }
+          await sleep(260);
+          if (scrollCount >= maxSteps) break;
+        }
+
+        window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+        await sleep(180);
+
+        return {
+          clicked,
+          click_labels: clickLabels,
+          scroll_steps: scrollCount,
+          initial_height: initialHeight,
+          final_height: Math.max(
+            document.body?.scrollHeight || 0,
+            document.documentElement?.scrollHeight || 0,
+          ),
+          reset_to_top: Math.round(window.scrollY || 0) === 0,
+        };
+      },
+      { mode: scanMode, maxSteps: effectiveSteps },
+    )
+    .catch(() => ({
+      clicked: 0,
+      click_labels: [],
+      scroll_steps: 0,
+      initial_height: 0,
+      final_height: 0,
+      reset_to_top: true,
+    }));
 }
 
 function textHash(value) {
-  const text = normalizeWhitespace(value);
+  const text = clean(value, 800);
   let hash = 0;
-  for (let index = 0; index < text.length; index += 1) {
-    hash = (hash << 5) - hash + text.charCodeAt(index);
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i);
     hash |= 0;
   }
   return hash;
@@ -183,7 +185,7 @@ function buildFramePathMap(page) {
   map.set(root, "root");
 
   const queue = [root];
-  while (queue.length > 0) {
+  while (queue.length) {
     const current = queue.shift();
     const currentPath = map.get(current) || "root";
     const children = current.childFrames();
@@ -220,1732 +222,18 @@ async function computeFrameOffset(frame) {
   return { x: Math.round(x), y: Math.round(y) };
 }
 
-function isTextLikeContentType(contentType = "") {
-  return /json|javascript|xml|html|text|graphql|x-www-form-urlencoded/.test(
-    String(contentType).toLowerCase(),
-  );
-}
-
-function createNetworkRecorder(page, config, startTime = Date.now()) {
-  const requests = [];
-  const responses = [];
-  const requestIds = new WeakMap();
-  let requestCounter = 0;
-
-  const onRequest = (request) => {
-    if (!config.include_network) return;
-    requestCounter += 1;
-    const requestId = `request-${requestCounter}`;
-    requestIds.set(request, requestId);
-    requests.push({
-      request_id: requestId,
-      url: request.url(),
-      method: request.method(),
-      resource_type: request.resourceType(),
-      frame_url: request.frame()?.url?.() || "",
-      initiator: request.isNavigationRequest()
-        ? "navigation"
-        : request.resourceType(),
-      timestamp: Date.now(),
-    });
-  };
-
-  const onResponse = async (response) => {
-    if (!config.include_network) return;
-    const request = response.request();
-    const headers = response.headers();
-    const contentType =
-      headers["content-type"] || headers["Content-Type"] || "";
-    const item = {
-      request_id: requestIds.get(request) || `request-${responses.length + 1}`,
-      url: response.url(),
-      status: response.status(),
-      content_type: contentType,
-      request_method: request.method(),
-      resource_type: request.resourceType(),
-      frame_url: request.frame()?.url?.() || "",
-      body_preview: "",
-      body_truncated: false,
-    };
-
-    if (config.include_response_bodies && isTextLikeContentType(contentType)) {
-      try {
-        item.body_preview = await response.text();
-      } catch {
-        item.body_preview = "";
-      }
-    }
-
-    responses.push(item);
-  };
-
-  page.on("request", onRequest);
-  page.on("response", onResponse);
-
+function applyOffset(entry, offset, framePath) {
   return {
-    requests,
-    responses,
-    startTime,
-    dispose: () => {
-      page.off("request", onRequest);
-      page.off("response", onResponse);
-    },
-  };
-}
-
-async function installMutationObserver(page) {
-  await page
-    .evaluate(() => {
-      try {
-        if (window.__owcMutationObserver) {
-          window.__owcMutationObserver.disconnect();
-        }
-
-        window.__owcMutations = [];
-        window.__owcMutationStartedAt = performance.now();
-
-        const observer = new MutationObserver((records) => {
-          const now = performance.now();
-          const bucket = Array.isArray(window.__owcMutations)
-            ? window.__owcMutations
-            : [];
-
-          for (const record of records) {
-            bucket.push({
-              type: record.type,
-              targetTag: record.target?.tagName?.toLowerCase?.() || "",
-              selector: record.target?.id
-                ? `#${record.target.id}`
-                : record.target?.tagName?.toLowerCase?.() || "",
-              added: record.addedNodes?.length || 0,
-              removed: record.removedNodes?.length || 0,
-              attributeName: record.attributeName || "",
-              oldValue: record.oldValue || "",
-              newValue: record.attributeName
-                ? record.target?.getAttribute?.(record.attributeName) || ""
-                : "",
-              newText:
-                record.type === "characterData"
-                  ? String(record.target?.data || "")
-                  : "",
-              time: Math.round(now - (window.__owcMutationStartedAt || now)),
-            });
-          }
-
-          window.__owcMutations = bucket;
-        });
-
-        observer.observe(document.documentElement || document.body, {
-          childList: true,
-          subtree: true,
-          attributes: true,
-          attributeOldValue: true,
-          characterData: true,
-          characterDataOldValue: true,
-        });
-
-        window.__owcMutationObserver = observer;
-      } catch {
-        window.__owcMutations = [];
-      }
-    })
-    .catch(() => {});
-}
-
-async function collectMutationSummary(page, phase) {
-  return page
-    .evaluate((phaseName) => {
-      const raw = Array.isArray(window.__owcMutations)
-        ? window.__owcMutations
-        : [];
-      window.__owcMutations = [];
-
-      return {
-        phase: phaseName,
-        timestamp_offset_ms: raw.at(-1)?.time || 0,
-        added_nodes: raw.reduce(
-          (sum, entry) => sum + Number(entry.added || 0),
-          0,
-        ),
-        removed_nodes: raw.reduce(
-          (sum, entry) => sum + Number(entry.removed || 0),
-          0,
-        ),
-        changed_attributes: raw
-          .filter((entry) => entry.type === "attributes" && entry.attributeName)
-          .map((entry) => ({
-            selector: entry.selector || "",
-            attribute: entry.attributeName,
-            old_value: String(entry.oldValue || ""),
-            new_value: String(entry.newValue || ""),
-          })),
-        text_changes: raw
-          .filter((entry) => entry.type === "characterData")
-          .map((entry) => ({
-            selector: entry.selector || "",
-            old_text: String(entry.oldValue || ""),
-            new_text_preview: String(entry.newText || ""),
-          })),
-      };
-    }, phase)
-    .catch(() => ({
-      phase,
-      timestamp_offset_ms: 0,
-      added_nodes: 0,
-      removed_nodes: 0,
-      changed_attributes: [],
-      text_changes: [],
-    }));
-}
-
-async function extractStorage(page) {
-  const storage = await page
-    .evaluate(() => ({
-      local_storage_keys: Object.keys(window.localStorage || {}),
-      session_storage_keys: Object.keys(window.sessionStorage || {}),
-    }))
-    .catch(() => ({
-      local_storage_keys: [],
-      session_storage_keys: [],
-    }));
-
-  const cookies = await page.cookies().catch(() => []);
-  return {
-    local_storage_keys: storage.local_storage_keys,
-    session_storage_keys: storage.session_storage_keys,
-    cookies_summary: cookies.map((cookie) => ({
-      name: cookie.name,
-      domain: cookie.domain,
-      path: cookie.path,
-      httpOnly: Boolean(cookie.httpOnly),
-      secure: Boolean(cookie.secure),
-      sameSite: cookie.sameSite || "Unknown",
-    })),
-  };
-}
-
-export function buildNetworkSummary(
-  requests = [],
-  responses = [],
-  startTime = Date.now(),
-) {
-  const resource_summary = {
-    document: 0,
-    script: 0,
-    stylesheet: 0,
-    image: 0,
-    xhr: 0,
-    fetch: 0,
-    media: 0,
-    websocket: 0,
-    other: 0,
-  };
-
-  const normalizedRequests = requests.map((entry, index) => {
-    const resourceType = String(entry.resource_type || "other").toLowerCase();
-    if (Object.prototype.hasOwnProperty.call(resource_summary, resourceType)) {
-      resource_summary[resourceType] += 1;
-    } else {
-      resource_summary.other += 1;
-    }
-
-    return {
-      request_id: entry.request_id || `request-${index + 1}`,
-      url: entry.url,
-      method: entry.method,
-      resource_type: entry.resource_type,
-      frame_url: entry.frame_url,
-      initiator: entry.initiator || "",
-      timestamp_offset_ms: Math.max(
-        0,
-        Number(entry.timestamp || startTime) - Number(startTime || 0),
-      ),
-    };
-  });
-
-  const normalizedResponses = responses.map((entry, index) => ({
-    request_id: entry.request_id || `request-${index + 1}`,
-    url: entry.url,
-    status: entry.status,
-    content_type: entry.content_type,
-    resource_type: entry.resource_type,
-    frame_url: entry.frame_url,
-    body_preview: entry.body_preview || "",
-    body_truncated: Boolean(entry.body_truncated),
-  }));
-
-  return {
-    resource_summary,
-    requests: normalizedRequests,
-    responses: normalizedResponses,
-  };
-}
-
-function previewJson(value) {
-  if (Array.isArray(value)) {
-    return {
-      type: "array",
-      length: value.length,
-      sample: value.slice(0, 5),
-    };
-  }
-
-  if (value && typeof value === "object") {
-    const keys = Object.keys(value);
-    const sample = {};
-    for (const key of keys.slice(0, 10)) {
-      sample[key] = value[key];
-    }
-    return {
-      type: "object",
-      keys,
-      sample,
-    };
-  }
-
-  return {
-    type: typeof value,
-    sample: value,
-  };
-}
-
-export function buildDataResponses(responseLog = []) {
-  const out = [];
-
-  for (const entry of responseLog) {
-    const contentType = String(entry.content_type || "").toLowerCase();
-    if (!/json|graphql/.test(contentType)) continue;
-    if (!entry.body_preview) continue;
-
-    try {
-      const parsed = JSON.parse(entry.body_preview);
-      out.push({
-        request_id: entry.request_id,
-        url: entry.url,
-        content_type: entry.content_type,
-        status: entry.status,
-        json_preview: previewJson(parsed),
-      });
-    } catch {
-      out.push({
-        request_id: entry.request_id,
-        url: entry.url,
-        content_type: entry.content_type,
-        status: entry.status,
-        parse_error: "invalid_json_preview",
-        body_preview: entry.body_preview,
-      });
-    }
-  }
-
-  return out;
-}
-
-export function extractPageObservation(configInput = {}) {
-  const config = {
-    max_depth: Number(configInput.max_depth || 0),
-    max_children_per_node: Number(configInput.max_children_per_node || 0),
-    max_links: Number(configInput.max_links || 0),
-    max_interactive_elements: Number(configInput.max_interactive_elements || 0),
-    max_tables: Number(configInput.max_tables || 0),
-    max_table_rows: Number(configInput.max_table_rows || 0),
-    max_table_cells: Number(configInput.max_table_cells || 0),
-    max_iframes: Number(configInput.max_iframes || 0),
-    max_videos: Number(configInput.max_videos || 0),
-    max_audio: Number(configInput.max_audio || 0),
-    max_images: Number(configInput.max_images || 0),
-    max_sources: Number(configInput.max_sources || 0),
-    max_tracks: Number(configInput.max_tracks || 0),
-    max_forms: Number(configInput.max_forms || 0),
-    max_form_inputs: Number(configInput.max_form_inputs || 0),
-    include_shadow_dom: Boolean(configInput.include_shadow_dom),
-    treeOnly: Boolean(configInput.treeOnly),
-  };
-
-  const normalizeText = (value) =>
-    String(value ?? "")
-      .replace(/\s+/g, " ")
-      .trim();
-  const unlimitedDepth = config.max_depth <= 0;
-  const unlimitedChildren = config.max_children_per_node <= 0;
-  const limitCollection = (items, max) =>
-    max > 0 ? items.slice(0, max) : items;
-  const keptHiddenMeaningfully = true;
-  const removedTags = new Set(["script", "style", "noscript", "template"]);
-  const meaningfulTags = new Set([
-    "html",
-    "body",
-    "main",
-    "article",
-    "section",
-    "nav",
-    "header",
-    "footer",
-    "aside",
-    "form",
-    "table",
-    "thead",
-    "tbody",
-    "tr",
-    "th",
-    "td",
-    "video",
-    "audio",
-    "img",
-    "picture",
-    "source",
-    "track",
-    "iframe",
-    "button",
-    "a",
-    "input",
-    "textarea",
-    "select",
-    "label",
-    "summary",
-    "details",
-    "canvas",
-    "svg",
-    "figure",
-    "figcaption",
-    "ul",
-    "ol",
-    "li",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "h5",
-    "h6",
-  ]);
-
-  let nodeCounter = 0;
-  let removedHiddenNodes = 0;
-  const nodeIds = new WeakMap();
-  const limitsReached = [];
-
-  function nextNodeId() {
-    nodeCounter += 1;
-    return `node-${nodeCounter}`;
-  }
-
-  function getNodeId(node) {
-    if (!nodeIds.has(node)) nodeIds.set(node, nextNodeId());
-    return nodeIds.get(node);
-  }
-
-  function cssEscape(value) {
-    try {
-      return CSS.escape(String(value));
-    } catch {
-      return String(value).replace(/[^a-zA-Z0-9_-]/g, "");
-    }
-  }
-
-  function uniqueIdSelector(el) {
-    const id = el.getAttribute?.("id");
-    if (!id) return "";
-    const selector = `#${cssEscape(id)}`;
-    try {
-      if (document.querySelectorAll(selector).length === 1) return selector;
-    } catch {
-      return "";
-    }
-    return "";
-  }
-
-  function getSelector(el) {
-    if (!(el instanceof Element)) return "";
-    const idSelector = uniqueIdSelector(el);
-    if (idSelector) return idSelector;
-
-    const parts = [];
-    let current = el;
-    let depth = 0;
-    while (current && current.nodeType === 1 && depth < 8) {
-      const tag = current.tagName.toLowerCase();
-      const parent = current.parentElement;
-      if (!parent) {
-        parts.unshift(tag);
-        break;
-      }
-      const sameTagSiblings = Array.from(parent.children).filter(
-        (child) => child.tagName === current.tagName,
-      );
-      const index = sameTagSiblings.indexOf(current) + 1;
-      parts.unshift(
-        sameTagSiblings.length > 1 ? `${tag}:nth-of-type(${index})` : tag,
-      );
-      const parentId = uniqueIdSelector(parent);
-      if (parentId) {
-        parts.unshift(parentId);
-        break;
-      }
-      current = parent;
-      depth += 1;
-    }
-    return parts.join(" > ");
-  }
-
-  function getBBox(el) {
-    if (!(el instanceof Element)) return null;
-    const rect = el.getBoundingClientRect();
-    return {
-      x: Math.round(rect.x),
-      y: Math.round(rect.y),
-      width: Math.round(rect.width),
-      height: Math.round(rect.height),
-    };
-  }
-
-  function ownText(node) {
-    if (!(node instanceof Element)) return "";
-    const text = Array.from(node.childNodes || [])
-      .filter((child) => child.nodeType === Node.TEXT_NODE)
-      .map((child) => child.textContent || "")
-      .join(" ");
-    return normalizeText(text);
-  }
-
-  function allText(node) {
-    if (!(node instanceof Element)) return "";
-    return normalizeText(node.innerText || node.textContent || "");
-  }
-
-  function isVisible(el) {
-    if (!(el instanceof Element)) return false;
-    const style = window.getComputedStyle(el);
-    const rect = el.getBoundingClientRect();
-    return (
-      rect.width > 0 &&
-      rect.height > 0 &&
-      style.display !== "none" &&
-      style.visibility !== "hidden" &&
-      style.opacity !== "0"
-    );
-  }
-
-  function hasMeaningfulAttributes(el) {
-    if (!(el instanceof Element)) return false;
-    return Array.from(el.attributes || []).some((attr) => {
-      const name = String(attr.name || "").toLowerCase();
-      return Boolean(name) && normalizeText(attr.value).length > 0;
-    });
-  }
-
-  function shouldKeepElement(el) {
-    const tag = String(el?.tagName || "").toLowerCase();
-    if (meaningfulTags.has(tag)) return true;
-    if (isVisible(el)) return true;
-    if (ownText(el)) return true;
-    return hasMeaningfulAttributes(el);
-  }
-
-  function getAttributes(el) {
-    if (!(el instanceof Element)) return {};
-    const attrs = {};
-    for (const attr of Array.from(el.attributes || [])) {
-      attrs[attr.name] = normalizeText(attr.value);
-    }
-    return attrs;
-  }
-
-  function nodeToTree(node, depth = 0) {
-    if (!(node instanceof Element)) return null;
-
-    const tag = node.tagName.toLowerCase();
-    if (removedTags.has(tag)) return null;
-    if (!shouldKeepElement(node)) {
-      if (!isVisible(node)) removedHiddenNodes += 1;
-      return null;
-    }
-    if (!unlimitedDepth && depth > config.max_depth) {
-      limitsReached.push({
-        field: "tree_depth",
-        limit: config.max_depth,
-        actual_estimate: depth,
-      });
-      return null;
-    }
-
-    const children = Array.from(node.children || []);
-    const childLimit = unlimitedChildren
-      ? children.length
-      : config.max_children_per_node;
-    if (!unlimitedChildren && children.length > childLimit) {
-      limitsReached.push({
-        field: "tree_children",
-        limit: childLimit,
-        actual_estimate: children.length,
-      });
-    }
-
-    const out = {
-      node_id: getNodeId(node),
-      tag,
-      selector: getSelector(node),
-      xpath: getXPath(node),
-      text: ownText(node),
-      text_preview: ownText(node),
-      attributes: getAttributes(node),
-      visible: isVisible(node),
-      bbox: getBBox(node),
-      children: [],
-    };
-
-    for (const child of children.slice(0, childLimit)) {
-      const childNode = nodeToTree(child, depth + 1);
-      if (childNode) out.children.push(childNode);
-    }
-
-    return out;
-  }
-
-  function previewJsonValue(value) {
-    if (Array.isArray(value)) {
-      return {
-        type: "array",
-        length: value.length,
-        sample: value.slice(0, 5),
-      };
-    }
-
-    if (value && typeof value === "object") {
-      const keys = Object.keys(value);
-      const sample = {};
-      for (const key of keys.slice(0, 10)) {
-        sample[key] = value[key];
-      }
-      return {
-        type: "object",
-        keys,
-        sample,
-      };
-    }
-
-    return {
-      type: typeof value,
-      sample: value,
-    };
-  }
-
-  function getXPath(el) {
-    if (!(el instanceof Element)) return "";
-    const parts = [];
-    let node = el;
-    while (node && node.nodeType === 1) {
-      let index = 1;
-      let sibling = node.previousElementSibling;
-      while (sibling) {
-        if (sibling.tagName === node.tagName) index += 1;
-        sibling = sibling.previousElementSibling;
-      }
-      parts.unshift(`${node.tagName.toLowerCase()}[${index}]`);
-      node = node.parentElement;
-    }
-    return `//${parts.join("/")}`;
-  }
-
-  function extractMetadata() {
-    const meta = Array.from(document.querySelectorAll("meta"))
-      .map((el) => ({
-        name: el.getAttribute("name") || "",
-        property: el.getAttribute("property") || "",
-        content: el.getAttribute("content") || "",
-      }))
-      .filter((item) => item.name || item.property || item.content);
-
-    const canonical =
-      document.querySelector('link[rel="canonical"]')?.getAttribute("href") ||
-      "";
-    const description =
-      document
-        .querySelector('meta[name="description"]')
-        ?.getAttribute("content") || "";
-    const json_ld = Array.from(
-      document.querySelectorAll('script[type="application/ld+json"]'),
-    ).map((script, index) => {
-      try {
-        const parsed = JSON.parse(script.textContent || "{}");
-        return {
-          script_index: index,
-          type: typeof parsed,
-          keys: Object.keys(parsed || {}),
-          preview: previewJsonValue(parsed),
-        };
-      } catch {
-        return {
-          script_index: index,
-          parse_error: "invalid_json_ld",
-          text_preview: script.textContent || "",
-        };
-      }
-    });
-
-    return {
-      title: document.title || "",
-      description,
-      canonical,
-      meta,
-      json_ld,
-    };
-  }
-
-  function extractOutline() {
-    return {
-      headings: Array.from(document.querySelectorAll("h1,h2,h3,h4,h5,h6")).map(
-        (heading) => ({
-          level: Number(heading.tagName[1]),
-          selector: getSelector(heading),
-          text: allText(heading),
-        }),
-      ),
-      landmarks: Array.from(
-        document.querySelectorAll(
-          "main,nav,header,footer,aside,section,article,form",
-        ),
-      ).map((el) => ({
-        tag: el.tagName.toLowerCase(),
-        selector: getSelector(el),
-        text_preview: allText(el),
-      })),
-    };
-  }
-
-  function nearestRegion(el) {
-    return el.closest("main,nav,header,footer,aside,section,article,form");
-  }
-
-  function extractRegions() {
-    return Array.from(
-      document.querySelectorAll(
-        "main,nav,header,footer,aside,section,article,form",
-      ),
-    ).map((el) => ({
-      selector: getSelector(el),
-      tag: el.tagName.toLowerCase(),
-      text_preview: allText(el),
-      children_count: el.children.length,
-      links_count: el.querySelectorAll("a[href]").length,
-      buttons_count: el.querySelectorAll(
-        'button,[role="button"],[role="tab"],select',
-      ).length,
-    }));
-  }
-
-  function extractLinks() {
-    return limitCollection(
-      Array.from(document.querySelectorAll("a[href]")),
-      config.max_links,
-    ).map((a) => ({
-      href: a.href || "",
-      raw_href: a.getAttribute("href") || "",
-      text: allText(a),
-      selector: getSelector(a),
-      xpath: getXPath(a),
-      node_id: getNodeId(a),
-      visible: isVisible(a),
-      region_selector: nearestRegion(a) ? getSelector(nearestRegion(a)) : "",
-      ancestor_text_preview: nearestRegion(a) ? allText(nearestRegion(a)) : "",
-      attributes: getAttributes(a),
-      bbox: getBBox(a),
-    }));
-  }
-
-  function extractInteractive() {
-    const selector =
-      'button,a[href],input,textarea,select,[role="button"],[role="tab"],[onclick],[data-server],[data-source],[data-embed],summary,details';
-    return limitCollection(
-      Array.from(document.querySelectorAll(selector)),
-      config.max_interactive_elements,
-    ).map((el) => {
-      const style = window.getComputedStyle(el);
-      return {
-        node_id: getNodeId(el),
-        selector: getSelector(el),
-        xpath: getXPath(el),
-        tag: el.tagName.toLowerCase(),
-        text: allText(el) || normalizeText(el.value || ""),
-        visible: isVisible(el),
-        disabled: Boolean(el.disabled),
-        attributes: getAttributes(el),
-        event_attributes: {
-          onclick: el.getAttribute("onclick") || "",
-        },
-        computed: {
-          cursor: style.cursor || "",
-          pointer_events: style.pointerEvents || "",
-        },
-        bbox: getBBox(el),
-      };
-    });
-  }
-
-  function extractTables() {
-    return limitCollection(
-      Array.from(document.querySelectorAll("table")),
-      config.max_tables,
-    ).map(
-      (table, tableIndex) => {
-        const headers = Array.from(table.querySelectorAll("thead th")).map(
-          (th) => allText(th),
-        );
-        const rows = limitCollection(
-          Array.from(table.querySelectorAll("tbody tr, tr")),
-          config.max_table_rows,
-        ).map(
-          (row, rowIndex) => ({
-            row_index: rowIndex,
-            selector: getSelector(row),
-            cells: limitCollection(
-              Array.from(row.querySelectorAll("th,td")),
-              config.max_table_cells,
-            ).map(
-              (cell, columnIndex) => ({
-                column: headers[columnIndex] || `col_${columnIndex + 1}`,
-                text: allText(cell),
-                links: Array.from(cell.querySelectorAll("a[href]")).map(
-                  (link) => ({
-                    href: link.href || "",
-                    text: allText(link),
-                  }),
-                ),
-                buttons: Array.from(
-                  cell.querySelectorAll('button,[role="button"]'),
-                ).map((button) => ({
-                  text: allText(button),
-                  selector: getSelector(button),
-                })),
-              }),
-            ),
-            attributes: getAttributes(row),
-          }),
-        );
-
-        return {
-          table_id: `table-${tableIndex + 1}`,
-          node_id: getNodeId(table),
-          selector: getSelector(table),
-          caption: allText(table.querySelector("caption")),
-          headers,
-          row_count: rows.length,
-          column_count: Math.max(headers.length, rows[0]?.cells?.length || 0),
-          rows,
-        };
-      },
-    );
-  }
-
-  function extractMedia() {
-    return {
-      iframes: limitCollection(
-        Array.from(document.querySelectorAll("iframe")),
-        config.max_iframes,
-      ).map(
-        (frame, index) => ({
-          frame_id: `iframe-${index + 1}`,
-          node_id: getNodeId(frame),
-          selector: getSelector(frame),
-          xpath: getXPath(frame),
-          src:
-            frame.src ||
-            frame.getAttribute("src") ||
-            frame.getAttribute("data-src") ||
-            "",
-          name: frame.name || "",
-          title: frame.title || "",
-          visible: isVisible(frame),
-          sandbox: frame.getAttribute("sandbox") || "",
-          allow: frame.getAttribute("allow") || "",
-          referrerpolicy: frame.getAttribute("referrerpolicy") || "",
-          loading: frame.getAttribute("loading") || "",
-          bbox: getBBox(frame),
-          accessible_dom: false,
-          frame_url_after_load: null,
-        }),
-      ),
-      videos: limitCollection(
-        Array.from(document.querySelectorAll("video")),
-        config.max_videos,
-      ).map((video) => ({
-        node_id: getNodeId(video),
-        selector: getSelector(video),
-        xpath: getXPath(video),
-        src: video.getAttribute("src") || "",
-        current_src: video.currentSrc || "",
-        poster: video.poster || "",
-        controls: Boolean(video.controls),
-        autoplay: Boolean(video.autoplay),
-        muted: Boolean(video.muted),
-        loop: Boolean(video.loop),
-        playsinline: Boolean(video.playsInline),
-        preload: video.preload || "",
-        ready_state: Number(video.readyState || 0),
-        network_state: Number(video.networkState || 0),
-        duration: Number.isFinite(video.duration)
-          ? Number(video.duration)
-          : null,
-        paused: Boolean(video.paused),
-        visible: isVisible(video),
-        bbox: getBBox(video),
-        sources: Array.from(video.querySelectorAll("source")).map((source) => ({
-          src: source.src || source.getAttribute("src") || "",
-          type: source.type || source.getAttribute("type") || "",
-        })),
-      })),
-      audio: limitCollection(
-        Array.from(document.querySelectorAll("audio")),
-        config.max_audio,
-      ).map((audio) => ({
-        node_id: getNodeId(audio),
-        selector: getSelector(audio),
-        xpath: getXPath(audio),
-        src: audio.getAttribute("src") || "",
-        current_src: audio.currentSrc || "",
-        controls: Boolean(audio.controls),
-        autoplay: Boolean(audio.autoplay),
-        muted: Boolean(audio.muted),
-        loop: Boolean(audio.loop),
-        preload: audio.preload || "",
-        ready_state: Number(audio.readyState || 0),
-        network_state: Number(audio.networkState || 0),
-        paused: Boolean(audio.paused),
-        visible: isVisible(audio),
-        bbox: getBBox(audio),
-      })),
-      images: limitCollection(
-        Array.from(document.querySelectorAll("img")),
-        config.max_images,
-      ).map((img) => ({
-        node_id: getNodeId(img),
-        selector: getSelector(img),
-        xpath: getXPath(img),
-        src: img.currentSrc || img.src || "",
-        alt: img.alt || "",
-        title: img.title || "",
-        loading: img.loading || "",
-        visible: isVisible(img),
-        bbox: getBBox(img),
-      })),
-      sources: limitCollection(
-        Array.from(document.querySelectorAll("source")),
-        config.max_sources,
-      ).map(
-        (source) => ({
-          selector: getSelector(source),
-          xpath: getXPath(source),
-          parent_selector: getSelector(source.parentElement),
-          src: source.src || source.getAttribute("src") || "",
-          type: source.type || source.getAttribute("type") || "",
-        }),
-      ),
-      tracks: limitCollection(
-        Array.from(document.querySelectorAll("track")),
-        config.max_tracks,
-      ).map((track) => ({
-        selector: getSelector(track),
-        xpath: getXPath(track),
-        src: track.src || track.getAttribute("src") || "",
-        kind: track.kind || track.getAttribute("kind") || "",
-        label: track.label || track.getAttribute("label") || "",
-        srclang: track.srclang || track.getAttribute("srclang") || "",
-      })),
-    };
-  }
-
-  function extractForms() {
-    return limitCollection(Array.from(document.forms), config.max_forms).map((form, formIndex) => ({
-      form_id: `form-${formIndex + 1}`,
-      selector: getSelector(form),
-      method: (form.getAttribute("method") || form.method || "").toLowerCase(),
-      action: form.action || form.getAttribute("action") || "",
-      text_preview: allText(form),
-      inputs: limitCollection(
-        Array.from(form.querySelectorAll("input,textarea,select,button")),
-        config.max_form_inputs,
-      ).map((input) => ({
-        selector: getSelector(input),
-        xpath: getXPath(input),
-        tag: input.tagName.toLowerCase(),
-        type: input.getAttribute("type") || "",
-        name: input.getAttribute("name") || "",
-        placeholder: input.getAttribute("placeholder") || "",
-        value: normalizeText(input.value || ""),
-        text: allText(input),
-        visible: isVisible(input),
-        attributes: getAttributes(input),
-        bbox: getBBox(input),
-      })),
-    }));
-  }
-
-  function extractUrlLikeStrings(text) {
-    const out = [];
-    const regex =
-      /https?:\/\/[^\s"'`<>]+|\/(?:api|embed|stream|player|watch)[^\s"'`<>]*/gi;
-    let match;
-    while ((match = regex.exec(String(text || "")))) {
-      out.push(match[0]);
-    }
-    return out;
-  }
-
-  function guessNearbyKey(text, value) {
-    const index = String(text || "").indexOf(value);
-    if (index < 0) return "";
-    const nearby = String(text || "").slice(
-      Math.max(0, index - 120),
-      index + value.length + 40,
-    );
-    const match = nearby.match(/["']?([a-zA-Z0-9_-]{2,80})["']?\s*[:=]\s*$/);
-    return match?.[1] || "";
-  }
-
-  function extractObjectKeySamples(text) {
-    const keys = [];
-    const regex = /["']([a-zA-Z0-9_-]{2,120})["']\s*:/g;
-    let match;
-    while ((match = regex.exec(String(text || "")))) {
-      if (!keys.includes(match[1])) keys.push(match[1]);
-    }
-    return keys;
-  }
-
-  function extractScripts() {
-    const scripts = Array.from(document.querySelectorAll("script"));
-    const external = scripts
-      .filter((script) => script.src)
-      .map((script) => ({
-        src: script.src,
-        async: Boolean(script.async),
-        defer: Boolean(script.defer),
-        type: script.type || "",
-      }));
-
-    const inline_summaries = [];
-    const script_url_strings = [];
-    const script_object_keys = [];
-
-    scripts.forEach((script, scriptIndex) => {
-      const text = String(script.textContent || "");
-      if (!text) return;
-      const urls = extractUrlLikeStrings(text);
-      const keys = extractObjectKeySamples(text);
-
-      inline_summaries.push({
-        script_index: scriptIndex,
-        length: text.length,
-        contains_eval: /\beval\s*\(/.test(text),
-        contains_fetch: /\bfetch\s*\(/.test(text),
-        contains_xhr: /XMLHttpRequest/.test(text),
-        contains_websocket: /WebSocket/.test(text),
-        contains_iframe_write:
-          /iframe/.test(text) && /write|appendChild|innerHTML/.test(text),
-        contains_location_assignment: /location\s*=|location\.href\s*=/.test(
-          text,
-        ),
-        contains_event_listeners: /addEventListener/.test(text),
-        string_url_count: urls.length,
-        object_key_samples: keys,
-      });
-
-      urls.forEach((value) => {
-        script_url_strings.push({
-          source: `inline:${scriptIndex}`,
-          value,
-          nearby_key: guessNearbyKey(text, value),
-        });
-      });
-
-      if (keys.length > 0) {
-        script_object_keys.push({
-          source: `inline:${scriptIndex}`,
-          keys,
-        });
-      }
-    });
-
-    return {
-      external,
-      inline_summaries,
-      script_url_strings,
-      script_object_keys,
-    };
-  }
-
-  function signature(el) {
-    const tag = el.tagName.toLowerCase();
-    const attrs = Object.keys(getAttributes(el)).sort().join("|");
-    const childTags = Array.from(el.children)
-      .map((child) => child.tagName.toLowerCase())
-      .join("|");
-    const hasLink = el.querySelector("a[href]") ? "1" : "0";
-    const hasButton = el.querySelector('button,[role="button"]') ? "1" : "0";
-    const hasMedia = el.querySelector("video,img,iframe") ? "1" : "0";
-    return `${tag}::${attrs}::${childTags}::${hasLink}${hasButton}${hasMedia}`;
-  }
-
-  function groupBySignature(elements) {
-    const map = new Map();
-    for (const element of elements) {
-      const sig = signature(element);
-      if (!map.has(sig)) map.set(sig, []);
-      map.get(sig).push(element);
-    }
-    return map;
-  }
-
-  function common(values) {
-    const counts = new Map();
-    values.forEach((value) => counts.set(value, (counts.get(value) || 0) + 1));
-    return Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([value]) => value);
-  }
-
-  function commonAttributeNames(elements) {
-    const counts = new Map();
-    elements.forEach((el) => {
-      Array.from(el.attributes || []).forEach((attr) => {
-        counts.set(attr.name, (counts.get(attr.name) || 0) + 1);
-      });
-    });
-    return Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([value]) => value);
-  }
-
-  function commonClassTokens(elements) {
-    const counts = new Map();
-    elements.forEach((el) => {
-      String(el.className || "")
-        .split(/\s+/)
-        .filter(Boolean)
-        .forEach((token) => {
-          counts.set(token, (counts.get(token) || 0) + 1);
-        });
-    });
-    return Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([value]) => value);
-  }
-
-  function extractRepeatedStructures() {
-    const structures = [];
-    const containers = Array.from(
-      document.querySelectorAll("main,section,article,ul,ol,div"),
-    );
-    let structureIndex = 0;
-
-    for (const container of containers) {
-      const children = Array.from(container.children || []).filter((child) =>
-        shouldKeepElement(child),
-      );
-      if (children.length < 3) continue;
-      const groups = groupBySignature(children);
-      for (const items of groups.values()) {
-        if (items.length < 3) continue;
-        structureIndex += 1;
-        structures.push({
-          structure_id: `structure-${structureIndex}`,
-          container_node_id: getNodeId(container),
-          container_selector: getSelector(container),
-          container_tag: container.tagName.toLowerCase(),
-          item_count: items.length,
-          visible_item_count: items.filter((item) => isVisible(item)).length,
-          common_child_tag:
-            common(items.map((item) => item.tagName.toLowerCase()))[0] || "",
-          common_attribute_names: commonAttributeNames(items),
-          common_class_tokens: commonClassTokens(items),
-          average_text_length: Math.round(
-            items.reduce((sum, item) => sum + allText(item).length, 0) /
-              items.length,
-          ),
-          text_samples: items.map((item) => allText(item)),
-          items: items.map((item) => ({
-            node_id: getNodeId(item),
-            selector: getSelector(item),
-            tag: item.tagName.toLowerCase(),
-            text: allText(item),
-            attributes: getAttributes(item),
-            bbox: getBBox(item),
-          })),
-        });
-      }
-    }
-
-    return structures;
-  }
-
-  function shadowRootToTree(node, depth = 0) {
-    if (!node) return null;
-    if (!unlimitedDepth && depth > config.max_depth) return null;
-
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = normalizeText(node.textContent || "");
-      return text ? { tag: "#text", text } : null;
-    }
-
-    if (!(node instanceof Element) && !(node instanceof ShadowRoot))
-      return null;
-
-    const childNodes = Array.from(node.childNodes || []);
-    const childLimit = unlimitedChildren
-      ? childNodes.length
-      : config.max_children_per_node;
-    const children = [];
-    for (const child of childNodes.slice(0, childLimit)) {
-      const value = shadowRootToTree(child, depth + 1);
-      if (value) children.push(value);
-    }
-
-    return {
-      tag:
-        node instanceof ShadowRoot
-          ? "#shadow-root"
-          : node.tagName.toLowerCase(),
-      selector: node instanceof Element ? getSelector(node) : "",
-      text: node instanceof Element ? allText(node) : "",
-      visible: node instanceof Element ? isVisible(node) : true,
-      attributes: node instanceof Element ? getAttributes(node) : {},
-      children,
-    };
-  }
-
-  function extractShadowRoots() {
-    if (!config.include_shadow_dom) return [];
-    const result = [];
-    const all = Array.from(document.querySelectorAll("*"));
-    for (const host of all) {
-      if (!host.shadowRoot) continue;
-      result.push({
-        host_selector: getSelector(host),
-        mode: host.shadowRoot.mode || "open",
-        tree: shadowRootToTree(host.shadowRoot, 0),
-      });
-    }
-    return result;
-  }
-
-  function countTreeNodes(node) {
-    if (!node) return 0;
-    return (
-      1 +
-      (node.children || []).reduce(
-        (sum, child) => sum + countTreeNodes(child),
-        0,
-      )
-    );
-  }
-
-  function maxTreeDepth(node, depth = 0) {
-    if (!node || !Array.isArray(node.children) || node.children.length === 0)
-      return depth;
-    return Math.max(
-      ...node.children.map((child) => maxTreeDepth(child, depth + 1)),
-    );
-  }
-
-  const root = document.body || document.documentElement;
-  const tree = nodeToTree(root, 0);
-  if (config.treeOnly) return tree;
-
-  const metadata = extractMetadata();
-  const outline = extractOutline();
-  const regions = extractRegions();
-  const links = extractLinks();
-  const interactive_elements = extractInteractive();
-  const tables = extractTables();
-  const media = extractMedia();
-  const forms = extractForms();
-  const scripts = extractScripts();
-  const repeated_structures = extractRepeatedStructures();
-  const shadow_roots = extractShadowRoots();
-
-  return {
-    metadata,
-    document_stats: {
-      original_node_count: document.querySelectorAll("*").length,
-      returned_node_count: countTreeNodes(tree),
-      removed_node_count: Math.max(
-        document.querySelectorAll("*").length - countTreeNodes(tree),
-        0,
-      ),
-      max_depth_returned: maxTreeDepth(tree, 0),
-      text_length: normalizeText(document.body?.innerText || "").length,
-      link_count: links.length,
-      interactive_count: interactive_elements.length,
-      iframe_count: media.iframes.length,
-      video_count: media.videos.length,
-      table_count: tables.length,
-      form_count: forms.length,
-    },
-    outline,
-    tree,
-    regions,
-    repeated_structures,
-    tables,
-    links,
-    interactive_elements,
-    forms,
-    media,
-    shadow_roots,
-    scripts,
-    pruning: {
-      removed_tags: Array.from(removedTags),
-      removed_hidden_nodes: removedHiddenNodes,
-      kept_hidden_if_meaningful: keptHiddenMeaningfully,
-      text_truncation_chars_per_node: 0,
-      max_children_per_node: config.max_children_per_node,
-      max_depth: config.max_depth,
-      limits_reached: limitsReached,
-    },
-  };
-}
-
-async function extractTreeSnapshot(page, config) {
-  return page
-    .evaluate(extractPageObservation, {
-      ...config,
-      treeOnly: true,
-    })
-    .catch(() => null);
-}
-
-function hasServerControls(interactiveElements = []) {
-  return interactiveElements.some((entry) => {
-    const haystack = [
-      entry.text,
-      entry.selector,
-      entry.attributes?.role,
-      entry.attributes?.class,
-      entry.attributes?.["data-server"],
-      entry.attributes?.["data-source"],
-      entry.attributes?.["data-embed"],
-    ]
-      .filter(Boolean)
-      .join(" ");
-    return /(server|source|mirror|backup|embed|stream|quality|cdn)/i.test(
-      haystack,
-    );
-  });
-}
-
-function playerLibraryDetailsFromObservation(observation = {}) {
-  const scripts = observation.scripts || {};
-  const sources = [
-    ...(scripts.external || []).map((entry) => entry.src || ""),
-    ...(scripts.script_url_strings || []).map((entry) => entry.value || ""),
-  ].join(" ");
-  const haystack =
-    `${sources} ${JSON.stringify(observation.interactive_elements || [])}`.toLowerCase();
-
-  return {
-    jwplayer: /jwplayer/.test(haystack),
-    videojs: /videojs|vjs-/.test(haystack),
-    hls: /hls\.js|hlsjs|master\.m3u8|\.m3u8/.test(haystack),
-    dashjs: /dashjs|\.mpd/.test(haystack),
-    clappr: /clappr/.test(haystack),
-    albaplayer: /albaplayer/.test(haystack),
-    html_player_hint: Boolean(
-      (observation.media?.videos || []).length ||
-      (observation.media?.iframes || []).length,
-    ),
-  };
-}
-
-function hasPlayerLibrary(observation = {}) {
-  return Object.values(playerLibraryDetailsFromObservation(observation)).some(
-    Boolean,
-  );
-}
-
-function computeCenterX(bbox) {
-  if (!bbox) return 0;
-  return Math.round((bbox.x || 0) + (bbox.width || 0) / 2);
-}
-
-function computeCenterY(bbox) {
-  if (!bbox) return 0;
-  return Math.round((bbox.y || 0) + (bbox.height || 0) / 2);
-}
-
-function buildPagination(links = [], interactive = []) {
-  const elements = [
-    ...links.map((entry) => ({
-      text: entry.text,
-      href: entry.href,
-      selector: entry.selector,
-      xpath: entry.xpath || "",
-      x: computeCenterX(entry.bbox),
-      y: computeCenterY(entry.bbox),
-    })),
-    ...interactive
-      .filter(
-        (entry) =>
-          ["button", "select", "a"].includes(entry.tag) ||
-          entry.attributes?.role === "tab",
-      )
-      .map((entry) => ({
-        text: entry.text,
-        href: entry.attributes?.href || "",
-        selector: entry.selector,
-        xpath: entry.xpath || "",
-        x: computeCenterX(entry.bbox),
-        y: computeCenterY(entry.bbox),
-      })),
-  ].filter((entry) =>
-    /next|prev|page|older|newer|\b\d+\b/i.test(
-      `${entry.text} ${entry.selector}`,
-    ),
-  );
-
-  return {
-    detected: elements.length > 0,
-    type: elements.length > 0 ? "numbered_or_navigational" : null,
-    elements,
-  };
-}
-
-function buildLegacyCompatibilityView(
-  observation = {},
-  pageDigest = {},
-  frameRecords = [],
-) {
-  const links = observation.links || [];
-  const interactive = observation.interactive_elements || [];
-  const media = observation.media || {
-    iframes: [],
-    videos: [],
-    audio: [],
-    images: [],
-    sources: [],
-    tracks: [],
-  };
-  const regions = observation.regions || [];
-  const forms = observation.forms || [];
-  const libraryDetails = playerLibraryDetailsFromObservation(observation);
-
-  const contentLinks = links.map((entry) => ({
-    href: entry.href || "",
-    raw_href: entry.raw_href || "",
-    text: entry.text || "",
-    selector: entry.selector || "",
-    node_id: entry.node_id || "",
-    visible: Boolean(entry.visible),
-    region_selector: entry.region_selector || "",
-    ancestor_text_preview: entry.ancestor_text_preview || "",
-    attributes: entry.attributes || {},
-    x: computeCenterX(entry.bbox),
-    y: computeCenterY(entry.bbox),
-    width: Math.round(entry.bbox?.width || 0),
-    height: Math.round(entry.bbox?.height || 0),
-    frame_path: "root",
-  }));
-
-  const navLinks = contentLinks.filter((entry) => {
-    const region = regions.find(
-      (item) => item.selector === entry.region_selector,
-    );
-    return (
-      region?.tag === "nav" ||
-      /nav|menu|header/i.test(`${entry.region_selector} ${entry.selector}`)
-    );
-  });
-
-  const buttons = interactive
-    .filter(
-      (entry) =>
-        ["button", "select", "summary", "details"].includes(entry.tag) ||
-        ["button", "tab"].includes(entry.attributes?.role || ""),
-    )
-    .map((entry) => ({
-      kind: entry.tag === "select" ? "dropdown" : "button",
-      text: entry.text || "",
-      selector: entry.selector || "",
-      xpath: entry.xpath || "",
-      x: computeCenterX(entry.bbox),
-      y: computeCenterY(entry.bbox),
-      width: Math.round(entry.bbox?.width || 0),
-      height: Math.round(entry.bbox?.height || 0),
-      visible: Boolean(entry.visible),
-      active: Boolean(
-        entry.attributes?.["aria-selected"] === "true" ||
-        entry.attributes?.["aria-expanded"] === "true",
-      ),
-      data: {
-        server: entry.attributes?.["data-server"] || null,
-        source: entry.attributes?.["data-source"] || null,
-        embed: entry.attributes?.["data-embed"] || null,
-      },
-      frame_path: "root",
-    }));
-
-  const flattenedFormInputs = forms.flatMap((form) => form.inputs || []);
-  const elements = [
-    ...contentLinks.map((entry) => ({
-      kind: "link",
-      tag: "a",
-      type: "",
-      role: "",
-      text: entry.text,
-      href: entry.href,
-      src: "",
-      selector: entry.selector,
-      xpath: entry.xpath || "",
-      id: entry.attributes?.id || "",
-      classes: entry.attributes?.class || "",
-      x: entry.x,
-      y: entry.y,
-      width: entry.width,
-      height: entry.height,
-      visible: entry.visible,
-      frame_path: "root",
-      active: false,
-      checked: null,
-      disabled: false,
-      data: {
-        server: entry.attributes?.["data-server"] || null,
-        source: entry.attributes?.["data-source"] || null,
-        embed: entry.attributes?.["data-embed"] || null,
-      },
-    })),
-    ...interactive.map((entry) => ({
-      kind: entry.tag,
-      tag: entry.tag,
-      type: entry.attributes?.type || "",
-      role: entry.attributes?.role || "",
-      text: entry.text || "",
-      href: entry.attributes?.href || "",
-      src: entry.attributes?.src || "",
-      selector: entry.selector || "",
-      xpath: entry.xpath || "",
-      id: entry.attributes?.id || "",
-      classes: entry.attributes?.class || "",
-      x: computeCenterX(entry.bbox),
-      y: computeCenterY(entry.bbox),
-      width: Math.round(entry.bbox?.width || 0),
-      height: Math.round(entry.bbox?.height || 0),
-      visible: Boolean(entry.visible),
-      frame_path: "root",
-      active: Boolean(
-        entry.attributes?.["aria-selected"] === "true" ||
-        entry.attributes?.["aria-expanded"] === "true",
-      ),
-      checked: entry.attributes?.checked === "true" ? true : null,
-      disabled: Boolean(entry.disabled),
-      data: {
-        server: entry.attributes?.["data-server"] || null,
-        source: entry.attributes?.["data-source"] || null,
-        embed: entry.attributes?.["data-embed"] || null,
-      },
-    })),
-    ...flattenedFormInputs.map((entry) => ({
-      kind: entry.tag,
-      tag: entry.tag,
-      type: entry.type || "",
-      role: entry.attributes?.role || "",
-      text: entry.text || "",
-      href: entry.attributes?.href || "",
-      src: entry.attributes?.src || "",
-      selector: entry.selector || "",
-      xpath: entry.xpath || "",
-      id: entry.attributes?.id || "",
-      classes: entry.attributes?.class || "",
-      x: computeCenterX(entry.bbox),
-      y: computeCenterY(entry.bbox),
-      width: Math.round(entry.bbox?.width || 0),
-      height: Math.round(entry.bbox?.height || 0),
-      visible: Boolean(entry.visible),
-      frame_path: "root",
-      active: Boolean(
-        entry.attributes?.["aria-selected"] === "true" ||
-        entry.attributes?.["aria-expanded"] === "true",
-      ),
-      checked: entry.attributes?.checked === "true" ? true : null,
-      disabled: Boolean(entry.attributes?.disabled === "true"),
-      data: {
-        server: entry.attributes?.["data-server"] || null,
-        source: entry.attributes?.["data-source"] || null,
-        embed: entry.attributes?.["data-embed"] || null,
-      },
-    })),
-  ];
-
-  const iframes = (media.iframes || []).map((entry) => ({
-    src: entry.src || "",
-    id: entry.attributes?.id || "",
-    name: entry.name || "",
-    selector: entry.selector || "",
-    xpath: entry.xpath || "",
-    x: computeCenterX(entry.bbox),
-    y: computeCenterY(entry.bbox),
-    width: Math.round(entry.bbox?.width || 0),
-    height: Math.round(entry.bbox?.height || 0),
-    category: /ad|banner|doubleclick|analytics|track/i.test(entry.src || "")
-      ? "ad"
-      : "content",
-  }));
-
-  const videos = (media.videos || []).map((entry) => ({
-    selector: entry.selector || "",
-    xpath: entry.xpath || "",
-    src: entry.current_src || entry.src || "",
-    readyState: entry.ready_state,
-    networkState: entry.network_state,
-    paused: entry.paused,
-    duration: entry.duration,
-    x: computeCenterX(entry.bbox),
-    y: computeCenterY(entry.bbox),
-    width: Math.round(entry.bbox?.width || 0),
-    height: Math.round(entry.bbox?.height || 0),
-  }));
-
-  const popups = interactive
-    .filter((entry) =>
-      /popup|modal|overlay|cookie|banner/i.test(
-        `${entry.selector} ${JSON.stringify(entry.attributes || {})}`,
-      ),
-    )
-    .map((entry) => ({
-      selector: entry.selector || "",
-      xpath: entry.xpath || "",
-      text: entry.text || "",
-      close_selector: "",
-      close_xpath: "",
-      x: computeCenterX(entry.bbox),
-      y: computeCenterY(entry.bbox),
-      width: Math.round(entry.bbox?.width || 0),
-      height: Math.round(entry.bbox?.height || 0),
-    }));
-
-  return {
-    contentLinks,
-    navLinks,
-    buttons,
-    iframes,
-    hosting_signals: {
-      has_video: videos.length > 0,
-      has_player_iframe: iframes.some(
-        (entry) => entry.category === "content" && entry.width > 250,
-      ),
-      player_iframe_src:
-        iframes.find(
-          (entry) => entry.category === "content" && entry.width > 250,
-        )?.src || null,
-      visible_content_iframes: iframes.filter(
-        (entry) => entry.category === "content" && entry.width > 100,
-      ).length,
-      player_libraries: Object.values(libraryDetails).some(Boolean),
-      player_libraries_detail: libraryDetails,
-      server_tabs: hasServerControls(interactive),
-    },
-    popups,
-    dom_skeleton: regions.map((region) => ({
-      tag: region.tag,
-      id: "",
-      classes: "",
-      links: region.links_count,
-    })),
-    pagination: buildPagination(links, interactive),
-    videos,
-    elements,
-    frame_tree: frameRecords,
-    page_digest: {
-      text_sample: normalizeWhitespace(pageDigest.text_sample || "").slice(0, 180),
-      text_hash: textHash(pageDigest.text_sample || ""),
-      html_size: Number(pageDigest.html_size || 0),
-      node_count: Number(
-        pageDigest.node_count ||
-          observation.document_stats?.original_node_count ||
-          0,
-      ),
-    },
-  };
-}
-
-function buildLegacyFrameRecord(
-  frameObservation = {},
-  framePath = "root",
-  parentPath = null,
-  frame = null,
-  offset = { x: 0, y: 0 },
-) {
-  const interactive = frameObservation.interactive_elements || [];
-  const media = frameObservation.media || { iframes: [], videos: [] };
-  const libraryDetails = playerLibraryDetailsFromObservation(frameObservation);
-  const textSample =
-    frameObservation.tree?.text || frameObservation.metadata?.description || "";
-
-  const allLinks = (frameObservation.links || []).map((entry) => ({
-    href: entry.href || "",
-    text: entry.text || "",
-    selector: entry.selector || "",
-    xpath: entry.xpath || "",
-    x: Math.round(computeCenterX(entry.bbox) + offset.x),
-    y: Math.round(computeCenterY(entry.bbox) + offset.y),
-    width: Math.round(entry.bbox?.width || 0),
-    height: Math.round(entry.bbox?.height || 0),
+    ...entry,
+    x: Math.round((entry.x || 0) + offset.x),
+    y: Math.round((entry.y || 0) + offset.y),
     frame_path: framePath,
-  }));
-
-  const allButtons = interactive
-    .filter(
-      (entry) =>
-        ["button", "select", "summary", "details"].includes(entry.tag) ||
-        ["button", "tab"].includes(entry.attributes?.role || ""),
-    )
-    .map((entry) => ({
-      text: entry.text || "",
-      selector: entry.selector || "",
-      xpath: entry.xpath || "",
-      x: Math.round(computeCenterX(entry.bbox) + offset.x),
-      y: Math.round(computeCenterY(entry.bbox) + offset.y),
-      width: Math.round(entry.bbox?.width || 0),
-      height: Math.round(entry.bbox?.height || 0),
-      frame_path: framePath,
-    }));
-
-  const summary = {
-    title: frameObservation.metadata?.title || "",
-    text_sample: textSample,
-    video_count: (media.videos || []).length,
-    has_player_library: Object.values(libraryDetails).some(Boolean),
-    has_server_controls: hasServerControls(interactive),
-  };
-
-  return {
-    frame_path: framePath,
-    parent_frame_path: parentPath,
-    depth: frameDepth(framePath),
-    is_main_frame: frame
-      ? frame === frame.page().mainFrame()
-      : framePath === "root",
-    name: frame?.name?.() || "",
-    url: frame?.url?.() || "",
-    viewport_offset: offset,
-    title: summary.title,
-    text_sample: summary.text_sample,
-    text_hash: textHash(summary.text_sample),
-    total_links: allLinks.length,
-    total_buttons: allButtons.length,
-    total_iframes: (media.iframes || []).length,
-    video_count: summary.video_count,
-    has_server_controls: summary.has_server_controls,
-    has_player_library: summary.has_player_library,
-    player_libraries_detail: libraryDetails,
-    purpose_hint: inferFramePurpose(summary, frame?.url?.() || ""),
-    sample_links: allLinks,
-    sample_buttons: allButtons,
-    links: allLinks,
-    buttons: allButtons,
-    error: null,
   };
 }
 
 function inferFramePurpose(summary, url) {
-  const haystack =
-    `${summary.title || ""} ${summary.text_sample || ""} ${url || ""}`.toLowerCase();
+  const haystack = `${summary.title || ""} ${summary.text_sample || ""} ${url || ""}`.toLowerCase();
+
   if (summary.video_count > 0 || summary.has_player_library) return "player";
   if (summary.has_server_controls) return "server-controls";
   if (/embed|player|iframe|stream/.test(haystack)) return "player";
@@ -1954,623 +242,505 @@ function inferFramePurpose(summary, url) {
   return "unknown";
 }
 
-function compactLegacyEntries(items = [], limit = 12) {
-  return (Array.isArray(items) ? items : []).slice(0, limit).map((entry) => ({
-    text: normalizeWhitespace(entry.text || entry.name || ""),
-    href: entry.href || entry.url || "",
-    src: entry.src || "",
-    selector: entry.selector || "",
-    xpath: entry.xpath || "",
-    frame_path: entry.frame_path || "root",
-    x: Math.round(entry.x || entry.bbox?.x || 0),
-    y: Math.round(entry.y || entry.bbox?.y || 0),
-    width: Math.round(entry.width || entry.bbox?.width || 0),
-    height: Math.round(entry.height || entry.bbox?.height || 0),
-    visible: entry.visible ?? true,
-  }));
-}
+async function collectRootData(page) {
+  return page.evaluate((limits) => {
+    const cleanText = (value, max = 160) =>
+      String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
 
-function compactPaginationSummary(pagination = {}, { limit = 6, textLimit = 72 } = {}) {
-  const elements = Array.isArray(pagination.elements) ? pagination.elements : [];
-  const seen = new Set();
-  const compacted = [];
-
-  for (const entry of elements) {
-    const key = `${entry.href || ""}|${entry.selector || ""}|${normalizeWhitespace(entry.text || "")}`;
-    if (!key.trim() || seen.has(key)) continue;
-    seen.add(key);
-    compacted.push({
-      text: normalizeWhitespace(entry.text || "").slice(0, textLimit),
-      href: entry.href || "",
-      selector: entry.selector || "",
-      xpath: entry.xpath || "",
-    });
-    if (compacted.length >= limit) break;
-  }
-
-  return {
-    detected: Boolean(pagination.detected),
-    type: pagination.type || null,
-    total_candidates: elements.length,
-    elements: compacted,
-  };
-}
-
-function compactNetworkForOutput(network = {}, { includeDetails = false } = {}) {
-  const requests = Array.isArray(network.requests) ? network.requests : [];
-  const responses = Array.isArray(network.responses) ? network.responses : [];
-  const summary = {
-    resource_summary: network.resource_summary || {},
-    total_requests: requests.length,
-    total_responses: responses.length,
-  };
-  if (!includeDetails) return summary;
-  return {
-    ...summary,
-    requests: requests.slice(0, 30),
-    responses: responses.slice(0, 30),
-  };
-}
-
-function trimProjectedTree(node, { maxDepth = 3, maxChildrenPerNode = 6 } = {}) {
-  if (!node || typeof node !== "object") return null;
-  const visit = (entry, depth = 0) => {
-    if (!entry || typeof entry !== "object") return null;
-    const next = { ...entry };
-    const rawChildren = Array.isArray(entry.children) ? entry.children : [];
-    if (depth >= maxDepth) {
-      delete next.children;
-      if (rawChildren.length) next.child_count = rawChildren.length;
-      return next;
-    }
-    const children = rawChildren
-      .slice(0, maxChildrenPerNode)
-      .map((child) => visit(child, depth + 1))
-      .filter(Boolean);
-    if (children.length) next.children = children;
-    else delete next.children;
-    if (rawChildren.length > children.length) {
-      next.truncated_children = rawChildren.length - children.length;
-    }
-    return next;
-  };
-  return visit(node, 0);
-}
-
-function estimateJsonBytes(value) {
-  try {
-    return Buffer.byteLength(JSON.stringify(value), "utf8");
-  } catch {
-    return 0;
-  }
-}
-
-function minimizeNodeEntries(nodes = [], { keepSelectors = true } = {}) {
-  return (Array.isArray(nodes) ? nodes : []).map((node) => {
-    const next = {
-      node_id: node.node_id,
-      frame_path: node.frame_path,
-      semantic_kind: node.semantic_kind,
-      tag: node.tag,
-      name: node.name,
-      text_preview: node.text_preview,
-      visible: node.visible,
+    const isVisible = (el) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
     };
-    if (keepSelectors) {
-      next.selector = node.selector || "";
-      next.xpath = node.xpath || "";
-    }
-    if (node.href) next.href = node.href;
-    if (node.src) next.src = node.src;
-    return next;
-  });
-}
 
-function enforcePublicCompactBudget(response, maxBytes = 90000) {
-  const output = { ...response };
-  if (estimateJsonBytes(output) <= maxBytes) return output;
-
-  output.node_index = minimizeNodeEntries(output.node_index?.slice(0, 16) || []);
-  output.action_targets = minimizeNodeEntries(output.action_targets?.slice(0, 8) || []);
-  output.frame_catalog = (output.frame_catalog || []).slice(0, 6);
-  output.context_tree = trimProjectedTree(output.context_tree, { maxDepth: 2, maxChildrenPerNode: 4 });
-  output.pagination = compactPaginationSummary(output.pagination, { limit: 4, textLimit: 56 });
-  output.outline = {
-    headings: Array.isArray(output.outline?.headings) ? output.outline.headings.slice(0, 3) : [],
-    landmarks: Array.isArray(output.outline?.landmarks) ? output.outline.landmarks.slice(0, 3) : [],
-  };
-  if (estimateJsonBytes(output) <= maxBytes) return output;
-
-  output.node_index = minimizeNodeEntries(output.node_index?.slice(0, 10) || [], { keepSelectors: false });
-  output.action_targets = minimizeNodeEntries(output.action_targets?.slice(0, 6) || [], { keepSelectors: true });
-  output.frame_catalog = (output.frame_catalog || []).slice(0, 4);
-  output.context_tree = trimProjectedTree(output.context_tree, { maxDepth: 2, maxChildrenPerNode: 3 });
-  output.pagination = compactPaginationSummary(output.pagination, { limit: 3, textLimit: 48 });
-  output.outline = {
-    headings: Array.isArray(output.outline?.headings) ? output.outline.headings.slice(0, 2) : [],
-    landmarks: Array.isArray(output.outline?.landmarks) ? output.outline.landmarks.slice(0, 2) : [],
-  };
-  return output;
-}
-
-async function extractFrameObservations(page, config) {
-  if (!config.include_frames) return { frames: [], frameRecords: [] };
-
-  const pathMap = buildFramePathMap(page);
-  const frames = [];
-  const frameRecords = [];
-  const frameLimit = Math.max(1, Number(config.max_frames || 0));
-  const evalTimeoutMs = Math.max(1000, Number(config.frame_eval_timeout_ms || 0));
-  const pageFrames = page.frames();
-  const targetFrames =
-    frameLimit > 0 ? pageFrames.slice(0, frameLimit) : pageFrames;
-
-  for (const frame of targetFrames) {
-    const framePath = pathMap.get(frame) || "root";
-    const parentFrame = frame.parentFrame();
-    const parentPath = parentFrame ? pathMap.get(parentFrame) || "root" : null;
-    const offset = await computeFrameOffset(frame);
-
-    try {
-      const observation = await Promise.race([
-        frame.evaluate(extractPageObservation, config),
-        new Promise((_, reject) => {
-          setTimeout(() => reject(new Error("frame_eval_timeout")), evalTimeoutMs);
-        }),
-      ]);
-      frames.push({
-        frame_id: framePath,
-        parent_frame_id: parentPath,
-        url: frame.url() || "",
-        title: observation.metadata?.title || "",
-        accessible: true,
-        cross_origin_blocked: false,
-        tree: observation.tree,
-        interactive_elements: observation.interactive_elements || [],
-        links: observation.links || [],
-        document_stats: observation.document_stats || {},
-        media: observation.media || {
-          iframes: [],
-          videos: [],
-          audio: [],
-          images: [],
-          sources: [],
-          tracks: [],
-        },
-      });
-      frameRecords.push(
-        buildLegacyFrameRecord(
-          observation,
-          framePath,
-          parentPath,
-          frame,
-          offset,
-        ),
-      );
-    } catch (error) {
-      const errorMessage = String(error?.message || "frame_evaluate_failed");
-      frames.push({
-        frame_id: framePath,
-        parent_frame_id: parentPath,
-        url: frame.url() || "",
-        title: "",
-        accessible: false,
-        cross_origin_blocked: true,
-        tree: null,
-        interactive_elements: [],
-        links: [],
-        document_stats: {},
-        media: {
-          iframes: [],
-          videos: [],
-          audio: [],
-          images: [],
-          sources: [],
-          tracks: [],
-        },
-      });
-      frameRecords.push({
-        frame_path: framePath,
-        parent_frame_path: parentPath,
-        depth: frameDepth(framePath),
-        is_main_frame: frame === page.mainFrame(),
-        name: frame.name?.() || "",
-        url: frame.url() || "",
-        viewport_offset: offset,
-        title: "",
-        text_sample: "",
-        text_hash: textHash(""),
-        total_links: 0,
-        total_buttons: 0,
-        total_iframes: 0,
-        video_count: 0,
-        has_server_controls: false,
-        has_player_library: false,
-        player_libraries_detail: {},
-        purpose_hint: "unknown",
-        sample_links: [],
-        sample_buttons: [],
-        links: [],
-        buttons: [],
-        error: errorMessage,
-      });
-    }
-  }
-
-  return { frames, frameRecords };
-}
-
-export function buildInspectResponse({
-  config,
-  requestedUrl,
-  finalUrl,
-  pageContext,
-  pageState,
-  loadState,
-  observation,
-  frames,
-  network,
-  dataResponses,
-  mutationObservations,
-  storage,
-  snapshots,
-  screenshotUrl,
-  pageDigest,
-  frameRecords,
-}) {
-  const title = observation?.metadata?.title || pageContext?.title || "";
-  const textSample = pageDigest?.text_sample || "";
-  const accessState = detectAccessStateFromSignals({
-    title,
-    textSample,
-    htmlSample: "",
-    url: finalUrl,
-  });
-
-  const legacy = buildLegacyCompatibilityView(
-    observation,
-    pageDigest,
-    frameRecords,
-  );
-  const normalized =
-    observation?.tree
-      ? buildNormalizedTreeArtifacts(observation.tree, {
-        frame_path: pageState?.frame_path || "root",
-        dom_epoch: pageState?.dom_epoch || "",
-        page_state_id: pageState?.page_state_id || "",
-      })
-      : { context_tree: null, node_index: [], action_targets: [] };
-  const frame_catalog = buildFrameCatalog(frameRecords || []);
-  const compact_context_tree = compactContextTree(normalized.context_tree, {
-    maxDepth: config.scanMode === "default" ? 3 : 4,
-    maxChildrenPerNode: config.scanMode === "default" ? 6 : 8,
-    textLimit: 60,
-  });
-  const compact_node_index = compactNodeIndex(normalized.node_index, {
-    limit: config.scanMode === "default" ? 24 : 36,
-    textLimit: 60,
-  });
-  const compact_action_targets = compactActionTargets(normalized.action_targets, {
-    limit: config.scanMode === "default" ? 12 : 16,
-    textLimit: 60,
-  });
-  const compact_frame_catalog = compactFrameCatalog(frame_catalog, {
-    limit: config.scanMode === "default" ? 8 : 10,
-  });
-  const page_summary = {
-    counts_by_kind: summarizeNodeKinds(normalized.node_index),
-    total_nodes: normalized.node_index.length,
-    actionable_targets: normalized.action_targets.length,
-    links: legacy.contentLinks.length,
-    buttons: legacy.buttons.length,
-    iframes: legacy.iframes.length,
-    videos: legacy.videos.length,
-    forms: Number(observation?.forms?.length || 0),
-    tables: Number(observation?.tables?.length || 0),
-    frames: compact_frame_catalog.length,
-  };
-  const baseResponse = {
-    schema_version: OBSERVATION_SCHEMA_VERSION,
-    page: {
-      requested_url: requestedUrl || finalUrl || "",
-      final_url: finalUrl || requestedUrl || "",
-      title,
-      language: pageContext?.language || "",
-      direction: pageContext?.direction || "",
-      viewport: pageContext?.viewport || { width: 0, height: 0 },
-      timestamp: pageContext?.timestamp || new Date().toISOString(),
-    },
-    load_state: {
-      domcontentloaded: Boolean(loadState?.domcontentloaded),
-      load: Boolean(loadState?.load),
-      network_idle_reached: Boolean(loadState?.network_idle_reached),
-      waited_ms: Number(loadState?.waited_ms || 0),
-      console_error_count: Array.isArray(loadState?.console_errors) ? loadState.console_errors.length : 0,
-      page_error_count: Array.isArray(loadState?.page_errors) ? loadState.page_errors.length : 0,
-    },
-    inspect_profile: config.scanMode || "default",
-    page_summary,
-    context_tree: compact_context_tree,
-    node_index: compact_node_index,
-    action_targets: compact_action_targets,
-    frame_catalog: compact_frame_catalog,
-    url: finalUrl || requestedUrl || "",
-    title,
-    screenshot_url: screenshotUrl || "",
-    contentLinks: compactLegacyEntries(legacy.contentLinks, 16),
-    navLinks: compactLegacyEntries(legacy.navLinks, 10),
-    buttons: compactLegacyEntries(legacy.buttons, 12),
-    iframes: compactLegacyEntries(legacy.iframes, 10),
-    hosting_signals: legacy.hosting_signals,
-    popups: compactLegacyEntries(legacy.popups, 8),
-    pagination: legacy.pagination,
-    videos: compactLegacyEntries(legacy.videos, 8),
-    page_digest: legacy.page_digest,
-    stats: {
-      content_links: legacy.contentLinks.length,
-      nav_links: legacy.navLinks.length,
-      buttons: legacy.buttons.length,
-      iframes: legacy.iframes.length,
-      videos: legacy.videos.length,
-      popups: legacy.popups.length,
-      elements: legacy.elements.length,
-      frames_total: legacy.frame_tree.length,
-      frames_with_video: legacy.frame_tree.filter(
-        (frame) => frame.video_count > 0,
-      ).length,
-    },
-    access_state: accessState,
-  };
-
-  if (String(config.response_profile || "").toLowerCase() === "internal_rich") {
-    return {
-      ...baseResponse,
-      metadata: observation?.metadata || {},
-      document_stats: observation?.document_stats || {},
-      outline: observation?.outline || { headings: [], landmarks: [] },
-      frame_tree: legacy.frame_tree,
-      network: network || { resource_summary: {}, requests: [], responses: [] },
-      network_summary: compactNetworkForOutput(network, { includeDetails: false }),
-      data_responses: (dataResponses || []).slice(0, 20),
-      mutation_observations: (mutationObservations || []).slice(0, 8),
-      elements: compactLegacyEntries(legacy.elements, 20),
-      frames: Array.isArray(frames) ? frames.slice(0, 8) : [],
-      inspect_config: {
-        scanMode: config.scanMode,
-        wait_ms: config.wait_ms,
-        include_network: Boolean(config.include_network),
-        include_frames: Boolean(config.include_frames),
-      },
-    };
-  }
-
-  return enforcePublicCompactBudget({
-    ...baseResponse,
-    document_stats: {
-      link_count: Number(observation?.document_stats?.link_count || 0),
-      original_node_count: Number(observation?.document_stats?.original_node_count || 0),
-    },
-    outline: {
-      headings: Array.isArray(observation?.outline?.headings) ? observation.outline.headings.slice(0, 3) : [],
-      landmarks: Array.isArray(observation?.outline?.landmarks) ? observation.outline.landmarks.slice(0, 3) : [],
-    },
-    network_summary: compactNetworkForOutput(network, { includeDetails: false }),
-    context_tree: trimProjectedTree(baseResponse.context_tree, {
-      maxDepth: 2,
-      maxChildrenPerNode: 5,
-    }),
-    node_index: baseResponse.node_index.slice(0, 18),
-    action_targets: baseResponse.action_targets.slice(0, 8),
-    frame_catalog: baseResponse.frame_catalog.slice(0, 6),
-    contentLinks: [],
-    buttons: [],
-    navLinks: [],
-    iframes: [],
-    popups: [],
-    videos: [],
-    pagination: compactPaginationSummary(baseResponse.pagination, {
-      limit: 6,
-      textLimit: 64,
-    }),
-    page_digest: {
-      text_hash: baseResponse.page_digest?.text_hash || 0,
-      html_size: baseResponse.page_digest?.html_size || 0,
-      node_count: baseResponse.page_digest?.node_count || 0,
-    },
-    stats: {
-      content_links: baseResponse.stats.content_links,
-      nav_links: baseResponse.stats.nav_links,
-      buttons: baseResponse.stats.buttons,
-      iframes: baseResponse.stats.iframes,
-      videos: baseResponse.stats.videos,
-      frames_total: baseResponse.stats.frames_total,
-      frames_with_video: baseResponse.stats.frames_with_video,
-    },
-  });
-}
-
-export async function inspect(params = {}) {
-  const browserWsEndpoint = params.browserWsEndpoint;
-  const config = normalizeInspectConfig(params);
-
-  return withBrowserSession(browserWsEndpoint, async ({ page }) => {
-    const requestedUrl = config.url || page.url();
-    const startTime = Date.now();
-    const networkRecorder = createNetworkRecorder(page, config, startTime);
-    const consoleErrors = [];
-    const pageErrors = [];
-
-    const onConsole = (message) => {
-      if (message.type() === "error") {
-        consoleErrors.push(normalizeWhitespace(message.text()));
+    const selectorFor = (el) => {
+      if (el.id) return `#${el.id}`;
+      if (el.getAttribute("name")) return `[name="${el.getAttribute("name")}"]`;
+      if (el.className && String(el.className).trim()) {
+        const firstClass = String(el.className).trim().split(/\s+/)[0];
+        if (firstClass) return `.${firstClass}`;
       }
-    };
-    const onPageError = (error) => {
-      pageErrors.push(normalizeWhitespace(error?.message || error));
+      return el.tagName.toLowerCase();
     };
 
-    page.on("console", onConsole);
-    page.on("pageerror", onPageError);
-
-    let networkIdleReached = false;
-    let initialTree = null;
-    let afterWaitTree = null;
-    const mutationObservations = [];
-
-    try {
-      if (config.url && page.url() !== config.url) {
-        await page.goto(config.url, {
-          waitUntil: "domcontentloaded",
-          timeout: 30000,
-        });
-      }
-
-      await installMutationObserver(page);
-      initialTree = await extractTreeSnapshot(page, config);
-
-      if (config.wait_ms > 0) {
-        if (typeof page.waitForTimeout === "function") {
-          await page.waitForTimeout(config.wait_ms).catch(() => {});
-        } else {
-          await sleep(config.wait_ms);
+    const xpathFor = (el) => {
+      const parts = [];
+      let node = el;
+      while (node && node.nodeType === 1) {
+        let idx = 1;
+        let sib = node.previousElementSibling;
+        while (sib) {
+          if (sib.tagName === node.tagName) idx += 1;
+          sib = sib.previousElementSibling;
         }
-        await page
-          .waitForNetworkIdle({
-            idleTime: 500,
-            timeout: Math.max(config.wait_ms, 1500),
-          })
-          .then(() => {
-            networkIdleReached = true;
-          })
-          .catch(() => {
-            networkIdleReached = false;
-          });
+        parts.unshift(`${node.tagName.toLowerCase()}[${idx}]`);
+        node = node.parentElement;
       }
+      return `//${parts.join("/")}`;
+    };
 
-      afterWaitTree = await extractTreeSnapshot(page, config);
-      mutationObservations.push(
-        await collectMutationSummary(page, "after_wait"),
-      );
-
-      const observation = await page.evaluate(extractPageObservation, config);
-      const { frames, frameRecords } = await extractFrameObservations(
-        page,
-        config,
-      );
-      const storage = await extractStorage(page);
-      const network = buildNetworkSummary(
-        networkRecorder.requests,
-        networkRecorder.responses,
-        startTime,
-      );
-      const dataResponses = buildDataResponses(networkRecorder.responses);
-      const screenshotUrl = config.include_screenshot
-        ? await screenshotViewport(page).catch(
-            (error) => `error: ${error.message}`,
-          )
-        : "";
-      const pageContext = await page
-        .evaluate(() => ({
-          language: document.documentElement.lang || "",
-          direction: document.documentElement.dir || "ltr",
-          viewport: {
-            width: window.innerWidth || 0,
-            height: window.innerHeight || 0,
-          },
-          readyState: document.readyState || "unknown",
-          title: document.title || "",
-        }))
-        .catch(() => ({
-          language: "",
-          direction: "ltr",
-          viewport: { width: 0, height: 0 },
-          readyState: "unknown",
-          title: "",
-        }));
-      const pageDigest = await page
-        .evaluate(() => {
-          const normalizeText = (value) =>
-            String(value ?? "")
-              .replace(/\s+/g, " ")
-              .trim();
-          return {
-            text_sample: normalizeText(
-              document.body?.innerText ||
-                document.documentElement?.innerText ||
-                "",
-            ),
-            html_size: (document.documentElement?.outerHTML || "").length,
-            node_count: document.querySelectorAll("*").length,
-          };
-        })
-        .catch(() => ({
-          text_sample: "",
-          html_size: 0,
-          node_count: 0,
-        }));
-      const pageState = await buildFrameState(page, "root");
-
-      return buildInspectResponse({
-        config,
-        requestedUrl,
-        finalUrl: page.url(),
-        pageContext: {
-          ...pageContext,
-          timestamp: new Date().toISOString(),
-        },
-        pageState,
-        loadState: {
-          domcontentloaded: ["interactive", "complete"].includes(
-            pageContext.readyState,
-          ),
-          load: pageContext.readyState === "complete",
-          network_idle_reached: networkIdleReached,
-          waited_ms: config.wait_ms,
-          console_errors: consoleErrors,
-          page_errors: pageErrors,
-        },
-        observation,
-        frames,
-        network,
-        dataResponses,
-        mutationObservations,
-        storage,
-        snapshots: {
-          initial_tree: initialTree,
-          after_wait_tree: afterWaitTree,
-          after_scroll_tree: null,
-          after_interaction_tree: null,
-        },
-        screenshotUrl,
-        pageDigest,
-        frameRecords,
-      });
-    } catch (error) {
+    const elInfo = (el) => {
+      const r = el.getBoundingClientRect();
       return {
-        schema_version: OBSERVATION_SCHEMA_VERSION,
-        page: {
-          requested_url: requestedUrl,
-          final_url: page.url(),
-        },
-        error: {
-          type: "inspect_failed",
-          message: normalizeWhitespace(error?.message || error),
-          phase: "inspect",
-        },
-        partial_observation: {
-          snapshots: {
-            initial_tree: initialTree,
-            after_wait_tree: afterWaitTree,
-            after_scroll_tree: null,
-            after_interaction_tree: null,
-          },
-          mutation_observations: mutationObservations,
-        },
+        tag: el.tagName.toLowerCase(),
+        type: (el.getAttribute("type") || "").toLowerCase(),
+        role: el.getAttribute("role") || "",
+        text: cleanText(el.innerText || el.textContent || el.value || "", 140),
+        href: el.href || el.getAttribute("href") || "",
+        src: el.src || el.currentSrc || el.getAttribute("src") || "",
+        selector: selectorFor(el),
+        xpath: xpathFor(el),
+        id: el.id || "",
+        classes: cleanText(el.className || "", 120),
+        x: Math.round(r.x + r.width / 2),
+        y: Math.round(r.y + r.height / 2),
+        width: Math.round(r.width),
+        height: Math.round(r.height),
+        visible: isVisible(el),
+        frame_path: "root",
       };
-    } finally {
-      networkRecorder.dispose();
-      page.off("console", onConsole);
-      page.off("pageerror", onPageError);
-    }
-  });
+    };
+
+    const mainSelectors = [
+      "main",
+      "article",
+      "[class*='content']",
+      "[class*='main']",
+      "[id*='content']",
+      "section",
+    ];
+    const mainEl =
+      mainSelectors
+        .map((selector) => document.querySelector(selector))
+        .find(Boolean) || document.body;
+
+    const contentLinks = [];
+    mainEl.querySelectorAll("a[href]").forEach((a) => {
+      if (!isVisible(a)) return;
+      const href = a.href || a.getAttribute("href") || "";
+      if (!href || href.includes("#")) return;
+      contentLinks.push(elInfo(a));
+    });
+
+    const navLinks = [];
+    document
+      .querySelectorAll("nav a, header a, [class*='nav'] a, [class*='menu'] a")
+      .forEach((a) => {
+        if (!isVisible(a)) return;
+        navLinks.push(elInfo(a));
+      });
+
+    const buttons = [];
+    document
+      .querySelectorAll(
+        "button, [role='tab'], [class*='tab'], [class*='filter'], [class*='btn'], select",
+      )
+      .forEach((el) => {
+        if (!isVisible(el)) return;
+        buttons.push({
+          ...elInfo(el),
+          kind: el.tagName.toLowerCase() === "select" ? "dropdown" : "button",
+          active:
+            el.classList.contains("active") ||
+            el.getAttribute("aria-selected") === "true",
+          data: {
+            server: el.dataset?.server || null,
+            source: el.dataset?.source || null,
+            embed: el.dataset?.embed || null,
+          },
+        });
+      });
+
+    const iframes = [];
+    document.querySelectorAll("iframe").forEach((frame) => {
+      const r = frame.getBoundingClientRect();
+      iframes.push({
+        src: frame.src || frame.getAttribute("data-src") || "",
+        id: frame.id || "",
+        name: frame.name || "",
+        selector: selectorFor(frame),
+        xpath: xpathFor(frame),
+        x: Math.round(r.x + r.width / 2),
+        y: Math.round(r.y + r.height / 2),
+        width: Math.round(r.width),
+        height: Math.round(r.height),
+        category: (frame.src || "").match(/ad|banner|track|analytics/i)
+          ? "ad"
+          : "content",
+      });
+    });
+
+    const playerLibrariesDetail = {
+      jwplayer: Boolean(window.jwplayer),
+      videojs: Boolean(window.videojs),
+      hls: Boolean(window.Hls),
+      dashjs: Boolean(window.dashjs),
+      html_player_hint: Boolean(
+        document.querySelector("[class*='jwplayer'],[class*='vjs-'],[id*='player']"),
+      ),
+    };
+
+    const videos = Array.from(document.querySelectorAll("video")).map((video, index) => {
+      const r = video.getBoundingClientRect();
+      return {
+        selector: video.id ? `#${video.id}` : `video:nth-of-type(${index + 1})`,
+        xpath: `(//video)[${index + 1}]`,
+        src: video.currentSrc || video.src || "",
+        readyState: video.readyState,
+        networkState: video.networkState,
+        paused: video.paused,
+        duration: Number.isFinite(video.duration)
+          ? Number(video.duration.toFixed(2))
+          : null,
+        x: Math.round(r.x + r.width / 2),
+        y: Math.round(r.y + r.height / 2),
+        width: Math.round(r.width),
+        height: Math.round(r.height),
+      };
+    });
+
+    const playerIframe = iframes.find(
+      (frame) => frame.category === "content" && frame.width > 300,
+    );
+    const hosting_signals = {
+      has_video: videos.length > 0,
+      has_player_iframe: Boolean(playerIframe),
+      player_iframe_src: playerIframe?.src || null,
+      visible_content_iframes: iframes.filter(
+        (frame) => frame.category === "content" && frame.width > 100,
+      ).length,
+      player_libraries: Object.values(playerLibrariesDetail).some(Boolean),
+      player_libraries_detail: playerLibrariesDetail,
+      server_tabs: Boolean(
+        document.querySelector("[class*='server'],[data-server],[data-source]"),
+      ),
+    };
+
+    const popups = [];
+    document
+      .querySelectorAll(
+        "[class*='popup'],[class*='modal'],[class*='overlay'],[class*='cookie'],[class*='banner']",
+      )
+      .forEach((el) => {
+        const r = el.getBoundingClientRect();
+        if (r.width <= 200 || r.height <= 0) return;
+        if (!isVisible(el)) return;
+        const close = el.querySelector(
+          "[class*='close'],[class*='accept'],[aria-label*='close']",
+        );
+        popups.push({
+          selector: selectorFor(el),
+          xpath: xpathFor(el),
+          text: cleanText(el.innerText || el.textContent || "", 120),
+          close_selector: close ? selectorFor(close) : null,
+          close_xpath: close ? xpathFor(close) : null,
+          x: Math.round(r.x + r.width / 2),
+          y: Math.round(r.y + r.height / 2),
+          width: Math.round(r.width),
+          height: Math.round(r.height),
+        });
+      });
+
+    const dom_skeleton = [];
+    document
+      .querySelectorAll("header, nav, main, section, aside, footer, [class*='content']")
+      .forEach((el) => {
+        dom_skeleton.push({
+          tag: el.tagName.toLowerCase(),
+          id: el.id || "",
+          classes: cleanText(el.className || "", 80),
+          links: el.querySelectorAll("a").length,
+        });
+      });
+
+    const paginationEl = document.querySelector(
+      "[class*='pagination'],[class*='pager'],[aria-label*='pagination']",
+    );
+    const pagination = {
+      detected: Boolean(paginationEl),
+      type: paginationEl ? "numbered" : null,
+      elements: paginationEl
+        ? Array.from(paginationEl.querySelectorAll("a,button")).map((el) => {
+            const info = elInfo(el);
+            return {
+              text: info.text,
+              href: info.href,
+              selector: info.selector,
+              xpath: info.xpath,
+              x: info.x,
+              y: info.y,
+            };
+          })
+        : [],
+    };
+
+    const elements = [];
+    const tags =
+      "a,button,input,textarea,select,[role='button'],[onclick],[data-server],[data-source],[data-embed],label";
+    document.querySelectorAll(tags).forEach((el) => {
+      if (!isVisible(el)) return;
+      elements.push({
+        ...elInfo(el),
+        kind: (() => {
+          const tag = el.tagName.toLowerCase();
+          if (tag === "a") return "link";
+          if (tag === "button") return "button";
+          if (tag === "select") return "select";
+          if (tag === "textarea") return "textarea";
+          if (tag === "input") {
+            const inputType = (el.getAttribute("type") || "text").toLowerCase();
+            if (inputType === "checkbox") return "checkbox";
+            if (inputType === "radio") return "radio";
+            return "input";
+          }
+          if ((el.getAttribute("role") || "").toLowerCase() === "button")
+            return "button";
+          return tag;
+        })(),
+        active:
+          el.classList.contains("active") ||
+          el.getAttribute("aria-selected") === "true",
+        checked: typeof el.checked === "boolean" ? Boolean(el.checked) : null,
+        disabled: Boolean(el.disabled),
+        data: {
+          server: el.dataset?.server || null,
+          source: el.dataset?.source || null,
+          embed: el.dataset?.embed || null,
+        },
+      });
+    });
+
+    return {
+      contentLinks: contentLinks.slice(0, limits.contentLinks),
+      navLinks: navLinks.slice(0, limits.navLinks),
+      buttons: buttons.slice(0, limits.buttons),
+      iframes: iframes.slice(0, limits.iframes),
+      hosting_signals,
+      popups: popups.slice(0, limits.popups),
+      dom_skeleton: dom_skeleton,
+      pagination: {
+        ...pagination,
+        elements: pagination.elements.slice(0, limits.paginationElements),
+      },
+      videos: videos.slice(0, limits.videos),
+      elements: elements.slice(0, limits.elements),
+      text_sample: cleanText(document.body?.innerText || "", 320),
+      html_size: (document.documentElement?.outerHTML || "").length,
+      node_count: document.querySelectorAll("*").length,
+    };
+  }, LIMITS);
+}
+
+async function collectFrameSummary(frame, framePath, offset) {
+  try {
+    const summary = await frame.evaluate((limits) => {
+      const cleanText = (value, max = 160) =>
+        String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+
+      const isVisible = (el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      };
+
+      const selectorFor = (el) => {
+        if (el.id) return `#${el.id}`;
+        if (el.getAttribute("name")) return `[name="${el.getAttribute("name")}"]`;
+        if (el.className && String(el.className).trim()) {
+          const firstClass = String(el.className).trim().split(/\s+/)[0];
+          if (firstClass) return `.${firstClass}`;
+        }
+        return el.tagName.toLowerCase();
+      };
+
+      const xpathFor = (el) => {
+        const parts = [];
+        let node = el;
+        while (node && node.nodeType === 1) {
+          let idx = 1;
+          let sib = node.previousElementSibling;
+          while (sib) {
+            if (sib.tagName === node.tagName) idx += 1;
+            sib = sib.previousElementSibling;
+          }
+          parts.unshift(`${node.tagName.toLowerCase()}[${idx}]`);
+          node = node.parentElement;
+        }
+        return `//${parts.join("/")}`;
+      };
+
+      const info = (el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          tag: el.tagName.toLowerCase(),
+          text: cleanText(el.innerText || el.textContent || el.value || "", 120),
+          href: el.href || el.getAttribute("href") || "",
+          selector: selectorFor(el),
+          xpath: xpathFor(el),
+          x: Math.round(r.x + r.width / 2),
+          y: Math.round(r.y + r.height / 2),
+          width: Math.round(r.width),
+          height: Math.round(r.height),
+        };
+      };
+
+      const allLinks = Array.from(document.querySelectorAll("a[href]")).filter((el) =>
+        isVisible(el),
+      );
+      const allButtons = Array.from(
+        document.querySelectorAll(
+          "button,[role='button'],select,[class*='tab'],[data-server],[data-source]",
+        ),
+      ).filter((el) => isVisible(el));
+      const videos = Array.from(document.querySelectorAll("video"));
+
+      const playerLibrariesDetail = {
+        jwplayer: Boolean(window.jwplayer),
+        videojs: Boolean(window.videojs),
+        hls: Boolean(window.Hls),
+        dashjs: Boolean(window.dashjs),
+      };
+
+      return {
+        title: cleanText(document.title || "", 120),
+        text_sample: cleanText(document.body?.innerText || "", 240),
+        total_links: allLinks.length,
+        total_buttons: allButtons.length,
+        total_iframes: document.querySelectorAll("iframe").length,
+        video_count: videos.length,
+        has_server_controls: Boolean(
+          document.querySelector("[class*='server'],[data-server],[data-source]"),
+        ),
+        has_player_library: Object.values(playerLibrariesDetail).some(Boolean),
+        player_libraries_detail: playerLibrariesDetail,
+        sample_links: allLinks.slice(0, limits.frameSampleLinks).map(info),
+        sample_buttons: allButtons.slice(0, limits.frameSampleButtons).map(info),
+      };
+    }, LIMITS);
+
+    return {
+      ...summary,
+      sample_links: summary.sample_links.map((entry) =>
+        applyOffset(entry, offset, framePath),
+      ),
+      sample_buttons: summary.sample_buttons.map((entry) =>
+        applyOffset(entry, offset, framePath),
+      ),
+      error: null,
+    };
+  } catch (error) {
+    return {
+      title: "",
+      text_sample: "",
+      total_links: 0,
+      total_buttons: 0,
+      total_iframes: 0,
+      video_count: 0,
+      has_server_controls: false,
+      has_player_library: false,
+      player_libraries_detail: {},
+      sample_links: [],
+      sample_buttons: [],
+      error: String(error?.message || error || "frame_evaluate_failed"),
+    };
+  }
+}
+
+export async function inspect({
+  browserWsEndpoint,
+  scanMode = "default",
+  scroll = true,
+  scroll_steps = 12,
+} = {}) {
+  const browser = await connectBrowser(browserWsEndpoint);
+  const page = await getPage(browser);
+
+  const url = page.url();
+  const title = await page.title().catch(() => "");
+  const shouldWarm = scanMode !== "default" || Boolean(scroll);
+  const lazy_load_warmup = shouldWarm
+    ? await warmLazyContent(page, { scanMode, scrollSteps: scroll_steps })
+    : null;
+  const rootData = await collectRootData(page);
+
+  const framePathMap = buildFramePathMap(page);
+  const frameRecords = [];
+  const frames = page.frames().slice(0, LIMITS.frameTree);
+
+  for (const frame of frames) {
+    const framePath = framePathMap.get(frame) || "root";
+    const parentFrame = frame.parentFrame();
+    const parentPath = parentFrame ? framePathMap.get(parentFrame) || "root" : null;
+    const offset = await computeFrameOffset(frame);
+    const summary = await collectFrameSummary(frame, framePath, offset);
+
+    frameRecords.push({
+      frame_path: framePath,
+      parent_frame_path: parentPath,
+      depth: frameDepth(framePath),
+      is_main_frame: frame === page.mainFrame(),
+      name: clean(frame.name?.() || "", 60),
+      url: frame.url() || "",
+      viewport_offset: offset,
+      title: summary.title,
+      text_sample: summary.text_sample,
+      text_hash: textHash(summary.text_sample),
+      total_links: summary.total_links,
+      total_buttons: summary.total_buttons,
+      total_iframes: summary.total_iframes,
+      video_count: summary.video_count,
+      has_server_controls: summary.has_server_controls,
+      has_player_library: summary.has_player_library,
+      player_libraries_detail: summary.player_libraries_detail,
+      purpose_hint: inferFramePurpose(summary, frame.url()),
+      sample_links: summary.sample_links,
+      sample_buttons: summary.sample_buttons,
+      error: summary.error,
+    });
+  }
+
+  let screenshot_url = null;
+  try {
+    screenshot_url = await screenshotViewport(page);
+  } catch (e) {
+    screenshot_url = `error: ${e.message}`;
+  }
+
+  await browser.disconnect();
+
+  return {
+    url,
+    title,
+    screenshot_url,
+    contentLinks: rootData.contentLinks,
+    navLinks: rootData.navLinks,
+    buttons: rootData.buttons,
+    iframes: rootData.iframes,
+    hosting_signals: rootData.hosting_signals,
+    popups: rootData.popups,
+    dom_skeleton: rootData.dom_skeleton,
+    pagination: rootData.pagination,
+    videos: rootData.videos,
+    elements: rootData.elements,
+    frame_tree: frameRecords,
+    lazy_load_warmup,
+    page_digest: {
+      text_sample: rootData.text_sample,
+      text_hash: textHash(rootData.text_sample),
+      html_size: rootData.html_size,
+      node_count: rootData.node_count,
+    },
+    stats: {
+      content_links: rootData.contentLinks.length,
+      nav_links: rootData.navLinks.length,
+      buttons: rootData.buttons.length,
+      iframes: rootData.iframes.length,
+      videos: rootData.videos.length,
+      popups: rootData.popups.length,
+      elements: rootData.elements.length,
+      frames_total: frameRecords.length,
+      frames_with_video: frameRecords.filter((frame) => frame.video_count > 0).length,
+      lazy_load_clicks: Number(lazy_load_warmup?.clicked || 0),
+      lazy_load_scroll_steps: Number(lazy_load_warmup?.scroll_steps || 0),
+      lazy_load_reset_to_top: Boolean(lazy_load_warmup?.reset_to_top ?? true),
+    },
+  };
 }

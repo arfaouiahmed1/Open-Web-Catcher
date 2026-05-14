@@ -25,7 +25,7 @@ export function DialogContent({ className, children, showClose = true, ...props 
       <DialogOverlay />
       <DialogPrimitive.Content
         className={cn(
-          "fixed left-[50%] top-[50%] z-50 grid w-[calc(100vw-1.5rem)] max-h-[calc(100vh-1.5rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-xl border border-border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-fade-up sm:w-full",
+          "fixed left-[50%] top-[50%] z-50 grid w-[calc(100vw-1.5rem)] max-h-[calc(100vh-1.5rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-xl border border-border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-fade-in-soft sm:w-full",
           className,
         )}
         {...props}

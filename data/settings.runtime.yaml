@@ -1,19 +1,19 @@
-agent_model: gemma-4-31b-it
+agent_model: gemini-3.1-flash-lite
 agent_model_config:
   classification:
-    model: gemma-4-31b-it
+    model: gemini-3.1-flash-lite
     provider: google
   embedded:
-    model: gemma-4-31b-it
+    model: gemini-3.1-flash-lite
     provider: google
   hosting:
-    model: gemma-4-31b-it
+    model: gemini-3.1-flash-lite
     provider: google
   landing:
-    model: gemma-4-31b-it
+    model: gemini-3.1-flash-lite
     provider: google
   orchestrator:
-    model: gemma-4-31b-it
+    model: gemini-3.1-flash-lite
     provider: google
 agent_runtime_config:
   classification:
@@ -228,11 +228,11 @@ llm_tuning:
 log_file: data/logs/app.log
 log_level: INFO
 max_parallel_hosting_pages: 1
-orchestrator_model: gemma-4-31b-it
+orchestrator_model: gemini-3.1-flash-lite
 provider_cache_enabled: true
 provider_model_catalog_cache:
   google:
-    cached_at: '2026-05-14T16:07:37.004851+00:00'
+    cached_at: '2026-05-14T17:32:27.638037+00:00'
     models:
     - capabilities:
         allowed_tuning_keys: &id001
