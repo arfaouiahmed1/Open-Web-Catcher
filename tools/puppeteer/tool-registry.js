@@ -616,7 +616,7 @@ const TOOL_SPECS = {
       toolImpls.click_coordinates({ ...args, browserWsEndpoint }),
   ),
   capture_streams: spec(
-    "Use after playback starts to discover stream URLs. Captures HLS/DASH/MP4 evidence from CDP, DOM, player objects, iframe src, and performance entries.",
+    "Use after playback starts to discover stream URLs. Captures m3u8/mpd/mp4 evidence from CDP, DOM, player objects, iframe src, and performance entries, then returns the screenshot and network diagnostics for the capture window.",
     {
       frame_path: "root.0",
       duration_ms: 30000,
@@ -629,6 +629,7 @@ const TOOL_SPECS = {
         { url: "https://cdn.example.com/master.m3u8", protocol: "hls" },
       ],
       screenshot_url: "https://res.cloudinary.com/...",
+      network_diagnostics: [{ url: "https://cdn.example.com/master.m3u8", method: "GET" }],
     },
     {
       frame_path: framePathSchema,
@@ -804,16 +805,28 @@ const TOOL_SPECS = {
       toolImpls.screenshot({ ...args, browserWsEndpoint }),
   ),
   harvest: spec(
-    "Capture streaming URLs (m3u8/mpd/mp4/webm) using six detection layers and return protocol-split URL lists plus video state.",
+    "Capture streaming URLs (m3u8/mpd/mp4/webm) using six detection layers and return full stream rows, protocol-split URL lists, screenshot_url, network_diagnostics, iframe_diagnostics, and video state. Hosting and embedded agents should copy these fields directly into their final server evidence.",
     {
       duration_ms: 12000,
       player_iframe_url: "https://embed.example.com/player/abc",
     },
     {
+      streams: [
+        {
+          url: "https://cdn.example.com/master.m3u8",
+          protocol: "hls",
+          source_layer: "cdp-response",
+          source_layers: ["cdp-response", "response-intercept"],
+        },
+      ],
       total: 1,
       m3u8_urls: ["https://cdn.example.com/master.m3u8"],
+      mpd_urls: [],
+      mp4_urls: [],
       video_state: "playing",
       screenshot_url: "https://res.cloudinary.com/...",
+      network_diagnostics: [{ url: "https://cdn.example.com/master.m3u8", method: "GET" }],
+      iframe_diagnostics: [{ frame_url: "https://embed.example.com/player/abc" }],
     },
     {
       duration_ms: z.number().optional().default(12000),

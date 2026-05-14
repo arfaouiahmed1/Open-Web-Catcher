@@ -23,6 +23,7 @@ import {
   summarizeRunState,
 } from "@/lib/run-trace";
 import { buildAutoDecisionSync } from "@/lib/run-log-sync";
+import { AgentOutputTab } from "@/components/console/run-detail/agent-output-tab";
 import { BrowserLiveView } from "@/components/console/run-detail/browser-live-view";
 import { StreamProviderTab } from "@/components/console/run-detail/stream-provider-tab";
 import { DecisionLogPanel } from "@/components/run-log-panels";
@@ -348,12 +349,17 @@ export function RunDetailLive({
   runId,
   runUrl = "",
   providerUrls = [],
+  providerAnalysis = [],
+  takedownEmails = [],
+  extractionResults = [],
   snapshotScreenshots = [],
   activeTrace = null,
   persistedEvents = [],
   persistedToolCalls = [],
   initialDecisions = [],
   agentRollups = [],
+  stageRollups = [],
+  parallelism = null,
   metrics = null,
   onMetricsChange = null,
   defaultStreaming = null,
@@ -515,30 +521,45 @@ export function RunDetailLive({
     initialDecisions.length,
     autoDecisionItems.length,
   );
+  const outputCount = Math.max(agentRollups.length, stageRollups.length, takedownEmails.length);
+  const providerEntryCount = Math.max(
+    Array.isArray(providerAnalysis) ? providerAnalysis.length : 0,
+    Array.isArray(providerUrls) ? providerUrls.length : 0,
+  );
   const tabState = useMemo(
     () =>
       buildRunDetailTabState({
         decisionCount,
+        outputCount,
         taskCount: 0,
         toolCallCount: toolCallFeedRows.length,
         eventCount: normalizedEvents.length,
         screenshotCount: snapshotScreenshots.length,
         runState,
       }),
-    [decisionCount, normalizedEvents.length, runState, snapshotScreenshots.length, toolCallFeedRows.length],
+    [
+      decisionCount,
+      normalizedEvents.length,
+      outputCount,
+      runState,
+      snapshotScreenshots.length,
+      toolCallFeedRows.length,
+    ],
   );
   const primaryTabs = useMemo(() => {
-    if (!Array.isArray(providerUrls) || !providerUrls.length) return tabState.primaryTabs;
+    if (!providerEntryCount && !(Array.isArray(extractionResults) && extractionResults.length)) {
+      return tabState.primaryTabs;
+    }
     return [
       ...tabState.primaryTabs,
       {
         value: "providers",
         label: "Provider Intel",
-        count: providerUrls.length,
+        count: providerEntryCount || extractionResults.length,
         tone: "signal",
       },
     ];
-  }, [providerUrls, tabState.primaryTabs]);
+  }, [extractionResults, providerEntryCount, tabState.primaryTabs]);
 
   useEffect(() => {
     if (!runId) return undefined;
@@ -707,6 +728,15 @@ export function RunDetailLive({
           <OrchestratorGraph events={normalizedEvents} rootActor={rootActor} agentRollups={agentRollups} />
         </TabsContent>
 
+        <TabsContent value="output" className="space-y-4">
+          <AgentOutputTab
+            stageRollups={stageRollups}
+            agentRollups={agentRollups}
+            parallelism={parallelism}
+            takedownEmails={takedownEmails}
+          />
+        </TabsContent>
+
         <TabsContent value="decisions" className="space-y-4">
           <DecisionLogPanel
             runId={runId}
@@ -740,9 +770,15 @@ export function RunDetailLive({
           )}
         </TabsContent>
 
-        {providerUrls.length ? (
+        {providerEntryCount || (Array.isArray(extractionResults) && extractionResults.length) ? (
           <TabsContent value="providers">
-            <StreamProviderTab runId={runId} runUrl={runUrl} streamUrls={providerUrls} />
+            <StreamProviderTab
+              runId={runId}
+              runUrl={runUrl}
+              streamUrls={providerUrls}
+              providerAnalysis={providerAnalysis}
+              extractionResults={extractionResults}
+            />
           </TabsContent>
         ) : null}
       </CardContent>

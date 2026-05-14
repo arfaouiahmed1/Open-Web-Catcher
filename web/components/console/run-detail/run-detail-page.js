@@ -965,6 +965,9 @@ export function RunDetailPage() {
         runId={runId}
         runUrl={run.url || ""}
         providerUrls={providerUrls}
+        providerAnalysis={providerSnapshot.provider_analysis || EMPTY_ARRAY}
+        takedownEmails={providerSnapshot.takedown_emails || EMPTY_ARRAY}
+        extractionResults={snapshot.extraction_results || EMPTY_ARRAY}
         snapshotScreenshots={screenshots}
         activeTrace={normalizedTrace}
         persistedEvents={runEvents}
@@ -973,6 +976,8 @@ export function RunDetailPage() {
         defaultStreaming={isActiveTrace && !runTerminalState.isTerminal}
         rootActor={run.root_actor || normalizedTrace?.root_actor || ""}
         agentRollups={agentRollups}
+        stageRollups={stageRollups}
+        parallelism={parallelism}
       />
     </div>
   );

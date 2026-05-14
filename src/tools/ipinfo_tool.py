@@ -1,7 +1,8 @@
 """IPInfoTool — orchestrator calls this after all stream extractions are done.
 
-Input:  list of stream URLs
-Output: list of ProviderInfo objects (JSON) — IP, org, country, abuse email per URL
+Input: list of stream URLs.
+Output: list of ProviderInfo objects (JSON) with IPInfo geolocation plus RDAP/Whois
+ownership and abuse-contact evidence per URL.
 """
 
 from __future__ import annotations
@@ -21,10 +22,10 @@ logger = get_logger(__name__)
 class IPInfoTool(BaseTool):
     name: str = "analyze_providers"
     description: str = (
-        "Look up the hosting provider for each stream URL using IPInfo + Whois. "
+        "Look up the hosting provider for each stream URL using IPInfo plus RDAP/Whois enrichment. "
         "Call this AFTER all run_hosting_agent and run_embedded_agent calls are done. "
         "Input: a list of stream URLs (m3u8/mpd/mp4). "
-        "Returns provider name, country, abuse email, and IP for each URL."
+        "Returns provider name, country, abuse email, IP, and raw whois evidence for each URL."
     )
     ipinfo_token: str = Field(default="")
 

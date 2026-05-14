@@ -166,6 +166,7 @@ Interpretation:
 - streams found means extraction success for that source or server
 - zero streams plus no real video evidence means failed
 - zero streams plus visible playback means one longer retry, then decide
+- `harvest` returns `streams`, `m3u8_urls`, `mpd_urls`, `mp4_urls`, `screenshot_url`, `network_diagnostics`, and `iframe_diagnostics`; copy that evidence directly into the current server/source record
 
 ### Step 5: Switch sources and repeat
 
@@ -230,6 +231,7 @@ Required evidence per server or source:
 - verified player state before concluding
 - `screenshot_url`
 - extracted stream URLs when present
+- explicit `m3u8_urls`, `mpd_urls`, and `mp4_urls` when `harvest` returned them
 - `embedded_url` or `player_iframe_url` when present
 - `network_diagnostics`
 - `iframe_diagnostics`

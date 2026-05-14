@@ -236,6 +236,45 @@ def _collect_embedded_urls(extraction: ExtractionResult) -> list[str]:
     return _dedupe_urls(urls)
 
 
+def _extraction_evidence_overview(extraction_results: list[ExtractionResult]) -> dict[str, int]:
+    stream_count = len(_collect_all_streams(extraction_results))
+    screenshot_count = len(_collect_all_screenshots(extraction_results))
+    server_count = 0
+    network_diagnostics_count = 0
+    iframe_diagnostics_count = 0
+
+    for extraction in extraction_results:
+        server_count += len(extraction.servers)
+        network_diagnostics_count += sum(
+            len(server.network_diagnostics or []) for server in extraction.servers
+        )
+        iframe_diagnostics_count += sum(
+            len(server.iframe_diagnostics or []) for server in extraction.servers
+        )
+        for server in extraction.metadata.get("servers", []):
+            if not isinstance(server, dict):
+                continue
+            network_values = server.get("network_diagnostics", [])
+            iframe_values = server.get("iframe_diagnostics", [])
+            if isinstance(network_values, list):
+                network_diagnostics_count += len(
+                    [item for item in network_values if isinstance(item, dict)]
+                )
+            if isinstance(iframe_values, list):
+                iframe_diagnostics_count += len(
+                    [item for item in iframe_values if isinstance(item, dict)]
+                )
+
+    return {
+        "extraction_count": len(extraction_results),
+        "server_count": server_count,
+        "stream_count": stream_count,
+        "screenshot_count": screenshot_count,
+        "network_diagnostics_count": network_diagnostics_count,
+        "iframe_diagnostics_count": iframe_diagnostics_count,
+    }
+
+
 def _normalize_domain(url: str) -> str:
     host = (urlparse(str(url or "").strip()).netloc or "").lower().strip()
     return host[4:] if host.startswith("www.") else host
@@ -816,18 +855,25 @@ async def analyze_providers_node(
     observer: RunObserver | None = None,
 ) -> dict[str, Any]:
     stream_urls = [stream.url for stream in _collect_all_streams(state["extraction_results"])]
+    evidence_overview = _extraction_evidence_overview(state["extraction_results"])
     if not stream_urls:
         _emit_orchestrator_decision(
             observer,
             "Provider analysis skipped",
             status="warning",
-            details={"reason": "no stream URLs were found"},
+            details={
+                "reason": "no stream URLs were found",
+                **evidence_overview,
+            },
         )
         return {"provider_analysis": []}
     _emit_orchestrator_decision(
         observer,
         "Provider analysis started",
-        details={"stream_count": len(stream_urls)},
+        details={
+            **evidence_overview,
+            "stream_count": len(stream_urls),
+        },
     )
     payload = await IPInfoTool(ipinfo_token=settings.ipinfo_token)._arun(stream_urls=stream_urls)
     try:
@@ -839,7 +885,10 @@ async def analyze_providers_node(
         observer,
         "Provider analysis completed",
         status="success" if providers else "warning",
-        details={"provider_count": len(providers)},
+        details={
+            **evidence_overview,
+            "provider_count": len(providers),
+        },
     )
     return {"provider_analysis": providers}
 
@@ -849,18 +898,25 @@ async def generate_takedown_emails_node(
     *,
     observer: RunObserver | None = None,
 ) -> dict[str, Any]:
+    evidence_overview = _extraction_evidence_overview(state["extraction_results"])
     if not _collect_all_streams(state["extraction_results"]):
         _emit_orchestrator_decision(
             observer,
             "Takedown draft generation skipped",
             status="warning",
-            details={"reason": "no stream URLs were found"},
+            details={
+                "reason": "no stream URLs were found",
+                **evidence_overview,
+            },
         )
         return {"takedown_emails": []}
     _emit_orchestrator_decision(
         observer,
         "Takedown draft generation started",
-        details={"provider_analysis_count": len(state["provider_analysis"])},
+        details={
+            **evidence_overview,
+            "provider_analysis_count": len(state["provider_analysis"]),
+        },
     )
     payload = await EmailTool()._arun(
         infringing_url=state["url"],
@@ -880,7 +936,10 @@ async def generate_takedown_emails_node(
         observer,
         "Takedown draft generation completed",
         status="success" if emails else "warning",
-        details={"email_count": len(emails)},
+        details={
+            **evidence_overview,
+            "email_count": len(emails),
+        },
     )
     return {"takedown_emails": emails}
 

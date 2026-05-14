@@ -1746,6 +1746,13 @@ def _agent_output_payload(ctx: dict[str, Any], result: PipelineResult) -> dict[s
             "stream_count": len(result.all_streams),
             "provider_analysis_count": len(result.provider_analysis),
             "email_count": len(result.takedown_emails),
+            "all_streams": [stream.model_dump(mode="json") for stream in result.all_streams],
+            "all_screenshots": list(result.all_screenshots),
+            "provider_analysis": [
+                provider.model_dump(mode="json") for provider in result.provider_analysis
+            ],
+            "takedown_emails": [email.model_dump(mode="json") for email in result.takedown_emails],
+            "extraction_checks": _orchestrator_extraction_checks(result),
         }
     if agent_type == AgentType.CLASSIFICATION.value and result.classification is not None:
         return result.classification.model_dump(mode="json")
@@ -1803,6 +1810,87 @@ def _stream_count_from_payload(payload: dict[str, Any]) -> int:
         count += len(server.get("mpd_urls", []) or [])
         count += len(server.get("mp4_urls", []) or [])
     return count
+
+
+def _dedupe_keep_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def _orchestrator_extraction_checks(result: PipelineResult) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    for extraction in result.extraction_results:
+        collected_streams = _dedupe_keep_order(
+            [stream.url for stream in extraction.streams if getattr(stream, "url", "")]
+        )
+        screenshots = _dedupe_keep_order(
+            [
+                *list(extraction.screenshots or []),
+                *[
+                    server.screenshot_url
+                    for server in extraction.servers
+                    if getattr(server, "screenshot_url", None)
+                ],
+            ]
+        )
+        network_diagnostics_count = sum(
+            len(server.network_diagnostics or []) for server in extraction.servers
+        )
+        iframe_diagnostics_count = sum(
+            len(server.iframe_diagnostics or []) for server in extraction.servers
+        )
+        server_rows = []
+        sample_streams: list[str] = []
+        for server in extraction.servers:
+            server_streams = _dedupe_keep_order(
+                [
+                    *list(server.stream_urls or []),
+                    *list(server.m3u8_urls or []),
+                    *list(server.mpd_urls or []),
+                    *list(server.mp4_urls or []),
+                    *(([server.primary_stream] if server.primary_stream else [])),
+                ]
+            )
+            sample_streams.extend(server_streams[:3])
+            collected_streams.extend(server_streams)
+            server_rows.append(
+                {
+                    "label": server.label,
+                    "status": server.status,
+                    "server_up": server.server_up,
+                    "player_state": server.player_state or "",
+                    "stream_count": len(server_streams),
+                    "screenshot_url": server.screenshot_url or "",
+                    "embedded_url": server.embedded_url or "",
+                    "player_iframe_url": server.player_iframe_url or "",
+                    "network_diagnostics_count": len(server.network_diagnostics or []),
+                    "iframe_diagnostics_count": len(server.iframe_diagnostics or []),
+                }
+            )
+        checks.append(
+            {
+                "url": extraction.url,
+                "agent_type": extraction.agent_type.value,
+                "page_type": extraction.page_type.value,
+                "status": extraction.status.value,
+                "server_count": len(extraction.servers),
+                "stream_count": len(_dedupe_keep_order(collected_streams)),
+                "screenshot_count": len(screenshots),
+                "network_diagnostics_count": network_diagnostics_count,
+                "iframe_diagnostics_count": iframe_diagnostics_count,
+                "sample_streams": _dedupe_keep_order(sample_streams)[:8],
+                "sample_screenshots": screenshots[:4],
+                "servers": server_rows,
+            }
+        )
+    return checks
 
 
 def _resolve_agent_status(ctx: dict[str, Any], result: PipelineResult) -> str:

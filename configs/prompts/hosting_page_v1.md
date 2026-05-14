@@ -179,6 +179,7 @@ Interpretation:
 - streams found means direct extraction success for that server
 - zero streams plus no real video evidence means `needs_embed_agent` only when an explicit `embedded_url` or `player_iframe_url` was observed; otherwise `no_stream_found`
 - zero streams plus visible playback means one longer retry, then decide
+- `harvest` returns `streams`, `m3u8_urls`, `mpd_urls`, `mp4_urls`, `screenshot_url`, `network_diagnostics`, and `iframe_diagnostics`; copy that evidence into the current server record instead of summarizing it away
 
 ### Step 5: Switch servers and repeat
 
@@ -245,6 +246,7 @@ Required evidence per server:
 - verified player state before concluding
 - `screenshot_url`
 - extracted stream URLs when present
+- explicit `m3u8_urls`, `mpd_urls`, and `mp4_urls` when `harvest` returned them
 - `embedded_url` or `player_iframe_url` when present
 - `network_diagnostics`
 - `iframe_diagnostics`
