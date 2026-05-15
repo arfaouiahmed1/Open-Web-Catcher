@@ -50,7 +50,11 @@
         4000
       ],
       "media_cors_patch_enabled": true,
-      "media_playback_verification_enabled": true
+      "media_playback_verification_enabled": true,
+      "media_playback_verification_timeout_ms": 7000,
+      "media_activation_settle_ms": 1200,
+      "media_activation_candidate_limit": 8,
+      "media_preflight_action_limit": 4
     },
     "playwright": {
       "launch_timeout_ms": 45000,
@@ -99,13 +103,17 @@
         4000
       ],
       "media_cors_patch_enabled": false,
-      "media_playback_verification_enabled": true
+      "media_playback_verification_enabled": true,
+      "media_playback_verification_timeout_ms": 7000,
+      "media_activation_settle_ms": 1200,
+      "media_activation_candidate_limit": 8,
+      "media_preflight_action_limit": 4
     }
   },
   "runtime_sync": {
     "source_path": "/app/data/settings.runtime.yaml",
     "bridge_path": "/app/data/browser.runtime.json",
-    "synced_at": "2026-05-14T18:18:12.188897+00:00",
+    "synced_at": "2026-05-15T12:33:36.626129+00:00",
     "active_runtime_source": "runtime_yaml"
   }
 }

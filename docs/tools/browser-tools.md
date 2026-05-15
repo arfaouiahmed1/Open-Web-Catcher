@@ -1,417 +1,222 @@
 # Browser Tools Reference
 
-> **See also:** [MCP Server Architecture](../architecture/mcp-server.md) · [Python Tools](python-tools.md) · [← Docs Home](../README.md)
+> **See also:** [MCP Server Architecture](../architecture/mcp-server.md) · [Python Tools](python-tools.md) · [Classification Tools](classification/README.md) · [Docs Home](../README.md)
 
-All browser tools run inside the Node.js MCP server (`tools/puppeteer/` and `tools/playwright/`).
-This reference uses Puppeteer file paths for examples; Playwright has equivalent files under
-`/home/runner/work/Open-Web-Catcher/Open-Web-Catcher/tools/playwright/` with matching tool intent and contracts.
+All browser tools run inside the Node.js MCP server under `tools/puppeteer/` and `tools/playwright/`.
 
-## Agent-Specific Tool Sets
+## Inspect Architecture
 
-- [Classification Agent](classification/README.md)
-- [Landing Agent](landing/README.md)
-- [Hosting Agent](hosting/README.md)
-- [Embedded Agent](embedded/README.md)
+The inspect stack now has 2 layers:
 
----
+1. **Internal collector**
+   - File: [`tools/puppeteer/tools/inspect_full.js`](../../tools/puppeteer/tools/inspect_full.js)
+   - Purpose: gather full raw DOM, frame, player, popup, and pagination evidence
+   - Audience: internal summarizers only
+   - Not part of the LLM-facing contract
+
+2. **Public summarizers**
+   - [`inspect`](../../tools/puppeteer/tools/inspect.js): classification-focused
+   - [`inspect_landing`](../../tools/puppeteer/tools/inspect_landing.js): landing-focused
+   - [`inspect_hosting`](../../tools/puppeteer/tools/inspect_hosting.js): hosting-focused
+   - [`inspect_embedded`](../../tools/puppeteer/tools/inspect_embedded.js): embedded-focused
+
+Public inspect tools do **not** expose giant flat arrays as their primary contract anymore. They return grouped summaries plus representative actionable samples.
+
+## Compression Model
+
+Each public inspect tool:
+
+1. collects raw evidence through `inspect_full.js`
+2. groups repeated links, controls, and frames by semantic pattern
+3. builds representative candidates
+4. adaptively compresses the payload until it fits the profile budget
+
+Profile budgets:
+
+| Tool | Target serialized size |
+|------|-------------------------|
+| `inspect` | <= 8 KB |
+| `inspect_landing` | <= 18 KB |
+| `inspect_hosting` | <= 14 KB |
+| `inspect_embedded` | <= 14 KB |
+
+This is adaptive compression, not crude per-array hard caps. Compression prefers to:
+
+1. dedupe exact duplicates
+2. hoist repeated structure to group level
+3. keep generalized URL patterns instead of repeating every URL
+4. shrink per-group samples
+5. shrink lower-priority groups
+
+Critical player and watch-pattern evidence is preserved as long as possible.
+
+Every public inspect response includes compression telemetry in `stats`:
+
+- `raw_counts`
+- `output_counts`
+- `compressed_bytes`
+- `estimated_tokens`
+- `compression_ratio`
+- `budget_target`
+- `budget_fit`
+- `compression_steps`
+
+## When To Use Follow-up Tools
+
+Use the grouped inspect output first. If more detail is needed, expand with:
+
+- `query_elements`
+- `get_element_detail`
+- `get_frame_tree`
+- `get_page_context`
+
+Do not expect `inspect` to dump exhaustive raw DOM lists. Expansion is explicit.
 
 ## Tool-to-Profile Mapping
 
 | Tool | classification | landing | hosting | embedded |
 |------|:--------------:|:-------:|:-------:|:--------:|
-| `inspect` | ✓ | ✓ | ✓ | ✓ |
-| `navigate` | ✓ | ✓ | ✓ | ✓ |
-| `interact` | | ✓ | ✓ | ✓ |
-| `screenshot` | | ✓ | ✓ | ✓ |
-| `harvest` | | | ✓ | ✓ |
-
----
+| `inspect` | yes | no | no | no |
+| `inspect_landing` | no | yes | no | no |
+| `inspect_hosting` | no | no | yes | no |
+| `inspect_embedded` | no | no | no | yes |
+| `navigate` | yes | yes | yes | yes |
+| `interact` | no | yes | yes | yes |
+| `screenshot` | no | yes | yes | yes |
+| `harvest` | no | no | yes | yes |
 
 ## `inspect`
 
 **File:** [`tools/puppeteer/tools/inspect.js`](../../tools/puppeteer/tools/inspect.js)
 
-Full DOM scan. The primary tool for understanding any page. Most agent turns start with `inspect`.
+Classification-oriented grouped inspect.
 
-### Input Schema
+### Output contract
 
-```typescript
+```ts
 {
-  url?: string  // optional — if omitted, scans the current page
-}
-```
-
-### Output Schema
-
-```typescript
-{
-  title: string
-  url: string
-
-  // Navigation and content links
-  content_links: Array<{
-    text: string
-    href: string
-    type: "internal" | "external" | "stream" | "social"
-    context: string  // surrounding text
-  }>
-  nav_links: Array<{ text: string, href: string }>
-
-  // Interactive elements with viewport coords
-  buttons: Array<{
-    text: string
-    selector: string
-    x: number       // viewport X (for coordinate-mode fallback)
-    y: number       // viewport Y
-    visible: boolean
-  }>
-
-  // iframes (key for hosted players)
-  iframes: Array<{
-    src: string
-    id: string
-    sandbox: string
-    dimensions: { width: number, height: number }
-  }>
-
-  // Native video elements
-  videos: Array<{
-    src: string
-    type: string
-    poster: string
-    is_playing: boolean
-  }>
-
-  // All interactive elements
-  elements: Array<{
-    tag: string
-    text: string
-    selector: string
-    x: number
-    y: number
-    attributes: Record<string, string>
-  }>
-
-  // Player detection signals
-  hosting_signals: {
-    has_video_player: boolean
-    has_server_tabs: boolean
-    detected_player_type: "hls.js" | "video.js" | "jwplayer" | "native" | null
-    iframe_count: number
-    m3u8_in_source: boolean
-    known_streaming_domains: string[]
+  context_type: "classification"
+  page: {
+    url: string
+    title: string
+    screenshot: "available" | "missing"
   }
-
-  // Detected popups/overlays (often need dismissal)
-  popups: Array<{
-    selector: string
-    type: "ad" | "cookie" | "modal" | "overlay"
-    dismiss_selector: string
-  }>
-
-  // Condensed page structure for LLM context
-  dom_skeleton: string
-
-  // Pagination info
-  pagination: {
-    has_pagination: boolean
-    current_page: number | null
-    total_pages: number | null
-    next_selector: string | null
+  screenshot_url: string | null
+  classification_hints: {
+    likely_page_type: "landing_page" | "host_page" | "embed_video_page"
+    scores: Record<string, number>
+    reasons: string[]
   }
-
-  // Visual evidence
-  screenshot_url: string  // Cloudinary URL
-
-  stats: {
-    total_links: number
-    total_buttons: number
-    total_iframes: number
-    total_videos: number
+  link_groups: Group[]
+  action_groups: Group[]
+  top_candidates: {
+    watch: ActionableLink[]
+    navigation: ActionableLink[]
+    actions: ActionableAction[]
   }
+  player_evidence: PlayerEvidence
+  frame_overview: FrameOverview
+  blockers: { popups: PopupSummary[] }
+  pagination: PaginationSummary
+  lazy_load_warmup: object | null
+  stats: CompressionStats
 }
 ```
 
----
+## `inspect_landing`
 
-## `interact`
+**File:** [`tools/puppeteer/tools/inspect_landing.js`](../../tools/puppeteer/tools/inspect_landing.js)
 
-**File:** [`tools/puppeteer/tools/interact.js`](../../tools/puppeteer/tools/interact.js)
+Landing-page grouped inspect.
 
-Performs user interactions. Includes anti-bot simulation (realistic delays, bezier mouse paths).
+### Output contract
 
-### Input Schema
-
-```typescript
-// Mode: click
+```ts
 {
-  mode: "click"
-  selector?: string    // CSS selector
-  xpath?: string       // XPath expression
-  text?: string        // element text content
-  description: string  // human-readable description for logs
+  context_type: "landing"
+  page: PageSummary
+  screenshot_url: string | null
+  grouped_sections: { page: PageSummary, groups: Group[] }
+  match_groups: Group[]
+  navigation_groups: Group[]
+  action_groups: Group[]
+  top_match_candidates: ActionableLink[]
+  iframe_overview: FrameOverview & { iframe_groups: FrameGroup[] }
+  pagination: PaginationSummary
+  popups: PopupSummary[]
+  lazy_load_warmup: object | null
+  stats: CompressionStats
 }
+```
 
-// Mode: play
+## `inspect_hosting`
+
+**File:** [`tools/puppeteer/tools/inspect_hosting.js`](../../tools/puppeteer/tools/inspect_hosting.js)
+
+Hosting-page grouped inspect.
+
+### Output contract
+
+```ts
 {
-  mode: "play"
-  description: string
+  context_type: "hosting"
+  page: PageSummary
+  screenshot_url: string | null
+  control_groups: Group[]
+  playback_groups: Group[]
+  iframe_groups: FrameGroup[]
+  player_evidence: PlayerEvidence
+  top_server_controls: ActionableAction[]
+  top_playback_targets: ActionableAction[]
+  popups: PopupSummary[]
+  lazy_load_warmup: object | null
+  stats: CompressionStats
 }
+```
 
-// Mode: type
+## `inspect_embedded`
+
+**File:** [`tools/puppeteer/tools/inspect_embedded.js`](../../tools/puppeteer/tools/inspect_embedded.js)
+
+Embedded-player grouped inspect.
+
+### Output contract
+
+```ts
 {
-  mode: "type"
-  selector: string
-  value: string
-  description: string
-}
-
-// Mode: select
-{
-  mode: "select"
-  selector: string
-  value: string
-  description: string
-}
-
-// Mode: coordinates (for cross-origin iframes)
-{
-  mode: "coordinates"
-  x: number
-  y: number
-  description: string
-}
-
-// Mode: check
-{
-  mode: "check"
-  selector: string
-  description: string
+  context_type: "embedded"
+  page: PageSummary
+  screenshot_url: string | null
+  control_groups: Group[]
+  player_groups: Group[]
+  frame_focus_groups: FrameGroup[]
+  player_evidence: PlayerEvidence
+  top_source_controls: ActionableAction[]
+  top_player_targets: ActionableAction[]
+  popups: PopupSummary[]
+  lazy_load_warmup: object | null
+  stats: CompressionStats
 }
 ```
 
-### Output Schema
+## Representative Samples
 
-```typescript
-{
-  success: boolean
-  mode: string
-  element_found: boolean
-  navigated: boolean      // TRUE = browser left the target page
-  new_url: string | null  // URL after navigation (if navigated)
-  screenshot_url: string
-  error: string | null
-}
-```
+Representative actionable samples preserve the fields needed for follow-up actions:
 
-> **Always check `navigated`.** If `true`, the click navigated away from the target
-> page (e.g., a "server" link was actually a redirect). The agent should navigate back
-> to the original hosting page.
+- `text`
+- `selector`
+- `xpath`
+- `frame_path`
+- `x`
+- `y`
 
-### Element Resolution Priority
+Grouped samples may omit some of those fields to save tokens. Exact interaction should use the top candidate arrays or follow-up tools.
 
-When using `mode: click`, the tool tries to find the element in this order:
-1. CSS `selector`
-2. XPath `xpath`
-3. Text content match (`text`)
-4. Falls back to coordinates if all fail (uses centre of viewport)
+## Other Core Tools
 
----
-
-## `harvest`
-
-**File:** [`tools/puppeteer/tools/harvest.js`](../../tools/puppeteer/tools/harvest.js)
-
-Stream URL capture using 6 detection layers in parallel. The core extraction tool.
-
-### When to Use
-
-Call `harvest` **after** triggering the player (via `interact`). The tool waits
-`waitMs` milliseconds for network requests to fire, then collects from all layers.
-
-### Input Schema
-
-```typescript
-{
-  waitMs?: number  // default 3000 — how long to wait for streams (ms)
-}
-```
-
-### Detection Layers
-
-```
-Layer 1: CDP Network.requestWillBeSent
-         → Intercepts every outgoing XHR/fetch as it's initiated
-         → Catches .m3u8, .mpd, .mp4, video/* content-types
-
-Layer 2: CDP Network.responseReceived
-         → Checks response Content-Type headers
-         → Catches streams served with video/* MIME types
-
-Layer 3: DOM element scan
-         → document.querySelectorAll('video, source, [data-src], [src]')
-         → Finds hardcoded video URLs in HTML
-
-Layer 4: iframe src list
-         → Lists all iframe srcs
-         → Identifies video CDN iframes (different from inspect's approach)
-
-Layer 5: JS player API inspection
-         → hls.js:     window.Hls instances → hls.url
-         → video.js:   videojs.getPlayers() → player.currentSrc()
-         → JW Player:  jwplayer() → player.getPlaylistItem()
-         → Flowplayer: flowplayer instances
-
-Layer 6: Performance entries
-         → performance.getEntriesByType('resource')
-         → Finds resources loaded since page start, filtered by extension
-```
-
-### Output Schema
-
-```typescript
-{
-  m3u8_urls: string[]
-  mpd_urls: string[]
-  mp4_urls: string[]
-  video_state: {
-    is_playing: boolean
-    current_time: number
-    duration: number
-    paused: boolean
-    has_player: boolean
-    player_type: string | null
-  }
-  screenshot_url: string
-  layers_used: string[]  // which detection layers found results
-  total_found: number
-}
-```
-
-### Deduplication
-
-URLs are deduplicated across all layers before being returned. The same URL found
-by both CDP and JS player inspection is only returned once.
-
----
-
-## `navigate`
-
-**File:** [`tools/puppeteer/tools/navigate.js`](../../tools/puppeteer/tools/navigate.js)
-
-Navigate to a URL and capture the redirect chain.
-
-### Input Schema
-
-```typescript
-{
-  url: string
-  waitUntil?: "load" | "networkidle0" | "networkidle2"  // default "networkidle2"
-  timeout?: number  // ms, default 30000
-}
-```
-
-### Output Schema
-
-```typescript
-{
-  final_url: string
-  redirect_chain: string[]    // all URLs in the redirect chain
-  domain_warning: boolean     // true if final domain ≠ original domain
-  domain_changed_to: string | null
-  title: string
-  screenshot_url: string
-  load_time_ms: number
-}
-```
-
-### `domain_warning`
-
-If the navigation lands on a different base domain (e.g., navigating from
-`site.com/match/123` to `login.site.com` or `adserver.xyz`), `domain_warning` is `true`.
-The agent should handle this — likely by navigating back to the original URL.
-
----
-
-## `screenshot`
-
-**File:** [`tools/puppeteer/tools/screenshot.js`](../../tools/puppeteer/tools/screenshot.js)
-
-Quick screenshot without a full DOM scan. ~3× faster than `inspect`.
-
-### When to Use
-
-Use `screenshot` when you need visual evidence but already know the page structure.
-Use `inspect` when you need both structure and a screenshot.
-
-### Input Schema
-
-```typescript
-{
-  mode?: "viewport" | "full" | "element"  // default "viewport"
-  selector?: string  // CSS selector (only for mode "element")
-}
-```
-
-### Output Schema
-
-```typescript
-{
-  screenshot_url: string  // Cloudinary URL
-  video_state: {
-    is_playing: boolean
-    has_player: boolean
-    current_time: number | null
-  }
-  dimensions: { width: number, height: number }
-}
-```
-
----
-
-## Shared Utilities
-
-**Directory:** [`tools/puppeteer/shared/`](../../tools/puppeteer/shared/)
-
-### `browser.js`
-
-```javascript
-export async function connectBrowser(wsEndpoint) {
-  // puppeteer.connect() with retry (5 attempts, 1s delay)
-  // Returns { browser, page }
-}
-```
-
-### `upload.js`
-
-```javascript
-export async function uploadScreenshot(buffer, options = {}) {
-  // Uploads PNG buffer to Cloudinary
-  // Timeout: 10s
-  // Returns: secure URL string or null on failure
-}
-```
-
-### `screenshot.js`
-
-```javascript
-export async function screenshotViewport(page)   // viewport only
-export async function screenshotFull(page)        // full page scroll
-export async function screenshotElement(page, selector)  // specific element
-// All functions: capture → upload → return URL
-```
-
-### `adblocker.js`
-
-```javascript
-export async function enableBlocking(page) {
-  // Ghostery-backed blocking with cached EasyList/EasyPrivacy/HaGeZi/OISD/uBO lists
-  // Reads remote sources from tools/puppeteer/shared/filterlists/sources.json
-  // Caches downloaded lists and the compiled engine under data/cache/adblocker/
-  // Exposes network/cosmetic mode flags, with cosmetic-only split kept as a placeholder
-}
-```
-
----
+- `interact`: perform clicks, play, type, select, checks, or coordinate clicks with frame-aware resolution
+- `navigate`: move to a URL and capture redirect outcome
+- `screenshot`: fast visual confirmation without a full grouped inspect
+- `harvest`: capture stream URLs after player activation
 
 *Next: [Python Tools](python-tools.md) | [MCP Server Architecture](../architecture/mcp-server.md)*

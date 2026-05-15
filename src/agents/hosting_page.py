@@ -11,6 +11,7 @@ from src.memory.long_term import LongTermMemory
 from src.memory.short_term import ShortTermMemory
 from src.models.enums import AgentType, ExtractionStatus, PageType
 from src.models.schemas import ExtractionResult, ServerResult, StreamURL
+from src.utils.channel_detection import best_channel_match, collect_channel_text_fragments, normalize_channel_name
 from src.utils.config import Settings
 from src.utils.instrumentation import (
     observability_span,
@@ -30,6 +31,7 @@ _AGENT_CONTRACT = """\
 - use site memory only as hints and re-check everything on the live page
 - stay anchored to the assigned hosting content and recover from off-target drift
 - preserve screenshot, iframe/embed, network, and player-state evidence per server when available
+- return detected channel/broadcast metadata per server when the page or screenshot reveals it
 - if playback fails or no streams are recovered, return an embedded fallback only when you observed an explicit embedded/player URL; otherwise stop with failure evidence and no fabricated next target
 """
 
@@ -215,6 +217,9 @@ class HostingPageAgent:
                     screenshots=screenshots,
                     embedded_urls=embedded_urls,
                     servers=servers,
+                    primary_channel=str(normalized_output.get("primary_channel") or "").strip(),
+                    detected_channels=list(normalized_output.get("detected_channels") or []),
+                    channel_metadata=dict(normalized_output.get("channel_metadata") or {}),
                     agent_type=AgentType.HOSTING_PAGE,
                     tool_calls_used=result.tool_calls_made,
                     metadata=normalized_output,
@@ -340,6 +345,34 @@ def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any
         if isinstance(server_up_value, bool)
         else status in {"success", "partial", "active"}
     )
+    channel_texts = collect_channel_text_fragments(
+        [
+            label,
+            server.get("channel"),
+            server.get("detected_channel"),
+            server.get("ocr_text"),
+            server.get("player_ocr_text"),
+            server.get("visual_confirmation"),
+            server.get("session_summary"),
+        ]
+    )
+    channel_match = best_channel_match(*channel_texts)
+    detected_channel = normalize_channel_name(
+        str(server.get("detected_channel") or server.get("channel") or channel_match.get("channel_name") or "").strip()
+    )
+    channel_candidates = _dedupe_urls(
+        [
+            detected_channel,
+            *[
+                normalize_channel_name(item)
+                for item in (
+                    server.get("channel_candidates", [])
+                    if isinstance(server.get("channel_candidates"), list)
+                    else channel_match.get("channel_candidates", [])
+                )
+            ],
+        ]
+    )
 
     return {
         "label": label,
@@ -359,6 +392,22 @@ def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any
         "player_state": str(server.get("player_state") or "").strip(),
         "visual_confirmation": str(server.get("visual_confirmation") or "").strip(),
         "extraction_method": str(server.get("extraction_method") or "").strip(),
+        "detected_channel": detected_channel,
+        "channel_candidates": channel_candidates,
+        "channel_confidence": str(
+            server.get("channel_confidence") or channel_match.get("channel_confidence") or ""
+        ).strip(),
+        "channel_detection_method": str(
+            server.get("channel_detection_method")
+            or ("ocr+screenshot" if str(server.get("ocr_text") or server.get("player_ocr_text") or "").strip() else channel_match.get("channel_detection_method") or "")
+        ).strip(),
+        "ocr_text": str(server.get("ocr_text") or server.get("player_ocr_text") or "").strip(),
+        "playback_confirmed": bool(server.get("playback_confirmed"))
+        or str(server.get("player_state") or "").strip().lower() == "playing"
+        or "video playing" in str(server.get("visual_confirmation") or "").lower(),
+        "server_change_observed": bool(server.get("server_change_observed"))
+        or bool(server.get("switch_detected"))
+        or bool(server.get("switched")),
         "network_diagnostics": _normalize_diagnostics_list(server.get("network_diagnostics")),
         "iframe_diagnostics": _normalize_diagnostics_list(server.get("iframe_diagnostics")),
     }
@@ -531,6 +580,83 @@ def _normalize_hosting_output(output: dict[str, Any]) -> dict[str, Any]:
     ]
     normalized["servers_needing_embed"] = _dedupe_urls([*top_level_embeds, *per_server_embeds])
     normalized["embedded_urls_for_processing"] = list(normalized["servers_needing_embed"])
+    successful_servers = sum(
+        1
+        for server in servers
+        if server.get("status") in {"success", "partial"} or server.get("server_up")
+    )
+    failed_servers_count = sum(
+        1 for server in servers if server.get("status") in {"failed", "needs_embed_agent"}
+    )
+    down_servers_count = sum(
+        1
+        for server in servers
+        if not server.get("server_up") and str(server.get("down_reason") or "").strip()
+    )
+    normalized["total_servers"] = int(normalized.get("total_servers") or len(servers))
+    normalized["successful_servers"] = int(
+        normalized.get("successful_servers") or successful_servers
+    )
+    normalized["failed_servers_count"] = int(
+        normalized.get("failed_servers_count") or failed_servers_count
+    )
+    normalized["down_servers_count"] = int(
+        normalized.get("down_servers_count") or down_servers_count
+    )
+    normalized["total_unique_streams"] = int(
+        normalized.get("total_unique_streams") or len(normalized["streaming_urls"])
+    )
+    decision = str(normalized.get("decision") or "").strip().lower()
+    if not decision:
+        if normalized["streaming_urls"] and normalized["servers_needing_embed"]:
+            decision = "partial_success_needs_embed"
+        elif normalized["streaming_urls"]:
+            decision = "safe_exit"
+        elif normalized["servers_needing_embed"]:
+            decision = "needs_embed_agent"
+        else:
+            decision = "no_stream_found"
+    normalized["decision"] = decision
+    channel_texts = collect_channel_text_fragments(
+        [
+            normalized.get("channel"),
+            normalized.get("detected_channel"),
+            normalized.get("session_summary"),
+            normalized.get("page_title"),
+            normalized.get("event_title"),
+            normalized.get("servers"),
+        ]
+    )
+    channel_match = best_channel_match(*channel_texts)
+    detected_channels = _dedupe_urls(
+        [
+            normalize_channel_name(str(normalized.get("primary_channel") or normalized.get("channel") or channel_match.get("channel_name") or "").strip()),
+            *[
+                normalize_channel_name(server.get("detected_channel"))
+                for server in servers
+                if isinstance(server, dict)
+            ],
+            *[
+                normalize_channel_name(item)
+                for item in channel_match.get("channel_candidates", [])
+            ],
+        ]
+    )
+    primary_channel = detected_channels[0] if detected_channels else ""
+    normalized["primary_channel"] = primary_channel
+    normalized["detected_channels"] = detected_channels
+    normalized["channel_metadata"] = {
+        "primary_channel": primary_channel,
+        "channel_candidates": detected_channels,
+        "channel_confidence": channel_match.get("channel_confidence", ""),
+        "channel_detection_method": channel_match.get("channel_detection_method", ""),
+        "channel_evidence": channel_match.get("channel_evidence", []),
+        "ocr_texts": [
+            str(server.get("ocr_text") or "").strip()
+            for server in servers
+            if isinstance(server, dict) and str(server.get("ocr_text") or "").strip()
+        ][:6],
+    }
     return normalized
 
 
@@ -556,6 +682,13 @@ def _build_server_results(servers: list[dict[str, Any]]) -> list[ServerResult]:
                 player_state=str(server.get("player_state") or "") or None,
                 visual_confirmation=str(server.get("visual_confirmation") or "") or None,
                 extraction_method=str(server.get("extraction_method") or "") or None,
+                detected_channel=str(server.get("detected_channel") or "") or None,
+                channel_candidates=_normalize_url_list(server.get("channel_candidates")),
+                channel_confidence=str(server.get("channel_confidence") or "") or None,
+                channel_detection_method=str(server.get("channel_detection_method") or "") or None,
+                ocr_text=str(server.get("ocr_text") or "") or None,
+                playback_confirmed=bool(server.get("playback_confirmed")),
+                server_change_observed=bool(server.get("server_change_observed")),
                 network_diagnostics=_normalize_diagnostics_list(server.get("network_diagnostics")),
                 iframe_diagnostics=_normalize_diagnostics_list(server.get("iframe_diagnostics")),
             )
@@ -577,6 +710,7 @@ def _collect_streams(output: dict[str, Any]) -> list[StreamURL]:
                         entry.get("type") or entry.get("protocol") or _protocol_from_url(url)
                     ),
                     source_layer=str(entry.get("source") or ""),
+                    channel_name=str(output.get("primary_channel") or ""),
                 )
             )
     for server in output.get("servers", []):
@@ -595,6 +729,7 @@ def _collect_streams(output: dict[str, Any]) -> list[StreamURL]:
                         url=url_text,
                         protocol=_protocol_from_url(url_text),
                         source_layer=str(server.get("label") or ""),
+                        channel_name=str(server.get("detected_channel") or output.get("primary_channel") or ""),
                     )
                 )
     return streams

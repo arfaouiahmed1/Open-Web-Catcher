@@ -13,6 +13,7 @@ from src.memory.long_term import LongTermMemory
 from src.memory.short_term import ShortTermMemory
 from src.models.enums import AgentType, ExtractionStatus, PageType
 from src.models.schemas import ExtractionResult
+from src.utils.channel_detection import best_channel_match, normalize_channel_name
 from src.utils.config import Settings
 from src.utils.instrumentation import (
     observability_span,
@@ -31,6 +32,7 @@ _AGENT_CONTRACT = """\
 - inspect screenshots and page structure for repeated watch-page patterns, then stop early once the routing decision is well supported
 - respect the final JSON/output format defined in the base policy
 - do not fabricate hosting links; only return verified live-page findings
+- return channel metadata when it is visible on the landing page or candidate cards
 - default downstream route is `stream_extractor`; use `embed_agent` only when the discovered URL is already a direct embedded/player URL
 - once a hosting pattern is verified, collect the best same-pattern siblings, hand them off downstream, and stop instead of re-proving low-value alternatives
 - if no verified hosting or direct embedded targets remain, return an empty result and stop instead of inventing a next hop
@@ -146,6 +148,8 @@ def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[st
         page_dict.setdefault("title", "")
         page_dict.setdefault("participants", "")
         page_dict.setdefault("channel", "")
+        if not isinstance(page_dict.get("channel_candidates"), list):
+            page_dict["channel_candidates"] = []
         page_dict.setdefault("sport", "")
         page_dict.setdefault("league", "")
         page_dict.setdefault("status", "unknown")
@@ -161,6 +165,34 @@ def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[st
         if not patterns.get("url_pattern"):
             patterns["url_pattern"] = _generalize_url_pattern(candidate_url)
         page_dict["patterns"] = patterns
+
+        channel_match = best_channel_match(
+            page_dict.get("channel"),
+            page_dict.get("title"),
+            page_dict.get("participants"),
+            candidate_url,
+        )
+        normalized_channel = normalize_channel_name(
+            str(page_dict.get("channel") or channel_match.get("channel_name") or "").strip()
+        )
+        page_dict["channel"] = normalized_channel
+        page_dict["channel_candidates"] = list(
+            dict.fromkeys(
+                [
+                    normalized_channel,
+                    *[
+                        normalize_channel_name(item)
+                        for item in channel_match.get("channel_candidates", [])
+                    ],
+                ]
+            )
+        )
+        page_dict["metadata"] = {
+            **(page_dict.get("metadata") if isinstance(page_dict.get("metadata"), dict) else {}),
+            "channel_confidence": channel_match.get("channel_confidence", ""),
+            "channel_detection_method": channel_match.get("channel_detection_method", ""),
+            "channel_evidence": channel_match.get("channel_evidence", []),
+        }
         normalized.append(page_dict)
 
     return normalized

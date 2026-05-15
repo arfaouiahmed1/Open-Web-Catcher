@@ -78,6 +78,7 @@ _HOSTING_EVIDENCE_CHECKLIST = [
     "record embedded_url or player_iframe_url when present",
     "record network_diagnostics and iframe_diagnostics",
     "record confirmed player_state before concluding on a server",
+    "record detected channel metadata and screenshot-derived OCR text when the broadcast name is visible",
 ]
 _EMBEDDED_EVIDENCE_CHECKLIST = [
     "stay on the assigned embedded URL and do not drift back into host-page exploration",
@@ -86,6 +87,7 @@ _EMBEDDED_EVIDENCE_CHECKLIST = [
     "record embedded_url or player_iframe_url when present",
     "record network_diagnostics and iframe_diagnostics",
     "record confirmed player_state before concluding on a server/source",
+    "record detected channel metadata and screenshot-derived OCR text when the broadcast name is visible",
 ]
 
 
@@ -374,6 +376,14 @@ def _requires_embedded_followup(extraction: ExtractionResult) -> bool:
     embedded_candidates = _collect_embedded_urls(extraction)
     if decision in {"needs_embed_agent", "partial_success_needs_embed"}:
         return True
+    for server in extraction.servers:
+        if str(server.status or "").strip().lower() == "needs_embed_agent":
+            return bool(embedded_candidates)
+    for server in extraction.metadata.get("servers", []):
+        if not isinstance(server, dict):
+            continue
+        if str(server.get("status") or "").strip().lower() == "needs_embed_agent":
+            return bool(embedded_candidates)
     return not extraction.streams and bool(embedded_candidates)
 
 
@@ -422,6 +432,8 @@ def _build_hosting_handoff(
         ctx["candidate_participants"] = match.participants or ""
         ctx["landing_route"] = match.route or ""
         ctx["landing_iframes"] = _dedupe_urls(match.iframes)[:4] if match.iframes else []
+        if match.channel:
+            ctx["focus"] += f"; landing hinted channel '{match.channel}' so verify it from the live player and override it if the site is misleading"
     return render_handoff(ctx)
 
 
@@ -450,6 +462,8 @@ def _build_embedded_handoff(
         ctx["candidate_title"] = match.title or ""
         ctx["candidate_participants"] = match.participants or ""
         ctx["landing_route"] = match.route or ""
+        if match.channel:
+            ctx["focus"] += f"; landing hinted channel '{match.channel}' so verify it from the live player and override it if the site is misleading"
     if source_hosting is not None:
         ctx["source_hosting_url"] = source_hosting.url
         ctx["source_hosting_status"] = source_hosting.status.value
@@ -458,6 +472,8 @@ def _build_embedded_handoff(
         ).strip()
         ctx["source_streams_found"] = len(source_hosting.streams)
         ctx["route_source"] = "hosting output: explicit embedded_url/player_iframe handoff"
+        if source_hosting.primary_channel:
+            ctx["focus"] += f"; hosting already reported '{source_hosting.primary_channel}', so verify or override it from the embedded player if needed"
     return render_handoff(ctx)
 
 

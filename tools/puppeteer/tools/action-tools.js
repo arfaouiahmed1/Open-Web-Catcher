@@ -2,11 +2,13 @@ import {
   buildEnvelope,
   capturePageSnapshot,
   makeObservedChange,
+  resolveFrame,
   resolveElementTarget,
   trackNewTabs,
   withBrowserSession,
 } from '../shared/tool-runtime.js';
 import { getPageNetworkDiagnostics } from '../shared/browser.js';
+import { activatePlayback, getMediaRuntimeConfig as getSharedMediaRuntimeConfig } from '../shared/media-activation.js';
 import { getBrowserRuntimeSettings } from '../shared/runtime-config.js';
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -510,122 +512,130 @@ export async function playMedia({
   browserWsEndpoint,
   browserProfile = '',
 } = {}) {
-  const mediaRuntime = getMediaRuntimeConfig();
+  const mediaRuntime = getSharedMediaRuntimeConfig('puppeteer');
 
   return withBrowserSession(browserWsEndpoint, async ({ browser, page }) => {
     const before = await capturePageSnapshot(page, frame_path);
     const tabs = trackNewTabs(browser);
-    let resolved = await resolveElementTarget(page, { frame_path, element_ref, selector, xpath, text });
+    const hasLocator = Boolean(element_ref || selector || xpath || text);
+    let resolved = hasLocator
+      ? await resolveElementTarget(page, { frame_path, element_ref, selector, xpath, text })
+      : { ok: false, frame_path, error: 'no_locator', code: 'no_locator' };
+    let activeFrame = null;
+    let activeFramePath = frame_path;
+    let preferredHandle = null;
+    let resolutionPayload = {
+      locator_used: {},
+      stale_ref_detected: false,
+      frame_fallback_applied: false,
+      frame_relocated: false,
+      resolution_attempts: [],
+      error_code: '',
+      error: '',
+    };
 
-    if (!resolved.ok) {
-      tabs.dispose();
-      return buildEnvelope(page, {
-        frame_path: resolved.frame_path || frame_path,
-        ok: false,
-        error: resolved.error,
-        data: {
-          error_code: resolved.code || 'action_target_not_found',
-          stale_ref_detected: Boolean(resolved.stale_ref_detected),
-          frame_fallback_applied: Boolean(resolved.frame_fallback_applied),
-          resolution_attempts: resolved.resolution_attempts || [],
-        },
-      });
-    }
-
-    const preflight = await runPlaybackPreflight(resolved.frame);
-    if (preflight.clicked) {
-      await wait(350);
-      const refreshed = await resolveElementTarget(page, { frame_path, element_ref, selector, xpath, text });
-      if (refreshed.ok) {
-        await resolved.handle.dispose().catch(() => {});
-        resolved = refreshed;
-      }
-    }
-
-    const attempts = [];
-    let finalError = null;
-    let playbackStarted = false;
-    let finalProbe = { events: [], media_error_code: null, media_error_message: '' };
-
-    try {
-      for (let attemptIndex = 0; attemptIndex < mediaRuntime.total_attempts; attemptIndex += 1) {
-        const muteForAttempt = attemptIndex >= 1;
-        await primeMediaProbe(resolved.frame, { mute: muteForAttempt });
-        const probeBefore = await readMediaProbe(resolved.frame);
-        const baselineEventCount = (probeBefore.events || []).length;
-
-        const execution = await invokeMediaPlayback(resolved.frame, resolved.handle, { mute: muteForAttempt });
-        let verification = { started: false, probe: await readMediaProbe(resolved.frame) };
-        if (mediaRuntime.verify_playback) {
-          verification = await waitForPlayback(resolved.frame, mediaRuntime.verification_timeout_ms);
-        } else {
-          await wait(Math.min(wait_ms, 750));
-          verification = { started: true, probe: await readMediaProbe(resolved.frame) };
-        }
-
-        const probeAfter = verification.probe || await readMediaProbe(resolved.frame);
-        const attemptEvents = (probeAfter.events || []).slice(baselineEventCount);
-        const attemptError = execution.play_result?.error || execution.click_error || probeAfter.media_error_message || '';
-        const attemptOk = mediaRuntime.verify_playback ? verification.started : !attemptError;
-
-        attempts.push({
-          attempt: attemptIndex + 1,
-          click_successful: execution.click_successful,
-          play_started: verification.started,
-          playback_events: attemptEvents,
-          muted_retry: muteForAttempt,
-          error: attemptOk ? null : (attemptError || 'Playback did not start'),
-          media_error_code: probeAfter.media_error_code,
-        });
-
-        finalProbe = probeAfter;
-        if (attemptOk) {
-          playbackStarted = verification.started;
-          finalError = null;
-          break;
-        }
-
-        finalError = attempts[attempts.length - 1].error;
-        const backoffMs = mediaRuntime.retry_backoff_ms[attemptIndex]
-          ?? mediaRuntime.retry_backoff_ms[mediaRuntime.retry_backoff_ms.length - 1]
-          ?? 0;
-        if (attemptIndex < mediaRuntime.total_attempts - 1 && backoffMs > 0) {
-          await wait(backoffMs);
-        }
-      }
-
-      if (wait_ms > 0) {
-        await wait(wait_ms);
-      }
-      await page.waitForNetworkIdle({ idleTime: 300, timeout: Math.max(wait_ms, 1500) }).catch(() => {});
-    } catch (error) {
-      finalError = error?.message || String(error);
-    } finally {
-      tabs.dispose();
-    }
-
-    const after = await capturePageSnapshot(page, resolved.frame_path);
-    const network_diagnostics = getPageNetworkDiagnostics(page, { limit: 12 });
-    const result = await buildEnvelope(page, {
-      frame_path: resolved.frame_path,
-      ok: playbackStarted || (!mediaRuntime.verify_playback && !finalError),
-      error: playbackStarted ? null : finalError,
-      observed_change: makeObservedChange(before, after, tabs.new_tab_urls),
-      screenshotHandle: resolved.handle,
-      data: {
-        locator_used: resolved.locator_used,
+    if (resolved.ok) {
+      activeFrame = resolved.frame;
+      activeFramePath = resolved.frame_path || frame_path;
+      preferredHandle = resolved.handle || null;
+      resolutionPayload = {
+        locator_used: resolved.locator_used || {},
         stale_ref_detected: Boolean(resolved.stale_ref_detected),
         frame_fallback_applied: Boolean(resolved.frame_fallback_applied),
         frame_relocated: Boolean(resolved.frame_relocated),
         resolution_attempts: resolved.resolution_attempts || [],
-        preflight,
-        playback_started: playbackStarted,
-        playback_ready: Number(finalProbe.ready_state || 0) >= 2,
-        playback_current_time: Number(finalProbe.current_time || 0),
-        playback_events: finalProbe.events || [],
-        attempts,
-        media_error_code: finalProbe.media_error_code,
-        final_error: playbackStarted ? null : finalError,
+        error_code: '',
+        error: '',
+      };
+    } else {
+      const frameResolution = await resolveFrame(page, frame_path);
+      if (!frameResolution.ok) {
+        tabs.dispose();
+        return buildEnvelope(page, {
+          frame_path: resolved.frame_path || frame_path,
+          ok: false,
+          error: hasLocator ? resolved.error : frameResolution.error,
+          data: {
+            error_code: hasLocator ? (resolved.code || 'action_target_not_found') : 'frame_not_found',
+            stale_ref_detected: Boolean(resolved.stale_ref_detected),
+            frame_fallback_applied: Boolean(resolved.frame_fallback_applied),
+            resolution_attempts: resolved.resolution_attempts || [],
+          },
+        });
+      }
+      activeFrame = frameResolution.frame;
+      activeFramePath = frameResolution.frame_path || frame_path;
+      resolutionPayload = {
+        locator_used: {},
+        stale_ref_detected: Boolean(resolved.stale_ref_detected),
+        frame_fallback_applied: Boolean(resolved.frame_fallback_applied),
+        frame_relocated: false,
+        resolution_attempts: resolved.resolution_attempts || [],
+        error_code: resolved.code || (hasLocator ? 'action_target_not_found' : ''),
+        error: resolved.error || '',
+      };
+    }
+
+    let activation = null;
+
+    try {
+      activation = await activatePlayback({
+        page,
+        frame: activeFrame,
+        handle: preferredHandle,
+        framePath: activeFramePath,
+        waitMs: wait_ms,
+        browserId: 'puppeteer',
+      });
+
+      if (wait_ms > 0) await wait(wait_ms);
+      await page.waitForNetworkIdle({ idleTime: 300, timeout: Math.max(wait_ms, 1500) }).catch(() => {});
+    } catch (error) {
+      activation = {
+        runtime: mediaRuntime,
+        preflight: { overlays_detected: 0, overlays: [], actions: [], clicked: false },
+        candidate_summary: { frame_url: activeFrame?.url?.() || page.url(), video_count: 0, playable_video_count: 0, top_candidates: [], videos: [], player_shell_detected: false },
+        strategies_attempted: [],
+        frame_path: activeFramePath,
+        frame_url: activeFrame?.url?.() || page.url(),
+        frame_relocated: false,
+        playback_started: false,
+        media_confirmed: false,
+        verification_signal: '',
+        playback_probe: { events: [], media_error_code: null, media_error_message: '' },
+        final_error: error?.message || String(error),
+      };
+    } finally {
+      tabs.dispose();
+    }
+
+    const after = await capturePageSnapshot(page, activeFramePath);
+    const network_diagnostics = getPageNetworkDiagnostics(page, { limit: 12 });
+    const result = await buildEnvelope(page, {
+      frame_path: activeFramePath,
+      ok: Boolean(activation?.playback_started),
+      error: activation?.playback_started ? null : activation?.final_error,
+      observed_change: makeObservedChange(before, after, tabs.new_tab_urls),
+      screenshotHandle: preferredHandle,
+      data: {
+        locator_used: resolutionPayload.locator_used,
+        stale_ref_detected: resolutionPayload.stale_ref_detected,
+        frame_fallback_applied: resolutionPayload.frame_fallback_applied,
+        frame_relocated: Boolean(resolutionPayload.frame_relocated || activation?.frame_relocated),
+        resolution_attempts: resolutionPayload.resolution_attempts || [],
+        locator_resolution_error: resolutionPayload.error || '',
+        preflight: activation?.preflight || { overlays_detected: 0, overlays: [], actions: [], clicked: false },
+        candidate_summary: activation?.candidate_summary || { frame_url: activeFrame?.url?.() || page.url(), video_count: 0, playable_video_count: 0, top_candidates: [], videos: [], player_shell_detected: false },
+        strategies_attempted: activation?.strategies_attempted || [],
+        playback_started: Boolean(activation?.playback_started),
+        media_confirmed: Boolean(activation?.media_confirmed),
+        verification_signal: activation?.verification_signal || '',
+        playback_ready: Number(activation?.playback_probe?.max_ready_state || 0) >= 2,
+        playback_current_time: Number(activation?.playback_probe?.max_current_time || 0),
+        playback_events: activation?.playback_probe?.events || [],
+        attempts: activation?.strategies_attempted || [],
+        media_error_code: activation?.playback_probe?.media_error_code ?? null,
+        final_error: activation?.playback_started ? null : (activation?.final_error || null),
         effective_policy: network_diagnostics.effective_policy,
         effective_runtime: network_diagnostics.effective_runtime,
         critical_resource_failures: network_diagnostics.critical_resource_failures,
@@ -634,7 +644,7 @@ export async function playMedia({
         network_diagnostics,
       },
     });
-    await resolved.handle.dispose().catch(() => {});
+    await preferredHandle?.dispose?.().catch(() => {});
     return result;
   }, { browserProfile });
 }

@@ -56,6 +56,10 @@ DEFAULT_BROWSER_RUNTIME: dict[str, dict[str, Any]] = {
         "media_retry_backoff_ms": [1200, 2500, 5000, 8000],
         "media_cors_patch_enabled": False,
         "media_playback_verification_enabled": True,
+        "media_playback_verification_timeout_ms": 7000,
+        "media_activation_settle_ms": 1200,
+        "media_activation_candidate_limit": 8,
+        "media_preflight_action_limit": 4,
     },
     "playwright": {
         "launch_timeout_ms": 45000,
@@ -91,6 +95,10 @@ DEFAULT_BROWSER_RUNTIME: dict[str, dict[str, Any]] = {
         "media_retry_backoff_ms": [1200, 2500, 5000, 8000],
         "media_cors_patch_enabled": False,
         "media_playback_verification_enabled": True,
+        "media_playback_verification_timeout_ms": 7000,
+        "media_activation_settle_ms": 1200,
+        "media_activation_candidate_limit": 8,
+        "media_preflight_action_limit": 4,
     },
 }
 
@@ -233,6 +241,26 @@ def normalize_browser_runtime(value: Any) -> dict[str, dict[str, Any]]:
         current["media_playback_verification_enabled"] = _coerce_bool(
             raw.get("media_playback_verification_enabled"),
             current["media_playback_verification_enabled"],
+        )
+        current["media_playback_verification_timeout_ms"] = _coerce_int(
+            raw.get("media_playback_verification_timeout_ms"),
+            current["media_playback_verification_timeout_ms"],
+            minimum=1000,
+        )
+        current["media_activation_settle_ms"] = _coerce_int(
+            raw.get("media_activation_settle_ms"),
+            current["media_activation_settle_ms"],
+            minimum=0,
+        )
+        current["media_activation_candidate_limit"] = _coerce_int(
+            raw.get("media_activation_candidate_limit"),
+            current["media_activation_candidate_limit"],
+            minimum=1,
+        )
+        current["media_preflight_action_limit"] = _coerce_int(
+            raw.get("media_preflight_action_limit"),
+            current["media_preflight_action_limit"],
+            minimum=1,
         )
         if browser == "puppeteer":
             current["stream_cors_patch_enabled"] = _coerce_bool(

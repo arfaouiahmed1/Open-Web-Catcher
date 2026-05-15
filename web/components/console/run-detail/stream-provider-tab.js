@@ -183,6 +183,8 @@ function summarizeExtractionResults(extractionResults = []) {
         agent_type: String(row.agent_type || row.page_type || "agent").trim(),
         page_type: String(row.page_type || "").trim(),
         status: String(row.status || "unknown").trim(),
+        primary_channel: String(row.primary_channel || "").trim(),
+        detected_channels: Array.isArray(row.detected_channels) ? row.detected_channels.filter(Boolean) : [],
         server_count: servers.length,
         stream_count: sampleStreams.length,
         screenshot_count: screenshots.length,
@@ -454,6 +456,11 @@ export function StreamProviderTab({
                     <div className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
                       {row.url || "--"}
                     </div>
+                    {row.primary_channel ? (
+                      <div className="mt-1 text-[11px] text-foreground/80">
+                        channel {row.primary_channel}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Badge tone="signal" className="font-mono text-[10px]">

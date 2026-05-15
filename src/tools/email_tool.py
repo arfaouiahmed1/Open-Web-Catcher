@@ -21,13 +21,14 @@ logger = get_logger(__name__)
 class EmailTool(BaseTool):
     name: str = "generate_takedown_emails"
     description: str = (
-        "Generate DMCA takedown emails — one per hosting provider. "
+        "Generate DMCA takedown emails — grouped per detected channel and hosting provider. "
         "Call this AFTER analyze_providers. "
         "Inputs: "
         "  infringing_url (str) — the top-level illegal streaming site URL, "
         "  provider_analysis (list) — output from analyze_providers, "
         "  extraction_results (list) — server+stream+screenshot data from hosting/embedded agents. "
-        "Returns a list of email objects with subject, body, and evidence links. "
+        "Returns a list of email objects with subject, body, flat evidence links, "
+        "and per-stream correlated screenshot evidence. "
         "Emails are NOT sent — they are written for human review."
     )
 

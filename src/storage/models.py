@@ -402,13 +402,16 @@ class TakedownEmailRecord(Base):
     pipeline_run_id: Mapped[int] = mapped_column(ForeignKey("pipeline_runs.id", ondelete="CASCADE"), index=True)
     provider: Mapped[str] = mapped_column(Text, default="")
     abuse_email: Mapped[str] = mapped_column(String(255), default="")
+    channel_name: Mapped[str] = mapped_column(String(255), default="", index=True)
     subject: Mapped[str] = mapped_column(Text, default="")
     body: Mapped[str] = mapped_column(Text, default="")
     infringing_url: Mapped[str] = mapped_column(Text, default="")
     stream_urls_json: Mapped[list] = mapped_column(JSON, default=list)
     screenshot_urls_json: Mapped[list] = mapped_column(JSON, default=list)
     server_labels_json: Mapped[list] = mapped_column(JSON, default=list)
+    stream_evidence_json: Mapped[list] = mapped_column(JSON, default=list)
     provider_info_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    rights_owner_reference_url: Mapped[str] = mapped_column(Text, default="")
     generated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

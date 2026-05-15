@@ -28,6 +28,7 @@ class StreamURL(BaseModel):
     protocol: str = ""  # hls / dash / mp4 / etc.
     quality: str = ""
     source_layer: str = ""  # which server/layer captured it
+    channel_name: str = ""
     captured_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -52,6 +53,13 @@ class ServerResult(BaseModel):
     player_state: str | None = None
     visual_confirmation: str | None = None
     extraction_method: str | None = None
+    detected_channel: str | None = None
+    channel_candidates: list[str] = Field(default_factory=list)
+    channel_confidence: str | None = None
+    channel_detection_method: str | None = None
+    ocr_text: str | None = None
+    playback_confirmed: bool = False
+    server_change_observed: bool = False
     network_diagnostics: list[dict[str, Any]] = Field(default_factory=list)
     iframe_diagnostics: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -64,6 +72,9 @@ class ExtractionResult(BaseModel):
     streams: list[StreamURL] = Field(default_factory=list)
     screenshots: list[str] = Field(default_factory=list)  # Cloudinary URLs
     embedded_urls: list[str] = Field(default_factory=list)  # iframes needing embedded agent
+    primary_channel: str = ""
+    detected_channels: list[str] = Field(default_factory=list)
+    channel_metadata: dict[str, Any] = Field(default_factory=dict)
     agent_type: AgentType
     tool_calls_used: int = 0
     duration_seconds: float = 0.0
@@ -81,6 +92,7 @@ class MatchInfo(BaseModel):
     title: str = ""
     participants: str | None = None  # "Team A vs Team B"
     channel: str | None = None
+    channel_candidates: list[str] = Field(default_factory=list)
     sport: str | None = None
     league: str | None = None
     status: str = "unknown"  # live / upcoming / replay / unknown
@@ -90,6 +102,7 @@ class MatchInfo(BaseModel):
     iframes: list[str] = Field(default_factory=list)
     entry_point: str = ""
     patterns: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 # ── Provider / Whois analysis ─────────────────────────────────────────────────
@@ -118,6 +131,7 @@ class TakedownEmail(BaseModel):
 
     provider: str
     abuse_email: str
+    channel_name: str = ""
     subject: str
     body: str
     # Evidence attached
@@ -125,8 +139,24 @@ class TakedownEmail(BaseModel):
     stream_urls: list[str] = Field(default_factory=list)
     screenshot_urls: list[str] = Field(default_factory=list)
     server_labels: list[str] = Field(default_factory=list)
+    stream_evidence: list["StreamEvidence"] = Field(default_factory=list)
     provider_info: ProviderInfo | None = None
+    rights_owner_reference_url: str = ""
     generated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class StreamEvidence(BaseModel):
+    """Correlated stream-to-screenshot evidence for takedown drafts."""
+
+    stream_url: str
+    protocol: str = ""
+    source_layer: str = ""
+    server_label: str = ""
+    channel_name: str = ""
+    screenshot_urls: list[str] = Field(default_factory=list)
+    page_url: str = ""
+    provider_hostname: str = ""
+    ocr_text: str = ""
 
 
 # ── Pipeline result ───────────────────────────────────────────────────────────

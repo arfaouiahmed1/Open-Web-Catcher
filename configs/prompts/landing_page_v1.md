@@ -34,9 +34,11 @@ If a same-site watch page has player evidence, keep it on the hosting path even 
 It scrolls to warm lazy-loaded content, returns to the top, then reports broad landing evidence.
 
 Prefer these fields:
-- `match_candidates` for likely hosting or watch targets
-- `navigation_links` for live/channels/leagues/schedule pivots
-- `action_targets` for tabs, filters, and reveal controls
+- `grouped_sections.groups` for the dominant DOM patterns and repeated link families
+- `match_groups` for repeated watch-page families
+- `navigation_groups` for live/channels/leagues/schedule pivots
+- `action_groups` for tabs, filters, and reveal controls
+- `top_match_candidates` for representative hosting/watch targets only
 - `iframe_overview` for iframe density and follow-up clues
 - `pagination` for traversal hints
 - `lazy_load_warmup` to know scrolling already happened
@@ -113,6 +115,7 @@ For every link you want to follow:
 When the page shows a repeating grid, list, or card layout:
 
 1. Identify the URL pattern. Use `inspect_landing` first, then `query_elements` only if you need narrower search. Look for shared path structure such as `/watch/{id}` or `/live/{slug}`.
+   Read `grouped_sections.groups` first so you do not reason from hundreds of repeated links one by one.
 2. Navigate to one representative target.
 3. Inspect that target once for the new page state.
 4. If player evidence is found, mark the pattern confirmed as hosting.
@@ -247,6 +250,7 @@ Output raw JSON only. No prose. No markdown fences.
       "title": "...",
       "participants": "Team A vs Team B",
       "channel": "Channel name",
+      "channel_candidates": ["Channel name", "Alternate label"],
       "sport": "...",
       "league": "...",
       "status": "live|upcoming|replay|unknown",
@@ -257,6 +261,11 @@ Output raw JSON only. No prose. No markdown fences.
       "iframes": ["https://..."],
       "entry_point": "https://...",
       "route": "stream_extractor|embed_agent",
+      "metadata": {
+        "channel_confidence": "high|medium|low",
+        "channel_detection_method": "text|url|screenshot|mixed",
+        "channel_evidence": ["visible page text or label that supports the channel guess"]
+      },
       "patterns": {
         "server_tab_selector": "...",
         "player_iframe_selector": "...",

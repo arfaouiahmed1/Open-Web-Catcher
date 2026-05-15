@@ -15,7 +15,16 @@ import {
 
 function EmailDraftCard({ email, index }) {
   const streamCount = Array.isArray(email?.stream_urls) ? email.stream_urls.length : 0;
-  const screenshotCount = Array.isArray(email?.screenshot_urls) ? email.screenshot_urls.length : 0;
+  const evidenceRows = Array.isArray(email?.stream_evidence) ? email.stream_evidence : [];
+  const screenshotCount = evidenceRows.length
+    ? new Set(
+        evidenceRows.flatMap((row) =>
+          Array.isArray(row?.screenshot_urls) ? row.screenshot_urls.filter(Boolean) : [],
+        ),
+      ).size
+    : Array.isArray(email?.screenshot_urls)
+      ? email.screenshot_urls.length
+      : 0;
   const serverCount = Array.isArray(email?.server_labels) ? email.server_labels.length : 0;
 
   return (
@@ -31,6 +40,7 @@ function EmailDraftCard({ email, index }) {
             </CardTitle>
             <CardDescription className="mt-1 text-[12px]">
               Generated from orchestrator provider checks and extraction evidence.
+              {email?.channel_name ? ` Channel: ${email.channel_name}.` : ""}
             </CardDescription>
           </div>
           <div className="ml-auto flex flex-wrap gap-2">
@@ -65,6 +75,62 @@ function EmailDraftCard({ email, index }) {
             <pre className="mt-1 overflow-x-auto whitespace-pre-wrap rounded-lg border border-border bg-card px-3 py-3 font-mono text-[11px] leading-relaxed text-foreground/85">
               {email.body}
             </pre>
+          </div>
+        ) : null}
+        {evidenceRows.length ? (
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
+              Correlated evidence
+            </div>
+            <div className="mt-2 space-y-3">
+              {evidenceRows.map((row, rowIndex) => (
+                <div
+                  key={`${row?.stream_url || "stream"}-${rowIndex}`}
+                  className="rounded-lg border border-border bg-muted/15 px-3 py-3"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone="signal" className="font-mono text-[10px]">
+                      {row?.protocol || "unknown"}
+                    </Badge>
+                    {row?.server_label ? (
+                      <Badge tone="default" className="font-mono text-[10px]">
+                        {row.server_label}
+                      </Badge>
+                    ) : null}
+                    {row?.channel_name ? (
+                      <Badge tone="default" className="font-mono text-[10px]">
+                        {row.channel_name}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <div className="mt-2 break-all font-mono text-[11px] text-foreground/90">
+                    {row?.stream_url || "Unknown stream"}
+                  </div>
+                  {Array.isArray(row?.screenshot_urls) && row.screenshot_urls.length ? (
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      {row.screenshot_urls.map((screenshotUrl, screenshotIndex) => (
+                        <a
+                          key={`${screenshotUrl}-${screenshotIndex}`}
+                          href={screenshotUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="overflow-hidden rounded-lg border border-border bg-card transition hover:border-primary/50"
+                        >
+                          <img
+                            src={screenshotUrl}
+                            alt={`Evidence screenshot ${screenshotIndex + 1}`}
+                            className="h-32 w-full object-cover"
+                          />
+                          <div className="border-t border-border px-2 py-1 font-mono text-[10px] text-muted-foreground">
+                            Screenshot {screenshotIndex + 1}
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
           </div>
         ) : null}
         {email?.provider_info ? (
