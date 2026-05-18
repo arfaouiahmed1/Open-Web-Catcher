@@ -16,7 +16,7 @@ const NOISE_PATTERN =
   /(login|sign in|signup|register|privacy|terms|cookie|contact|about|help|faq|telegram|discord|twitter|facebook|instagram)/i;
 
 const WATCH_PATTERN =
-  /(\/watch\/|\/live\/|\/stream\/|watch|live|stream|match|fixture|kickoff|vs|versus|channel|game|event|play)/i;
+  /(\/watch\/|\/live\/|\/stream\/|watch|live|stream|match|fixture|kickoff|vs|versus|channel|game|event|play|championship|league|cup|tournament)/i;
 
 const NAV_PATTERN =
   /(home|schedule|api|status|channels|category|categories|today|live|leagues?)/i;
@@ -331,12 +331,14 @@ function landingLinkGroup(entry) {
   const url = String(entry.url || "").toLowerCase();
   const text = String(entry.text || "").toLowerCase();
   const source = String(entry.source || "").toLowerCase();
+  const status = String(entry.status || "").toLowerCase();
   if (/status/.test(url) || /\bstatus\b/.test(text)) return "status_links";
-  if (source === "nav" || NAV_PATTERN.test(text)) return "header_nav";
+  if (source === "nav") return "header_nav";
   if (/\/category\//.test(url) || CATEGORY_PATTERN.test(text)) return "sports_categories";
-  if (/\/watch\//.test(url) && /\blive\b/.test(text)) return "live_watch_cards";
-  if (/\/watch\//.test(url) && /\b(channel|tv)\b/.test(text)) return "live_channels";
-  if (/\/watch\//.test(url)) return "watch_links";
+  if (WATCH_PATTERN.test(`${text} ${url}`) && status === "live") return "live_watch_cards";
+  if (WATCH_PATTERN.test(`${text} ${url}`) && /\b(channel|tv)\b/.test(text)) return "live_channels";
+  if (WATCH_PATTERN.test(`${text} ${url}`)) return "watch_links";
+  if (NAV_PATTERN.test(text)) return "header_nav";
   if (/\/schedule/.test(url) || /\bschedule\b/.test(text)) return "schedule_links";
   if (/mirror|backup/.test(text)) return "mirror_links";
   return "misc_links";
@@ -414,6 +416,10 @@ function compactLinkCandidate(entry) {
     url: entry.url,
     status: entry.status,
     frame_path: entry.frame_path || "root",
+    selector: entry.selector || "",
+    xpath: entry.xpath || "",
+    x: Math.round(entry.x || 0),
+    y: Math.round(entry.y || 0),
   };
 }
 
@@ -777,7 +783,7 @@ function splitLandingGroups(linkGroups) {
 export function summarizeLandingInspect(data, options = {}) {
   const budgetTarget = options.budgetTargetBytes || DEFAULT_BUDGETS.landing;
   const rawCounts = buildRawCounts(data);
-  const links = collectLinks(data).map((entry) => ({ ...entry, metadata: { status: inferStatus(entry.text, entry.url) } }));
+  const links = collectLinks(data).map((entry) => ({ ...entry, status: inferStatus(entry.text, entry.url) }));
   const actions = collectActions(data);
   const linkGroups = buildLinkGroups(links, landingLinkGroup);
   const { matchGroups, navigationGroups } = splitLandingGroups(linkGroups);

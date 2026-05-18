@@ -101,6 +101,13 @@ def _aggregate_agent_status(statuses: list[str]) -> str:
     return normalized[-1]
 
 
+def _first_non_empty_list(*candidates: Any) -> list[Any]:
+    for candidate in candidates:
+        if isinstance(candidate, list) and candidate:
+            return candidate
+    return []
+
+
 class OperatorConsoleRepository:
     TABLE_MAP = {
         "pipeline_runs": PipelineRunRecord,
@@ -890,6 +897,42 @@ class OperatorConsoleRepository:
 
         job_state = self._job_state_row(job)
         snapshot_payload = snapshot.snapshot_json if snapshot else {}
+        run_stream_rows = (
+            self._session.query(RunStreamRecord)
+            .filter(RunStreamRecord.pipeline_run_id == pipeline.id)
+            .order_by(RunStreamRecord.id.asc())
+            .all()
+        )
+        provider_rows = (
+            self._session.query(ProviderAnalysisRecord)
+            .filter(ProviderAnalysisRecord.pipeline_run_id == pipeline.id)
+            .order_by(ProviderAnalysisRecord.id.asc())
+            .all()
+        )
+        email_rows = (
+            self._session.query(TakedownEmailRecord)
+            .filter(TakedownEmailRecord.pipeline_run_id == pipeline.id)
+            .order_by(TakedownEmailRecord.id.asc())
+            .all()
+        )
+        screenshot_rows = (
+            self._session.query(RunScreenshotRecord)
+            .filter(RunScreenshotRecord.pipeline_run_id == pipeline.id)
+            .order_by(RunScreenshotRecord.id.asc())
+            .all()
+        )
+        db_all_streams = [self._serialize_model(row) for row in run_stream_rows]
+        db_provider_analysis = [self._serialize_model(row) for row in provider_rows]
+        db_takedown_emails = [self._serialize_model(row) for row in email_rows]
+        db_screenshots = [str(row.screenshot_url or "") for row in screenshot_rows if str(row.screenshot_url or "").strip()]
+        snapshot_all_streams = snapshot_payload.get("all_streams", []) if isinstance(snapshot_payload, dict) else []
+        snapshot_provider_analysis = snapshot_payload.get("provider_analysis", []) if isinstance(snapshot_payload, dict) else []
+        snapshot_takedown_emails = snapshot_payload.get("takedown_emails", []) if isinstance(snapshot_payload, dict) else []
+        snapshot_all_screenshots = snapshot_payload.get("all_screenshots", []) if isinstance(snapshot_payload, dict) else []
+        effective_all_streams = _first_non_empty_list(snapshot_all_streams, db_all_streams)
+        effective_provider_analysis = _first_non_empty_list(snapshot_provider_analysis, db_provider_analysis)
+        effective_takedown_emails = _first_non_empty_list(snapshot_takedown_emails, db_takedown_emails)
+        effective_all_screenshots = _first_non_empty_list(snapshot_all_screenshots, db_screenshots)
         run_payload = self._run_row(
             pipeline,
             root_actor=root_actor,
@@ -922,10 +965,10 @@ class OperatorConsoleRepository:
         return {
             "run": run_payload,
             "snapshot": snapshot_payload,
-            "provider_analysis": snapshot_payload.get("provider_analysis", []) or [],
-            "takedown_emails": snapshot_payload.get("takedown_emails", []) or [],
-            "all_streams": snapshot_payload.get("all_streams", []) or [],
-            "all_screenshots": snapshot_payload.get("all_screenshots", []) or [],
+            "provider_analysis": effective_provider_analysis,
+            "takedown_emails": effective_takedown_emails,
+            "all_streams": effective_all_streams,
+            "all_screenshots": effective_all_screenshots,
             "agent_runs": [self._serialize_model(row) for row in agent_runs],
             "agent_outputs": agent_output_rows,
             "agent_rollups": agent_rollups,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import json
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
@@ -87,6 +88,28 @@ def _dedupe_keep_order(values: list[str]) -> list[str]:
     return result
 
 
+def _coerce_memory_match_records(run_memory: dict[str, Any]) -> list[dict[str, Any]]:
+    records = run_memory.get("match_records", []) if isinstance(run_memory, dict) else []
+    if not isinstance(records, list):
+        return []
+    parsed: list[dict[str, Any]] = []
+    for raw in records:
+        if isinstance(raw, dict):
+            record = dict(raw)
+        else:
+            try:
+                record = json.loads(str(raw or ""))
+            except json.JSONDecodeError:
+                continue
+        if not isinstance(record, dict):
+            continue
+        url = str(record.get("url") or "").strip()
+        if not url.startswith(("http://", "https://")) or _looks_like_low_value_url(url):
+            continue
+        parsed.append(record)
+    return parsed
+
+
 def _looks_like_low_value_url(url: str) -> bool:
     lowered = str(url or "").lower().strip()
     if not lowered:
@@ -100,6 +123,34 @@ def _looks_like_low_value_url(url: str) -> bool:
         return True
     if re.search(r"\.(css|js|png|jpe?g|gif|svg|ico|webp|pdf)(\?|$)", lowered):
         return True
+    return False
+
+
+def _clean_optional_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _has_verified_player_or_iframe(page: dict[str, Any]) -> bool:
+    if isinstance(page.get("iframes"), list) and page.get("iframes"):
+        return True
+    route = str(page.get("route") or "").strip().lower()
+    if route == "embed_agent":
+        return True
+    reason = " ".join(
+        str(page.get(key) or "")
+        for key in ("classification_reason", "route_source", "title", "participants")
+    ).lower()
+    return any(token in reason for token in ("live", "watch", "player", "play", "iframe", "stream"))
+
+
+def _is_explicit_non_live_candidate(page: dict[str, Any]) -> bool:
+    status = str(page.get("status") or "").strip().lower()
+    if not status:
+        return False
+    if status in {"live", "on_air", "on-air", "now", "in_progress", "streaming"}:
+        return False
+    if status in {"upcoming", "scheduled", "replay", "vod", "ended", "finished", "not_live"}:
+        return not _has_verified_player_or_iframe(page)
     return False
 
 
@@ -145,11 +196,28 @@ def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[st
             continue
         seen_urls.add(candidate_url)
 
+        for text_key in (
+            "title",
+            "participants",
+            "channel",
+            "sport",
+            "league",
+            "status",
+            "scheduled_time",
+            "route",
+            "entry_point",
+            "route_source",
+        ):
+            if text_key in page_dict:
+                page_dict[text_key] = _clean_optional_text(page_dict.get(text_key))
         page_dict.setdefault("title", "")
         page_dict.setdefault("participants", "")
         page_dict.setdefault("channel", "")
         if not isinstance(page_dict.get("channel_candidates"), list):
             page_dict["channel_candidates"] = []
+        page_dict["channel_candidates"] = [
+            _clean_optional_text(item) for item in page_dict["channel_candidates"]
+        ]
         page_dict.setdefault("sport", "")
         page_dict.setdefault("league", "")
         page_dict.setdefault("status", "unknown")
@@ -157,8 +225,17 @@ def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[st
         page_dict.setdefault("confidence", 85)
         page_dict.setdefault("route", "stream_extractor")
         page_dict.setdefault("entry_point", source_url)
+        if not isinstance(page_dict.get("redirect_chain"), list):
+            page_dict["redirect_chain"] = []
+        page_dict["redirect_chain"] = [
+            _clean_optional_text(item) for item in page_dict["redirect_chain"] if item
+        ]
         if not isinstance(page_dict.get("iframes"), list):
             page_dict["iframes"] = []
+        page_dict["iframes"] = [_clean_optional_text(item) for item in page_dict["iframes"] if item]
+
+        if _is_explicit_non_live_candidate(page_dict):
+            continue
 
         raw_patterns = page_dict.get("patterns")
         patterns: dict[str, Any] = dict(raw_patterns) if isinstance(raw_patterns, dict) else {}
@@ -207,6 +284,40 @@ def _augment_landing_output(
     output = dict(output_json or {})
     hosting_pages = _normalize_hosting_pages(output.get("hosting_pages", []), source_url=source_url)
     existing_urls = {str(page.get("url") or "").strip() for page in hosting_pages}
+
+    recovered_from_short_memory = 0
+    for record in _coerce_memory_match_records(run_memory):
+        candidate_url = str(record.get("url") or "").strip()
+        if candidate_url in existing_urls:
+            continue
+        page_dict: dict[str, Any] = {
+            "url": candidate_url,
+            "title": str(record.get("title") or ""),
+            "participants": str(record.get("participants") or ""),
+            "channel": "",
+            "channel_candidates": [],
+            "sport": "",
+            "league": "",
+            "status": str(record.get("status") or "unknown"),
+            "scheduled_time": "",
+            "confidence": 62,
+            "classification_reason": (
+                "recovered from inspect_landing candidate memory; hosting agent must verify "
+                "with screenshot/player evidence"
+            ),
+            "servers": [],
+            "iframes": [],
+            "entry_point": source_url,
+            "route_source": "inspect_landing_short_memory",
+            "redirect_chain": [source_url, candidate_url],
+            "route": "stream_extractor",
+            "patterns": {"url_pattern": _generalize_url_pattern(candidate_url)},
+        }
+        if _is_explicit_non_live_candidate(page_dict):
+            continue
+        hosting_pages.append(page_dict)
+        existing_urls.add(candidate_url)
+        recovered_from_short_memory += 1
 
     known_patterns: set[str] = set()
     known_pattern_signatures: set[str] = set()
@@ -324,6 +435,7 @@ def _augment_landing_output(
 
     output["pattern_expansion"] = {
         "expanded_candidates": expanded_count,
+        "short_memory_recovered_candidates": recovered_from_short_memory,
         "known_patterns": len([pattern for pattern in known_patterns if pattern]),
         "known_pattern_signatures": len(
             [signature for signature in known_pattern_signatures if signature]

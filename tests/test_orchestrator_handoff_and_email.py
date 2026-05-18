@@ -1,8 +1,20 @@
 from src.agents.email_generator import generate_takedown_emails
 from src.agents.hosting_page import _normalize_hosting_output
-from src.agents.orchestrator import _requires_embedded_followup
-from src.models.enums import AgentType, ExtractionStatus, PageType
-from src.models.schemas import ExtractionResult, ProviderInfo, ServerResult, StreamURL
+from src.agents.orchestrator import (
+    _build_hosting_handoff,
+    _collect_all_streams,
+    _requires_embedded_followup,
+    route_after_classification,
+)
+from src.models.enums import AgentType, Confidence, ExtractionStatus, PageType
+from src.models.schemas import (
+    ClassificationResult,
+    ExtractionResult,
+    ProviderInfo,
+    ServerResult,
+    StreamURL,
+    MatchInfo,
+)
 
 
 def test_hosting_output_promotes_partial_success_embed_decision() -> None:
@@ -65,6 +77,93 @@ def test_requires_embedded_followup_when_server_requests_it() -> None:
     )
 
     assert _requires_embedded_followup(extraction) is True
+
+
+def test_embedded_classification_with_site_shell_video_falls_back_to_hosting() -> None:
+    classification = ClassificationResult(
+        url="https://freeslot.example/live",
+        page_type=PageType.EMBEDDED,
+        confidence=Confidence.MEDIUM,
+        reasoning=(
+            "Large autoplay background video with normal site chrome, nav menu, "
+            "search box, and cookie banner. No player controls were verified."
+        ),
+    )
+
+    assert route_after_classification({"classification": classification}) == "queue_root_hosting"
+
+
+def test_embedded_classification_with_real_player_stays_embedded() -> None:
+    classification = ClassificationResult(
+        url="https://embed.example/player/123",
+        page_type=PageType.EMBEDDED,
+        confidence=Confidence.HIGH,
+        reasoning=(
+            "Standalone third-party player with minimal chrome, play button, "
+            "video controls, and iframe player ownership."
+        ),
+    )
+
+    assert route_after_classification({"classification": classification}) == "queue_root_embedded"
+
+
+def test_hosting_handoff_preserves_landing_route_and_iframe_context() -> None:
+    handoff = _build_hosting_handoff(
+        {
+            "url": "https://istreameast.app/v3",
+            "classification": ClassificationResult(
+                url="https://istreameast.app/v3",
+                page_type=PageType.LANDING,
+                confidence=Confidence.HIGH,
+                reasoning="listing page",
+            ),
+            "matches": [
+                MatchInfo(
+                    url="https://istreameast.app/game/123",
+                    title="Sweden vs Czechia",
+                    route="stream_extractor",
+                    iframes=["https://gooz.example/embed/50810"],
+                    route_source="representative_card",
+                    redirect_chain=[
+                        "https://istreameast.app/v3",
+                        "https://istreameast.app/v52",
+                        "https://istreameast.app/game/123",
+                    ],
+                )
+            ],
+        },
+        target_url="https://istreameast.app/game/123",
+        memory_hint_text="",
+    )
+
+    assert "landing route source: representative_card" in handoff
+    assert "landing redirect chain: https://istreameast.app/v3 -> https://istreameast.app/v52" in handoff
+    assert "landing iframes to watch: https://gooz.example/embed/50810" in handoff
+
+
+def test_provider_analysis_only_receives_protocol_stream_urls() -> None:
+    extraction = ExtractionResult(
+        url="https://streamed.pk/category/cricket",
+        page_type=PageType.HOSTING,
+        status=ExtractionStatus.SUCCESS,
+        agent_type=AgentType.HOSTING_PAGE,
+        streams=[
+            StreamURL(url="https://streamed.pk/category/cricket"),
+            StreamURL(url="https://cdn.example.com/live/master.m3u8"),
+        ],
+        servers=[
+            ServerResult(
+                label="server",
+                m3u8_urls=["https://cdn.example.com/live/master.m3u8"],
+                mp4_urls=["https://cdn.example.com/video.mp4?token=1"],
+            )
+        ],
+    )
+
+    assert [stream.url for stream in _collect_all_streams([extraction])] == [
+        "https://cdn.example.com/live/master.m3u8",
+        "https://cdn.example.com/video.mp4?token=1",
+    ]
 
 
 def test_generate_takedown_emails_without_abuse_contact_still_creates_draft() -> None:

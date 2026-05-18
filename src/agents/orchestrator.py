@@ -52,6 +52,8 @@ class HandoffContext(TypedDict, total=False):
     candidate_title: str
     candidate_participants: str
     landing_route: str
+    landing_route_source: str
+    landing_redirect_chain: list[str]
     landing_iframes: list[str]
     recovery_url: str
     route_source: str
@@ -123,6 +125,14 @@ def render_handoff(ctx: HandoffContext) -> str:
     landing_route = ctx.get("landing_route")
     if landing_route:
         lines.append(f"- landing suggested route: {landing_route}")
+
+    landing_route_source = ctx.get("landing_route_source")
+    if landing_route_source:
+        lines.append(f"- landing route source: {landing_route_source}")
+
+    landing_redirect_chain = ctx.get("landing_redirect_chain")
+    if landing_redirect_chain:
+        lines.append(f"- landing redirect chain: {' -> '.join(landing_redirect_chain[:6])}")
 
     landing_iframes = ctx.get("landing_iframes")
     if landing_iframes:
@@ -431,6 +441,8 @@ def _build_hosting_handoff(
         ctx["candidate_title"] = match.title or ""
         ctx["candidate_participants"] = match.participants or ""
         ctx["landing_route"] = match.route or ""
+        ctx["landing_route_source"] = match.route_source or ""
+        ctx["landing_redirect_chain"] = match.redirect_chain or []
         ctx["landing_iframes"] = _dedupe_urls(match.iframes)[:4] if match.iframes else []
         if match.channel:
             ctx["focus"] += f"; landing hinted channel '{match.channel}' so verify it from the live player and override it if the site is misleading"
@@ -462,6 +474,8 @@ def _build_embedded_handoff(
         ctx["candidate_title"] = match.title or ""
         ctx["candidate_participants"] = match.participants or ""
         ctx["landing_route"] = match.route or ""
+        ctx["landing_route_source"] = match.route_source or ""
+        ctx["landing_redirect_chain"] = match.redirect_chain or []
         if match.channel:
             ctx["focus"] += f"; landing hinted channel '{match.channel}' so verify it from the live player and override it if the site is misleading"
     if source_hosting is not None:
@@ -618,6 +632,11 @@ async def landing_page_node(
             pending_embedded_urls.append(normalized_match.url)
         else:
             pending_hosting_urls.append(normalized_match.url)
+            pending_embedded_urls.extend(
+                iframe_url
+                for iframe_url in _dedupe_urls(normalized_match.iframes)
+                if _looks_like_direct_embed_url(iframe_url)
+            )
 
     matches = normalized_matches
     pending_hosting_urls = _dedupe_urls(pending_hosting_urls)
@@ -960,6 +979,74 @@ async def generate_takedown_emails_node(
     return {"takedown_emails": emails}
 
 
+_EMBEDDED_CLASSIFICATION_SITE_SHELL_SIGNALS = (
+    "background video",
+    "autoplay background",
+    "decorative video",
+    "hero video",
+    "site chrome",
+    "navigation bar",
+    "navbar",
+    "menu",
+    "search box",
+    "cookie banner",
+    "full website",
+    "home page",
+    "landing page",
+    "article page",
+)
+
+_EMBEDDED_CLASSIFICATION_PLAYER_SIGNALS = (
+    "standalone player",
+    "direct player",
+    "iframe player",
+    "embedded player",
+    "third-party player",
+    "minimal chrome",
+    "player controls",
+    "video controls",
+    "play button",
+    "fullscreen",
+    "m3u8",
+    "hls",
+    "dash stream",
+)
+
+_EMBEDDED_CLASSIFICATION_NEGATED_PLAYER_SIGNALS = (
+    "not an embedded player",
+    "not embedded player",
+    "not a standalone player",
+    "no player controls",
+    "no video controls",
+    "decorative rather than a player",
+)
+
+
+def _embedded_classification_needs_hosting_fallback(
+    classification: ClassificationResult,
+) -> bool:
+    """Guard the route when a decorative/site-shell video was mislabeled embedded."""
+    text = " ".join(
+        [
+            str(classification.reasoning or ""),
+            str(classification.url or ""),
+        ]
+    ).lower()
+    if not text:
+        return False
+    if any(signal in text for signal in _EMBEDDED_CLASSIFICATION_NEGATED_PLAYER_SIGNALS):
+        return True
+    has_site_shell_signal = any(
+        signal in text for signal in _EMBEDDED_CLASSIFICATION_SITE_SHELL_SIGNALS
+    )
+    if not has_site_shell_signal:
+        return False
+    has_player_signal = any(
+        signal in text for signal in _EMBEDDED_CLASSIFICATION_PLAYER_SIGNALS
+    )
+    return not has_player_signal
+
+
 def route_after_classification(state: PipelineState) -> str:
     classification = state["classification"]
     if classification is None:
@@ -969,6 +1056,8 @@ def route_after_classification(state: PipelineState) -> str:
     if classification.page_type == PageType.HOSTING:
         return "queue_root_hosting"
     if classification.page_type == PageType.EMBEDDED:
+        if _embedded_classification_needs_hosting_fallback(classification):
+            return "queue_root_hosting"
         return "queue_root_embedded"
     return "analyze_providers"
 
@@ -1215,12 +1304,12 @@ def _collect_all_streams(extraction_results: list[ExtractionResult]) -> list[Str
     streams: list[StreamURL] = []
     for extraction in extraction_results:
         for stream in extraction.streams:
-            if stream.url and stream.url not in seen:
+            if _looks_like_provider_stream_url(stream.url) and stream.url not in seen:
                 seen.add(stream.url)
                 streams.append(stream)
         for server in extraction.servers:
             for url in server.m3u8_urls + server.mpd_urls + server.mp4_urls:
-                if url and url not in seen:
+                if _looks_like_provider_stream_url(url) and url not in seen:
                     seen.add(url)
                     streams.append(StreamURL(url=url, source_layer=server.label))
         # Backward-compatible fallback for legacy payloads that only kept servers in metadata.
@@ -1230,10 +1319,22 @@ def _collect_all_streams(extraction_results: list[ExtractionResult]) -> list[Str
                 + server.get("mpd_urls", [])
                 + server.get("mp4_urls", [])
             ):
-                if url and url not in seen:
+                if _looks_like_provider_stream_url(url) and url not in seen:
                     seen.add(url)
                     streams.append(StreamURL(url=url, source_layer=server.get("label", "")))
     return streams
+
+
+def _looks_like_provider_stream_url(url: str) -> bool:
+    candidate = str(url or "").strip().lower()
+    if not candidate.startswith(("http://", "https://")):
+        return False
+    parsed = urlparse(candidate)
+    path = parsed.path or ""
+    return bool(
+        re.search(r"\.(m3u8|mpd|mp4)(?:$|[?#])", candidate)
+        or path.endswith((".m3u8", ".mpd", ".mp4"))
+    )
 
 
 def _collect_all_screenshots(extraction_results: list[ExtractionResult]) -> list[str]:

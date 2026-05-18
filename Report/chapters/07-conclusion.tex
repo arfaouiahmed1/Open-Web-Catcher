@@ -1,149 +1,143 @@
 \chapter{Conclusion and Perspectives}
 
-\section{Summary of contributions}
+\section{General Conclusion}
 
-This internship delivered two related artifacts for evidence collection on unstable
-streaming websites: a validated n8n workflow and a Python reference architecture derived
-from it. The work addressed a concrete operational need at Soft Stars: certain page
-conditions — deeply nested iframes, heavy anti-bot pressure, click-gated players, and
-tokenized stream generation — make fully automated evidence collection challenging. The
-validated workflow and the academic reference architecture tackle precisely those cases
-through reasoning-driven browser automation.
+This internship produced an agentic evidence-collection system for illegal sports
+streaming websites. The work started from a practical problem: streaming-piracy pages do
+not expose evidence through simple static HTML. They use dynamic listings, JavaScript
+tabs, popup traps, nested iframes, click-gated players, redirects, provider checks, and
+short-lived stream URLs. The final system therefore had to behave more like a controlled
+browser investigator than a normal scraper.
 
-The contributions can be summarized along five dimensions:
+The project followed a general-to-specific progression. The n8n phase validated the core
+idea quickly: an LLM-guided browser workflow can inspect pages, follow page transitions,
+activate players, and recover evidence. The Python reference implementation then turned
+that prototype into a more maintainable architecture with FastAPI, a Next.js operator
+console, profiled MCP browser tools, specialist agents, memory and cache support,
+PostgreSQL/SQLite observability, and cost-aware model telemetry.
+
+The most important result is not a single extraction trick. It is a repeatable
+engineering framework for investigating unstable websites while preserving reviewable
+evidence: traces, screenshots, stream candidates, page classifications, model/tool
+usage, and failure reasons.
+
+\section{Main Contributions}
 
 \begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.5cm}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.7cm}
                               >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
-Contribution & Description \\
+Contribution & Summary \\
 \midrule
-n8n prototype & Rapid feasibility validation of the extraction pipeline on real targets;
-  established that the agentic approach was viable and led to a focused single-agent
-  deployment in the company context. \\
-Agent architecture & Four specialist agents (classification, landing, hosting, embedded)
-  each with a targeted ReAct-style prompt, dedicated tool set, and explicit stopping
-  criteria. \\
-Browser tool layer & Puppeteer-based tools (inspect, interact, harvest, screenshot,
-  navigate, get\_media\_state) that enable adaptive page interaction beyond static HTML
-  retrieval. \\
-Operator platform & FastAPI backend with structured observability + Next.js operator
-  console prototype providing live run streaming, history, and evaluation surfaces. \\
-Prompt engineering & Iterative evolution from intent-based to ReAct-style prompts,
-  evaluated across navigation and player activation use cases, with documented improvement
-  in recall and recovery rate. \\
+n8n feasibility prototype & Validated the agentic browser workflow on real dynamic
+pages and exposed the limitations of long sequential visual workflows. \\
+Specialist agent design & Split the task into classification, landing, hosting, and
+embedded agents, each with a focused prompt, tool profile, and stopping behavior. \\
+Browser-tool layer & Built Puppeteer/MCP tools for inspection, interaction, navigation,
+screenshot capture, media-state checks, stream harvesting, and memory support. \\
+Operator platform & Provided a FastAPI backend and Next.js console for run launching,
+run review, event streaming, screenshots, and dashboard metrics. \\
+Evaluation framework & Defined KPI formulas for classification, navigation, player
+activation, stream extraction, popup handling, tool behavior, cache, and cost. \\
+Observability and cost tracking & Persisted run records, events, model usage, tool
+calls, cache fields, and cost fields so failures can be diagnosed instead of guessed. \\
 \bottomrule
 \end{tabularx}
-\caption{Summary of main contributions by dimension.}
-\label{tab:contrib-summary}
+\caption{Summary of the project contributions.}
+\label{tab:final-contributions}
 \end{table}
 
-\section{Key technical lessons}
+\section{Technical Lessons}
 
-\subsection{Prompt design matters more than agent count}
+\subsection{Prompt structure matters}
 
-The single most impactful improvement across all evaluation campaigns was the transition
-from intent-based to ReAct-style prompts. More agents or more tools did not help if
-the agent's prompt did not instruct it to check navigational controls or player state
-before declaring a task complete. Prompt discipline is the primary lever for system
-reliability.
+The largest reliability gain came from replacing broad intent-based prompts with
+ReAct-style prompts. The agent needed to observe, state a hypothesis, choose one action,
+verify the result, and then continue or stop. Without that loop, the system stopped too
+early, missed hidden tabs, harvested before activation, or accepted weak evidence.
 
-\subsection{Fallback paths are not optional}
+\subsection{Browser evidence must be layered}
 
-The hosting-to-embedded fallback mechanism recovered evidence in cases that would
-otherwise have been declared failures. The embedded agent resolving a 3-level iframe
-chain (Case A) would not have been reached without an explicit fallback routing rule.
-In the streaming-site domain, no single extraction strategy succeeds on all pages.
+DOM text alone was not enough. A valid result needed several evidence layers: visible
+state, screenshot context, tool trace, media state, stream URL, iframe path, and final
+structured output. This is why the implementation treats screenshots and runtime events
+as core evidence rather than debugging extras.
 
-\subsection{Observability drives improvement}
+\subsection{Fallbacks are part of the architecture}
 
-The per-step tool trace, screenshot artifacts, and cost tracking built into the platform
-were what made it possible to identify exactly where each failure occurred and which
-prompt or tool change would fix it. Without structured observability, the evaluation
-campaign would have produced aggregate success rates with no actionable signal.
+Streaming websites rarely follow one clean path. Landing pages may link to host pages,
+host pages may redirect to embedded players, and embedded players may be nested several
+frames deep. The hosting-to-embedded fallback was therefore essential. It allowed the
+system to recover cases that a single-stage scraper would mark as failed.
 
-\subsection{Anti-bot adaptation is continuous}
+\subsection{Evaluation must be regression-oriented}
 
-No static anti-bot configuration remained reliable across the evaluation window.
-Adblock filters, fingerprint profiles, and interaction timing all required periodic
-adjustment. The platform's value comes from being a maintainable framework for repeated
-adaptation, not from a one-time technical trick.
+The evaluation showed that every improvement can create a new failure. More tool calls
+can improve recovery, but also increase cost. More aggressive ad blocking can reduce
+noise, but can also break a player. A stronger prompt can improve one page type while
+overfitting another. The correct evaluation method is therefore regression testing across
+stable use cases: classification, landing navigation, player activation, server
+switching, popup handling, redirect handling, stream extraction, and metadata enrichment.
 
-\section{Conclusion}
+\section{Limitations}
 
-This internship delivered a practical evidence-collection workflow together with a
-maintainability-oriented reference architecture for unstable streaming websites. The
-core contribution is technical and operational: transform website-level failure modes
-into repeatable, traceable mitigation patterns.
-
-The project demonstrates a realistic engineering principle: resilience in this domain is
-built incrementally through iteration, measurement, and controlled adaptation. The n8n
-phase confirmed the concept quickly and produced the operational company-side workflow.
-The Python reference architecture translated the same lessons into a maintainable
-engineering design and future deployment target. The prompt evaluation gave the team a
-quantitative basis for continuous improvement.
-
-Progress came from concrete problem-fix cycles:
+The system remains a reference architecture, not a finished production enforcement
+platform. The main limitations are:
 
 \begin{itemize}
-  \item navigation-heavy pages required state-loop navigation rather than one-pass
-    crawling;
-  \item popup-heavy pages required fallback click strategies and visibility-aware
-    interaction;
-  \item anti-adblock pressure required adaptive policies, not static configuration;
-  \item Cloudflare-like barriers were handled best by reducing automation signals and
-    behaving closer to normal user traffic;
-  \item tokenized stream generation required post-activation harvest with deferred timing.
+  \item anti-bot and provider behavior changes continuously;
+  \item some runs still require human review before the evidence can be trusted;
+  \item the local dashboard snapshot is small and does not yet represent production-scale
+    accuracy;
+  \item model and pricing telemetry must be collected over more real runs before a true
+    LLM model leaderboard can be claimed;
+  \item deeply nested iframe chains, token expiry, and popup-heavy pages still require
+    careful budget and retry policies.
 \end{itemize}
 
-\section{Future work and broader lessons}
+These limitations do not invalidate the approach. They define the next engineering
+steps: larger evaluation sets, more stable telemetry capture, clearer model comparisons,
+and stronger run-level validation.
 
-The most useful short-term improvements are operational rather than architectural: tighten
-fallback triggers, formalize periodic adblock and fingerprint maintenance, and expand the
-benchmark set used during evaluation so that before/after prompt or tool changes can be
-measured more systematically.
+\section{Future Work}
 
-From a deployment perspective, the next logical step is to carry the Python reference
-architecture toward queue-driven cloud execution, with interactive services separated
-from browser workers and persistent evidence storage kept outside ephemeral containers.
-This direction is already compatible with the architecture presented in Chapters~4 and~5.
+The most useful short-term improvements are practical:
 
-\subsection{Canvas-Based Screenshot Annotation Layer}
-
-Another useful extension for the operator console is a \textbf{Canvas-Based Screenshot
-Annotation Layer}. This is presented as future work, not as current implemented
-functionality. The idea is to place a Canvas overlay above stored screenshots so that a
-reviewer can draw bounding boxes, arrows, points, freehand regions, and short labels on
-relevant evidence areas such as server buttons, play controls, iframe containers,
-blocked overlays, broadcaster logos, and player-state indicators.
-
-Each annotation can be stored as structured metadata linked to the screenshot URL, run
-ID, page URL, and review timestamp. A minimal annotation record would include
-\texttt{annotation\_id}, \texttt{run\_id}, \texttt{screenshot\_url},
-\texttt{page\_url}, \texttt{label}, \texttt{shape\_type}, \texttt{x}, \texttt{y},
-\texttt{width}, \texttt{height}, \texttt{note}, \texttt{created\_at}, and
-\texttt{reviewer}.
-
-This matters because it improves human review, makes screenshots easier to interpret,
-supports report figures and legal or operational review, and cleanly separates raw
-screenshot capture from reviewer interpretation. The annotation layer would not change
-the target website, because annotation happens only after capture.
-
-Automatic validation checks whether the agent output is structurally and evidentially
-acceptable. Canvas-based annotation is a human-review layer that explains why a
-screenshot matters by marking visual evidence regions. The two mechanisms are
-complementary: validation prevents unsupported outputs from being accepted, while
-annotation improves interpretability for operators and report readers.
-
-Beyond this specific use case, three lessons stand out:
 \begin{itemize}
-  \item specialist agents are more reliable and easier to control than one general-purpose agent;
-  \item ReAct-style procedures outperform generic intent statements on dynamic websites;
-  \item observability and memory are what turn a promising prototype into a maintainable reference architecture.
+  \item expand the fixed benchmark set with labeled landing, hosting, embedded, popup,
+    redirect, and tokenized-stream cases;
+  \item persist model/tool telemetry consistently for every dashboard run so cost,
+    cache, and model comparisons are always available;
+  \item add automated regression suites for each agent and each page behavior;
+  \item improve candidate ranking so the system spends less time on low-quality host
+    pages and dead server buttons;
+  \item refine memory so successful selectors, server labels, and provider patterns can
+    be reused without hardcoding websites;
+  \item move long browser work to queue-driven workers while keeping the operator console
+    responsive.
 \end{itemize}
 
-The final value of the project is not that it permanently defeats anti-bot behavior. Its
-value is that it provides a repeatable engineering framework for adapting to change while
-preserving reviewable evidence that investigators can trust.
+\subsection{Screenshot annotation layer}
+
+A useful operator-console extension is a canvas-based screenshot annotation layer. The
+system already captures screenshots; the next step is to let reviewers mark evidence
+regions directly: server buttons, play controls, iframe containers, blocking overlays,
+broadcaster logos, player state, and stream-relevant UI areas.
+
+Each annotation can be stored as structured metadata linked to the run, screenshot URL,
+page URL, timestamp, and reviewer. This would improve human review, make report figures
+clearer, and support evidence handoff without modifying the target website.
+
+\section{Final Remarks}
+
+The project demonstrates that agentic browser automation is a suitable approach for this
+domain when it is constrained, observable, and evaluated carefully. The final value is
+not that the system permanently defeats every anti-bot technique. The value is that it
+turns a messy investigation process into a structured workflow: classify the page,
+navigate deliberately, activate and verify the player, extract evidence, preserve the
+trace, estimate the cost, and learn from failures.
+
+That framework gives Soft Stars a foundation for continuing the work: more data, more
+evaluation, more robust deployment, and clearer operational review.

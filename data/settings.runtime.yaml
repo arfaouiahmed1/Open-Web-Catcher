@@ -67,6 +67,7 @@ agent_runtime_config:
     tool_result_cache_min_identical_observations: 2
     tool_timeout_seconds: 60
 agent_timeout_seconds: 2700
+background_job_concurrency: 1
 browser_engine: puppeteer
 browser_runtime:
   playwright:
@@ -82,9 +83,13 @@ browser_runtime:
     iframe_recovery_timeout_ms: 20000
     iframe_sandbox_patch_enabled: true
     launch_timeout_ms: 45000
+    media_activation_candidate_limit: 8
+    media_activation_settle_ms: 1200
     media_capture_timeout_ms: 30000
     media_cors_patch_enabled: false
     media_playback_verification_enabled: true
+    media_playback_verification_timeout_ms: 7000
+    media_preflight_action_limit: 4
     media_proxy_strategy: direct_first
     media_retry_backoff_ms:
     - 1000
@@ -128,9 +133,13 @@ browser_runtime:
     iframe_recovery_timeout_ms: 20000
     iframe_sandbox_patch_enabled: true
     launch_timeout_ms: 45000
+    media_activation_candidate_limit: 8
+    media_activation_settle_ms: 1200
     media_capture_timeout_ms: 30000
     media_cors_patch_enabled: true
     media_playback_verification_enabled: true
+    media_playback_verification_timeout_ms: 7000
+    media_preflight_action_limit: 4
     media_proxy_strategy: direct_first
     media_retry_backoff_ms:
     - 1000
@@ -232,7 +241,7 @@ orchestrator_model: gemini-3.1-flash-lite
 provider_cache_enabled: true
 provider_model_catalog_cache:
   google:
-    cached_at: '2026-05-14T23:42:08.196231+00:00'
+    cached_at: '2026-05-18T21:50:26.701485+00:00'
     models:
     - capabilities:
         allowed_tuning_keys: &id001

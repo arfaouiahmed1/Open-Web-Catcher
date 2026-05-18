@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
@@ -88,6 +89,7 @@ const AUTO_REFRESH_MS = 8000;
 const CUSTOM_LANGUAGE = "__custom__";
 const EMPTY_ARRAY = [];
 const EMPTY_OBJECT = {};
+const RUN_TABS = new Set(["sites", "batches", "history"]);
 
 const FALLBACK_LANGUAGES = [
   "english",
@@ -701,6 +703,8 @@ function SiteDetailSheet({
 }
 
 export function RunsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState("sites");
   const [sites, setSites] = useState([]);
   const [siteTotal, setSiteTotal] = useState(0);
@@ -753,15 +757,33 @@ export function RunsPage() {
     [selectedSiteIds, sites],
   );
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const batchId = params.get("batch") || "";
-    if (batchId) {
-      setSelectedBatchId(batchId);
-      setTab("batches");
+  const setRunsTab = useCallback((nextTab, updates = {}) => {
+    if (!RUN_TABS.has(nextTab)) return;
+    setTab(nextTab);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", nextTab);
+    if (nextTab !== "batches") {
+      params.delete("batch");
     }
-  }, []);
+    if (updates.batch) {
+      params.set("batch", updates.batch);
+      params.set("tab", "batches");
+    }
+    router.replace(`/runs?${params.toString()}`, { scroll: false });
+  }, [router, searchParams]);
+
+  useEffect(() => {
+    const requestedBatchId = searchParams.get("batch") || "";
+    const requestedTab = searchParams.get("tab") || "";
+    if (requestedBatchId) {
+      setSelectedBatchId(requestedBatchId);
+      setTab("batches");
+      return;
+    }
+    if (RUN_TABS.has(requestedTab)) {
+      setTab(requestedTab);
+    }
+  }, [searchParams]);
 
   const hasActiveDatasetWork = useMemo(() => {
     const siteActive = sites.some((site) =>
@@ -775,6 +797,11 @@ export function RunsPage() {
     if (tab !== "batches") return "";
     return selectedBatchId || batches[0]?.batch_id || "";
   }, [batches, selectedBatchId, tab]);
+
+  const selectedBatchSummary = useMemo(
+    () => batches.find((batch) => batch.batch_id === activeBatchId) || null,
+    [activeBatchId, batches],
+  );
 
   const loadDashboard = useCallback(async () => {
     setIsLoading(true);
@@ -830,7 +857,8 @@ export function RunsPage() {
     };
   }, []);
 
-  const batchRuns = batchDetail?.runs || EMPTY_ARRAY;
+  const batchRuns = batchDetail?.batch_id === activeBatchId ? batchDetail?.runs || EMPTY_ARRAY : EMPTY_ARRAY;
+  const displayedBatchDetail = batchDetail?.batch_id === activeBatchId ? batchDetail : selectedBatchSummary;
 
   useEffect(() => {
     let cancelled = false;
@@ -1162,7 +1190,7 @@ export function RunsPage() {
       });
       setSelectedBatchId(created.batch_id);
       setBatchDetail(created);
-      setTab("batches");
+      setRunsTab("batches", { batch: created.batch_id });
       setRefreshTick((value) => value + 1);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Failed to launch workflow batch");
@@ -1190,8 +1218,8 @@ export function RunsPage() {
 
   async function openBatch(batchId) {
     if (!batchId) return;
-    setTab("batches");
     setSelectedBatchId(batchId);
+    setRunsTab("batches", { batch: batchId });
   }
 
   async function cancelRun(runId) {
@@ -1298,7 +1326,7 @@ export function RunsPage() {
           </div>
         </div>
 
-        <Tabs value={tab} onValueChange={setTab}>
+        <Tabs value={tab} onValueChange={setRunsTab}>
           <TabsList className="h-auto flex-wrap justify-start">
             <TabsTrigger value="sites">Websites</TabsTrigger>
             <TabsTrigger value="batches">Batches</TabsTrigger>
@@ -1367,18 +1395,18 @@ export function RunsPage() {
 
             <Card className="overflow-hidden">
               <div className="max-h-[62vh] overflow-auto">
-              <Table>
+              <Table className="min-w-[1180px] table-fixed">
                 <TableHeader className="bg-muted/40">
                   <TableRow>
                     <TableHead className="w-10">
                       <Checkbox checked={allVisibleSelected} onCheckedChange={(checked) => toggleAllVisible(checked === true)} aria-label="Select all visible websites" />
                     </TableHead>
-                    <TableHead>Website</TableHead>
+                    <TableHead className="w-[340px]">Website</TableHead>
                     <TableHead className="w-[170px]">Language</TableHead>
                     <TableHead className="w-[160px]">Label</TableHead>
-                    <TableHead>Latest run</TableHead>
-                    <TableHead className="text-right">Cost</TableHead>
-                    <TableHead className="text-right">Tokens</TableHead>
+                    <TableHead className="w-[280px]">Latest run</TableHead>
+                    <TableHead className="w-[95px] text-right">Cost</TableHead>
+                    <TableHead className="w-[95px] text-right">Tokens</TableHead>
                     <TableHead className="w-[220px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1395,21 +1423,21 @@ export function RunsPage() {
                       const status = datasetRunStatus(latest);
                       const cost = effectiveRunCost(latest, pricingMap);
                       return (
-                        <TableRow key={site.id} className="[&>td]:py-2.5">
-                          <TableCell className="align-top">
+                        <TableRow key={site.id} className="h-auto [&>td]:py-2">
+                          <TableCell className="align-middle">
                             <Checkbox checked={selectedSiteIds.includes(site.id)} onCheckedChange={(checked) => toggleSite(site.id, checked === true)} aria-label={`Select ${site.url}`} />
                           </TableCell>
-                          <TableCell className="align-top">
+                          <TableCell className="align-middle">
                             <SiteIdentity site={site} />
                           </TableCell>
-                          <TableCell className="align-top">
+                          <TableCell className="align-middle">
                             <Select
                               value={site.language || ""}
                               onChange={(value) => updateSite(site.id, { language: value })}
                               options={languageOptions(languages, false)}
                             />
                           </TableCell>
-                          <TableCell className="align-top">
+                          <TableCell className="align-middle">
                             <Select
                               value={site.label || ""}
                               onChange={(value) => updateSite(site.id, { label: value })}
@@ -1446,8 +1474,8 @@ export function RunsPage() {
                           <TableCell className="align-top text-right tabular-nums text-xs">
                             {formatNumber(runTokenTotal(latest))}
                           </TableCell>
-                          <TableCell className="align-top">
-                            <div className="flex flex-wrap gap-1.5">
+                          <TableCell className="align-middle">
+                            <div className="flex flex-nowrap items-center gap-1.5 whitespace-nowrap">
                               <Button size="sm" variant="outline" onClick={() => openSiteDetail(site)}>
                                 <Eye className="h-3.5 w-3.5" />
                                 Results
@@ -1535,7 +1563,7 @@ export function RunsPage() {
                           <div className="text-sm font-medium text-foreground">No batches have been launched yet</div>
                           <div className="text-xs text-muted-foreground">Select websites in the dataset tab and launch a workflow batch.</div>
                           <div>
-                            <Button size="sm" variant="outline" onClick={() => setTab("sites")}>
+                            <Button size="sm" variant="outline" onClick={() => setRunsTab("sites")}>
                               Open websites tab
                             </Button>
                           </div>
@@ -1565,27 +1593,32 @@ export function RunsPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4 p-4">
-                {batchDetail ? (
+                {displayedBatchDetail ? (
                   <>
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                      <MetricTile icon={Activity} label="Status" value={datasetStatusLabel(batchDetail.status)} detail={batchDetail.batch_name || "Untitled batch"} />
-                      <MetricTile icon={CheckCircle2} label="Completed" value={`${formatNumber(batchDetail.completed_count || 0)} / ${formatNumber(batchDetail.requested_count || 0)}`} detail={`${formatNumber(batchDetail.success_rate || 0)}% success`} />
+                      <MetricTile icon={Activity} label="Status" value={datasetStatusLabel(displayedBatchDetail.status)} detail={displayedBatchDetail.batch_name || "Untitled batch"} />
+                      <MetricTile icon={CheckCircle2} label="Completed" value={`${formatNumber(displayedBatchDetail.completed_count || 0)} / ${formatNumber(displayedBatchDetail.requested_count || 0)}`} detail={`${formatNumber(displayedBatchDetail.success_rate || 0)}% success`} />
                       <MetricTile icon={Database} label="Batch cost" value={formatCurrency(batchTotals.cost)} detail={`${formatNumber(batchRuns.length)} site runs`} />
                       <MetricTile icon={BarChart3} label="Tokens" value={formatNumber(batchTotals.tokens)} detail="Summed per site run" />
                       <MetricTile icon={Globe2} label="Streams" value={formatNumber(batchTotals.streams)} detail="Collected streams" />
                     </div>
-                    <BatchProgress batch={batchDetail} />
+                    <BatchProgress batch={displayedBatchDetail} />
+                    {isBatchLoading && !batchRuns.length ? (
+                      <div className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                        Loading site-run rows for this batch...
+                      </div>
+                    ) : null}
                     <div className="overflow-hidden rounded-lg border">
                       <div className="max-h-[56vh] overflow-auto">
-                      <Table>
+                      <Table className="min-w-[960px] table-fixed">
                         <TableHeader className="bg-muted/40">
                           <TableRow>
-                            <TableHead>Website</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Agent/model</TableHead>
-                            <TableHead className="text-right">Tokens</TableHead>
-                            <TableHead className="text-right">Cost</TableHead>
-                            <TableHead>Run</TableHead>
+                            <TableHead className="w-[280px]">Website</TableHead>
+                            <TableHead className="w-[180px]">Status</TableHead>
+                            <TableHead className="w-[240px]">Agent/model</TableHead>
+                            <TableHead className="w-[95px] text-right">Tokens</TableHead>
+                            <TableHead className="w-[105px] text-right">Cost</TableHead>
+                            <TableHead className="w-[240px]">Run</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1643,7 +1676,7 @@ export function RunsPage() {
                           ) : (
                             <TableRow>
                               <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
-                                This batch has no site runs.
+                                {isBatchLoading ? "Loading site runs..." : "This batch has no site runs."}
                               </TableCell>
                             </TableRow>
                           )}
@@ -1653,10 +1686,8 @@ export function RunsPage() {
                     </div>
                   </>
                 ) : isBatchLoading ? (
-                  <div className="space-y-3 py-4">
-                    <Skeleton className="h-20 rounded-xl" />
-                    <Skeleton className="h-10 rounded-xl" />
-                    <Skeleton className="h-48 rounded-xl" />
+                  <div className="rounded-lg border border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+                    Loading batch detail...
                   </div>
                 ) : (
                   <div className="py-16 text-center text-sm text-muted-foreground">

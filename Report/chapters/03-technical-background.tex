@@ -1,0 +1,540 @@
+\chapter{Technical Background}
+
+This chapter introduces the technical concepts needed before presenting the system
+architecture and implementation. It deliberately stays at a general level: the goal is
+to explain the web structures, streaming mechanisms, browser automation tools, and
+agentic concepts that make the project understandable. The concrete architecture,
+database schema, prompts, and tool contracts are described later.
+
+The chapter moves from the target websites themselves toward the technologies used to
+analyze them. It starts with page structures and DOM representation, then explains
+streaming protocols and embedded players, then covers browser automation issues such as
+ads, cookies, popups, and anti-bot providers. It ends with the agentic concepts used in
+the project: agents, prompts, tool use, n8n, LangChain, MCP servers, model providers,
+caching, and token usage.
+
+\section{Streaming Website Structures}
+
+Illegal streaming websites are not a single page type. They are usually a chain of
+pages with different responsibilities: one page lists events, another page presents a
+selected match and server choices, and a final embedded page or iframe hosts the player.
+Understanding these page roles is necessary before discussing extraction tools, because
+each role exposes different evidence and requires different interaction.
+
+\subsection{The normal page flow}
+
+Most target websites can be described as a three-step navigation path. A landing page
+contains match listings. A hosting page focuses on one selected match and usually offers
+one or more streaming servers. An embedded page contains the actual player, often inside
+an iframe loaded from another domain.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=1.2cm]
+\node[flowbox, minimum width=4.2cm, minimum height=1.4cm, fill=blue!8] (landing)
+  {\textbf{Landing page}\\Match cards, schedule, leagues, dates};
+\node[flowbox, minimum width=4.2cm, minimum height=1.4cm, fill=orange!10,
+      right=1.8cm of landing] (hosting)
+  {\textbf{Hosting page}\\One match, server buttons, player area};
+\node[flowbox, minimum width=4.2cm, minimum height=1.4cm, fill=green!10,
+      right=1.8cm of hosting] (embedded)
+  {\textbf{Embedded page}\\Iframe or player link, media runtime};
+
+\draw[myarrow, very thick] (landing) -- node[above, font=\small]{select match} (hosting);
+\draw[myarrow, very thick] (hosting) -- node[above, font=\small]{open server/player} (embedded);
+
+\node[toolbox, fill=red!8, draw=red!50, minimum width=3.6cm, below=1.0cm of hosting] (noise)
+  {Ads, redirects, popups,\\blocked players};
+\draw[->, >=Stealth, dashed, thick, red!60] (hosting.south) -- (noise.north);
+\draw[->, >=Stealth, dashed, thick, red!60] (noise.east) -| (embedded.south);
+\end{tikzpicture}
+}
+\caption{Common navigation flow from event listing to hosting page and embedded player.}
+\label{fig:page-flow-general}
+\end{figure}
+
+This flow is not always clean. Some sites skip the hosting page and link directly to an
+embedded player. Others place several ad pages between the hosting page and the player.
+Still, this model is useful because it separates discovery, server selection, and media
+extraction into distinct technical problems.
+
+\subsection{Landing pages}
+
+Landing pages are the discovery layer. They usually contain match cards, schedule rows,
+league filters, date tabs, search boxes, or category menus. The useful output from a
+landing page is not the stream itself but a set of candidate hosting links and match
+metadata.
+
+Common landing-page layouts include:
+
+\begin{itemize}
+  \item \textbf{card grids}: repeated blocks with teams, time, league, and a watch link;
+  \item \textbf{tables or lists}: one row per event, often with a direct action link;
+  \item \textbf{tabbed schedules}: live, today, yesterday, tomorrow, or league-specific
+    tabs loaded through JavaScript;
+  \item \textbf{lazy-loaded sections}: match cards that appear only after scrolling or
+    after an XHR request;
+  \item \textbf{embedded JSON}: page data stored in \texttt{<script type="application/json">}
+    blocks or \texttt{data-*} attributes.
+\end{itemize}
+
+The important idea is that landing pages are structurally repetitive. Even when class
+names change, the page still tends to contain repeated event units. This makes layout
+recognition more useful than relying on one fixed CSS selector.
+
+\subsection{Hosting pages}
+
+Hosting pages are the decision layer. They normally focus on one match and contain a
+player container, a server list, tabs such as \texttt{Server 1} or \texttt{HD}, and
+sometimes channel names or broadcaster logos. A hosting page may already expose the
+stream URL, but more often it only exposes an iframe or a JavaScript player
+configuration.
+
+Typical hosting-page signals are:
+
+\begin{itemize}
+  \item one match title or two team names repeated near the player;
+  \item server buttons, mirrors, or quality selectors;
+  \item an iframe whose \texttt{src} points to a player page;
+  \item player libraries such as Video.js, JWPlayer, Clappr, hls.js, or dash.js;
+  \item visible state changes after clicking play, selecting a server, or closing an
+    overlay.
+\end{itemize}
+
+Hosting pages are more difficult than landing pages because they require interaction.
+The same click can activate a real player, open a popup, switch a server, or trigger a
+redirect. This is why browser automation and runtime observation become necessary.
+
+\subsection{Embedded pages}
+
+Embedded pages are the media layer. They are often minimal pages loaded inside iframes,
+with little content except a player, a play button, and scripts that request the final
+media manifest. They may belong to another domain, which means the top page and the
+player page have different DOMs, cookies, and network contexts.
+
+An embedded page is important because the final stream reference is often generated only
+there. A static request to the hosting page may not show any \texttt{.m3u8} or
+\texttt{.mpd} URL, while the embedded player requests the manifest after user
+activation.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.2cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Page type & Main role & Useful evidence \\ \midrule
+\texttt{landing\_page} & Discover events and candidate match pages & match links,
+team names, schedule metadata, listing screenshot \\
+\texttt{hosting\_page} & Select server and activate player & server labels, iframe
+URLs, player state, page screenshot \\
+\texttt{embedded\_page} & Load the final media runtime & stream manifest, segment
+requests, player diagnostics \\
+\texttt{other} & Filter noise such as ads, redirects, and unrelated pages & reason for
+skip or blocked state \\
+\bottomrule
+\end{tabularx}
+\caption{General page taxonomy used to reason about streaming-site structure.}
+\label{tab:general-page-taxonomy}
+\end{table}
+
+The page taxonomy turns a messy website into a sequence of smaller questions: Where are
+the matches? Which page hosts the selected match? Which server or iframe contains the
+player? Which runtime request proves that media was loaded?
+
+\section{DOM Structures and Web Page Representation}
+
+The Document Object Model (DOM) is the browser's tree representation of a web page. It
+turns HTML into nodes such as documents, elements, attributes, text nodes, iframes,
+buttons, images, and scripts. Browser automation tools operate on this tree when they
+query selectors, read attributes, click buttons, or remove overlays.
+
+\subsection{A simplified DOM tree}
+
+The diagram below shows a simplified DOM structure. It is intentionally basic, but it
+captures the idea used throughout the project: a visible page is not just text, it is a
+tree of nested elements with attributes and event handlers.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  domnode/.style={draw=black!70, fill=gray!6, rectangle, minimum width=3.0cm,
+                  minimum height=0.65cm, align=center, font=\small},
+  leaf/.style={draw=black!60, fill=blue!5, rectangle, minimum width=2.6cm,
+               minimum height=0.58cm, align=center, font=\footnotesize},
+  domarr/.style={-, thick, black!70}
+]
+\node[domnode] (doc) at (0,0) {Document};
+\node[domnode] (html) at (0,-1.1) {Root element: \texttt{<html>}};
+\node[domnode] (head) at (-3.7,-2.4) {Element: \texttt{<head>}};
+\node[domnode] (body) at (3.7,-2.4) {Element: \texttt{<body>}};
+\node[leaf] (title) at (-3.7,-3.5) {Element: \texttt{<title>}};
+\node[leaf] (ttext) at (-3.7,-4.5) {Text: page title};
+\node[leaf] (a) at (1.9,-3.5) {Element: \texttt{<a>}};
+\node[leaf] (href) at (1.9,-4.5) {Attribute: \texttt{href}};
+\node[leaf] (h1) at (5.4,-3.5) {Element: \texttt{<h1>}};
+\node[leaf] (htext) at (5.4,-4.5) {Text: heading};
+
+\draw[domarr] (doc) -- (html);
+\draw[domarr] (html) -- (head);
+\draw[domarr] (html) -- (body);
+\draw[domarr] (head) -- (title);
+\draw[domarr] (title) -- (ttext);
+\draw[domarr] (body) -- (a);
+\draw[domarr] (a) -- (href);
+\draw[domarr] (body) -- (h1);
+\draw[domarr] (h1) -- (htext);
+\end{tikzpicture}
+\caption{Simplified DOM tree showing how a browser represents an HTML document.}
+\label{fig:dom-tree-general}
+\end{figure}
+
+For streaming sites, the DOM is useful but incomplete. It can reveal match cards,
+buttons, iframes, scripts, and player containers, but it may not reveal media URLs that
+are generated at runtime. This is why DOM inspection is combined with screenshots and
+network monitoring.
+
+\subsection{DOM signals on streaming pages}
+
+Different page roles expose different DOM signals. Landing pages expose repeated
+containers. Hosting pages expose player containers and server controls. Embedded pages
+often expose a reduced tree with one \texttt{<video>} element or a JavaScript player
+root.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.4cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+DOM signal & Where it appears & Why it matters \\ \midrule
+Repeated cards or rows & landing pages & indicates match listings and candidate links \\
+\texttt{<a href="...">} & landing and hosting pages & provides navigation targets \\
+\texttt{data-*} attributes & landing and dynamic pages & may store event IDs, team
+names, or hidden URLs \\
+\texttt{<iframe src="...">} & hosting pages & points to embedded player context \\
+\texttt{<video>} or \texttt{<source>} & hosting or embedded pages & may expose direct
+media source references \\
+script text and JSON blocks & all page types & may contain player configuration or
+lazy-loaded data \\
+\bottomrule
+\end{tabularx}
+\caption{DOM signals commonly used to understand streaming-site pages.}
+\label{tab:dom-signals}
+\end{table}
+
+The conclusion is that DOM analysis is a starting point, not a complete solution. It
+identifies page structure and interaction targets, while runtime browser evidence
+confirms what actually happened after the page executed.
+
+\section{Streaming Protocols and Embedded Players}
+
+The final evidence in this domain is usually not a normal web page. It is a media
+manifest, a player configuration, or a network request made by the browser while the
+player is active. This section explains the main protocols and player embedding
+patterns at a general level.
+
+\subsection{Common embedding patterns}
+
+Hosting pages usually embed players in one of three ways. The simplest case is a direct
+\texttt{<video>} element with a \texttt{src} or nested \texttt{<source>} tag. A common
+case is an iframe that loads a player from another domain. A more dynamic case is a
+JavaScript player library that inserts the video source after page load.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.9cm]
+\node[flowbox, fill=orange!8, minimum width=4.2cm] (host) {Hosting page};
+\node[toolbox, fill=blue!6, below left=1.0cm and 1.4cm of host,
+      minimum width=3.6cm] (video) {\texttt{<video>} / \texttt{<source>}};
+\node[toolbox, fill=blue!6, below=1.0cm of host,
+      minimum width=3.6cm] (iframe) {\texttt{<iframe src>}};
+\node[toolbox, fill=blue!6, below right=1.0cm and 1.4cm of host,
+      minimum width=3.6cm] (js) {JS player setup};
+\node[flowbox, fill=green!8, below=2.1cm of host,
+      minimum width=4.6cm] (manifest) {Media manifest\\\texttt{.m3u8}, \texttt{.mpd}, \texttt{.mp4}};
+\draw[myarrow] (host) -- (video);
+\draw[myarrow] (host) -- (iframe);
+\draw[myarrow] (host) -- (js);
+\draw[myarrow] (video) -- (manifest);
+\draw[myarrow] (iframe) -- (manifest);
+\draw[myarrow] (js) -- (manifest);
+\end{tikzpicture}
+}
+\caption{General embedding paths from a hosting page to a media manifest.}
+\label{fig:embedding-paths}
+\end{figure}
+
+This distinction matters because each embedding type requires a different observation
+strategy. Direct video tags can be read from the DOM. Iframes require frame traversal.
+JavaScript players often require runtime execution and network monitoring.
+
+\subsection{HLS and MPEG-DASH}
+
+HTTP Live Streaming (HLS) is one of the most common protocols for web video streaming.
+Its entry point is a \texttt{.m3u8} playlist that points either to variant playlists or
+to media segments. MPEG-DASH uses an XML \texttt{.mpd} manifest that describes periods,
+representations, and segment addressing rules. Both protocols are adaptive: the player
+can choose different quality levels depending on network conditions~\cite{hls-rfc,dash-standard}.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=1.0cm]
+\node[flowbox, minimum width=4.4cm, fill=blue!8] (master)
+  {Master manifest\\\texttt{index.m3u8} or \texttt{manifest.mpd}};
+\node[toolbox, minimum width=3.2cm, fill=gray!8, right=1.4cm of master] (high)
+  {High quality\\variant};
+\node[toolbox, minimum width=3.2cm, fill=gray!8, above=0.8cm of high] (mid)
+  {Medium quality\\variant};
+\node[toolbox, minimum width=3.2cm, fill=gray!8, below=0.8cm of high] (low)
+  {Low quality\\variant};
+\node[flowbox, minimum width=4.0cm, fill=green!8, right=1.4cm of high] (segments)
+  {Media segments\\\texttt{.ts}, \texttt{.m4s}, fMP4};
+\draw[myarrow] (master) -- (mid);
+\draw[myarrow] (master) -- (high);
+\draw[myarrow] (master) -- (low);
+\draw[myarrow] (mid) -- (segments);
+\draw[myarrow] (high) -- (segments);
+\draw[myarrow] (low) -- (segments);
+\end{tikzpicture}
+}
+\caption{Simplified adaptive streaming hierarchy used by HLS and MPEG-DASH.}
+\label{fig:adaptive-streaming}
+\end{figure}
+
+For evidence collection, the manifest URL is usually more important than downloading
+media segments. It proves that the page resolved to a playable stream entry point and
+often contains CDN, token, and path information.
+
+\subsection{Tokens, cookies, referers, and provider checks}
+
+Streaming manifests are frequently protected by short-lived tokens, cookies, referer
+checks, or provider-side gates. A URL such as \texttt{playlist.m3u8?token=...} may work
+only for a few minutes and only from the browser session that generated it. CDNs and
+fronting providers such as Cloudflare can also enforce challenge pages, bot checks,
+cache rules, and origin protection.
+
+This is why the browser session matters. A raw HTTP request may fail even when the
+browser can play the stream, because the browser carries the active cookies, headers,
+referer, and JavaScript-generated state. The technical background therefore includes
+both media protocols and web-provider behavior.
+
+\section{Browser Automation, Scraping, and Runtime Obstacles}
+
+Static scraping means downloading HTML and parsing it. That is useful for simple pages,
+but it is not enough for pages that depend on JavaScript, user clicks, iframes, or
+runtime media requests. Browser automation tools such as Puppeteer execute the page in a
+real Chromium browser and expose APIs for clicking, reading the DOM, taking screenshots,
+and listening to network activity~\cite{puppeteer,cdp}.
+
+\subsection{Puppeteer as a browser control layer}
+
+Puppeteer provides programmatic control over Chromium. In this project context, the
+important concept is not only ``click a button'' but full runtime observation:
+
+\begin{itemize}
+  \item inspect the DOM after JavaScript has executed;
+  \item click buttons, tabs, overlays, server selectors, and play controls;
+  \item traverse frames and iframes;
+  \item capture screenshots for human review;
+  \item observe network requests through the Chrome DevTools Protocol;
+  \item read browser-side state with \texttt{page.evaluate(...)}.
+\end{itemize}
+
+Puppeteer is therefore the bridge between a high-level extraction objective and the
+actual state of the web page. It lets the system test what a user would see and what the
+browser actually requested.
+
+\subsection{Ads, cookies, popups, and other annoyances}
+
+Illegal streaming websites often monetize through aggressive ad behavior. These
+behaviors are not just inconvenient; they change the extraction problem because the
+automation may click the wrong layer, follow an ad redirect, or lose the original player
+context.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.1cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Obstacle & Common symptom & General handling idea \\ \midrule
+Popups and new tabs & clicking play opens an ad page instead of the player & close
+extra targets and retry on the original page \\
+Overlay layers & a fake play button covers the real player & detect visible overlays
+and click or remove them carefully \\
+Cookie banners & controls are blocked until consent is handled & accept, dismiss, or
+record as blocking evidence \\
+Ad iframes & DOM contains many unrelated frames & rank frames by player-like signals
+instead of following every iframe \\
+Cloudflare-like challenges & browser sees an interstitial instead of the page & wait,
+retry with normal pacing, or preserve a blocked-state result \\
+\bottomrule
+\end{tabularx}
+\caption{Common browser-level obstacles in streaming-site extraction.}
+\label{tab:browser-obstacles}
+\end{table}
+
+Ad blocking tools such as uBlock Origin can reduce noise by blocking known ad and
+tracking domains~\cite{ublock}. However, they cannot replace browser reasoning. If a
+site serves ads and player assets from the same domain, aggressive blocking can break
+the player itself. The general solution is layered: block obvious noise, keep popup
+recovery, and preserve evidence when the page remains blocked.
+
+\subsection{Why screenshots and network logs matter}
+
+DOM text alone does not prove that a player actually loaded. A screenshot can show that
+the player was visible or that a challenge blocked the page. A network log can show that
+the browser requested a media manifest. Together, DOM, screenshot, and network evidence
+give a more reliable picture than any one source by itself.
+
+This is also why extraction tools should avoid claiming success only because a keyword
+or button was found. In this domain, useful evidence is the combination of page role,
+visible state, player behavior, and media request.
+
+\section{Agentic Evidence Collection Concepts}
+
+The project uses the term \emph{agentic} to describe an extraction approach where a
+language-model-driven agent observes a page, chooses a tool action, checks the result,
+and repeats until it has enough evidence or reaches a limit. This differs from a fixed
+scraper because the next action depends on the current browser state.
+
+\subsection{Agents and ReAct-style loops}
+
+Agentic systems commonly use a loop that combines reasoning and tool use. In a
+ReAct-style pattern, the agent observes the state, reasons about what to do, acts through
+a tool, and verifies the result before continuing~\cite{react,agent-survey}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.1cm]
+\node[flowbox, fill=blue!8, minimum width=3.0cm] (observe) {Observe\\page state};
+\node[flowbox, fill=orange!10, minimum width=3.0cm, right=1.2cm of observe] (reason)
+  {Reason\\next step};
+\node[flowbox, fill=green!10, minimum width=3.0cm, right=1.2cm of reason] (act)
+  {Act\\with tool};
+\node[flowbox, fill=purple!10, minimum width=3.0cm, below=1.1cm of reason] (verify)
+  {Verify\\evidence};
+
+\draw[myarrow] (observe) -- (reason);
+\draw[myarrow] (reason) -- (act);
+\draw[myarrow] (act.south) |- (verify.east);
+\draw[myarrow] (verify.west) -| (observe.south);
+\end{tikzpicture}
+\caption{General ReAct-style loop used by browser agents.}
+\label{fig:react-loop-general}
+\end{figure}
+
+For streaming sites, this loop is useful because the agent can adapt when a server
+button fails, a popup opens, an iframe appears, or a page turns out to be unrelated. The
+agent is not expected to know the full path in advance; it uses tools to discover it.
+
+\subsection{Prompt engineering, tokens, and token usage}
+
+Prompt engineering is the process of defining the agent's role, constraints, tool
+usage rules, evidence requirements, and output format. In this project domain, a prompt
+must prevent premature conclusions. It should tell the agent to ground decisions in
+visible page state, DOM evidence, screenshots, and network observations.
+
+Tokens are the units used by language models to process prompts and outputs. Long page
+snapshots, repeated tool results, and verbose traces increase token usage and therefore
+increase cost and latency. Token management is part of the technical background because
+browser agents can easily spend too much context on noisy HTML, ads, or repeated page
+states.
+
+Practical token-control ideas include:
+
+\begin{itemize}
+  \item summarize page observations instead of passing full raw HTML every time;
+  \item keep only evidence-relevant DOM snippets and network URLs;
+  \item stop early when the page role or stream evidence is clear;
+  \item separate input tokens, output tokens, and cached tokens when estimating cost;
+  \item use provider-side caching when stable prompt sections are reused.
+\end{itemize}
+
+LLM providers such as Gemini expose model features that affect cost, context length,
+streaming behavior, and caching~\cite{gemini}. Provider caching is especially relevant
+when the same system instructions, tool descriptions, or long context blocks are reused
+across many runs.
+
+\subsection{n8n and workflow automation}
+
+n8n is a workflow automation platform that lets developers connect nodes for HTTP
+requests, browser actions, LLM calls, data transformations, and external services
+through a visual flow~\cite{n8n}. It is useful for fast validation because a workflow can
+be assembled and adjusted without building a full application from the beginning.
+
+In this report, n8n should be understood as a workflow orchestration tool. It can
+sequence steps, pass data between nodes, call LLM providers, and make the evidence
+collection logic visible during early experimentation. Later chapters explain how the
+validated workflow relates to the more structured engineering design.
+
+\subsection{LangChain, tools, and MCP servers}
+
+LangChain is a framework for building applications around language models, prompts,
+tools, memory, and structured chains. At a general level, it helps connect an LLM to
+external capabilities: a browser tool, a database lookup, a parser, a memory store, or a
+custom function. This is useful when the model should not only answer textually but take
+controlled actions.
+
+The Model Context Protocol (MCP) is a way to expose external tools and resources to an
+agent through a consistent interface. In this type of project, an MCP server can expose
+browser tools such as inspect, click, navigate, screenshot, harvest, or media-state
+checks. The agent does not need to know how each tool is implemented internally; it needs
+a clear tool contract, input schema, and output shape.
+
+\begin{figure}[H]
+\centering
+\resizebox{0.9\textwidth}{!}{%
+\begin{tikzpicture}[
+  main/.style={draw=accent, fill=blue!6, rounded corners=5pt,
+    minimum width=3.5cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  tool/.style={draw=gray!65, fill=gray!8, rounded corners=5pt,
+    minimum width=3.0cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80},
+  ret/.style={->, >=Stealth, thick, gray!70, dashed}
+]
+\node[main] (llm) at (0,2.2) {LLM agent};
+\node[main, fill=orange!10, draw=orange!70] (mcp) at (4.4,2.2) {MCP server\\tool interface};
+\node[tool] (browser) at (8.8,3.2) {Browser tools};
+\node[tool] (memory) at (8.8,2.2) {Memory / DB};
+\node[tool] (media) at (8.8,1.2) {Media harvest};
+\node[main, fill=green!8, draw=green!55!black] (result) at (4.4,0.0) {Structured\\tool result};
+
+\draw[arr] (llm) -- node[above, font=\scriptsize]{tool request} (mcp);
+\draw[arr] (mcp.east) -- ++(0.45,0) |- (browser.west);
+\draw[arr] (mcp.east) -- (memory.west);
+\draw[arr] (mcp.east) -- ++(0.45,0) |- (media.west);
+\draw[ret] (browser.west) -- ++(-0.55,0) |- (result.east);
+\draw[ret] (memory.west) -- ++(-0.75,0) |- (result.east);
+\draw[ret] (media.west) -- ++(-0.95,0) |- (result.east);
+\draw[ret] (result.west) -- ++(-4.4,0) |- node[pos=0.2, below, font=\scriptsize]{evidence} (llm.south);
+\end{tikzpicture}
+}
+\caption{General relationship between an LLM agent, MCP tool interface, and external tools.}
+\label{fig:mcp-general}
+\end{figure}
+
+The important concept is separation of responsibility. The LLM decides what to try next,
+while tools perform bounded actions and return structured evidence. This keeps the
+agentic process auditable.
+
+\section{Chapter Summary}
+
+This chapter established the technical background for the rest of the report. It
+explained the page flow from landing pages to hosting pages and embedded players, the
+DOM structures used to inspect those pages, the streaming protocols and player embeds
+that carry the final evidence, and the browser-level obstacles caused by ads, cookies,
+popups, iframes, and provider-side checks. It also introduced the agentic concepts used
+later: ReAct-style loops, prompt engineering, tokens, provider caching, n8n, LangChain,
+and MCP tool servers.
+
+The next chapters use these concepts more concretely. Chapter~4 translates them into
+architecture, and Chapter~5 explains how the implementation applies them in the actual
+evidence-collection system.

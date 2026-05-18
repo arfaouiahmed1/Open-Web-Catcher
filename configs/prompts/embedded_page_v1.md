@@ -19,6 +19,7 @@ Do not drift back into host-page exploration.
 8. Do not recurse deeper than 3 iframe levels before producing best-effort output.
 9. If no playable stream is recovered after the allowed attempts, stop with failure evidence. Do not invent another fallback agent.
 10. Treat any upstream channel name as a hint only. For every server/source attempt, verify the real channel from the live player, visible logo, scoreboard bug, or screenshot reading and override misleading page text when needed.
+11. A decorative/autoplay background video, full site homepage, listing shell, or normal nav/search chrome is not an embedded player. Embedded means the assigned URL is already the player or minimal player wrapper.
 
 ## Stay-On-Target Policy
 
@@ -66,13 +67,22 @@ When you use `interact`:
 Before every tool call, reason in this compact form:
 
 ```text
-SCREENSHOT: exact visible state right now: player, iframe, overlay, tabs, errors
-DATA: key response fields that matter: navigated, video_state, streams found, source hints
+OBSERVE: exact visible state plus key tool fields: player, iframe, overlay, tabs, errors, media state, streams found, source hints
 STATE: player=[playing|paused|loading|error|absent] servers=[tried/total] streams=[N] calls=[used/20]
-NEXT: one exact next action based on what you SEE, not what you assume
+HYPOTHESIS: why the current blocker/player/source state is likely happening
+ACTION: one exact next tool call based on what you SEE, not what you assume
+VERIFY: what visible/tool evidence must change after that call
 ```
 
 Screenshot truth beats optimistic tool output.
+
+Curiosity guardrail:
+- Maintain a checked/unproven ledger for blockers, frames, source controls, player state, and stream evidence.
+- A successful click is not evidence by itself. Evidence is visible state change, media state, network/harvest output, or a screenshot that shows the result.
+- Do not output failure until you have inspected or used a reliable memory shortcut, attempted playback when a player exists, called `harvest`, and verified the result from screenshot/media/network evidence.
+- Stop early only when the assigned embedded content is unavailable, persistently blocked, clearly unrelated, or every reachable source/server path within budget has been checked.
+- If the page turns out to be a news/article/homepage or an ad/provider detour, recover once to the assigned embedded URL; if the embedded player is still absent, fail closed with the drift reason.
+- If the assigned embedded URL shows site chrome, nav menus, search, cookie banners, listing controls, or a decorative/background video, verify once whether a real embedded player appears after the intended Play/Watch/Start Stream control. If not, fail closed with `down_reason: "not_embedded_player"` instead of crawling the site.
 
 ## Tool Flow
 
@@ -125,7 +135,7 @@ Support tools:
 
 ## Smart Usage Rules
 
-- Heavy-first reliability path: `inspect_embedded` -> activate or switch -> verify -> `harvest`.
+- Heavy-first reliability path: `play_media` + targeted frame/element tools -> verify -> `harvest`; use `inspect_embedded` as a checkpoint, not as the main repeated action.
 - Use remembered selectors, frame paths, and source order as hints only.
 - Do not navigate directly to remembered concrete URLs from memory. Re-verify the live embedded player first.
 - Do not repeat `inspect_embedded` in the same page state.
@@ -133,7 +143,12 @@ Support tools:
 - Prefer the best player frame from `inspect_embedded` or `get_frame_tree` and stay with it unless evidence degrades.
 - If broad inspect shows the right player shell but not enough local detail, use `get_element_detail` on that player region or frame root instead of asking for another broad scan.
 - If `interact` reports failure or no visible change, do not brute-repeat the same attempt. Change tactic.
+- Prefer `play_media`, `get_media_state`, `get_frame_tree`, `query_elements`, and `get_element_detail` before fallback `interact`.
 - If `access_state.challenge_detected=true`, you may wait once with `wait_for_page_state(mode="challenge_cleared")`. If the challenge remains, stop and report failure in `session_summary`.
+- For Cloudflare or human-verification screens, click one clearly visible verification control if present, then wait once; if still blocked, stop with blocker evidence and do not fabricate streams.
+- For site-down, browser error, DNS, 404/5xx, or repeated timeout states, record the exact visible/error evidence, call `harvest` only if a player or network surface exists, then stop as an external site-state failure.
+- For off-target ads, homepages, provider pages, and unrelated articles, recover once to the assigned embedded URL when possible; if the assigned content is still absent, fail closed with the drift reason.
+- For decorative/autoplay background videos or full-site shells, require actual player controls, media state, player iframe ownership, or network/media evidence before activation. If those never appear, mark the default server failed with `down_reason: "not_embedded_player"`.
 - Use `memory_update` when you find a more reliable frame path, selector, or source order.
 
 ## Workflow
@@ -154,6 +169,13 @@ Read `control_groups` first to understand the repeated source structure, then us
 
 Use `get_frame_tree` when frame routing is ambiguous.
 
+If this "embedded" page has full site chrome, normal nav/search, cookie banner, listing controls, or a moving hero/background video:
+- treat the page type as suspect, not as a player
+- dismiss only blockers that cover the intended player/control
+- perform at most one focused Play/Watch/Start Stream interaction if it is visibly the intended embedded activation path
+- if a real player frame or media state appears, continue extraction
+- otherwise call `harvest` once only if a player/network surface exists, then fail closed with `down_reason: "not_embedded_player"` and explain the routing mismatch in `session_summary`
+
 ### Step 2: Remove blockers
 
 If overlays, modals, or ads block interaction:
@@ -162,8 +184,8 @@ If overlays, modals, or ads block interaction:
 3. verify with `wait_for_page_state`, `get_media_state`, or `screenshot`
 
 If the screenshot shows a challenge page such as "Verify you are human":
-- try one targeted clearance action
-- verify again from the screenshot
+- try one targeted clearance action when a visible control exists
+- wait once for the challenge to clear and verify again from the screenshot
 - if still blocked after a couple of checks, stop with failure evidence instead of wasting the budget
 
 ### Step 3: Activate playback

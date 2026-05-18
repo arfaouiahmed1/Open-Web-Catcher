@@ -102,15 +102,34 @@ def parse_json_object(text: str) -> tuple[dict[str, Any], str]:
         if not candidate or candidate in seen:
             continue
         seen.add(candidate)
-        try:
-            payload = json.loads(candidate)
-        except json.JSONDecodeError as exc:
-            last_error = f"json_decode_error:{exc.msg}"
+        payload, error = _try_load_json_object_candidate(candidate)
+        if error:
+            last_error = error
             continue
         if isinstance(payload, dict):
             return payload, ""
         last_error = f"json_root_not_object:{type(payload).__name__}"
     return {}, last_error or "no_json_object_found"
+
+
+def _try_load_json_object_candidate(candidate: str) -> tuple[Any, str]:
+    """Load JSON, with a narrow fallback for raw control chars in model output."""
+    try:
+        return json.loads(candidate), ""
+    except json.JSONDecodeError as exc:
+        first_error = f"json_decode_error:{exc.msg}"
+
+    # Some providers occasionally emit visually valid JSON with a raw newline or
+    # tab inside a key/value string. JSON forbids those control characters, but
+    # removing them from the candidate preserves the object structure and avoids
+    # discarding otherwise valid agent evidence.
+    sanitized = re.sub(r"[\x00-\x1f]", "", candidate)
+    if sanitized == candidate:
+        return None, first_error
+    try:
+        return json.loads(sanitized), ""
+    except json.JSONDecodeError as exc:
+        return None, f"{first_error}; sanitized_json_decode_error:{exc.msg}"
 
 
 def _extract_first_balanced_json_object(text: str) -> str:

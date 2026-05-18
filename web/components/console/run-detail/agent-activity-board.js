@@ -158,7 +158,12 @@ function eventSummaryLine(event) {
   if (!event) return "";
   const details = event.details || {};
   if (event.kind === "prompt_compiled") {
+    if (details.memory_injected) return "prompt compiled with site memory";
     return details.static_cache_hit ? "prompt compiled with cache hit" : "prompt compiled";
+  }
+  if (event.kind === "memory_loaded") {
+    const hintCount = Number(details.hint_count || details.memory_count || 0);
+    return hintCount > 0 ? `${formatNumber(hintCount)} memory hints loaded` : "memory hints loaded";
   }
   if (event.kind === "tool_session_connecting") {
     return details.profile ? `connecting ${details.profile}` : "connecting tools";
@@ -241,6 +246,10 @@ export function AgentActivityBoard({
         const actorLlmRows = llmRows.filter((row) => safeLower(row.actor) === safeLower(actor));
         const latestEvent = actorEvents[actorEvents.length - 1] || null;
         const recentEvents = actorEvents.slice(-3).reverse();
+        const memoryEvents = actorEvents.filter((event) => event.kind === "memory_loaded");
+        const promptEvents = actorEvents.filter((event) => event.kind === "prompt_compiled");
+        const memoryInjected = promptEvents.some((event) => Boolean(event.details?.memory_injected));
+        const latestMemoryEvent = memoryEvents[memoryEvents.length - 1] || null;
         const stage =
           actorToStage(actor) ||
           safeLower(actorRollup?.agent_type) ||
@@ -278,6 +287,15 @@ export function AgentActivityBoard({
           contextPct,
           contextModel: peak.model || actorLlmRows[actorLlmRows.length - 1]?.model || actorRollup?.model_name || "",
           outputSummary: trimText(actorRollup?.output_summary || "", 180),
+          memoryEvents: memoryEvents.length,
+          memoryInjected,
+          memoryPreview: trimText(
+            latestMemoryEvent?.details?.hint_preview ||
+              latestMemoryEvent?.details?.summary ||
+              latestMemoryEvent?.message ||
+              "",
+            180,
+          ),
           latestTimestamp: latestEvent?.timestamp || actorRollup?.finished_at || actorRollup?.started_at || "",
         };
       })
@@ -343,6 +361,11 @@ export function AgentActivityBoard({
                       {card.actor}
                     </div>
                     <Badge tone={statusTone(card.status)}>{statusLabel(card.status)}</Badge>
+                    {card.memoryInjected || card.memoryEvents > 0 ? (
+                      <Badge tone="default">
+                        {card.memoryEvents > 0 ? `memory ${formatNumber(card.memoryEvents)}` : "memory injected"}
+                      </Badge>
+                    ) : null}
                   </div>
                 </div>
                 {card.latestTimestamp ? (
@@ -385,6 +408,23 @@ export function AgentActivityBoard({
                   {card.focus.detail || "No detail available."}
                 </div>
               </div>
+
+              {card.memoryPreview ? (
+                <div
+                  className="mt-3 rounded-[12px] border px-3 py-2.5"
+                  style={{
+                    borderColor: "var(--line)",
+                    background: "color-mix(in oklch, var(--card) 92%, transparent)",
+                  }}
+                >
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--mute-3)" }}>
+                    Site memory used
+                  </div>
+                  <div className="mt-1 text-[12px] leading-relaxed" style={{ color: "var(--mute)" }}>
+                    {card.memoryPreview}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
                 <ActorMetric label="LLM" value={formatNumber(card.llmCalls)} tone="var(--violet)" />

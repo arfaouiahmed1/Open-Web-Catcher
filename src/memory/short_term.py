@@ -142,6 +142,7 @@ class ShortTermMemory:
             "stream_hosts": [],
             "server_labels": [],
             "hosting_candidate_urls": [],
+            "match_records": [],
             "server_records": [],
             "server_screenshots": [],
             "server_stream_urls": [],
@@ -432,6 +433,9 @@ class ShortTermMemory:
                 "- landing hosting candidates remembered: "
                 + (f"`{len(candidates)}`" if candidates else "`none yet`")
             )
+            match_records = run_memory.get("match_records", [])
+            if match_records:
+                lines.append(f"- landing match records remembered: `{len(match_records)}`")
         if (page_type or self.page_type) in {"hosting_page", "embedded_page"}:
             server_records = run_memory.get("server_records", [])
             lines.append(
@@ -471,6 +475,7 @@ class ShortTermMemory:
 
         landing_specific = {
             "hosting_candidate_urls": list(self._signals["hosting_candidate_urls"]),
+            "match_records": list(self._signals["match_records"]),
         }
         hosting_specific = {
             "server_records": list(self._signals["server_records"]),
@@ -490,6 +495,7 @@ class ShortTermMemory:
         return {
             **common,
             "hosting_candidate_urls": landing_specific["hosting_candidate_urls"],
+            "match_records": landing_specific["match_records"],
             "iframe_urls": common["iframe_urls"],
             "server_records": hosting_specific["server_records"],
             "server_screenshots": hosting_specific["server_screenshots"],
@@ -519,6 +525,7 @@ class ShortTermMemory:
             "stream_hosts": 120,
             "server_labels": 120,
             "hosting_candidate_urls": 260,
+            "match_records": 260,
             "server_records": 220,
             "server_screenshots": 220,
             "server_stream_urls": 320,
@@ -530,6 +537,7 @@ class ShortTermMemory:
                     "critical_links": 900,
                     "url_patterns": 360,
                     "hosting_candidate_urls": 900,
+                    "match_records": 900,
                 }
             )
         if page_type in {"hosting_page", "embedded_page"}:
@@ -579,7 +587,7 @@ class ShortTermMemory:
 
     def _capture_hosting_candidates(self, payload: dict[str, Any], *, base_url: str = "") -> None:
         discovered: list[str] = []
-        for key in ("hosting_pages", "match_candidates"):
+        for key in ("hosting_pages", "match_candidates", "top_match_candidates"):
             entries = payload.get(key, [])
             if not isinstance(entries, list):
                 continue
@@ -593,6 +601,22 @@ class ShortTermMemory:
                 resolved = _resolve_url_candidate(candidate, base_url=base_url)
                 if resolved:
                     discovered.append(resolved)
+                    if isinstance(entry, dict):
+                        record = {
+                            "url": resolved,
+                            "title": str(entry.get("title") or "")[:180],
+                            "participants": str(entry.get("participants") or "")[:160],
+                            "status": str(entry.get("status") or "unknown")[:40],
+                            "route": str(entry.get("route") or "")[:60],
+                            "iframe_count": len(entry.get("iframes") or [])
+                            if isinstance(entry.get("iframes"), list)
+                            else 0,
+                        }
+                        self._remember_signal(
+                            "match_records",
+                            json.dumps(record, ensure_ascii=False, sort_keys=True),
+                            max_items=self._signal_limit("match_records"),
+                        )
 
         for candidate in _dedupe_keep_order(discovered):
             self._remember_signal(

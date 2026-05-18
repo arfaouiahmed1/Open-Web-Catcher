@@ -157,6 +157,13 @@ function summarizeExtractionResults(extractionResults = []) {
             status: String(server.status || "unknown").trim(),
             server_up: Boolean(server.server_up),
             player_state: String(server.player_state || "").trim(),
+            detected_channel: String(server.detected_channel || server.channel || "").trim(),
+            channel_candidates: Array.isArray(server.channel_candidates)
+              ? server.channel_candidates.filter(Boolean)
+              : [],
+            channel_confidence: String(server.channel_confidence || "").trim(),
+            channel_detection_method: String(server.channel_detection_method || "").trim(),
+            ocr_text: String(server.ocr_text || server.player_ocr_text || "").trim(),
             screenshot_url: String(server.screenshot_url || "").trim(),
             embedded_url: String(server.embedded_url || "").trim(),
             player_iframe_url: String(server.player_iframe_url || "").trim(),
@@ -177,14 +184,39 @@ function summarizeExtractionResults(extractionResults = []) {
         ...(Array.isArray(row.screenshots) ? row.screenshots : []),
         ...servers.map((server) => server.screenshot_url),
       ]);
+      const channelMetadata = row.channel_metadata && typeof row.channel_metadata === "object"
+        ? row.channel_metadata
+        : {};
+      const detectedChannels = dedupe([
+        ...(Array.isArray(row.detected_channels) ? row.detected_channels : []),
+        ...(Array.isArray(channelMetadata.channel_candidates) ? channelMetadata.channel_candidates : []),
+        ...servers.map((server) => server.detected_channel),
+      ]);
+      const primaryChannel = String(
+        row.primary_channel || channelMetadata.primary_channel || detectedChannels[0] || "",
+      ).trim();
+      const ocrTexts = dedupe([
+        ...(Array.isArray(channelMetadata.ocr_texts) ? channelMetadata.ocr_texts : []),
+        ...servers.map((server) => server.ocr_text),
+      ]);
+      const firstChannelServer = servers.find((server) =>
+        server.channel_detection_method || server.channel_confidence,
+      );
       return {
         key: `${row.url || "extraction"}-${index}`,
         url: String(row.url || "").trim(),
         agent_type: String(row.agent_type || row.page_type || "agent").trim(),
         page_type: String(row.page_type || "").trim(),
         status: String(row.status || "unknown").trim(),
-        primary_channel: String(row.primary_channel || "").trim(),
-        detected_channels: Array.isArray(row.detected_channels) ? row.detected_channels.filter(Boolean) : [],
+        primary_channel: primaryChannel,
+        detected_channels: detectedChannels,
+        channel_confidence: String(
+          channelMetadata.channel_confidence || firstChannelServer?.channel_confidence || "",
+        ).trim(),
+        channel_detection_method: String(
+          channelMetadata.channel_detection_method || firstChannelServer?.channel_detection_method || "",
+        ).trim(),
+        ocr_texts: ocrTexts,
         server_count: servers.length,
         stream_count: sampleStreams.length,
         screenshot_count: screenshots.length,
@@ -312,6 +344,10 @@ export function StreamProviderTab({
       extraction_count: evidenceRows.length,
       stream_count: evidenceRows.reduce((total, row) => total + Number(row.stream_count || 0), 0),
       screenshot_count: evidenceRows.reduce((total, row) => total + Number(row.screenshot_count || 0), 0),
+      channel_count: new Set(
+        evidenceRows.flatMap((row) => [row.primary_channel, ...(row.detected_channels || [])]).filter(Boolean),
+      ).size,
+      ocr_count: evidenceRows.reduce((total, row) => total + Number(row.ocr_texts?.length || 0), 0),
       network_diagnostics_count: evidenceRows.reduce(
         (total, row) => total + Number(row.network_diagnostics_count || 0),
         0,
@@ -431,6 +467,12 @@ export function StreamProviderTab({
                 <Badge tone="default" className="font-mono text-[10px]">
                   screenshots {evidenceSummary.screenshot_count}
                 </Badge>
+                <Badge tone={evidenceSummary.channel_count ? "signal" : "default"} className="font-mono text-[10px]">
+                  channels {evidenceSummary.channel_count}
+                </Badge>
+                <Badge tone={evidenceSummary.ocr_count ? "signal" : "default"} className="font-mono text-[10px]">
+                  OCR {evidenceSummary.ocr_count}
+                </Badge>
                 <Badge tone="default" className="font-mono text-[10px]">
                   network hits {evidenceSummary.network_diagnostics_count}
                 </Badge>
@@ -456,9 +498,28 @@ export function StreamProviderTab({
                     <div className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
                       {row.url || "--"}
                     </div>
-                    {row.primary_channel ? (
-                      <div className="mt-1 text-[11px] text-foreground/80">
-                        channel {row.primary_channel}
+                    {row.primary_channel || row.detected_channels.length || row.channel_detection_method || row.ocr_texts.length ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {row.primary_channel ? (
+                          <Badge tone="signal" className="font-mono text-[10px]">
+                            channel {row.primary_channel}
+                          </Badge>
+                        ) : null}
+                        {row.channel_confidence ? (
+                          <Badge tone="default" className="font-mono text-[10px]">
+                            confidence {row.channel_confidence}
+                          </Badge>
+                        ) : null}
+                        {row.channel_detection_method ? (
+                          <Badge tone="default" className="font-mono text-[10px]">
+                            method {row.channel_detection_method}
+                          </Badge>
+                        ) : null}
+                        {row.ocr_texts.length ? (
+                          <Badge tone="default" className="font-mono text-[10px]">
+                            OCR text {row.ocr_texts.length}
+                          </Badge>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>
@@ -518,6 +579,40 @@ export function StreamProviderTab({
                         {server.screenshot_url ? (
                           <div className="mt-2 break-all font-mono text-[10.5px] text-muted-foreground">
                             screenshot {server.screenshot_url}
+                          </div>
+                        ) : null}
+                        {server.detected_channel || server.channel_detection_method || server.channel_confidence ? (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {server.detected_channel ? (
+                              <Badge tone="signal" className="font-mono text-[10px]">
+                                channel {server.detected_channel}
+                              </Badge>
+                            ) : null}
+                            {server.channel_confidence ? (
+                              <Badge tone="default" className="font-mono text-[10px]">
+                                {server.channel_confidence}
+                              </Badge>
+                            ) : null}
+                            {server.channel_detection_method ? (
+                              <Badge tone="default" className="font-mono text-[10px]">
+                                {server.channel_detection_method}
+                              </Badge>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        {server.channel_candidates.length ? (
+                          <div className="mt-2 text-[10.5px] text-muted-foreground">
+                            candidates {server.channel_candidates.join(", ")}
+                          </div>
+                        ) : null}
+                        {server.ocr_text ? (
+                          <div className="mt-2 rounded-md border border-border/70 bg-muted/20 px-2.5 py-2">
+                            <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
+                              OCR / visual text
+                            </div>
+                            <div className="mt-1 line-clamp-3 text-[11px] leading-relaxed text-foreground/80">
+                              {server.ocr_text}
+                            </div>
                           </div>
                         ) : null}
                       </div>

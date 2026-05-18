@@ -17,6 +17,7 @@ import { apiUrl } from "@/lib/api";
 const PREFS_KEY = "owc_notif_prefs";
 const HISTORY_KEY = "owc_notif_history";
 const MAX_HISTORY = 60;
+const MAX_NOTIFICATION_STREAMS = 2;
 
 const DEFAULT_PREFS = {
   pipeline_started: true,
@@ -693,8 +694,20 @@ export function NotificationProvider({ children }) {
    *   Format 1 — direct:  { kind, message, details, … }
    *   Format 2 — batched: { events: […], metrics: {…}, completed: true }
    */
+  function closeRunStream(runId) {
+    const stream = streamRefs.current[runId];
+    if (stream) {
+      try {
+        stream.close();
+      } catch {}
+      delete streamRefs.current[runId];
+    }
+    trackedRuns.current.delete(runId);
+  }
+
   function watchRun(runId) {
     if (streamRefs.current[runId]) return;
+    if (Object.keys(streamRefs.current).length >= MAX_NOTIFICATION_STREAMS) return;
 
     const es = new EventSource(apiUrl(`/ui/runs/${runId}/stream`));
     streamRefs.current[runId] = es;
@@ -735,14 +748,12 @@ export function NotificationProvider({ children }) {
         payload.completed || payload.error || TERMINAL_KINDS.has(payload.kind);
 
       if (isTerminal) {
-        es.close();
-        delete streamRefs.current[runId];
+        closeRunStream(runId);
       }
     };
 
     es.onerror = () => {
-      es.close();
-      delete streamRefs.current[runId];
+      closeRunStream(runId);
     };
   }
 
@@ -773,6 +784,9 @@ export function NotificationProvider({ children }) {
             ["queued", "running"].includes(status) &&
             !trackedRuns.current.has(id)
           ) {
+            if (Object.keys(streamRefs.current).length >= MAX_NOTIFICATION_STREAMS) {
+              continue;
+            }
             trackedRuns.current.add(id);
             watchRun(id);
           }
@@ -796,6 +810,7 @@ export function NotificationProvider({ children }) {
         } catch {}
       }
       streamRefs.current = {};
+      trackedRuns.current.clear();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

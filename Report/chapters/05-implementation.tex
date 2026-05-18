@@ -1,469 +1,97 @@
 \chapter{Implementation}
 \label{chap:implementation}
 
-\section{Implementation trajectory}
+The implementation progressed in two major parts. The first part was an n8n
+workflow used as a fast exploration and validation environment. The second part
+was a Python reference solution built around FastAPI, Next.js, MCP browser-tool
+containers, specialist agents, model/runtime management, and PostgreSQL
+observability.
 
-Implementation progressed in two explicit stages:
+This split matters because the two systems did not have the same purpose. The
+n8n workflow was useful for testing whether agentic browsing could handle the
+domain at all. The Python implementation was built after those lessons, with
+cleaner engineering boundaries, persistent traces, configurable runtime
+settings, and a better foundation for evaluation.
 
-\begin{itemize}
-  \item \textbf{Stage 1: n8n phase} requested by the company for rapid feasibility
-    validation;
-  \item \textbf{Stage 2: Python reference architecture} for maintainability, stronger
-    memory, clearer observability, systematic evaluation, and future long-run
-    execution.
-\end{itemize}
+\section{Part 1: n8n Workflow Prototype}
 
-The second stage keeps the lessons of the first stage while generalizing them into an
-academic and engineering reference implementation rather than claiming a full
-replacement of the operational company deployment.
+\subsection{Purpose of the n8n phase}
 
-
-\section{Backend and operator surfaces}
-
-Within the Python reference architecture, the FastAPI backend acts as a control plane
-for runtime coordination, persistence, and operator-facing services. It is not presented
-here as a deployed enterprise production API, but as the academic implementation used to
-organize the reference workflow around explicit interfaces. In practice, it handles
-runtime health and preflight checks, run launch and workflow execution, background jobs,
-run status inspection, trace and event persistence, screenshot and evidence retrieval,
-provider and runtime configuration, pricing configuration, evaluation execution, tool
-playground support, and database-backed operator views.
-
-The Next.js frontend complements this backend as an operator and reviewer interface
-rather than as a passive visual dashboard. The console supports run launch, readiness
-checks, live trace review, historical run inspection, evaluation workflows, settings
-management, and controlled access to stored observability records. Live run progress is
-streamed through Server-Sent Events (SSE), allowing operators to watch tool calls,
-agent transitions, and evidence capture as they happen.
-
-\subsection{Backend runtime and API surface}
-
-The backend groups related capabilities into route families rather than exposing one
-monolithic execution endpoint. Table~\ref{tab:backend-route-families} summarizes the
-main interface families used in the Python reference architecture. The endpoint names are
-presented as representative examples of the implemented route families, not as a claim
-of a finalized enterprise API contract.
-
-\begin{table}[H]
-\centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.0cm}
-                              >{\raggedright\arraybackslash}p{5.0cm}
-                              >{\raggedright\arraybackslash}X}
-\toprule
-\rowcolor{accent!8}
-Route family & Example endpoints & Responsibility \\
-\midrule
-Runtime health & \texttt{/health}, \texttt{/ui/browser/status} &
-  Verify browser, MCP, and tool-profile readiness before launching runs. \\
-Core pipeline execution & \texttt{/run}, \texttt{/extract}, \texttt{/ui/workflows/run} &
-  Start a workflow or agent extraction run. \\
-Run inspection & \texttt{/ui/runs/\{run\_id\}}, \texttt{/ui/overview} &
-  Display run status, traces, artifacts, streams, screenshots, and costs. \\
-Evaluation & \texttt{/ui/evaluations/lab}, \texttt{/ui/evaluations/run} &
-  Execute evaluation suites or manual website batches and summarize metrics. \\
-Configuration & \texttt{/ui/config}, \texttt{/ui/providers/models}, \texttt{/ui/pricing} &
-  Manage LLM provider, model settings, browser runtime, and pricing. \\
-Tool playground & \texttt{/ui/tools/playground} &
-  Test browser tools independently from full workflow runs. \\
-Database inspection & \texttt{/ui/database/tables} &
-  Inspect stored run, evaluation, and tool records through an allowlisted interface. \\
-\bottomrule
-\end{tabularx}
-\caption{Representative backend route families in the Python reference architecture.}
-\label{tab:backend-route-families}
-\end{table}
-
-This separation is useful for engineering reasons. Health and preflight routes reduce
-avoidable failed runs; execution routes isolate workflow launch from review concerns;
-inspection routes make traces and artifacts auditable after completion; and evaluation,
-configuration, and tool-playground routes support iterative improvement without forcing
-all debugging work through the main extraction path.
-
-\subsection{Operator console and frontend workflows}
-
-The Next.js frontend functions as an operational review surface for the reference
-architecture. Its purpose is to help an operator or evaluator initiate investigations,
-observe execution, inspect evidence, review failure modes, and adjust runtime settings.
-In this sense, the frontend is part of the workflow-control loop: it launches runs,
-checks runtime readiness, watches live events and traces, reviews completed runs,
-inspects extracted streams, screenshots, provider analysis, errors, and costs, launches
-evaluation batches, updates provider/model/runtime settings, and reviews evaluation
-results.
-
-\begin{table}[H]
-\centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.4cm}
-                              >{\raggedright\arraybackslash}X
-                              >{\raggedright\arraybackslash}p{4.6cm}}
-\toprule
-\rowcolor{accent!8}
-Frontend surface & Main function & Backend dependency \\
-\midrule
-Overview dashboard & Summarizes runs, costs, success/failure, and active jobs. &
-  \texttt{/ui/overview} \\
-Run detail page & Shows events, tool calls, LLM calls, screenshots, and streams. &
-  \texttt{/ui/runs/\{run\_id\}} \\
-Workflow launcher & Starts a new URL investigation. &
-  \texttt{/ui/workflows/run} \\
-Evaluation lab & Runs manual or configured evaluation suites. &
-  \texttt{/ui/evaluations/run} \\
-Settings/config page & Updates provider, model, pricing, and browser runtime settings. &
-  \texttt{/ui/config}, \texttt{/ui/pricing}, \texttt{/ui/providers/models} \\
-Database viewer & Reviews allowlisted persistence tables. &
-  \texttt{/ui/database/tables} \\
-\bottomrule
-\end{tabularx}
-\caption{Main frontend workflows and their backend dependencies.}
-\label{tab:frontend-workflows}
-\end{table}
-
-Taken together, the backend and frontend form a reviewable implementation surface for
-the Python reference architecture. The backend exposes structured control and persistence
-interfaces; the frontend turns those interfaces into repeatable operator workflows for
-launch, observation, diagnosis, evaluation, and configuration.
-
-\section{Four-agent design: specialist roles and boundaries}
-
-Each agent is designed around one clear responsibility. Figure~\ref{fig:four-agents}
-shows the four specialist agents with their tools and interfaces.
+The n8n implementation acted as the project playground. It made it possible to
+test the core question quickly: can an LLM-driven browser agent inspect illegal
+streaming websites, navigate through landing and hosting pages, activate
+players, and recover useful evidence? At this stage, the priority was not a
+clean software architecture. The priority was proving feasibility on real,
+unstable websites.
 
 \begin{figure}[H]
 \centering
-\begin{tikzpicture}[node distance=0.4cm and 0.6cm]
-
-% ===== Classification Agent =====
-\node[agentbox, minimum height=5cm, minimum width=5.8cm,
-      fill=blue!10, draw=blue!60] (cls) at (0, 0) {
-};
-\node[font=\small\bfseries, text=blue!70] at (0, 1.8) {Classification Agent};
-\node[toolbox, minimum width=5cm] at (0, 1.0) {inspect\_page (read-only)};
-\node[toolbox, minimum width=5cm] at (0, 0.2) {screenshot()};
-\node[toolbox, minimum width=5cm] at (0,-0.6) {get\_frame\_tree()};
-\node[toolbox, minimum width=5cm, fill=yellow!10, draw=orange!50] at (0,-1.4)
-  {Output: page\_type label};
-\node[font=\tiny, text=gray!70] at (0,-2.0) {Decides routing only};
-
-% ===== Landing Agent =====
-\node[agentbox, minimum height=5cm, minimum width=5.8cm,
-      fill=orange!10, draw=orange!60] (land) at (6.4, 0) {
-};
-\node[font=\small\bfseries, text=orange!80] at (6.4, 1.8) {Landing Agent};
-\node[toolbox, minimum width=5cm] at (6.4, 1.0) {inspect\_landing()};
-\node[toolbox, minimum width=5cm] at (6.4, 0.2) {interact (tab click, scroll)};
-\node[toolbox, minimum width=5cm] at (6.4,-0.6) {screenshot()};
-\node[toolbox, minimum width=5cm, fill=yellow!10, draw=orange!50] at (6.4,-1.4)
-  {Output: ranked host URLs};
-\node[font=\tiny, text=gray!70] at (6.4,-2.0) {Discovers hosting candidates};
-
-% ===== Hosting Agent =====
-\node[agentbox, minimum height=5.6cm, minimum width=5.8cm,
-      fill=green!8, draw=green!60] (host) at (0, -6.8) {
-};
-\node[font=\small\bfseries, text=green!70] at (0, -4.8) {Hosting Agent};
-\node[toolbox, minimum width=5cm] at (0,-5.6) {inspect\_hosting()};
-\node[toolbox, minimum width=5cm] at (0,-6.4) {interact (server btn, play)};
-\node[toolbox, minimum width=5cm] at (0,-7.2) {harvest()};
-\node[toolbox, minimum width=5cm] at (0,-8.0) {get\_media\_state()};
-\node[toolbox, minimum width=5cm, fill=yellow!10, draw=orange!50] at (0,-8.8)
-  {Output: m3u8/mpd streams};
-\node[font=\tiny, text=gray!70] at (0,-9.4) {Activates players, extracts streams};
-
-% ===== Embedded Agent =====
-\node[agentbox, minimum height=5.6cm, minimum width=5.8cm,
-      fill=purple!8, draw=purple!60] (emb) at (6.4, -6.8) {
-};
-\node[font=\small\bfseries, text=purple!70] at (6.4, -4.8) {Embedded Agent};
-\node[toolbox, minimum width=5cm] at (6.4,-5.6) {inspect\_embedded()};
-\node[toolbox, minimum width=5cm] at (6.4,-6.4) {interact (play btn, frame)};
-\node[toolbox, minimum width=5cm] at (6.4,-7.2) {harvest()};
-\node[toolbox, minimum width=5cm] at (6.4,-8.0) {navigate()};
-\node[toolbox, minimum width=5cm, fill=yellow!10, draw=orange!50] at (6.4,-8.8)
-  {Output: final stream manifests};
-\node[font=\tiny, text=gray!70] at (6.4,-9.4) {Fallback: iframe player contexts};
-
-% Flow arrows
-\draw[myarrow, very thick] (cls.east) -- node[above, font=\tiny]{host\_page}
-  (land.west);
-\draw[myarrow, very thick] (cls.south) -- node[right, font=\tiny]{host}
-  (host.north);
-\draw[myarrow, very thick] (land.south) -- node[right, font=\tiny]{host URLs}
-  (emb.north);
-\draw[->, >=Stealth, thick, red!60, dashed] (host.east) --
-  node[above, font=\tiny, red!60]{fallback} (emb.west);
-
-\end{tikzpicture}
-\caption{Four specialist agents: tools, outputs, and routing relationships.}
-\label{fig:four-agents}
-\end{figure}
-
-\section{Agent design: reasoning toward a final objective}
-
-Each agent follows the same operating principle: it has a final objective and a toolset
-to reach that objective through iterative evidence-based decisions.
-
-\begin{itemize}
-  \item \textbf{Classification agent objective:} route the page correctly.
-  \item \textbf{Landing agent objective:} discover and rank hosting candidates.
-  \item \textbf{Hosting agent objective:} activate players, test servers, and extract
-    streams.
-  \item \textbf{Embedded agent objective:} recover streams from iframe-centered contexts
-    and difficult fallback paths.
-\end{itemize}
-
-\section{Prompt design and structure per agent}
-
-The full system prompts are omitted from this shortened report. In the main body, it is
-more useful to summarize what each prompt is responsible for and what constraint keeps it
-under control.
-
-\begin{table}[H]
-\centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.8cm}
-                              >{\raggedright\arraybackslash}X
-                              >{\raggedright\arraybackslash}X}
-\toprule
-\rowcolor{accent!8}
-Agent & Prompt objective & Main control rule \\
-\midrule
-Classification & Assign one page type from the predefined taxonomy using read-only evidence &
-No interaction; short tool budget; return a single structured decision \\
-Landing & Discover and rank hosting candidates on listing pages &
-Iterate over tabs and dynamic listings, but stop when no new candidates appear \\
-Hosting & Activate players, test servers, and recover stream evidence from host pages &
-Validate actions with screenshots or media state before harvesting; fall back when needed \\
-Embedded & Recover final stream evidence inside iframe-centered player contexts &
-Use bounded play-attempt logic and return an explicit failure reason when evidence is absent \\
-\bottomrule
-\end{tabularx}
-\caption{Prompt summary per specialist agent.}
-\label{tab:prompt-summary}
-\end{table}
-
-Across all four prompts, the final design converged on the same pattern: explicit final
-objective, evidence-based reasoning loop, bounded tool budget, and clear stopping criteria.
-This made agent behavior more auditable and reduced the tendency to stop too early on
-ambiguous pages.
-
-\section{Prompt evaluation by use case}
-
-Prompt iteration was driven mainly by two recurring situations: navigation-heavy landing
-pages and click-to-play host or embedded pages. In both cases, the early intent-based
-prompts failed because they treated the first visible state as complete. The later ReAct-style
-prompts improved performance by forcing the agent to inspect, act, verify the result, and only
-then decide whether to continue.
-
-The main prompt improvements were:
-\begin{itemize}
-  \item explicit checks for hidden navigation controls such as tabs, filters, and ``load more'' actions;
-  \item explicit player-state checks before calling \texttt{harvest};
-  \item post-interaction verification through screenshots or media-state diagnostics;
-  \item popup recovery instructions and alternative click strategies when normal interaction failed.
-\end{itemize}
-
-These changes are discussed quantitatively in Chapter~6. In Chapter~5, the important point
-is the design consequence: the prompts became operational procedures rather than generic
-natural-language goals.
-
-\section{Puppeteer tool registry and tool descriptions}
-
-\subsection{Why tool descriptions matter}
-
-When an LLM agent decides which tool to call next, it reads each tool's schema
-description. This is not cosmetic documentation --- it is the primary signal the
-model uses to distinguish between similar-sounding tools. A vague description
-causes wrong tool selection; a precise description causes the model to call the
-right tool on the first attempt.
-
-This behavior is also API-provider specific. Some providers (Google Gemini~\cite{gemini},
-Anthropic Claude~\cite{claude}) weight tool descriptions heavily in tool-selection
-decisions. A well-phrased description can eliminate entire categories of tool-call
-mistakes without any prompt change.
-
-\textbf{Design rule applied in this project:} every tool description must answer three
-questions: \emph{what state it reads or modifies}, \emph{what signals it returns},
-and \emph{when to use it versus a similar tool}.
-
-\subsection{Tool registry overview}
-
-The Puppeteer tool layer exposes the following tools to all agents, with descriptions
-that shape agent behavior:
-
-\begin{table}[H]
-\centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.5cm}
-                              >{\raggedright\arraybackslash}X}
-\toprule
-\rowcolor{accent!8}
-Tool name & Description exposed to the LLM \\
-\midrule
-\texttt{inspect\_page} &
-  Read the current page DOM state. Returns title, meta description, visible text links,
-  iframe src list, player signals (video/source tags, player library class names), and
-  network request summary. Use this as the first action after any navigation. Do not
-  use to activate controls. \\
-\texttt{inspect\_landing} &
-  Specialized inspect for listing pages. Returns match link candidates, date/category
-  tab labels, broadcaster references, and pagination controls. Use instead of
-  inspect\_page when the classification result is landing\_page. \\
-\texttt{inspect\_hosting} &
-  Specialized inspect for host pages. Returns server button selectors and labels,
-  player container state, iframe src attributes, and current network stream signals.
-  Use instead of inspect\_page when on a host page. \\
-\texttt{inspect\_embedded} &
-  Specialized inspect for embedded player pages. Returns player library type
-  (albaplayer, clappr, hls.js, videojs), play button presence and selector, auto-play
-  status, and frame nesting context. Use when operating within an iframe-origin page. \\
-\texttt{interact} &
-  Execute a single user interaction on the page. Strategies: selector, text\_content,
-  xpath, coordinates, js\_click. Returns action outcome and whether page state changed.
-  Always follow with screenshot() to confirm. Never call harvest() before interact()
-  if the player is not yet playing. \\
-\texttt{screenshot} &
-  Capture a PNG screenshot of the current page and upload to Cloudinary. Returns the
-  CDN URL. Use after every interact() call and before every harvest() call to confirm
-  state. \\
-\texttt{harvest} &
-  Collect stream evidence from all available layers: CDP network event log, JavaScript
-  player source attributes, and performance.getEntriesByType retroactive scan. Returns
-  m3u8/mpd/mp4 URL candidates with source layer attribution. Use only after player
-  activation is confirmed by screenshot or get\_media\_state. \\
-\texttt{get\_media\_state} &
-  Probe the current player state by evaluating JavaScript player API objects in the
-  active frame. Returns: playing, paused, idle, error, or unknown. Use before harvest()
-  to decide whether activation is needed. \\
-\texttt{navigate} &
-  Navigate the browser to a new URL with a configurable wait strategy (load,
-  networkidle0, networkidle2). Returns the final URL after redirects. Use to follow
-  embed URLs or explicit server switches that require a full page load. \\
-\texttt{get\_frame\_tree} &
-  Enumerate all frames in the current page, including nested iframes, with their origin
-  URLs and nesting depth. Use when inspect\_page shows iframe signals but the player
-  frame is not accessible from the top context. \\
-\bottomrule
-\end{tabularx}
-\caption{Puppeteer tool descriptions as exposed to the LLM agent.}
-\label{tab:tool-descriptions}
-\end{table}
-
-\subsection{How tool descriptions guide agent behavior: concrete examples}
-
-\textbf{Example 1: inspect\_page vs inspect\_hosting.}
-Before the specialized inspect tools were added, agents called \texttt{inspect\_page}
-on host pages and received generic DOM information that did not highlight server
-buttons. Adding \texttt{inspect\_hosting} with the description ``Returns server button
-selectors and labels'' caused the agent to switch tools automatically on host pages
-without any prompt instruction to do so.
-
-\textbf{Example 2: harvest timing.}
-The \texttt{harvest} description includes the phrase ``Use only after player activation
-is confirmed.'' This sentence alone reduced premature harvest calls (calling harvest
-before clicking play) by a large margin compared to the early prompt versions that
-relied on the system prompt instruction alone.
-
-\textbf{Example 3: get\_media\_state disambiguation.}
-Before \texttt{get\_media\_state} existed, agents used \texttt{screenshot} as their
-only state-check tool. This worked visually but was slower. Adding
-\texttt{get\_media\_state} with the description ``Probe the current player state by
-evaluating JavaScript player API objects'' caused agents to use it as a fast pre-check
-before the more expensive screenshot call.
-
-\subsection{Per-agent tool allocation}
-
-Not all tools are available to all agents. Each agent receives only the tools relevant
-to its role, which reduces the decision space and prevents cross-agent tool misuse.
-
-\begin{table}[H]
-\centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.8cm}
-                              >{\raggedright\arraybackslash}X}
-\toprule
-\rowcolor{accent!8}
-Agent & Tools available \\
-\midrule
-Classification agent &
-  \texttt{inspect\_page}, \texttt{screenshot}, \texttt{get\_frame\_tree} \\
-Landing agent &
-  \texttt{inspect\_landing}, \texttt{interact}, \texttt{screenshot} \\
-Hosting agent &
-  \texttt{inspect\_hosting}, \texttt{interact}, \texttt{screenshot},
-  \texttt{get\_media\_state}, \texttt{harvest}, \texttt{navigate},
-  \texttt{get\_frame\_tree} \\
-Embedded agent &
-  \texttt{inspect\_embedded}, \texttt{interact}, \texttt{screenshot},
-  \texttt{harvest}, \texttt{navigate} \\
-\bottomrule
-\end{tabularx}
-\caption{Tool allocation per specialist agent. Agents receive only tools relevant to
-their role to reduce tool-selection error surface.}
-\label{tab:per-agent-tools}
-\end{table}
-
-\subsection{Diagram: tool call flow per agent type}
-
-Figure~\ref{fig:tool-flow} shows the typical tool call sequence for each agent,
-reflecting the order in which tools are described in the prompt procedure.
-
-\begin{figure}[H]
-\centering
+\resizebox{0.9\textwidth}{!}{%
 \begin{tikzpicture}[
-  seq/.style={draw=accent!70, fill=blue!5, rounded corners=3pt,
-              minimum width=2.9cm, minimum height=0.7cm,
-              font=\tiny, align=center},
-  arr/.style={->, >=Stealth, thin, gray!70}
+  stepbox/.style={draw=accent, fill=blue!5, rounded corners=5pt,
+    minimum width=3.2cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  issue/.style={draw=red!55, fill=red!6, rounded corners=5pt,
+    minimum width=3.2cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  outbox/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
+    minimum width=3.2cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80}
 ]
 
-% Classification
-\node[font=\footnotesize\bfseries, text=blue!70] at (1.5, 5.2) {Classification};
-\node[seq] (c1) at (1.5, 4.6) {inspect\_page};
-\node[seq] (c2) at (1.5, 3.7) {screenshot};
-\node[seq, fill=green!8, draw=green!60] (c3) at (1.5, 2.8) {[return type]};
-\draw[arr](c1)--(c2); \draw[arr](c2)--(c3);
+\node[stepbox] (seed) at (0,2.4) {Seed URL};
+\node[stepbox] (trigger) at (3.7,2.4) {n8n trigger};
+\node[stepbox] (agent) at (7.4,2.4) {Agent workflow};
+\node[stepbox] (browser) at (11.1,2.4) {Browser session};
+\node[outbox] (evidence) at (14.8,2.4) {Screenshots / streams};
+\node[issue] (limits) at (5.55,0.55) {Runtime limitations};
+\node[outbox] (lessons) at (11.1,0.55) {Lessons for\\reference solution};
 
-% Landing
-\node[font=\footnotesize\bfseries, text=orange!80] at (5.2, 5.2) {Landing};
-\node[seq] (l1) at (5.2, 4.6) {inspect\_landing};
-\node[seq] (l2) at (5.2, 3.7) {interact (tab)};
-\node[seq] (l3) at (5.2, 2.8) {inspect\_landing};
-\node[seq, fill=green!8, draw=green!60] (l4) at (5.2, 1.9) {[return URLs]};
-\draw[arr](l1)--(l2); \draw[arr](l2)--(l3); \draw[arr](l3)--(l4);
-
-% Hosting
-\node[font=\footnotesize\bfseries, text=green!70] at (8.9, 5.2) {Hosting};
-\node[seq] (h1) at (8.9, 4.6) {inspect\_hosting};
-\node[seq] (h2) at (8.9, 3.7) {interact (server)};
-\node[seq] (h3) at (8.9, 2.8) {screenshot};
-\node[seq] (h4) at (8.9, 1.9) {get\_media\_state};
-\node[seq] (h5) at (8.9, 1.0) {harvest};
-\node[seq, fill=green!8, draw=green!60] (h6) at (8.9, 0.1) {[return streams]};
-\draw[arr](h1)--(h2); \draw[arr](h2)--(h3);
-\draw[arr](h3)--(h4); \draw[arr](h4)--(h5); \draw[arr](h5)--(h6);
-
-% Embedded
-\node[font=\footnotesize\bfseries, text=purple!70] at (12.6, 5.2) {Embedded};
-\node[seq] (e1) at (12.6, 4.6) {inspect\_embedded};
-\node[seq] (e2) at (12.6, 3.7) {interact (play)};
-\node[seq] (e3) at (12.6, 2.8) {screenshot};
-\node[seq] (e4) at (12.6, 1.9) {harvest};
-\node[seq, fill=green!8, draw=green!60] (e5) at (12.6, 1.0) {[return streams]};
-\draw[arr](e1)--(e2); \draw[arr](e2)--(e3);
-\draw[arr](e3)--(e4); \draw[arr](e4)--(e5);
-
-% Separator lines
-\foreach \x in {3.35, 7.05, 10.75}
-  \draw[dashed, gray!40] (\x, 5.5) -- (\x, -0.3);
+\draw[arr] (seed) -- (trigger);
+\draw[arr] (trigger) -- (agent);
+\draw[arr] (agent) -- (browser);
+\draw[arr] (browser) -- (evidence);
+\draw[arr] (agent.south) |- (limits.east);
+\draw[arr] (limits) -- (lessons);
+\draw[arr] (evidence.south) |- (lessons.east);
 
 \end{tikzpicture}
-\caption{Typical tool call sequence per agent. Each column shows the ordered tool
-invocations; agents loop back when the stopping criterion is not yet met.}
-\label{fig:tool-flow}
+}
+\caption{Role of the n8n workflow as a feasibility playground.}
+\label{fig:n8n-playground-flow}
 \end{figure}
 
-\section{Tool architecture and why it works on hard sites}
+The workflow helped test agent behavior before investing in a full backend,
+database, and operator console. It also exposed which parts of the task were
+hard: browser state continuity, popup handling, stream activation, memory,
+runtime length, and evidence validation.
 
-The tool architecture combines high-level operations (inspect/interact/harvest/
-screenshot/navigate) with lower-level primitives (frame tree, page context, media state,
-action variants). This layered design helps agents adapt to unknown page structures
-instead of depending on one brittle selector path.
+\subsection{n8n agents and screenshot placeholders}
+
+The n8n workflow used agent-like nodes to test the same page-type responsibilities
+that later became specialist agents. The screenshots below are intentionally left
+as placeholders so the final report can include the real workflow captures.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{n8n-full-workflow.png}
+\vspace{0.8em}
+\begin{tabularx}{\textwidth}{XX}
+\fbox{\parbox[c][3.2cm][c]{0.45\textwidth}{\centering
+\textbf{Screenshot Placeholder}\\[0.4em]
+n8n classification agent\\workflow node and output}} &
+\fbox{\parbox[c][3.2cm][c]{0.45\textwidth}{\centering
+\textbf{Screenshot Placeholder}\\[0.4em]
+n8n landing agent\\match discovery path}} \\
+\\[-0.2em]
+\fbox{\parbox[c][3.2cm][c]{0.45\textwidth}{\centering
+\textbf{Screenshot Placeholder}\\[0.4em]
+n8n hosting agent\\server and player activation}} &
+\fbox{\parbox[c][3.2cm][c]{0.45\textwidth}{\centering
+\textbf{Screenshot Placeholder}\\[0.4em]
+n8n embedded agent\\iframe/player extraction}} \\
+\end{tabularx}
+\caption{Full n8n workflow and screenshot placeholders for the agent workflows.}
+\label{fig:n8n-agent-screenshots}
+\end{figure}
 
 \begin{table}[H]
 \centering
@@ -472,168 +100,521 @@ instead of depending on one brittle selector path.
                               >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
-Observed obstacle & Typical site behavior & Tool-layer adaptation \\
+n8n agent role & What it tested & Lesson learned \\
 \midrule
-Theme-level selector drift & same visual page, changed underlying selectors &
-  text and role-based fallback targeting, not selector-only targeting \\
-Mirror heterogeneity & one event points to multiple providers with different UI
-  semantics & provider-agnostic inspect/interact loops with per-mirror diagnostics \\
-Ad diversion & interaction causes tab hijack or overlay interruption &
-  focus recovery, popup handling, and retry with state validation \\
-Late stream materialization & stream appears only after runtime player logic &
-  deferred harvest triggered by confirmed media-state transition \\
+Classification & Whether a page could be categorized as landing, hosting,
+embedded, or other from browser evidence. & Routing must be explicit and
+fail-closed; wrong classification wastes the whole run. \\
+Landing & Whether listing pages could expose match cards, tabs, and hosting
+links. & Generic DOM inspection was not enough; landing pages needed
+page-type-specific extraction. \\
+Hosting & Whether server buttons and play controls could be activated. & Stream
+evidence appears only after interaction; screenshot and media-state validation
+are necessary. \\
+Embedded & Whether iframe and player pages could reveal final manifests. &
+Nested frames require a dedicated extraction path and should not be mixed with
+landing-page exploration. \\
 \bottomrule
 \end{tabularx}
-\caption{How the tool architecture adapts to recurrent break behaviors.}
-\label{tab:tool-adaptation}
+\caption{n8n agent roles and lessons carried into the reference implementation.}
+\label{tab:n8n-agent-lessons}
 \end{table}
 
-\section{Puppeteer techniques inside tools}
+\subsection{Limitations of the n8n implementation}
 
-Key techniques used in tools include:
-
-\begin{itemize}
-  \item \texttt{page.evaluate(...)} for runtime extraction of player state and
-    DOM-derived signals;
-  \item CDP network events for request/response-level evidence capture;
-  \item iframe diagnostics and frame-targeted interactions;
-  \item performance resource scanning for retroactive stream evidence;
-  \item screenshot checkpoints after each critical state transition.
-\end{itemize}
-
-These methods are essential because static HTML alone does not expose enough evidence
-in many real cases.
-
-\section{Handling tokenized \texttt{m3u8} and hidden stream flows}
-
-HLS (HTTP Live Streaming)~\cite{hls-rfc} manifests (\texttt{.m3u8}) are the primary
-evidence target in this project. Some websites do not expose final manifests directly:
-the stream appears only after runtime token exchange or player-side JavaScript logic. In such runs, an initial page
-resource can look unrelated (including decoy assets like \texttt{mono.css}) while the
-real signed stream URL is generated later.
-
-Implementation strategy:
-
-\begin{itemize}
-  \item trigger real player behavior first (interaction step);
-  \item capture network request/response layers after activation;
-  \item inspect JavaScript player objects and runtime resource entries;
-  \item aggregate and deduplicate candidate stream URLs;
-  \item validate with screenshots and media-state diagnostics.
-\end{itemize}
-
-\section{Screenshot capture and Cloudinary storage}
-
-Screenshot reasoning was treated as a first-class mechanism, not a cosmetic artifact.
-It serves three purposes:
-
-\begin{itemize}
-  \item confirms whether an interaction changed state (player started, popup closed,
-    server switched);
-  \item prevents false-positive claims when a click did nothing visible;
-  \item provides operator-auditable evidence for manual verification and takedown
-    package assembly.
-\end{itemize}
-
-\textbf{Cloudinary integration.} After each \texttt{screenshot()} call, the Puppeteer
-tool uploads the PNG buffer to Cloudinary using their unsigned upload preset. The tool
-returns the Cloudinary CDN URL to the agent, which stores it as part of the run event
-record. The URL is then surfaced in the operator console next to the corresponding
-tool call in the live trace.
-
-This approach decouples evidence storage from the extraction container. Containers can
-be ephemeral (as required by Azure Container Apps Jobs) while screenshots remain
-accessible indefinitely via the Cloudinary CDN link.
-
-\subsection{Future extension: Canvas-based screenshot annotation}
-
-The operator console can be extended with a Canvas-based annotation layer over stored
-screenshots. Reviewers would be able to draw rectangles, arrows, points, and labels
-over evidence regions such as server buttons, play controls, iframe containers, blocked
-overlays, broadcaster logos, and active player states. The annotations would be stored
-as metadata linked to \texttt{run\_id}, \texttt{screenshot\_url}, \texttt{page\_url},
-timestamp, and reviewer. This improves evidence interpretation and report/legal review
-without modifying the target website.
-
-A minimal annotation schema could include \texttt{annotation\_id}, \texttt{run\_id},
-\texttt{screenshot\_url}, \texttt{page\_url}, \texttt{label}, \texttt{shape\_type},
-\texttt{x}, \texttt{y}, \texttt{width}, \texttt{height}, \texttt{note},
-\texttt{reviewer}, and \texttt{created\_at}. Automatic validation checks whether the
-agent output is structurally and evidentially acceptable. The operator console and
-future Canvas annotation layer support human interpretation of the accepted or partial
-evidence.
-
-\section{Model strategy, cache behavior, and cost}
-
-The implementation uses smaller and larger models with role-based allocation:
-
-\begin{itemize}
-  \item \texttt{gemini-2.5-flash-lite} for orchestration and lightweight routing
-    decisions;
-  \item \texttt{gemini-2.5-flash} for specialist extraction where richer reasoning is
-    required.
-\end{itemize}
-
-Observed cost behavior is strongly model-dependent and task-depth dependent.
+The n8n workflow was valuable, but it reached clear limits when the task became
+larger than a single experimental run. These limits explain why the second
+implementation was necessary.
 
 \begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.7cm}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.6cm}
                               >{\raggedright\arraybackslash}X
                               >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
-Cost driver & Why it increases cost & Mitigation used \\
+Limitation & What happened in practice & Consequence \\
 \midrule
-Model choice & stronger models cost more per token &
-  route lightweight tasks to flash-lite \\
-Hosting-page count & more pages require more reasoning/tool loops &
-  ranking and early pruning \\
-Servers per page & each server adds interaction + harvest attempts &
-  bounded retries and evidence thresholds \\
-Long context windows & repeated prompt context can become expensive &
-  provider cache and tool-result cache \\
+No real evaluation layer & Runs could be inspected manually, but there was no
+structured evaluation harness for repeatable scoring. & Prompt changes were hard
+to compare objectively. \\
+Weak memory model & The workflow did not provide a durable, domain-aware memory
+layer for reusable site knowledge. & Agents repeated failed actions and could
+not reliably reuse successful selectors or strategies. \\
+Long runtimes & Large pages and multi-server hosting pages created long blocking
+executions. & Debugging became slow and failures were expensive to reproduce. \\
+Sequential execution & The workflow behaved mostly as a sequential chain rather
+than parallel specialist agents. & Runs were slower than necessary, especially
+when multiple hosting or embedded candidates existed. \\
+Limited development environment & n8n is a workflow editor, not a normal source
+controlled development environment. & Workflows had to be exported as JSON files
+to preserve progress and compare versions. \\
+Fragile Puppeteer integration & Puppeteer code inside n8n nodes was brittle and
+tools frequently broke when browser state changed. & Browser automation needed a
+dedicated tool service with stable sessions. \\
+Isolated code execution & Code executions were isolated, so browser instances
+could be lost between steps. A \texttt{puppeteer.connect} workaround was needed
+to reconnect to a running browser. & Browser continuity became a workaround
+instead of a clean runtime contract. \\
+High memory usage & Long browser sessions, page artifacts, and workflow state
+created large memory pressure. & The prototype was not comfortable for long or
+batch-oriented extraction runs. \\
+Hard failure analysis & Errors were visible, but not stored as normalized events,
+LLM calls, tool calls, screenshots, and costs. & Post-mortem review required
+manual reconstruction. \\
 \bottomrule
 \end{tabularx}
-\caption{Primary cost drivers and implementation mitigations.}
-\label{tab:cost-drivers}
+\caption{Main limitations observed during the n8n prototype phase.}
+\label{tab:n8n-limitations}
 \end{table}
 
-\section{Operational fallback strategy}
+\begin{figure}[H]
+\centering
+\resizebox{0.86\textwidth}{!}{%
+\begin{tikzpicture}[
+  prob/.style={draw=red!55, fill=red!6, rounded corners=5pt,
+    minimum width=3.6cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
+  sol/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
+    minimum width=3.6cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80}
+]
 
-The extraction workflow remains staged:
+\node[prob] (p1) at (0,3.0) {Sequential workflow};
+\node[prob] (p2) at (0,1.8) {No durable memory};
+\node[prob] (p3) at (0,0.6) {Fragile browser state};
+\node[prob] (p4) at (0,-0.6) {Manual evaluation};
 
-\begin{enumerate}
-  \item deterministic path first;
-  \item if insufficient confidence, activate agentic path;
-  \item hosting-stage extraction first in agentic path;
-  \item embedded-stage fallback when hosting returns no reliable stream evidence.
-\end{enumerate}
+\node[sol] (s1) at (6.0,3.0) {Orchestrated specialists};
+\node[sol] (s2) at (6.0,1.8) {Short/long-term memory};
+\node[sol] (s3) at (6.0,0.6) {MCP browser sessions};
+\node[sol] (s4) at (6.0,-0.6) {Stored traces + eval routes};
 
-\section{Deployment-oriented implementation}
+\foreach \i in {1,2,3,4}
+  \draw[arr] (p\i) -- (s\i);
 
-Two deployment levels must be distinguished. The operational deployment achieved during
-the internship was the validated n8n single-agent workflow. The Python reference
-architecture remains compatible with queue-based cloud execution through FastAPI
-services, browser workers, a PostgreSQL observability database, Cloudinary screenshot
-storage, Azure Service Bus, and Azure Container Apps Jobs. During internship execution,
-this remained a future deployment target rather than the default daily runtime.
+\end{tikzpicture}
+}
+\caption{How n8n limitations shaped the reference implementation.}
+\label{fig:n8n-to-reference}
+\end{figure}
 
-\section{Implementation summary}
+\section{Part 2: Implemented Reference Solution}
 
-The current implementation addresses the main hard realities of this domain:
+The reference solution keeps the useful extraction logic from the n8n phase but
+moves it into explicit software components. It is organized into five main
+implementation areas: FastAPI, Next.js, MCP browser containers, agents and model
+runtime, and PostgreSQL.
 
-\begin{itemize}
-  \item nested iframes and popup-heavy pages;
-  \item tokenized and delayed stream generation;
-  \item anti-bot pressure and dynamic page drift;
-  \item cost growth with deeper hosting/server exploration.
-\end{itemize}
+\begin{figure}[H]
+\centering
+\resizebox{0.92\textwidth}{!}{%
+\begin{tikzpicture}[
+  layer/.style={draw=accent, fill=blue!5, rounded corners=5pt,
+    minimum width=3.4cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  support/.style={draw=purple!60, fill=purple!7, rounded corners=5pt,
+    minimum width=3.4cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80}
+]
 
-It does so through reasoning agents with explicit goals, layered browser tools,
-screenshot-grounded validation, and explicit fallback behavior from hosting to embedded
-extraction.
+\node[layer] (next) at (0,2.2) {Next.js\\operator console};
+\node[layer] (api) at (4.0,2.2) {FastAPI\\control plane};
+\node[layer] (agents) at (8.0,2.2) {Agents\\LangChain runtime};
+\node[layer] (mcp) at (12.0,2.2) {MCP browser\\containers};
+\node[layer] (browser) at (16.0,2.2) {Puppeteer\\Chromium};
 
-Chapter~6 evaluates this implementation against concrete use cases, measuring the impact
-of each prompt iteration on navigation recall, player activation rate, and overall
-stream-extraction success.
+\node[support] (db) at (4.0,0.2) {PostgreSQL\\observability};
+\node[support] (cache) at (8.0,0.2) {Memory + cache};
+\node[support] (external) at (12.0,0.2) {LLM, Cloudinary,\\IPInfo / WHOIS};
+
+\draw[arr] (next) -- (api);
+\draw[arr] (api) -- (agents);
+\draw[arr] (agents) -- (mcp);
+\draw[arr] (mcp) -- (browser);
+\draw[arr] (api) -- (db);
+\draw[arr] (agents) -- (cache);
+\draw[arr] (agents) -- (external);
+
+\end{tikzpicture}
+}
+\caption{Five implementation areas of the reference solution.}
+\label{fig:implementation-five-areas}
+\end{figure}
+
+\subsection{FastAPI Backend}
+
+The FastAPI backend is the control plane of the reference solution. It starts
+runs, checks runtime readiness, streams or returns run state, exposes settings,
+stores observability records, and gives the frontend a stable API surface.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.4cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Backend area & Responsibility & Why it matters \\
+\midrule
+Runtime health & Check browser, MCP, settings, and launch readiness. & Failed
+preflight is clearer than a silently broken agent run. \\
+Run execution & Start single URL runs and dataset-backed runs. & Keeps workflow
+launch separate from UI rendering. \\
+Run inspection & Return trace, screenshots, streams, provider data, model usage,
+and errors. & Makes each run auditable after execution. \\
+Configuration & Persist model, provider, pricing, browser, and tool settings. &
+Allows controlled experimentation without editing code every time. \\
+Tool playground & Let tools be tested without a full agent run. & Isolates
+browser/tool failures from prompt failures. \\
+Evaluation routes & Run or review batches and reliability checks. & Provides the
+foundation that the n8n prototype lacked. \\
+\bottomrule
+\end{tabularx}
+\caption{FastAPI backend responsibilities.}
+\label{tab:fastapi-responsibilities}
+\end{table}
+
+The backend also uses lightweight caching for frequently polled read endpoints.
+This reduces repeated database work when the frontend refreshes dashboards or
+run summaries.
+
+\subsection{Next.js Operator Console}
+
+The Next.js frontend is not just a dashboard. It is the operator console for the
+reference implementation: launching runs, following execution, reviewing
+evidence, and changing runtime configuration.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.4cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Frontend surface & What it shows or controls & Main backend dependency \\
+\midrule
+Run launcher & Seed URL, batch inputs, runtime readiness, launch status. &
+Workflow and health endpoints. \\
+Run detail & Agent activity, events, decisions, screenshots, streams, provider
+analysis, tool calls, model usage. & Run inspection endpoints and stored traces. \\
+Datasets and batches & Website dataset, batch launch, per-site progress,
+history. & Dataset and batch repositories. \\
+Settings & Provider/model config, caching, browser runtime, pricing, MCP tools. &
+Configuration endpoints. \\
+Tool playground & Direct tool tests for navigation, inspection, screenshots, and
+harvest. & MCP tool-test endpoints. \\
+\bottomrule
+\end{tabularx}
+\caption{Main Next.js operator workflows.}
+\label{tab:nextjs-surfaces}
+\end{table}
+
+The design goal was operational clarity. A failed launch should show why it
+failed. A completed run should show what the agent actually did, which tools it
+called, what evidence it found, and where the model or browser runtime failed.
+
+\subsection{MCP Browser Containers and Puppeteer Tools}
+
+The browser tooling was extracted from the n8n code-node style into dedicated
+MCP browser services. Each agent profile receives a filtered tool surface
+through an MCP endpoint. This reduces tool-selection noise and keeps browser
+session ownership outside the LLM prompt.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.8cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Browser engine & Strengths observed & Project decision \\
+\midrule
+Playwright & Strong context isolation, good frame and browser-context APIs,
+useful for comparing behavior and validating browser policies. & Tested and
+kept as a useful reference path, but not the primary runtime. \\
+Puppeteer & Direct Chrome DevTools Protocol fit, simpler integration with the
+existing tool registry, stable enough for the profiled MCP tool server. & Chosen
+as the main browser engine for the implemented agent prompts and tool runtime. \\
+\bottomrule
+\end{tabularx}
+\caption{Playwright and Puppeteer comparison for the browser tool layer.}
+\label{tab:playwright-puppeteer}
+\end{table}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.2cm}
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Tool group & Purpose \\
+\midrule
+Navigation tools & Open URLs, go back, wait for page state, and recover from
+navigation drift. \\
+Inspection tools & Read page context, landing cards, hosting server controls,
+embedded player state, DOM elements, and frame trees. \\
+Interaction tools & Click by selector, text, XPath, checkbox/radio/select,
+coordinates, play media, type input, scroll, and swipe. \\
+Evidence tools & Capture screenshots, media state, stream requests, player
+signals, and harvested \texttt{m3u8}/\texttt{mpd}/\texttt{mp4} candidates. \\
+Memory tools & Read or update reusable site hints from the memory layer. \\
+\bottomrule
+\end{tabularx}
+\caption{Puppeteer tool groups exposed through MCP.}
+\label{tab:puppeteer-tool-groups}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\resizebox{0.86\textwidth}{!}{%
+\begin{tikzpicture}[
+  stepbox/.style={draw=accent, fill=blue!5, rounded corners=5pt,
+    minimum width=3.2cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80},
+  ret/.style={->, >=Stealth, thick, gray!70, dashed}
+]
+
+\node[stepbox] (agent) at (0,2.4) {Agent chooses tool};
+\node[stepbox] (mcp) at (4.2,2.4) {MCP profile endpoint};
+\node[stepbox] (registry) at (8.4,2.4) {Tool registry};
+\node[stepbox] (chrome) at (12.6,2.4) {Puppeteer + Chromium};
+\node[stepbox] (result) at (9.6,0.2) {Structured tool result};
+\node[stepbox] (memory) at (3.0,0.2) {Trace + memory update};
+
+\draw[arr] (agent) -- (mcp);
+\draw[arr] (mcp) -- (registry);
+\draw[arr] (registry) -- (chrome);
+\draw[ret] (chrome.south) -- ++(0,-1.1) -| (result.east);
+\draw[ret] (result) -- (memory);
+\draw[ret] (memory.west) -- ++(-2.2,0) |- (agent.south);
+
+\end{tikzpicture}
+}
+\caption{Browser tool execution loop through MCP and Puppeteer.}
+\label{fig:mcp-tool-loop}
+\end{figure}
+
+\subsection{Agents, Models, Memory, and Prompts}
+
+The reference solution uses specialist agents rather than one general browser
+agent. Each specialist receives a role-specific prompt, a profile-specific tool
+set, and a bounded execution budget.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.8cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Agent & Objective & Main tools used \\
+\midrule
+Classification & Decide whether the seed is landing, hosting, embedded, or
+other. & Generic inspection, screenshot, frame tree, memory lookup. \\
+Landing & Discover match cards, listing tabs, pagination, and hosting
+candidates. & Landing inspect, element queries, click/scroll, screenshot,
+memory tools. \\
+Hosting & Activate server controls, verify player state, and extract streams or
+embedded fallbacks. & Hosting inspect, click/play tools, media state, frame tree,
+harvest, screenshot. \\
+Embedded & Work only on embedded/player URLs and harvest final stream evidence.
+& Embedded inspect, play/media tools, harvest, screenshot, frame diagnostics. \\
+\bottomrule
+\end{tabularx}
+\caption{Specialist agents, objectives, and tool surfaces.}
+\label{tab:agent-objectives-tools}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\resizebox{0.88\textwidth}{!}{%
+\begin{tikzpicture}[
+  stepbox/.style={draw=accent, fill=blue!5, rounded corners=5pt,
+    minimum width=3.2cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
+  mem/.style={draw=purple!60, fill=purple!7, rounded corners=5pt,
+    minimum width=3.2cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80},
+  loop/.style={->, >=Stealth, thick, gray!70, dashed}
+]
+
+\node[mem] (long) at (0,2.7) {Long-term hints};
+\node[stepbox] (prompt) at (3.8,2.7) {Compiled prompt};
+\node[stepbox] (llm) at (7.6,2.7) {LLM tool decision};
+\node[stepbox] (tool) at (11.4,2.7) {MCP tool call};
+\node[stepbox] (obs) at (11.4,0.7) {Observation};
+\node[stepbox] (valid) at (7.6,0.7) {Validate progress};
+\node[mem] (short) at (3.8,0.7) {Short-term memory};
+
+\draw[arr] (long) -- (prompt);
+\draw[arr] (prompt) -- (llm);
+\draw[arr] (llm) -- (tool);
+\draw[arr] (tool) -- (obs);
+\draw[arr] (obs) -- (valid);
+\draw[arr] (valid) -- (short);
+\draw[loop] (short.south) -- ++(0,-0.45) -| (llm.south);
+
+\end{tikzpicture}
+}
+\caption{Agent reasoning loop with memory and tool feedback.}
+\label{fig:agent-memory-loop}
+\end{figure}
+
+LangChain is used as the tool-binding and message-loop layer. The implementation
+does not let the model freely access every browser capability. Instead, the MCP
+client loads only the tool profile for the current agent. The shared loop records
+tool calls, model calls, token usage, cache behavior, and stop reasons.
+
+\subsubsection{Model behavior, token usage, and rate limits}
+
+The model layer had to be treated as an operational dependency, not only as a
+prompting detail. Long browser pages, repeated DOM observations, screenshots,
+tool traces, and failed retries can grow the context quickly. The implementation
+therefore tracks context windows, input tokens, output tokens, cached tokens,
+cache writes, and estimated cost.
+
+Gemini rate limits are evaluated across RPM, TPM, and RPD. Google's current
+documentation defines these as requests per minute, input tokens per minute, and
+requests per day, and states that limits depend on model and usage tier and can
+change in AI Studio.\footnote{\url{https://ai.google.dev/gemini-api/docs/rate-limits}
+Last checked on 2026-05-18.} The implementation therefore treats rate limits as
+configuration and observability concerns rather than hard-coded constants.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.1cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Model concern & Implementation handling & Why it matters \\
+\midrule
+Context window & Store and display model context-window metadata where available.
+& Prevents long runs from silently approaching context exhaustion. \\
+Token usage & Track input, output, cached input, and cache-write tokens. & Makes
+cost and prompt growth visible per run. \\
+Tool calling & Bind only profile-specific tools through LangChain and MCP. &
+Reduces incorrect tool choice and keeps browser actions controlled. \\
+Rate limits & Treat RPM, TPM, and RPD as provider limits to monitor and respect.
+& Avoids confusing quota failures with browser or prompt failures. \\
+Retries & Apply bounded LLM retry attempts and delays per agent profile. &
+Recovers transient provider errors without infinite loops. \\
+Caching & Use prompt/provider cache and tool-result cache where safe. & Reduces
+repeated tokens and repeated browser observations. \\
+\bottomrule
+\end{tabularx}
+\caption{Model-runtime concerns handled by the implementation.}
+\label{tab:model-runtime-concerns}
+\end{table}
+
+\subsubsection{Prompt engineering and stopping behavior}
+
+The prompts evolved from broad goals into operational procedures. Each prompt
+defines the objective, the evidence required, which page ownership rules must be
+respected, and when the agent should stop. The strongest prompt pattern was an
+evidence-based loop: observe, state the current hypothesis, choose one action,
+verify the result, then either continue or return a structured failure.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.3cm}
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Prompt design rule & Implementation effect \\
+\midrule
+Explicit page ownership & Hosting agents stay on hosting pages; embedded agents
+stay on embedded/player URLs. \\
+Evidence before harvest & Agents confirm player state or screenshot state before
+claiming stream extraction. \\
+Bounded tool budget & Long runs stop with a clear partial result instead of
+looping indefinitely. \\
+Structured output contract & Results can be stored, evaluated, and rendered in
+the UI without manual parsing. \\
+Memory hints as soft guidance & Prior site knowledge helps, but does not replace
+current evidence. \\
+\bottomrule
+\end{tabularx}
+\caption{Prompt engineering rules used by the specialist agents.}
+\label{tab:prompt-engineering-rules}
+\end{table}
+
+\subsection{PostgreSQL Database and Observability}
+
+The PostgreSQL database is used mainly for observability, review, evaluation,
+and configuration. It is not the product database of the external organization.
+Its purpose in this project is to preserve what happened during a run so that
+failures and successes can be inspected later.
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.4cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Record group & Tables / records & Status in the project \\
+\midrule
+Core run trace & Pipeline runs, agent runs, runtime events, LLM calls, tool
+calls. & Central to reviewing and debugging runs. \\
+Evidence & Run streams, screenshots, provider analyses, takedown emails. &
+Central to the evidence bundle. \\
+Model and prompt metadata & Prompt versions, prompt compilations, model usage,
+pricing configs. & Important for cost, prompt iteration, and reproducibility. \\
+Memory & Memory entries and memory hints used. & Used to connect cross-run
+knowledge with current agent decisions. \\
+Datasets and batches & Dataset sites, dataset batches, dataset site runs. &
+Useful for evaluation/batch execution, but not always used in every run. \\
+Operational support & Run decisions, run tasks, playground calls, snapshots. &
+Support/diagnostic records; some remain secondary rather than core report
+outputs. \\
+\bottomrule
+\end{tabularx}
+\caption{PostgreSQL record groups and their role in the implementation.}
+\label{tab:postgres-record-groups}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\resizebox{0.9\textwidth}{!}{%
+\begin{tikzpicture}[
+  core/.style={draw=accent, fill=blue!5, rounded corners=5pt,
+    minimum width=3.4cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
+  data/.style={draw=purple!60, fill=purple!7, rounded corners=5pt,
+    minimum width=3.4cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80}
+]
+
+\node[core] (run) at (0,3.0) {PipelineRun};
+\node[data] (agents) at (-5.0,1.35) {AgentRun\\AgentOutput};
+\node[data] (calls) at (0,1.35) {LLMCall\\ToolCall};
+\node[data] (events) at (5.0,1.35) {RuntimeEvent};
+\node[data] (evidence) at (-5.0,-0.45) {Streams\\Screenshots};
+\node[data] (provider) at (0,-0.45) {ProviderAnalysis\\TakedownEmail};
+\node[data] (usage) at (5.0,-0.45) {ModelUsage\\Pricing};
+
+\draw[arr] (run) -- (agents);
+\draw[arr] (run) -- (calls);
+\draw[arr] (run) -- (events);
+\draw[arr] (agents) -- (evidence);
+\draw[arr] (agents) -- (provider);
+\draw[arr] (calls) -- (usage);
+\draw[arr] (events) -- (usage);
+\draw[arr] (evidence) -- (provider);
+
+\end{tikzpicture}
+}
+\caption{Simplified database relationship map for run review.}
+\label{fig:postgres-run-map}
+\end{figure}
+
+\section{Implementation Summary}
+
+The implementation moved from a useful but limited n8n prototype to a structured
+reference solution. The n8n phase validated the feasibility of agentic browser
+extraction and exposed the main runtime problems. The Python solution addressed
+those problems with explicit backend routes, a reviewable frontend, profiled MCP
+browser tools, specialist agents, memory and caching, model-usage tracking, and
+PostgreSQL observability.
+
+The result is not only an extraction script. It is a reviewable agent platform
+where failures can be diagnosed, prompts can be evaluated, tool behavior can be
+tested independently, and evidence can be inspected after the browser run ends.

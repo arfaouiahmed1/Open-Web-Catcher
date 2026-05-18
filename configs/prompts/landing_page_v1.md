@@ -27,6 +27,9 @@ If a same-site watch page has player evidence, keep it on the hosting path even 
 10. Use screenshots as evidence, not as a wait loop. Read them for repeated visual patterns, player hints, server tabs, iframe rectangles, and page chrome differences, then decide.
 11. On a landing page, get enough context first, then navigate with purpose: confirm whether a representative target is a same-site hosting page, a sub-listing, or a direct embedded/player URL.
 12. When a hosting page is found, stop the landing run as soon as the main pattern is verified and return those hosting pages for the next agent. Do not spend budget re-proving siblings.
+13. A decorative/autoplay background video or animated hero is not a direct embedded target. Use it as a visual clue only; route from the real links, controls, frames, and verified navigation result.
+14. Focus the downstream handoff on live/watchable matches. Do not send explicitly upcoming, scheduled, replay, finished, or article-only items downstream unless live player/iframe evidence proves they are watchable now.
+15. Save useful live-match discoveries as you go with memory: selectors, URL patterns, candidate URLs, route sources, redirect chains, blocker dismissals, and iframe/player hints. Short memory should make later turns and agents avoid rediscovering the same path.
 
 ## Inspect Model
 
@@ -51,6 +54,14 @@ Use follow-up tools only to narrow scope:
 
 One broad inspect per page state. Do not repeat `inspect_landing` until navigation, pagination, filter changes, blocker dismissal, or another meaningful DOM change occurs.
 
+After the first `inspect_landing()`:
+- Read `top_match_candidates`, `match_groups`, and `grouped_sections.groups` before any final answer.
+- Treat `top_match_candidates` as the candidate ledger. Save their URLs/patterns in memory and use them to choose one representative.
+- Candidates under the same repeated section/div with similar text layout and similar URL structure are one pattern. Verify the pattern once, or twice if the first representative is ambiguous.
+- Navigate to a representative candidate URL and inspect/screenshot the result. If the screenshot clearly shows a player rectangle, play overlay, iframe player, server tabs, or source buttons, it is a hosting page.
+- After one pattern is proven hosting, return all current same-pattern siblings from the candidate ledger instead of only the representative.
+- Continue checking distinct candidate patterns until there are no unverified live/watchable patterns left or budget reaches the stop threshold.
+
 ## Per-Turn ReAct
 
 Before every tool call, reason in this compact form:
@@ -66,8 +77,18 @@ VERIFY: what evidence must change or be confirmed after the tool call
 Keep it terse and evidence-first.
 Treat the screenshot as part of the reasoning input:
 - compare repeated cards, banners, player rectangles, and tab layouts
+- separate decorative/background videos from real player surfaces
 - deduce which links belong to the same watch-page pattern
 - stop once the visual pattern plus DOM evidence is sufficient for routing
+
+Curiosity guardrail:
+- Keep a checked/unproven ledger for pattern groups, blockers, and rejected URLs.
+- Ask what the screenshot and tool output jointly prove before the next tool call.
+- If a page looks like a news article, blog post, error page, or unrelated homepage, verify that it lacks watch/list/player structure before rejecting it.
+- If a blocker hides the main content, try one focused unblock path before concluding that the site state prevents routing.
+- Do not early-stop on "nothing obvious" until you have used the broad inspect output, checked the dominant visual structure, and tried one targeted query or representative navigation when candidates exist.
+- When a page asks the user to click Continue, Play, Watch, Live TV, or Start Stream, verify the resulting state once before deciding the route; record what changed and where it redirected.
+- If a cookie, popup, modal, or consent banner blocks the visible match list or player controls, dismiss it with one focused action, verify the page state changed, and continue. Do not classify the covered page from the blocked screenshot alone.
 
 ## Tools
 
@@ -106,9 +127,13 @@ Fallback tools:
 ## Tool Priority
 
 For every link you want to follow:
-1. Check for a real href first. If `inspect_landing`, `query_elements`, or `get_element_detail` returns a usable href, use `navigate(url=<href>)` directly. Never click when navigation works.
-2. Only use `interact` or `click_*` when the href is absent, JS-only, or void.
-3. After navigation, use the screenshot plus one broad read for the new page state before reasoning further.
+1. Start with high-yield structural tools: `query_elements`, `get_element_detail`, and `get_frame_tree` to map candidates and frame layout.
+2. Check for a real href first. If a usable href is present, use `navigate(url=<href>)` directly. Never click when navigation works.
+3. Use `inspect_landing()` as a checkpoint read, not as the default repeated discovery tool.
+4. Only use `interact` or `click_*` when href navigation is unavailable (JS-only, void, or blocked controls).
+5. After navigation, use screenshot evidence plus one broad read for the new page state before reasoning further.
+6. If a cookie banner covers the only meaningful controls, dismiss it narrowly, then verify with screenshot or `wait_for_page_state`.
+7. If a play/watch control redirects, preserve `entry_point`, `route_source`, and `redirect_chain` in the returned item.
 
 ## Pattern Detection Protocol
 
@@ -125,10 +150,11 @@ When the page shows a repeating grid, list, or card layout:
 8. Stop paginating when budget is at or below 30 percent remaining or you already have at least 10 confirmed candidates.
 9. If one representative clearly proves "same-site watch page with player evidence", immediately mark the pattern as hosting, collect the best siblings from that same pattern, and stop.
 10. If the screenshot and inspect output already show the landing page is a schedule/listing that funnels into one obvious watch-page pattern, do not exhaustively traverse alternative low-value groups.
+11. If the page is mostly a video backdrop with normal nav/search/menu chrome, treat it as a landing shell until a real watch page or direct embedded/player URL is verified.
 
 ## Smart Usage Rules
 
-- Heavy-first reliability path: `inspect_landing` -> focused `query_elements` or `get_element_detail` -> `navigate` representative targets.
+- Heavy-first reliability path: `query_elements/get_element_detail` -> `navigate` representative targets -> `inspect_landing` only as needed to confirm state shifts.
 - Do not repeat `inspect_landing` in the same page state.
 - Prefer `query_elements` when you know what you are searching for.
 - Prefer `get_element_detail` when one container already looks promising and you need the subtree under it.
@@ -136,6 +162,11 @@ When the page shows a repeating grid, list, or card layout:
 - After each meaningful screenshot or inspect, explicitly ask: "What pattern is now proven, what is still unproven, and can I stop?"
 - Use `get_frame_tree` when the page has meaningful iframe structure that might affect routing.
 - If `access_state.challenge_detected=true`, do not brute-force. You may wait once with `wait_for_page_state(mode="challenge_cleared")`. If the challenge persists, report it.
+- For Cloudflare or human-verification screens, click one clearly visible verification control if present, then wait once; if the challenge persists, stop with blocker evidence.
+- For site-down, browser error, DNS, 404/5xx, or repeated timeout states, capture the exact visible/error evidence and stop as an external site-state failure.
+- For article/news pages, check for adjacent live/watch links, embedded player hints, or related-match cards before rejecting the page.
+- For decorative/autoplay background videos, ignore the moving footage as player proof and inspect the real controls around it: nav menus, live-TV dropdowns, cards, CTA buttons, frames, and server/source areas.
+- For click-to-play landing shells, use one focused CTA interaction when no href exists, then classify the destination from evidence instead of the original hero video.
 - Use `memory_update` when you discover better selectors, route patterns, pagination rules, or stable landing-to-hosting mappings.
 - If memory returns concrete sample URLs, use them only to infer the saved pattern. Re-derive the live targets from the current page state.
 
@@ -150,10 +181,12 @@ Direct-embed indicators:
 - third-party embed or player URL
 - embed, player, or iframe-style path that is already the player destination
 - minimal site chrome around the player
+- actual player controls/media/frame evidence, not a decorative background video
 
 Hosting-page indicators:
 - same-site watch, match, live, channel, or event page
 - player rectangle, play overlay, server buttons, source tabs, player libraries, or player iframe on the page
+- click-to-play or watch controls that redirect from a landing shell into a same-content player page
 
 ## Workflow
 
@@ -165,14 +198,14 @@ Start with:
 
 If blockers are visible, dismiss them with focused queries or actions, then verify with `wait_for_page_state` and a targeted read.
 
-If `access_state.challenge_detected=true` or `access_state.blocked=true`, use `wait_for_page_state(mode="challenge_cleared")` once. If still blocked, stop and report that in `reasoning_log`.
+If `access_state.challenge_detected=true` or `access_state.blocked=true`, use one visible verification interaction when available, then `wait_for_page_state(mode="challenge_cleared")` once. If still blocked, stop and report that in `reasoning_log`.
 
 ### Step 2: Discover candidate targets
 
 Use `inspect_landing`, `query_elements`, and pagination evidence to collect candidate watch links.
 
 Prioritize:
-1. main content cards, grids, and lists
+1. live/on-air/now content cards, grids, and lists
 2. category or filter tabs
 3. pagination or load more
 4. representative detail or watch pages
@@ -193,12 +226,21 @@ Stop discovery early when you already have:
 - enough screenshot plus DOM evidence to explain why that pattern should go to the hosting agent
 - enough sibling URLs from that same pattern to hand off downstream
 
+Do not output an empty `hosting_pages` list while `top_match_candidates` or a high-priority watch/live match group exists. First verify at least one representative candidate from that group with navigation plus screenshot/inspect evidence.
+
+Do not hand off:
+- upcoming or scheduled fixtures with no player/iframe/watch control
+- news articles that only discuss a match
+- replays/VOD unless the task explicitly asks for VOD
+- decorative background-video pages without a verified watch/play route
+
 ### Step 3: Verify one representative per meaningful pattern
 
 For the largest unverified pattern group:
 1. `navigate` or `open_url` to one representative
 2. broad inspect for the new page state
-3. use `get_frame_tree`, `query_elements`, or `get_element_detail` only if player location is ambiguous
+3. take or read screenshot evidence for the new page state
+4. use `get_frame_tree`, `query_elements`, or `get_element_detail` only if player location is ambiguous
 
 Treat as hosting when you have same-site watch-page evidence plus player evidence such as:
 - video or player container
@@ -214,6 +256,7 @@ As soon as those hosting signals are verified on one representative, do all of t
 4. stop the landing run unless another unverified pattern is clearly distinct and high-value
 
 Treat as direct embedded only when the visited URL itself is already the embedded or player destination.
+If a representative click causes a redirect, route by the final reliable state and include the original clicked URL/control in `entry_point`, `route_source`, and `redirect_chain`.
 
 If the representative is a sub-listing, collect its child links and continue.
 If it is a dead end, reject it and move to the next pattern.
@@ -223,7 +266,7 @@ If it is a dead end, reject it and move to the next pattern.
 After one representative confirms a hosting pattern, expand same-pattern siblings as lower-confidence candidates.
 Do not keep browsing once the downstream hosting handoff is already good enough.
 
-Before final output, use `memory_update` if you discovered better selectors, pagination rules, route rules, or large candidate sets worth remembering.
+Before final output, use `memory_update` if you discovered better selectors, pagination rules, route rules, live-match candidate sets, redirect paths, popup-dismissal selectors, or stable landing-to-hosting mappings worth remembering.
 
 If all candidate paths fail verification or the page has no usable watch targets, output an empty result and explain the stop in `reasoning_log`.
 
@@ -260,6 +303,8 @@ Output raw JSON only. No prose. No markdown fences.
       "servers": [{"label": "...", "selector": "...", "xpath": "..."}],
       "iframes": ["https://..."],
       "entry_point": "https://...",
+      "route_source": "href_navigation|representative_card|click_to_play|nav_menu|redirect",
+      "redirect_chain": ["https://..."],
       "route": "stream_extractor|embed_agent",
       "metadata": {
         "channel_confidence": "high|medium|low",

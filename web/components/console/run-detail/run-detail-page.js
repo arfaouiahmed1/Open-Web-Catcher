@@ -39,6 +39,12 @@ const EMPTY_OBJECT = {};
 const EMPTY_ARRAY = [];
 const FAILURE_EVENT_KINDS = new Set(["llm_error", "llm_timeout", "llm_rate_limited", "pipeline_failed"]);
 
+function firstNonEmptyArray(...values) {
+  const nonEmpty = values.find((value) => Array.isArray(value) && value.length > 0);
+  if (nonEmpty) return nonEmpty;
+  return values.find((value) => Array.isArray(value)) || EMPTY_ARRAY;
+}
+
 function fmt(ts) {
   if (!ts) return "--";
   try {
@@ -526,11 +532,18 @@ export function RunDetailPage() {
   const llmTelemetryRows = useMemo(() => buildLlmRows(runEvents), [runEvents]);
   const providerSnapshot = useMemo(
     () => ({
-      all_streams: snapshot.all_streams || payload?.all_streams || EMPTY_ARRAY,
-      provider_analysis: snapshot.provider_analysis || payload?.provider_analysis || EMPTY_ARRAY,
-      takedown_emails: snapshot.takedown_emails || payload?.takedown_emails || EMPTY_ARRAY,
+      all_streams: firstNonEmptyArray(snapshot.all_streams, payload?.all_streams),
+      provider_analysis: firstNonEmptyArray(snapshot.provider_analysis, payload?.provider_analysis),
+      takedown_emails: firstNonEmptyArray(snapshot.takedown_emails, payload?.takedown_emails),
+      extraction_results: firstNonEmptyArray(snapshot.extraction_results, payload?.extraction_results),
     }),
-    [payload?.all_streams, payload?.provider_analysis, payload?.takedown_emails, snapshot],
+    [
+      payload?.all_streams,
+      payload?.extraction_results,
+      payload?.provider_analysis,
+      payload?.takedown_emails,
+      snapshot,
+    ],
   );
   const providerUrls = useMemo(
     () => collectRunProviderUrls({ snapshot: providerSnapshot, events: runEvents }),
@@ -607,7 +620,7 @@ export function RunDetailPage() {
   const degradedFallback = payload.source === "background_job_result";
   const telemetryStatus = String(payload.telemetry_status || run.telemetry_status || "").trim().toLowerCase();
   const telemetryMissing = degradedFallback && telemetryStatus === "missing";
-  const allStreams = snapshot.all_streams || EMPTY_ARRAY;
+  const allStreams = providerSnapshot.all_streams || EMPTY_ARRAY;
   const modelUsage = payload.model_usage || snapshot?.metrics?.model_usage || EMPTY_ARRAY;
 
   const effectiveCalls = llmCalls.length > 0 ? llmCalls : synthCallsFromModelUsage(modelUsage);
@@ -967,7 +980,7 @@ export function RunDetailPage() {
         providerUrls={providerUrls}
         providerAnalysis={providerSnapshot.provider_analysis || EMPTY_ARRAY}
         takedownEmails={providerSnapshot.takedown_emails || EMPTY_ARRAY}
-        extractionResults={snapshot.extraction_results || EMPTY_ARRAY}
+        extractionResults={providerSnapshot.extraction_results || EMPTY_ARRAY}
         snapshotScreenshots={screenshots}
         activeTrace={normalizedTrace}
         persistedEvents={runEvents}

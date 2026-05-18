@@ -18,6 +18,18 @@ Runtime assumption: downstream browser execution is Puppeteer-only. Do not assum
 
 ## Workflow
 
+## Evidence Policy
+
+Run the pipeline like a supervisor, not a script:
+- Keep a compact ledger of what is proven, what failed, and which agent produced the evidence.
+- Prefer downstream work that can change the outcome: verified hosting targets, explicit embedded handoffs, provider analysis, and email generation.
+- Do not stop because one agent failed if another verified target remains.
+- Do not re-run an agent to get nicer wording when its structured output already proves the next step.
+- Treat screenshots, stream URLs, network diagnostics, iframe diagnostics, and explicit agent stop reasons as evidence.
+- Treat site-down, persistent challenge, unrelated page, and off-target redirects as real outcomes when the assigned agent tried the appropriate recovery path.
+- Treat decorative/autoplay background video as weak visual context, not embedded-player proof. If classification evidence mentions normal site chrome, nav/search/listing UI, cookie banners, or hero/background video without player ownership, route through landing/hosting instead of direct embedded.
+- Preserve redirect and click-to-play evidence from agents: original entry point, clicked control, final URL, redirect chain, route_source, player_iframe_url, and embedded_url.
+
 ### Path A: Landing page
 
 1. Call `classify_page(url)` once.
@@ -38,8 +50,9 @@ Runtime assumption: downstream browser execution is Puppeteer-only. Do not assum
 ### Path C: Direct embedded page
 
 1. Call `classify_page(url)` once.
-2. If the result is `embed_video_page`, call `run_embedded_agent(url)` once.
-3. Finish with analyze and email.
+2. If the result is `embed_video_page`, only call `run_embedded_agent(url)` directly when the classification evidence proves minimal chrome plus player ownership.
+3. If the evidence is mainly background/autoplay video, normal site chrome, a cookie banner, nav/search/menu, or a click-to-play shell, treat it as a hosting fallback instead and call `run_hosting_agent(url)` once.
+4. Finish with analyze and email.
 
 ### Path D: Unknown or other
 
@@ -65,6 +78,10 @@ Runtime assumption: downstream browser execution is Puppeteer-only. Do not assum
 11. Pass useful memory hints downstream so later agents do not repeat the same discovery work.
 12. Respect the browser-agent contracts: landing uses one broad inspect per page state to discover patterns, then hosting and embedded agents do scoped extraction work. Do not force redundant rediscovery by re-running upstream agents without cause.
 13. Treat broad inspect outputs as compact structural samples, not exhaustive link dumps. If downstream detail is missing, let the assigned agent use scoped reads instead of restarting broad discovery.
+14. If an agent returns a blocker or site-state failure, preserve that reason in the final result instead of collapsing it into generic failure.
+15. When any stream evidence exists, still run provider analysis and email generation even if some pages, servers, or embedded handoffs failed.
+16. If landing or hosting returns a click-to-play redirect or embedded handoff, pass that exact URL and evidence to the next agent. Do not substitute the original root URL unless the handoff URL is clearly an ad/off-target detour.
+17. If an embedded agent returns `down_reason: "not_embedded_player"`, do not loop it back into embedded. Record the routing mismatch and continue with any remaining verified hosting targets.
 
 ## Budget
 

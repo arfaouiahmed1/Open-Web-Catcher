@@ -119,6 +119,7 @@ const DASHBOARD_TABS = [
   { href: "/?tab=overview", label: "Overview" },
   { href: "/?tab=costs", label: "Costs" },
   { href: "/?tab=tokens", label: "Tokens" },
+  { href: "/?tab=providers", label: "Providers" },
   { href: "/?tab=tools", label: "Tools" },
   { href: "/?tab=agents", label: "Agents" },
 ];
@@ -126,6 +127,12 @@ const DASHBOARD_TABS = [
 const LIVE_PIPELINE_TABS = [
   { href: "/live?mode=workflow", label: "Workflow" },
   { href: "/live?mode=agent", label: "Single agent" },
+];
+
+const RUNS_TABS = [
+  { href: "/runs?tab=sites", label: "Websites" },
+  { href: "/runs?tab=batches", label: "Batches" },
+  { href: "/runs?tab=history", label: "Run history" },
 ];
 
 const SETTINGS_TABS = [
@@ -147,7 +154,7 @@ export const NAV_ITEMS = [
     badge: true,
     children: LIVE_PIPELINE_TABS,
   },
-  { href: "/runs", label: "View Results", key: "runs", section: "Agents" },
+  { href: "/runs", label: "View Results", key: "runs", section: "Agents", children: RUNS_TABS },
   { href: "/providers", label: "Provider Results", key: "providers", section: "Agents" },
   {
     href: "/settings",
@@ -165,7 +172,7 @@ export function pathToCrumbs(pathname) {
     "/": ["dashboard"],
     "/live": ["agents", "live-pipeline"],
     "/runs": ["agents", "view-results"],
-    "/providers": ["config", "providers"],
+    "/providers": ["agents", "provider-results"],
     "/settings": ["config", "settings"],
   };
   const base = `/${pathname.split("/")[1] || ""}`;

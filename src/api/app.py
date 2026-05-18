@@ -36,6 +36,7 @@ from src.models.schemas import (
     OperatorOverview,
     PipelineResult,
     PricingConfig,
+    ProviderInfo,
     ProviderLookupRequest,
     ToolPlaygroundRequest,
     WorkflowRunRequest,
@@ -153,6 +154,16 @@ _playground_tool_sessions: dict[str, _PlaygroundToolSession] = {}
 _playground_tool_session_lock = asyncio.Lock()
 _background_worker_task: asyncio.Task | None = None
 _active_run_tasks: dict[str, asyncio.Task] = {}
+
+
+def _background_job_payload(job: Any) -> dict[str, Any]:
+    return {
+        "run_id": str(job.run_id or ""),
+        "job_type": str(job.job_type or ""),
+        "url": str(job.url or ""),
+        "actor": str(job.actor or ""),
+        "payload_json": dict(job.payload_json or {}),
+    }
 
 
 class ClassifyRequest(BaseModel):
@@ -540,71 +551,80 @@ def _recover_background_jobs() -> int:
         session.close()
 
 
-async def _process_background_job() -> bool:
+def _claim_background_job() -> dict[str, Any] | None:
     session = get_session()
     try:
         repo = BackgroundJobRepository(session)
         job = repo.claim_next(lease_seconds=90)
         if job is not None:
             DatasetRepository(session).mark_site_run_running(job.run_id)
+            return _background_job_payload(job)
     finally:
         session.close()
+    return None
 
+
+async def _execute_background_job(job: dict[str, Any]) -> dict[str, Any]:
     if job is None:
-        return False
+        return {"ok": False, "error": "missing_background_job"}
 
-    if run_registry.get(job.run_id) is None and not _restore_trace_from_db(job.run_id):
+    run_id = str(job.get("run_id", "") or "")
+    job_type = str(job.get("job_type", "") or "")
+    url = str(job.get("url", "") or "")
+    actor = str(job.get("actor", "") or "")
+    payload = dict(job.get("payload_json") or {})
+
+    if run_registry.get(run_id) is None and not _restore_trace_from_db(run_id):
         observer = run_registry.create(
-            run_id=job.run_id,
-            root_actor=job.actor or ("orchestrator" if job.job_type == "workflow" else "agent"),
+            run_id=run_id,
+            root_actor=actor or ("orchestrator" if job_type == "workflow" else "agent"),
             observability=get_observability_status(get_settings()),
         )
-        observer.set_url(job.url or "")
+        observer.set_url(url or "")
 
-    if job.job_type == "workflow":
+    if job_type == "workflow":
         execution = await _track_run_task(
-            job.run_id,
-            asyncio.create_task(_background_workflow(job.run_id, job.url)),
+            run_id,
+            asyncio.create_task(_background_workflow(run_id, url)),
         )
-    elif job.job_type == "agent":
-        payload = job.payload_json or {}
+    elif job_type == "agent":
         execution = await _track_run_task(
-            job.run_id,
+            run_id,
             asyncio.create_task(
                 _background_agent(
-                    job.run_id,
-                    str(payload.get("agent", "") or job.actor or "classification"),
-                    job.url,
+                    run_id,
+                    str(payload.get("agent", "") or actor or "classification"),
+                    url,
                     prompt_override=str(payload.get("prompt_override", "") or ""),
                 )
             ),
         )
     else:
-        execution = {"ok": False, "error": f"Unsupported job type '{job.job_type}'"}
+        execution = {"ok": False, "error": f"Unsupported job type '{job_type}'"}
 
     session = get_session()
     try:
         repo = BackgroundJobRepository(session)
         dataset_repo = DatasetRepository(session)
         if execution.get("ok"):
-            repo.mark_succeeded(job.run_id, result_json=execution.get("result") or {})
+            repo.mark_succeeded(run_id, result_json=execution.get("result") or {})
             result_payload = execution.get("result") or {}
             dataset_repo.finalize_site_run(
-                job.run_id,
+                run_id,
                 display_status=str(result_payload.get("final_status", "") or "success"),
                 result_json=result_payload,
             )
         elif execution.get("cancelled"):
-            repo.mark_cancelled(job.run_id, reason=str(execution.get("error", "Cancelled")))
+            repo.mark_cancelled(run_id, reason=str(execution.get("error", "Cancelled")))
             dataset_repo.finalize_site_run(
-                job.run_id,
+                run_id,
                 display_status="cancelled",
                 result_json=execution.get("result") or {},
                 error_text=str(execution.get("error", "Cancelled")),
             )
         else:
             failed_job = repo.mark_failed(
-                job.run_id, error_text=str(execution.get("error", "background_job_failed"))
+                run_id, error_text=str(execution.get("error", "background_job_failed"))
             )
             failed_status = (
                 normalize_job_display_status(str(failed_job.status or ""))
@@ -612,25 +632,61 @@ async def _process_background_job() -> bool:
                 else "failed"
             )
             if failed_status == "running":
-                dataset_repo.mark_site_run_running(job.run_id)
+                dataset_repo.mark_site_run_running(run_id)
             else:
                 dataset_repo.finalize_site_run(
-                    job.run_id,
+                    run_id,
                     display_status=failed_status,
                     result_json=execution.get("result") or {},
                     error_text=str(execution.get("error", "background_job_failed")),
                 )
     finally:
         session.close()
+    return execution
+
+
+async def _process_background_job() -> bool:
+    job = _claim_background_job()
+    if job is None:
+        return False
+    await _execute_background_job(job)
     return True
 
 
 async def _background_worker_loop() -> None:
+    running: set[asyncio.Task] = set()
     while True:
         try:
-            processed = await _process_background_job()
-            await asyncio.sleep(0.2 if processed else 0.8)
+            limit = max(1, int(get_settings().background_job_concurrency or 1))
+            while len(running) < limit:
+                job = _claim_background_job()
+                if job is None:
+                    break
+                task = asyncio.create_task(_execute_background_job(job))
+                running.add(task)
+
+            if running:
+                done, pending = await asyncio.wait(
+                    running,
+                    timeout=0.2,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                running = set(pending)
+                for task in done:
+                    try:
+                        task.result()
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:  # noqa: BLE001
+                        logger.exception("Background job task failed: %s", exc)
+                continue
+
+            await asyncio.sleep(0.8)
         except asyncio.CancelledError:
+            for task in running:
+                task.cancel()
+            if running:
+                await asyncio.gather(*running, return_exceptions=True)
             return
         except Exception as exc:  # noqa: BLE001
             logger.exception("Background worker iteration failed: %s", exc)
@@ -857,6 +913,60 @@ def _background_job_result_summary(job: Any) -> dict[str, Any]:
         "telemetry_status": telemetry_status,
         "telemetry_message": telemetry_message,
     }
+
+
+def _recover_missing_takedown_emails(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return payload
+    snapshot = payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else {}
+    existing = payload.get("takedown_emails")
+    if isinstance(existing, list) and existing:
+        if isinstance(snapshot, dict) and not snapshot.get("takedown_emails"):
+            snapshot["takedown_emails"] = existing
+        return payload
+
+    snapshot_existing = snapshot.get("takedown_emails") if isinstance(snapshot, dict) else []
+    if isinstance(snapshot_existing, list) and snapshot_existing:
+        payload["takedown_emails"] = snapshot_existing
+        return payload
+
+    provider_rows = payload.get("provider_analysis")
+    if not isinstance(provider_rows, list) or not provider_rows:
+        provider_rows = snapshot.get("provider_analysis") if isinstance(snapshot, dict) else []
+    extraction_rows = snapshot.get("extraction_results") if isinstance(snapshot, dict) else []
+    if not isinstance(provider_rows, list) or not provider_rows or not isinstance(extraction_rows, list):
+        return payload
+
+    try:
+        from src.agents.email_generator import generate_takedown_emails
+
+        providers = [ProviderInfo(**row) for row in provider_rows if isinstance(row, dict)]
+        extractions = [ExtractionResult(**row) for row in extraction_rows if isinstance(row, dict)]
+        run_row = payload.get("run") if isinstance(payload.get("run"), dict) else {}
+        infringing_url = str(run_row.get("url") or snapshot.get("url") or "")
+        emails = generate_takedown_emails(
+            infringing_url=infringing_url,
+            extraction_results=extractions,
+            provider_analysis=providers,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Skipping takedown email recovery: %s", exc)
+        return payload
+
+    if not emails:
+        return payload
+    email_payload = [email.model_dump(mode="json") for email in emails]
+    payload["takedown_emails"] = email_payload
+    if isinstance(snapshot, dict):
+        snapshot["takedown_emails"] = email_payload
+    run_row = payload.get("run")
+    if isinstance(run_row, dict):
+        run_row["email_count"] = max(int(run_row.get("email_count") or 0), len(email_payload))
+    payload["takedown_email_recovery"] = {
+        "source": "provider_analysis_and_extraction_results",
+        "count": len(email_payload),
+    }
+    return payload
 
 
 def _background_job_row(job: Any) -> dict[str, Any]:
@@ -2501,7 +2611,7 @@ def ui_run_detail(run_id: str):
                 payload["dataset_context"] = dataset_context
             if not active.completed:
                 payload["active_trace"] = active.model_dump(mode="json")
-            return payload
+            return _recover_missing_takedown_emails(payload)
         if payload is None:
             if job is None:
                 raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
@@ -2594,7 +2704,7 @@ def ui_run_detail(run_id: str):
                 "max_parallel_agents": 0,
                 "active_parallel_agents": 0,
             }
-            return {
+            return _recover_missing_takedown_emails({
                 "run": run_row,
                 "snapshot": snapshot,
                 "provider_analysis": snapshot.get("provider_analysis", []) or [],
@@ -2632,13 +2742,13 @@ def ui_run_detail(run_id: str):
                 "telemetry_status": summary["telemetry_status"],
                 "telemetry_message": summary["telemetry_message"],
                 "dataset_context": dataset_context,
-            }
+            })
         if job_state is not None:
             payload["job_state"] = job_state
             payload["job"] = job_state
         if dataset_context is not None:
             payload["dataset_context"] = dataset_context
-        return payload
+        return _recover_missing_takedown_emails(payload)
     finally:
         session.close()
 

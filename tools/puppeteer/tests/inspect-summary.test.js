@@ -220,6 +220,9 @@ test("landing summary returns grouped sections and top representatives only", ()
   assert.ok(Array.isArray(summary.match_groups));
   assert.ok(Array.isArray(summary.navigation_groups));
   assert.ok(Array.isArray(summary.top_match_candidates));
+  assert.equal(summary.top_match_candidates[0].status, "live");
+  assert.ok(summary.top_match_candidates[0].selector);
+  assert.ok(summary.grouped_sections.groups.some((group) => group.label === "live_watch_cards"));
   assert.ok(summary.stats.budget_fit);
   assert.ok(summary.stats.compressed_bytes <= 18 * 1024);
   assert.equal(summary.match_candidates, undefined);

@@ -101,6 +101,8 @@ class MatchInfo(BaseModel):
     route: str = "stream_extractor"  # stream_extractor = hosting-first, embed_agent = direct embedded URL only
     iframes: list[str] = Field(default_factory=list)
     entry_point: str = ""
+    route_source: str = ""
+    redirect_chain: list[str] = Field(default_factory=list)
     patterns: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 

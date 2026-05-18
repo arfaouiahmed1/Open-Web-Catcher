@@ -276,6 +276,7 @@ class Settings(BaseSettings):
     tool_timeout_seconds: int = 30
     agent_timeout_seconds: int = 2700
     background_job_retention_days: int = 30
+    background_job_concurrency: int = 1
 
     memory_enabled: bool = True
     memory_db_path: str = "data/site_memory.db"
@@ -369,6 +370,7 @@ class Settings(BaseSettings):
         existing["disabled_tools_by_browser_profile"] = self.disabled_tools_by_browser_profile
         existing["browser_runtime"] = self.browser_runtime
         existing["max_parallel_hosting_pages"] = self.max_parallel_hosting_pages
+        existing["background_job_concurrency"] = self.background_job_concurrency
         existing["thinking_enabled"] = self.thinking_enabled
         existing["thinking_budget_tokens"] = self.thinking_budget_tokens
 

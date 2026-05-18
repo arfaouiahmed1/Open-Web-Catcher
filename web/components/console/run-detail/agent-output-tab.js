@@ -106,6 +106,16 @@ function EmailDraftCard({ email, index }) {
                   <div className="mt-2 break-all font-mono text-[11px] text-foreground/90">
                     {row?.stream_url || "Unknown stream"}
                   </div>
+                  {row?.ocr_text ? (
+                    <div className="mt-3 rounded-lg border border-border bg-card px-3 py-2">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
+                        OCR / visual channel text
+                      </div>
+                      <div className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-foreground/80">
+                        {row.ocr_text}
+                      </div>
+                    </div>
+                  ) : null}
                   {Array.isArray(row?.screenshot_urls) && row.screenshot_urls.length ? (
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
                       {row.screenshot_urls.map((screenshotUrl, screenshotIndex) => (

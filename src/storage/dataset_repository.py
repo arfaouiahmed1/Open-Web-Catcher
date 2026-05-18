@@ -38,6 +38,8 @@ LABELS = ["piracy", "sports", "news", "entertainment", "unknown"]
 SUCCESS_FINAL_STATUSES = {"success", "partial"}
 FAILED_FINAL_STATUSES = {"failed", "cancelled"}
 TERMINAL_SITE_RUN_STATUSES = SUCCESS_FINAL_STATUSES | FAILED_FINAL_STATUSES
+ACTIVE_SITE_RUN_STATUSES = {"queued", "running", "retrying", "leased"}
+RUNNING_SITE_RUN_STATUSES = {"running", "retrying", "leased"}
 
 
 def canonicalize_url(url: str) -> str:
@@ -618,7 +620,7 @@ class DatasetRepository:
         payload["active_run_count"] = int(
             self._session.query(DatasetSiteRunRecord)
             .filter_by(site_id=row.id)
-            .filter(DatasetSiteRunRecord.status.in_(["queued", "running", "retrying"]))
+            .filter(DatasetSiteRunRecord.status.in_(sorted(ACTIVE_SITE_RUN_STATUSES)))
             .count()
             or 0
         )
@@ -662,7 +664,7 @@ class DatasetRepository:
         )
         if not run_payloads:
             batch_status = "queued"
-        elif any(str(item.get("status", "") or "").strip().lower() == "running" for item in run_payloads):
+        elif any(str(item.get("status", "") or "").strip().lower() in RUNNING_SITE_RUN_STATUSES for item in run_payloads):
             batch_status = "running"
         elif any(str(item.get("status", "") or "").strip().lower() == "queued" for item in run_payloads):
             batch_status = "queued"
@@ -881,7 +883,7 @@ class DatasetRepository:
 
         if not rows:
             batch.status = "queued"
-        elif any(str(row.status or "").strip().lower() == "running" for row in rows):
+        elif any(str(row.status or "").strip().lower() in RUNNING_SITE_RUN_STATUSES for row in rows):
             batch.status = "running"
         elif any(str(row.status or "").strip().lower() == "queued" for row in rows):
             batch.status = "queued"
