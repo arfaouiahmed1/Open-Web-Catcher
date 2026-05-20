@@ -5,7 +5,7 @@
   "type": "module",
   "private": true,
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12"
   },
   "main": "mcp-server.js",
   "scripts": {
@@ -18,7 +18,7 @@
     "express": "^4.19.0",
     "fingerprint-generator": "^2.1.82",
     "fingerprint-injector": "^2.1.82",
-    "playwright": "^1.50.0",
+    "playwright": "^1.60.0",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "zod": "^3.23.0"

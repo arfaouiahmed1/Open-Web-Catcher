@@ -5,7 +5,7 @@
 #  Processes: Chrome (shared fallback) + Node MCP server (port 3001)
 # =============================================================================
 
-FROM mcr.microsoft.com/playwright:v1.50.0-noble
+FROM mcr.microsoft.com/playwright:v1.60.0-noble
 
 ARG BUILDKIT_INLINE_CACHE=1
 
@@ -32,7 +32,7 @@ COPY tools/playwright/package*.json tools/playwright/
 RUN --mount=type=cache,target=/root/.npm \
     cd tools/playwright \
     && npm ci --omit=dev --prefer-offline --no-audit --no-fund \
-    && CHROME_BIN="$(find /ms-playwright -type f -path '*/chrome-linux/chrome' | head -n 1)" \
+    && CHROME_BIN="$(find /ms-playwright -type f \( -path '*/chrome-linux64/chrome' -o -path '*/chrome-linux/chrome' \) | head -n 1)" \
     && test -n "${CHROME_BIN}" \
     && ln -sf "${CHROME_BIN}" /usr/local/bin/google-chrome-stable \
     && ln -sf /usr/local/bin/google-chrome-stable /usr/local/bin/google-chrome \

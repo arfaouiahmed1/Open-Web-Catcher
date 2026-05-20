@@ -1,0 +1,37 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.92\textwidth}{!}{%
+\begin{tikzpicture}[
+  box/.style={draw=accent, fill=blue!5, rounded corners=5pt,
+    minimum width=3.8cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  weak/.style={draw=orange!70, fill=orange!10, rounded corners=5pt,
+    minimum width=3.8cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  stop/.style={draw=red!55, fill=red!6, rounded corners=5pt,
+    minimum width=3.8cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  ok/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
+    minimum width=3.8cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80},
+  loop/.style={->, >=Stealth, thick, gray!70, dashed},
+  lab/.style={font=\tiny, fill=white, inner sep=1pt}
+]
+\node[weak] (old1) at (0,3.0) {Intent prompt};
+\node[weak] (old2) at (4.2,3.0) {One-pass tool use};
+\node[stop] (old3) at (8.4,3.0) {Premature answer};
+\draw[arr] (old1)--(old2);
+\draw[arr] (old2)--(old3);
+
+\node[box] (new1) at (0,0.8) {Observe page state};
+\node[box] (new2) at (4.2,0.8) {Reason + choose tool};
+\node[box] (new3) at (8.4,0.8) {Act with MCP tool};
+\node[ok] (new4) at (12.6,0.8) {Validate evidence};
+\node[ok] (new5) at (12.6,-1.2) {Return result\\or clear failure};
+\draw[arr] (new1)--(new2);
+\draw[arr] (new2)--(new3);
+\draw[arr] (new3)--(new4);
+\draw[arr] (new4)--(new5);
+\draw[loop] (new4.north) -- ++(0,0.8) -| node[lab, above]{not enough evidence} (new2.north);
+\end{tikzpicture}
+}
+\caption{Prompt evolution from one-pass intent prompts to evidence-driven agent loops.}
+\label{fig:prompt-evolution}
+\end{figure}

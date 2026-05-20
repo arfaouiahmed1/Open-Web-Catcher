@@ -20,68 +20,7 @@ engineer or administrator maintains prompts, models, datasets, browser runtime
 settings, and tool configuration. External services provide LLM inference,
 target website content, screenshot storage, and provider ownership data.
 
-\begin{figure}[H]
-\centering
-\resizebox{0.96\textwidth}{!}{%
-\begin{tikzpicture}[
-  actor/.style={draw=gray!70, fill=gray!7, rounded corners=3pt,
-    minimum width=2.8cm, minimum height=0.8cm, align=center, font=\small\bfseries},
-  uc/.style={draw=accent, fill=blue!5, ellipse,
-    minimum width=4.5cm, minimum height=1.0cm, align=center, font=\footnotesize\bfseries},
-  subuc/.style={draw=accent!65, fill=blue!2, ellipse,
-    minimum width=3.7cm, minimum height=0.75cm, align=center, font=\scriptsize},
-  ext/.style={draw=purple!65, fill=purple!7, rounded corners=4pt,
-    minimum width=2.9cm, minimum height=0.85cm, align=center, font=\small\bfseries},
-  boundary/.style={draw=gray!55, rounded corners=8pt, inner sep=11pt},
-  assoc/.style={-, thick, gray!75},
-  inc/.style={->, >=Stealth, dashed, gray!70, thick},
-  note/.style={font=\tiny, text=gray!70, fill=white, inner sep=1pt}
-]
-
-\node[actor] (operator) at (-6.9,1.5) {Operator};
-\node[actor] (engineer) at (-6.9,-3.2) {Engineer /\\Administrator};
-\node[ext] (services) at (7.0,-1.2) {External\\Services};
-
-\node[uc] (launch) at (-2.0,3.2) {Launch investigation};
-\node[subuc] (seed) at (2.2,3.9) {Submit seed URL};
-\node[subuc] (batch) at (2.2,2.8) {Run dataset batch};
-
-\node[uc] (monitor) at (-2.0,1.2) {Monitor execution};
-\node[subuc] (events) at (2.2,1.7) {View events and tool calls};
-\node[subuc] (screens) at (2.2,0.7) {Inspect screenshots};
-
-\node[uc] (review) at (-2.0,-0.9) {Review evidence};
-\node[subuc] (streams) at (2.2,-0.2) {Validate stream URLs};
-\node[subuc] (provider) at (2.2,-1.2) {Analyze providers};
-\node[subuc] (emails) at (2.2,-2.2) {Draft takedown emails};
-
-\node[uc] (config) at (-2.0,-3.2) {Configure\\system};
-\node[subuc, minimum width=4.2cm] (runtime) at (2.2,-3.2) {Models, prompts, MCP, runtime};
-
-\node[boundary, fit=(launch)(seed)(batch)(monitor)(events)(screens)(review)(streams)(provider)(emails)(config)(runtime)] (system) {};
-\node[anchor=south, font=\small\bfseries, text=accent] at ([yshift=0.15cm]system.north)
-  {Evidence Collection Platform};
-
-\draw[assoc] (operator) -- (launch);
-\draw[assoc] (operator) -- (monitor);
-\draw[assoc] (operator) -- (review);
-\draw[assoc] (engineer) -- (config);
-\draw[assoc] (services) -- (provider);
-
-\draw[inc] (launch) -- node[note, above]{include} (seed);
-\draw[inc] (launch) -- node[note, below]{include} (batch);
-\draw[inc] (monitor) -- node[note, above]{include} (events);
-\draw[inc] (monitor) -- node[note, below]{include} (screens);
-\draw[inc] (review) -- node[note, above]{include} (streams);
-\draw[inc] (review) -- node[note, above]{include} (provider);
-\draw[inc] (review) -- node[note, below]{extend} (emails);
-\draw[inc] (config) -- (runtime);
-
-\end{tikzpicture}
-}
-\caption{Use-case overview of the evidence-collection platform.}
-\label{fig:use-case-overview}
-\end{figure}
+\input{figures/tikz/fig-use-case-overview}
 
 \begin{table}[H]
 \centering
@@ -102,7 +41,7 @@ Configure system & Update models, prompts, browser runtime, MCP tools, pricing,
 and datasets. & Persist settings and expose health/preflight feedback. \\
 \bottomrule
 \end{tabularx}
-\caption{Main use-case groups and system responsibilities.}
+\caption{Use-case responsibilities across operator and administration workflows.}
 \label{tab:architecture-actors}
 \end{table}
 
@@ -114,230 +53,32 @@ evidence is enriched before review. The most important routing rule is that
 landing, hosting, and embedded pages are different page types, so they require
 different browser strategies.
 
-\begin{figure}[H]
-\centering
-\resizebox{0.95\textwidth}{!}{%
-\begin{tikzpicture}[
-  box/.style={draw=accent, fill=blue!5, rounded corners=5pt,
-    minimum width=3.5cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  agent/.style={draw=orange!70, fill=orange!10, rounded corners=5pt,
-    minimum width=3.3cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  result/.style={draw=green!60!black, fill=green!8, rounded corners=5pt,
-    minimum width=3.5cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80},
-  dashedarr/.style={->, >=Stealth, thick, red!60, dashed},
-  note/.style={font=\tiny, text=gray!70, fill=white, inner sep=1pt}
-]
-
-\node[box] (seed) at (0,4.5) {Seed URL};
-\node[box] (preflight) at (0,3.2) {Runtime preflight};
-\node[box] (classify) at (0,1.9) {Classification agent};
-
-\node[agent] (landing) at (-4.3,0.2) {Landing agent\\match discovery};
-\node[agent] (hosting) at (0,0.2) {Hosting agent\\server extraction};
-\node[agent] (embedded) at (4.3,0.2) {Embedded agent\\player extraction};
-
-\node[result] (evidence) at (0,-1.6) {Evidence bundle\\streams + screenshots};
-\node[result] (provider) at (-2.4,-3.0) {Provider analysis\\IPInfo / WHOIS};
-\node[result] (review) at (2.4,-3.0) {Operator review\\email drafts};
-
-\draw[arr] (seed) -- (preflight);
-\draw[arr] (preflight) -- (classify);
-\draw[arr] (classify) -- node[note, above left]{listing} (landing);
-\draw[arr] (classify) -- node[note, right]{host} (hosting);
-\draw[arr] (classify) -- node[note, above right]{embed} (embedded);
-\draw[arr] (landing) -- node[note, above]{hosting URLs} (hosting);
-\draw[dashedarr] (hosting) -- node[note, above]{iframe fallback} (embedded);
-\draw[arr] (hosting) -- (evidence);
-\draw[arr] (embedded) -- (evidence);
-\draw[arr] (evidence) -- (provider);
-\draw[arr] (evidence) -- (review);
-\draw[arr] (provider) -- (review);
-
-\end{tikzpicture}
-}
-\caption{Logical workflow of an evidence-collection run.}
-\label{fig:logical-workflow}
-\end{figure}
+\input{figures/tikz/fig-logical-workflow}
 
 Figure~\ref{fig:agent-interconnection} shows the agent interconnection at a
 higher level. The orchestrator is the only component that routes between
 specialists. Shared services are shown as support blocks, not as many individual
 arrows, because the detailed tool allocation is covered in Chapter~5.
 
-\begin{figure}[H]
-\centering
-\resizebox{0.9\textwidth}{!}{%
-\begin{tikzpicture}[
-  core/.style={draw=accent, fill=blue!8, rounded corners=5pt,
-    minimum width=4.4cm, minimum height=1.0cm, align=center, font=\small\bfseries},
-  agent/.style={draw=orange!70, fill=orange!10, rounded corners=5pt,
-    minimum width=2.8cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  support/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
-    minimum width=3.2cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  output/.style={draw=purple!60, fill=purple!8, rounded corners=5pt,
-    minimum width=3.2cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  group/.style={draw=gray!50, dashed, rounded corners=6pt, inner sep=7pt},
-  arr/.style={->, >=Stealth, thick, accent!80}
-]
-
-\node[core] (orch) at (0,4.6) {OrchestratorAgent\\LangGraph state machine};
-
-\node[agent] (cls) at (-5.1,2.7) {Classification};
-\node[agent] (land) at (-1.7,2.7) {Landing};
-\node[agent] (host) at (1.7,2.7) {Hosting};
-\node[agent] (embed) at (5.1,2.7) {Embedded};
-\node[group, fit=(cls)(land)(host)(embed)] (agents) {};
-\node[anchor=south west, font=\small\bfseries, text=accent] at ([xshift=0.15cm,yshift=0.08cm]agents.north west)
-  {Specialist extraction layer};
-
-\node[support] (tools) at (-4.0,0.8) {MCP browser tools};
-\node[support] (loop) at (0,0.8) {LangChain tool loop};
-\node[support] (memory) at (4.0,0.8) {Memory and cache};
-
-\node[output] (records) at (-4.0,-1.2) {Run records};
-\node[output] (providers) at (0,-1.2) {Provider analysis};
-\node[output] (bundle) at (4.0,-1.2) {Evidence bundle};
-
-\foreach \a in {cls,land,host,embed}
-  \draw[arr] (orch) -- (\a);
-\draw[arr] (land.south) -- (tools.north);
-\draw[arr] (host.south) -- (loop.north);
-\draw[arr] (embed.south) -- (memory.north);
-\draw[arr] (tools) -- (records);
-\draw[arr] (loop) -- (providers);
-\draw[arr] (memory) -- (bundle);
-\draw[arr] (records.east) -- (providers.west);
-\draw[arr] (providers.east) -- (bundle.west);
-
-\end{tikzpicture}
-}
-\caption{Logical interconnection of the orchestrator, specialists, and shared support services.}
-\label{fig:agent-interconnection}
-\end{figure}
+\input{figures/tikz/fig-04-agent-interconnection}
 
 \subsection{Run Sequence}
 
-\begin{figure}[H]
-\centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[
-  part/.style={draw=gray!55, fill=gray!8, rounded corners=3pt,
-    minimum width=2.2cm, minimum height=0.55cm, align=center, font=\scriptsize\bfseries},
-  msg/.style={->, >=Stealth, thick, accent!80},
-  ret/.style={->, >=Stealth, dashed, gray!70, thick},
-  life/.style={gray!45, dashed},
-  lab/.style={font=\scriptsize, fill=white, inner sep=1pt}
-]
-
-\foreach \x/\name/\id in {
-  0/Operator/ui,
-  2.7/Next.js/next,
-  5.4/FastAPI/api,
-  8.1/Orchestrator/orch,
-  10.8/Agent/agent,
-  13.5/MCP tools/mcp,
-  16.2/Storage/db
-}{
-  \node[part] (\id) at (\x,0) {\name};
-  \draw[life] (\x,-0.35) -- (\x,-7.1);
-}
-
-\draw[msg] (0,-0.8) -- node[lab, above]{launch URL} (2.7,-0.8);
-\draw[msg] (2.7,-1.45) -- node[lab, above]{POST run} (5.4,-1.45);
-\draw[msg] (5.4,-2.1) -- node[lab, above]{start pipeline} (8.1,-2.1);
-\draw[msg] (8.1,-2.75) -- node[lab, above]{handoff by page type} (10.8,-2.75);
-\draw[msg] (10.8,-3.4) -- node[lab, above]{inspect / interact / harvest} (13.5,-3.4);
-\draw[ret] (13.5,-4.05) -- node[lab, above]{DOM, network, screenshots} (10.8,-4.05);
-\draw[ret] (10.8,-4.7) -- node[lab, above]{structured result} (8.1,-4.7);
-\draw[msg] (8.1,-5.35) -- node[lab, above]{events and artifacts} (16.2,-5.35);
-\draw[ret] (16.2,-6.0) -- node[lab, above]{run detail} (2.7,-6.0);
-\draw[ret] (2.7,-6.65) -- node[lab, above]{review evidence} (0,-6.65);
-
-\end{tikzpicture}
-}
-\caption{Sequence diagram for a standard investigation run.}
-\label{fig:run-sequence}
-\end{figure}
+\input{figures/tikz/fig-run-sequence}
 
 \section{Static Code and Data Model View}
 
-The static view is intentionally compact. Instead of drawing every class
-relationship, Figure~\ref{fig:class-diagram} shows the main code families and
-the dependency direction between them. The data records are grouped into
-observability, evidence, configuration, and evaluation records.
+The static view is intentionally detailed enough to show responsibility boundaries
+without listing every implementation class. Figure~\ref{fig:class-diagram} separates
+four concerns: orchestration and state, specialist agents, support services, and stored
+records. The inheritance arrows show that page-specific specialists share the same
+runtime loop, while the green and purple arrows show tool usage and persistence.
 
-\begin{figure}[H]
-\centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[
-  classbox/.style={draw=gray!80, fill=white, rounded corners=2pt,
-    text width=3.8cm, minimum height=1.35cm, align=left, font=\scriptsize, inner sep=5pt},
-  agentclass/.style={draw=accent, fill=blue!4, rounded corners=2pt,
-    text width=3.5cm, minimum height=1.25cm, align=left, font=\scriptsize, inner sep=5pt},
-  dataclass/.style={draw=purple!65, fill=purple!5, rounded corners=2pt,
-    text width=3.5cm, minimum height=1.25cm, align=left, font=\scriptsize, inner sep=5pt},
-  helper/.style={draw=green!55!black, fill=green!6, rounded corners=2pt,
-    text width=3.5cm, minimum height=1.25cm, align=left, font=\scriptsize, inner sep=5pt},
-  group/.style={draw=gray!45, dashed, rounded corners=4pt, inner sep=6pt},
-  assoc/.style={-, thick, gray!75},
-  dep/.style={->, >=Stealth, thick, accent!70},
-  inh/.style={->, >=Stealth, thick, gray!70}
-]
-
-\node[classbox] (orch) at (-3.2,8.4) {\centering\textbf{OrchestratorAgent}\\\rule{3.4cm}{0.3pt}\\
-\raggedright + run(url)\\+ build\_graph()\\+ route\_after\_*()};
-\node[classbox] (state) at (3.2,8.4) {\centering\textbf{PipelineState}\\\rule{3.4cm}{0.3pt}\\
-\raggedright + classification\\+ matches\\+ extraction\_results\\+ pending\_urls};
-
-\node[agentclass] (base) at (0,6.1) {\centering\textbf{Base Agent Loop}\\\rule{3.1cm}{0.3pt}\\
-\raggedright + compile prompt\\+ bind tools\\+ record usage};
-\node[agentclass] (cls) at (-7.2,3.45) {\centering\textbf{ClassificationAgent}\\\rule{3.1cm}{0.3pt}\\
-\raggedright + page\_type\\+ confidence\\+ reasoning};
-\node[agentclass] (landing) at (-2.4,3.45) {\centering\textbf{LandingPageAgent}\\\rule{3.1cm}{0.3pt}\\
-\raggedright + match cards\\+ hosting candidates};
-\node[agentclass] (hosting) at (2.4,3.45) {\centering\textbf{HostingPageAgent}\\\rule{3.1cm}{0.3pt}\\
-\raggedright + server attempts\\+ streams / embeds};
-\node[agentclass] (embedded) at (7.2,3.45) {\centering\textbf{EmbeddedPageAgent}\\\rule{3.1cm}{0.3pt}\\
-\raggedright + player page\\+ final manifests};
-\node[group, fit=(cls)(landing)(hosting)(embedded)] (specialists) {};
-\node[anchor=south west, font=\tiny\bfseries, text=accent] at ([xshift=0.12cm,yshift=0.08cm]specialists.north west)
-  {Specialist subclasses};
-
-\node[helper] (mcp) at (-5.0,0.65) {\centering\textbf{MCP Client}\\\rule{3.1cm}{0.3pt}\\
-\raggedright + profile tools\\+ required tools\\+ session pinning};
-\node[helper] (cache) at (0,0.65) {\centering\textbf{Memory / Cache}\\\rule{3.1cm}{0.3pt}\\
-\raggedright + memory hints\\+ tool result cache\\+ provider cache};
-\node[helper] (ipinfo) at (5.0,0.65) {\centering\textbf{IPInfoTool}\\\rule{3.1cm}{0.3pt}\\
-\raggedright + resolve host\\+ RDAP / WHOIS\\+ abuse contact};
-
-\node[dataclass] (result) at (0,-1.55) {\centering\textbf{PipelineResult}\\\rule{3.1cm}{0.3pt}\\
-\raggedright + classification\\+ extraction results\\+ providers\\+ emails};
-\node[dataclass] (extract) at (-5.0,-5.0) {\centering\textbf{ExtractionResult}\\\rule{3.1cm}{0.3pt}\\
-\raggedright + servers\\+ streams\\+ screenshots};
-\node[dataclass] (provider) at (0,-5.0) {\centering\textbf{ProviderInfo}\\\rule{3.1cm}{0.3pt}\\
-\raggedright + provider\\+ IP\\+ country\\+ abuse email};
-\node[dataclass] (records) at (5.0,-5.0) {\centering\textbf{Run Records}\\\rule{3.1cm}{0.3pt}\\
-\raggedright + AgentRun\\+ LLMCall\\+ ToolCall\\+ RuntimeEvent};
-
-\draw[assoc] (orch) -- node[above, font=\tiny]{owns} (state);
-\draw[dep] (orch) -- (base);
-\draw[dep] (base.south) -- (specialists.north);
-\draw[assoc] (result) -- node[left, font=\tiny]{1..*} (extract);
-\draw[assoc] (result) -- node[right, font=\tiny]{0..*} (provider);
-\draw[assoc] (result) -- node[right, font=\tiny]{persists} (records);
-
-\end{tikzpicture}
-}
-\caption{UML-style class diagram for the agent runtime and stored outputs.}
-\label{fig:class-diagram}
-\end{figure}
+\input{figures/tikz/fig-04-class-diagram}
 
 \begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.8cm}
-                              >{\raggedright\arraybackslash}X
-                              >{\raggedright\arraybackslash}X}
+\begin{tabularx}{\textwidth}{Q{3.25cm} Y Y}
 \toprule
 \rowcolor{accent!8}
 Architectural element & Responsibility & Main output \\
@@ -352,7 +93,7 @@ Storage layer & Keeps the execution reviewable after the browser run ends. &
 Events, tool calls, LLM calls, screenshots, streams, providers, costs. \\
 \bottomrule
 \end{tabularx}
-\caption{Main code responsibilities and outputs.}
+\caption{Architecture responsibilities and evidence outputs.}
 \label{tab:code-responsibilities}
 \end{table}
 
@@ -364,98 +105,7 @@ to the API, the API launches agents, agents use MCP tools, and the browser
 interacts with the target site. Storage, cache, model, and provider services are
 shown as supporting services.
 
-\begin{figure}[H]
-\centering
-\resizebox{0.95\textwidth}{!}{%
-\begin{tikzpicture}[
-  main/.style={draw=accent, fill=blue!5, rounded corners=5pt,
-    minimum width=2.9cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  support/.style={draw=purple!60, fill=purple!7, rounded corners=5pt,
-    minimum width=2.9cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  ext/.style={draw=gray!65, fill=gray!10, rounded corners=5pt,
-    minimum width=2.9cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80},
-  supp/.style={->, >=Stealth, thick, gray!65}
-]
-
-\node[main] (op) at (0,2.5) {Operator\\browser};
-\node[main] (next) at (3.2,2.5) {Next.js\\frontend};
-\node[main] (api) at (6.4,2.5) {FastAPI\\backend};
-\node[main] (agents) at (9.6,2.5) {Python\\agents};
-\node[main] (mcp) at (12.8,2.5) {MCP\\server};
-\node[main] (browser) at (16.0,2.5) {Chromium\\browser};
-\node[ext] (sites) at (19.2,2.5) {Target\\websites};
-
-\node[support] (db) at (4.8,0.6) {PostgreSQL\\observability};
-\node[support] (art) at (8.0,0.6) {Screenshot\\storage};
-\node[support] (cache) at (11.2,0.6) {Memory and\\cache};
-\node[ext] (llm) at (14.4,0.6) {LLM\\provider};
-\node[ext] (whois) at (17.6,0.6) {IPInfo /\\WHOIS};
-
-\draw[arr] (op) -- (next);
-\draw[arr] (next) -- (api);
-\draw[arr] (api) -- (agents);
-\draw[arr] (agents) -- (mcp);
-\draw[arr] (mcp) -- (browser);
-\draw[arr] (browser) -- (sites);
-
-\draw[supp] (api) -- (db);
-\draw[supp] (browser) -- (art);
-\draw[supp] (agents) -- (cache);
-\draw[supp] (agents) -- (llm);
-\draw[supp] (agents) -- (whois);
-
-\end{tikzpicture}
-}
-\caption{Component architecture of the system runtime.}
-\label{fig:component}
-\end{figure}
-
-\begin{figure}[H]
-\centering
-\resizebox{0.95\textwidth}{!}{%
-\begin{tikzpicture}[
-  service/.style={draw=accent, fill=blue!6, rounded corners=5pt,
-    minimum width=3.4cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  job/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
-    minimum width=3.4cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  store/.style={draw=purple!60, fill=purple!7, rounded corners=5pt,
-    minimum width=3.4cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  ext/.style={draw=gray!65, fill=gray!10, rounded corners=5pt,
-    minimum width=3.4cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80},
-  group/.style={draw=gray!50, dashed, rounded corners=8pt, inner sep=9pt}
-]
-
-\node[service] (ui) at (0,3.3) {UI service};
-\node[service] (api) at (4.0,3.3) {API service};
-\node[job] (queue) at (8.0,3.3) {Queue / job trigger};
-\node[job] (agent) at (4.0,1.3) {Agent job};
-\node[job] (browser) at (8.0,1.3) {Browser job};
-\node[store] (db) at (0,1.3) {PostgreSQL};
-\node[store] (artifacts) at (12.0,1.3) {Artifact storage};
-\node[ext] (apis) at (4.0,-0.8) {LLM + IP lookup};
-\node[ext] (targets) at (8.0,-0.8) {Target websites};
-
-\draw[arr] (ui) -- (api);
-\draw[arr] (api) -- (queue);
-\draw[arr] (queue) -- (agent);
-\draw[arr] (agent) -- (browser);
-\draw[arr] (browser) -- (artifacts);
-\draw[arr] (api) -- (db);
-\draw[arr] (agent) -- (db);
-\draw[arr] (agent) -- (apis);
-\draw[arr] (browser) -- (targets);
-
-\node[group, fit=(ui)(api)(queue)(agent)(browser)(db)(artifacts)] (cloud) {};
-\node[anchor=south, font=\small\bfseries, text=accent] at ([yshift=0.1cm]cloud.north)
-  {Target cloud deployment boundary};
-
-\end{tikzpicture}
-}
-\caption{Physical runtime and hardware-oriented deployment view.}
-\label{fig:physical-architecture}
-\end{figure}
+\input{figures/tikz/fig-component}
 
 \subsection{Validation and Repair Loop}
 
@@ -464,43 +114,9 @@ cookie banners, Cloudflare-style interstitials, unstable selectors, and nested
 iframes can change the state after each click. The runtime therefore uses a
 simple observe-act-validate loop.
 
-\begin{figure}[H]
-\centering
-\resizebox{0.9\textwidth}{!}{%
-\begin{tikzpicture}[
-  stepbox/.style={draw=accent, fill=blue!5, rounded corners=5pt,
-    minimum width=3.5cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  decision/.style={draw=orange!75, fill=orange!10, diamond, aspect=2.1,
-    minimum width=3.2cm, minimum height=1.0cm, align=center, font=\footnotesize\bfseries},
-  done/.style={draw=green!60!black, fill=green!9, rounded corners=5pt,
-    minimum width=3.5cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  repair/.style={draw=red!55, fill=red!6, rounded corners=5pt,
-    minimum width=3.5cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80},
-  bad/.style={->, >=Stealth, thick, red!65, dashed}
-]
+\input{figures/tikz/fig-validation-repair-loop}
 
-\node[stepbox] (observe) at (0,2.2) {Observe\\DOM + screenshot};
-\node[stepbox] (act) at (4.0,2.2) {Act\\click / scroll / play};
-\node[stepbox] (harvest) at (8.0,2.2) {Harvest\\network + media};
-\node[decision] (valid) at (12.1,2.2) {Valid\\evidence?};
-\node[done] (accept) at (12.1,0.05) {Store result};
-\node[repair] (repair) at (8.0,0.05) {Repair\\popup / retry / server};
-
-\draw[arr] (observe) -- (act);
-\draw[arr] (act) -- (harvest);
-\draw[arr] (harvest) -- (valid);
-\draw[arr] (valid) -- node[right, font=\tiny]{yes} (accept);
-\draw[bad] (valid.south west) -- node[above, font=\tiny]{no} (repair.north east);
-\draw[bad] (repair.west) -- ++(-8.0,0) -- node[left, font=\tiny]{retry} (observe.south);
-
-\end{tikzpicture}
-}
-\caption{Browser validation and repair loop used by specialist agents.}
-\label{fig:validation-repair-loop}
-\end{figure}
-
-\section{Memory, Caching, and Deployment Summary}
+\section{Memory and Caching Summary}
 
 Memory and caching are support mechanisms, not separate product features. They
 exist to reduce repeated work, preserve useful domain knowledge, and make cost
@@ -527,50 +143,12 @@ Usage records & Run review and evaluation. & Track input, output, cached tokens,
 cost, and model-call metadata. \\
 \bottomrule
 \end{tabularx}
-\caption{Memory and caching layers used by the runtime.}
+\caption{Runtime memory and caching layers.}
 \label{tab:memory-arch}
 \end{table}
 
-\begin{figure}[H]
-\centering
-\resizebox{0.9\textwidth}{!}{%
-\begin{tikzpicture}[
-  nodebox/.style={draw=accent, fill=blue!5, rounded corners=5pt,
-    minimum width=3.1cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  store/.style={draw=purple!60, fill=purple!7, rounded corners=5pt,
-    minimum width=3.1cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80}
-]
-
-\node[nodebox] (operator) at (0,2.6) {Operator\\browser};
-\node[nodebox] (ui) at (3.5,2.6) {Next.js\\frontend};
-\node[nodebox] (api) at (7.0,2.6) {FastAPI\\control plane};
-\node[nodebox] (agent) at (10.5,2.6) {Python agent\\job};
-\node[nodebox] (browser) at (14.0,2.6) {Puppeteer\\Chromium};
-\node[nodebox, fill=red!6, draw=red!55] (sites) at (17.5,2.6) {Target\\websites};
-
-\node[store] (db) at (7.0,0.4) {PostgreSQL\\runs and traces};
-\node[store] (cache) at (10.5,0.4) {Memory and\\provider cache};
-\node[store] (art) at (14.0,0.4) {Screenshots and\\stream artifacts};
-\node[store] (review) at (3.5,0.4) {Review UI\\run detail};
-
-\draw[arr] (operator) -- (ui);
-\draw[arr] (ui) -- (api);
-\draw[arr] (api) -- (agent);
-\draw[arr] (agent) -- (browser);
-\draw[arr] (browser) -- (sites);
-\draw[arr] (api) -- (db);
-\draw[arr] (agent) -- (cache);
-\draw[arr] (browser) -- (art);
-\draw[arr] (db) -- (review);
-\draw[arr] (art) -- (review);
-\draw[arr] (review) -- (ui);
-
-\end{tikzpicture}
-}
-\caption{Target deployment architecture with separated UI/API services and browser-heavy jobs.}
-\label{fig:hardware-architecture}
-\end{figure}
+The runtime-environment view is kept in Chapter~5, where the implementation chapter can
+separate the operational scope from the broader Python reference architecture.
 
 \section{Chapter Summary}
 

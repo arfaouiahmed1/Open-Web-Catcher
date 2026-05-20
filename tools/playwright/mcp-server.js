@@ -27,6 +27,13 @@ import {
 const PORT = parseInt(process.env.PORT || "3001", 10);
 const BROWSER_WS = process.env.BROWSER_WS_ENDPOINT || "ws://127.0.0.1:9223";
 const BROWSER_MODE = process.env.MCP_BROWSER_MODE || "isolated";
+const RUN_BROWSER_REUSE_ENABLED =
+  String(process.env.MCP_REUSE_BROWSER_BY_RUN ?? "true").toLowerCase() !==
+  "false";
+const RUN_BROWSER_TTL_MS = Math.max(
+  1000,
+  parseInt(process.env.MCP_RUN_BROWSER_TTL_MS || "120000", 10),
+);
 
 function buildServer(profileName, browserSession) {
   const allowedTools = PROFILES[profileName];
@@ -71,13 +78,75 @@ app.use(express.json());
 
 // Active SSE sessions: sessionId -> { transport, profile, browserSession }
 const sessions = new Map();
+const runBrowsers = new Map();
+
+function runBrowserKey(req) {
+  const runId = String(req.query?.runId || "").trim();
+  if (!RUN_BROWSER_REUSE_ENABLED || BROWSER_MODE !== "isolated" || !runId)
+    return "";
+  return `run:${runId.replace(/[^a-zA-Z0-9_.:-]/g, "_")}`;
+}
+
+async function acquireIsolatedBrowser({ sessionId, profile, runKey }) {
+  if (runKey) {
+    const existing = runBrowsers.get(runKey);
+    if (existing?.browserSession) {
+      if (existing.closeTimer) {
+        clearTimeout(existing.closeTimer);
+        existing.closeTimer = null;
+      }
+      existing.refCount += 1;
+      console.log(
+        `[MCP-PW] Reusing isolated run browser ${runKey} for ${sessionId} (${profile})`,
+      );
+      return existing.browserSession;
+    }
+  }
+
+  const browserSession = await launchEphemeralBrowser(runKey || sessionId, {
+    browserProfile: profile,
+  });
+  if (runKey) {
+    runBrowsers.set(runKey, {
+      browserSession,
+      refCount: 1,
+      closeTimer: null,
+    });
+  }
+  return browserSession;
+}
+
+async function releaseBrowserSession(session) {
+  if (!session?.browserSession) return;
+  if (!session.runKey) {
+    await closeEphemeralBrowser(session.browserSession);
+    return;
+  }
+
+  const entry = runBrowsers.get(session.runKey);
+  if (!entry || entry.browserSession !== session.browserSession) {
+    await closeEphemeralBrowser(session.browserSession);
+    return;
+  }
+  entry.refCount = Math.max(0, entry.refCount - 1);
+  if (entry.refCount > 0 || entry.closeTimer) return;
+
+  entry.closeTimer = setTimeout(() => {
+    const current = runBrowsers.get(session.runKey);
+    if (!current || current.refCount > 0) return;
+    runBrowsers.delete(session.runKey);
+    closeEphemeralBrowser(current.browserSession).catch((error) => {
+      console.error(`[MCP-PW] Failed to close run browser ${session.runKey}:`, error);
+    });
+  }, RUN_BROWSER_TTL_MS);
+}
 
 async function closeSession(sessionId) {
   const session = sessions.get(sessionId);
   if (!session) return;
 
   sessions.delete(sessionId);
-  await closeEphemeralBrowser(session.browserSession);
+  await releaseBrowserSession(session);
   console.log(`[MCP-PW] Session closed: ${sessionId} (${session.profile})`);
 }
 
@@ -89,6 +158,8 @@ app.get("/health", async (_req, res) => {
     engine: "playwright",
     profiles: Object.keys(PROFILES),
     browser_mode: BROWSER_MODE,
+    run_browser_reuse: RUN_BROWSER_REUSE_ENABLED,
+    active_run_browsers: runBrowsers.size,
     shared_browser_fallback: BROWSER_WS,
     browser,
   });
@@ -125,12 +196,15 @@ app.get("/mcp/:profile/sse", async (req, res) => {
   console.log(`[MCP-PW] New session -> profile: ${profile}`);
 
   const transport = new SSEServerTransport("/mcp/message", res);
+  const runKey = runBrowserKey(req);
   let browserSession = null;
 
   if (BROWSER_MODE === "isolated") {
     try {
-      browserSession = await launchEphemeralBrowser(transport.sessionId, {
-        browserProfile: profile,
+      browserSession = await acquireIsolatedBrowser({
+        sessionId: transport.sessionId,
+        profile,
+        runKey,
       });
       console.log(
         `[MCP-PW] Isolated browser started for ${transport.sessionId}`,
@@ -166,7 +240,7 @@ app.get("/mcp/:profile/sse", async (req, res) => {
 
   const server = buildServer(profile, browserSession);
 
-  sessions.set(transport.sessionId, { transport, profile, browserSession });
+  sessions.set(transport.sessionId, { transport, profile, browserSession, runKey });
   res.on("close", () => {
     closeSession(transport.sessionId).catch((err) => {
       console.error(

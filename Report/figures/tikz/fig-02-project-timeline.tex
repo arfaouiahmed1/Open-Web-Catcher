@@ -1,0 +1,42 @@
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  marker/.style={circle, fill=accent, draw=accent, minimum size=6pt, inner sep=0pt},
+  labelbox/.style={draw=accent!60, fill=blue!6, rounded corners=4pt,
+                   minimum width=2.55cm, minimum height=0.95cm,
+                   text centered, font=\footnotesize, align=center},
+  conn/.style={accent!55, thick}
+]
+\draw[very thick, accent!60] (0.5,0) -- (14.5,0);
+\node[marker] (p1) at (1.0,0) {};
+\node[marker] (p2) at (3.8,0) {};
+\node[marker] (p3) at (6.6,0) {};
+\node[marker] (p4) at (9.4,0) {};
+\node[marker] (p5) at (12.2,0) {};
+\node[marker] (p6) at (14.0,0) {};
+
+\node[labelbox, fill=gray!10, draw=gray!60] (start) at (1.0,1.35)
+  {Domain\\orientation};
+\node[labelbox, fill=orange!10, draw=orange!60] (proto) at (3.8,-1.35)
+  {Exploratory\\workflow};
+\node[labelbox, fill=orange!10, draw=orange!60] (deploy) at (6.6,1.35)
+  {Validated\\single-agent\\path};
+\node[labelbox, fill=blue!10, draw=blue!60] (python) at (9.4,-1.35)
+  {Reference\\architecture};
+\node[labelbox, fill=green!10, draw=green!60] (eval) at (12.2,1.35)
+  {Regression\\evaluation};
+\node[labelbox, fill=purple!10, draw=purple!60] (future) at (14.0,-1.35)
+  {Report\\synthesis};
+
+\draw[conn] (p1.north) -- (start.south);
+\draw[conn] (p2.south) -- (proto.north);
+\draw[conn] (p3.north) -- (deploy.south);
+\draw[conn] (p4.south) -- (python.north);
+\draw[conn] (p5.north) -- (eval.south);
+\draw[conn] (p6.south) -- (future.north);
+\end{tikzpicture}
+}
+\caption{Project evolution timeline from domain orientation to evaluated reference architecture.}
+\label{fig:timeline}
+\end{figure}

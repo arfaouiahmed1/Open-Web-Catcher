@@ -86,34 +86,8 @@ used to frame the project. Chapter~3 introduces the technical background needed
 to understand streaming websites, browser-based observation, automation tools,
 agentic extraction, and media protocols. Chapter~4 describes the proposed
 architecture and explains how the main system responsibilities are organized.
-Chapter~5 details the implementation choices and the concrete mechanisms used to
-collect and structure evidence. Chapter~6 evaluates the results, discusses
-observed limitations, and analyzes the reliability of the approach. Chapter~7
-concludes the report.
+Chapter~5 details the implementation path, from exploration to the concrete
+software components and operational scope. Chapter~6 evaluates the system
+through agent, model, and tool testing. Chapter~7 concludes the report.
 
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-  chbox/.style={draw=accent, fill=blue!7, rounded corners=5pt,
-                minimum width=3.2cm, minimum height=1.4cm,
-                font=\small\bfseries, align=center},
-  arrow/.style={->, >=Stealth, thick, accent!70}
-]
-\node[chbox] (c1) at (0,    0) {Ch.1\\Introduction};
-\node[chbox] (c2) at (3.8,  0) {Ch.2\\Methodology};
-\node[chbox] (c3) at (7.6,  0) {Ch.3\\Technical\\Background};
-\node[chbox] (c4) at (3.8,-2.4) {Ch.4\\Architecture};
-\node[chbox] (c5) at (7.6,-2.4) {Ch.5\\Implementation};
-\node[chbox] (c6) at (3.8,-4.8) {Ch.6\\Evaluation};
-\node[chbox] (c7) at (7.6,-4.8) {Ch.7\\Conclusion};
-\draw[arrow] (c1)--(c2);
-\draw[arrow] (c2)--(c3);
-\draw[arrow] (c3)--(c4);
-\draw[arrow] (c4)--(c5);
-\draw[arrow] (c5)--(c6);
-\draw[arrow] (c6)--(c7);
-\draw[arrow, dashed, gray!60] (c3.south) -- (c4.north);
-\end{tikzpicture}
-\caption{Report reading map: chapter sequence from general context to implementation and evaluation.}
-\label{fig:report-map}
-\end{figure}
+\input{figures/tikz/fig-01-report-map}

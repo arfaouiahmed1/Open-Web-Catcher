@@ -2,6 +2,19 @@ from src.agents.email_generator import generate_takedown_emails
 from src.agents.hosting_page import _normalize_hosting_output
 from src.models.enums import AgentType, ExtractionStatus, PageType
 from src.models.schemas import ExtractionResult, ProviderInfo, ServerResult, StreamURL
+from src.utils.channel_detection import best_channel_match, normalize_channel_name
+
+
+def test_channel_detection_uses_known_broadcaster_aliases_and_rejects_generic_labels() -> None:
+    assert normalize_channel_name("Server 1") == ""
+    assert normalize_channel_name("English") == ""
+    assert normalize_channel_name("LIVE CNN International") == "CNN"
+    assert normalize_channel_name("CNBC Europe HD") == "CNBC"
+    assert normalize_channel_name("beIN Sports 1 HD") == "beIN SPORTS"
+
+    match = best_channel_match("source 2", "visible player logo: Sky News live")
+
+    assert match["channel_name"] == "Sky News"
 
 
 def test_hosting_output_derives_channel_metadata_from_stream_and_ocr() -> None:

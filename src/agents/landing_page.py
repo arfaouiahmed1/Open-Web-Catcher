@@ -13,7 +13,7 @@ from src.agents.prompting import build_runtime_context, build_task_brief, compil
 from src.memory.long_term import LongTermMemory
 from src.memory.short_term import ShortTermMemory
 from src.models.enums import AgentType, ExtractionStatus, PageType
-from src.models.schemas import ExtractionResult
+from src.models.schemas import ExtractionResult, StreamURL
 from src.utils.channel_detection import best_channel_match, normalize_channel_name
 from src.utils.config import Settings
 from src.utils.instrumentation import (
@@ -30,13 +30,15 @@ PROMPT_PATH = Path("configs/prompts/landing_page_v1.md")
 _AGENT_CONTRACT = """\
 - find and return hosting page URLs from the landing page
 - use navigation and page-inspection tools as needed, but stay within budget
-- inspect screenshots and page structure for repeated watch-page patterns, then stop early once the routing decision is well supported
+- inspect screenshots and page structure for repeated watch-page patterns, and keep crawling distinct useful patterns until at least one hosting route is found or the meaningful frontier is exhausted
 - respect the final JSON/output format defined in the base policy
 - do not fabricate hosting links; only return verified live-page findings
 - return channel metadata when it is visible on the landing page or candidate cards
-- default downstream route is `stream_extractor`; use `embed_agent` only when the discovered URL is already a direct embedded/player URL
-- once a hosting pattern is verified, collect the best same-pattern siblings, hand them off downstream, and stop instead of re-proving low-value alternatives
-- if no verified hosting or direct embedded targets remain, return an empty result and stop instead of inventing a next hop
+- default downstream route is `stream_extractor`; landing does not route directly to the embedded agent
+- preserve exact iframe src, frame URL, video src, player URL, and direct stream URLs in structured fields as hosting/provider hints
+- act like a compact AI crawler: maintain a frontier of live/watch/listing patterns, verify representatives, expand siblings, and stop only when distinct useful patterns are exhausted
+- once a hosting pattern is verified, collect the best same-pattern siblings and keep checking other distinct live/watchable patterns instead of re-proving low-value alternatives
+- if no verified hosting targets remain after crawling useful patterns, return an empty result and stop instead of inventing a next hop
 """
 
 
@@ -130,8 +132,135 @@ def _clean_optional_text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _normalize_url_list(value: Any, *, base_url: str = "") -> list[str]:
+    raw_items: list[Any]
+    if isinstance(value, list):
+        raw_items = value
+    elif isinstance(value, dict):
+        raw_items = [value]
+    elif isinstance(value, str) and value.strip():
+        raw_items = [value]
+    else:
+        return []
+
+    urls: list[str] = []
+    for item in raw_items:
+        if isinstance(item, dict):
+            candidate = str(
+                item.get("url")
+                or item.get("src")
+                or item.get("href")
+                or item.get("player_iframe_url")
+                or item.get("embedded_url")
+                or ""
+            ).strip()
+        else:
+            candidate = str(item or "").strip()
+        if not candidate:
+            continue
+        if not candidate.startswith(("http://", "https://")) and base_url:
+            candidate = urljoin(base_url, candidate)
+        if candidate.startswith(("http://", "https://")):
+            urls.append(candidate)
+    return _dedupe_keep_order(urls)
+
+
+def _looks_like_stream_url(url: str) -> bool:
+    candidate = str(url or "").strip().lower()
+    if not candidate.startswith(("http://", "https://")):
+        return False
+    parsed = urlparse(candidate)
+    path = parsed.path or ""
+    query = parsed.query or ""
+    if re.search(r"\.(m3u8|mpd|mp4|m4s|ts)(?:$|[?#])", candidate) or path.endswith(
+        (".m3u8", ".mpd", ".mp4", ".m4s", ".ts")
+    ):
+        return True
+    stream_context = bool(
+        re.search(
+            r"(^|[/_.-])(hls|dash|manifest|playlist|master|chunklist|m3u8|mpd|mono)([/_.-]|$)",
+            path,
+        )
+        or re.search(r"(^|[?&])(hls|dash|m3u8|mpd|playlist|manifest|stream)=", query)
+        or re.search(r"(^|[?&])(format|type|protocol)=(hls|dash|m3u8|mpd)", query)
+    )
+    if not stream_context:
+        return False
+    return bool(
+        re.search(r"/(?:hls|dash|m3u8|mpd|manifest|playlist|tracks[^/]*)/", path)
+        or re.search(r"(?:^|/)(?:master|index|chunklist|playlist|manifest)(?:[.-]|$)", path)
+        or re.search(r"(^|[?&])(format|type|protocol)=(hls|dash|m3u8|mpd)", query)
+        or (re.search(r"(?:^|/)mono(?:[.-]|$)", path) and ("token=" in query or "expires=" in query))
+    )
+
+
+def _extract_player_handoff_urls(
+    page_dict: dict[str, Any], *, base_url: str
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    metadata = page_dict.get("metadata") if isinstance(page_dict.get("metadata"), dict) else {}
+    iframes = _normalize_url_list(
+        [
+            *_normalize_url_list(page_dict.get("iframes"), base_url=base_url),
+            *_normalize_url_list(page_dict.get("iframe_urls"), base_url=base_url),
+            *_normalize_url_list(page_dict.get("player_iframe_urls"), base_url=base_url),
+            *_normalize_url_list(metadata.get("iframes"), base_url=base_url),
+            *_normalize_url_list(metadata.get("iframe_urls"), base_url=base_url),
+        ],
+        base_url=base_url,
+    )
+    video_srcs = _normalize_url_list(
+        [
+            *_normalize_url_list(page_dict.get("video_srcs"), base_url=base_url),
+            *_normalize_url_list(page_dict.get("video_sources"), base_url=base_url),
+            *_normalize_url_list(page_dict.get("videos"), base_url=base_url),
+            *_normalize_url_list(metadata.get("video_srcs"), base_url=base_url),
+            *_normalize_url_list(metadata.get("video_sources"), base_url=base_url),
+        ],
+        base_url=base_url,
+    )
+    player_urls = _normalize_url_list(
+        [
+            *_normalize_url_list(page_dict.get("player_urls"), base_url=base_url),
+            *_normalize_url_list(page_dict.get("embedded_urls"), base_url=base_url),
+            *_normalize_url_list(page_dict.get("embed_urls"), base_url=base_url),
+            *_normalize_url_list(metadata.get("player_urls"), base_url=base_url),
+            *_normalize_url_list(metadata.get("embedded_urls"), base_url=base_url),
+        ],
+        base_url=base_url,
+    )
+
+    for raw in [page_dict.get("player_handoff_candidates"), metadata.get("player_handoff_candidates")]:
+        if not isinstance(raw, list):
+            continue
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            candidate = _normalize_url_list(item, base_url=base_url)
+            if not candidate:
+                continue
+            kind = str(item.get("type") or item.get("kind") or "").strip().lower()
+            if "video" in kind:
+                video_srcs.extend(candidate)
+            elif "iframe" in kind:
+                iframes.extend(candidate)
+            else:
+                player_urls.extend(candidate)
+
+    iframes = _dedupe_keep_order(iframes)
+    video_srcs = _dedupe_keep_order(video_srcs)
+    player_urls = _dedupe_keep_order(player_urls)
+    direct_stream_urls = _dedupe_keep_order(
+        [url for url in [*iframes, *video_srcs, *player_urls] if _looks_like_stream_url(url)]
+    )
+    return iframes, video_srcs, player_urls, direct_stream_urls
+
+
 def _has_verified_player_or_iframe(page: dict[str, Any]) -> bool:
     if isinstance(page.get("iframes"), list) and page.get("iframes"):
+        return True
+    if isinstance(page.get("video_srcs"), list) and page.get("video_srcs"):
+        return True
+    if isinstance(page.get("player_urls"), list) and page.get("player_urls"):
         return True
     route = str(page.get("route") or "").strip().lower()
     if route == "embed_agent":
@@ -232,7 +361,14 @@ def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[st
         ]
         if not isinstance(page_dict.get("iframes"), list):
             page_dict["iframes"] = []
-        page_dict["iframes"] = [_clean_optional_text(item) for item in page_dict["iframes"] if item]
+        iframes, video_srcs, player_urls, direct_stream_urls = _extract_player_handoff_urls(
+            page_dict,
+            base_url=candidate_url or source_url,
+        )
+        page_dict["iframes"] = iframes
+        page_dict["video_srcs"] = video_srcs
+        page_dict["player_urls"] = player_urls
+        page_dict["direct_stream_urls"] = direct_stream_urls
 
         if _is_explicit_non_live_candidate(page_dict):
             continue
@@ -249,9 +385,11 @@ def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[st
             page_dict.get("participants"),
             candidate_url,
         )
-        normalized_channel = normalize_channel_name(
-            str(page_dict.get("channel") or channel_match.get("channel_name") or "").strip()
-        )
+        normalized_channel = normalize_channel_name(str(page_dict.get("channel") or "").strip())
+        if not normalized_channel:
+            normalized_channel = normalize_channel_name(
+                str(channel_match.get("channel_name") or "").strip()
+            )
         page_dict["channel"] = normalized_channel
         page_dict["channel_candidates"] = list(
             dict.fromkeys(
@@ -269,6 +407,8 @@ def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[st
             "channel_confidence": channel_match.get("channel_confidence", ""),
             "channel_detection_method": channel_match.get("channel_detection_method", ""),
             "channel_evidence": channel_match.get("channel_evidence", []),
+            "player_handoff_urls": _dedupe_keep_order([*iframes, *video_srcs, *player_urls]),
+            "direct_stream_urls": direct_stream_urls,
         }
         normalized.append(page_dict)
 
@@ -307,6 +447,9 @@ def _augment_landing_output(
             ),
             "servers": [],
             "iframes": [],
+            "video_srcs": [],
+            "player_urls": [],
+            "direct_stream_urls": [],
             "entry_point": source_url,
             "route_source": "inspect_landing_short_memory",
             "redirect_chain": [source_url, candidate_url],
@@ -404,6 +547,9 @@ def _augment_landing_output(
                 "classification_reason": "pattern-expanded from verified hosting candidate in this run",
                 "servers": [],
                 "iframes": [],
+                "video_srcs": [],
+                "player_urls": [],
+                "direct_stream_urls": [],
                 "entry_point": source_url,
                 "route": "stream_extractor",
                 "patterns": {
@@ -413,6 +559,26 @@ def _augment_landing_output(
         )
 
     output["hosting_pages"] = hosting_pages
+    direct_stream_urls = _dedupe_keep_order(
+        [
+            *[
+                stream_url
+                for page in hosting_pages
+                for stream_url in _normalize_url_list(page.get("direct_stream_urls"), base_url=source_url)
+            ],
+            *_normalize_url_list(output.get("direct_stream_urls"), base_url=source_url),
+            *_normalize_url_list(output.get("streaming_urls"), base_url=source_url),
+            *[
+                item
+                for item in (
+                    run_memory.get("stream_urls", []) if isinstance(run_memory, dict) else []
+                )
+                if _looks_like_stream_url(str(item or ""))
+            ],
+        ]
+    )
+    if direct_stream_urls:
+        output["direct_stream_urls"] = direct_stream_urls
 
     extraction_summary = output.get("extraction_summary", {})
     if isinstance(extraction_summary, dict):
@@ -443,6 +609,36 @@ def _augment_landing_output(
         "candidate_pool_size": len(candidate_pool),
     }
     return output, expanded_count
+
+
+def _protocol_from_url(url: str) -> str:
+    lowered = str(url or "").lower()
+    if ".m3u8" in lowered or "hls" in lowered:
+        return "hls"
+    if ".mpd" in lowered or "dash" in lowered:
+        return "dash"
+    if ".mp4" in lowered:
+        return "mp4"
+    if ".m4s" in lowered or ".ts" in lowered:
+        return "segment"
+    return ""
+
+
+def _collect_landing_streams(output: dict[str, Any]) -> list[StreamURL]:
+    seen: set[str] = set()
+    streams: list[StreamURL] = []
+    for url in _normalize_url_list(output.get("direct_stream_urls")):
+        if not _looks_like_stream_url(url) or url in seen:
+            continue
+        seen.add(url)
+        streams.append(
+            StreamURL(
+                url=url,
+                protocol=_protocol_from_url(url),
+                source_layer="landing_player_handoff",
+            )
+        )
+    return streams
 
 
 class LandingPageAgent:
@@ -593,10 +789,14 @@ class LandingPageAgent:
                         :4000
                     ]
                 hosting_pages = output_json.get("hosting_pages", [])
+                streams = _collect_landing_streams(output_json)
                 extraction = ExtractionResult(
                     url=url,
                     page_type=PageType.LANDING,
-                    status=ExtractionStatus.SUCCESS if hosting_pages else ExtractionStatus.FAILED,
+                    status=ExtractionStatus.SUCCESS
+                    if hosting_pages or streams
+                    else ExtractionStatus.FAILED,
+                    streams=streams,
                     agent_type=AgentType.LANDING_PAGE,
                     tool_calls_used=result.tool_calls_made,
                     metadata=output_json,
@@ -605,6 +805,7 @@ class LandingPageAgent:
                     span,
                     {
                         "hosting_pages_found": len(hosting_pages),
+                        "direct_streams_found": len(streams),
                         "pattern_expanded_candidates": expanded_candidates,
                         "status": extraction.status.value,
                         "tool_calls_used": result.tool_calls_made,
@@ -624,9 +825,10 @@ class LandingPageAgent:
             observer.emit(
                 "agent_finished",
                 f"Landing page agent found {len(hosting_pages)} hosting pages",
-                status="success" if hosting_pages else "warning",
+                status="success" if hosting_pages or extraction.streams else "warning",
                 details={
                     "hosting_pages_found": len(hosting_pages),
+                    "direct_streams_found": len(extraction.streams),
                     "pattern_expansion": extraction.metadata.get("pattern_expansion", {}),
                 },
             )

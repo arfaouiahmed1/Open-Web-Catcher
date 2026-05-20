@@ -1,0 +1,45 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.95\textwidth}{!}{%
+\begin{tikzpicture}[
+  chbox/.style={draw=accent, fill=blue!7, rounded corners=6pt,
+                minimum width=3.35cm, minimum height=1.25cm,
+                font=\small\bfseries, align=center},
+  evalbox/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
+                minimum width=3.35cm, minimum height=1.25cm,
+                font=\small\bfseries, align=center},
+  deploybox/.style={draw=orange!75, fill=orange!10, rounded corners=6pt,
+                minimum width=3.35cm, minimum height=1.25cm,
+                font=\small\bfseries, align=center},
+  band/.style={draw=gray!45, dashed, rounded corners=8pt, inner sep=7pt},
+  arrow/.style={->, >=Stealth, thick, accent!75},
+  lab/.style={font=\footnotesize\bfseries, text=gray!70}
+]
+\node[chbox] (c1) at (0,3.0) {Ch.1\\Introduction};
+\node[chbox] (c2) at (4.1,3.0) {Ch.2\\Methodology};
+\node[chbox] (c3) at (8.2,3.0) {Ch.3\\Technical\\Background};
+\node[chbox] (c4) at (2.05,0.9) {Ch.4\\Architecture};
+\node[deploybox] (c5) at (6.15,0.9) {Ch.5\\Implementation\\and Deployment};
+\node[evalbox] (c6) at (10.25,0.9) {Ch.6\\Evaluation};
+\node[chbox] (c7) at (6.15,-1.2) {Ch.7\\Conclusion};
+
+\draw[arrow] (c1)--(c2);
+\draw[arrow] (c2)--(c3);
+\draw[arrow] (c3.south) -- ++(0,-0.55) -| (c4.north);
+\draw[arrow] (c4)--(c5);
+\draw[arrow] (c5)--(c6);
+\draw[arrow] (c6.south) -- ++(0,-0.55) -| (c7.east);
+
+\node[band, fit=(c1)(c2)(c3)] (general) {};
+\node[band, fit=(c4)(c5)(c6)] (specific) {};
+\node[lab, anchor=south west] at ([xshift=0.1cm,yshift=0.12cm]general.north west)
+  {General framing};
+\node[lab, anchor=south west] at ([xshift=0.1cm,yshift=0.12cm]specific.north west)
+  {System design, implementation, and validation};
+\node[lab, text=accent] at (10.1,-1.2) {specificity increases};
+\draw[arrow, dashed] (6.9,-1.2) -- (8.65,-1.2);
+\end{tikzpicture}
+}
+\caption{Report reading map: chapter sequence from general context to implementation and evaluation.}
+\label{fig:report-map}
+\end{figure}

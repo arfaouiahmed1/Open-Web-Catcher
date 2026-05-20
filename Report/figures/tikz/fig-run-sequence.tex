@@ -1,0 +1,41 @@
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  part/.style={draw=gray!55, fill=gray!8, rounded corners=3pt,
+    minimum width=2.2cm, minimum height=0.55cm, align=center, font=\scriptsize\bfseries},
+  msg/.style={->, >=Stealth, thick, accent!80},
+  ret/.style={->, >=Stealth, dashed, gray!70, thick},
+  life/.style={gray!45, dashed},
+  lab/.style={font=\scriptsize, fill=white, inner sep=1pt}
+]
+
+\foreach \x/\name/\id in {
+  0/Operator/ui,
+  2.7/Next.js/next,
+  5.4/FastAPI/api,
+  8.1/Orchestrator/orch,
+  10.8/Agent/agent,
+  13.5/MCP tools/mcp,
+  16.2/Storage/db
+}{
+  \node[part] (\id) at (\x,0) {\name};
+  \draw[life] (\x,-0.35) -- (\x,-7.1);
+}
+
+\draw[msg] (0,-0.8) -- node[lab, above]{launch URL} (2.7,-0.8);
+\draw[msg] (2.7,-1.45) -- node[lab, above]{POST run} (5.4,-1.45);
+\draw[msg] (5.4,-2.1) -- node[lab, above]{start pipeline} (8.1,-2.1);
+\draw[msg] (8.1,-2.75) -- node[lab, above]{handoff by page type} (10.8,-2.75);
+\draw[msg] (10.8,-3.4) -- node[lab, above]{inspect / interact / harvest} (13.5,-3.4);
+\draw[ret] (13.5,-4.05) -- node[lab, above]{DOM, network, screenshots} (10.8,-4.05);
+\draw[ret] (10.8,-4.7) -- node[lab, above]{structured result} (8.1,-4.7);
+\draw[msg] (8.1,-5.35) -- node[lab, above]{events and artifacts} (16.2,-5.35);
+\draw[ret] (16.2,-6.0) -- node[lab, above]{run detail} (2.7,-6.0);
+\draw[ret] (2.7,-6.65) -- node[lab, above]{review evidence} (0,-6.65);
+
+\end{tikzpicture}
+}
+\caption{Sequence diagram for a standard investigation run.}
+\label{fig:run-sequence}
+\end{figure}

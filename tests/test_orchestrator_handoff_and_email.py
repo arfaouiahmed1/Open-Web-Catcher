@@ -2,10 +2,14 @@ from src.agents.email_generator import generate_takedown_emails
 from src.agents.hosting_page import _normalize_hosting_output
 from src.agents.orchestrator import (
     _build_hosting_handoff,
+    _build_pipeline_result,
     _collect_all_streams,
+    _embedded_target_allowed,
+    _split_landing_match_handoff_targets,
     _requires_embedded_followup,
     route_after_classification,
 )
+from src.agents.landing_page import _normalize_hosting_pages
 from src.models.enums import AgentType, Confidence, ExtractionStatus, PageType
 from src.models.schemas import (
     ClassificationResult,
@@ -123,6 +127,8 @@ def test_hosting_handoff_preserves_landing_route_and_iframe_context() -> None:
                     title="Sweden vs Czechia",
                     route="stream_extractor",
                     iframes=["https://gooz.example/embed/50810"],
+                    video_srcs=["https://video.example/player/50810"],
+                    player_urls=["https://sports.example/e/50810"],
                     route_source="representative_card",
                     redirect_chain=[
                         "https://istreameast.app/v3",
@@ -138,7 +144,84 @@ def test_hosting_handoff_preserves_landing_route_and_iframe_context() -> None:
 
     assert "landing route source: representative_card" in handoff
     assert "landing redirect chain: https://istreameast.app/v3 -> https://istreameast.app/v52" in handoff
-    assert "landing iframes to watch: https://gooz.example/embed/50810" in handoff
+    assert "landing iframes to watch" not in handoff
+    assert "landing video srcs to inspect" not in handoff
+    assert "landing player urls to inspect" not in handoff
+
+
+def test_landing_match_handoff_splits_embeds_from_direct_streams() -> None:
+    match = MatchInfo(
+        url="https://site.example/watch/123",
+        iframes=["https://sportsembed.su/embed/4716"],
+        video_srcs=[
+            "https://cdn.example.com/hls/channel/mono.css?token=abc",
+            "https://player.example.com/video/123",
+        ],
+        player_urls=["https://host.example/player?id=123"],
+    )
+
+    embedded_targets, direct_streams = _split_landing_match_handoff_targets(match)
+
+    assert embedded_targets == [
+        "https://sportsembed.su/embed/4716",
+        "https://player.example.com/video/123",
+        "https://host.example/player?id=123",
+    ]
+    assert direct_streams == ["https://cdn.example.com/hls/channel/mono.css?token=abc"]
+
+
+def test_embedded_target_requires_hosting_source_unless_root_embedded() -> None:
+    state = {
+        "url": "https://site.example",
+        "classification": ClassificationResult(
+            url="https://site.example",
+            page_type=PageType.LANDING,
+            confidence=Confidence.HIGH,
+        ),
+        "extraction_results": [],
+        "pending_hosting_urls": [],
+        "pending_embedded_urls": ["https://embed.example/player/1"],
+        "matches": [],
+        "provider_analysis": [],
+        "takedown_emails": [],
+        "error": "",
+    }
+
+    assert _embedded_target_allowed(state, "https://embed.example/player/1") is False
+
+    state["extraction_results"] = [
+        ExtractionResult(
+            url="https://site.example/watch/1",
+            page_type=PageType.HOSTING,
+            status=ExtractionStatus.FAILED,
+            agent_type=AgentType.HOSTING_PAGE,
+            metadata={"servers_needing_embed": ["https://embed.example/player/1"]},
+        )
+    ]
+
+    assert _embedded_target_allowed(state, "https://embed.example/player/1") is True
+
+
+def test_landing_normalization_preserves_player_handoff_fields() -> None:
+    pages = _normalize_hosting_pages(
+        [
+            {
+                "url": "/watch/1",
+                "status": "live",
+                "iframes": ["/embed/1"],
+                "player_handoff_candidates": [
+                    {"type": "video_src", "url": "https://cdn.example.com/live/master.m3u8"},
+                    {"type": "frame_url", "url": "https://frame.example.com/player/1"},
+                ],
+            }
+        ],
+        source_url="https://site.example/",
+    )
+
+    assert pages[0]["iframes"] == ["https://site.example/embed/1"]
+    assert pages[0]["video_srcs"] == ["https://cdn.example.com/live/master.m3u8"]
+    assert pages[0]["player_urls"] == ["https://frame.example.com/player/1"]
+    assert pages[0]["direct_stream_urls"] == ["https://cdn.example.com/live/master.m3u8"]
 
 
 def test_provider_analysis_only_receives_protocol_stream_urls() -> None:
@@ -150,10 +233,16 @@ def test_provider_analysis_only_receives_protocol_stream_urls() -> None:
         streams=[
             StreamURL(url="https://streamed.pk/category/cricket"),
             StreamURL(url="https://cdn.example.com/live/master.m3u8"),
+            StreamURL(url="https://cdn.example.com/hls/channel/mono.css?token=abc"),
+            StreamURL(url="https://cdn.example.com/assets/mono.css"),
         ],
         servers=[
             ServerResult(
                 label="server",
+                stream_urls=[
+                    "https://cdn.example.com/live/playlist?type=hls&token=1",
+                    "https://cdn.example.com/theme.css",
+                ],
                 m3u8_urls=["https://cdn.example.com/live/master.m3u8"],
                 mp4_urls=["https://cdn.example.com/video.mp4?token=1"],
             )
@@ -162,8 +251,104 @@ def test_provider_analysis_only_receives_protocol_stream_urls() -> None:
 
     assert [stream.url for stream in _collect_all_streams([extraction])] == [
         "https://cdn.example.com/live/master.m3u8",
+        "https://cdn.example.com/hls/channel/mono.css?token=abc",
+        "https://cdn.example.com/live/playlist?type=hls&token=1",
         "https://cdn.example.com/video.mp4?token=1",
     ]
+
+
+def test_pipeline_result_distinguishes_no_hosting_pages() -> None:
+    result = _build_pipeline_result(
+        {
+            "run_id": "run-no-hosting",
+            "url": "https://landing.example",
+            "classification": ClassificationResult(
+                url="https://landing.example",
+                page_type=PageType.LANDING,
+                confidence=Confidence.HIGH,
+            ),
+            "matches": [],
+            "extraction_results": [
+                ExtractionResult(
+                    url="https://landing.example",
+                    page_type=PageType.LANDING,
+                    status=ExtractionStatus.FAILED,
+                    agent_type=AgentType.LANDING_PAGE,
+                    metadata={"hosting_pages": []},
+                )
+            ],
+            "pending_hosting_urls": [],
+            "pending_embedded_urls": [],
+            "provider_analysis": [],
+            "takedown_emails": [],
+            "error": "",
+        }
+    )
+
+    assert result.final_status == ExtractionStatus.NO_HOSTING_PAGES
+
+
+def test_pipeline_result_distinguishes_page_inaccessible() -> None:
+    result = _build_pipeline_result(
+        {
+            "run_id": "run-inaccessible",
+            "url": "https://dead.example",
+            "classification": ClassificationResult(
+                url="https://dead.example",
+                page_type=PageType.LANDING,
+                confidence=Confidence.HIGH,
+            ),
+            "matches": [],
+            "extraction_results": [
+                ExtractionResult(
+                    url="https://dead.example",
+                    page_type=PageType.LANDING,
+                    status=ExtractionStatus.FAILED,
+                    agent_type=AgentType.LANDING_PAGE,
+                    error_message="The page is inaccessible due to a browser-level navigation error.",
+                    metadata={"hosting_pages": []},
+                )
+            ],
+            "pending_hosting_urls": [],
+            "pending_embedded_urls": [],
+            "provider_analysis": [],
+            "takedown_emails": [],
+            "error": "",
+        }
+    )
+
+    assert result.final_status == ExtractionStatus.PAGE_INACCESSIBLE
+
+
+def test_pipeline_result_distinguishes_no_streams() -> None:
+    result = _build_pipeline_result(
+        {
+            "run_id": "run-no-streams",
+            "url": "https://host.example/watch/1",
+            "classification": ClassificationResult(
+                url="https://host.example/watch/1",
+                page_type=PageType.HOSTING,
+                confidence=Confidence.HIGH,
+            ),
+            "matches": [],
+            "extraction_results": [
+                ExtractionResult(
+                    url="https://host.example/watch/1",
+                    page_type=PageType.HOSTING,
+                    status=ExtractionStatus.FAILED,
+                    agent_type=AgentType.HOSTING_PAGE,
+                    metadata={"decision": "no_stream_found"},
+                )
+            ],
+            "pending_hosting_urls": [],
+            "pending_embedded_urls": [],
+            "provider_analysis": [],
+            "takedown_emails": [],
+            "error": "",
+        }
+    )
+
+    assert result.final_status == ExtractionStatus.NO_STREAMS
 
 
 def test_generate_takedown_emails_without_abuse_contact_still_creates_draft() -> None:

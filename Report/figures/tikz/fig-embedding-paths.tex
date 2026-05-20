@@ -1,0 +1,24 @@
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=0.9cm]
+\node[flowbox, fill=orange!8, minimum width=4.2cm] (host) {Hosting page};
+\node[toolbox, fill=blue!6, below left=1.0cm and 1.4cm of host,
+      minimum width=3.6cm] (video) {\texttt{<video>} / \texttt{<source>}};
+\node[toolbox, fill=blue!6, below=1.0cm of host,
+      minimum width=3.6cm] (iframe) {\texttt{<iframe src>}};
+\node[toolbox, fill=blue!6, below right=1.0cm and 1.4cm of host,
+      minimum width=3.6cm] (js) {JS player setup};
+\node[flowbox, fill=green!8, below=2.1cm of host,
+      minimum width=4.6cm] (manifest) {Media manifest\\\texttt{.m3u8}, \texttt{.mpd}, \texttt{.mp4}};
+\draw[myarrow] (host) -- (video);
+\draw[myarrow] (host) -- (iframe);
+\draw[myarrow] (host) -- (js);
+\draw[myarrow] (video) -- (manifest);
+\draw[myarrow] (iframe) -- (manifest);
+\draw[myarrow] (js) -- (manifest);
+\end{tikzpicture}
+}
+\caption{General embedding paths from a hosting page to a media manifest.}
+\label{fig:embedding-paths}
+\end{figure}

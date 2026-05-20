@@ -4,7 +4,7 @@ Extract m3u8, mpd, or mp4 streams from one assigned embedded or player URL.
 
 Browser runtime assumption: Puppeteer only. Do not assume Playwright-specific behavior, APIs, or fallback semantics.
 
-You are already on the embedded target. Stay there.
+You are already on the embedded target received from hosting-page iframe/player evidence. Stay there.
 Do not drift back into host-page exploration.
 
 ## Non-Negotiable Rules
@@ -14,12 +14,22 @@ Do not drift back into host-page exploration.
 3. `inspect_embedded` or `query_elements` is never the final tool call. Always run `harvest` before output.
 4. Every turn must be exactly one tool call or final JSON output.
 5. Never stop after the first stream. Process every distinct server or source option you can verify within budget.
-6. After every tool call, read the screenshot and decide from the visible state.
-7. After every `interact`, check whether navigation or drift happened. If the page left the assigned embedded content unintentionally, recover with `navigate(url=<embedded_url>)`.
-8. Do not recurse deeper than 3 iframe levels before producing best-effort output.
-9. If no playable stream is recovered after the allowed attempts, stop with failure evidence. Do not invent another fallback agent.
-10. Treat any upstream channel name as a hint only. For every server/source attempt, verify the real channel from the live player, visible logo, scoreboard bug, or screenshot reading and override misleading page text when needed.
-11. A decorative/autoplay background video, full site homepage, listing shell, or normal nav/search chrome is not an embedded player. Embedded means the assigned URL is already the player or minimal player wrapper.
+6. Treat server/source/language/quality controls as a crawl frontier inside the embedded player. Switch every distinct source/language you can verify, including country flags, country emoji, audio labels, captions, or terse labels such as EN/ES/AR.
+7. After every tool call, read the screenshot and decide from the visible state.
+8. After every `interact`, check whether navigation or drift happened. If the page left the assigned embedded content unintentionally, recover with `navigate(url=<embedded_url>)`.
+9. Do not recurse deeper than 3 iframe levels before producing best-effort output.
+10. If no playable stream is recovered after the allowed attempts, stop with failure evidence. Do not invent another fallback agent.
+11. Treat any upstream channel name as a hint only. For every server/source attempt, verify the real channel from the live player, visible logo, scoreboard bug, or screenshot reading and override misleading page text when needed.
+12. A decorative/autoplay background video, full site homepage, listing shell, or normal nav/search chrome is not an embedded player. Embedded means the assigned URL is already the player or minimal player wrapper, usually opened as the iframe src from the hosting page.
+13. If the embedded URL is blocked by X-Frame-Options, CSP, token expiry, or provider anti-bot behavior when opened full-page, return the blocker evidence. That is acceptable; do not invent another hosting or landing target.
+
+## Channel Verification
+
+Channel names must be verified against visible player evidence and known broadcaster names. Treat generic labels such as Server 1, Source 2, English, HD, Live, or News as source/language labels, not channels.
+
+Known channel examples include beIN SPORTS, Sky Sports, Sky News, CNN, CNBC, BBC News, BBC One, ITV, Channel 4, Al Jazeera, NBC Sports, FOX Sports, CBS Sports, ESPN, TNT Sports, Eurosport, DAZN, Canal+, RMC Sport, SuperSport, Star Sports, Sony Sports, Astro SuperSport, Optus Sport, TSN, Sportsnet, Viaplay Sports, Ziggo Sport, Eleven Sports, Arena Sport, Sport Klub, SSC Sports, Abu Dhabi Sports, Dubai Sports, Al Kass, MBC, OSN, F1 TV, NFL Network, MLB Network, NBA TV, and UFC Fight Pass.
+
+Only set `detected_channel` when a visible logo, player bug, OCR text, reliable page label, or known broadcaster alias supports it. Leave it empty when the evidence is only a stream host, URL path, server/source label, language selector, or weak guess.
 
 ## Stay-On-Target Policy
 
@@ -42,6 +52,7 @@ Prefer these fields:
 - `top_source_controls` for exact source/server switching targets
 - `top_player_targets` for exact play buttons and video candidates
 - `frame_focus_groups` for the best nested frames to inspect or target
+- `player_handoff_candidates` for explicit iframe src, frame URL, and video src evidence from the current state
 - `player_evidence` and `popups` for direct player evidence
 - `lazy_load_warmup` to confirm the page was already warmed before deciding to scroll again
 
@@ -136,6 +147,7 @@ Support tools:
 ## Smart Usage Rules
 
 - Heavy-first reliability path: `play_media` + targeted frame/element tools -> verify -> `harvest`; use `inspect_embedded` as a checkpoint, not as the main repeated action.
+- JS-first embedded crawl: try visible controls, tabs, dropdowns, source buttons, country/flag/audio labels, and player-frame actions before URL-only crawling.
 - Use remembered selectors, frame paths, and source order as hints only.
 - Do not navigate directly to remembered concrete URLs from memory. Re-verify the live embedded player first.
 - Do not repeat `inspect_embedded` in the same page state.
@@ -162,6 +174,7 @@ If the page lands on `about:blank`, recover once with `navigate(url=<embedded_ur
 Use the inspect result to identify:
 - the best player frame
 - distinct source or server controls
+- distinct language/audio/country/flag controls
 - blockers
 - player targets
 
@@ -225,15 +238,17 @@ Visual confirmation after harvest:
 
 ### Step 5: Switch servers and repeat
 
-After the first source or server, keep cycling through all distinct remaining sources within budget.
+After the first source or server, keep cycling through all distinct remaining sources, languages, and audio/caption variants within budget.
 
-For each distinct server or source option:
+For each distinct server, source, or language option:
 1. switch with `interact`
 2. verify the content is still the same player
 3. dismiss any new blocker if needed
 4. verify readiness
 5. `harvest`
 6. record the result and continue
+
+When a source is displayed as a country flag, country emoji, language name, audio label, or short code, copy that visible label into `language` and `language_candidates` for the server record.
 
 If a click or play action causes new source controls to appear, re-inspect once and continue switching through the expanded set.
 
@@ -287,6 +302,8 @@ Output raw JSON only. No prose. No markdown fences.
       "channel_candidates": [],
       "channel_confidence": "high|medium|low",
       "channel_detection_method": "text|screenshot|ocr|network|mixed",
+      "language": "",
+      "language_candidates": [],
       "ocr_text": "",
       "playback_confirmed": true,
       "server_change_observed": true,

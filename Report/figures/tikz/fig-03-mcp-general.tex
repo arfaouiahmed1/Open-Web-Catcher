@@ -1,0 +1,37 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.93\textwidth}{!}{%
+\begin{tikzpicture}[
+  main/.style={draw=accent, fill=blue!6, rounded corners=5pt,
+    minimum width=3.6cm, minimum height=0.95cm, align=center, font=\footnotesize\bfseries},
+  mcp/.style={draw=orange!75, fill=orange!10, rounded corners=5pt,
+    minimum width=3.85cm, minimum height=0.95cm, align=center, font=\footnotesize\bfseries},
+  tool/.style={draw=gray!65, fill=gray!8, rounded corners=5pt,
+    minimum width=3.15cm, minimum height=0.82cm, align=center, font=\footnotesize\bfseries},
+  result/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
+    minimum width=4.0cm, minimum height=0.92cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80},
+  ret/.style={->, >=Stealth, thick, gray!70, dashed},
+  lab/.style={font=\scriptsize, fill=white, inner sep=1.5pt}
+]
+\node[main] (llm) at (0,2.3) {LLM agent};
+\node[mcp] (mcp) at (4.6,2.3) {MCP server\\tool interface};
+\node[tool] (browser) at (9.2,3.55) {Browser tools};
+\node[tool] (memory) at (9.2,2.3) {Memory / DB};
+\node[tool] (media) at (9.2,1.05) {Media harvest};
+\node[result] (result) at (4.6,-0.35) {Structured tool result};
+
+\draw[arr] (llm.east) -- node[lab, above]{tool request} (mcp.west);
+\draw[arr] (mcp.east) -- ++(0.6,0) |- (browser.west);
+\draw[arr] (mcp.east) -- (memory.west);
+\draw[arr] (mcp.east) -- ++(0.6,0) |- (media.west);
+
+\draw[ret] (browser.south west) -- ++(-0.75,-0.45) |- (result.east);
+\draw[ret] (memory.west) -- ++(-0.95,0) |- (result.east);
+\draw[ret] (media.north west) -- ++(-0.75,0.45) |- (result.east);
+\draw[ret] (result.west) -- ++(-4.6,0) |- node[lab, pos=0.22, left]{evidence} (llm.south);
+\end{tikzpicture}
+}
+\caption{General relationship between an LLM agent, MCP tool interface, and external tools.}
+\label{fig:mcp-general}
+\end{figure}

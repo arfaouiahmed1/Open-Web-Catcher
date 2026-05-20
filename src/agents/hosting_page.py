@@ -13,6 +13,7 @@ from src.models.enums import AgentType, ExtractionStatus, PageType
 from src.models.schemas import ExtractionResult, ServerResult, StreamURL
 from src.utils.channel_detection import best_channel_match, collect_channel_text_fragments, normalize_channel_name
 from src.utils.config import Settings
+from src.utils.language_detection import best_language_match, detect_language_candidates
 from src.utils.instrumentation import (
     observability_span,
     set_span_output,
@@ -26,13 +27,15 @@ logger = get_logger(__name__)
 PROMPT_PATH = Path("configs/prompts/hosting_page_v1.md")
 _AGENT_CONTRACT = """\
 - extract verified stream URLs from the hosting page when possible
-- if the host page clearly hands off to an embedded player, return that embedded URL instead of guessing streams
+- if the host page clearly exposes an iframe src or embedded player URL, return that embedded URL instead of guessing streams
 - respect the base policy's final JSON/output contract
 - use site memory only as hints and re-check everything on the live page
 - stay anchored to the assigned hosting content and recover from off-target drift
 - preserve screenshot, iframe/embed, network, and player-state evidence per server when available
-- return detected channel/broadcast metadata per server when the page or screenshot reveals it
-- if playback fails or no streams are recovered, return an embedded fallback only when you observed an explicit embedded/player URL; otherwise stop with failure evidence and no fabricated next target
+- return detected channel/broadcast metadata per server only when a known broadcaster name is visible or strongly evidenced
+- crawl visible JS-driven player/server/source/language controls before falling back to URL-only evidence
+- preserve source language labels when they are shown as flags, country emoji, audio labels, captions, or short codes
+- if playback fails or no streams are recovered, return an embedded fallback only when the current hosting page exposes an explicit iframe src or embedded/player URL; otherwise stop with failure evidence and no fabricated next target
 """
 
 
@@ -357,9 +360,30 @@ def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any
         ]
     )
     channel_match = best_channel_match(*channel_texts)
+    language_candidates = [
+        item
+        for item in detect_language_candidates(
+            label,
+            server.get("language"),
+            server.get("language_candidates"),
+            server.get("audio"),
+            server.get("audio_track"),
+            server.get("subtitle"),
+            server.get("caption"),
+            server.get("ocr_text"),
+            server.get("visual_confirmation"),
+        )
+        if item
+    ]
+    raw_language = str(server.get("language") or server.get("detected_language") or "").strip()
+    detected_language = raw_language or best_language_match(label, server.get("ocr_text"))
     detected_channel = normalize_channel_name(
-        str(server.get("detected_channel") or server.get("channel") or channel_match.get("channel_name") or "").strip()
+        str(server.get("detected_channel") or server.get("channel") or "").strip()
     )
+    if not detected_channel:
+        detected_channel = normalize_channel_name(
+            str(channel_match.get("channel_name") or "").strip()
+        )
     channel_candidates = _dedupe_urls(
         [
             detected_channel,
@@ -401,6 +425,8 @@ def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any
             server.get("channel_detection_method")
             or ("ocr+screenshot" if str(server.get("ocr_text") or server.get("player_ocr_text") or "").strip() else channel_match.get("channel_detection_method") or "")
         ).strip(),
+        "language": detected_language,
+        "language_candidates": _dedupe_urls([detected_language, *language_candidates]),
         "ocr_text": str(server.get("ocr_text") or server.get("player_ocr_text") or "").strip(),
         "playback_confirmed": bool(server.get("playback_confirmed"))
         or str(server.get("player_state") or "").strip().lower() == "playing"
@@ -630,7 +656,8 @@ def _normalize_hosting_output(output: dict[str, Any]) -> dict[str, Any]:
     channel_match = best_channel_match(*channel_texts)
     detected_channels = _dedupe_urls(
         [
-            normalize_channel_name(str(normalized.get("primary_channel") or normalized.get("channel") or channel_match.get("channel_name") or "").strip()),
+            normalize_channel_name(str(normalized.get("primary_channel") or normalized.get("channel") or "").strip())
+            or normalize_channel_name(str(channel_match.get("channel_name") or "").strip()),
             *[
                 normalize_channel_name(server.get("detected_channel"))
                 for server in servers
@@ -686,6 +713,8 @@ def _build_server_results(servers: list[dict[str, Any]]) -> list[ServerResult]:
                 channel_candidates=_normalize_url_list(server.get("channel_candidates")),
                 channel_confidence=str(server.get("channel_confidence") or "") or None,
                 channel_detection_method=str(server.get("channel_detection_method") or "") or None,
+                language=str(server.get("language") or "") or None,
+                language_candidates=_normalize_url_list(server.get("language_candidates")),
                 ocr_text=str(server.get("ocr_text") or "") or None,
                 playback_confirmed=bool(server.get("playback_confirmed")),
                 server_change_observed=bool(server.get("server_change_observed")),

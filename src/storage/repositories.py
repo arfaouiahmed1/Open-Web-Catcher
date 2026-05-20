@@ -34,6 +34,7 @@ from src.storage.models import (
     TakedownEmailRecord,
     ToolCallRecord,
 )
+from src.utils.console_state import RUN_TERMINAL_STATUSES
 from src.utils.observability import RunTrace
 
 
@@ -312,8 +313,8 @@ class RunRepository:
                 legacy.status = "running"
             elif trace.cancel_requested or failure_mode in {"runcancellederror", "cancelled", "canceled"}:
                 legacy.status = "cancelled"
-            elif failure_mode == "partial":
-                legacy.status = "partial"
+            elif failure_mode in RUN_TERMINAL_STATUSES:
+                legacy.status = failure_mode
             elif trace.metrics and trace.metrics.success:
                 legacy.status = "success"
             else:

@@ -10,7 +10,7 @@
       "fingerprint_rotation_interval_ms": 180000,
       "fingerprint_rotation_max_uses": 6,
       "fingerprint_recent_pool_size": 12,
-      "proxy_enabled": true,
+      "proxy_enabled": false,
       "proxy_source_mode": "hybrid",
       "proxy_source_order": [
         "openproxylist-https",
@@ -113,7 +113,7 @@
   "runtime_sync": {
     "source_path": "/app/data/settings.runtime.yaml",
     "bridge_path": "/app/data/browser.runtime.json",
-    "synced_at": "2026-05-18T22:39:10.632356+00:00",
+    "synced_at": "2026-05-20T00:07:21.258275+00:00",
     "active_runtime_source": "runtime_yaml"
   }
 }

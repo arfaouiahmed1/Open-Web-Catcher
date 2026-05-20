@@ -13,9 +13,13 @@ const STREAM_PATTERNS = [
   { re: /\.m3u8(\?|$)/i, protocol: 'hls' },
   { re: /\.mpd(\?|$)/i, protocol: 'dash' },
   { re: /\.mp4(\?|$)/i, protocol: 'mp4' },
+  { re: /\.(m4s|ts)(\?|$)/i, protocol: 'segment' },
   { re: /\.webm(\?|$)/i, protocol: 'webm' },
   { re: /\.ism\/manifest/i, protocol: 'smooth' },
   { re: /manifest\.m3u8/i, protocol: 'hls' },
+  { re: /\/(?:hls|live|stream|video|broadcast|secure)\/.*(?:master|index|chunklist|playlist|manifest|mono)(?:[.-]|$|\?)/i, protocol: 'hls' },
+  { re: /(?:[?&](?:format|type|protocol)=hls|[?&](?:hls|m3u8|playlist|manifest)=)/i, protocol: 'hls' },
+  { re: /(?:[?&](?:format|type|protocol)=dash|[?&](?:dash|mpd)=)/i, protocol: 'dash' },
 ];
 
 const isStream = (url) => STREAM_PATTERNS.some(({ re }) => re.test(url));

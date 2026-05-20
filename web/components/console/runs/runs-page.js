@@ -40,6 +40,7 @@ import { loadPricing } from "@/lib/pricing";
 import {
   canCancelRun,
   canDeleteRun,
+  RUN_STATUSES,
   statusLabel,
   statusTone,
 } from "@/lib/run-status";
@@ -90,6 +91,10 @@ const CUSTOM_LANGUAGE = "__custom__";
 const EMPTY_ARRAY = [];
 const EMPTY_OBJECT = {};
 const RUN_TABS = new Set(["sites", "batches", "history"]);
+const HISTORY_STATUS_FILTERS = RUN_STATUSES.filter((status) => status !== "redirect").map((status) => ({
+  value: status,
+  label: status ? statusLabel(status) : "All",
+}));
 
 const FALLBACK_LANGUAGES = [
   "english",
@@ -714,6 +719,7 @@ export function RunsPage() {
   const [batchDetail, setBatchDetail] = useState(null);
   const [runHistory, setRunHistory] = useState([]);
   const [runHistoryTotal, setRunHistoryTotal] = useState(0);
+  const [historyStatus, setHistoryStatus] = useState("");
   const [pricingMap, setPricingMap] = useState(null);
   const [selectedSiteIds, setSelectedSiteIds] = useState([]);
   const [query, setQuery] = useState("");
@@ -765,6 +771,9 @@ export function RunsPage() {
     if (nextTab !== "batches") {
       params.delete("batch");
     }
+    if (nextTab !== "history") {
+      params.delete("status");
+    }
     if (updates.batch) {
       params.set("batch", updates.batch);
       params.set("tab", "batches");
@@ -775,6 +784,7 @@ export function RunsPage() {
   useEffect(() => {
     const requestedBatchId = searchParams.get("batch") || "";
     const requestedTab = searchParams.get("tab") || "";
+    const requestedStatus = searchParams.get("status") || "";
     if (requestedBatchId) {
       setSelectedBatchId(requestedBatchId);
       setTab("batches");
@@ -782,6 +792,9 @@ export function RunsPage() {
     }
     if (RUN_TABS.has(requestedTab)) {
       setTab(requestedTab);
+    }
+    if (requestedTab === "history") {
+      setHistoryStatus(requestedStatus);
     }
   }, [searchParams]);
 
@@ -979,7 +992,13 @@ export function RunsPage() {
     if (tab !== "history") return undefined;
     let cancelled = false;
     setIsHistoryLoading(true);
-    apiFetch(`/ui/runs?limit=25&offset=0&query=${encodeURIComponent(query)}`)
+    const params = new URLSearchParams({
+      limit: "25",
+      offset: "0",
+      query,
+    });
+    if (historyStatus) params.set("status", historyStatus);
+    apiFetch(`/ui/runs?${params.toString()}`)
       .then((payload) => {
         if (!cancelled) {
           setRunHistory(payload.rows || []);
@@ -997,7 +1016,7 @@ export function RunsPage() {
     return () => {
       cancelled = true;
     };
-  }, [query, refreshTick, tab]);
+  }, [historyStatus, query, refreshTick, tab]);
 
   useEffect(() => {
     if (tab !== "batches") return undefined;
@@ -1222,6 +1241,31 @@ export function RunsPage() {
     setRunsTab("batches", { batch: batchId });
   }
 
+  function setHistoryStatusFilter(nextStatus) {
+    const normalized = String(nextStatus || "").trim().toLowerCase();
+    setHistoryStatus(normalized);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "history");
+    params.delete("batch");
+    if (normalized) params.set("status", normalized);
+    else params.delete("status");
+    router.replace(`/runs?${params.toString()}`, { scroll: false });
+  }
+
+  async function cancelBatch(batchId) {
+    if (!batchId) return;
+    setBusyAction(`cancel-batch-${batchId}`);
+    setActionError("");
+    try {
+      await apiFetch(`/api/datasets/batches/${batchId}/cancel`, { method: "POST" });
+      setRefreshTick((value) => value + 1);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to cancel batch");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
   async function cancelRun(runId) {
     setHistoryBusyRunId(runId);
     setActionError("");
@@ -1270,6 +1314,13 @@ export function RunsPage() {
       { cost: 0, tokens: 0, streams: 0 },
     );
   }, [batchRuns, displayBatchRunCost]);
+  const canCancelDisplayedBatch = Boolean(
+    displayedBatchDetail
+      && (
+        isActiveStatus(displayedBatchDetail.status)
+        || batchRuns.some((row) => isActiveStatus(datasetRunStatus(row)))
+      ),
+  );
 
   return (
     <TooltipProvider>
@@ -1585,10 +1636,40 @@ export function RunsPage() {
                     </CardDescription>
                   </div>
                   {selectedBatchId ? (
-                    <Button variant="outline" size="sm" onClick={() => setRefreshTick((value) => value + 1)} disabled={isBatchLoading}>
-                      <RefreshCw className={`h-4 w-4 ${isBatchLoading ? "animate-spin" : ""}`} />
-                      Refresh batch
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      {canCancelDisplayedBatch ? (
+                        <ConfirmAction
+                          title="Cancel this batch?"
+                          description="Queued and running site runs in this batch will be marked cancelled and active workers will be asked to stop."
+                          actionLabel="Cancel batch"
+                          onConfirm={() => cancelBatch(selectedBatchId)}
+                          trigger={(
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={busyAction === `cancel-batch-${selectedBatchId}`}
+                            >
+                              <XCircle className="h-4 w-4" />
+                              Cancel batch
+                            </Button>
+                          )}
+                        />
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled
+                          title="This batch has no queued or running site runs to cancel."
+                        >
+                          <XCircle className="h-4 w-4" />
+                          Cancel batch
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" onClick={() => setRefreshTick((value) => value + 1)} disabled={isBatchLoading}>
+                        <RefreshCw className={`h-4 w-4 ${isBatchLoading ? "animate-spin" : ""}`} />
+                        Refresh batch
+                      </Button>
+                    </div>
                   ) : null}
                 </div>
               </CardHeader>
@@ -1706,6 +1787,19 @@ export function RunsPage() {
                   The full persisted run table remains available for direct workflow and agent run debugging.
                 </CardDescription>
               </CardHeader>
+              <div className="flex flex-wrap gap-1.5 border-b bg-muted/20 px-4 py-2">
+                {HISTORY_STATUS_FILTERS.map((item) => (
+                  <Button
+                    key={item.value || "all"}
+                    size="sm"
+                    variant={historyStatus === item.value ? "accent" : "outline"}
+                    className="h-8"
+                    onClick={() => setHistoryStatusFilter(item.value)}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </div>
               <Table>
                 <TableHeader className="bg-muted/40">
                   <TableRow>

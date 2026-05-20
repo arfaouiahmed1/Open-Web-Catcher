@@ -1,4 +1,5 @@
 import { inspect } from './inspect.js';
+import { buildPlayerHandoffCandidates } from './player-handoff.js';
 
 const SERVER_PATTERN = /(server|source|mirror|backup|embed|stream|quality|cdn)/i;
 const PLAY_PATTERN = /(play|watch|start|resume|stream)/i;
@@ -146,6 +147,7 @@ export async function inspectHosting(params = {}) {
     popups: (data.popups || []).slice(0, 8),
     server_controls,
     playback_targets,
+    player_handoff_candidates: buildPlayerHandoffCandidates(data),
     iframe_context: {
       total_frames: (data.frame_tree || []).length,
       max_depth: (data.frame_tree || []).reduce((max, frame) => Math.max(max, frame.depth || 0), 0),

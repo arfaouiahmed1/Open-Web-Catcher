@@ -59,6 +59,7 @@ from src.utils.config import (
 from src.utils.console_state import (
     JOB_ACTIVE_STATUSES,
     JOB_TERMINAL_STATUSES,
+    RUN_TERMINAL_STATUSES,
     normalize_job_display_status,
 )
 from src.utils.ipinfo import lookup_multiple
@@ -2544,12 +2545,7 @@ def ui_runs(
                     or row.get("status", "")
                     or ""
                 ).strip().lower()
-                persisted_terminal = persisted_display_status in {
-                    "success",
-                    "partial",
-                    "failed",
-                    "cancelled",
-                }
+                persisted_terminal = persisted_display_status in RUN_TERMINAL_STATUSES
                 row = {
                     **row,
                     "status": row.get("status") if persisted_terminal else _background_job_display_status(job),
@@ -2966,6 +2962,35 @@ async def ui_cancel_active_runs():
 
     _cache_bust("overview")
     return {"ok": True, "cancelled": len(run_ids), "run_ids": run_ids}
+
+
+@app.post("/api/datasets/batches/{batch_id}/cancel")
+async def ui_cancel_dataset_batch(batch_id: str):
+    reason = "Batch cancelled from the Next.js operator console."
+    session = get_session()
+    try:
+        dataset_repo = DatasetRepository(session)
+        cancel_payload = dataset_repo.cancel_batch(batch_id, reason=reason)
+        run_ids = [str(run_id) for run_id in cancel_payload.get("run_ids", []) if run_id]
+        job_repo = BackgroundJobRepository(session)
+        for run_id in run_ids:
+            job = job_repo.get_by_run_id(run_id)
+            if job is not None and str(job.status or "") not in JOB_TERMINAL_STATUSES:
+                job_repo.mark_cancelled(run_id, reason=reason)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        logger.warning("Failed to cancel dataset batch %s: %s", batch_id, exc)
+        raise HTTPException(status_code=500, detail="Could not cancel batch") from exc
+    finally:
+        session.close()
+
+    for run_id in run_ids:
+        run_registry.request_cancel(run_id, reason=reason)
+        await _cancel_active_run_task(run_id)
+
+    _cache_bust("overview")
+    return {"ok": True, **cancel_payload}
 
 
 @app.delete("/ui/runs/{run_id}")

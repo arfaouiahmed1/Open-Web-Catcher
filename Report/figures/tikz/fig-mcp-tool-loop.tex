@@ -1,0 +1,29 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.86\textwidth}{!}{%
+\begin{tikzpicture}[
+  stepbox/.style={draw=accent, fill=blue!5, rounded corners=5pt,
+    minimum width=3.2cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80},
+  ret/.style={->, >=Stealth, thick, gray!70, dashed}
+]
+
+\node[stepbox] (agent) at (0,2.4) {Agent chooses tool};
+\node[stepbox] (mcp) at (4.2,2.4) {MCP profile endpoint};
+\node[stepbox] (registry) at (8.4,2.4) {Tool registry};
+\node[stepbox] (chrome) at (12.6,2.4) {Puppeteer + Chromium};
+\node[stepbox] (result) at (9.6,0.2) {Structured tool result};
+\node[stepbox] (memory) at (3.0,0.2) {Trace + memory update};
+
+\draw[arr] (agent) -- (mcp);
+\draw[arr] (mcp) -- (registry);
+\draw[arr] (registry) -- (chrome);
+\draw[ret] (chrome.south) -- ++(0,-1.1) -| (result.east);
+\draw[ret] (result) -- (memory);
+\draw[ret] (memory.west) -- ++(-2.2,0) |- (agent.south);
+
+\end{tikzpicture}
+}
+\caption{Browser tool execution loop through MCP and Puppeteer.}
+\label{fig:mcp-tool-loop}
+\end{figure}

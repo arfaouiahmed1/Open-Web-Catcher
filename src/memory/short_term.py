@@ -56,16 +56,29 @@ def _looks_like_pagination_url(url: str) -> bool:
 
 
 def _looks_like_stream_url(url: str) -> bool:
-    candidate = str(url or "").lower()
-    return bool(
-        candidate
-        and (
-            ".m3u8" in candidate
-            or ".mpd" in candidate
-            or ".mp4" in candidate
-            or "manifest" in candidate
-            or "playlist" in candidate
+    candidate = str(url or "").strip().lower()
+    parsed = urlparse(candidate)
+    path = parsed.path or ""
+    query = parsed.query or ""
+    if re.search(r"\.(m3u8|mpd|mp4|m4s|ts)(?:$|[?#])", candidate) or path.endswith(
+        (".m3u8", ".mpd", ".mp4", ".m4s", ".ts")
+    ):
+        return True
+    stream_context = bool(
+        re.search(
+            r"(^|[/_.-])(hls|dash|manifest|playlist|master|chunklist|m3u8|mpd|mono)([/_.-]|$)",
+            path,
         )
+        or re.search(r"(^|[?&])(hls|dash|m3u8|mpd|playlist|manifest|stream)=", query)
+        or re.search(r"(^|[?&])(format|type|protocol)=(hls|dash|m3u8|mpd)", query)
+    )
+    if not stream_context:
+        return False
+    return bool(
+        re.search(r"/(?:hls|dash|m3u8|mpd|manifest|playlist|tracks[^/]*)/", path)
+        or re.search(r"(?:^|/)(?:master|index|chunklist|playlist|manifest)(?:[.-]|$)", path)
+        or re.search(r"(^|[?&])(format|type|protocol)=(hls|dash|m3u8|mpd)", query)
+        or (re.search(r"(?:^|/)mono(?:[.-]|$)", path) and ("token=" in query or "expires=" in query))
     )
 
 

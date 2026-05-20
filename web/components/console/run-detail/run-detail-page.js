@@ -38,6 +38,14 @@ import { collectRunProviderUrls } from "@/lib/run-log-sync";
 const EMPTY_OBJECT = {};
 const EMPTY_ARRAY = [];
 const FAILURE_EVENT_KINDS = new Set(["llm_error", "llm_timeout", "llm_rate_limited", "pipeline_failed"]);
+const FAILURE_STATUSES = new Set([
+  "failed",
+  "timeout",
+  "site_dead",
+  "page_inaccessible",
+  "no_hosting_pages",
+  "no_streams",
+]);
 
 function firstNonEmptyArray(...values) {
   const nonEmpty = values.find((value) => Array.isArray(value) && value.length > 0);
@@ -116,6 +124,10 @@ function stageLabel(stage) {
 
 function getRunMode(jobState) {
   return String(jobState?.job_type || "").toLowerCase() === "workflow" ? "workflow run" : "agent run";
+}
+
+function isFailureStatus(status) {
+  return FAILURE_STATUSES.has(String(status || "").trim().toLowerCase());
 }
 
 function HeroMetric({ label, value, description, emphasis = "var(--ink)" }) {
@@ -355,17 +367,17 @@ function RunHeader({
                   className="min-w-[280px] max-w-[520px] rounded-[16px] border px-3 py-3"
                   style={{
                     borderColor:
-                      run?.final_status === "failed"
+                      isFailureStatus(run?.final_status)
                         ? "color-mix(in oklch, var(--rose) 26%, transparent)"
                         : "var(--line)",
                     background:
-                      run?.final_status === "failed"
+                      isFailureStatus(run?.final_status)
                         ? "color-mix(in oklch, var(--rose) 8%, transparent)"
                         : "color-mix(in oklch, var(--card) 92%, transparent)",
                   }}
                 >
                   <div className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: "var(--mute-3)" }}>
-                    {run?.final_status === "failed" ? "Primary blocker" : "Run summary"}
+                    {isFailureStatus(run?.final_status) ? "Primary blocker" : "Run summary"}
                   </div>
                   <div className="mt-1 text-[14px] font-semibold leading-snug" style={{ color: "var(--ink)" }}>
                     {failureHeadline || "Run summary"}
@@ -676,13 +688,14 @@ export function RunDetailPage() {
       run.classification_reasoning ||
       run.failure_mode,
   );
+  const runFailed = isFailureStatus(run.final_status);
 
   const attemptedModelLabel =
     primaryProvider || primaryModel
       ? `${primaryProvider || "--"} / ${primaryModel || "--"}`
       : "--";
   const failureHeadline =
-    run.final_status === "failed"
+    runFailed
       ? primaryModel
         ? `${failureStageLabel} blocked while attempting ${primaryModel}`
         : `${failureStageLabel} blocked before completion`
@@ -690,7 +703,7 @@ export function RunDetailPage() {
         ? `${statusLabel(run.final_status)} run`
         : "Run summary";
   const failureNarrative =
-    run.final_status === "failed"
+    runFailed
       ? [
           primaryProvider || primaryModel
             ? `Attempted ${attemptedModelLabel}.`
@@ -809,7 +822,7 @@ export function RunDetailPage() {
 
   const diagnosticsItems = [
     { label: "Attempted model", value: attemptedModelLabel, note: primaryModel ? "Derived from LLM attempt events when persisted primary model is empty." : "" },
-    { label: "Failure stage", value: run.final_status === "failed" ? failureStageLabel : "--", note: run.final_status === "failed" ? failureText : "" },
+    { label: "Failure stage", value: runFailed ? failureStageLabel : "--", note: runFailed ? failureText : "" },
     { label: "Last successful stage", value: lastSuccessfulStage, note: lastSuccessfulStage !== "--" ? "Last completed stage before the terminal state." : "" },
     { label: "Routing decisions", value: formatNumber(decisionCount), note: decisionCount > 0 ? "Event-derived orchestrator decisions." : "No decisions recorded." },
     { label: "Tool profiles", value: toolProfiles.length ? toolProfiles.join(", ") : "--", note: toolProfiles.length ? `${formatNumber(toolProfiles.length)} MCP profile${toolProfiles.length === 1 ? "" : "s"} connected.` : "No tool session handshakes recorded." },

@@ -1,4 +1,5 @@
 import { inspect } from './inspect.js';
+import { buildPlayerHandoffCandidates } from './player-handoff.js';
 
 const SOURCE_PATTERN = /(server|source|mirror|backup|quality|audio|sub|embed|stream)/i;
 const PLAY_PATTERN = /(play|watch|start|resume|tap|stream)/i;
@@ -149,6 +150,7 @@ export async function inspectEmbedded(params = {}) {
     popups: (data.popups || []).slice(0, 8),
     source_controls,
     player_targets,
+    player_handoff_candidates: buildPlayerHandoffCandidates(data),
     frame_focus_order,
     iframe_context: {
       total_frames: (data.frame_tree || []).length,

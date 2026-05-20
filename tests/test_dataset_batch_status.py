@@ -35,6 +35,43 @@ def test_created_batch_starts_queued_with_site_runs() -> None:
         session.close()
 
 
+def test_cancel_batch_marks_only_non_terminal_site_runs_cancelled() -> None:
+    repo, session = _repo_session()
+    try:
+        created = repo.create_batch(
+            urls=[
+                "https://queued.example/live",
+                "https://running.example/live",
+                "https://done.example/live",
+            ],
+            batch_name="Cancel batch",
+        )
+        batch = session.query(DatasetBatchRecord).filter_by(batch_id=created["batch_id"]).one()
+        rows = (
+            session.query(DatasetSiteRunRecord)
+            .filter_by(batch_id=batch.id)
+            .order_by(DatasetSiteRunRecord.id.asc())
+            .all()
+        )
+        rows[1].status = "running"
+        rows[2].status = "success"
+        rows[2].final_status = "success"
+        session.commit()
+
+        payload = repo.cancel_batch(created["batch_id"], reason="operator stop")
+
+        assert payload["cancelled"] == 2
+        assert payload["skipped"] == 1
+        assert payload["batch"]["status"] == "partial"
+        assert [run["final_status"] for run in payload["batch"]["runs"]] == [
+            "cancelled",
+            "cancelled",
+            "success",
+        ]
+    finally:
+        session.close()
+
+
 @pytest.mark.parametrize("active_status", ["retrying", "leased"])
 def test_retrying_and_leased_site_runs_keep_batch_running(active_status: str) -> None:
     repo, session = _repo_session()

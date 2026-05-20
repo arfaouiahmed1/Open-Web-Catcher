@@ -1,0 +1,28 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.95\textwidth}{!}{%
+\begin{tikzpicture}[
+  card/.style={draw=accent, fill=blue!5, rounded corners=6pt,
+    text width=4.1cm, minimum height=1.75cm, align=left,
+    font=\footnotesize, inner sep=7pt},
+  chosen/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
+    text width=4.1cm, minimum height=1.75cm, align=left,
+    font=\footnotesize, inner sep=7pt},
+  weak/.style={draw=orange!70, fill=orange!10, rounded corners=6pt,
+    text width=4.1cm, minimum height=1.75cm, align=left,
+    font=\footnotesize, inner sep=7pt},
+]
+\node[weak] (agile) at (0,0) {\centering\textbf{Agile}\\[0.25em]
+\raggedright Fast iteration for prompts, tools, and browser behavior.};
+\node[weak] (crisp) at (4.7,0) {\centering\textbf{CRISP-DM}\\[0.25em]
+\raggedright Useful for context, evaluation, and operational review discipline.};
+\node[chosen] (dsrm) at (9.4,0) {\centering\textbf{DSRM}\\[0.25em]
+\raggedright Best fit for designing and evaluating an engineering artifact.};
+
+\node[card, fill=gray!8, draw=gray!55, text width=12.2cm, minimum height=0.78cm] (decision) at (4.7,-1.85)
+{\centering\textbf{Adopted method:} DSRM backbone + Agile iterations + CRISP-DM evaluation lens.};
+\end{tikzpicture}
+}
+\caption{Methodology selection logic: Agile and CRISP-DM used as supporting lenses, DSRM used as the main backbone.}
+\label{fig:methodology-selection}
+\end{figure}

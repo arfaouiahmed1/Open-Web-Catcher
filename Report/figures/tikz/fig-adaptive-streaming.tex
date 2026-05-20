@@ -1,0 +1,25 @@
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=1.0cm]
+\node[flowbox, minimum width=4.4cm, fill=blue!8] (master)
+  {Master manifest\\\texttt{index.m3u8} or \texttt{manifest.mpd}};
+\node[toolbox, minimum width=3.2cm, fill=gray!8, right=1.4cm of master] (high)
+  {High quality\\variant};
+\node[toolbox, minimum width=3.2cm, fill=gray!8, above=0.8cm of high] (mid)
+  {Medium quality\\variant};
+\node[toolbox, minimum width=3.2cm, fill=gray!8, below=0.8cm of high] (low)
+  {Low quality\\variant};
+\node[flowbox, minimum width=4.0cm, fill=green!8, right=1.4cm of high] (segments)
+  {Media segments\\\texttt{.ts}, \texttt{.m4s}, fMP4};
+\draw[myarrow] (master) -- (mid);
+\draw[myarrow] (master) -- (high);
+\draw[myarrow] (master) -- (low);
+\draw[myarrow] (mid) -- (segments);
+\draw[myarrow] (high) -- (segments);
+\draw[myarrow] (low) -- (segments);
+\end{tikzpicture}
+}
+\caption{Simplified adaptive streaming hierarchy used by HLS and MPEG-DASH.}
+\label{fig:adaptive-streaming}
+\end{figure}

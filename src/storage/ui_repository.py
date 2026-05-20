@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+import re
 from typing import Any
 
 from sqlalchemy import case, func
@@ -42,6 +43,8 @@ from src.storage.models import (
     ToolPlaygroundCallRecord,
 )
 from src.utils.console_state import (
+    RUN_CANCELLED_STATUSES,
+    RUN_FAILURE_STATUSES,
     country_code_from_value,
     flag_emoji_from_country_code,
     normalize_job_display_status,
@@ -106,6 +109,38 @@ def _first_non_empty_list(*candidates: Any) -> list[Any]:
         if isinstance(candidate, list) and candidate:
             return candidate
     return []
+
+
+_PAGE_INACCESSIBLE_RE = re.compile(
+    r"(inaccessible|unreachable|could not be accessed|failed to load|navigation error|"
+    r"browser-level|chrome-error|about:blank|err_|dns|ssl handshake|connection refused|"
+    r"connection reset|site unavailable|timed out)",
+    re.IGNORECASE,
+)
+_NO_HOSTING_RE = re.compile(
+    r"(no hosting|no downstream|directory|portal|listing|hub|article-only|"
+    r"no functional components|standard .*wordpress)",
+    re.IGNORECASE,
+)
+
+
+def _derived_failed_run_status(row: PipelineRunRecord) -> str:
+    text = " ".join(
+        [
+            str(row.failure_mode or ""),
+            str(row.classification_reasoning or ""),
+            str(row.root_url or ""),
+            str(row.page_type or ""),
+        ]
+    )
+    if _PAGE_INACCESSIBLE_RE.search(text):
+        return "page_inaccessible"
+    if str(row.page_type or "").strip().lower() == "landing_page" and int(row.stream_count or 0) == 0:
+        if _NO_HOSTING_RE.search(text) or int(row.provider_analysis_count or 0) == 0:
+            return "no_hosting_pages"
+    if int(row.stream_count or 0) == 0 and int(row.provider_analysis_count or 0) == 0:
+        return "no_streams"
+    return "failed"
 
 
 class OperatorConsoleRepository:
@@ -239,11 +274,21 @@ class OperatorConsoleRepository:
                 func.sum(case((PipelineRunRecord.final_status == "partial", 1), else_=0)), 0
             ),
             func.coalesce(
-                func.sum(case((PipelineRunRecord.final_status == "failed", 1), else_=0)), 0
+                func.sum(
+                    case((PipelineRunRecord.final_status.in_(RUN_FAILURE_STATUSES), 1), else_=0)
+                ),
+                0,
             ),
             func.coalesce(
-                func.sum(case((PipelineRunRecord.final_status == "running", 1), else_=0)), 0
+                func.sum(
+                    case(
+                        (PipelineRunRecord.final_status.in_(RUN_CANCELLED_STATUSES), 1),
+                        else_=0,
+                    )
+                ),
+                0,
             ),
+            func.coalesce(func.sum(case((PipelineRunRecord.final_status == "running", 1), else_=0)), 0),
             func.coalesce(func.sum(PipelineRunRecord.total_tokens_in), 0),
             func.coalesce(func.sum(PipelineRunRecord.total_tokens_out), 0),
             func.coalesce(func.sum(PipelineRunRecord.total_llm_calls), 0),
@@ -260,19 +305,20 @@ class OperatorConsoleRepository:
         success_count = int(pipeline_totals[1] or 0)
         partial_count = int(pipeline_totals[2] or 0)
         failure_count = int(pipeline_totals[3] or 0)
-        running_count = int(pipeline_totals[4] or 0)
-        total_tokens_in = int(pipeline_totals[5] or 0)
-        total_tokens_out = int(pipeline_totals[6] or 0)
-        total_llm_calls = int(pipeline_totals[7] or 0)
-        total_tool_calls = int(pipeline_totals[8] or 0)
-        total_cost = float(pipeline_totals[9] or 0.0)
-        avg_latency = float(pipeline_totals[10] or 0.0)
-        runs_with_streams = int(pipeline_totals[11] or 0)
-        runs_with_emails = int(pipeline_totals[12] or 0)
-        total_streams = int(pipeline_totals[13] or 0)
-        total_emails = int(pipeline_totals[14] or 0)
-        total_provider_analyses = int(pipeline_totals[15] or 0)
-        terminal_runs = success_count + partial_count + failure_count
+        cancelled_count = int(pipeline_totals[4] or 0)
+        running_count = int(pipeline_totals[5] or 0)
+        total_tokens_in = int(pipeline_totals[6] or 0)
+        total_tokens_out = int(pipeline_totals[7] or 0)
+        total_llm_calls = int(pipeline_totals[8] or 0)
+        total_tool_calls = int(pipeline_totals[9] or 0)
+        total_cost = float(pipeline_totals[10] or 0.0)
+        avg_latency = float(pipeline_totals[11] or 0.0)
+        runs_with_streams = int(pipeline_totals[12] or 0)
+        runs_with_emails = int(pipeline_totals[13] or 0)
+        total_streams = int(pipeline_totals[14] or 0)
+        total_emails = int(pipeline_totals[15] or 0)
+        total_provider_analyses = int(pipeline_totals[16] or 0)
+        terminal_runs = success_count + partial_count + failure_count + cancelled_count
         rate_denominator = terminal_runs if terminal_runs > 0 else total_runs
         total_tokens = total_tokens_in + total_tokens_out
 
@@ -378,11 +424,19 @@ class OperatorConsoleRepository:
         ).one()
         failed_window_count = int(
             self._session.query(func.count(PipelineRunRecord.id))
-            .filter(PipelineRunRecord.final_status == "failed")
+            .filter(PipelineRunRecord.final_status.in_(RUN_FAILURE_STATUSES))
             .filter(PipelineRunRecord.created_at >= datetime.utcnow() - timedelta(hours=24))
             .scalar()
             or 0
         )
+        status_breakdown = {
+            str(status or "unknown"): int(count or 0)
+            for status, count in (
+                self._session.query(PipelineRunRecord.final_status, func.count(PipelineRunRecord.id))
+                .group_by(PipelineRunRecord.final_status)
+                .all()
+            )
+        }
 
         recent_parallelism = 0
         recent_run_ids = [row.id for row in recent_runs]
@@ -447,6 +501,8 @@ class OperatorConsoleRepository:
                 "failure_rate": round(failure_count / rate_denominator, 4)
                 if rate_denominator
                 else 0.0,
+                "cancelled_runs": cancelled_count,
+                "status_breakdown": status_breakdown,
                 "total_tokens_in": total_tokens_in,
                 "total_cached_input_tokens": int(
                     llm_usage_totals.get("cached_input_tokens", 0) or 0
@@ -538,8 +594,13 @@ class OperatorConsoleRepository:
         actor: str = "",
     ) -> dict[str, Any]:
         query_obj = self._session.query(PipelineRunRecord)
-        if status:
-            query_obj = query_obj.filter(PipelineRunRecord.final_status == status)
+        derived_status_filter = str(status or "").strip().lower()
+        direct_status_filters = {"success", "partial", "cancelled"}
+        apply_status_after_fetch = bool(derived_status_filter) and derived_status_filter not in direct_status_filters
+        if derived_status_filter in direct_status_filters:
+            query_obj = query_obj.filter(PipelineRunRecord.final_status == derived_status_filter)
+        elif derived_status_filter == "failed":
+            query_obj = query_obj.filter(PipelineRunRecord.final_status == "failed")
         if page_type:
             query_obj = query_obj.filter(PipelineRunRecord.page_type == page_type)
         # DB-level text search across url + run_id + page_type (avoids loading all rows)
@@ -562,10 +623,15 @@ class OperatorConsoleRepository:
             query_obj = query_obj.filter(PipelineRunRecord.id.in_(actor_subq))
         # DB-level count (cheap — no row hydration) then paginated fetch
         total = query_obj.count()
+        fetch_limit = max(limit, 1)
+        fetch_offset = max(offset, 0)
+        if apply_status_after_fetch:
+            fetch_limit = max(limit + offset + 500, 500)
+            fetch_offset = 0
         rows = (
             query_obj.order_by(PipelineRunRecord.created_at.desc())
-            .offset(max(offset, 0))
-            .limit(max(limit, 1))
+            .offset(fetch_offset)
+            .limit(fetch_limit)
             .all()
         )
         run_ids = [row.id for row in rows]
@@ -644,7 +710,11 @@ class OperatorConsoleRepository:
             provider, model_name = model_map.get(row.id, ("", ""))
             r["primary_provider"] = provider
             r["primary_model"] = model_name
-            result_rows.append(r)
+            if not apply_status_after_fetch or r["final_status"] == derived_status_filter:
+                result_rows.append(r)
+        if apply_status_after_fetch:
+            total = len(result_rows)
+            result_rows = result_rows[offset : offset + limit]
         return {"total": total, "rows": result_rows}
 
     def get_run_detail(self, run_id: str) -> dict[str, Any] | None:
@@ -1440,6 +1510,8 @@ class OperatorConsoleRepository:
             failure_mode=str(row.failure_mode or ""),
             job_status=job_status,
         )
+        if display_status == "failed":
+            display_status = _derived_failed_run_status(row)
         return {
             "run_id": row.run_id,
             "url": row.root_url,
@@ -1842,7 +1914,13 @@ class OperatorConsoleRepository:
                     func.sum(case((PipelineRunRecord.final_status == "partial", 1), else_=0)), 0
                 ),
                 func.coalesce(
-                    func.sum(case((PipelineRunRecord.final_status == "failed", 1), else_=0)), 0
+                    func.sum(
+                        case(
+                            (PipelineRunRecord.final_status.in_(RUN_FAILURE_STATUSES), 1),
+                            else_=0,
+                        )
+                    ),
+                    0,
                 ),
                 func.coalesce(
                     func.sum(case((PipelineRunRecord.final_status == "running", 1), else_=0)), 0

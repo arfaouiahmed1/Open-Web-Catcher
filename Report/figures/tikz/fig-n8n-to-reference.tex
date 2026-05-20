@@ -1,0 +1,29 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.86\textwidth}{!}{%
+\begin{tikzpicture}[
+  prob/.style={draw=red!55, fill=red!6, rounded corners=5pt,
+    minimum width=3.6cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
+  sol/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
+    minimum width=3.6cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80}
+]
+
+\node[prob] (p1) at (0,3.0) {Sequential workflow};
+\node[prob] (p2) at (0,1.8) {No durable memory};
+\node[prob] (p3) at (0,0.6) {Fragile browser state};
+\node[prob] (p4) at (0,-0.6) {Manual evaluation};
+
+\node[sol] (s1) at (6.0,3.0) {Orchestrated specialists};
+\node[sol] (s2) at (6.0,1.8) {Short/long-term memory};
+\node[sol] (s3) at (6.0,0.6) {MCP browser sessions};
+\node[sol] (s4) at (6.0,-0.6) {Stored traces + eval routes};
+
+\foreach \i in {1,2,3,4}
+  \draw[arr] (p\i) -- (s\i);
+
+\end{tikzpicture}
+}
+\caption{How n8n limitations shaped the reference implementation.}
+\label{fig:n8n-to-reference}
+\end{figure}

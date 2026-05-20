@@ -13,6 +13,7 @@ from src.models.enums import AgentType, ExtractionStatus, PageType
 from src.models.schemas import ExtractionResult, ServerResult, StreamURL
 from src.utils.channel_detection import best_channel_match, collect_channel_text_fragments, normalize_channel_name
 from src.utils.config import Settings
+from src.utils.language_detection import best_language_match, detect_language_candidates
 from src.utils.instrumentation import (
     observability_span,
     set_span_output,
@@ -25,14 +26,16 @@ logger = get_logger(__name__)
 
 PROMPT_PATH = Path("configs/prompts/embedded_page_v1.md")
 _AGENT_CONTRACT = """\
-- work inside the embedded player context and extract verified stream URLs
+- work only inside the embedded player URL received from hosting iframe/player evidence and extract verified stream URLs
 - check server switches, player activation, and network evidence before concluding
 - respect the final JSON/output format from the base policy
 - use remembered site hints only as soft guidance
 - stay on the assigned embedded/player URL and recover from off-target drift
 - preserve screenshot, iframe/embed, network, and player-state evidence per server/source when available
-- return detected channel/broadcast metadata per server/source when the player or screenshot reveals it
-- if no playable stream is recovered after the allowed attempts, stop with the failure evidence and do not invent another downstream fallback
+- return detected channel/broadcast metadata per server/source only when the player or screenshot reveals a known broadcaster name
+- crawl visible JS-driven player/source/language controls before falling back to URL-only evidence
+- preserve source language labels when they are shown as flags, country emoji, audio labels, captions, or short codes
+- if no playable stream is recovered or the full-page embedded URL is blocked, stop with the failure evidence and do not invent another downstream fallback
 """
 
 
@@ -354,9 +357,30 @@ def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any
         ]
     )
     channel_match = best_channel_match(*channel_texts)
+    language_candidates = [
+        item
+        for item in detect_language_candidates(
+            label,
+            server.get("language"),
+            server.get("language_candidates"),
+            server.get("audio"),
+            server.get("audio_track"),
+            server.get("subtitle"),
+            server.get("caption"),
+            server.get("ocr_text"),
+            server.get("visual_confirmation"),
+        )
+        if item
+    ]
+    raw_language = str(server.get("language") or server.get("detected_language") or "").strip()
+    detected_language = raw_language or best_language_match(label, server.get("ocr_text"))
     detected_channel = normalize_channel_name(
-        str(server.get("detected_channel") or server.get("channel") or channel_match.get("channel_name") or "").strip()
+        str(server.get("detected_channel") or server.get("channel") or "").strip()
     )
+    if not detected_channel:
+        detected_channel = normalize_channel_name(
+            str(channel_match.get("channel_name") or "").strip()
+        )
     channel_candidates = _dedupe_urls(
         [
             detected_channel,
@@ -398,6 +422,8 @@ def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any
             server.get("channel_detection_method")
             or ("ocr+screenshot" if str(server.get("ocr_text") or server.get("player_ocr_text") or "").strip() else channel_match.get("channel_detection_method") or "")
         ).strip(),
+        "language": detected_language,
+        "language_candidates": _dedupe_urls([detected_language, *language_candidates]),
         "ocr_text": str(server.get("ocr_text") or server.get("player_ocr_text") or "").strip(),
         "playback_confirmed": bool(server.get("playback_confirmed"))
         or str(server.get("player_state") or "").strip().lower() == "playing"
@@ -568,7 +594,8 @@ def _normalize_embedded_output(output: dict[str, Any]) -> dict[str, Any]:
     channel_match = best_channel_match(*channel_texts)
     detected_channels = _dedupe_urls(
         [
-            normalize_channel_name(str(normalized.get("primary_channel") or normalized.get("channel") or channel_match.get("channel_name") or "").strip()),
+            normalize_channel_name(str(normalized.get("primary_channel") or normalized.get("channel") or "").strip())
+            or normalize_channel_name(str(channel_match.get("channel_name") or "").strip()),
             *[
                 normalize_channel_name(server.get("detected_channel"))
                 for server in servers
@@ -624,6 +651,8 @@ def _build_server_results(servers: list[dict[str, Any]]) -> list[ServerResult]:
                 channel_candidates=_normalize_url_list(server.get("channel_candidates")),
                 channel_confidence=str(server.get("channel_confidence") or "") or None,
                 channel_detection_method=str(server.get("channel_detection_method") or "") or None,
+                language=str(server.get("language") or "") or None,
+                language_candidates=_normalize_url_list(server.get("language_candidates")),
                 ocr_text=str(server.get("ocr_text") or "") or None,
                 playback_confirmed=bool(server.get("playback_confirmed")),
                 server_change_observed=bool(server.get("server_change_observed")),

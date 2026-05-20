@@ -1,4 +1,5 @@
 import { inspect } from './inspect.js';
+import { buildPlayerHandoffCandidates } from './player-handoff.js';
 
 const MATCH_PATTERN = /(watch|live|stream|match|fixture|kickoff|vs|versus|channel|game|event|play|league|cup|sports?)/i;
 const NOISE_PATTERN = /(login|sign in|signup|register|privacy|terms|cookie|contact|about|help|faq|telegram|discord|twitter|facebook|instagram)/i;
@@ -191,6 +192,7 @@ export async function inspectLanding(params = {}) {
     match_candidates,
     navigation_links,
     action_targets,
+    player_handoff_candidates: buildPlayerHandoffCandidates(data),
     iframe_overview: {
       total_frames: (data.frame_tree || []).length,
       max_depth: maxDepth,

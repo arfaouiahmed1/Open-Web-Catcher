@@ -1,97 +1,47 @@
 \chapter{Implementation}
 \label{chap:implementation}
 
-The implementation progressed in two major parts. The first part was an n8n
+The implementation progressed in three major parts. The first part was an n8n
 workflow used as a fast exploration and validation environment. The second part
 was a Python reference solution built around FastAPI, Next.js, MCP browser-tool
 containers, specialist agents, model/runtime management, and PostgreSQL
-observability.
+observability. The third part was the deployment direction: the company preferred to keep
+n8n as the operational workflow, while one agent was deployed as a focused cloud job.
 
 This split matters because the two systems did not have the same purpose. The
 n8n workflow was useful for testing whether agentic browsing could handle the
 domain at all. The Python implementation was built after those lessons, with
 cleaner engineering boundaries, persistent traces, configurable runtime
-settings, and a better foundation for evaluation.
+settings, and a better foundation for evaluation. The deployment work then narrowed the
+cloud target to the part that the company actually wanted to operationalize during the
+internship.
 
 \section{Part 1: n8n Workflow Prototype}
 
 \subsection{Purpose of the n8n phase}
 
-The n8n implementation acted as the project playground. It made it possible to
+The n8n implementation acted as the project playground~\cite{n8n}. It made it possible to
 test the core question quickly: can an LLM-driven browser agent inspect illegal
 streaming websites, navigate through landing and hosting pages, activate
 players, and recover useful evidence? At this stage, the priority was not a
 clean software architecture. The priority was proving feasibility on real,
 unstable websites.
 
-\begin{figure}[H]
-\centering
-\resizebox{0.9\textwidth}{!}{%
-\begin{tikzpicture}[
-  stepbox/.style={draw=accent, fill=blue!5, rounded corners=5pt,
-    minimum width=3.2cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  issue/.style={draw=red!55, fill=red!6, rounded corners=5pt,
-    minimum width=3.2cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  outbox/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
-    minimum width=3.2cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80}
-]
-
-\node[stepbox] (seed) at (0,2.4) {Seed URL};
-\node[stepbox] (trigger) at (3.7,2.4) {n8n trigger};
-\node[stepbox] (agent) at (7.4,2.4) {Agent workflow};
-\node[stepbox] (browser) at (11.1,2.4) {Browser session};
-\node[outbox] (evidence) at (14.8,2.4) {Screenshots / streams};
-\node[issue] (limits) at (5.55,0.55) {Runtime limitations};
-\node[outbox] (lessons) at (11.1,0.55) {Lessons for\\reference solution};
-
-\draw[arr] (seed) -- (trigger);
-\draw[arr] (trigger) -- (agent);
-\draw[arr] (agent) -- (browser);
-\draw[arr] (browser) -- (evidence);
-\draw[arr] (agent.south) |- (limits.east);
-\draw[arr] (limits) -- (lessons);
-\draw[arr] (evidence.south) |- (lessons.east);
-
-\end{tikzpicture}
-}
-\caption{Role of the n8n workflow as a feasibility playground.}
-\label{fig:n8n-playground-flow}
-\end{figure}
+\input{figures/tikz/fig-n8n-playground-flow}
 
 The workflow helped test agent behavior before investing in a full backend,
 database, and operator console. It also exposed which parts of the task were
 hard: browser state continuity, popup handling, stream activation, memory,
 runtime length, and evidence validation.
 
-\subsection{n8n agents and screenshot placeholders}
+\subsection{n8n workflow screenshots}
 
 The n8n workflow used agent-like nodes to test the same page-type responsibilities
-that later became specialist agents. The screenshots below are intentionally left
-as placeholders so the final report can include the real workflow captures.
+that later became specialist agents. Figure~\ref{fig:n8n-agent-screenshots} shows the
+full sequential workflow and the four agent workflow captures used during the
+prototype phase.
 
-\begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{n8n-full-workflow.png}
-\vspace{0.8em}
-\begin{tabularx}{\textwidth}{XX}
-\fbox{\parbox[c][3.2cm][c]{0.45\textwidth}{\centering
-\textbf{Screenshot Placeholder}\\[0.4em]
-n8n classification agent\\workflow node and output}} &
-\fbox{\parbox[c][3.2cm][c]{0.45\textwidth}{\centering
-\textbf{Screenshot Placeholder}\\[0.4em]
-n8n landing agent\\match discovery path}} \\
-\\[-0.2em]
-\fbox{\parbox[c][3.2cm][c]{0.45\textwidth}{\centering
-\textbf{Screenshot Placeholder}\\[0.4em]
-n8n hosting agent\\server and player activation}} &
-\fbox{\parbox[c][3.2cm][c]{0.45\textwidth}{\centering
-\textbf{Screenshot Placeholder}\\[0.4em]
-n8n embedded agent\\iframe/player extraction}} \\
-\end{tabularx}
-\caption{Full n8n workflow and screenshot placeholders for the agent workflows.}
-\label{fig:n8n-agent-screenshots}
-\end{figure}
+\input{figures/tikz/fig-n8n-agent-screenshots}
 
 \begin{table}[H]
 \centering
@@ -116,7 +66,7 @@ Nested frames require a dedicated extraction path and should not be mixed with
 landing-page exploration. \\
 \bottomrule
 \end{tabularx}
-\caption{n8n agent roles and lessons carried into the reference implementation.}
+\caption{n8n prototype agent roles and implementation lessons.}
 \label{tab:n8n-agent-lessons}
 \end{table}
 
@@ -128,9 +78,7 @@ implementation was necessary.
 
 \begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.6cm}
-                              >{\raggedright\arraybackslash}X
-                              >{\raggedright\arraybackslash}X}
+\begin{tabularx}{\textwidth}{Q{3.0cm} Y Y}
 \toprule
 \rowcolor{accent!8}
 Limitation & What happened in practice & Consequence \\
@@ -164,39 +112,11 @@ LLM calls, tool calls, screenshots, and costs. & Post-mortem review required
 manual reconstruction. \\
 \bottomrule
 \end{tabularx}
-\caption{Main limitations observed during the n8n prototype phase.}
+\caption{n8n prototype limitations and engineering consequences.}
 \label{tab:n8n-limitations}
 \end{table}
 
-\begin{figure}[H]
-\centering
-\resizebox{0.86\textwidth}{!}{%
-\begin{tikzpicture}[
-  prob/.style={draw=red!55, fill=red!6, rounded corners=5pt,
-    minimum width=3.6cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  sol/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
-    minimum width=3.6cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80}
-]
-
-\node[prob] (p1) at (0,3.0) {Sequential workflow};
-\node[prob] (p2) at (0,1.8) {No durable memory};
-\node[prob] (p3) at (0,0.6) {Fragile browser state};
-\node[prob] (p4) at (0,-0.6) {Manual evaluation};
-
-\node[sol] (s1) at (6.0,3.0) {Orchestrated specialists};
-\node[sol] (s2) at (6.0,1.8) {Short/long-term memory};
-\node[sol] (s3) at (6.0,0.6) {MCP browser sessions};
-\node[sol] (s4) at (6.0,-0.6) {Stored traces + eval routes};
-
-\foreach \i in {1,2,3,4}
-  \draw[arr] (p\i) -- (s\i);
-
-\end{tikzpicture}
-}
-\caption{How n8n limitations shaped the reference implementation.}
-\label{fig:n8n-to-reference}
-\end{figure}
+\input{figures/tikz/fig-n8n-to-reference}
 
 \section{Part 2: Implemented Reference Solution}
 
@@ -205,44 +125,11 @@ moves it into explicit software components. It is organized into five main
 implementation areas: FastAPI, Next.js, MCP browser containers, agents and model
 runtime, and PostgreSQL.
 
-\begin{figure}[H]
-\centering
-\resizebox{0.92\textwidth}{!}{%
-\begin{tikzpicture}[
-  layer/.style={draw=accent, fill=blue!5, rounded corners=5pt,
-    minimum width=3.4cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  support/.style={draw=purple!60, fill=purple!7, rounded corners=5pt,
-    minimum width=3.4cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80}
-]
-
-\node[layer] (next) at (0,2.2) {Next.js\\operator console};
-\node[layer] (api) at (4.0,2.2) {FastAPI\\control plane};
-\node[layer] (agents) at (8.0,2.2) {Agents\\LangChain runtime};
-\node[layer] (mcp) at (12.0,2.2) {MCP browser\\containers};
-\node[layer] (browser) at (16.0,2.2) {Puppeteer\\Chromium};
-
-\node[support] (db) at (4.0,0.2) {PostgreSQL\\observability};
-\node[support] (cache) at (8.0,0.2) {Memory + cache};
-\node[support] (external) at (12.0,0.2) {LLM, Cloudinary,\\IPInfo / WHOIS};
-
-\draw[arr] (next) -- (api);
-\draw[arr] (api) -- (agents);
-\draw[arr] (agents) -- (mcp);
-\draw[arr] (mcp) -- (browser);
-\draw[arr] (api) -- (db);
-\draw[arr] (agents) -- (cache);
-\draw[arr] (agents) -- (external);
-
-\end{tikzpicture}
-}
-\caption{Five implementation areas of the reference solution.}
-\label{fig:implementation-five-areas}
-\end{figure}
+\input{figures/tikz/fig-implementation-five-areas}
 
 \subsection{FastAPI Backend}
 
-The FastAPI backend is the control plane of the reference solution. It starts
+The FastAPI backend is the control plane of the reference solution~\cite{fastapi}. It starts
 runs, checks runtime readiness, streams or returns run state, exposes settings,
 stores observability records, and gives the frontend a stable API surface.
 
@@ -263,13 +150,13 @@ Run inspection & Return trace, screenshots, streams, provider data, model usage,
 and errors. & Makes each run auditable after execution. \\
 Configuration & Persist model, provider, pricing, browser, and tool settings. &
 Allows controlled experimentation without editing code every time. \\
-Tool playground & Let tools be tested without a full agent run. & Isolates
-browser/tool failures from prompt failures. \\
+MCP tool diagnostics & Expose profile-specific tool status and logged tool calls.
+& Separates browser/tool failures from prompt failures. \\
 Evaluation routes & Run or review batches and reliability checks. & Provides the
 foundation that the n8n prototype lacked. \\
 \bottomrule
 \end{tabularx}
-\caption{FastAPI backend responsibilities.}
+\caption{Backend API responsibilities in the reference implementation.}
 \label{tab:fastapi-responsibilities}
 \end{table}
 
@@ -279,7 +166,7 @@ run summaries.
 
 \subsection{Next.js Operator Console}
 
-The Next.js frontend is not just a dashboard. It is the operator console for the
+The Next.js frontend is not just a dashboard~\cite{nextjs}. It is the operator console for the
 reference implementation: launching runs, following execution, reviewing
 evidence, and changing runtime configuration.
 
@@ -292,19 +179,21 @@ evidence, and changing runtime configuration.
 \rowcolor{accent!8}
 Frontend surface & What it shows or controls & Main backend dependency \\
 \midrule
-Run launcher & Seed URL, batch inputs, runtime readiness, launch status. &
-Workflow and health endpoints. \\
-Run detail & Agent activity, events, decisions, screenshots, streams, provider
-analysis, tool calls, model usage. & Run inspection endpoints and stored traces. \\
-Datasets and batches & Website dataset, batch launch, per-site progress,
-history. & Dataset and batch repositories. \\
-Settings & Provider/model config, caching, browser runtime, pricing, MCP tools. &
-Configuration endpoints. \\
-Tool playground & Direct tool tests for navigation, inspection, screenshots, and
-harvest. & MCP tool-test endpoints. \\
+Dashboard & Overview, cost, token, provider, tool, and agent telemetry. &
+Dashboard aggregation endpoints and persisted observability tables. \\
+Live Pipeline & Workflow and single-agent launch with runtime preflight. &
+Workflow launch, health, and browser/MCP readiness endpoints. \\
+View Results & Website dataset, batch execution, per-site status, and run
+history. & Dataset, batch, and run repositories. \\
+Provider Results & Stream URL enrichment, IP resolution, provider distribution,
+country distribution, and manual lookup. & Provider-analysis records and lookup
+services. \\
+Settings & Gemini model assignments, cache/runtime controls, browser settings,
+display preferences, API key status, notifications, and MCP tool enablement. &
+Configuration endpoints and runtime settings persistence. \\
 \bottomrule
 \end{tabularx}
-\caption{Main Next.js operator workflows.}
+\caption{Current Next.js operator-console surfaces and backend dependencies.}
 \label{tab:nextjs-surfaces}
 \end{table}
 
@@ -312,12 +201,16 @@ The design goal was operational clarity. A failed launch should show why it
 failed. A completed run should show what the agent actually did, which tools it
 called, what evidence it found, and where the model or browser runtime failed.
 
+\input{figures/tikz/fig-frontend-console-screenshots}
+
 \subsection{MCP Browser Containers and Puppeteer Tools}
 
 The browser tooling was extracted from the n8n code-node style into dedicated
-MCP browser services. Each agent profile receives a filtered tool surface
+MCP browser services~\cite{mcp-spec}. Each agent profile receives a filtered tool surface
 through an MCP endpoint. This reduces tool-selection noise and keeps browser
 session ownership outside the LLM prompt.
+The engine comparison below is based on the official Playwright and Puppeteer
+documentation and the project's integration constraints~\cite{playwright,puppeteer,cdp}.
 
 \begin{table}[H]
 \centering
@@ -336,7 +229,7 @@ existing tool registry, stable enough for the profiled MCP tool server. & Chosen
 as the main browser engine for the implemented agent prompts and tool runtime. \\
 \bottomrule
 \end{tabularx}
-\caption{Playwright and Puppeteer comparison for the browser tool layer.}
+\caption{Browser automation engine comparison for the MCP tool layer.}
 \label{tab:playwright-puppeteer}
 \end{table}
 
@@ -359,39 +252,11 @@ signals, and harvested \texttt{m3u8}/\texttt{mpd}/\texttt{mp4} candidates. \\
 Memory tools & Read or update reusable site hints from the memory layer. \\
 \bottomrule
 \end{tabularx}
-\caption{Puppeteer tool groups exposed through MCP.}
+\caption{Puppeteer MCP tool groups and responsibilities.}
 \label{tab:puppeteer-tool-groups}
 \end{table}
 
-\begin{figure}[H]
-\centering
-\resizebox{0.86\textwidth}{!}{%
-\begin{tikzpicture}[
-  stepbox/.style={draw=accent, fill=blue!5, rounded corners=5pt,
-    minimum width=3.2cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80},
-  ret/.style={->, >=Stealth, thick, gray!70, dashed}
-]
-
-\node[stepbox] (agent) at (0,2.4) {Agent chooses tool};
-\node[stepbox] (mcp) at (4.2,2.4) {MCP profile endpoint};
-\node[stepbox] (registry) at (8.4,2.4) {Tool registry};
-\node[stepbox] (chrome) at (12.6,2.4) {Puppeteer + Chromium};
-\node[stepbox] (result) at (9.6,0.2) {Structured tool result};
-\node[stepbox] (memory) at (3.0,0.2) {Trace + memory update};
-
-\draw[arr] (agent) -- (mcp);
-\draw[arr] (mcp) -- (registry);
-\draw[arr] (registry) -- (chrome);
-\draw[ret] (chrome.south) -- ++(0,-1.1) -| (result.east);
-\draw[ret] (result) -- (memory);
-\draw[ret] (memory.west) -- ++(-2.2,0) |- (agent.south);
-
-\end{tikzpicture}
-}
-\caption{Browser tool execution loop through MCP and Puppeteer.}
-\label{fig:mcp-tool-loop}
-\end{figure}
+\input{figures/tikz/fig-mcp-tool-loop}
 
 \subsection{Agents, Models, Memory, and Prompts}
 
@@ -420,45 +285,78 @@ Embedded & Work only on embedded/player URLs and harvest final stream evidence.
 & Embedded inspect, play/media tools, harvest, screenshot, frame diagnostics. \\
 \bottomrule
 \end{tabularx}
-\caption{Specialist agents, objectives, and tool surfaces.}
+\caption{Specialist agent objectives and assigned tool surfaces.}
 \label{tab:agent-objectives-tools}
 \end{table}
 
-\begin{figure}[H]
+\subsubsection{Design constraints implemented in the agent runtime}
+
+The agent runtime was shaped by constraints that became clear during prototyping. These
+constraints are implementation concerns, not only methodology notes, because each one
+changed how the agents, prompts, tools, memory, and stopping rules were built.
+
+\begin{table}[H]
 \centering
-\resizebox{0.88\textwidth}{!}{%
-\begin{tikzpicture}[
-  stepbox/.style={draw=accent, fill=blue!5, rounded corners=5pt,
-    minimum width=3.2cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  mem/.style={draw=purple!60, fill=purple!7, rounded corners=5pt,
-    minimum width=3.2cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80},
-  loop/.style={->, >=Stealth, thick, gray!70, dashed}
-]
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.6cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Constraint & Runtime effect & Implementation response \\
+\midrule
+Changing layouts & Selectors and visible labels differ across languages, clones, and
+match-list layouts. & Agents use broad DOM context first, then scoped element details
+and page-type-specific tools. \\
+Nested iframe players & The playable media source may not exist in the top-level page.
+& Hosting agents can hand off embedded URLs; embedded agents inspect frame trees and
+player-only pages. \\
+Popups and ad traps & Clicks can open new tabs, steal focus, or hide the original
+player. & Browser tools restore focus, close popup tabs, and retry with safer
+JavaScript interactions. \\
+Delayed stream generation & Stream manifests often appear only after a play click or
+server switch. & Prompts require media-state or screenshot verification before
+harvesting network evidence. \\
+Cost and context growth & Repeated DOM observations, screenshots, and retries can make
+runs expensive. & The runtime tracks token usage, uses caching, and enforces bounded
+tool budgets. \\
+Evidence isolation & The reference system must not depend on company production data.
+& Persistence is limited to traces, metrics, screenshots, tool calls, model usage, and
+structured outputs. \\
+\bottomrule
+\end{tabularx}
+\caption{Runtime constraints and their implementation responses.}
+\label{tab:agent-runtime-constraints}
+\end{table}
 
-\node[mem] (long) at (0,2.7) {Long-term hints};
-\node[stepbox] (prompt) at (3.8,2.7) {Compiled prompt};
-\node[stepbox] (llm) at (7.6,2.7) {LLM tool decision};
-\node[stepbox] (tool) at (11.4,2.7) {MCP tool call};
-\node[stepbox] (obs) at (11.4,0.7) {Observation};
-\node[stepbox] (valid) at (7.6,0.7) {Validate progress};
-\node[mem] (short) at (3.8,0.7) {Short-term memory};
+\subsubsection{Prompt evolution in the implementation}
 
-\draw[arr] (long) -- (prompt);
-\draw[arr] (prompt) -- (llm);
-\draw[arr] (llm) -- (tool);
-\draw[arr] (tool) -- (obs);
-\draw[arr] (obs) -- (valid);
-\draw[arr] (valid) -- (short);
-\draw[loop] (short.south) -- ++(0,-0.45) -| (llm.south);
+The prompts evolved from linear intent prompts into evidence-driven loops. The early
+prompt asked the model to solve the page in one pass. That worked on simple pages, but it
+failed on ambiguous layouts because the agent would stop before opening tabs, activating
+players, or verifying stream generation. The implemented prompt pattern instead forces
+each specialist to observe, reason, act, and validate before returning a result.
 
-\end{tikzpicture}
-}
-\caption{Agent reasoning loop with memory and tool feedback.}
-\label{fig:agent-memory-loop}
-\end{figure}
+\input{figures/tikz/fig-05-prompt-evolution}
 
-LangChain is used as the tool-binding and message-loop layer. The implementation
+\subsubsection{Agent design principles}
+
+The resulting agent design follows seven practical principles:
+
+\begin{itemize}
+  \item classify the page role before deep extraction;
+  \item separate operational n8n validation from the Python reference architecture;
+  \item ground every conclusion in browser evidence rather than textual guessing;
+  \item preserve traces, screenshots, and structured outputs for each critical step;
+  \item use specialist agents and explicit fallbacks instead of one unconstrained agent;
+  \item optimize reliability and cost together through caching, budgets, and model
+    routing;
+  \item keep deployment loosely coupled across API services, browser workers,
+    observability storage, and queue-based execution.
+\end{itemize}
+
+\input{figures/tikz/fig-agent-memory-loop}
+
+LangChain is used as the tool-binding and message-loop layer~\cite{langchain-docs}. The implementation
 does not let the model freely access every browser capability. Instead, the MCP
 client loads only the tool profile for the current agent. The shared loop records
 tool calls, model calls, token usage, cache behavior, and stop reasons.
@@ -474,9 +372,8 @@ cache writes, and estimated cost.
 Gemini rate limits are evaluated across RPM, TPM, and RPD. Google's current
 documentation defines these as requests per minute, input tokens per minute, and
 requests per day, and states that limits depend on model and usage tier and can
-change in AI Studio.\footnote{\url{https://ai.google.dev/gemini-api/docs/rate-limits}
-Last checked on 2026-05-18.} The implementation therefore treats rate limits as
-configuration and observability concerns rather than hard-coded constants.
+change in AI Studio \cite{gemini-rate-limits}. The implementation therefore treats rate
+limits as configuration and observability concerns rather than hard-coded constants.
 
 \begin{table}[H]
 \centering
@@ -501,7 +398,7 @@ Caching & Use prompt/provider cache and tool-result cache where safe. & Reduces
 repeated tokens and repeated browser observations. \\
 \bottomrule
 \end{tabularx}
-\caption{Model-runtime concerns handled by the implementation.}
+\caption{Model-runtime concerns handled by the agent platform.}
 \label{tab:model-runtime-concerns}
 \end{table}
 
@@ -533,7 +430,7 @@ Memory hints as soft guidance & Prior site knowledge helps, but does not replace
 current evidence. \\
 \bottomrule
 \end{tabularx}
-\caption{Prompt engineering rules used by the specialist agents.}
+\caption{Prompt engineering rules enforced by the specialist agents.}
 \label{tab:prompt-engineering-rules}
 \end{table}
 
@@ -563,48 +460,56 @@ Memory & Memory entries and memory hints used. & Used to connect cross-run
 knowledge with current agent decisions. \\
 Datasets and batches & Dataset sites, dataset batches, dataset site runs. &
 Useful for evaluation/batch execution, but not always used in every run. \\
-Operational support & Run decisions, run tasks, playground calls, snapshots. &
+Operational support & Run decisions, run tasks, tool-call diagnostics, snapshots. &
 Support/diagnostic records; some remain secondary rather than core report
 outputs. \\
 \bottomrule
 \end{tabularx}
-\caption{PostgreSQL record groups and their role in the implementation.}
+\caption{PostgreSQL observability records and their implementation role.}
 \label{tab:postgres-record-groups}
 \end{table}
 
-\begin{figure}[H]
+\input{figures/tikz/fig-postgres-run-map}
+
+\section{Part 3: Deployment}
+
+The company preferred to keep n8n as the main operational workflow. For that reason, the
+cloud deployment did not attempt to replace the whole workflow with the Python
+multi-agent platform. Instead, the deployment focused on one validated agent: the landing
+page agent. This agent was packaged as a containerized worker and connected to Azure
+Container Apps Jobs through Azure Service Bus~\cite{azure-jobs,azure-servicebus}. The queue receives a landing-page job, the
+container job wakes up, runs the browser-agent logic, and returns extracted match and host
+candidate evidence.
+
+This deployment choice matches the internship scope. The Python reference architecture
+shows how the full platform can be structured, but the company-side deployment remained
+focused: n8n orchestration stayed in place, while the landing-page agent was isolated as
+a cloud-executable unit.
+
+\input{figures/tikz/fig-05-deployment-physical}
+
+\begin{table}[H]
 \centering
-\resizebox{0.9\textwidth}{!}{%
-\begin{tikzpicture}[
-  core/.style={draw=accent, fill=blue!5, rounded corners=5pt,
-    minimum width=3.4cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  data/.style={draw=purple!60, fill=purple!7, rounded corners=5pt,
-    minimum width=3.4cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80}
-]
-
-\node[core] (run) at (0,3.0) {PipelineRun};
-\node[data] (agents) at (-5.0,1.35) {AgentRun\\AgentOutput};
-\node[data] (calls) at (0,1.35) {LLMCall\\ToolCall};
-\node[data] (events) at (5.0,1.35) {RuntimeEvent};
-\node[data] (evidence) at (-5.0,-0.45) {Streams\\Screenshots};
-\node[data] (provider) at (0,-0.45) {ProviderAnalysis\\TakedownEmail};
-\node[data] (usage) at (5.0,-0.45) {ModelUsage\\Pricing};
-
-\draw[arr] (run) -- (agents);
-\draw[arr] (run) -- (calls);
-\draw[arr] (run) -- (events);
-\draw[arr] (agents) -- (evidence);
-\draw[arr] (agents) -- (provider);
-\draw[arr] (calls) -- (usage);
-\draw[arr] (events) -- (usage);
-\draw[arr] (evidence) -- (provider);
-
-\end{tikzpicture}
-}
-\caption{Simplified database relationship map for run review.}
-\label{fig:postgres-run-map}
-\end{figure}
+\begin{tabularx}{\textwidth}{Q{2.8cm} Y Y}
+\toprule
+\rowcolor{accent!8}
+Deployment element & Role & Scope during internship \\
+\midrule
+n8n workflow & Keeps the company-preferred orchestration layer. & Main operational
+workflow remained in n8n. \\
+Azure Service Bus & Decouples job submission from execution. & Used to pass landing-page
+jobs to the container worker. \\
+Container Apps Job & Runs one containerized agent when a job arrives. & Landing-page
+agent only. \\
+Puppeteer runtime & Opens the page and extracts match/host candidates. & Browser work
+for the deployed landing agent. \\
+Outputs and artifacts & Return structured evidence, logs, and screenshots. & Used for
+review and integration back into the workflow. \\
+\bottomrule
+\end{tabularx}
+\caption{Landing-agent deployment scope and responsibilities.}
+\label{tab:deployment-scope}
+\end{table}
 
 \section{Implementation Summary}
 

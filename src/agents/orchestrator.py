@@ -55,6 +55,8 @@ class HandoffContext(TypedDict, total=False):
     landing_route_source: str
     landing_redirect_chain: list[str]
     landing_iframes: list[str]
+    landing_video_srcs: list[str]
+    landing_player_urls: list[str]
     recovery_url: str
     route_source: str
     navigation_policy: str
@@ -137,6 +139,14 @@ def render_handoff(ctx: HandoffContext) -> str:
     landing_iframes = ctx.get("landing_iframes")
     if landing_iframes:
         lines.append(f"- landing iframes to watch: {', '.join(landing_iframes[:4])}")
+
+    landing_video_srcs = ctx.get("landing_video_srcs")
+    if landing_video_srcs:
+        lines.append(f"- landing video srcs to inspect: {', '.join(landing_video_srcs[:4])}")
+
+    landing_player_urls = ctx.get("landing_player_urls")
+    if landing_player_urls:
+        lines.append(f"- landing player urls to inspect: {', '.join(landing_player_urls[:4])}")
 
     recovery_url = ctx.get("recovery_url")
     if recovery_url:
@@ -324,19 +334,29 @@ def _normalize_landing_route(route: str) -> str:
 
 
 def _resolve_landing_match_route(match: MatchInfo, *, root_url: str) -> str:
-    route = _normalize_landing_route(match.route)
-    if route != "embed_agent":
-        return "stream_extractor"
-
-    # Only direct player/embed URLs should bypass the hosting agent. Same-site
-    # `/embed` or `/player` URLs are still valid embedded-player targets.
-    if _looks_like_direct_embed_url(match.url):
-        return "embed_agent"
-
-    reference_url = match.entry_point or root_url
-    if _same_site_or_subdomain(match.url, reference_url):
-        return "stream_extractor"
     return "stream_extractor"
+
+
+def _split_landing_match_handoff_targets(match: MatchInfo) -> tuple[list[str], list[str]]:
+    embedded_targets: list[str] = []
+    direct_streams: list[str] = []
+    iframe_set = set(match.iframes)
+    video_set = set(match.video_srcs)
+    player_set = set(match.player_urls)
+    for candidate in _landing_match_handoff_urls(match):
+        if not candidate.startswith(("http://", "https://")):
+            continue
+        if _looks_like_provider_stream_url(candidate):
+            direct_streams.append(candidate)
+            continue
+        if (
+            _looks_like_direct_embed_url(candidate)
+            or candidate in iframe_set
+            or candidate in video_set
+            or candidate in player_set
+        ):
+            embedded_targets.append(candidate)
+    return _dedupe_urls(embedded_targets), _dedupe_urls(direct_streams)
 
 
 def _truncate(value: Any, *, max_chars: int = 700) -> str:
@@ -361,6 +381,35 @@ def _match_for_url(matches: list[MatchInfo], target_url: str) -> MatchInfo | Non
         return None
     for item in matches:
         if item.url == target:
+            return item
+    return None
+
+
+def _landing_match_handoff_urls(match: MatchInfo) -> list[str]:
+    metadata = match.metadata if isinstance(match.metadata, dict) else {}
+    metadata_urls: list[str] = []
+    for key in ("player_handoff_urls", "direct_stream_urls", "embedded_urls", "player_urls"):
+        values = metadata.get(key, [])
+        if isinstance(values, list):
+            metadata_urls.extend(str(value or "").strip() for value in values)
+        elif isinstance(values, str):
+            metadata_urls.append(values.strip())
+    return _dedupe_urls(
+        [
+            *match.iframes,
+            *match.video_srcs,
+            *match.player_urls,
+            *metadata_urls,
+        ]
+    )
+
+
+def _match_containing_handoff_url(matches: list[MatchInfo], target_url: str) -> MatchInfo | None:
+    target = str(target_url or "").strip()
+    if not target:
+        return None
+    for item in matches:
+        if target in _landing_match_handoff_urls(item):
             return item
     return None
 
@@ -397,6 +446,19 @@ def _requires_embedded_followup(extraction: ExtractionResult) -> bool:
     return not extraction.streams and bool(embedded_candidates)
 
 
+def _embedded_target_allowed(state: PipelineState, target_url: str) -> bool:
+    if _latest_hosting_context_for_embedded(
+        state.get("extraction_results", []), embedded_url=target_url
+    ):
+        return True
+    classification = state.get("classification")
+    return bool(
+        classification is not None
+        and classification.page_type == PageType.EMBEDDED
+        and str(target_url or "").strip() == str(state.get("url") or "").strip()
+    )
+
+
 def _build_landing_handoff(
     state: PipelineState,
     *,
@@ -407,7 +469,7 @@ def _build_landing_handoff(
         "root_url": state["url"],
         "page_type": classification.page_type.value if classification is not None else "unknown",
         "classification_reasoning": classification.reasoning if classification is not None else "",
-        "focus": "return clean hosting candidates, keep iframe-heavy watch pages on the hosting path, and use embed_agent only for direct embedded/player URLs",
+        "focus": "return clean hosting candidates, keep iframe-heavy watch pages on the hosting path, and preserve iframe/player evidence only as hints for the hosting agent",
         "memory_hints": memory_hint_text,
     }
     return render_handoff(ctx)
@@ -421,7 +483,9 @@ def _build_hosting_handoff(
     pattern_context: str = "",
 ) -> str:
     classification = state.get("classification")
-    match = _match_for_url(state.get("matches", []), target_url)
+    match = _match_for_url(state.get("matches", []), target_url) or _match_containing_handoff_url(
+        state.get("matches", []), target_url
+    )
     ctx: HandoffContext = {
         "root_url": state["url"],
         "target_url": target_url,
@@ -443,7 +507,6 @@ def _build_hosting_handoff(
         ctx["landing_route"] = match.route or ""
         ctx["landing_route_source"] = match.route_source or ""
         ctx["landing_redirect_chain"] = match.redirect_chain or []
-        ctx["landing_iframes"] = _dedupe_urls(match.iframes)[:4] if match.iframes else []
         if match.channel:
             ctx["focus"] += f"; landing hinted channel '{match.channel}' so verify it from the live player and override it if the site is misleading"
     return render_handoff(ctx)
@@ -458,7 +521,9 @@ def _build_embedded_handoff(
     source_hosting = _latest_hosting_context_for_embedded(
         state.get("extraction_results", []), embedded_url=target_url
     )
-    match = _match_for_url(state.get("matches", []), target_url)
+    match = _match_for_url(state.get("matches", []), target_url) or _match_containing_handoff_url(
+        state.get("matches", []), target_url
+    )
     ctx: HandoffContext = {
         "root_url": state["url"],
         "target_url": target_url,
@@ -618,6 +683,7 @@ async def landing_page_node(
 
     pending_embedded_urls = list(state["pending_embedded_urls"])
     pending_hosting_urls: list[str] = []
+    landing_direct_streams: list[str] = []
     normalized_matches: list[MatchInfo] = []
 
     for match in matches:
@@ -628,34 +694,61 @@ async def landing_page_node(
             else match
         )
         normalized_matches.append(normalized_match)
-        if resolved_route == "embed_agent":
-            pending_embedded_urls.append(normalized_match.url)
+        _landing_player_hints, direct_streams = _split_landing_match_handoff_targets(
+            normalized_match
+        )
+        landing_direct_streams.extend(direct_streams)
+        if _looks_like_provider_stream_url(normalized_match.url):
+            landing_direct_streams.append(normalized_match.url)
         else:
             pending_hosting_urls.append(normalized_match.url)
-            pending_embedded_urls.extend(
-                iframe_url
-                for iframe_url in _dedupe_urls(normalized_match.iframes)
-                if _looks_like_direct_embed_url(iframe_url)
-            )
 
     matches = normalized_matches
     pending_hosting_urls = _dedupe_urls(pending_hosting_urls)
     pending_embedded_urls = _dedupe_urls(pending_embedded_urls)
+    landing_direct_streams = _dedupe_urls(landing_direct_streams)
     landing_metadata = landing_outcome.metadata if landing_outcome is not None else {}
+    if landing_direct_streams and landing_outcome is not None:
+        existing_stream_urls = {stream.url for stream in landing_outcome.streams}
+        for stream_url in landing_direct_streams:
+            if stream_url not in existing_stream_urls:
+                landing_outcome.streams.append(
+                    StreamURL(
+                        url=stream_url,
+                        protocol="",
+                        source_layer="landing_player_handoff",
+                    )
+                )
+                existing_stream_urls.add(stream_url)
+        existing_direct_streams = (
+            [
+                str(value or "").strip()
+                for value in landing_metadata.get("direct_stream_urls", [])
+                if value
+            ]
+            if isinstance(landing_metadata.get("direct_stream_urls"), list)
+            else []
+        )
+        landing_metadata["direct_stream_urls"] = _dedupe_urls(
+            [*existing_direct_streams, *landing_direct_streams]
+        )
 
     _emit_orchestrator_decision(
         observer,
         "Landing results routed",
-        status="warning" if not pending_hosting_urls and not pending_embedded_urls else "info",
+        status="warning"
+        if not pending_hosting_urls and not pending_embedded_urls and not landing_direct_streams
+        else "info",
         details={
             "hosting_pages_found": len(hosting_pages),
             "matches": len(matches),
             "pending_hosting_urls": pending_hosting_urls,
             "pending_embedded_urls": pending_embedded_urls,
+            "landing_direct_streams": landing_direct_streams,
             "pattern_expansion": landing_metadata.get("pattern_expansion", {}),
             "note": (
                 "No hosting candidates were found; workflow will finish without treating this as a runtime failure."
-                if not pending_hosting_urls and not pending_embedded_urls
+                if not pending_hosting_urls and not pending_embedded_urls and not landing_direct_streams
                 else ""
             ),
         },
@@ -808,7 +901,22 @@ async def embedded_page_node(
     if not state["pending_embedded_urls"]:
         return {}
 
-    target_urls = _dedupe_urls(state["pending_embedded_urls"])
+    original_target_urls = _dedupe_urls(state["pending_embedded_urls"])
+    target_urls = [
+        target_url
+        for target_url in original_target_urls
+        if _embedded_target_allowed(state, target_url)
+    ]
+    skipped_targets = [target_url for target_url in original_target_urls if target_url not in target_urls]
+    if skipped_targets:
+        _emit_orchestrator_decision(
+            observer,
+            "Embedded targets skipped without hosting iframe source",
+            status="warning",
+            details={"target_urls": skipped_targets[:20]},
+        )
+    if not target_urls:
+        return {"pending_embedded_urls": []}
     total_targets = len(target_urls)
     _emit_orchestrator_decision(
         observer,
@@ -1308,14 +1416,15 @@ def _collect_all_streams(extraction_results: list[ExtractionResult]) -> list[Str
                 seen.add(stream.url)
                 streams.append(stream)
         for server in extraction.servers:
-            for url in server.m3u8_urls + server.mpd_urls + server.mp4_urls:
+            for url in server.stream_urls + server.m3u8_urls + server.mpd_urls + server.mp4_urls:
                 if _looks_like_provider_stream_url(url) and url not in seen:
                     seen.add(url)
                     streams.append(StreamURL(url=url, source_layer=server.label))
         # Backward-compatible fallback for legacy payloads that only kept servers in metadata.
         for server in extraction.metadata.get("servers", []):
             for url in (
-                server.get("m3u8_urls", [])
+                server.get("stream_urls", [])
+                + server.get("m3u8_urls", [])
                 + server.get("mpd_urls", [])
                 + server.get("mp4_urls", [])
             ):
@@ -1326,15 +1435,120 @@ def _collect_all_streams(extraction_results: list[ExtractionResult]) -> list[Str
 
 
 def _looks_like_provider_stream_url(url: str) -> bool:
-    candidate = str(url or "").strip().lower()
+    raw = str(url or "").strip()
+    candidate = raw.lower()
     if not candidate.startswith(("http://", "https://")):
         return False
     parsed = urlparse(candidate)
     path = parsed.path or ""
-    return bool(
-        re.search(r"\.(m3u8|mpd|mp4)(?:$|[?#])", candidate)
-        or path.endswith((".m3u8", ".mpd", ".mp4"))
+    query = parsed.query or ""
+    if re.search(r"\.(m3u8|mpd|mp4|m4s|ts)(?:$|[?#])", candidate) or path.endswith(
+        (".m3u8", ".mpd", ".mp4", ".m4s", ".ts")
+    ):
+        return True
+
+    stream_context = bool(
+        re.search(
+            r"(^|[/_.-])(hls|dash|manifest|playlist|master|chunklist|m3u8|mpd|mono)([/_.-]|$)",
+            path,
+        )
+        or re.search(r"(^|[?&])(hls|dash|m3u8|mpd|playlist|manifest|stream)=", query)
+        or re.search(r"(^|[?&])(format|type|protocol)=(hls|dash|m3u8|mpd)", query)
     )
+    if not stream_context:
+        return False
+
+    # Some piracy players expose tokenized HLS manifests or segment playlists
+    # behind misleading extensions such as mono.css. Do not accept ordinary
+    # assets unless the path/query also carries strong stream context above.
+    stream_container = bool(
+        re.search(r"/(?:hls|dash|m3u8|mpd|manifest|playlist|tracks[^/]*)/", path)
+        or re.search(r"(^|[?&])(format|type|protocol)=(hls|dash|m3u8|mpd)", query)
+    )
+    playlist_name = bool(
+        re.search(r"(?:^|/)(?:master|index|chunklist|playlist|manifest)(?:[.-]|$)", path)
+    )
+    disguised_segment_name = bool(re.search(r"(?:^|/)mono(?:[.-]|$)", path))
+    return bool(
+        playlist_name
+        or stream_container
+        or (disguised_segment_name and ("token=" in query or "expires=" in query))
+    )
+
+
+_PAGE_INACCESSIBLE_RE = re.compile(
+    r"(inaccessible|unreachable|could not be accessed|failed to load|navigation error|"
+    r"browser-level|chrome-error|about:blank|err_|dns|ssl handshake|connection refused|"
+    r"connection reset|site unavailable|timed out)",
+    re.IGNORECASE,
+)
+
+
+def _flatten_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        return " ".join(_flatten_text(item) for item in value.values())
+    if isinstance(value, list):
+        return " ".join(_flatten_text(item) for item in value)
+    return str(value)
+
+
+def _extraction_failure_text(result: ExtractionResult) -> str:
+    values: list[Any] = [
+        result.error_message,
+        result.metadata.get("session_summary"),
+        result.metadata.get("early_stop_reason"),
+        result.metadata.get("navigation_attempt_summary"),
+        result.metadata.get("orchestrator_error"),
+        result.metadata.get("decision"),
+        result.metadata.get("reasoning"),
+    ]
+    for server in result.servers:
+        values.extend(
+            [
+                server.down_reason,
+                server.player_state,
+                server.visual_confirmation,
+                server.network_diagnostics,
+                server.iframe_diagnostics,
+            ]
+        )
+    values.append(result.metadata.get("servers", []))
+    return _flatten_text(values)
+
+
+def _result_page_inaccessible(result: ExtractionResult) -> bool:
+    if result.status in {ExtractionStatus.SITE_DEAD, ExtractionStatus.TIMEOUT}:
+        return True
+    return bool(_PAGE_INACCESSIBLE_RE.search(_extraction_failure_text(result)))
+
+
+def _result_has_hosting_pages(result: ExtractionResult) -> bool:
+    pages = result.metadata.get("hosting_pages", []) if isinstance(result.metadata, dict) else []
+    return isinstance(pages, list) and bool(pages)
+
+
+def _result_no_hosting_pages(result: ExtractionResult) -> bool:
+    return (
+        result.page_type == PageType.LANDING
+        and not _result_has_hosting_pages(result)
+        and not _result_page_inaccessible(result)
+    )
+
+
+def _result_no_streams(result: ExtractionResult) -> bool:
+    if result.page_type not in {PageType.HOSTING, PageType.EMBEDDED}:
+        return False
+    if result.streams or any(
+        server.stream_urls or server.m3u8_urls or server.mpd_urls or server.mp4_urls
+        for server in result.servers
+    ):
+        return False
+    if _result_page_inaccessible(result):
+        return False
+    decision = str(result.metadata.get("decision", "") or "").strip().lower()
+    return decision in {"", "no_stream_found", "safe_exit"} or "no stream" in _extraction_failure_text(result).lower()
 
 
 def _collect_all_screenshots(extraction_results: list[ExtractionResult]) -> list[str]:
@@ -1374,10 +1588,18 @@ def _build_pipeline_result(state: PipelineState, metrics: Any | None = None) -> 
 
     if all_streams:
         final_status = ExtractionStatus.SUCCESS
-    elif pending_followups or has_nonfailed_evidence or landing_discovery_exhausted:
-        final_status = ExtractionStatus.PARTIAL
     elif has_timeout:
         final_status = ExtractionStatus.TIMEOUT
+    elif any(_result_page_inaccessible(result) for result in extraction_results):
+        final_status = ExtractionStatus.PAGE_INACCESSIBLE
+    elif any(_result_no_hosting_pages(result) for result in extraction_results) or landing_discovery_exhausted:
+        final_status = ExtractionStatus.NO_HOSTING_PAGES
+    elif extraction_results and all(_result_no_streams(result) for result in extraction_results):
+        final_status = ExtractionStatus.NO_STREAMS
+    elif any(_result_no_streams(result) for result in extraction_results) and not pending_followups:
+        final_status = ExtractionStatus.NO_STREAMS
+    elif pending_followups or has_nonfailed_evidence:
+        final_status = ExtractionStatus.PARTIAL
     else:
         final_status = ExtractionStatus.FAILED
 

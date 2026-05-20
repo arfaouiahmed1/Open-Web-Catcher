@@ -8,7 +8,20 @@ export function toNumber(value, fallback = 0) {
 
 export function terminalStatus(value) {
   const status = String(value || "").trim().toLowerCase();
-  if (["success", "partial", "failed", "cancelled"].includes(status)) return status;
+  if (
+    [
+      "success",
+      "partial",
+      "failed",
+      "cancelled",
+      "timeout",
+      "site_dead",
+      "redirect",
+      "page_inaccessible",
+      "no_hosting_pages",
+      "no_streams",
+    ].includes(status)
+  ) return status;
   return "";
 }
 
@@ -20,7 +33,8 @@ export function statusToneForDataset(status) {
   const value = String(status || "").trim().toLowerCase();
   if (value === "success") return "success";
   if (value === "partial") return "warning";
-  if (value === "failed" || value === "cancelled") return "danger";
+  if (value === "no_hosting_pages" || value === "no_streams" || value === "cancelled") return "warning";
+  if (["failed", "page_inaccessible", "site_dead", "timeout"].includes(value)) return "danger";
   if (value === "running" || value === "retrying") return "live";
   return "default";
 }

@@ -1,0 +1,46 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.95\textwidth}{!}{%
+\begin{tikzpicture}[
+  main/.style={draw=accent, fill=blue!5, rounded corners=5pt,
+    minimum width=2.9cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  support/.style={draw=purple!60, fill=purple!7, rounded corners=5pt,
+    minimum width=2.9cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
+  ext/.style={draw=gray!65, fill=gray!10, rounded corners=5pt,
+    minimum width=2.9cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80},
+  supp/.style={->, >=Stealth, thick, gray!65}
+]
+
+\node[main] (op) at (0,2.5) {Operator\\browser};
+\node[main] (next) at (3.2,2.5) {Next.js\\frontend};
+\node[main] (api) at (6.4,2.5) {FastAPI\\backend};
+\node[main] (agents) at (9.6,2.5) {Python\\agents};
+\node[main] (mcp) at (12.8,2.5) {MCP\\server};
+\node[main] (browser) at (16.0,2.5) {Chromium\\browser};
+\node[ext] (sites) at (19.2,2.5) {Target\\websites};
+
+\node[support] (db) at (4.8,0.6) {PostgreSQL\\observability};
+\node[support] (art) at (8.0,0.6) {Screenshot\\storage};
+\node[support] (cache) at (11.2,0.6) {Memory and\\cache};
+\node[ext] (llm) at (14.4,0.6) {LLM\\provider};
+\node[ext] (whois) at (17.6,0.6) {IPInfo /\\WHOIS};
+
+\draw[arr] (op) -- (next);
+\draw[arr] (next) -- (api);
+\draw[arr] (api) -- (agents);
+\draw[arr] (agents) -- (mcp);
+\draw[arr] (mcp) -- (browser);
+\draw[arr] (browser) -- (sites);
+
+\draw[supp] (api) -- (db);
+\draw[supp] (browser) -- (art);
+\draw[supp] (agents) -- (cache);
+\draw[supp] (agents) -- (llm);
+\draw[supp] (agents) -- (whois);
+
+\end{tikzpicture}
+}
+\caption{Component architecture of the system runtime.}
+\label{fig:component}
+\end{figure}

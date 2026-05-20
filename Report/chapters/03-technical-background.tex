@@ -10,7 +10,7 @@ The chapter moves from the target websites themselves toward the technologies us
 analyze them. It starts with page structures and DOM representation, then explains
 streaming protocols and embedded players, then covers browser automation issues such as
 ads, cookies, popups, and anti-bot providers. It ends with the agentic concepts used in
-the project: agents, prompts, tool use, n8n, LangChain, MCP servers, model providers,
+the project: agents, prompts, tool use, workflow automation, LangChain, MCP servers, model providers,
 caching, and token usage.
 
 \section{Streaming Website Structures}
@@ -28,31 +28,9 @@ contains match listings. A hosting page focuses on one selected match and usuall
 one or more streaming servers. An embedded page contains the actual player, often inside
 an iframe loaded from another domain.
 
-\begin{figure}[H]
-\centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[node distance=1.2cm]
-\node[flowbox, minimum width=4.2cm, minimum height=1.4cm, fill=blue!8] (landing)
-  {\textbf{Landing page}\\Match cards, schedule, leagues, dates};
-\node[flowbox, minimum width=4.2cm, minimum height=1.4cm, fill=orange!10,
-      right=1.8cm of landing] (hosting)
-  {\textbf{Hosting page}\\One match, server buttons, player area};
-\node[flowbox, minimum width=4.2cm, minimum height=1.4cm, fill=green!10,
-      right=1.8cm of hosting] (embedded)
-  {\textbf{Embedded page}\\Iframe or player link, media runtime};
+\input{figures/tikz/fig-page-flow-general}
 
-\draw[myarrow, very thick] (landing) -- node[above, font=\small]{select match} (hosting);
-\draw[myarrow, very thick] (hosting) -- node[above, font=\small]{open server/player} (embedded);
-
-\node[toolbox, fill=red!8, draw=red!50, minimum width=3.6cm, below=1.0cm of hosting] (noise)
-  {Ads, redirects, popups,\\blocked players};
-\draw[->, >=Stealth, dashed, thick, red!60] (hosting.south) -- (noise.north);
-\draw[->, >=Stealth, dashed, thick, red!60] (noise.east) -| (embedded.south);
-\end{tikzpicture}
-}
-\caption{Common navigation flow from event listing to hosting page and embedded player.}
-\label{fig:page-flow-general}
-\end{figure}
+\input{figures/tikz/fig-page-type-visuals}
 
 This flow is not always clean. Some sites skip the hosting page and link directly to an
 embedded player. Others place several ad pages between the hosting page and the player.
@@ -136,7 +114,7 @@ requests, player diagnostics \\
 skip or blocked state \\
 \bottomrule
 \end{tabularx}
-\caption{General page taxonomy used to reason about streaming-site structure.}
+\caption{Streaming-site page taxonomy and evidence role.}
 \label{tab:general-page-taxonomy}
 \end{table}
 
@@ -157,39 +135,7 @@ The diagram below shows a simplified DOM structure. It is intentionally basic, b
 captures the idea used throughout the project: a visible page is not just text, it is a
 tree of nested elements with attributes and event handlers.
 
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-  domnode/.style={draw=black!70, fill=gray!6, rectangle, minimum width=3.0cm,
-                  minimum height=0.65cm, align=center, font=\small},
-  leaf/.style={draw=black!60, fill=blue!5, rectangle, minimum width=2.6cm,
-               minimum height=0.58cm, align=center, font=\footnotesize},
-  domarr/.style={-, thick, black!70}
-]
-\node[domnode] (doc) at (0,0) {Document};
-\node[domnode] (html) at (0,-1.1) {Root element: \texttt{<html>}};
-\node[domnode] (head) at (-3.7,-2.4) {Element: \texttt{<head>}};
-\node[domnode] (body) at (3.7,-2.4) {Element: \texttt{<body>}};
-\node[leaf] (title) at (-3.7,-3.5) {Element: \texttt{<title>}};
-\node[leaf] (ttext) at (-3.7,-4.5) {Text: page title};
-\node[leaf] (a) at (1.9,-3.5) {Element: \texttt{<a>}};
-\node[leaf] (href) at (1.9,-4.5) {Attribute: \texttt{href}};
-\node[leaf] (h1) at (5.4,-3.5) {Element: \texttt{<h1>}};
-\node[leaf] (htext) at (5.4,-4.5) {Text: heading};
-
-\draw[domarr] (doc) -- (html);
-\draw[domarr] (html) -- (head);
-\draw[domarr] (html) -- (body);
-\draw[domarr] (head) -- (title);
-\draw[domarr] (title) -- (ttext);
-\draw[domarr] (body) -- (a);
-\draw[domarr] (a) -- (href);
-\draw[domarr] (body) -- (h1);
-\draw[domarr] (h1) -- (htext);
-\end{tikzpicture}
-\caption{Simplified DOM tree showing how a browser represents an HTML document.}
-\label{fig:dom-tree-general}
-\end{figure}
+\input{figures/tikz/fig-dom-tree-general}
 
 For streaming sites, the DOM is useful but incomplete. It can reveal match cards,
 buttons, iframes, scripts, and player containers, but it may not reveal media URLs that
@@ -222,7 +168,7 @@ script text and JSON blocks & all page types & may contain player configuration 
 lazy-loaded data \\
 \bottomrule
 \end{tabularx}
-\caption{DOM signals commonly used to understand streaming-site pages.}
+\caption{DOM signals used to understand streaming-site pages.}
 \label{tab:dom-signals}
 \end{table}
 
@@ -244,30 +190,7 @@ Hosting pages usually embed players in one of three ways. The simplest case is a
 case is an iframe that loads a player from another domain. A more dynamic case is a
 JavaScript player library that inserts the video source after page load.
 
-\begin{figure}[H]
-\centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[node distance=0.9cm]
-\node[flowbox, fill=orange!8, minimum width=4.2cm] (host) {Hosting page};
-\node[toolbox, fill=blue!6, below left=1.0cm and 1.4cm of host,
-      minimum width=3.6cm] (video) {\texttt{<video>} / \texttt{<source>}};
-\node[toolbox, fill=blue!6, below=1.0cm of host,
-      minimum width=3.6cm] (iframe) {\texttt{<iframe src>}};
-\node[toolbox, fill=blue!6, below right=1.0cm and 1.4cm of host,
-      minimum width=3.6cm] (js) {JS player setup};
-\node[flowbox, fill=green!8, below=2.1cm of host,
-      minimum width=4.6cm] (manifest) {Media manifest\\\texttt{.m3u8}, \texttt{.mpd}, \texttt{.mp4}};
-\draw[myarrow] (host) -- (video);
-\draw[myarrow] (host) -- (iframe);
-\draw[myarrow] (host) -- (js);
-\draw[myarrow] (video) -- (manifest);
-\draw[myarrow] (iframe) -- (manifest);
-\draw[myarrow] (js) -- (manifest);
-\end{tikzpicture}
-}
-\caption{General embedding paths from a hosting page to a media manifest.}
-\label{fig:embedding-paths}
-\end{figure}
+\input{figures/tikz/fig-embedding-paths}
 
 This distinction matters because each embedding type requires a different observation
 strategy. Direct video tags can be read from the DOM. Iframes require frame traversal.
@@ -281,31 +204,7 @@ to media segments. MPEG-DASH uses an XML \texttt{.mpd} manifest that describes p
 representations, and segment addressing rules. Both protocols are adaptive: the player
 can choose different quality levels depending on network conditions~\cite{hls-rfc,dash-standard}.
 
-\begin{figure}[H]
-\centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[node distance=1.0cm]
-\node[flowbox, minimum width=4.4cm, fill=blue!8] (master)
-  {Master manifest\\\texttt{index.m3u8} or \texttt{manifest.mpd}};
-\node[toolbox, minimum width=3.2cm, fill=gray!8, right=1.4cm of master] (high)
-  {High quality\\variant};
-\node[toolbox, minimum width=3.2cm, fill=gray!8, above=0.8cm of high] (mid)
-  {Medium quality\\variant};
-\node[toolbox, minimum width=3.2cm, fill=gray!8, below=0.8cm of high] (low)
-  {Low quality\\variant};
-\node[flowbox, minimum width=4.0cm, fill=green!8, right=1.4cm of high] (segments)
-  {Media segments\\\texttt{.ts}, \texttt{.m4s}, fMP4};
-\draw[myarrow] (master) -- (mid);
-\draw[myarrow] (master) -- (high);
-\draw[myarrow] (master) -- (low);
-\draw[myarrow] (mid) -- (segments);
-\draw[myarrow] (high) -- (segments);
-\draw[myarrow] (low) -- (segments);
-\end{tikzpicture}
-}
-\caption{Simplified adaptive streaming hierarchy used by HLS and MPEG-DASH.}
-\label{fig:adaptive-streaming}
-\end{figure}
+\input{figures/tikz/fig-adaptive-streaming}
 
 For evidence collection, the manifest URL is usually more important than downloading
 media segments. It proves that the page resolved to a playable stream entry point and
@@ -317,7 +216,7 @@ Streaming manifests are frequently protected by short-lived tokens, cookies, ref
 checks, or provider-side gates. A URL such as \texttt{playlist.m3u8?token=...} may work
 only for a few minutes and only from the browser session that generated it. CDNs and
 fronting providers such as Cloudflare can also enforce challenge pages, bot checks,
-cache rules, and origin protection.
+cache rules, and origin protection~\cite{cloudflare-challenges}.
 
 This is why the browser session matters. A raw HTTP request may fail even when the
 browser can play the stream, because the browser carries the active cookies, headers,
@@ -328,9 +227,9 @@ both media protocols and web-provider behavior.
 
 Static scraping means downloading HTML and parsing it. That is useful for simple pages,
 but it is not enough for pages that depend on JavaScript, user clicks, iframes, or
-runtime media requests. Browser automation tools such as Puppeteer execute the page in a
-real Chromium browser and expose APIs for clicking, reading the DOM, taking screenshots,
-and listening to network activity~\cite{puppeteer,cdp}.
+runtime media requests. Browser automation tools such as Puppeteer and Playwright execute
+pages in real browsers and expose APIs for clicking, reading the DOM, taking screenshots,
+and listening to network activity~\cite{puppeteer,playwright,cdp}.
 
 \subsection{Puppeteer as a browser control layer}
 
@@ -377,7 +276,7 @@ Cloudflare-like challenges & browser sees an interstitial instead of the page & 
 retry with normal pacing, or preserve a blocked-state result \\
 \bottomrule
 \end{tabularx}
-\caption{Common browser-level obstacles in streaming-site extraction.}
+\caption{Browser-level obstacles and handling strategies.}
 \label{tab:browser-obstacles}
 \end{table}
 
@@ -411,25 +310,7 @@ Agentic systems commonly use a loop that combines reasoning and tool use. In a
 ReAct-style pattern, the agent observes the state, reasons about what to do, acts through
 a tool, and verifies the result before continuing~\cite{react,agent-survey}.
 
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[node distance=1.1cm]
-\node[flowbox, fill=blue!8, minimum width=3.0cm] (observe) {Observe\\page state};
-\node[flowbox, fill=orange!10, minimum width=3.0cm, right=1.2cm of observe] (reason)
-  {Reason\\next step};
-\node[flowbox, fill=green!10, minimum width=3.0cm, right=1.2cm of reason] (act)
-  {Act\\with tool};
-\node[flowbox, fill=purple!10, minimum width=3.0cm, below=1.1cm of reason] (verify)
-  {Verify\\evidence};
-
-\draw[myarrow] (observe) -- (reason);
-\draw[myarrow] (reason) -- (act);
-\draw[myarrow] (act.south) |- (verify.east);
-\draw[myarrow] (verify.west) -| (observe.south);
-\end{tikzpicture}
-\caption{General ReAct-style loop used by browser agents.}
-\label{fig:react-loop-general}
-\end{figure}
+\input{figures/tikz/fig-react-loop-general}
 
 For streaming sites, this loop is useful because the agent can adapt when a server
 button fails, a popup opens, an iframe appears, or a page turns out to be unrelated. The
@@ -459,21 +340,19 @@ Practical token-control ideas include:
 \end{itemize}
 
 LLM providers such as Gemini expose model features that affect cost, context length,
-streaming behavior, and caching~\cite{gemini}. Provider caching is especially relevant
-when the same system instructions, tool descriptions, or long context blocks are reused
-across many runs.
+streaming behavior, pricing, and caching~\cite{gemini,gemini-pricing,gemini-caching}.
+Provider caching is especially relevant when the same system instructions, tool
+descriptions, or long context blocks are reused across many runs.
 
-\subsection{n8n and workflow automation}
+\subsection{Workflow automation tools}
 
-n8n is a workflow automation platform that lets developers connect nodes for HTTP
-requests, browser actions, LLM calls, data transformations, and external services
-through a visual flow~\cite{n8n}. It is useful for fast validation because a workflow can
-be assembled and adjusted without building a full application from the beginning.
-
-In this report, n8n should be understood as a workflow orchestration tool. It can
-sequence steps, pass data between nodes, call LLM providers, and make the evidence
-collection logic visible during early experimentation. Later chapters explain how the
-validated workflow relates to the more structured engineering design.
+Workflow automation tools let developers connect nodes for HTTP requests, browser
+actions, LLM calls, data transformations, and external services through a visual flow.
+They are useful for fast validation because a workflow can be assembled and adjusted
+before a full application is built. In this report, workflow automation is treated as an
+orchestration concept: it sequences steps, passes data between nodes, calls model
+providers, and makes evidence-collection logic visible during experimentation. The
+specific workflow tool used during implementation is introduced in Chapter~5.
 
 \subsection{LangChain, tools, and MCP servers}
 
@@ -481,45 +360,15 @@ LangChain is a framework for building applications around language models, promp
 tools, memory, and structured chains. At a general level, it helps connect an LLM to
 external capabilities: a browser tool, a database lookup, a parser, a memory store, or a
 custom function. This is useful when the model should not only answer textually but take
-controlled actions.
+controlled actions~\cite{langchain-docs}.
 
 The Model Context Protocol (MCP) is a way to expose external tools and resources to an
 agent through a consistent interface. In this type of project, an MCP server can expose
 browser tools such as inspect, click, navigate, screenshot, harvest, or media-state
 checks. The agent does not need to know how each tool is implemented internally; it needs
-a clear tool contract, input schema, and output shape.
+a clear tool contract, input schema, and output shape~\cite{mcp-spec}.
 
-\begin{figure}[H]
-\centering
-\resizebox{0.9\textwidth}{!}{%
-\begin{tikzpicture}[
-  main/.style={draw=accent, fill=blue!6, rounded corners=5pt,
-    minimum width=3.5cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  tool/.style={draw=gray!65, fill=gray!8, rounded corners=5pt,
-    minimum width=3.0cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80},
-  ret/.style={->, >=Stealth, thick, gray!70, dashed}
-]
-\node[main] (llm) at (0,2.2) {LLM agent};
-\node[main, fill=orange!10, draw=orange!70] (mcp) at (4.4,2.2) {MCP server\\tool interface};
-\node[tool] (browser) at (8.8,3.2) {Browser tools};
-\node[tool] (memory) at (8.8,2.2) {Memory / DB};
-\node[tool] (media) at (8.8,1.2) {Media harvest};
-\node[main, fill=green!8, draw=green!55!black] (result) at (4.4,0.0) {Structured\\tool result};
-
-\draw[arr] (llm) -- node[above, font=\scriptsize]{tool request} (mcp);
-\draw[arr] (mcp.east) -- ++(0.45,0) |- (browser.west);
-\draw[arr] (mcp.east) -- (memory.west);
-\draw[arr] (mcp.east) -- ++(0.45,0) |- (media.west);
-\draw[ret] (browser.west) -- ++(-0.55,0) |- (result.east);
-\draw[ret] (memory.west) -- ++(-0.75,0) |- (result.east);
-\draw[ret] (media.west) -- ++(-0.95,0) |- (result.east);
-\draw[ret] (result.west) -- ++(-4.4,0) |- node[pos=0.2, below, font=\scriptsize]{evidence} (llm.south);
-\end{tikzpicture}
-}
-\caption{General relationship between an LLM agent, MCP tool interface, and external tools.}
-\label{fig:mcp-general}
-\end{figure}
+\input{figures/tikz/fig-03-mcp-general}
 
 The important concept is separation of responsibility. The LLM decides what to try next,
 while tools perform bounded actions and return structured evidence. This keeps the
@@ -532,8 +381,8 @@ explained the page flow from landing pages to hosting pages and embedded players
 DOM structures used to inspect those pages, the streaming protocols and player embeds
 that carry the final evidence, and the browser-level obstacles caused by ads, cookies,
 popups, iframes, and provider-side checks. It also introduced the agentic concepts used
-later: ReAct-style loops, prompt engineering, tokens, provider caching, n8n, LangChain,
-and MCP tool servers.
+later: ReAct-style loops, prompt engineering, tokens, provider caching, workflow
+automation, LangChain, and MCP tool servers.
 
 The next chapters use these concepts more concretely. Chapter~4 translates them into
 architecture, and Chapter~5 explains how the implementation applies them in the actual

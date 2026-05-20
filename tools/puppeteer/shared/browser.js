@@ -42,7 +42,7 @@ const EXECUTABLE_PATH =
 const CHROME_VERSION_API_URL =
   process.env.OWC_CHROME_VERSION_API_URL ||
   'https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json';
-const CHROME_VERSION_FALLBACK = String(process.env.OWC_CHROME_VERSION_FALLBACK || '146.0.0.0').trim();
+const CHROME_VERSION_FALLBACK = String(process.env.OWC_CHROME_VERSION_FALLBACK || '148.0.7778.167').trim();
 const CHROME_VERSION_TIMEOUT_MS = Number.parseInt(
   String(process.env.OWC_CHROME_VERSION_FETCH_TIMEOUT_MS || '6000'),
   10,

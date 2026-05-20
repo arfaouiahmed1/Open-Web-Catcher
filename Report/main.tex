@@ -52,10 +52,15 @@
 \urlstyle{tt}
 \Urlmuskip=0mu plus 2mu\relax
 \captionsetup[table]{font=small,skip=6pt}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{B}{>{\raggedright\arraybackslash\bfseries}X}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\newcolumntype{Z}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{Q}[1]{>{\raggedright\arraybackslash\bfseries}p{#1}}
 \AtBeginEnvironment{tabularx}{%
   \small
-  \setlength{\tabcolsep}{5pt}%
-  \renewcommand{\arraystretch}{1.15}%
+  \setlength{\tabcolsep}{4.5pt}%
+  \renewcommand{\arraystretch}{1.18}%
 }
 
 \definecolor{codebg}{RGB}{247,247,247}
@@ -431,14 +436,18 @@ Ce formulaire doit être introduit après la page de garde / This form must be i
 \chapter*{Abstract}
 This report presents the design, development, and evaluation of an agentic evidence-collection system for illegal streaming websites. The work was carried out during an internship at Soft Stars for the client beIN SPORTS. The objective was to support rights-enforcement workflows by visiting target websites, classifying their pages, extracting hosting and stream evidence, and preserving auditable outputs such as screenshots, traces, and structured results.
 
-The internship produced two related artifacts: a validated \textbf{n8n} workflow, from which one operational agent was deployed in the company context, and a \textbf{Python}-based reference architecture designed to improve maintainability, observability, memory, evaluation, and future scalability. The company-side operational outcome therefore remained a focused single-agent workflow, while the broader FastAPI/Puppeteer multi-agent implementation is presented as an academic and engineering reference architecture derived from the validated n8n workflow.
+The internship produced two related artifacts: an exploratory workflow used to validate browser-agent behavior on real targets, and a \textbf{Python}-based reference architecture designed to improve maintainability, observability, memory, evaluation, and scalability. The report presents these artifacts progressively, starting from the general evidence-collection problem and moving toward the concrete implementation and evaluation details.
 
-The proposed architecture organizes evidence collection around specialized reasoning agents, browser automation tools, structured outputs, trace storage, screenshot capture, and evaluation metrics. Its target deployment model separates API services, browser workers, observability storage, screenshot storage, and queue-based execution for future Azure Container Apps Jobs operation. The Python architecture does not depend on the enterprise production database; the database described in this report is limited to observability, evaluation, traces, metrics, screenshots, errors, tool calls, and structured outputs.
+The proposed architecture organizes evidence collection around specialized reasoning agents, browser automation tools, structured outputs, trace storage, screenshot capture, and evaluation metrics. The database described in this report is limited to observability, evaluation, traces, metrics, screenshots, errors, tool calls, and structured outputs; it is not the enterprise production database of the client organization.
 
 \chapter*{Acknowledgements}
 I would like to thank my academic and professional supervisors for their guidance throughout this internship. I also thank the Soft Stars team for the technical discussions, feedback, and trust that made this work possible.
 
 \tableofcontents
+\clearpage
+\listoffigures
+\clearpage
+\listoftables
 \clearpage
 
 \pagenumbering{arabic}
@@ -451,8 +460,9 @@ I would like to thank my academic and professional supervisors for their guidanc
 \input{chapters/06-evaluation}
 \input{chapters/07-conclusion}
 
-\chapter*{References}
-\addcontentsline{toc}{chapter}{References}
+\section*{References}
+\begingroup
+\small
 \begin{thebibliography}{99}
 
 % ---- AI Agents and ReAct Framework ----
@@ -498,6 +508,36 @@ Google DeepMind,
 Technical Report, Google DeepMind, 2023.
 Available: \url{https://arxiv.org/abs/2312.11805}
 
+\bibitem{gemini-flash-lite}
+Google,
+\emph{Gemini 3.1 Flash-Lite: Built for Intelligence at Scale},
+The Keyword, 2026.
+Available: \url{https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-flash-lite/}
+
+\bibitem{openrouter-models}
+OpenRouter,
+\emph{Models API},
+Official documentation, 2026.
+Available: \url{https://openrouter.ai/api/v1/models}
+
+\bibitem{gemini-rate-limits}
+Google,
+\emph{Gemini API Rate Limits},
+Google AI for Developers documentation, 2026.
+Available: \url{https://ai.google.dev/gemini-api/docs/rate-limits}
+
+\bibitem{gemini-pricing}
+Google,
+\emph{Gemini Developer API Pricing},
+Google AI for Developers documentation, 2026.
+Available: \url{https://ai.google.dev/gemini-api/docs/pricing}
+
+\bibitem{gemini-caching}
+Google,
+\emph{Context Caching in the Gemini API},
+Google AI for Developers documentation, 2026.
+Available: \url{https://ai.google.dev/gemini-api/docs/caching}
+
 % ---- Browser Automation and Web Agents ----
 
 \bibitem{puppeteer}
@@ -505,6 +545,12 @@ Google Chrome Developers,
 \emph{Puppeteer API Reference},
 Official documentation, 2026.
 Available: \url{https://pptr.dev}
+
+\bibitem{playwright}
+Microsoft,
+\emph{Playwright Documentation},
+Official documentation, 2026.
+Available: \url{https://playwright.dev/docs/intro}
 
 \bibitem{webarena}
 S. Zhou, F. F. Xu, H. Zhu, X. Zhou, R. Lo, A. Sridhar, X. Cheng, T. Bisk,
@@ -568,6 +614,18 @@ Vercel,
 Vercel, 2024.
 Available: \url{https://nextjs.org/docs}
 
+\bibitem{langchain-docs}
+LangChain,
+\emph{LangChain Agents and Tools Documentation},
+Official documentation, 2026.
+Available: \url{https://docs.langchain.com/oss/python/langchain/agents}
+
+\bibitem{mcp-spec}
+Model Context Protocol,
+\emph{Model Context Protocol Specification},
+Official documentation, 2026.
+Available: \url{https://modelcontextprotocol.io/specification/2024-11-05/basic/index}
+
 \bibitem{n8n}
 n8n GmbH,
 \emph{n8n: Workflow Automation for Technical People},
@@ -593,6 +651,24 @@ Cloudinary,
 \emph{Cloudinary Upload API Documentation},
 Official documentation, 2026.
 Available: \url{https://cloudinary.com/documentation}
+
+\bibitem{ipinfo-api}
+IPinfo,
+\emph{IPinfo API Documentation},
+Official documentation, 2026.
+Available: \url{https://ipinfo.io/developers/ipinfo-api}
+
+\bibitem{icann-rdap}
+ICANN,
+\emph{Registration Data Access Protocol (RDAP)},
+Official documentation, 2026.
+Available: \url{https://www.icann.org/rdap/}
+
+\bibitem{cloudflare-challenges}
+Cloudflare,
+\emph{How Cloudflare Challenges Work},
+Official documentation, 2026.
+Available: \url{https://developers.cloudflare.com/cloudflare-challenges/concepts/how-challenges-work/}
 
 % ---- Streaming Protocols and Media ----
 
@@ -631,6 +707,7 @@ Council of Europe, Strasbourg, 2022.
 Available: \url{https://rm.coe.int/}
 
 \end{thebibliography}
+\endgroup
 
 % =====================================================================
 %  LAST PAGE — ESPRIT BACK COVER

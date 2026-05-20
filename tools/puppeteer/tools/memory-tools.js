@@ -144,16 +144,29 @@ function looksLikePagination(url) {
 }
 
 function looksLikeStream(url) {
-  const candidate = String(url || '').toLowerCase();
+  const candidate = String(url || '').trim().toLowerCase();
+  let path = candidate;
+  let query = '';
+  try {
+    const parsed = new URL(candidate);
+    path = parsed.pathname || '';
+    query = parsed.search.slice(1);
+  } catch {
+    // Keep the raw candidate for relative URLs saved in memory.
+  }
+  if (/\.(m3u8|mpd|mp4|m4s|ts)(?:$|[?#])/.test(candidate) || /\.(m3u8|mpd|mp4|m4s|ts)$/.test(path)) {
+    return true;
+  }
+  const streamContext =
+    /(^|[/_.-])(hls|dash|manifest|playlist|master|chunklist|m3u8|mpd|mono)([/_.-]|$)/.test(path)
+    || /(^|[?&])(hls|dash|m3u8|mpd|playlist|manifest|stream)=/.test(query)
+    || /(^|[?&])(format|type|protocol)=(hls|dash|m3u8|mpd)/.test(query);
+  if (!streamContext) return false;
   return Boolean(
-    candidate
-      && (
-        candidate.includes('.m3u8')
-        || candidate.includes('.mpd')
-        || candidate.includes('.mp4')
-        || candidate.includes('manifest')
-        || candidate.includes('playlist')
-      )
+    /\/(?:hls|dash|m3u8|mpd|manifest|playlist|tracks[^/]*)\//.test(path)
+      || /(?:^|\/)(?:master|index|chunklist|playlist|manifest)(?:[.-]|$)/.test(path)
+      || /(^|[?&])(format|type|protocol)=(hls|dash|m3u8|mpd)/.test(query)
+      || (/(?:^|\/)mono(?:[.-]|$)/.test(path) && (query.includes('token=') || query.includes('expires=')))
   );
 }
 

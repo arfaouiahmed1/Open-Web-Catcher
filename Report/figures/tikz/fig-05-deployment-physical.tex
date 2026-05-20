@@ -1,0 +1,46 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.96\textwidth}{!}{%
+\begin{tikzpicture}[
+  service/.style={draw=accent, fill=blue!6, rounded corners=5pt,
+    minimum width=3.45cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  job/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
+    minimum width=3.65cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  store/.style={draw=purple!60, fill=purple!7, rounded corners=5pt,
+    minimum width=3.45cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  ext/.style={draw=gray!65, fill=gray!10, rounded corners=5pt,
+    minimum width=3.45cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  note/.style={draw=orange!70, fill=orange!10, rounded corners=5pt,
+    minimum width=3.85cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80},
+  supp/.style={->, >=Stealth, thick, gray!65, dashed},
+  group/.style={draw=gray!50, dashed, rounded corners=8pt, inner sep=10pt},
+  lab/.style={font=\tiny, fill=white, inner sep=1pt}
+]
+\node[note] (n8n) at (0,3.35) {n8n operational\\workflow};
+\node[job] (bus) at (4.5,3.35) {Azure Service Bus\\landing jobs};
+\node[job] (job) at (9.0,3.35) {Container Apps Job\\landing agent};
+\node[job] (browser) at (13.5,3.35) {Puppeteer\\browser runtime};
+\node[ext] (sites) at (17.7,3.35) {Target streaming\\websites};
+
+\node[store] (logs) at (4.5,1.1) {Run logs\\and outputs};
+\node[ext] (llm) at (9.0,1.1) {Gemini model\\provider};
+\node[store] (artifacts) at (13.5,1.1) {Screenshots\\and evidence};
+
+\draw[arr] (n8n) -- node[lab, above]{enqueue URL} (bus);
+\draw[arr] (bus) -- node[lab, above]{trigger job} (job);
+\draw[arr] (job) -- node[lab, above]{browser actions} (browser);
+\draw[arr] (browser) -- node[lab, above]{inspect pages} (sites);
+\draw[supp] (job) -- (llm);
+\draw[supp] (job) -- (logs);
+\draw[supp] (browser) -- (artifacts);
+\draw[supp] (artifacts.south) -- ++(0,-0.55) -| (n8n.south);
+
+\node[group, fit=(bus)(job)(browser)(logs)(llm)(artifacts)] (azure) {};
+\node[anchor=south, font=\small\bfseries, text=accent] at ([yshift=0.1cm]azure.north)
+  {Azure deployment boundary};
+\end{tikzpicture}
+}
+\caption{Physical runtime and hardware-oriented deployment view.}
+\label{fig:physical-architecture}
+\end{figure}

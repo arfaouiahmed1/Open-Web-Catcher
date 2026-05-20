@@ -1,0 +1,25 @@
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=1.2cm]
+\node[flowbox, minimum width=4.2cm, minimum height=1.4cm, fill=blue!8] (landing)
+  {\textbf{Landing page}\\Match cards, schedule, leagues, dates};
+\node[flowbox, minimum width=4.2cm, minimum height=1.4cm, fill=orange!10,
+      right=1.8cm of landing] (hosting)
+  {\textbf{Hosting page}\\One match, server buttons, player area};
+\node[flowbox, minimum width=4.2cm, minimum height=1.4cm, fill=green!10,
+      right=1.8cm of hosting] (embedded)
+  {\textbf{Embedded page}\\Iframe or player link, media runtime};
+
+\draw[myarrow, very thick] (landing) -- node[above, font=\small]{select match} (hosting);
+\draw[myarrow, very thick] (hosting) -- node[above, font=\small]{open server/player} (embedded);
+
+\node[toolbox, fill=red!8, draw=red!50, minimum width=3.6cm, below=1.0cm of hosting] (noise)
+  {Ads, redirects, popups,\\blocked players};
+\draw[->, >=Stealth, dashed, thick, red!60] (hosting.south) -- (noise.north);
+\draw[->, >=Stealth, dashed, thick, red!60] (noise.east) -| (embedded.south);
+\end{tikzpicture}
+}
+\caption{Common navigation flow from event listing to hosting page and embedded player.}
+\label{fig:page-flow-general}
+\end{figure}

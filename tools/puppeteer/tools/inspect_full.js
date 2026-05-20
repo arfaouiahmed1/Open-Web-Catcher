@@ -396,10 +396,14 @@ async function collectRootData(page) {
 
     const videos = Array.from(document.querySelectorAll("video")).map((video, index) => {
       const r = video.getBoundingClientRect();
+      const sources = Array.from(video.querySelectorAll("source"))
+        .map((source) => source.src || source.getAttribute("src") || "")
+        .filter(Boolean);
       return {
         selector: video.id ? `#${video.id}` : `video:nth-of-type(${index + 1})`,
         xpath: `(//video)[${index + 1}]`,
-        src: video.currentSrc || video.src || "",
+        src: video.currentSrc || video.src || sources[0] || "",
+        sources,
         readyState: video.readyState,
         networkState: video.networkState,
         paused: video.paused,
@@ -638,6 +642,23 @@ async function collectFrameSummary(frame, framePath, offset) {
         ),
       ).filter((el) => isVisible(el));
       const videos = Array.from(document.querySelectorAll("video"));
+      const sampleVideos = videos.slice(0, 12).map((video, index) => {
+        const r = video.getBoundingClientRect();
+        const sources = Array.from(video.querySelectorAll("source"))
+          .map((source) => source.src || source.getAttribute("src") || "")
+          .filter(Boolean);
+        return {
+          selector: video.id ? `#${video.id}` : `video:nth-of-type(${index + 1})`,
+          xpath: `(//video)[${index + 1}]`,
+          src: video.currentSrc || video.src || sources[0] || "",
+          sources,
+          readyState: video.readyState,
+          networkState: video.networkState,
+          paused: video.paused,
+          width: Math.round(r.width),
+          height: Math.round(r.height),
+        };
+      });
 
       const playerLibrariesDetail = {
         jwplayer: Boolean(window.jwplayer),
@@ -660,6 +681,7 @@ async function collectFrameSummary(frame, framePath, offset) {
         player_libraries_detail: playerLibrariesDetail,
         sample_links: allLinks.slice(0, limits.frameSampleLinks).map(info),
         sample_buttons: allButtons.slice(0, limits.frameSampleButtons).map(info),
+        sample_videos: sampleVideos,
       };
     }, LIMITS);
 
@@ -673,6 +695,7 @@ async function collectFrameSummary(frame, framePath, offset) {
         summary.sample_buttons.map((entry) => applyOffset(entry, offset, framePath)),
         (entry) => `${entry.text}|${entry.selector}|${entry.xpath}`,
       ),
+      sample_videos: summary.sample_videos || [],
       error: null,
     };
   } catch (error) {
@@ -688,6 +711,7 @@ async function collectFrameSummary(frame, framePath, offset) {
       player_libraries_detail: {},
       sample_links: [],
       sample_buttons: [],
+      sample_videos: [],
       error: String(error?.message || error || "frame_evaluate_failed"),
     };
   }
@@ -736,6 +760,7 @@ export async function inspect({
       purpose_hint: inferFramePurpose(summary, frame.url()),
       sample_links: summary.sample_links,
       sample_buttons: summary.sample_buttons,
+      sample_videos: summary.sample_videos || [],
       error: summary.error,
     });
   }

@@ -1,0 +1,45 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.95\textwidth}{!}{%
+\begin{tikzpicture}[
+  box/.style={draw=accent, fill=blue!5, rounded corners=5pt,
+    minimum width=3.5cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  agent/.style={draw=orange!70, fill=orange!10, rounded corners=5pt,
+    minimum width=3.3cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  result/.style={draw=green!60!black, fill=green!8, rounded corners=5pt,
+    minimum width=3.5cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80},
+  dashedarr/.style={->, >=Stealth, thick, red!60, dashed},
+  note/.style={font=\tiny, text=gray!70, fill=white, inner sep=1pt}
+]
+
+\node[box] (seed) at (0,4.5) {Seed URL};
+\node[box] (preflight) at (0,3.2) {Runtime preflight};
+\node[box] (classify) at (0,1.9) {Classification agent};
+
+\node[agent] (landing) at (-4.3,0.2) {Landing agent\\match discovery};
+\node[agent] (hosting) at (0,0.2) {Hosting agent\\server extraction};
+\node[agent] (embedded) at (4.3,0.2) {Embedded agent\\player extraction};
+
+\node[result] (evidence) at (0,-1.6) {Evidence bundle\\streams + screenshots};
+\node[result] (provider) at (-2.4,-3.0) {Provider analysis\\IPInfo / WHOIS};
+\node[result] (review) at (2.4,-3.0) {Operator review\\email drafts};
+
+\draw[arr] (seed) -- (preflight);
+\draw[arr] (preflight) -- (classify);
+\draw[arr] (classify) -- node[note, above left]{listing} (landing);
+\draw[arr] (classify) -- node[note, right]{host} (hosting);
+\draw[arr] (classify) -- node[note, above right]{embed} (embedded);
+\draw[arr] (landing) -- node[note, above]{hosting URLs} (hosting);
+\draw[dashedarr] (hosting) -- node[note, above]{iframe fallback} (embedded);
+\draw[arr] (hosting) -- (evidence);
+\draw[arr] (embedded) -- (evidence);
+\draw[arr] (evidence) -- (provider);
+\draw[arr] (evidence) -- (review);
+\draw[arr] (provider) -- (review);
+
+\end{tikzpicture}
+}
+\caption{Logical workflow of an evidence-collection run.}
+\label{fig:logical-workflow}
+\end{figure}

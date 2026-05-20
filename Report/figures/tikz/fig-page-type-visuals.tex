@@ -1,0 +1,52 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  panel/.style={draw=gray!55, fill=white, rounded corners=6pt,
+    minimum width=4.55cm, minimum height=5.1cm},
+  title/.style={font=\small\bfseries, text=accent},
+  browserbar/.style={draw=gray!35, fill=gray!10, rounded corners=3pt,
+    minimum width=4.15cm, minimum height=0.38cm, font=\tiny, align=left},
+  card/.style={draw=accent!45, fill=blue!5, rounded corners=4pt,
+    minimum width=3.75cm, minimum height=0.62cm, font=\tiny, align=left},
+  server/.style={draw=orange!65, fill=orange!10, rounded corners=3pt,
+    minimum width=1.05cm, minimum height=0.36cm, font=\tiny\bfseries, align=center},
+  player/.style={draw=gray!65, fill=gray!12, rounded corners=4pt,
+    minimum width=3.55cm, minimum height=1.55cm, align=center, font=\tiny\bfseries},
+  manifest/.style={draw=green!55!black, fill=green!8, rounded corners=4pt,
+    minimum width=3.35cm, minimum height=0.52cm, align=center, font=\tiny\ttfamily},
+  arr/.style={->, >=Stealth, thick, accent!80},
+  note/.style={font=\tiny, text=gray!70, align=center}
+]
+\node[panel] (landingPanel) at (0,0) {};
+\node[panel] (hostingPanel) at (5.15,0) {};
+\node[panel] (embeddedPanel) at (10.3,0) {};
+
+\node[title] at (0,2.2) {Landing page};
+\node[browserbar] at (0,1.72) {\hspace{0.15cm}https://streamed.pk/};
+\node[card] at (0,0.95) {Match card: teams, time, league};
+\node[card] at (0,0.22) {Match card: repeated event layout};
+\node[card] at (0,-0.51) {Watch / event link candidates};
+\node[note] at (0,-1.55) {Goal: discover events\\and hosting links};
+
+\node[title] at (5.15,2.2) {Hosting page};
+\node[browserbar] at (5.15,1.72) {\hspace{0.15cm}/match-or-channel/...};
+\node[player] at (5.15,0.85) {Player shell\\play overlay};
+\node[server] at (3.65,-0.35) {S1};
+\node[server] at (5.15,-0.35) {S2};
+\node[server] at (6.65,-0.35) {HD};
+\node[note] at (5.15,-1.55) {Goal: activate player,\\switch servers, find iframe};
+
+\node[title] at (10.3,2.2) {Embedded page};
+\node[browserbar] at (10.3,1.72) {\hspace{0.15cm}iframe/player URL};
+\node[player] at (10.3,0.85) {Player runtime\\video / scripts / frames};
+\node[manifest] at (10.3,-0.35) {master.m3u8 / manifest.mpd};
+\node[note] at (10.3,-1.55) {Goal: capture final\\media evidence};
+
+\draw[arr] (landingPanel.east) -- node[note, above]{open event} (hostingPanel.west);
+\draw[arr] (hostingPanel.east) -- node[note, above]{iframe / redirect} (embeddedPanel.west);
+\end{tikzpicture}
+}
+\caption{Visual comparison of the three page types used by the extraction workflow.}
+\label{fig:page-type-visuals}
+\end{figure}

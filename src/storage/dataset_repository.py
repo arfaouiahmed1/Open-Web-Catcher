@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -20,7 +21,14 @@ from src.storage.models import (
     PipelineRunRecord,
     RunModelUsageRecord,
 )
-from src.utils.console_state import normalize_job_display_status, normalize_run_display_status
+from src.utils.console_state import (
+    RUN_CANCELLED_STATUSES,
+    RUN_FAILURE_STATUSES,
+    RUN_SUCCESS_STATUSES,
+    RUN_TERMINAL_STATUSES,
+    normalize_job_display_status,
+    normalize_run_display_status,
+)
 
 LANGUAGES = [
     "english",
@@ -35,11 +43,23 @@ LANGUAGES = [
     "other",
 ]
 LABELS = ["piracy", "sports", "news", "entertainment", "unknown"]
-SUCCESS_FINAL_STATUSES = {"success", "partial"}
-FAILED_FINAL_STATUSES = {"failed", "cancelled"}
-TERMINAL_SITE_RUN_STATUSES = SUCCESS_FINAL_STATUSES | FAILED_FINAL_STATUSES
+SUCCESS_FINAL_STATUSES = set(RUN_SUCCESS_STATUSES)
+FAILED_FINAL_STATUSES = set(RUN_FAILURE_STATUSES)
+CANCELLED_FINAL_STATUSES = set(RUN_CANCELLED_STATUSES)
+TERMINAL_SITE_RUN_STATUSES = set(RUN_TERMINAL_STATUSES)
 ACTIVE_SITE_RUN_STATUSES = {"queued", "running", "retrying", "leased"}
 RUNNING_SITE_RUN_STATUSES = {"running", "retrying", "leased"}
+_PAGE_INACCESSIBLE_RE = re.compile(
+    r"(inaccessible|unreachable|could not be accessed|failed to load|navigation error|"
+    r"browser-level|chrome-error|about:blank|err_|dns|ssl handshake|connection refused|"
+    r"connection reset|site unavailable|timed out)",
+    re.IGNORECASE,
+)
+_NO_HOSTING_RE = re.compile(
+    r"(no hosting|no downstream|directory|portal|listing|hub|article-only|"
+    r"no functional components|standard .*wordpress)",
+    re.IGNORECASE,
+)
 
 
 def canonicalize_url(url: str) -> str:
@@ -73,6 +93,28 @@ def _serialize_datetime(value: Any) -> str:
 def _terminal_site_status(value: str) -> str:
     status = str(value or "").strip().lower()
     return status if status in TERMINAL_SITE_RUN_STATUSES else ""
+
+
+def _derive_failed_site_status(
+    *,
+    status: str,
+    page_type: str = "",
+    stream_count: int = 0,
+    provider_analysis_count: int = 0,
+    error_text: str = "",
+) -> str:
+    normalized = str(status or "").strip().lower()
+    if normalized != "failed":
+        return normalized
+    text = " ".join([str(error_text or ""), str(page_type or "")])
+    if _PAGE_INACCESSIBLE_RE.search(text):
+        return "page_inaccessible"
+    if str(page_type or "").strip().lower() == "landing_page" and int(stream_count or 0) == 0:
+        if _NO_HOSTING_RE.search(text) or int(provider_analysis_count or 0) == 0:
+            return "no_hosting_pages"
+    if int(stream_count or 0) == 0 and int(provider_analysis_count or 0) == 0:
+        return "no_streams"
+    return normalized
 
 
 class DatasetRepository:
@@ -579,6 +621,46 @@ class DatasetRepository:
         self._refresh_batch_metrics(row.batch_id)
         self._session.commit()
 
+    def cancel_batch(self, batch_id: str, *, reason: str = "") -> dict[str, Any]:
+        batch = self._session.query(DatasetBatchRecord).filter_by(batch_id=batch_id).first()
+        if batch is None:
+            raise ValueError("Batch not found")
+
+        rows = (
+            self._session.query(DatasetSiteRunRecord)
+            .filter_by(batch_id=batch.id)
+            .order_by(DatasetSiteRunRecord.id.asc())
+            .all()
+        )
+        now = datetime.utcnow()
+        cancelled_run_ids: list[str] = []
+        skipped_run_ids: list[str] = []
+        for row in rows:
+            current = str(row.final_status or row.status or "").strip().lower()
+            if current in TERMINAL_SITE_RUN_STATUSES:
+                skipped_run_ids.append(row.run_id)
+                continue
+            row.status = "cancelled"
+            row.final_status = "cancelled"
+            row.error_text = str(reason or "")
+            row.started_at = row.started_at or now
+            row.finished_at = now
+            cancelled_run_ids.append(row.run_id)
+
+        affected_site_ids = {int(row.site_id) for row in rows if row.site_id is not None}
+        for site_id in affected_site_ids:
+            self._refresh_site_metrics(site_id)
+        self._refresh_batch_metrics(batch.id)
+        self._session.commit()
+        return {
+            "batch_id": batch.batch_id,
+            "cancelled": len(cancelled_run_ids),
+            "skipped": len(skipped_run_ids),
+            "run_ids": cancelled_run_ids,
+            "skipped_run_ids": skipped_run_ids,
+            "batch": self.get_batch(batch.batch_id),
+        }
+
     def finalize_site_run(
         self,
         run_id: str,
@@ -652,7 +734,8 @@ class DatasetRepository:
             [
                 item
                 for item in completed
-                if _terminal_site_status(item.get("final_status") or item.get("status")) == "failed"
+                if _terminal_site_status(item.get("final_status") or item.get("status"))
+                in FAILED_FINAL_STATUSES
             ]
         )
         cancelled_count = len(
@@ -770,6 +853,20 @@ class DatasetRepository:
                     or str(pipeline.classification_reasoning or "")
                     or str(pipeline.failure_mode or "")
                 )
+            resolved_status = _derive_failed_site_status(
+                status=resolved_status,
+                page_type=str(pipeline.page_type or ""),
+                stream_count=int(pipeline.stream_count or 0),
+                provider_analysis_count=int(pipeline.provider_analysis_count or 0),
+                error_text=derived_error or str(pipeline.classification_reasoning or ""),
+            )
+            resolved_final_status = _derive_failed_site_status(
+                status=resolved_final_status or resolved_status,
+                page_type=str(pipeline.page_type or ""),
+                stream_count=int(pipeline.stream_count or 0),
+                provider_analysis_count=int(pipeline.provider_analysis_count or 0),
+                error_text=derived_error or str(pipeline.classification_reasoning or ""),
+            )
             payload["run"] = {
                 "run_id": pipeline.run_id,
                 "url": pipeline.root_url,
@@ -810,6 +907,22 @@ class DatasetRepository:
             payload["duration_seconds"] = 0.0
         if not derived_error and resolved_status in FAILED_FINAL_STATUSES:
             derived_error = str(getattr(job, "error_text", "") or "")
+        resolved_status = _derive_failed_site_status(
+            status=resolved_status,
+            page_type=str(payload.get("page_type", "") or ""),
+            stream_count=int(payload.get("stream_count") or 0),
+            provider_analysis_count=0,
+            error_text=derived_error,
+        )
+        resolved_final_status = _derive_failed_site_status(
+            status=resolved_final_status or resolved_status,
+            page_type=str(payload.get("page_type", "") or ""),
+            stream_count=int(payload.get("stream_count") or 0),
+            provider_analysis_count=0,
+            error_text=derived_error,
+        )
+        payload["status"] = resolved_status
+        payload["final_status"] = resolved_final_status or payload.get("final_status") or payload.get("status") or ""
         payload["error_text"] = derived_error
         payload["model_usage"] = model_usage
         payload["agent_runs"] = agent_rows
@@ -878,7 +991,14 @@ class DatasetRepository:
         batch.requested_count = len(rows)
         batch.completed_count = len(completed)
         batch.passed_count = len([row for row in completed if str(row.final_status or row.status or "").strip().lower() in SUCCESS_FINAL_STATUSES])
-        batch.failed_count = len([row for row in completed if str(row.final_status or row.status or "").strip().lower() == "failed"])
+        batch.failed_count = len(
+            [
+                row
+                for row in completed
+                if str(row.final_status or row.status or "").strip().lower()
+                in FAILED_FINAL_STATUSES
+            ]
+        )
         batch.cancelled_count = len([row for row in completed if str(row.final_status or row.status or "").strip().lower() == "cancelled"])
 
         if not rows:

@@ -1,0 +1,19 @@
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1.1cm]
+\node[flowbox, fill=blue!8, minimum width=3.0cm] (observe) {Observe\\page state};
+\node[flowbox, fill=orange!10, minimum width=3.0cm, right=1.2cm of observe] (reason)
+  {Reason\\next step};
+\node[flowbox, fill=green!10, minimum width=3.0cm, right=1.2cm of reason] (act)
+  {Act\\with tool};
+\node[flowbox, fill=purple!10, minimum width=3.0cm, below=1.1cm of reason] (verify)
+  {Verify\\evidence};
+
+\draw[myarrow] (observe) -- (reason);
+\draw[myarrow] (reason) -- (act);
+\draw[myarrow] (act.south) |- (verify.east);
+\draw[myarrow] (verify.west) -| (observe.south);
+\end{tikzpicture}
+\caption{General ReAct-style loop used by browser agents.}
+\label{fig:react-loop-general}
+\end{figure}

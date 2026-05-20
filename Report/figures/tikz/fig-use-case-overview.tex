@@ -1,0 +1,62 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.96\textwidth}{!}{%
+\begin{tikzpicture}[
+  actor/.style={draw=gray!70, fill=gray!7, rounded corners=3pt,
+    minimum width=2.8cm, minimum height=0.8cm, align=center, font=\small\bfseries},
+  uc/.style={draw=accent, fill=blue!5, ellipse,
+    minimum width=4.5cm, minimum height=1.0cm, align=center, font=\footnotesize\bfseries},
+  subuc/.style={draw=accent!65, fill=blue!2, ellipse,
+    minimum width=3.7cm, minimum height=0.75cm, align=center, font=\scriptsize},
+  ext/.style={draw=purple!65, fill=purple!7, rounded corners=4pt,
+    minimum width=2.9cm, minimum height=0.85cm, align=center, font=\small\bfseries},
+  boundary/.style={draw=gray!55, rounded corners=8pt, inner sep=11pt},
+  assoc/.style={-, thick, gray!75},
+  inc/.style={->, >=Stealth, dashed, gray!70, thick},
+  note/.style={font=\tiny, text=gray!70, fill=white, inner sep=1pt}
+]
+
+\node[actor] (operator) at (-6.9,1.5) {Operator};
+\node[actor] (engineer) at (-6.9,-3.2) {Engineer /\\Administrator};
+\node[ext] (services) at (7.0,-1.2) {External\\Services};
+
+\node[uc] (launch) at (-2.0,3.2) {Launch investigation};
+\node[subuc] (seed) at (2.2,3.9) {Submit seed URL};
+\node[subuc] (batch) at (2.2,2.8) {Run dataset batch};
+
+\node[uc] (monitor) at (-2.0,1.2) {Monitor execution};
+\node[subuc] (events) at (2.2,1.7) {View events and tool calls};
+\node[subuc] (screens) at (2.2,0.7) {Inspect screenshots};
+
+\node[uc] (review) at (-2.0,-0.9) {Review evidence};
+\node[subuc] (streams) at (2.2,-0.2) {Validate stream URLs};
+\node[subuc] (provider) at (2.2,-1.2) {Analyze providers};
+\node[subuc] (emails) at (2.2,-2.2) {Draft takedown emails};
+
+\node[uc] (config) at (-2.0,-3.2) {Configure\\system};
+\node[subuc, minimum width=4.2cm] (runtime) at (2.2,-3.2) {Models, prompts, MCP, runtime};
+
+\node[boundary, fit=(launch)(seed)(batch)(monitor)(events)(screens)(review)(streams)(provider)(emails)(config)(runtime)] (system) {};
+\node[anchor=south, font=\small\bfseries, text=accent] at ([yshift=0.15cm]system.north)
+  {Evidence Collection Platform};
+
+\draw[assoc] (operator) -- (launch);
+\draw[assoc] (operator) -- (monitor);
+\draw[assoc] (operator) -- (review);
+\draw[assoc] (engineer) -- (config);
+\draw[assoc] (services) -- (provider);
+
+\draw[inc] (launch) -- node[note, above]{include} (seed);
+\draw[inc] (launch) -- node[note, below]{include} (batch);
+\draw[inc] (monitor) -- node[note, above]{include} (events);
+\draw[inc] (monitor) -- node[note, below]{include} (screens);
+\draw[inc] (review) -- node[note, above]{include} (streams);
+\draw[inc] (review) -- node[note, above]{include} (provider);
+\draw[inc] (review) -- node[note, below]{extend} (emails);
+\draw[inc] (config) -- (runtime);
+
+\end{tikzpicture}
+}
+\caption{Use-case overview of the evidence-collection platform.}
+\label{fig:use-case-overview}
+\end{figure}

@@ -885,6 +885,7 @@ function OverviewPageContent() {
   const summary = overview?.summary ?? EMPTY_OBJECT;
   const rawTrend = overview?.trend ?? EMPTY_ARRAY;
   const rawModelRows = overview?.model_breakdown ?? EMPTY_ARRAY;
+  const overviewProviderRows = overview?.provider_breakdown ?? EMPTY_ARRAY;
   const providerAnalysisRows = providerAnalysisDb?.rows ?? EMPTY_ARRAY;
   const workflowStreamRows = runStreamsDb?.rows ?? EMPTY_ARRAY;
   const toolRows = toolRel?.rows ?? overview?.top_tools ?? EMPTY_ARRAY;
@@ -1124,11 +1125,25 @@ function OverviewPageContent() {
       }
     }
 
+    if (!providerAnalysisRows.length) {
+      for (const row of overviewProviderRows) {
+        const provider = String(row.provider || "unknown").trim() || "unknown";
+        providerMap.set(provider, {
+          provider,
+          count: Number(row.analysis_count || 0),
+          affectedRuns: Number(row.affected_runs || 0),
+          abuseContacts: 0,
+          countries: 0,
+        });
+      }
+    }
+
     const providerRows = Array.from(providerMap.values())
       .map((row) => ({
         ...row,
-        affectedRuns: row.affectedRuns.size,
-        countries: row.countries.size,
+        affectedRuns:
+          row.affectedRuns instanceof Set ? row.affectedRuns.size : Number(row.affectedRuns || 0),
+        countries: row.countries instanceof Set ? row.countries.size : Number(row.countries || 0),
       }))
       .sort((a, b) => b.count - a.count || a.provider.localeCompare(b.provider));
     const countryRows = Array.from(countryMap.values()).sort(
@@ -1138,12 +1153,17 @@ function OverviewPageContent() {
     return {
       providerRows,
       countryRows,
-      analysedLinks: analysedUrls.size || providerAnalysisRows.length,
+      analysedLinks:
+        analysedUrls.size
+        || providerAnalysisRows.length
+        || overviewProviderRows.reduce((total, row) => total + Number(row.analysis_count || 0), 0),
       streamLinks: workflowStreamRows.length,
-      affectedRuns: runIds.size,
+      affectedRuns:
+        runIds.size
+        || overviewProviderRows.reduce((total, row) => total + Number(row.affected_runs || 0), 0),
       abuseContacts,
     };
-  }, [providerAnalysisRows, workflowStreamRows]);
+  }, [overviewProviderRows, providerAnalysisRows, workflowStreamRows]);
 
   const workflowProviderLinkRows = useMemo(() => {
     if (providerAnalysisRows.length) {

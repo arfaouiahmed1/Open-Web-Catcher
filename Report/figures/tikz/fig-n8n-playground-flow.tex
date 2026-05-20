@@ -1,0 +1,34 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.9\textwidth}{!}{%
+\begin{tikzpicture}[
+  stepbox/.style={draw=accent, fill=blue!5, rounded corners=5pt,
+    minimum width=3.2cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  issue/.style={draw=red!55, fill=red!6, rounded corners=5pt,
+    minimum width=3.2cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  outbox/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
+    minimum width=3.2cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80}
+]
+
+\node[stepbox] (seed) at (0,2.4) {Seed URL};
+\node[stepbox] (trigger) at (3.7,2.4) {n8n trigger};
+\node[stepbox] (agent) at (7.4,2.4) {Agent workflow};
+\node[stepbox] (browser) at (11.1,2.4) {Browser session};
+\node[outbox] (evidence) at (14.8,2.4) {Screenshots / streams};
+\node[issue] (limits) at (5.55,0.55) {Runtime limitations};
+\node[outbox] (lessons) at (11.1,0.55) {Lessons for\\reference solution};
+
+\draw[arr] (seed) -- (trigger);
+\draw[arr] (trigger) -- (agent);
+\draw[arr] (agent) -- (browser);
+\draw[arr] (browser) -- (evidence);
+\draw[arr] (agent.south) |- (limits.east);
+\draw[arr] (limits) -- (lessons);
+\draw[arr] (evidence.south) |- (lessons.east);
+
+\end{tikzpicture}
+}
+\caption{Role of the n8n workflow as a feasibility playground.}
+\label{fig:n8n-playground-flow}
+\end{figure}

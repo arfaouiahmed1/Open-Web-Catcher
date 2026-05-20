@@ -16,19 +16,19 @@ from src.utils.observability import RunTrace
 
 _PROFILE_VERSION = 1
 _PROFILE_ARRAY_LIMITS = {
-    "selectors": 64,
-    "pagination_url_patterns": 32,
-    "url_patterns": 60,
-    "navigation_hints": 60,
-    "critical_links": 600,
-    "server_labels": 220,
-    "stream_hosts": 160,
-    "ui_signals": 40,
-    "hosting_candidate_urls": 900,
-    "server_records": 420,
-    "server_screenshots": 360,
-    "server_stream_urls": 900,
-    "activated_servers": 260,
+    "selectors": 32,
+    "pagination_url_patterns": 16,
+    "url_patterns": 32,
+    "navigation_hints": 32,
+    "critical_links": 120,
+    "server_labels": 80,
+    "stream_hosts": 60,
+    "ui_signals": 24,
+    "hosting_candidate_urls": 160,
+    "server_records": 80,
+    "server_screenshots": 60,
+    "server_stream_urls": 160,
+    "activated_servers": 80,
 }
 
 
@@ -56,6 +56,15 @@ def _dedupe_keep_order(values: list[str]) -> list[str]:
             seen.add(normalized)
             result.append(normalized)
     return result
+
+
+def _format_memory_items(values: list[str], limit: int = 4) -> str:
+    items = _dedupe_keep_order([str(value or "").strip() for value in values])[:limit]
+    return ", ".join(f"`{item}`" for item in items) if items else "`none`"
+
+
+def _format_counter_items(counter: Counter[str], limit: int = 4) -> str:
+    return _format_memory_items([item for item, _ in counter.most_common(limit)], limit)
 
 
 def _looks_like_pagination_url(url: str) -> bool:
@@ -492,131 +501,72 @@ class LongTermMemory:
             if not data.get("success") and data.get("result_summary"):
                 failure_patterns.append(str(data["result_summary"]))
 
+        profile_selectors = _coerce_string_list(profile.get("selectors", [])) if profile else []
+        profile_url_patterns = _coerce_string_list(profile.get("url_patterns", [])) if profile else []
+        profile_pagination = (
+            _coerce_string_list(profile.get("pagination_url_patterns", [])) if profile else []
+        )
+        profile_servers = _coerce_string_list(profile.get("activated_servers", [])) if profile else []
+        profile_streams = _coerce_string_list(profile.get("server_stream_urls", [])) if profile else []
+
         lines = [
-            "SITE MEMORY HINTS",
-            "Use these only as hints. Re-verify on the live page before trusting them.",
-            f"- domain: `{domain}`",
-            f"- page type focus: `{page_type}`",
-            f"- recent runs remembered: `{len(rows)}`",
-            f"- recent successes: `{successes}` / `{len(rows)}`",
+            "SITE MEMORY PLAYBOOK",
+            "Use as hints only; re-verify on the live page.",
+            f"- scope: `{domain}` `{page_type}`; remembered `{len(rows)}` runs, `{successes}` successes",
+            "- steps: "
+            + (
+                " -> ".join(f"`{step}`" for step in latest_step_playbook[:5])
+                if latest_step_playbook
+                else _format_counter_items(tool_counts, 4)
+            ),
+            "- selectors/clicks: "
+            + _format_memory_items([*profile_selectors, *[item for item, _ in selector_counts.most_common(4)]], 5),
+            "- route patterns: "
+            + _format_memory_items(
+                [
+                    *profile_url_patterns,
+                    *[item for item, _ in url_pattern_counts.most_common(4)],
+                ],
+                5,
+            ),
+            "- pagination: "
+            + _format_memory_items(
+                [*profile_pagination, *[item for item, _ in pagination_counts.most_common(3)]],
+                3,
+            ),
         ]
 
-        if tool_counts:
+        if page_type == "landing_page" and profile and profile.get("hosting_candidate_urls"):
             lines.append(
-                "- often useful tools: "
-                + ", ".join(f"`{tool}` x{count}" for tool, count in tool_counts.most_common(5))
+                f"- landing: `{len(_coerce_string_list(profile.get('hosting_candidate_urls', [])))}` remembered hosting candidates; infer patterns, do not replay stale URLs"
             )
-        if latest_step_playbook:
+        if page_type in {"hosting_page", "embedded_page"}:
             lines.append(
-                "- latest successful step playbook: "
-                + " -> ".join(f"`{step}`" for step in latest_step_playbook[:8])
-            )
-        if selector_counts:
-            lines.append(
-                "- repeated selectors/text targets: "
-                + ", ".join(f"`{target}`" for target, _ in selector_counts.most_common(4))
-            )
-        if server_counts:
-            lines.append(
-                "- repeated server labels: "
-                + ", ".join(f"`{label}`" for label, _ in server_counts.most_common(4))
-            )
-        if stream_host_counts:
-            lines.append(
-                "- previously seen stream hosts: "
-                + ", ".join(f"`{host}`" for host, _ in stream_host_counts.most_common(4))
-            )
-        if url_pattern_counts:
-            lines.append(
-                "- repeated url patterns: "
-                + ", ".join(f"`{pattern}`" for pattern, _ in url_pattern_counts.most_common(4))
-            )
-        if pagination_counts:
-            lines.append(
-                "- repeated pagination url patterns: "
-                + ", ".join(f"`{pattern}`" for pattern, _ in pagination_counts.most_common(4))
-            )
-        if target_counts or critical_link_counts:
-            lines.append(
-                f"- remembered concrete links/navigation targets exist: `{sum(target_counts.values()) + sum(critical_link_counts.values())}`"
-            )
-            lines.append(
-                "- use remembered concrete URLs only to infer patterns; do not navigate directly from memory alone"
-            )
-        if profile:
-            lines.append(
-                f"- memory profile revision: `{_safe_int(profile.get('revision', 0), 0)}`"
-            )
-            if profile.get("selectors"):
-                lines.append(
-                    "- remembered selectors/actions: "
-                    + ", ".join(f"`{item}`" for item in _coerce_string_list(profile.get("selectors", []))[:6])
+                "- player/server: "
+                + _format_memory_items(
+                    [*profile_servers, *[item for item, _ in server_counts.most_common(4)]],
+                    5,
                 )
-            if profile.get("pagination_url_patterns"):
-                lines.append(
-                    "- remembered pagination url patterns: "
-                    + ", ".join(
-                        f"`{item}`" for item in _coerce_string_list(profile.get("pagination_url_patterns", []))[:4]
-                    )
+            )
+            lines.append(
+                "- streams/hosts: "
+                + _format_memory_items(
+                    [
+                        *profile_streams,
+                        *[item for item, _ in stream_host_counts.most_common(4)],
+                    ],
+                    5,
                 )
-            if profile.get("url_patterns"):
-                lines.append(
-                    "- remembered route/url patterns: "
-                    + ", ".join(f"`{item}`" for item in _coerce_string_list(profile.get("url_patterns", []))[:5])
-                )
-            if profile.get("hosting_candidate_urls"):
-                landing_candidates = _coerce_string_list(profile.get("hosting_candidate_urls", []))
-                lines.append(
-                    f"- remembered landing hosting candidates count: `{len(landing_candidates)}`"
-                )
-            if profile.get("server_records"):
-                server_records = _coerce_string_list(profile.get("server_records", []))
-                parsed_labels: list[str] = []
-                for raw in server_records[:12]:
-                    try:
-                        parsed = json.loads(raw)
-                    except Exception:
-                        parsed = {}
-                    label = str(parsed.get("label", "")).strip() if isinstance(parsed, dict) else ""
-                    if label:
-                        parsed_labels.append(label)
-                lines.append(
-                    f"- remembered server snapshots: `{len(server_records)}`"
-                    + (
-                        " (sample labels: "
-                        + ", ".join(f"`{item}`" for item in _dedupe_keep_order(parsed_labels)[:6])
-                        + ")"
-                        if parsed_labels
-                        else ""
-                    )
-                )
-            if profile.get("activated_servers"):
-                lines.append(
-                    "- often activated servers: "
-                    + ", ".join(f"`{item}`" for item in _coerce_string_list(profile.get("activated_servers", []))[:8])
-                )
-            if profile.get("server_stream_urls"):
-                lines.append(
-                    "- remembered per-server stream urls: "
-                    + ", ".join(f"`{item}`" for item in _coerce_string_list(profile.get("server_stream_urls", []))[:5])
-                )
-            if profile.get("ui_change_detected"):
-                notes = _coerce_string_list(profile.get("ui_change_notes", []))
-                lines.append(
-                    "- ui change warning: "
-                    + ("; ".join(f"`{item}`" for item in notes[:2]) if notes else "`possible structural drift from recent runs`")
-                )
-            if profile.get("last_refresh_reason"):
-                lines.append(f"- last memory refresh reason: `{profile['last_refresh_reason']}`")
-
-        lines.append(
-            "- memory-first policy: start from remembered selectors/patterns and only escalate to heavy full-page scans when hints fail or page structure changed"
-        )
+            )
+        if profile and profile.get("ui_change_detected"):
+            notes = _coerce_string_list(profile.get("ui_change_notes", []))
+            lines.append("- drift: " + _format_memory_items(notes or ["possible structural drift"], 2))
         if failure_patterns:
             lines.append(
-                "- recent failure patterns: "
-                + "; ".join(f"`{pattern[:120]}`" for pattern in failure_patterns[:3])
+                "- recent failures: "
+                + "; ".join(f"`{pattern[:90]}`" for pattern in failure_patterns[:2])
             )
+        lines.append("- policy: try remembered selectors/patterns first, then inspect if they fail")
         return "\n".join(lines)
 
     def close(self) -> None:
@@ -1078,20 +1028,20 @@ def build_site_memory_entry(
     is_landing = page_type == "landing_page"
     is_stream_page = page_type in {"hosting_page", "embedded_page"}
 
-    tool_limit = 24
-    tool_step_limit = 80
-    navigation_limit = 80 if is_landing else 36
-    selector_limit = 72 if is_landing else 52 if is_stream_page else 24
-    url_pattern_limit = 120 if is_landing else 80 if is_stream_page else 28
-    pagination_limit = 64 if is_landing else 24
-    critical_limit = 1200 if is_landing else 700 if is_stream_page else 120
-    server_label_limit = 260 if is_stream_page else 120
-    stream_host_limit = 220 if is_stream_page else 80
-    hosting_candidate_limit = 1200 if is_landing else 320
-    server_record_limit = 420 if is_stream_page else 120
-    server_stream_limit = 1200 if is_stream_page else 180
-    server_screenshot_limit = 420 if is_stream_page else 120
-    activated_limit = 260 if is_stream_page else 100
+    tool_limit = 16
+    tool_step_limit = 24
+    navigation_limit = 28 if is_landing else 18
+    selector_limit = 28 if is_landing else 24 if is_stream_page else 12
+    url_pattern_limit = 40 if is_landing else 28 if is_stream_page else 12
+    pagination_limit = 20 if is_landing else 12
+    critical_limit = 80 if is_landing else 50 if is_stream_page else 24
+    server_label_limit = 48 if is_stream_page else 24
+    stream_host_limit = 40 if is_stream_page else 16
+    hosting_candidate_limit = 120 if is_landing else 32
+    server_record_limit = 56 if is_stream_page else 16
+    server_stream_limit = 80 if is_stream_page else 20
+    server_screenshot_limit = 48 if is_stream_page else 16
+    activated_limit = 48 if is_stream_page else 16
 
     return {
         "domain": _normalize_domain(url),
@@ -1115,7 +1065,7 @@ def build_site_memory_entry(
         "server_screenshots": _dedupe_keep_order(server_screenshots)[:server_screenshot_limit],
         "activated_servers": _dedupe_keep_order(activated_servers)[:activated_limit],
         "llm_notes": _dedupe_keep_order(llm_notes)[:4],
-        "short_memory_summary": short_memory_summary[:1200],
+        "short_memory_summary": short_memory_summary[:700],
         "result_summary": result_summary,
     }
 

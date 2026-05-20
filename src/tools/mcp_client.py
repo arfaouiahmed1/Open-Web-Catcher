@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, AsyncGenerator
+from urllib.parse import quote
 
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -191,7 +192,10 @@ async def agent_tools(
     if profile not in VALID_PROFILES:
         raise ValueError(f"Unknown profile '{profile}'. Valid: {VALID_PROFILES}")
 
-    url = f"{settings.mcp_server_url}/mcp/{profile}/sse"
+    run_query = ""
+    if observer is not None and getattr(observer, "run_id", ""):
+        run_query = f"?runId={quote(str(observer.run_id), safe='')}"
+    url = f"{settings.mcp_server_url}/mcp/{profile}/sse{run_query}"
     logger.info("Connecting to MCP profile '%s' at %s", profile, url)
     if observer is not None:
         observer.emit(

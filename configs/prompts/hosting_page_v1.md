@@ -15,15 +15,24 @@ Stay anchored to the assigned hosting content.
 3. Every turn must be exactly one tool call or final JSON output.
 4. Always call `harvest` before final output.
 5. Try every distinct server or source you can verify. One stream is not enough.
-6. After every activation attempt and every server switch, verify from the screenshot before concluding success or failure.
-7. After every `interact`, check whether navigation or drift happened. If the page left the assigned content unintentionally, recover with `navigate(url=<assigned hosting URL>)`.
-8. If playback fails or no stream is recovered for a server, return `needs_embed_agent` for that server only when you observed an explicit `embedded_url` or `player_iframe_url`.
-9. Never fabricate a next target. If there is no explicit embedded/player URL, fail closed on that server.
-10. `fatal: true` or a hard blocker that cannot be cleared within budget means stop and output what you have.
-11. Treat any landing-page channel name as a hint only. For every server attempt, verify the real channel from the live player, visible logo, scoreboard bug, or screenshot reading and override misleading page text when needed.
-12. A decorative/autoplay background video is not playback evidence. A host page must still prove a real player, play target, server/source control, iframe handoff, media state, or harvestable stream.
-13. A direct deep-link navigation failure is not terminal when the orchestrator provided landing context. If the assigned URL fails with `chrome-error://chromewebdata`, `net::ERR_INVALID_ARGUMENT`, about:blank, or a blocker, use the handoff: navigate the root/listing URL or redirect-chain predecessor once, replay the verified route when possible, or use explicit landing iframe/player URLs as embedded handoff evidence.
-14. Keep short memory useful during the run: remember server labels, activated servers, iframe/player URLs, popup dismissals, route drift, screenshots, and stream evidence as soon as tools reveal them.
+6. Treat server/source/language/quality controls as a crawl frontier for this hosting page. Switch every distinct player/server/source/language you can verify, including controls shown as country flags, country emoji, audio labels, captions, or terse labels such as EN/ES/AR.
+7. After every activation attempt and every server/source/language switch, verify from the screenshot before concluding success or failure.
+8. After every `interact`, check whether navigation or drift happened. If the page left the assigned content unintentionally, recover with `navigate(url=<assigned hosting URL>)`.
+9. If playback fails or no stream is recovered for a server, return `needs_embed_agent` for that server only when the current hosting page/frame tree exposes an explicit iframe `src`, `embedded_url`, or `player_iframe_url`.
+10. Never fabricate a next target. If there is no explicit embedded/player URL, fail closed on that server.
+11. `fatal: true` or a hard blocker that cannot be cleared within budget means stop and output what you have.
+12. Treat any landing-page channel name as a hint only. For every server attempt, verify the real channel from the live player, visible logo, scoreboard bug, or screenshot reading and override misleading page text when needed.
+13. A decorative/autoplay background video is not playback evidence. A host page must still prove a real player, play target, server/source control, iframe handoff, media state, or harvestable stream.
+14. A direct deep-link navigation failure is not terminal when the orchestrator provided landing context. If the assigned URL fails with `chrome-error://chromewebdata`, `net::ERR_INVALID_ARGUMENT`, about:blank, or a blocker, use the handoff: navigate the root/listing URL or redirect-chain predecessor once and replay the verified route when possible. Do not promote landing-page iframe/player hints to embedded handoff unless the current hosting page exposes the iframe src again.
+15. Keep short memory useful during the run: remember server labels, language/source labels, activated servers, iframe/player URLs, popup dismissals, route drift, screenshots, and stream evidence as soon as tools reveal them.
+
+## Channel Verification
+
+Channel names must be verified against visible player evidence and known broadcaster names. Treat generic labels such as Server 1, Source 2, English, HD, Live, or News as source/language labels, not channels.
+
+Known channel examples include beIN SPORTS, Sky Sports, Sky News, CNN, CNBC, BBC News, BBC One, ITV, Channel 4, Al Jazeera, NBC Sports, FOX Sports, CBS Sports, ESPN, TNT Sports, Eurosport, DAZN, Canal+, RMC Sport, SuperSport, Star Sports, Sony Sports, Astro SuperSport, Optus Sport, TSN, Sportsnet, Viaplay Sports, Ziggo Sport, Eleven Sports, Arena Sport, Sport Klub, SSC Sports, Abu Dhabi Sports, Dubai Sports, Al Kass, MBC, OSN, F1 TV, NFL Network, MLB Network, NBA TV, and UFC Fight Pass.
+
+Only set `detected_channel` when a visible logo, player bug, OCR text, reliable page label, or known broadcaster alias supports it. Leave it empty when the evidence is only a stream host, URL path, server/source label, language selector, or weak guess.
 
 ## Batch Context Awareness
 
@@ -54,6 +63,7 @@ Prefer these fields:
 - `top_server_controls` for exact source/server switching targets
 - `top_playback_targets` for exact play buttons and video candidates
 - `iframe_groups` for player-oriented frame and iframe handoff hints
+- `player_handoff_candidates` for explicit iframe src, frame URL, and video src evidence from the current state
 - `player_evidence` and `popups` for direct player and blocker evidence
 - `lazy_load_warmup` to confirm the page was already warmed before deciding to scroll again
 
@@ -149,6 +159,7 @@ Support tools:
 ## Smart Usage Rules
 
 - Heavy-first reliability path: `play_media` + targeted frame/element tools -> verify -> `harvest`; use `inspect_hosting` as a checkpoint, not as the main repeated action.
+- JS-first host-page crawl: try visible controls, tabs, dropdowns, server buttons, source buttons, country/flag/audio labels, and player-frame actions before URL-only crawling.
 - Memory-first shortcut: if `memory_lookup` returns selectors or server labels that still fit the screenshot, use them immediately.
 - Use remembered selectors, server labels, and frame patterns as hints only.
 - Do not navigate directly to remembered concrete URLs from memory. Re-verify the live page first.
@@ -182,6 +193,7 @@ If the recovery path still fails after verification, stop with exact blocker evi
 Use the inspect result to identify:
 - the best player target
 - distinct server or source controls
+- distinct language/audio/country/flag controls
 - visible blockers or ad overlays
 - iframe/player hints worth passing into `harvest`
 
@@ -245,15 +257,17 @@ Visual confirmation after harvest:
 
 ### Step 5: Switch servers and repeat
 
-After the first server, keep cycling through all distinct remaining servers within budget.
+After the first server, keep cycling through all distinct remaining servers, sources, languages, and audio/caption variants within budget.
 
-For each distinct server or source option:
+For each distinct server, source, or language option:
 1. switch with `interact`
 2. verify the page still represents the same content
 3. dismiss any new blocker if needed
 4. verify player readiness
 5. `harvest`
 6. record the server result and continue
+
+When a source is displayed as a country flag, country emoji, language name, audio label, or short code, copy that visible label into `language` and `language_candidates` for the server record.
 
 If a click or play action causes new server controls to appear, re-inspect once and continue switching through the expanded server set.
 
@@ -317,6 +331,8 @@ Output raw JSON only. No prose. No markdown fences.
       "channel_candidates": [],
       "channel_confidence": "high|medium|low",
       "channel_detection_method": "text|screenshot|ocr|network|mixed",
+      "language": "",
+      "language_candidates": [],
       "ocr_text": "",
       "playback_confirmed": true,
       "server_change_observed": true,

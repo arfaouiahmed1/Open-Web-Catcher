@@ -149,7 +149,7 @@ browser_runtime:
     popup_blocking_enabled: true
     proxy_cache_ttl_ms: 600000
     proxy_custom_list: []
-    proxy_enabled: true
+    proxy_enabled: false
     proxy_fallback_strategy: direct
     proxy_fetch_timeout_ms: 8000
     proxy_max_candidates: 25
@@ -241,7 +241,7 @@ orchestrator_model: gemini-3.1-flash-lite
 provider_cache_enabled: true
 provider_model_catalog_cache:
   google:
-    cached_at: '2026-05-18T21:50:26.701485+00:00'
+    cached_at: '2026-05-19T10:43:05.239576+00:00'
     models:
     - capabilities:
         allowed_tuning_keys: &id001
