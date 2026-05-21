@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Activity, Clock3, Coins, Cpu, Route, Wrench } from "lucide-react";
+import { Activity, Clock3, Coins, Cpu, FileJson, Info, Route, Wrench } from "lucide-react";
 
 import { getContextWindow, loadPricing, peakContextUsage } from "@/lib/pricing";
 import { actorToStage, STAGE_LABELS, STAGE_ORDER } from "@/lib/run-trace";
@@ -10,6 +10,12 @@ import { statusLabel, statusTone } from "@/lib/run-status";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const EMPTY_ARRAY = [];
 
@@ -44,6 +50,83 @@ function metricTone(value) {
   if (value >= 0.85) return "var(--rose)";
   if (value >= 0.6) return "var(--signal)";
   return "var(--mint)";
+}
+
+function firstNumber(...values) {
+  for (const value of values) {
+    const number = Number(value || 0);
+    if (Number.isFinite(number) && number > 0) return number;
+  }
+  return 0;
+}
+
+function firstText(...values) {
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+function latestEventContext(events = EMPTY_ARRAY) {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index] || {};
+    const details = event.details || {};
+    const contextWindow = Number(details.context_window || 0);
+    const contextTokens = Number(details.context_tokens || details.input_tokens || 0);
+    if (contextWindow > 0 || contextTokens > 0) {
+      return {
+        contextWindow,
+        contextTokens,
+        contextUsagePct: Number(details.context_usage_pct || 0),
+        model: firstText(details.model_name, details.model),
+        provider: firstText(details.provider),
+      };
+    }
+  }
+  return {
+    contextWindow: 0,
+    contextTokens: 0,
+    contextUsagePct: 0,
+    model: "",
+    provider: "",
+  };
+}
+
+function stringifyPreview(value, max = 900) {
+  if (!value) return "";
+  try {
+    return trimText(JSON.stringify(value, null, 2), max);
+  } catch {
+    return trimText(String(value), max);
+  }
+}
+
+function outputEvidence(rawOutput, agentType) {
+  const payload = rawOutput && typeof rawOutput === "object" ? rawOutput : {};
+  const type = safeLower(agentType);
+  if (type.includes("landing")) {
+    return (Array.isArray(payload.hosting_pages) ? payload.hosting_pages : [])
+      .map((item) => (typeof item === "string" ? item : item?.url || ""))
+      .filter(Boolean)
+      .slice(0, 5);
+  }
+  if (type.includes("hosting") || type.includes("embedded")) {
+    return (Array.isArray(payload.servers) ? payload.servers : [])
+      .slice(0, 5)
+      .map((server, index) => {
+        const label = server?.label || server?.name || `server ${index + 1}`;
+        const state = server?.status || server?.player_state || (server?.server_up ? "up" : "unknown");
+        const streamCount = [
+          ...(Array.isArray(server?.stream_urls) ? server.stream_urls : []),
+          ...(Array.isArray(server?.m3u8_urls) ? server.m3u8_urls : []),
+          ...(Array.isArray(server?.mpd_urls) ? server.mpd_urls : []),
+          ...(Array.isArray(server?.mp4_urls) ? server.mp4_urls : []),
+        ].filter(Boolean).length;
+        return `${label} | ${state}${streamCount ? ` | streams ${streamCount}` : ""}`;
+      });
+  }
+  return [];
 }
 
 function summarizeAgentFocus(event, fallbackUrl = "") {
@@ -198,6 +281,119 @@ function ActorMetric({ label, value, tone = "var(--ink)" }) {
   );
 }
 
+function DetailLine({ label, value }) {
+  if (value === "" || value === null || value === undefined) return null;
+  return (
+    <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="min-w-0 truncate font-mono">{value}</span>
+    </div>
+  );
+}
+
+function AgentDetailTooltip({ card, color }) {
+  const outputPreview = stringifyPreview(card.rawOutput, 1000);
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex size-7 items-center justify-center rounded-full border text-muted-foreground transition hover:text-foreground"
+          style={{ borderColor: `color-mix(in oklch, ${color} 24%, var(--line))` }}
+          aria-label={`${card.actor} details`}
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="left" align="start" className="max-w-[420px] p-3 text-[11px]">
+        <div className="flex flex-col gap-2">
+          <div>
+            <div className="text-xs font-semibold text-foreground">{card.actor}</div>
+            <div className="mt-0.5 text-muted-foreground">
+              {card.stageLabel}{card.invocationIndex > 0 ? ` #${card.invocationIndex}` : ""} · {statusLabel(card.status)}
+            </div>
+          </div>
+          <div className="grid gap-1 rounded-md border border-border bg-background/70 p-2">
+            <DetailLine label="Agent run" value={card.agentRunId || "live only"} />
+            <DetailLine label="Model" value={card.contextModel || "not reported"} />
+            <DetailLine label="Provider" value={card.contextProvider || "not reported"} />
+            <DetailLine
+              label="Context"
+              value={
+                card.contextWindow > 0
+                  ? `${formatNumber(card.contextTokens)} / ${formatNumber(card.contextWindow)} (${(Math.max(0, Math.min(1, card.contextPct)) * 100).toFixed(1)}%)`
+                  : "not reported"
+              }
+            />
+            <DetailLine label="LLM calls" value={formatNumber(card.llmCalls)} />
+            <DetailLine label="Tool calls" value={formatNumber(card.toolCalls)} />
+            <DetailLine label="Duration" value={compactDuration(card.durationSeconds)} />
+          </div>
+          {card.focus.detail ? (
+            <div className="rounded-md border border-border bg-background/70 p-2 leading-relaxed text-muted-foreground">
+              {card.focus.detail}
+            </div>
+          ) : null}
+          {card.outputSummary || card.evidenceRows.length || outputPreview ? (
+            <div className="rounded-md border border-border bg-background/70 p-2">
+              <div className="mb-1 font-semibold text-foreground">Output</div>
+              {card.outputSummary ? <div className="leading-relaxed text-muted-foreground">{card.outputSummary}</div> : null}
+              {card.evidenceRows.length ? (
+                <div className="mt-2 grid gap-1">
+                  {card.evidenceRows.map((item, index) => (
+                    <div key={`${item}-${index}`} className="truncate font-mono text-muted-foreground">
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {!card.outputSummary && !card.evidenceRows.length && outputPreview ? (
+                <pre className="max-h-48 overflow-hidden whitespace-pre-wrap font-mono text-[10px] text-muted-foreground">
+                  {outputPreview}
+                </pre>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function OutputTooltip({ card }) {
+  const preview = stringifyPreview(card.rawOutput, 1000);
+  if (!card.outputSummary && !card.evidenceRows.length && !preview) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button type="button" className="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-medium text-muted-foreground transition hover:text-foreground">
+          <FileJson className="h-3 w-3" />
+          Output details
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" align="start" className="max-w-[520px] p-3 text-[11px]">
+        <div className="flex flex-col gap-2">
+          {card.outputSummary ? <div className="leading-relaxed text-muted-foreground">{card.outputSummary}</div> : null}
+          {card.evidenceRows.length ? (
+            <div className="grid gap-1 rounded-md border border-border bg-background/70 p-2">
+              {card.evidenceRows.map((item, index) => (
+                <div key={`${item}-${index}`} className="truncate font-mono text-muted-foreground">
+                  {item}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {preview ? (
+            <pre className="max-h-56 overflow-hidden whitespace-pre-wrap rounded-md border border-border bg-background/70 p-2 font-mono text-[10px] text-muted-foreground">
+              {preview}
+            </pre>
+          ) : null}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function AgentActivityBoard({
   agentRollups = EMPTY_ARRAY,
   events = EMPTY_ARRAY,
@@ -221,28 +417,51 @@ export function AgentActivityBoard({
 
   const cards = useMemo(() => {
     const eventGroups = new Map();
+    const eventGroupsByAgentRunId = new Map();
     for (const event of Array.isArray(events) ? events : EMPTY_ARRAY) {
       const actor = String(event?.actor || "").trim();
       if (!actor) continue;
       if (!eventGroups.has(actor)) eventGroups.set(actor, []);
       eventGroups.get(actor).push(event);
+      const agentRunId = Number(event?.agent_run_id || event?.details?.agent_run_id || 0);
+      if (agentRunId > 0) {
+        if (!eventGroupsByAgentRunId.has(agentRunId)) eventGroupsByAgentRunId.set(agentRunId, []);
+        eventGroupsByAgentRunId.get(agentRunId).push(event);
+      }
     }
 
     const rollups = Array.isArray(agentRollups) ? agentRollups : EMPTY_ARRAY;
-    const actorList = Array.from(
-      new Set([
-        ...rollups.map((row) => String(row?.actor || "").trim()).filter(Boolean),
-        ...eventGroups.keys(),
-      ]),
-    );
+    const rollupActorKeys = new Set(rollups.map((row) => safeLower(row?.actor)).filter(Boolean));
+    const workItems = [
+      ...rollups.map((row) => {
+        const actor = String(row?.actor || row?.agent_type || "agent").trim();
+        const agentRunId = Number(row?.agent_run_id || 0);
+        const invocationIndex = Number(row?.invocation_index || 0);
+        const actorEvents =
+          (agentRunId > 0 ? eventGroupsByAgentRunId.get(agentRunId) : null) ||
+          (eventGroups.get(actor) || EMPTY_ARRAY).filter((event) => {
+            const eventInvocation = Number(event?.invocation_index || event?.details?.invocation_index || 0);
+            return !invocationIndex || !eventInvocation || eventInvocation === invocationIndex;
+          });
+        return {
+          key: `rollup-${agentRunId || actor}-${invocationIndex}`,
+          actor,
+          actorRollup: row,
+          actorEvents,
+        };
+      }),
+      ...Array.from(eventGroups.keys())
+        .filter((actor) => !rollupActorKeys.has(safeLower(actor)))
+        .map((actor) => ({
+          key: `events-${actor}`,
+          actor,
+          actorRollup: null,
+          actorEvents: eventGroups.get(actor) || EMPTY_ARRAY,
+        })),
+    ];
 
-    return actorList
-      .map((actor) => {
-        const actorEvents = eventGroups.get(actor) || EMPTY_ARRAY;
-        const actorRollup =
-          [...rollups]
-            .reverse()
-            .find((row) => safeLower(row?.actor) === safeLower(actor)) || null;
+    return workItems
+      .map(({ key, actor, actorRollup, actorEvents }) => {
         const actorLlmRows = llmRows.filter((row) => safeLower(row.actor) === safeLower(actor));
         const latestEvent = actorEvents[actorEvents.length - 1] || null;
         const recentEvents = actorEvents.slice(-3).reverse();
@@ -250,6 +469,7 @@ export function AgentActivityBoard({
         const promptEvents = actorEvents.filter((event) => event.kind === "prompt_compiled");
         const memoryInjected = promptEvents.some((event) => Boolean(event.details?.memory_injected));
         const latestMemoryEvent = memoryEvents[memoryEvents.length - 1] || null;
+        const eventContext = latestEventContext(actorEvents);
         const stage =
           actorToStage(actor) ||
           safeLower(actorRollup?.agent_type) ||
@@ -257,18 +477,26 @@ export function AgentActivityBoard({
         const stageIndex = STAGE_ORDER.indexOf(stage);
         const peak = peakContextUsage(actorLlmRows, pricingMap);
         const contextWindow =
-          peak.contextWindow ||
+          firstNumber(
+            actorRollup?.context_window,
+            eventContext.contextWindow,
+            peak.contextWindow,
+          ) ||
           getContextWindow(
-            peak.provider || primaryProvider,
-            peak.model || primaryModel,
+            eventContext.provider || peak.provider || actorRollup?.provider || primaryProvider,
+            eventContext.model || peak.model || actorRollup?.model_name || primaryModel,
             actorLlmRows,
             pricingMap,
           );
-        const contextPct = contextWindow > 0 ? peak.tokens / contextWindow : 0;
+        const contextTokens = firstNumber(actorRollup?.context_tokens, eventContext.contextTokens, peak.tokens);
+        const contextPct = firstNumber(actorRollup?.context_usage_pct, eventContext.contextUsagePct) ||
+          (contextWindow > 0 ? contextTokens / contextWindow : 0);
         const focus = summarizeAgentFocus(latestEvent, runUrl);
 
         return {
+          agentRunId: Number(actorRollup?.agent_run_id || 0),
           actor,
+          key,
           stage,
           stageLabel: STAGE_LABELS[stage] || actorRollup?.agent_type || actor,
           stageIndex: stageIndex >= 0 ? stageIndex : STAGE_ORDER.length + 1,
@@ -283,10 +511,14 @@ export function AgentActivityBoard({
           costUsd: Number(actorRollup?.cost_usd || 0),
           durationSeconds: Number(actorRollup?.duration_seconds || 0),
           contextWindow,
-          contextTokens: Number(peak.tokens || 0),
+          contextTokens,
           contextPct,
-          contextModel: peak.model || actorLlmRows[actorLlmRows.length - 1]?.model || actorRollup?.model_name || "",
+          contextModel: eventContext.model || peak.model || actorLlmRows[actorLlmRows.length - 1]?.model || actorRollup?.model_name || primaryModel || "",
+          contextProvider: eventContext.provider || peak.provider || actorLlmRows[actorLlmRows.length - 1]?.provider || actorRollup?.provider || primaryProvider || "",
           outputSummary: trimText(actorRollup?.output_summary || "", 180),
+          rawOutput: actorRollup?.raw_output || null,
+          evidenceRows: outputEvidence(actorRollup?.raw_output, actorRollup?.agent_type || stage),
+          continuationCount: Number(actorRollup?.raw_output?.agent_run?.continuation_count || 0),
           memoryEvents: memoryEvents.length,
           memoryInjected,
           memoryPreview: trimText(
@@ -311,6 +543,7 @@ export function AgentActivityBoard({
   if (!cards.length) return null;
 
   return (
+    <TooltipProvider>
     <Card className="overflow-hidden shadow-card">
       <CardHeader
         className="border-b px-4 py-4"
@@ -336,7 +569,7 @@ export function AgentActivityBoard({
           const contextTone = metricTone(card.contextPct);
           return (
             <div
-              key={`${card.actor}-${card.invocationIndex}`}
+              key={card.key || `${card.actor}-${card.invocationIndex}`}
               className="rounded-[18px] border p-4"
               style={{
                 borderColor: `color-mix(in oklch, ${color} 22%, var(--line))`,
@@ -366,16 +599,24 @@ export function AgentActivityBoard({
                         {card.memoryEvents > 0 ? `memory ${formatNumber(card.memoryEvents)}` : "memory injected"}
                       </Badge>
                     ) : null}
+                    {card.continuationCount > 0 ? (
+                      <Badge tone="warning">
+                        {formatNumber(card.continuationCount)} continuation{card.continuationCount === 1 ? "" : "s"}
+                      </Badge>
+                    ) : null}
                   </div>
                 </div>
-                {card.latestTimestamp ? (
-                  <div className="text-right text-[10px]" style={{ color: "var(--mute-3)" }}>
-                    <div>last update</div>
-                    <div className="mt-1 font-mono">
-                      {new Date(card.latestTimestamp).toLocaleTimeString()}
+                <div className="flex items-start gap-2">
+                  {card.latestTimestamp ? (
+                    <div className="text-right text-[10px]" style={{ color: "var(--mute-3)" }}>
+                      <div>last update</div>
+                      <div className="mt-1 font-mono">
+                        {new Date(card.latestTimestamp).toLocaleTimeString()}
+                      </div>
                     </div>
-                  </div>
-                ) : null}
+                  ) : null}
+                  <AgentDetailTooltip card={card} color={color} />
+                </div>
               </div>
 
               <div
@@ -437,29 +678,52 @@ export function AgentActivityBoard({
                   value={
                     card.contextWindow > 0
                       ? `${formatNumber(card.contextTokens)} / ${formatNumber(card.contextWindow)}`
-                      : "not used yet"
+                      : "not reported"
                   }
                   tone={card.contextWindow > 0 ? contextTone : "var(--mute-2)"}
                 />
               </div>
 
-              {card.contextWindow > 0 ? (
-                <div className="mt-3">
-                  <div className="flex items-center justify-between gap-2 text-[10px]" style={{ color: "var(--mute-3)" }}>
-                    <span className="truncate">{card.contextModel || "context window"}</span>
-                    <span>{(Math.max(0, Math.min(1, card.contextPct)) * 100).toFixed(1)}% used</span>
+              <div
+                className="mt-3 rounded-[14px] border px-3 py-2.5"
+                style={{
+                  borderColor: `color-mix(in oklch, ${contextTone} 18%, var(--line))`,
+                  background: "color-mix(in oklch, var(--bg) 82%, transparent)",
+                }}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--mute-3)" }}>
+                      Context window
+                    </div>
+                    <div className="mt-1 truncate font-mono text-[11px]" style={{ color: "var(--mute)" }}>
+                      {card.contextModel || "model not reported"}
+                      {card.contextProvider ? ` · ${card.contextProvider}` : ""}
+                    </div>
                   </div>
-                  <div className="mt-1.5 h-2 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
+                  <div className="font-mono text-[12px] font-semibold" style={{ color: card.contextWindow > 0 ? contextTone : "var(--mute-2)" }}>
+                    {card.contextWindow > 0
+                      ? `${formatNumber(card.contextTokens)} / ${formatNumber(card.contextWindow)}`
+                      : "not reported"}
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
                     <div
                       className="h-full rounded-full"
                       style={{
-                        width: `${Math.max(0, Math.min(1, card.contextPct)) * 100}%`,
-                        background: contextTone,
+                        width: card.contextWindow > 0 ? `${Math.max(0, Math.min(1, card.contextPct)) * 100}%` : "0%",
+                        background: card.contextWindow > 0 ? contextTone : "var(--mute-3)",
                       }}
                     />
                   </div>
+                  <div className="w-14 text-right font-mono text-[10px]" style={{ color: "var(--mute-3)" }}>
+                    {card.contextWindow > 0
+                      ? `${(Math.max(0, Math.min(1, card.contextPct)) * 100).toFixed(1)}%`
+                      : "--"}
+                  </div>
                 </div>
-              ) : null}
+              </div>
 
               {card.recentEvents.length ? (
                 <div className="mt-4 space-y-2 border-t pt-3" style={{ borderColor: "var(--line)" }}>
@@ -513,8 +777,27 @@ export function AgentActivityBoard({
               {card.outputSummary ? (
                 <div className="mt-4 flex items-start gap-2 rounded-[12px] border px-3 py-2.5" style={{ borderColor: "var(--line)", background: "color-mix(in oklch, var(--card) 92%, transparent)" }}>
                   <Coins className="mt-0.5 h-3.5 w-3.5" style={{ color: "var(--mute-3)" }} />
-                  <div className="text-[12px]" style={{ color: "var(--mute)" }}>
+                  <div className="min-w-0 flex-1 text-[12px]" style={{ color: "var(--mute)" }}>
                     {card.outputSummary}
+                  </div>
+                  <OutputTooltip card={card} />
+                </div>
+              ) : null}
+
+              {card.evidenceRows.length ? (
+                <div className="mt-3 rounded-[12px] border px-3 py-2.5" style={{ borderColor: "var(--line)", background: "color-mix(in oklch, var(--card) 92%, transparent)" }}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--mute-3)" }}>
+                      Agent result evidence
+                    </div>
+                    {!card.outputSummary ? <OutputTooltip card={card} /> : null}
+                  </div>
+                  <div className="mt-2 grid gap-1.5">
+                    {card.evidenceRows.map((item, index) => (
+                      <div key={`${item}-${index}`} className="truncate font-mono text-[11px]" style={{ color: "var(--mute)" }} title={item}>
+                        {item}
+                      </div>
+                    ))}
                   </div>
                 </div>
               ) : null}
@@ -523,6 +806,7 @@ export function AgentActivityBoard({
         })}
       </CardContent>
     </Card>
+    </TooltipProvider>
   );
 }
 

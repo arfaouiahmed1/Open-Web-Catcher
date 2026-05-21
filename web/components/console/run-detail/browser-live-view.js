@@ -82,7 +82,11 @@ function ScreenshotImage({
 
 function frameLabel(frame) {
   if (!frame) return "";
-  return [frame.toolName, frame.target].filter(Boolean).join(" | ");
+  const invocation =
+    frame.invocationIndex || frame.agentRunId
+      ? `${frame.actor || frame.agentType || "agent"}#${frame.invocationIndex || frame.agentRunId}`
+      : frame.actor || "";
+  return [invocation, frame.toolName, frame.target].filter(Boolean).join(" | ");
 }
 
 function stageTone(stage) {
@@ -124,6 +128,17 @@ function FrameOverlay({ frame, status }) {
         >
           {frame.toolName || "screenshot"}
         </span>
+        {frame.invocationIndex || frame.agentRunId ? (
+          <span
+            className="rounded-full px-2 py-0.5 font-mono text-[10px]"
+            style={{
+              background: "rgba(0,0,0,0.22)",
+              color: "rgba(255,255,255,0.78)",
+            }}
+          >
+            {frame.actor || frame.agentType || "agent"} #{frame.invocationIndex || frame.agentRunId}
+          </span>
+        ) : null}
         <span
           className="ml-auto font-mono text-[10px]"
           style={{ color: "rgba(255,255,255,0.74)" }}
@@ -185,6 +200,50 @@ function StageTrigger({ stage, active, autoSelected, count, status, phase }) {
   );
 }
 
+function normalizePersistedScreenshotFrame(row, index, selectedStage) {
+  if (typeof row === "string") {
+    const url = row.trim();
+    if (!url) return null;
+    return {
+      url,
+      seq: index + 1,
+      actor: "persisted",
+      stage: selectedStage,
+      agentType: "",
+      agentRunId: 0,
+      invocationIndex: 0,
+      toolName: "persisted capture",
+      target: "",
+      timestamp: "",
+    };
+  }
+  if (!row || typeof row !== "object") return null;
+  const url = String(row.screenshot_url || row.url || "").trim();
+  if (!url) return null;
+  const agentType = String(row.agent_type || "");
+  const stage = agentType.includes("landing")
+    ? "landing"
+    : agentType.includes("hosting")
+      ? "hosting"
+      : agentType.includes("embedded")
+        ? "embedded"
+        : agentType.includes("classification")
+          ? "classification"
+          : selectedStage;
+  return {
+    url,
+    seq: Number(row.seq || index + 1),
+    actor: String(row.actor || "persisted"),
+    stage,
+    agentType,
+    agentRunId: Number(row.agent_run_id || 0),
+    invocationIndex: Number(row.invocation_index || 0),
+    toolName: String(row.tool_name || row.label || "persisted capture"),
+    target: String(row.target_url || row.source_url || ""),
+    timestamp: String(row.created_at || ""),
+  };
+}
+
 export function BrowserLiveView({
   runId,
   events = [],
@@ -219,16 +278,8 @@ export function BrowserLiveView({
   const persistedFallbackFrames = useMemo(
     () =>
       (Array.isArray(persistedScreenshots) ? persistedScreenshots : EMPTY_ARRAY)
-        .filter((src) => typeof src === "string" && src.trim())
-        .map((src, index) => ({
-          url: src.trim(),
-          seq: index + 1,
-          actor: "persisted",
-          stage: selectedStage,
-          toolName: "persisted capture",
-          target: "",
-          timestamp: "",
-        })),
+        .map((row, index) => normalizePersistedScreenshotFrame(row, index, selectedStage))
+        .filter(Boolean),
     [persistedScreenshots, selectedStage],
   );
   const effectiveFrames = availableFrames.length ? availableFrames : persistedFallbackFrames;

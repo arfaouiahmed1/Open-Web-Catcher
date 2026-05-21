@@ -583,6 +583,9 @@ export function extractToolCalls(events = []) {
         key: toolCallId || `${actor || "unknown"}-${seq || rows.length + 1}`,
         actor,
         stage,
+        agentRunId: Number(event.agent_run_id || details.agent_run_id || 0),
+        agentType: String(details.agent_type || ""),
+        invocationIndex: Number(details.invocation_index || 0),
         toolName,
         target: toolTarget(details),
         status: "running",
@@ -623,6 +626,9 @@ export function extractToolCalls(events = []) {
         key: toolCallId || `${actor || "unknown"}-${seq || rows.length + 1}`,
         actor,
         stage,
+        agentRunId: Number(event.agent_run_id || details.agent_run_id || 0),
+        agentType: String(details.agent_type || ""),
+        invocationIndex: Number(details.invocation_index || 0),
         toolName,
         target: toolTarget(details),
         status: "queued",
@@ -645,6 +651,9 @@ export function extractToolCalls(events = []) {
     collectScreenshotUrls(result, screenshotSet);
     const screenshots = Array.from(screenshotSet);
     row.status = String(details.status || event.status || "success");
+    row.agentRunId = Number(event.agent_run_id || details.agent_run_id || row.agentRunId || 0);
+    row.agentType = String(details.agent_type || row.agentType || "");
+    row.invocationIndex = Number(details.invocation_index || row.invocationIndex || 0);
     row.finishedAt = event.timestamp || "";
     row.durationSeconds = Number(details.duration_seconds || row.durationSeconds || 0);
     row.finishSeq = seq || row.finishSeq;
@@ -729,6 +738,9 @@ export function buildStageView(events = []) {
         seq: Number(call.finishSeq || call.startSeq || 0),
         actor: call.actor,
         stage: call.stage,
+        agentRunId: Number(call.agentRunId || 0),
+        agentType: String(call.agentType || ""),
+        invocationIndex: Number(call.invocationIndex || 0),
         toolName: call.toolName,
         target: call.target,
         timestamp: call.finishedAt || call.startedAt || "",

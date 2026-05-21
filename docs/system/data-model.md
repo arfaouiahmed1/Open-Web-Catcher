@@ -96,7 +96,39 @@ erDiagram
     text result_preview
     text error_text
   }
+
+  RUN_SCREENSHOTS {
+    int id PK
+    int pipeline_run_id FK
+    int agent_run_id FK
+    text screenshot_url
+    text source_url
+    string actor
+    string agent_type
+    int invocation_index
+    string tool_name
+    text target_url
+    int seq
+  }
 ```
+
+## Screenshot Attribution
+
+`run_screenshots` now stores ownership for screenshots extracted from runtime events. `RunRepository` scans tool result payloads and event details, links each screenshot to the owning `agent_run_id`, and persists actor, agent type, invocation index, tool name, target URL, and event sequence. The old `all_screenshots` list is still returned for compatibility, but `GET /ui/runs/{run_id}` also returns `screenshots` as row objects for the Summary browser view.
+
+Fallback screenshots from a final `PipelineResult.all_screenshots` can still be stored without an `agent_run_id`; attributed rows are preferred whenever trace events are available.
+
+## Continuation Metadata
+
+Context continuation is carried in runtime event details and agent output JSON. The fields are:
+
+- `continuation_of_actor`
+- `continuation_index`
+- `compaction_reason`
+- `context_usage_pct`
+- `continuation_capsule`
+
+Specialist outputs copy continuation data under `agent_run.continuation_count` and `agent_run.continuation_capsules`. The normalized `agent_runs.invocation_index` remains the UI grouping key for continuation invocations.
 
 ## Runtime Schema Class Diagram
 

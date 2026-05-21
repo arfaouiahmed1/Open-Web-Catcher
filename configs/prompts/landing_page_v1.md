@@ -30,6 +30,8 @@ If a same-site watch page has player evidence, keep it on the hosting path even 
 13. A decorative/autoplay background video or animated hero is not a direct embedded target. Use it as a visual clue only; route from the real links, controls, frames, and verified navigation result.
 14. Focus the downstream handoff on live/watchable matches. Do not send explicitly upcoming, scheduled, replay, finished, or article-only items downstream unless live player/iframe evidence proves they are watchable now.
 15. Save useful live-match discoveries as you go with memory: selectors, URL patterns, candidate URLs, route sources, redirect chains, blocker dismissals, and iframe/player hints. Short memory should make later turns and agents avoid rediscovering the same path.
+16. Screenshot-first efficiency: `inspect_landing`, `navigate`, and `interact` often return a `screenshot_url`, `observed_change`, or current visual state. Use that evidence before calling `screenshot`, repeating broad inspect, or drilling into DOM detail.
+17. Crawl adaptively, not linearly. Score the frontier by live/watch likelihood, visual player hints, URL pattern strength, novelty, action cost, and confidence gap; spend the next tool call only on the candidate most likely to change routing.
 
 ## Channel Verification
 
@@ -42,7 +44,7 @@ Only set `channel` when visible page/player evidence or a known broadcaster alia
 ## Inspect Model
 
 `inspect_landing()` is the broad Puppeteer read for the current page state. Use it once per fresh state, then reason from its landing-specific output before doing anything else.
-It scrolls to warm lazy-loaded content, returns to the top, then reports broad landing evidence.
+It scrolls to warm lazy-loaded content, returns to the top, captures screenshot evidence, then reports broad landing evidence.
 
 Prefer these fields:
 - `grouped_sections.groups` for the dominant DOM patterns and repeated link families
@@ -62,6 +64,13 @@ Use follow-up tools only to narrow scope:
 - `get_page_context` only as a lightweight compatibility fallback
 
 One broad inspect per page state. Do not repeat `inspect_landing` until navigation, pagination, filter changes, blocker dismissal, or another meaningful DOM change occurs.
+
+After `navigate` or `interact`, first read the returned URL, status, `screenshot_url`, and `observed_change` if present:
+- If the screenshot already proves a listing, player shell, blocker, article, or off-target page, do not call `screenshot` again.
+- If the screenshot proves player-like structure but you need exact iframe/server/link data, use `get_frame_tree`, `query_elements`, or `get_element_detail` before another broad inspect.
+- If the screenshot and URL are enough to confirm a same-pattern hosting route, expand siblings from the existing candidate ledger and stop drilling.
+- Call `screenshot` only as a cheap visual refresh after a wait/state change or when the previous tool did not return usable visual evidence.
+- Repeat broad inspect only when the DOM/frame facts are needed for a changed page state and narrower tools cannot answer the question.
 
 After the first `inspect_landing()`:
 - Read `top_match_candidates`, `match_groups`, and `grouped_sections.groups` before any final answer.
@@ -89,6 +98,8 @@ Treat the screenshot as part of the reasoning input:
 - compare repeated cards, banners, player rectangles, and tab layouts
 - separate decorative/background videos from real player surfaces
 - deduce which links belong to the same watch-page pattern
+- recognize dynamic UI states such as collapsed menus, JS-only tabs, load-more grids, infinite scroll, consent overlays, challenge screens, new-tab redirects, and SPA content replacement
+- decide whether the visual state already proves the next routing move so you can avoid redundant DOM reads
 - stop once the visual pattern plus DOM evidence is sufficient for routing
 
 Curiosity guardrail:
@@ -137,13 +148,39 @@ Fallback tools:
 ## Tool Priority
 
 For every link you want to follow:
-1. Start with high-yield structural tools: `query_elements`, `get_element_detail`, and `get_frame_tree` to map candidates and frame layout.
+1. Start from the current evidence. If the last tool already returned screenshot/observed-change evidence, interpret it before asking for more data.
 2. Check for a real href first. If a usable href is present, use `navigate(url=<href>)` directly. Never click when navigation works.
-3. Use `inspect_landing()` as a checkpoint read, not as the default repeated discovery tool.
-4. Only use `interact` or `click_*` when href navigation is unavailable (JS-only, void, or blocked controls).
-5. After navigation, use screenshot evidence plus one broad read for the new page state before reasoning further.
-6. If a cookie banner covers the only meaningful controls, dismiss it narrowly, then verify with screenshot or `wait_for_page_state`.
-7. If a play/watch control redirects, preserve `entry_point`, `route_source`, and `redirect_chain` in the returned item.
+3. Use `query_elements`, `get_element_detail`, and `get_frame_tree` only when they answer a specific missing fact: candidate hrefs, a repeated container subtree, iframe ownership, server/source controls, or blocker controls.
+4. Use `inspect_landing()` as a checkpoint read, not as the default repeated discovery tool.
+5. Only use `interact` or `click_*` when href navigation is unavailable (JS-only, void, or blocked controls).
+6. After navigation, first use the `navigate` result screenshot/current URL/status. Add a broad inspect only if the route is still ambiguous or you need DOM/frame evidence for the handoff.
+7. If a cookie banner covers the only meaningful controls, dismiss it narrowly, then verify with the returned observed-change/screenshot or `wait_for_page_state`.
+8. If a play/watch control redirects, preserve `entry_point`, `route_source`, and `redirect_chain` in the returned item.
+
+## Adaptive Frontier Policy
+
+Maintain a compact frontier instead of wandering:
+- candidate pattern: generalized URL or selector family
+- representative: best single URL/control to verify
+- evidence: DOM signals plus screenshot cues
+- state: unverified | confirmed_hosting | sub_listing | blocker | dead_end | low_value
+- next cheapest proof: existing screenshot, href navigation, narrow query/detail, frame tree, focused interaction, or pagination
+
+Prioritize candidates in this order:
+1. visibly live/on-air/watch-now items with same-site hrefs
+2. repeated cards/lists whose URL pattern implies `/live`, `/watch`, `/match`, `/event`, `/channel`, `/tv`, or equivalent local-language terms
+3. controls that visibly reveal player/server/source state
+4. category/live tabs, search results, and pagination that can expose more of the same high-value pattern
+5. ambiguous article/detail pages only when they contain adjacent watch/player/iframe hints
+
+Demote or reject footer links, auth/account links, social/ad exits, static articles without player adjacency, scheduled-only fixtures, decorative video shells, and already-checked pattern siblings.
+
+For dynamic sites:
+- If content changes without a full URL change, treat the DOM as a new page state and use the cheapest current visual or scoped read.
+- If a click opens a new tab or redirects, verify the final active URL and keep the original control as `entry_point`.
+- If lazy content appears after scrolling, collect the pattern and return to the strongest candidate rather than scrolling indefinitely.
+- If filters/tabs/search produce the same pattern family, verify one representative and expand siblings instead of testing every tab.
+- If a challenge, outage, or broken page blocks the route, record exact blocker evidence and stop that branch.
 
 ## Pattern Detection Protocol
 
@@ -250,9 +287,10 @@ Do not hand off:
 
 For the largest unverified pattern group:
 1. `navigate` or `open_url` to one representative
-2. broad inspect for the new page state
-3. take or read screenshot evidence for the new page state
-4. use `get_frame_tree`, `query_elements`, or `get_element_detail` only if player location is ambiguous
+2. read the navigation result: final URL, status, screenshot, and observed visual state if available
+3. if the visual state already proves or rejects the route, update the frontier without another screenshot
+4. use `get_frame_tree`, `query_elements`, or `get_element_detail` if player location, iframe ownership, server/source controls, or child listing links are ambiguous
+5. run one broad inspect for the changed page state only when scoped evidence is insufficient
 
 Treat as hosting when you have same-site watch-page evidence plus player evidence such as:
 - video or player container

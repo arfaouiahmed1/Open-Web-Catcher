@@ -25,8 +25,16 @@ const ORCHESTRATOR_KINDS = new Set([
   "agent_finished",
   "agent_failed",
   "route_decision",
+  "orchestrator_decision",
   "routing",
   "handoff",
+  "orchestrator_handoff_received",
+  "context_compaction_started",
+  "context_compaction_finished",
+  "agent_loop_started",
+  "agent_loop_finished",
+  "agent_stop_requested",
+  "embedded_handoff_missing",
 ]);
 
 export function isOrchestratorEvent(event) {
@@ -46,6 +54,10 @@ function decisionMeta(event) {
   if (kind === "agent_started") return { icon: Bot, color: "var(--violet)", label: "Agent started" };
   if (kind === "agent_finished") return { icon: CheckCircle2, color: "var(--mint)", label: "Agent finished" };
   if (kind === "agent_failed") return { icon: XCircle, color: "var(--rose)", label: "Agent failed" };
+  if (kind.includes("context_compaction")) return { icon: GitBranch, color: "var(--signal)", label: "Context continuation" };
+  if (kind === "agent_stop_requested") return { icon: XCircle, color: "var(--signal)", label: "Agent stop requested" };
+  if (kind === "agent_loop_started") return { icon: Bot, color: "var(--violet)", label: "Agent loop started" };
+  if (kind === "agent_loop_finished") return { icon: CheckCircle2, color: "var(--mint)", label: "Agent loop finished" };
   if (kind.includes("route") || kind.includes("routing")) return { icon: GitBranch, color: "var(--signal)", label: "Routing decision" };
   if (kind.includes("handoff")) return { icon: GitBranch, color: "var(--signal)", label: "Handoff" };
   return { icon: Network, color: "var(--sky)", label: kind || "Event" };

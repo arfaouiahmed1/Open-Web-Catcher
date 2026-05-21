@@ -433,21 +433,21 @@ Refresh condition:
 
 ```mermaid
 sequenceDiagram
-    participant LOOP as run_agent_loop
+    participant AgentLoop as run_agent_loop
     participant REG as in-memory registry
     participant API as Google cachedContents API
     participant LLM as Gemini model invoke
 
-    LOOP->>REG: lookup(cache_key)
+    AgentLoop->>REG: lookup(cache_key)
 
     alt active entry and not near expiry
-        REG-->>LOOP: cachedContents/name
-        LOOP->>LLM: ainvoke(..., cached_content=name)
+        REG-->>AgentLoop: cachedContents/name
+        AgentLoop->>LLM: ainvoke(..., cached_content=name)
     else missing or near expiry
-        LOOP->>API: create cachedContents(ttl, static_prompt_prefix)
-        API-->>LOOP: name + expireTime
-        LOOP->>REG: upsert cache entry
-        LOOP->>LLM: ainvoke(..., cached_content=name)
+        AgentLoop->>API: create cachedContents(ttl, static_prompt_prefix)
+        API-->>AgentLoop: name + expireTime
+        AgentLoop->>REG: upsert cache entry
+        AgentLoop->>LLM: ainvoke(..., cached_content=name)
     end
 ```
 
@@ -513,7 +513,7 @@ flowchart TD
     ENV[.env / env vars]
     BASE[configs/settings.yaml]
     RUNTIME[data/settings.runtime.yaml]
-    APP[Settings.from_yaml()]
+    APP["Settings.from_yaml()"]
 
     ENV --> APP
     BASE --> APP

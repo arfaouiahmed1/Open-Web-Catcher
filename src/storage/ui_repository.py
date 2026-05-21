@@ -827,6 +827,17 @@ class OperatorConsoleRepository:
             cached_input_cost = sum(float(item.estimated_cached_input_cost_usd or 0.0) for item in llm_rows)
             cache_write_cost = sum(float(item.estimated_cache_write_cost_usd or 0.0) for item in llm_rows)
             output_cost = sum(float(item.estimated_output_cost_usd or 0.0) for item in llm_rows)
+            latest_llm_row = llm_rows[-1] if llm_rows else None
+            context_window = max((int(item.context_window or 0) for item in llm_rows), default=0)
+            context_tokens = max(
+                (int(item.input_tokens or 0) + int(item.output_tokens or 0) for item in llm_rows),
+                default=0,
+            )
+            context_usage_pct = (
+                round(float(context_tokens) / float(context_window), 6)
+                if context_window > 0
+                else 0.0
+            )
             stage_key = str(agent_row.agent_type or agent_row.actor or "unknown")
             status_value = normalize_run_display_status(
                 str(agent_row.status or ""),
@@ -851,6 +862,11 @@ class OperatorConsoleRepository:
                 "new_input_tokens": new_input_tokens,
                 "output_tokens": output_tokens,
                 "total_tokens": input_tokens + output_tokens,
+                "provider": str(getattr(latest_llm_row, "provider", "") or ""),
+                "model_name": str(getattr(latest_llm_row, "model_name", "") or ""),
+                "context_window": context_window,
+                "context_tokens": context_tokens,
+                "context_usage_pct": context_usage_pct,
                 "input_cost_usd": round(input_cost, 6),
                 "cached_input_cost_usd": round(cached_input_cost, 6),
                 "cache_write_cost_usd": round(cache_write_cost, 6),
@@ -994,6 +1010,7 @@ class OperatorConsoleRepository:
         db_all_streams = [self._serialize_model(row) for row in run_stream_rows]
         db_provider_analysis = [self._serialize_model(row) for row in provider_rows]
         db_takedown_emails = [self._serialize_model(row) for row in email_rows]
+        db_screenshot_rows = [self._serialize_model(row) for row in screenshot_rows]
         db_screenshots = [str(row.screenshot_url or "") for row in screenshot_rows if str(row.screenshot_url or "").strip()]
         snapshot_all_streams = snapshot_payload.get("all_streams", []) if isinstance(snapshot_payload, dict) else []
         snapshot_provider_analysis = snapshot_payload.get("provider_analysis", []) if isinstance(snapshot_payload, dict) else []
@@ -1032,6 +1049,22 @@ class OperatorConsoleRepository:
                 payload["agent_type"] = str(agent_row.agent_type or "")
                 payload["invocation_index"] = int(agent_row.invocation_index or 0)
             llm_call_rows.append(payload)
+        event_rows: list[dict[str, Any]] = []
+        for row in events:
+            payload = self._runtime_event_row(row)
+            agent_row = agent_by_id.get(int(row.agent_run_id or 0))
+            if agent_row is not None:
+                payload["agent_type"] = str(agent_row.agent_type or "")
+                payload["invocation_index"] = int(agent_row.invocation_index or 0)
+                details = payload.get("details") if isinstance(payload.get("details"), dict) else {}
+                payload["details"] = {
+                    **details,
+                    "agent_run_id": row.agent_run_id,
+                    "agent_type": str(agent_row.agent_type or ""),
+                    "invocation_index": int(agent_row.invocation_index or 0),
+                }
+                payload["details_json"] = payload["details"]
+            event_rows.append(payload)
         return {
             "run": run_payload,
             "snapshot": snapshot_payload,
@@ -1039,6 +1072,7 @@ class OperatorConsoleRepository:
             "takedown_emails": effective_takedown_emails,
             "all_streams": effective_all_streams,
             "all_screenshots": effective_all_screenshots,
+            "screenshots": db_screenshot_rows,
             "agent_runs": [self._serialize_model(row) for row in agent_runs],
             "agent_outputs": agent_output_rows,
             "agent_rollups": agent_rollups,
@@ -1072,7 +1106,7 @@ class OperatorConsoleRepository:
             "tool_calls": tool_call_rows,
             "llm_calls": llm_call_rows,
             "model_usage": [self._model_usage_row(row) for row in model_usage],
-            "events": [self._runtime_event_row(row) for row in events],
+            "events": event_rows,
             "decisions": [self._decision_row(row) for row in decisions],
             "tasks": [self._task_row(row) for row in tasks],
             "job": job_state,

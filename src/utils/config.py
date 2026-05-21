@@ -282,6 +282,9 @@ class Settings(BaseSettings):
     memory_db_path: str = "data/site_memory.db"
     memory_prompt_limit: int = 6
     memory_short_window: int = 40
+    context_continuation_enabled: bool = True
+    context_continuation_threshold: float = 0.8
+    context_continuation_max: int = 4
     prompt_cache_enabled: bool = True
     prompt_cache_mode: str = "provider_hook"
     prompt_cache_min_chars: int = 2000

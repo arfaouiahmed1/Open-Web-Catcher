@@ -371,9 +371,16 @@ class RunScreenshotRecord(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     pipeline_run_id: Mapped[int] = mapped_column(ForeignKey("pipeline_runs.id", ondelete="CASCADE"), index=True)
+    agent_run_id: Mapped[int | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True)
     screenshot_url: Mapped[str] = mapped_column(Text)
     source_url: Mapped[str] = mapped_column(Text, default="")
     label: Mapped[str] = mapped_column(String(128), default="")
+    actor: Mapped[str] = mapped_column(String(128), default="", index=True)
+    agent_type: Mapped[str] = mapped_column(String(32), default="", index=True)
+    invocation_index: Mapped[int] = mapped_column(Integer, default=0)
+    tool_name: Mapped[str] = mapped_column(String(128), default="")
+    target_url: Mapped[str] = mapped_column(Text, default="")
+    seq: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

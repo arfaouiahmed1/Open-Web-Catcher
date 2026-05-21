@@ -563,6 +563,10 @@ export function RunDetailPage() {
   );
 
   const screenshots = useMemo(() => {
+    const attributed = Array.isArray(payload?.screenshots)
+      ? payload.screenshots.filter((row) => row?.screenshot_url)
+      : EMPTY_ARRAY;
+    if (attributed.length) return attributed;
     const urls = new Set();
     collectScreenshotUrls(snapshot.all_screenshots || EMPTY_ARRAY, urls);
     collectScreenshotUrls(payload?.all_screenshots || EMPTY_ARRAY, urls);
@@ -571,7 +575,7 @@ export function RunDetailPage() {
       collectScreenshotUrls(event?.details_json, urls);
     }
     return Array.from(urls);
-  }, [payload?.all_screenshots, runEvents, snapshot]);
+  }, [payload?.all_screenshots, payload?.screenshots, runEvents, snapshot]);
 
   if (isLoading) {
     return (
@@ -1004,6 +1008,8 @@ export function RunDetailPage() {
         agentRollups={agentRollups}
         stageRollups={stageRollups}
         parallelism={parallelism}
+        primaryProvider={primaryProvider}
+        primaryModel={primaryModel}
       />
     </div>
   );

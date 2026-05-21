@@ -21,11 +21,11 @@ flowchart TB
   Page["RunDetailPage<br/>metadata, hero, payload fetch"]
   Live["RunDetailLive<br/>tabs, SSE, actions"]
   Graph["orchestrator-graph.js<br/>Agent desk"]
-  DecisionFeed["orchestrator-decision-feed.js"]
+  TraceFeed["orchestrator-decision-feed.js<br/>Traces tab"]
   OutputTab["agent-output-tab.js"]
   ProviderTab["stream-provider-tab.js"]
-  BrowserTab["browser-live-view.js"]
-  Panels["run-log-panels.js<br/>decisions/tasks"]
+  BrowserSummary["browser-live-view.js<br/>Summary screenshots"]
+  Panels["run-log-panels.js<br/>trace filters"]
   ApiLib["web/lib/api.js"]
   TraceLib["web/lib/run-trace.js"]
   SyncLib["web/lib/run-log-sync.js"]
@@ -35,10 +35,10 @@ flowchart TB
   Page --> TraceLib
   Page --> Live
   Live --> Graph
-  Live --> DecisionFeed
+  Live --> TraceFeed
   Live --> OutputTab
   Live --> ProviderTab
-  Live --> BrowserTab
+  Live --> BrowserSummary
   Live --> Panels
   Live --> SyncLib
 ```
@@ -133,23 +133,27 @@ sequenceDiagram
 | Model attempts | `llm_turn_started`, `llm_response`, persisted `llm_calls` |
 | Tool count | `tool_call_started`, `tool_call_finished`, persisted `tool_calls` |
 | Recent milestones | last stage events excluding noisy session-ready events |
-| Evidence | screenshots, stream URLs, provider rows, email rows |
+| Evidence | attributed screenshots, stream URLs, provider rows, email rows |
 
 ## How Agent Cards Are Built
 
-`AgentActivityBoard` groups runtime events by `actor`, merges them with `agent_rollups`, and computes a stage label with `actorToStage`. It also synthesizes LLM rows from events using `buildLlmRows`, then uses pricing helpers to show context-window usage and estimated spend. This is why the board can still show partial activity while a run is live, before every normalized DB row is available.
+`OrchestratorGraph` now keys persisted cards by exact `agent_rollup.agent_run_id` and `invocation_index`, not only by stage. That matters when several hosting or embedded agents run in parallel, and when context continuation starts a later invocation for the same actor. Live events are grouped by `agent_run_id` when the persisted event row has one, then fall back to actor/invocation grouping while the run is still streaming.
+
+Each card has a dedicated context-window block. Persisted rollups provide `provider`, `model_name`, `context_tokens`, `context_window`, and `context_usage_pct`; live LLM events can fill the same values from event details, and pricing metadata is used as a fallback when only provider/model is known. If the provider never reported a window, the block remains visible and says `not reported`.
+
+Each card also exposes hover controls for the agent and its output. The agent hover shows actor, `agent_run_id`, invocation index, model/provider, context tokens/window, LLM/tool counts, duration, and output evidence. Landing cards surface hosting URLs. Hosting and embedded cards surface server labels, states, and stream counts before the raw output JSON.
 
 The current card logic prefers concrete activity over generic labels. For example, `orchestrator_decision` becomes route/intent text, `prompt_compiled` becomes cache or memory status, `tool_call_started` becomes a tool-running state, and `llm_response` becomes a model-response milestone. That is the reason the dashboard can show what the orchestrator says it wants to do instead of only showing a stage name.
 
 ```mermaid
 flowchart TD
   Events["events[] from payload/SSE"]
-  EventGroups["group by actor"]
+  EventGroups["group by agent_run_id or actor"]
   Rollups["agent_rollups[]"]
   LLMRows["buildLlmRows(events)"]
   StageMap["actorToStage(actor)"]
   Pricing["loadPricing + peakContextUsage"]
-  Cards["AgentActivityBoard cards"]
+  Cards["OrchestratorGraph invocation cards"]
 
   Events --> EventGroups
   Events --> LLMRows
@@ -163,6 +167,12 @@ flowchart TD
 ## Dashboard Logging Semantics
 
 The Agent desk should be read as a live execution board, not as a static final report. Some data comes from event streams and some comes from persisted rows. While a run is active, SSE can add events before the database snapshot catches up. After a run finishes, the page reload path should rely on `GET /ui/runs/{run_id}` and the normalized rows.
+
+Screenshots are no longer a standalone tab. `RunDetailLive` keeps Browser live view under Summary and passes attributed `screenshots` rows from the API when available. `BrowserLiveView` accepts either legacy URL strings or attributed screenshot rows, then labels frames with actor, invocation, tool, target URL, and stage.
+
+The old Decisions tab is now Traces. The trace surface uses runtime events directly and does not show the manual decision log editor. It highlights orchestrator decisions, handoffs, agent lifecycle events, continuation events, and loop stop reasons.
+
+Output uses an evidence-first layout. `AgentOutputPanel` renders stage/agent metrics, then extracts the most useful fields from each agent output before the raw structured payload: landing hosting URLs, hosting server states and streams, embedded player/server rows, and continuation count. Raw payloads still use `StructuredDataCard`, which supports decoded JSON strings, recursive search, compact row limits, tree/table/json modes, and long-value truncation.
 
 The important distinction is:
 

@@ -26,7 +26,7 @@ import { buildAutoDecisionSync } from "@/lib/run-log-sync";
 import { AgentOutputTab } from "@/components/console/run-detail/agent-output-tab";
 import { BrowserLiveView } from "@/components/console/run-detail/browser-live-view";
 import { StreamProviderTab } from "@/components/console/run-detail/stream-provider-tab";
-import { DecisionLogPanel } from "@/components/run-log-panels";
+import { TracePanel } from "@/components/run-log-panels";
 import { OrchestratorGraph } from "@/components/orchestrator-graph";
 import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
 import { ToolCallFeed } from "@/components/tool-call-feed";
@@ -362,6 +362,8 @@ export function RunDetailLive({
   parallelism = null,
   metrics = null,
   onMetricsChange = null,
+  primaryProvider = "",
+  primaryModel = "",
   defaultStreaming = null,
   rootActor: rootActorOverride = "",
 }) {
@@ -377,7 +379,6 @@ export function RunDetailLive({
   const [isCancelling, setIsCancelling] = useState(false);
   const [actionError, setActionError] = useState("");
   const [streamError, setStreamError] = useState("");
-  const [logSyncVersion, setLogSyncVersion] = useState(0);
   const [sharedFilters, setSharedFilters] = useState({ actor: "", stage: "" });
 
   if (eventMapRef.current === null) {
@@ -534,7 +535,6 @@ export function RunDetailLive({
         taskCount: 0,
         toolCallCount: toolCallFeedRows.length,
         eventCount: normalizedEvents.length,
-        screenshotCount: snapshotScreenshots.length,
         runState,
       }),
     [
@@ -542,7 +542,6 @@ export function RunDetailLive({
       normalizedEvents.length,
       outputCount,
       runState,
-      snapshotScreenshots.length,
       toolCallFeedRows.length,
     ],
   );
@@ -577,7 +576,6 @@ export function RunDetailLive({
       })
         .then(() => {
           lastAutoSyncSignatureRef.current = signature;
-          setLogSyncVersion((value) => value + 1);
         })
         .catch(() => {});
     }, 450);
@@ -725,33 +723,13 @@ export function RunDetailLive({
         </TabsContent>
 
         <TabsContent value="summary" className="space-y-4">
-          <OrchestratorGraph events={normalizedEvents} rootActor={rootActor} agentRollups={agentRollups} />
-        </TabsContent>
-
-        <TabsContent value="output" className="space-y-4">
-          <AgentOutputTab
-            stageRollups={stageRollups}
-            agentRollups={agentRollups}
-            parallelism={parallelism}
-            takedownEmails={takedownEmails}
-          />
-        </TabsContent>
-
-        <TabsContent value="decisions" className="space-y-4">
-          <DecisionLogPanel
-            runId={runId}
-            initialItems={initialDecisions}
+          <OrchestratorGraph
             events={normalizedEvents}
-            isStreaming={isLive}
-            refreshToken={logSyncVersion}
-            sharedFilters={sharedFilters}
-            onSharedFiltersChange={setSharedFilters}
-            actorOptions={filterOptions.actors}
-            stageOptions={filterOptions.stages}
+            rootActor={rootActor}
+            agentRollups={agentRollups}
+            primaryProvider={primaryProvider}
+            primaryModel={primaryModel}
           />
-        </TabsContent>
-
-        <TabsContent value="screenshots" className="space-y-4">
           {runId ? (
             <BrowserLiveView
               runId={runId}
@@ -768,6 +746,26 @@ export function RunDetailLive({
               }
             />
           )}
+        </TabsContent>
+
+        <TabsContent value="output" className="space-y-4">
+          <AgentOutputTab
+            stageRollups={stageRollups}
+            agentRollups={agentRollups}
+            parallelism={parallelism}
+            takedownEmails={takedownEmails}
+          />
+        </TabsContent>
+
+        <TabsContent value="traces" className="space-y-4">
+          <TracePanel
+            events={normalizedEvents}
+            isStreaming={isLive}
+            sharedFilters={sharedFilters}
+            onSharedFiltersChange={setSharedFilters}
+            actorOptions={filterOptions.actors}
+            stageOptions={filterOptions.stages}
+          />
         </TabsContent>
 
         {providerEntryCount || (Array.isArray(extractionResults) && extractionResults.length) ? (

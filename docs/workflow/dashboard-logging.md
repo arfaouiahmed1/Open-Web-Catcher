@@ -211,7 +211,9 @@ If the payload source is `background_job_result`, the UI should treat telemetry 
 - `llm_calls` answer model/provider/token/cost questions.
 - `tool_calls` answer browser/tool behavior questions.
 - `run_model_usage` gives a grouped cost and token summary.
-- `run_streams`, `run_screenshots`, `provider_analyses`, and `takedown_emails` are the evidence products of the run.
+- `run_streams`, attributed `run_screenshots`, `provider_analyses`, and `takedown_emails` are the evidence products of the run.
 - `background_jobs` explains queued/running/retrying/cancelled job state even before a normalized `pipeline_runs` row exists.
+
+For screenshots, the compatibility list `all_screenshots` still exists, but the richer UI path reads `screenshots[]` rows with `agent_run_id`, `actor`, `agent_type`, `invocation_index`, `tool_name`, `target_url`, and `seq`. This is how Summary can show which parallel hosting or embedded invocation produced each frame.
 
 This separation is intentional. A failed run with no streams can still be a valuable run if it records the reason: page inaccessible, classification unknown, tool timeout, no hosting pages, no streams, or cancellation.

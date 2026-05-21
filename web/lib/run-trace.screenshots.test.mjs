@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { collectScreenshotUrls } from "./run-trace.js";
+import { extractToolCalls } from "./run-trace.js";
 
 function toList(value) {
   return Array.from(collectScreenshotUrls(value, new Set()));
@@ -29,6 +30,43 @@ test("extracts screenshot from content text wrapper", () => {
   };
   const urls = toList(payload);
   assert.deepEqual(urls, ["data:image/png;base64,AAAA"]);
+});
+
+test("carries agent invocation attribution onto screenshot tool calls", () => {
+  const events = [
+    {
+      seq: 1,
+      actor: "hosting",
+      kind: "tool_call_started",
+      agent_run_id: 42,
+      details: {
+        agent_type: "hosting_page",
+        invocation_index: 2,
+        tool_call_id: "call-1",
+        tool_name: "inspect_hosting",
+        tool_args: { url: "https://example.test/watch/1" },
+      },
+    },
+    {
+      seq: 2,
+      actor: "hosting",
+      kind: "tool_call_finished",
+      agent_run_id: 42,
+      details: {
+        agent_type: "hosting_page",
+        invocation_index: 2,
+        tool_call_id: "call-1",
+        tool_name: "inspect_hosting",
+        result_full: '{"screenshot_url":"https://res.cloudinary.com/demo/image/upload/v1/hosting.png"}',
+      },
+    },
+  ];
+  const calls = extractToolCalls(events);
+  assert.equal(calls[0].agentRunId, 42);
+  assert.equal(calls[0].invocationIndex, 2);
+  assert.deepEqual(calls[0].screenshots, [
+    "https://res.cloudinary.com/demo/image/upload/v1/hosting.png",
+  ]);
 });
 
 test("does not treat content_urls image links as screenshots", () => {

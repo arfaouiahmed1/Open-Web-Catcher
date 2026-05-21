@@ -27,6 +27,31 @@ LangGraph keeps those decisions explicit. The model can propose tool calls and p
 | Prompt layering | `src/agents/prompting.py` |
 | Gemini/tool caches | `src/agents/cache.py` |
 
+## Context Continuation
+
+`run_agent_loop` monitors context usage from every `llm_response`. For landing, hosting, and embedded profiles, if `input_tokens + output_tokens` reaches `settings.context_continuation_threshold` (default `0.8`) and the model still requested tools, the graph routes through `compact_context` before the next model turn. Classification is excluded by `runtime_profile == classification`.
+
+The compaction node emits visible runtime events:
+
+- `context_compaction_started`
+- `agent_finished` with `stop_reason=context_compacted`
+- `agent_started` for the continuation invocation
+- `context_compaction_finished`
+
+Persistence sees those `agent_finished` and `agent_started` events as separate `agent_runs` rows for the same actor with a higher `invocation_index`. The continuation capsule is stored in event details and in `AgentLoopResult.continuation_capsules`, then copied into specialist output under `agent_run.continuation_capsules`.
+
+The capsule is deterministic and intentionally compact. It preserves objective, target URL, page type, actor, continuation index, context usage, used/remaining tool budget, visited URLs, confirmed URL and pagination patterns, pending landing frontier, server evidence, screenshots, streams, blockers, and `next_best_move`. It is inserted as a new human message with the original system prompt and original task so the next invocation can continue from the current frontier instead of restarting.
+
+Context-window metadata is logged across the whole lifecycle. `agent_loop_started`,
+model retry, timeout, rate-limit, and error events include provider/model and
+`context_window`. Successful `llm_response` events additionally include
+`context_tokens` and `context_usage_pct`. The compaction events repeat
+`context_window`, `context_tokens`, `context_usage_pct`, and the continuation
+capsule so persistence and the Agent desk can explain why continuation happened.
+If a tool turn both crosses the threshold and exhausts the budget, compaction
+runs before the budget-exhausted final-answer path so the final answer request
+does not carry the oversized history.
+
 ## Layered Runtime Diagram
 
 ```mermaid
@@ -89,7 +114,7 @@ sequenceDiagram
   participant P as compile_agent_prompt
   participant M as LongTermMemory
   participant MCP as agent_tools(profile)
-  participant Loop as run_agent_loop
+  participant AgentLoop as run_agent_loop
   participant LLM as Gemini
   participant T as Browser tool
   participant O as RunObserver
@@ -100,21 +125,21 @@ sequenceDiagram
   P-->>A: compiled prompt + cache metadata
   A->>O: prompt_compiled
   A->>MCP: open profile session
-  A->>Loop: settings, llm, tools, prompt, bootstrap flags
-  Loop->>T: bootstrap memory_lookup when available
-  Loop->>T: bootstrap navigate/open_url
-  Loop->>T: bootstrap inspect/get_page_context
+  A->>AgentLoop: settings, llm, tools, prompt, bootstrap flags
+  AgentLoop->>T: bootstrap memory_lookup when available
+  AgentLoop->>T: bootstrap navigate/open_url
+  AgentLoop->>T: bootstrap inspect/get_page_context
   loop model and tool turns
-    Loop->>LLM: messages + bound tools
-    LLM-->>Loop: AIMessage with tool calls or final text
-    Loop->>O: llm_response and usage metrics
+    AgentLoop->>LLM: messages + bound tools
+    LLM-->>AgentLoop: AIMessage with tool calls or final text
+    AgentLoop->>O: llm_response and usage metrics
     opt requested tool call
-      Loop->>T: invoke tool with timeout
-      T-->>Loop: serialized tool result
-      Loop->>O: tool_call_finished
+      AgentLoop->>T: invoke tool with timeout
+      T-->>AgentLoop: serialized tool result
+      AgentLoop->>O: tool_call_finished
     end
   end
-  Loop-->>A: AgentLoopResult
+  AgentLoop-->>A: AgentLoopResult
   A->>A: parse and normalize result
   A->>O: agent_finished
 ```
@@ -134,6 +159,11 @@ classDiagram
     +str last_tool_batch_signature
     +int repeated_tool_batch_count
     +int no_progress_turn_count
+    +bool context_compaction_pending
+    +float context_usage_pct
+    +int last_context_tokens
+    +int continuation_index
+    +list continuation_capsules
   }
 
   class AgentLoopResult {
@@ -145,6 +175,8 @@ classDiagram
     +str stop_reason
     +bool budget_exhausted
     +str parse_error
+    +int continuation_count
+    +list continuation_capsules
     +parse_json() dict
   }
 

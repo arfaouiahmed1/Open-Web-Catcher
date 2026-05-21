@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="560" viewBox="0 0 1120 560" role="img" aria-labelledby="title desc">
+  <title id="title">Open Web Catcher physical runtime topology</title>
+  <desc id="desc">A custom SVG diagram of Docker Compose services: web, FastAPI, Postgres, Puppeteer MCP, Playwright MCP, data, configs, and datasets.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#1f2937"/>
+    </marker>
+    <style>
+      .bg{fill:#f8fafc}
+      .compose{fill:#ffffff;stroke:#cbd5e1;stroke-width:1.5}
+      .svc{fill:#f9fafb;stroke:#334155;stroke-width:1.6}
+      .web{fill:#eff6ff;stroke:#2563eb}
+      .api{fill:#eef2ff;stroke:#4f46e5}
+      .tool{fill:#ecfeff;stroke:#0891b2}
+      .db{fill:#f0fdf4;stroke:#15803d}
+      .vol{fill:#fff7ed;stroke:#c2410c}
+      .title{font:700 22px Arial, sans-serif;fill:#0f172a}
+      .label{font:700 14px Arial, sans-serif;fill:#111827}
+      .small{font:12px Arial, sans-serif;fill:#475569}
+      .tiny{font:11px Arial, sans-serif;fill:#64748b}
+      .edge{fill:none;stroke:#1f2937;stroke-width:1.8;marker-end:url(#arrow)}
+      .soft{fill:none;stroke:#94a3b8;stroke-width:1.4;stroke-dasharray:6 6;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect class="bg" width="1120" height="560" rx="20"/>
+  <text class="title" x="36" y="44">Physical runtime topology</text>
+  <text class="small" x="36" y="68">Docker Compose separates the UI, API, database, and browser automation engines</text>
+
+  <rect class="svc web" x="54" y="120" width="170" height="80" rx="12"/>
+  <text class="label" x="104" y="148">Browser</text>
+  <text class="small" x="77" y="170">localhost:3000</text>
+  <text class="tiny" x="82" y="188">operator console</text>
+
+  <rect class="compose" x="282" y="92" width="786" height="394" rx="18"/>
+  <text class="label" x="306" y="124">docker-compose.yml</text>
+
+  <rect class="svc web" x="326" y="160" width="164" height="88" rx="12"/>
+  <text class="label" x="379" y="188">owc-web</text>
+  <text class="small" x="346" y="210">Next.js container</text>
+  <text class="tiny" x="348" y="228">3001 -> host 3000</text>
+
+  <rect class="svc api" x="572" y="160" width="174" height="88" rx="12"/>
+  <text class="label" x="632" y="188">owc</text>
+  <text class="small" x="608" y="210">FastAPI + agents</text>
+  <text class="tiny" x="613" y="228">8000 -> host 8000</text>
+
+  <rect class="svc db" x="830" y="160" width="166" height="88" rx="12"/>
+  <text class="label" x="881" y="188">postgres</text>
+  <text class="small" x="862" y="210">PostgreSQL 16</text>
+  <text class="tiny" x="878" y="228">internal 5432</text>
+
+  <rect class="svc tool" x="450" y="318" width="190" height="92" rx="12"/>
+  <text class="label" x="505" y="346">owc-tools</text>
+  <text class="small" x="484" y="368">Puppeteer MCP</text>
+  <text class="tiny" x="477" y="386">3000 -> host 3001</text>
+  <text class="tiny" x="490" y="402">DevTools 9222</text>
+
+  <rect class="svc tool" x="722" y="318" width="210" height="92" rx="12"/>
+  <text class="label" x="768" y="346">owc-tools-playwright</text>
+  <text class="small" x="781" y="368">Playwright MCP</text>
+  <text class="tiny" x="758" y="386">3001 -> host 3002</text>
+  <text class="tiny" x="792" y="402">DevTools 9223</text>
+
+  <rect class="svc vol" x="318" y="444" width="190" height="34" rx="8"/>
+  <text class="small" x="344" y="466">./data shared runtime state</text>
+  <rect class="svc vol" x="546" y="444" width="184" height="34" rx="8"/>
+  <text class="small" x="574" y="466">./configs read-only</text>
+  <rect class="svc vol" x="768" y="444" width="190" height="34" rx="8"/>
+  <text class="small" x="794" y="466">./datasets read-only</text>
+
+  <path class="edge" d="M224 160 L326 204"/>
+  <path class="edge" d="M490 204 L572 204"/>
+  <path class="edge" d="M746 204 L830 204"/>
+  <path class="edge" d="M659 248 C640 282 602 304 560 318"/>
+  <path class="edge" d="M706 248 C736 286 772 304 812 318"/>
+  <path class="soft" d="M620 248 C560 332 480 398 412 444"/>
+  <path class="soft" d="M658 248 L638 444"/>
+  <path class="soft" d="M700 248 C746 338 820 398 862 444"/>
+
+  <text class="tiny" x="526" y="284">MCP_SERVER_URL_PUPPETEER</text>
+  <text class="tiny" x="750" y="284">MCP_SERVER_URL_PLAYWRIGHT</text>
+  <text class="tiny" x="512" y="148">API_BASE_URL=http://owc:8000</text>
+</svg>

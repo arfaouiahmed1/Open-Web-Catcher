@@ -1,4 +1,10 @@
 import { apiFetch } from "@/lib/api";
+import {
+  callContextWindow,
+  callInputTokens,
+  callModel,
+  callOutputTokens,
+} from "./context-window.js";
 
 let pricingCache = null;
 let pricingPromise = null;
@@ -105,10 +111,10 @@ export function lookupPricing(map, provider, model) {
 
 export function estimateCallCost(call, pricingMap) {
   const provider = call?.provider || "";
-  const model = call?.model_name || "";
+  const model = callModel(call);
   const pricing = lookupPricing(pricingMap, provider, model);
-  const inputTokens = Number(call?.input_tokens || 0);
-  const outputTokens = Number(call?.output_tokens || 0);
+  const inputTokens = callInputTokens(call);
+  const outputTokens = callOutputTokens(call);
   const meta = call?.usage_metadata_json || {};
   const cachedInput = Number(call?.cached_input_tokens ?? meta?.cached_input_tokens ?? 0);
   const cacheWriteInput = Number(call?.cache_creation_input_tokens ?? meta?.cache_creation_input_tokens ?? 0);
@@ -218,15 +224,18 @@ export function estimateRunCost(llmCalls, pricingMap) {
 export function getContextWindow(provider, model, llmCalls = [], pricingMap = null) {
   const m = normalizeModel(model);
   for (const call of llmCalls) {
+    const modelName = callModel(call);
+    const window = callContextWindow(call);
     if (
-      normalizeModel(call?.model_name) === m &&
-      Number(call?.context_window || 0) > 0
+      normalizeModel(modelName) === m &&
+      window > 0
     ) {
-      return Number(call.context_window);
+      return window;
     }
   }
   for (const call of llmCalls) {
-    if (Number(call?.context_window || 0) > 0) return Number(call.context_window);
+    const window = callContextWindow(call);
+    if (window > 0) return window;
   }
   if (pricingMap) {
     const pricing = lookupPricing(pricingMap, provider, model);
@@ -241,16 +250,16 @@ export function peakContextUsage(llmCalls = [], pricingMap = null) {
   let peakModel = "";
   let peakProvider = "";
   for (const call of llmCalls) {
-    const tokens = Number(call?.input_tokens || 0);
-    let cw = Number(call?.context_window || 0);
+    const tokens = callInputTokens(call);
+    let cw = callContextWindow(call);
     if (cw === 0 && pricingMap) {
-      const pricing = lookupPricing(pricingMap, call?.provider, call?.model_name);
+      const pricing = lookupPricing(pricingMap, call?.provider, callModel(call));
       if (pricing && pricing.context_window > 0) cw = pricing.context_window;
     }
     if (cw > 0 && tokens > peak) {
       peak = tokens;
       peakCw = cw;
-      peakModel = call?.model_name || "";
+      peakModel = callModel(call);
       peakProvider = call?.provider || "";
     }
   }

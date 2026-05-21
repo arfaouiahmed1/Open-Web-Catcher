@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="520" viewBox="0 0 1120 520" role="img" aria-labelledby="title desc">
+  <title id="title">Open Web Catcher evidence and observability loop</title>
+  <desc id="desc">A custom SVG diagram showing runtime events, model calls, tool calls, screenshots, streams, provider analysis, email drafts, Postgres, and console read models.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155"/>
+    </marker>
+    <style>
+      .bg{fill:#f8fafc}
+      .box{fill:#ffffff;stroke:#cbd5e1;stroke-width:1.5}
+      .node{fill:#f9fafb;stroke:#334155;stroke-width:1.5}
+      .runtime{fill:#eef2ff;stroke:#4f46e5}
+      .evidence{fill:#f0fdf4;stroke:#15803d}
+      .telemetry{fill:#ecfeff;stroke:#0891b2}
+      .review{fill:#fff7ed;stroke:#c2410c}
+      .title{font:700 22px Arial, sans-serif;fill:#0f172a}
+      .label{font:700 14px Arial, sans-serif;fill:#111827}
+      .small{font:12px Arial, sans-serif;fill:#475569}
+      .tiny{font:11px Arial, sans-serif;fill:#64748b}
+      .edge{fill:none;stroke:#334155;stroke-width:1.8;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect class="bg" width="1120" height="520" rx="20"/>
+  <text class="title" x="36" y="44">Evidence and observability loop</text>
+  <text class="small" x="36" y="68">The final answer and the debugging trail are persisted as first-class runtime data</text>
+
+  <rect class="box" x="46" y="112" width="232" height="292" rx="16"/>
+  <text class="label" x="72" y="144">Agent runtime</text>
+  <rect class="node runtime" x="78" y="170" width="166" height="42" rx="9"/>
+  <text class="small" x="115" y="195">RunObserver</text>
+  <rect class="node runtime" x="78" y="236" width="166" height="42" rx="9"/>
+  <text class="small" x="105" y="261">LLM + tool loop</text>
+  <rect class="node runtime" x="78" y="302" width="166" height="42" rx="9"/>
+  <text class="small" x="108" y="327">PipelineResult</text>
+
+  <rect class="box" x="340" y="94" width="274" height="330" rx="16"/>
+  <text class="label" x="368" y="126">Telemetry rows</text>
+  <rect class="node telemetry" x="372" y="154" width="208" height="36" rx="8"/>
+  <text class="small" x="422" y="177">runtime_events</text>
+  <rect class="node telemetry" x="372" y="204" width="208" height="36" rx="8"/>
+  <text class="small" x="437" y="227">llm_calls</text>
+  <rect class="node telemetry" x="372" y="254" width="208" height="36" rx="8"/>
+  <text class="small" x="432" y="277">tool_calls</text>
+  <rect class="node telemetry" x="372" y="304" width="208" height="36" rx="8"/>
+  <text class="small" x="411" y="327">prompt_compilations</text>
+  <rect class="node telemetry" x="372" y="354" width="208" height="36" rx="8"/>
+  <text class="small" x="412" y="377">run_model_usage</text>
+
+  <rect class="box" x="684" y="94" width="274" height="330" rx="16"/>
+  <text class="label" x="712" y="126">Evidence rows</text>
+  <rect class="node evidence" x="716" y="154" width="208" height="36" rx="8"/>
+  <text class="small" x="782" y="177">run_streams</text>
+  <rect class="node evidence" x="716" y="204" width="208" height="36" rx="8"/>
+  <text class="small" x="769" y="227">run_screenshots</text>
+  <rect class="node evidence" x="716" y="254" width="208" height="36" rx="8"/>
+  <text class="small" x="763" y="277">provider_analyses</text>
+  <rect class="node evidence" x="716" y="304" width="208" height="36" rx="8"/>
+  <text class="small" x="769" y="327">takedown_emails</text>
+  <rect class="node evidence" x="716" y="354" width="208" height="36" rx="8"/>
+  <text class="small" x="774" y="377">run_snapshots</text>
+
+  <rect class="node review" x="436" y="456" width="250" height="44" rx="10"/>
+  <text class="label" x="510" y="482">Postgres</text>
+  <rect class="node" x="796" y="456" width="250" height="44" rx="10"/>
+  <text class="label" x="854" y="482">Next.js run detail</text>
+
+  <path class="edge" d="M244 190 C288 186 318 176 372 172"/>
+  <path class="edge" d="M244 256 C290 256 322 266 372 272"/>
+  <path class="edge" d="M244 324 C392 430 554 430 716 372"/>
+  <path class="edge" d="M580 272 C624 248 668 230 716 222"/>
+  <path class="edge" d="M580 372 C638 376 668 372 716 372"/>
+  <path class="edge" d="M476 390 L540 456"/>
+  <path class="edge" d="M820 390 C786 430 720 452 686 470"/>
+  <path class="edge" d="M686 478 L796 478"/>
+  <text class="tiny" x="802" y="442">GET /ui/runs/{run_id}</text>
+</svg>

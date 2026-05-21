@@ -583,6 +583,13 @@ def _augment_landing_output(
     extraction_summary = output.get("extraction_summary", {})
     if isinstance(extraction_summary, dict):
         extraction_summary["hosting_pages_found"] = len(hosting_pages)
+        pagination_patterns = list(
+            common_memory.get("pagination_patterns", []) if isinstance(common_memory, dict) else []
+        )
+        if pagination_patterns:
+            extraction_summary["pagination_detected"] = True
+            extraction_summary.setdefault("pagination_patterns", pagination_patterns[:8])
+            extraction_summary.setdefault("pages_paginated", len(pagination_patterns))
         if "urls_crawled" in extraction_summary and isinstance(common_memory, dict):
             extraction_summary["urls_crawled"] = max(
                 int(extraction_summary.get("urls_crawled") or 0),
@@ -597,7 +604,20 @@ def _augment_landing_output(
             if pattern:
                 site_patterns["hosting_url_pattern"] = pattern
                 break
+    if not isinstance(site_patterns.get("pagination"), dict):
+        pagination_patterns = list(
+            common_memory.get("pagination_patterns", []) if isinstance(common_memory, dict) else []
+        )
+        if pagination_patterns:
+            site_patterns["pagination"] = {
+                "type": "url_pattern",
+                "url_pattern": pagination_patterns[0],
+                "patterns_found": pagination_patterns[:8],
+            }
     output["site_patterns"] = site_patterns
+    output["landing_match_urls"] = _dedupe_keep_order(
+        [str(page.get("url") or "").strip() for page in hosting_pages if isinstance(page, dict)]
+    )
 
     output["pattern_expansion"] = {
         "expanded_candidates": expanded_count,
@@ -782,6 +802,12 @@ class LandingPageAgent:
                             getattr(result, "llm_tool_calls_made", result.tool_calls_made) or 0
                         ),
                         "parse_error": str(getattr(result, "parse_error", "") or ""),
+                        "continuation_count": int(
+                            getattr(result, "continuation_count", 0) or 0
+                        ),
+                        "continuation_capsules": list(
+                            getattr(result, "continuation_capsules", []) or []
+                        ),
                     },
                 )
                 if getattr(result, "parse_error", ""):

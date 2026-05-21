@@ -3,7 +3,6 @@ export function buildRunDetailTabState({
   outputCount = 0,
   toolCallCount = 0,
   eventCount = 0,
-  screenshotCount = 0,
   runState = null,
 } = {}) {
   return {
@@ -38,16 +37,10 @@ export function buildRunDetailTabState({
                 : "default",
       },
       {
-        value: "decisions",
-        label: "Decisions",
+        value: "traces",
+        label: "Traces",
         count: decisionCount,
         tone: "signal",
-      },
-      {
-        value: "screenshots",
-        label: "Screenshots",
-        count: screenshotCount,
-        tone: screenshotCount > 0 ? "signal" : "default",
       },
     ],
   };

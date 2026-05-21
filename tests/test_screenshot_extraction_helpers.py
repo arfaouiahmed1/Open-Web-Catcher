@@ -1,7 +1,9 @@
 import unittest
+from datetime import datetime
 
 from src.api.app import _extract_screenshot_urls_from_value
-from src.storage.repositories import _collect_screenshot_urls
+from src.storage.repositories import _collect_attributed_screenshots, _collect_screenshot_urls
+from src.utils.observability import ObservabilityStatus, RunTrace, RuntimeEvent
 
 
 class ScreenshotExtractionParityTests(unittest.TestCase):
@@ -60,6 +62,58 @@ class ScreenshotExtractionParityTests(unittest.TestCase):
         ]
         self.assertEqual(len(self._app_urls(payload)), 4)
         self._assert_parity(payload)
+
+    def test_attributed_screenshots_keep_agent_invocation(self):
+        trace = RunTrace(
+            run_id="run-1",
+            root_actor="orchestrator",
+            started_at=datetime.utcnow(),
+            observability=ObservabilityStatus(enabled=False, project="", default_dataset_name=""),
+            events=[
+                RuntimeEvent(
+                    seq=1,
+                    actor="hosting",
+                    kind="tool_call_started",
+                    message="Calling inspect_hosting",
+                    details={
+                        "tool_call_id": "call-1",
+                        "tool_name": "inspect_hosting",
+                        "tool_args": {"url": "https://example.test/watch/1"},
+                    },
+                ),
+                RuntimeEvent(
+                    seq=2,
+                    actor="hosting",
+                    kind="tool_call_finished",
+                    message="inspect_hosting completed",
+                    details={
+                        "tool_call_id": "call-1",
+                        "tool_name": "inspect_hosting",
+                        "result_full": '{"screenshot_url":"https://res.cloudinary.com/demo/image/upload/v1/hosting.png"}',
+                    },
+                ),
+            ],
+        )
+        rows = _collect_attributed_screenshots(
+            trace,
+            [
+                {
+                    "id": 77,
+                    "actor": "hosting",
+                    "agent_type": "hosting_page",
+                    "invocation_index": 3,
+                    "target_url": "https://example.test/watch/1",
+                    "events": trace.events,
+                }
+            ],
+            default_source_url="https://example.test",
+        )
+        self.assertEqual(rows[0]["agent_run_id"], 77)
+        self.assertEqual(rows[0]["actor"], "hosting")
+        self.assertEqual(rows[0]["agent_type"], "hosting_page")
+        self.assertEqual(rows[0]["invocation_index"], 3)
+        self.assertEqual(rows[0]["tool_name"], "inspect_hosting")
+        self.assertEqual(rows[0]["target_url"], "https://example.test/watch/1")
 
 
 if __name__ == "__main__":

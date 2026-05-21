@@ -186,6 +186,12 @@ class HostingPageAgent:
                             getattr(result, "llm_tool_calls_made", result.tool_calls_made) or 0
                         ),
                         "parse_error": str(getattr(result, "parse_error", "") or ""),
+                        "continuation_count": int(
+                            getattr(result, "continuation_count", 0) or 0
+                        ),
+                        "continuation_capsules": list(
+                            getattr(result, "continuation_capsules", []) or []
+                        ),
                     },
                 )
                 if getattr(result, "parse_error", ""):
@@ -284,7 +290,30 @@ def _dedupe_urls(values: list[str]) -> list[str]:
 
 def _normalize_url_list(value: Any) -> list[str]:
     if isinstance(value, list):
-        return _dedupe_urls([str(item or "").strip() for item in value])
+        urls: list[str] = []
+        for item in value:
+            if isinstance(item, dict):
+                candidate = str(
+                    item.get("url")
+                    or item.get("stream_url")
+                    or item.get("playlist_url")
+                    or item.get("manifest_url")
+                    or ""
+                ).strip()
+            else:
+                candidate = str(item or "").strip()
+            if candidate:
+                urls.append(candidate)
+        return _dedupe_urls(urls)
+    if isinstance(value, dict):
+        candidate = str(
+            value.get("url")
+            or value.get("stream_url")
+            or value.get("playlist_url")
+            or value.get("manifest_url")
+            or ""
+        ).strip()
+        return [candidate] if candidate else []
     if isinstance(value, str) and value.strip():
         return [value.strip()]
     return []
@@ -301,6 +330,111 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _is_tokenized_url(url: str) -> bool:
+    lowered = str(url or "").lower()
+    return any(
+        token in lowered
+        for token in (
+            "token=",
+            "signature=",
+            "sig=",
+            "expires=",
+            "expires_at=",
+            "exp=",
+            "policy=",
+            "key-pair-id=",
+            "x-amz-",
+            "x-goog-",
+            "hdnts=",
+        )
+    )
+
+
+def _stream_role_from_url(url: str, protocol: str) -> str:
+    lowered = str(url or "").lower()
+    if protocol == "hls":
+        if "master" in lowered:
+            return "master_playlist"
+        if "chunklist" in lowered or "media" in lowered or "index" in lowered:
+            return "media_playlist"
+        return "playlist"
+    if protocol == "dash":
+        return "manifest"
+    if protocol == "mp4":
+        return "direct_file"
+    return ""
+
+
+def _normalize_protocol_details(
+    value: Any, server: dict[str, Any], *, source: str
+) -> list[dict[str, Any]]:
+    details: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add_detail(raw: Any, default_protocol: str = "") -> None:
+        if isinstance(raw, dict):
+            url = str(
+                raw.get("url")
+                or raw.get("stream_url")
+                or raw.get("playlist_url")
+                or raw.get("manifest_url")
+                or ""
+            ).strip()
+            protocol = str(
+                raw.get("protocol")
+                or raw.get("type")
+                or default_protocol
+                or _protocol_from_url(url)
+            ).strip()
+            role = str(raw.get("role") or _stream_role_from_url(url, protocol)).strip()
+            detail = {
+                "protocol": protocol,
+                "url": url,
+                "role": role,
+                "playlist_url": str(raw.get("playlist_url") or "").strip(),
+                "stream_url": str(raw.get("stream_url") or "").strip(),
+                "tokenized": bool(raw.get("tokenized")) or _is_tokenized_url(url),
+                "expires_at": str(raw.get("expires_at") or raw.get("expires") or "").strip(),
+                "headers_required": bool(raw.get("headers_required")),
+                "source": str(raw.get("source") or source).strip(),
+            }
+        else:
+            url = str(raw or "").strip()
+            protocol = default_protocol or _protocol_from_url(url)
+            detail = {
+                "protocol": protocol,
+                "url": url,
+                "role": _stream_role_from_url(url, protocol),
+                "playlist_url": url if protocol in {"hls", "dash"} else "",
+                "stream_url": url if protocol == "mp4" else "",
+                "tokenized": _is_tokenized_url(url),
+                "expires_at": "",
+                "headers_required": False,
+                "source": source,
+            }
+        if not detail["url"]:
+            return
+        key = (detail["url"], detail["protocol"])
+        if key in seen:
+            return
+        seen.add(key)
+        details.append(detail)
+
+    if isinstance(value, list):
+        for item in value:
+            add_detail(item)
+    elif isinstance(value, dict):
+        add_detail(value)
+
+    for protocol, field in (("hls", "m3u8_urls"), ("dash", "mpd_urls"), ("mp4", "mp4_urls")):
+        for url in _normalize_url_list(server.get(field)):
+            add_detail(url, protocol)
+    for url in _normalize_url_list(server.get("stream_urls")):
+        add_detail(url)
+
+    return details
 
 
 def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any]:
@@ -328,6 +462,17 @@ def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any
             if candidate:
                 primary_stream = candidate
                 break
+    protocol_details = _normalize_protocol_details(
+        server.get("protocol_details") or server.get("stream_details") or [],
+        {
+            **server,
+            "m3u8_urls": m3u8_urls,
+            "mpd_urls": mpd_urls,
+            "mp4_urls": mp4_urls,
+            "stream_urls": stream_urls,
+        },
+        source=label,
+    )
 
     status = str(server.get("status") or "").strip().lower()
     embedded_url = str(server.get("embedded_url") or "").strip()
@@ -409,6 +554,7 @@ def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any
         "mpd_urls": mpd_urls,
         "mp4_urls": mp4_urls,
         "stream_urls": stream_urls,
+        "protocol_details": protocol_details,
         "primary_stream": primary_stream,
         "status": status,
         "down_reason": str(server.get("down_reason") or "").strip(),
@@ -698,6 +844,7 @@ def _build_server_results(servers: list[dict[str, Any]]) -> list[ServerResult]:
                 mpd_urls=_normalize_url_list(server.get("mpd_urls")),
                 mp4_urls=_normalize_url_list(server.get("mp4_urls")),
                 stream_urls=_normalize_url_list(server.get("stream_urls")),
+                protocol_details=_normalize_diagnostics_list(server.get("protocol_details")),
                 primary_stream=str(server.get("primary_stream") or "") or None,
                 screenshot_url=str(server.get("screenshot_url") or "") or None,
                 embedded_url=str(server.get("embedded_url") or "") or None,

@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Any, TypedDict
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, START, StateGraph
@@ -58,6 +58,8 @@ class AgentLoopResult:
         llm_tool_calls_made: int | None = None,
         stop_reason: str = "completed",
         budget_exhausted: bool = False,
+        continuation_count: int = 0,
+        continuation_capsules: list[dict[str, Any]] | None = None,
     ) -> None:
         self.final_text = final_text
         # Total tool calls, including bootstrap calls, for observability/reporting.
@@ -72,6 +74,8 @@ class AgentLoopResult:
         self.stop_reason = stop_reason
         self.budget_exhausted = budget_exhausted
         self.parse_error = ""
+        self.continuation_count = max(0, int(continuation_count or 0))
+        self.continuation_capsules = list(continuation_capsules or [])
 
     def parse_json(self) -> dict[str, Any]:
         """Parse a JSON object from Gemini output, including fenced/prose-wrapped JSON."""
@@ -170,6 +174,11 @@ class AgentGraphState(TypedDict):
     last_tool_batch_signature: str
     repeated_tool_batch_count: int
     no_progress_turn_count: int
+    context_compaction_pending: bool
+    context_usage_pct: float
+    last_context_tokens: int
+    continuation_index: int
+    continuation_capsules: list[dict[str, Any]]
 
 
 def _json_ready(value: Any) -> Any:
@@ -182,6 +191,22 @@ def _json_ready(value: Any) -> Any:
         return json.loads(json.dumps(value, default=str))
     except Exception:
         return {"repr": repr(value)}
+
+
+def _truncate_for_capsule(value: Any, max_chars: int = 1200) -> Any:
+    if isinstance(value, str):
+        text = value.strip()
+        if len(text) <= max_chars:
+            return text
+        return f"{text[: max(0, max_chars - 3)].rstrip()}..."
+    if isinstance(value, list):
+        return [_truncate_for_capsule(item, max_chars=max_chars) for item in value[:24]]
+    if isinstance(value, dict):
+        return {
+            str(key): _truncate_for_capsule(nested, max_chars=max_chars)
+            for key, nested in list(value.items())[:40]
+        }
+    return value
 
 
 def _extract_usage(usage: Any) -> tuple[int, int]:
@@ -761,6 +786,18 @@ async def run_agent_loop(
         runtime_profile or (observer.actor if observer is not None else run_name),
     )
     model_context_window = resolve_model_context_window(model_name, provider)
+    normalized_runtime_profile = str(
+        runtime_profile or runtime_settings.get("profile") or run_name or ""
+    ).strip().lower()
+    continuation_allowed = bool(
+        getattr(settings, "context_continuation_enabled", True)
+        and normalized_runtime_profile not in {"classification", "classification_agent"}
+    )
+    continuation_threshold = min(
+        max(float(getattr(settings, "context_continuation_threshold", 0.8) or 0.8), 0.1),
+        0.95,
+    )
+    max_continuations = max(0, int(getattr(settings, "context_continuation_max", 4) or 0))
     google_explicit_cache_compatible = True
     gemini_cached_content_source = "none"
     if provider == "google_genai":
@@ -829,6 +866,8 @@ async def run_agent_loop(
             details={
                 "max_tool_calls": max_tool_calls,
                 "model_name": model_name,
+                "provider": provider,
+                "context_window": model_context_window,
                 "prompt": prompt_meta,
                 "provider_cache_active": provider_cache_active,
                 "gemini_cached_content_source": gemini_cached_content_source,
@@ -848,6 +887,9 @@ async def run_agent_loop(
                 "bootstrap_context_first": bootstrap_context_first,
                 "bootstrap_memory_lookup_first": bootstrap_memory_lookup_first,
                 "bootstrap_memory_page_type": str(bootstrap_memory_page_type or ""),
+                "context_continuation_enabled": continuation_allowed,
+                "context_continuation_threshold": continuation_threshold,
+                "context_continuation_max": max_continuations,
             },
         )
 
@@ -971,6 +1013,95 @@ async def run_agent_loop(
                 )
             )
 
+    def _context_usage(input_tokens: int, output_tokens: int) -> tuple[int, float]:
+        context_tokens = max(0, int(input_tokens or 0) + int(output_tokens or 0))
+        window = int(model_context_window or 0)
+        if window <= 0:
+            return context_tokens, 0.0
+        return context_tokens, context_tokens / max(window, 1)
+
+    def _continuation_pending(
+        *,
+        input_tokens: int,
+        output_tokens: int,
+        state: AgentGraphState,
+        response: AIMessage,
+    ) -> tuple[bool, int, float]:
+        context_tokens, usage_pct = _context_usage(input_tokens, output_tokens)
+        if not continuation_allowed or max_continuations <= 0:
+            return False, context_tokens, usage_pct
+        if int(state.get("continuation_index", 0) or 0) >= max_continuations:
+            return False, context_tokens, usage_pct
+        if not response.tool_calls:
+            return False, context_tokens, usage_pct
+        return usage_pct >= continuation_threshold, context_tokens, usage_pct
+
+    def _export_working_memory(page_type: str) -> dict[str, Any]:
+        if working_memory is None or not hasattr(working_memory, "export_run_memory"):
+            return {}
+        try:
+            value = working_memory.export_run_memory(page_type=page_type)
+        except Exception:
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def _build_continuation_capsule(
+        state: AgentGraphState,
+        *,
+        continuation_index: int,
+        reason: str,
+    ) -> dict[str, Any]:
+        page_type = str(bootstrap_memory_page_type or runtime_profile or run_name or "")
+        working_state = ""
+        if turn_context_provider is not None:
+            try:
+                working_state = str(turn_context_provider(state) or "").strip()
+            except Exception:
+                working_state = ""
+        run_memory = _export_working_memory(page_type)
+        common_memory = run_memory.get("common", run_memory) if isinstance(run_memory, dict) else {}
+        if not isinstance(common_memory, dict):
+            common_memory = {}
+        remaining = max(int(state.get("max_tool_calls", 0) or 0) - int(state.get("tool_calls_made", 0) or 0), 0)
+        capsule = {
+            "objective": _truncate_for_capsule(initial_message, 1400),
+            "target_url": bootstrap_url,
+            "page_type": page_type,
+            "actor": observer.actor if observer is not None else run_name,
+            "run_name": run_name,
+            "continuation_of_actor": observer.actor if observer is not None else run_name,
+            "continuation_index": continuation_index,
+            "compaction_reason": reason,
+            "context_usage_pct": round(float(state.get("context_usage_pct", 0.0) or 0.0), 4),
+            "context_tokens": int(state.get("last_context_tokens", 0) or 0),
+            "context_window": int(model_context_window or 0),
+            "tool_budget": {
+                "used": int(state.get("tool_calls_made", 0) or 0),
+                "total": int(state.get("max_tool_calls", 0) or 0),
+                "remaining": remaining,
+                "bootstrap_tool_calls": int(bootstrap_tool_calls or 0),
+            },
+            "visited_urls": _truncate_for_capsule(common_memory.get("critical_links", []), 220),
+            "confirmed_patterns": _truncate_for_capsule(common_memory.get("url_patterns", []), 260),
+            "confirmed_pagination": _truncate_for_capsule(common_memory.get("pagination_patterns", []), 260),
+            "pending_frontier": _truncate_for_capsule(run_memory.get("hosting_candidate_urls", []), 260)
+            if isinstance(run_memory, dict)
+            else [],
+            "server_evidence": _truncate_for_capsule(run_memory.get("server_records", []), 500)
+            if isinstance(run_memory, dict)
+            else [],
+            "screenshots": _truncate_for_capsule(run_memory.get("server_screenshots", []), 260)
+            if isinstance(run_memory, dict)
+            else [],
+            "streams": _truncate_for_capsule(run_memory.get("server_stream_urls", []), 260)
+            if isinstance(run_memory, dict)
+            else [],
+            "blockers": _truncate_for_capsule(common_memory.get("blockers", []), 260),
+            "next_best_move": _truncate_for_capsule(working_state, 6000),
+            "working_state": _truncate_for_capsule(working_state, 6000),
+        }
+        return _json_ready(capsule)
+
     async def _invoke_llm_with_retries(
         invoke_coro: Callable[[], Any],
         *,
@@ -1008,6 +1139,7 @@ async def run_agent_loop(
                             "timeout_seconds": llm_timeout_seconds,
                             "retry_delay_seconds": delay,
                             "reason": "timeout",
+                            "context_window": model_context_window,
                         },
                     )
                     await asyncio.sleep(delay)
@@ -1043,6 +1175,7 @@ async def run_agent_loop(
                                 "retry_delay_seconds": delay,
                                 "error_type": type(exc).__name__,
                                 "error_preview": str(exc)[:1200],
+                                "context_window": model_context_window,
                             },
                         )
                     await asyncio.sleep(delay)
@@ -1083,6 +1216,7 @@ async def run_agent_loop(
                         "timeout_seconds": llm_timeout_seconds,
                         "provider_cache_active": provider_cache_active,
                         "gemini_cached_content_source": gemini_cached_content_source,
+                        "context_window": model_context_window,
                     },
                 )
             try:
@@ -1107,6 +1241,7 @@ async def run_agent_loop(
                             "message_count": message_count,
                             "timeout_seconds": llm_timeout_seconds,
                             "attempts": llm_retry_attempts,
+                            "context_window": model_context_window,
                         },
                     )
                 raise RuntimeError(f"LLM turn timed out after {llm_timeout_seconds}s") from exc
@@ -1125,6 +1260,7 @@ async def run_agent_loop(
                                 "retry_after_seconds": _extract_retry_seconds(error_text),
                                 "error_type": type(exc).__name__,
                                 "error_preview": error_text[:1200],
+                                "context_window": model_context_window,
                             },
                         )
                     else:
@@ -1137,11 +1273,13 @@ async def run_agent_loop(
                                 "model_name": model_name,
                                 "error_type": type(exc).__name__,
                                 "error_preview": error_text[:1200],
+                                "context_window": model_context_window,
                             },
                         )
                 raise
             usage = getattr(response, "usage_metadata", None)
             input_tokens, output_tokens = _extract_usage(usage)
+            context_tokens, context_usage_pct = _context_usage(input_tokens, output_tokens)
             cache_metrics = _extract_cache_metrics(usage, response=response)
             nonlocal llm_cache_hit_calls, llm_cached_input_tokens, llm_new_input_tokens
             if cache_metrics["cache_hit"]:
@@ -1155,6 +1293,9 @@ async def run_agent_loop(
                     "owc.provider": provider,
                     "owc.input_tokens": input_tokens,
                     "owc.output_tokens": output_tokens,
+                    "owc.context_window": model_context_window,
+                    "owc.context_tokens": context_tokens,
+                    "owc.context_usage_pct": context_usage_pct,
                     "owc.cache_hit": bool(cache_metrics.get("cache_hit", False)),
                     "owc.cached_input_tokens": _to_int(cache_metrics.get("cached_input_tokens")),
                     "owc.new_input_tokens": _to_int(cache_metrics.get("new_input_tokens")),
@@ -1196,6 +1337,8 @@ async def run_agent_loop(
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                     "context_window": model_context_window,
+                    "context_tokens": context_tokens,
+                    "context_usage_pct": context_usage_pct,
                     "usage_metadata": _json_ready(getattr(response, "usage_metadata", None)),
                     "response_metadata": _json_ready(getattr(response, "response_metadata", None)),
                     "additional_kwargs": _json_ready(getattr(response, "additional_kwargs", None)),
@@ -1245,7 +1388,19 @@ async def run_agent_loop(
                 source=f"{run_name}.llm",
             )
 
-        return {"messages": [response], "budget_exhausted": False}
+        pending, context_tokens, context_usage_pct = _continuation_pending(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            state=state,
+            response=response,
+        )
+        return {
+            "messages": [response],
+            "budget_exhausted": False,
+            "context_compaction_pending": pending,
+            "context_usage_pct": context_usage_pct,
+            "last_context_tokens": context_tokens,
+        }
 
     async def tool_node(state: AgentGraphState) -> dict[str, Any]:
         _assert_not_cancelled(observer, "tool dispatch")
@@ -1463,6 +1618,97 @@ async def run_agent_loop(
             "no_progress_turn_count": no_progress_turn_count,
         }
 
+    async def compact_context_node(state: AgentGraphState) -> dict[str, Any]:
+        continuation_index = int(state.get("continuation_index", 0) or 0) + 1
+        reason = "context_window_threshold"
+        capsule = _build_continuation_capsule(
+            state,
+            continuation_index=continuation_index,
+            reason=reason,
+        )
+        usage_pct = float(state.get("context_usage_pct", 0.0) or 0.0)
+        details = {
+            "continuation_of_actor": observer.actor if observer is not None else run_name,
+            "continuation_index": continuation_index,
+            "compaction_reason": reason,
+            "context_usage_pct": usage_pct,
+            "context_tokens": int(state.get("last_context_tokens", 0) or 0),
+            "context_window": int(model_context_window or 0),
+            "continuation_capsule": capsule,
+            "page_type": str(bootstrap_memory_page_type or runtime_profile or run_name or ""),
+            "target_url": bootstrap_url,
+            "tool_calls_made": int(state.get("tool_calls_made", 0) or 0),
+            "max_tool_calls": int(state.get("max_tool_calls", 0) or 0),
+        }
+        if observer is not None:
+            observer.emit(
+                "context_compaction_started",
+                f"Context reached {usage_pct * 100:.1f}%; compacting agent state",
+                status="warning",
+                details=details,
+            )
+            observer.emit(
+                "agent_finished",
+                "Agent invocation compacted for continuation",
+                status="warning",
+                details={
+                    **details,
+                    "stop_reason": "context_compacted",
+                    "status": "partial",
+                },
+            )
+
+        removals: list[RemoveMessage] = []
+        for message in state.get("messages", []):
+            message_id = getattr(message, "id", None)
+            if message_id:
+                removals.append(RemoveMessage(id=message_id))
+
+        continuation_message = HumanMessage(
+            content=(
+                "CONTEXT CONTINUATION CAPSULE\n"
+                f"{json.dumps(capsule, ensure_ascii=False, indent=2)}\n\n"
+                "Continue exactly from `next_best_move`. Preserve completed evidence, "
+                "do not repeat settled navigation unless live verification requires it, "
+                "and keep using the remaining tool budget."
+            )
+        )
+        next_messages: list[BaseMessage] = [
+            *removals,
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=initial_message),
+            continuation_message,
+        ]
+
+        if observer is not None:
+            observer.emit(
+                "agent_started",
+                f"Continuation invocation {continuation_index} started",
+                details=details,
+            )
+            observer.emit(
+                "context_compaction_finished",
+                f"Continuation invocation {continuation_index} has compacted context",
+                details={
+                    **details,
+                    "replacement_message_count": 3,
+                    "removed_message_count": len(removals),
+                },
+            )
+
+        return {
+            "messages": next_messages,
+            "context_compaction_pending": False,
+            "continuation_index": continuation_index,
+            "continuation_capsules": [
+                *list(state.get("continuation_capsules", []) or []),
+                capsule,
+            ],
+            "last_tool_batch_signature": "",
+            "repeated_tool_batch_count": 0,
+            "no_progress_turn_count": 0,
+        }
+
     async def budget_exhausted_node(state: AgentGraphState) -> dict[str, Any]:
         stop_reason = str(state.get("stop_reason", "") or "")
         logger.info(
@@ -1544,6 +1790,7 @@ async def run_agent_loop(
                             "timeout_seconds": llm_timeout_seconds,
                             "phase": "budget_exhausted_final_answer",
                             "attempts": llm_retry_attempts,
+                            "context_window": model_context_window,
                         },
                     )
                 raise RuntimeError(
@@ -1565,6 +1812,7 @@ async def run_agent_loop(
                                 "phase": "budget_exhausted_final_answer",
                                 "error_type": type(exc).__name__,
                                 "error_preview": error_text[:1200],
+                                "context_window": model_context_window,
                             },
                         )
                     else:
@@ -1578,11 +1826,13 @@ async def run_agent_loop(
                                 "phase": "budget_exhausted_final_answer",
                                 "error_type": type(exc).__name__,
                                 "error_preview": error_text[:1200],
+                                "context_window": model_context_window,
                             },
                         )
                 raise
             final_usage = getattr(final, "usage_metadata", None)
             input_tokens, output_tokens = _extract_usage(final_usage)
+            context_tokens, context_usage_pct = _context_usage(input_tokens, output_tokens)
             set_span_attributes(
                 final_span,
                 {
@@ -1590,6 +1840,9 @@ async def run_agent_loop(
                     "owc.provider": provider,
                     "owc.input_tokens": input_tokens,
                     "owc.output_tokens": output_tokens,
+                    "owc.context_window": model_context_window,
+                    "owc.context_tokens": context_tokens,
+                    "owc.context_usage_pct": context_usage_pct,
                 },
             )
             set_span_output(final_span, (final.content or "")[:4000])
@@ -1628,6 +1881,8 @@ async def run_agent_loop(
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                     "context_window": model_context_window,
+                    "context_tokens": context_tokens,
+                    "context_usage_pct": context_usage_pct,
                     "usage_metadata": _json_ready(getattr(final, "usage_metadata", None)),
                     "response_metadata": _json_ready(getattr(final, "response_metadata", None)),
                     "additional_kwargs": _json_ready(getattr(final, "additional_kwargs", None)),
@@ -1680,23 +1935,30 @@ async def run_agent_loop(
         return "tools"
 
     def route_after_tools(state: AgentGraphState) -> str:
-        return (
-            "budget_exhausted"
-            if state.get("budget_exhausted", False) or state.get("stop_reason", "")
-            else "llm"
-        )
+        if (
+            continuation_allowed
+            and state.get("context_compaction_pending", False)
+            and int(state.get("continuation_index", 0) or 0) < max_continuations
+            and not state.get("stop_reason", "")
+        ):
+            return "compact_context"
+        if state.get("budget_exhausted", False) or state.get("stop_reason", ""):
+            return "budget_exhausted"
+        return "llm"
 
     graph = StateGraph(AgentGraphState)
     graph.add_node("llm", llm_node)
     graph.add_node("tools", tool_node)
+    graph.add_node("compact_context", compact_context_node)
     graph.add_node("budget_exhausted", budget_exhausted_node)
     graph.add_edge(START, "llm")
     graph.add_conditional_edges("llm", route_after_llm, {"tools": "tools", "end": END})
     graph.add_conditional_edges(
         "tools",
         route_after_tools,
-        {"llm": "llm", "budget_exhausted": "budget_exhausted"},
+        {"llm": "llm", "budget_exhausted": "budget_exhausted", "compact_context": "compact_context"},
     )
+    graph.add_edge("compact_context", "llm")
     graph.add_edge("budget_exhausted", END)
     compiled = graph.compile()
 
@@ -1713,6 +1975,11 @@ async def run_agent_loop(
         "last_tool_batch_signature": "",
         "repeated_tool_batch_count": 0,
         "no_progress_turn_count": 0,
+        "context_compaction_pending": False,
+        "context_usage_pct": 0.0,
+        "last_context_tokens": 0,
+        "continuation_index": 0,
+        "continuation_capsules": [],
     }
 
     context_metadata = {
@@ -1803,6 +2070,8 @@ async def run_agent_loop(
                         "tool_cache_bypasses": tool_cache.bypasses,
                         "tool_cache_writes": tool_cache.writes,
                         "tool_cache_invalidations": tool_cache.invalidations,
+                        "continuation_count": int(final_state.get("continuation_index", 0) or 0),
+                        "continuation_capsules": final_state.get("continuation_capsules", []) or [],
                     },
                     status="warning" if stop_reason != "completed" else "success",
                 )
@@ -1824,6 +2093,7 @@ async def run_agent_loop(
                     "tool_cache_bypasses": tool_cache.bypasses,
                     "tool_cache_writes": tool_cache.writes,
                     "tool_cache_invalidations": tool_cache.invalidations,
+                    "continuation_count": int(final_state.get("continuation_index", 0) or 0),
                     "runtime": "langgraph",
                 },
             )
@@ -1836,4 +2106,6 @@ async def run_agent_loop(
         stop_reason=stop_reason,
         budget_exhausted=budget_was_exhausted,
         messages=messages,
+        continuation_count=int(final_state.get("continuation_index", 0) or 0),
+        continuation_capsules=list(final_state.get("continuation_capsules", []) or []),
     )

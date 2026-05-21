@@ -42,6 +42,7 @@ class ServerResult(BaseModel):
     mpd_urls: list[str] = Field(default_factory=list)
     mp4_urls: list[str] = Field(default_factory=list)
     stream_urls: list[str] = Field(default_factory=list)
+    protocol_details: list[dict[str, Any]] = Field(default_factory=list)
     primary_stream: str | None = None
     screenshot_url: str | None = None  # Cloudinary URL
     embedded_url: str | None = None  # set when needs_embed_agent

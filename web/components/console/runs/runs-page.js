@@ -18,6 +18,7 @@ import {
   Globe2,
   Image as ImageIcon,
   Layers3,
+  ListChecks,
   Play,
   Plus,
   RefreshCw,
@@ -90,6 +91,7 @@ const AUTO_REFRESH_MS = 8000;
 const CUSTOM_LANGUAGE = "__custom__";
 const EMPTY_ARRAY = [];
 const EMPTY_OBJECT = {};
+const HISTORY_PAGE_SIZE = 25;
 const RUN_TABS = new Set(["sites", "batches", "history"]);
 const HISTORY_STATUS_FILTERS = RUN_STATUSES.filter((status) => status !== "redirect").map((status) => ({
   value: status,
@@ -125,6 +127,12 @@ function formatDuration(seconds) {
   if (!value) return "--";
   if (value < 60) return `${value.toFixed(1)}s`;
   return `${Math.floor(value / 60)}m ${Math.round(value % 60)}s`;
+}
+
+function pct(value, digits = 1) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number)) return "0%";
+  return `${number.toFixed(digits)}%`;
 }
 
 function formatRelativeTime(value) {
@@ -197,6 +205,11 @@ function labelOptions(metaLabels = [], includeAll = false) {
 
 function isActiveStatus(value) {
   return ["queued", "running", "retrying", "leased"].includes(String(value || "").toLowerCase());
+}
+
+function isFailureRunStatus(value) {
+  const status = String(value || "").toLowerCase();
+  return Boolean(status && !["success", "partial", "queued", "running", "cancelled"].includes(status));
 }
 
 function datasetStatusLabel(value) {
@@ -720,6 +733,9 @@ export function RunsPage() {
   const [runHistory, setRunHistory] = useState([]);
   const [runHistoryTotal, setRunHistoryTotal] = useState(0);
   const [historyStatus, setHistoryStatus] = useState("");
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [historyPage, setHistoryPage] = useState(0);
+  const [selectedHistoryRunIds, setSelectedHistoryRunIds] = useState([]);
   const [pricingMap, setPricingMap] = useState(null);
   const [selectedSiteIds, setSelectedSiteIds] = useState([]);
   const [query, setQuery] = useState("");
@@ -785,6 +801,8 @@ export function RunsPage() {
     const requestedBatchId = searchParams.get("batch") || "";
     const requestedTab = searchParams.get("tab") || "";
     const requestedStatus = searchParams.get("status") || "";
+    const requestedHistoryQuery = searchParams.get("run_query") || "";
+    const requestedHistoryPage = Math.max(Number(searchParams.get("page") || 1) - 1, 0);
     if (requestedBatchId) {
       setSelectedBatchId(requestedBatchId);
       setTab("batches");
@@ -795,6 +813,8 @@ export function RunsPage() {
     }
     if (requestedTab === "history") {
       setHistoryStatus(requestedStatus);
+      setHistoryQuery(requestedHistoryQuery);
+      setHistoryPage(Number.isFinite(requestedHistoryPage) ? requestedHistoryPage : 0);
     }
   }, [searchParams]);
 
@@ -993,9 +1013,9 @@ export function RunsPage() {
     let cancelled = false;
     setIsHistoryLoading(true);
     const params = new URLSearchParams({
-      limit: "25",
-      offset: "0",
-      query,
+      limit: String(HISTORY_PAGE_SIZE),
+      offset: String(historyPage * HISTORY_PAGE_SIZE),
+      query: historyQuery,
     });
     if (historyStatus) params.set("status", historyStatus);
     apiFetch(`/ui/runs?${params.toString()}`)
@@ -1003,6 +1023,9 @@ export function RunsPage() {
         if (!cancelled) {
           setRunHistory(payload.rows || []);
           setRunHistoryTotal(payload.total || 0);
+          setSelectedHistoryRunIds((current) =>
+            current.filter((runId) => (payload.rows || []).some((row) => row.run_id === runId)),
+          );
         }
       })
       .catch((error) => {
@@ -1016,7 +1039,7 @@ export function RunsPage() {
     return () => {
       cancelled = true;
     };
-  }, [historyStatus, query, refreshTick, tab]);
+  }, [historyPage, historyQuery, historyStatus, refreshTick, tab]);
 
   useEffect(() => {
     if (tab !== "batches") return undefined;
@@ -1244,11 +1267,55 @@ export function RunsPage() {
   function setHistoryStatusFilter(nextStatus) {
     const normalized = String(nextStatus || "").trim().toLowerCase();
     setHistoryStatus(normalized);
+    setHistoryPage(0);
+    setSelectedHistoryRunIds([]);
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", "history");
     params.delete("batch");
+    params.delete("page");
     if (normalized) params.set("status", normalized);
     else params.delete("status");
+    router.replace(`/runs?${params.toString()}`, { scroll: false });
+  }
+
+  function setHistorySearch(nextQuery) {
+    const normalized = String(nextQuery || "");
+    setHistoryQuery(normalized);
+    setHistoryPage(0);
+    setSelectedHistoryRunIds([]);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "history");
+    params.delete("batch");
+    params.delete("page");
+    if (normalized.trim()) params.set("run_query", normalized);
+    else params.delete("run_query");
+    router.replace(`/runs?${params.toString()}`, { scroll: false });
+  }
+
+  function resetHistoryFilters() {
+    setHistoryQuery("");
+    setHistoryStatus("");
+    setHistoryPage(0);
+    setSelectedHistoryRunIds([]);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "history");
+    params.delete("batch");
+    params.delete("status");
+    params.delete("run_query");
+    params.delete("page");
+    router.replace(`/runs?${params.toString()}`, { scroll: false });
+  }
+
+  function setHistoryPageIndex(nextPage) {
+    const maxPage = Math.max(Math.ceil(runHistoryTotal / HISTORY_PAGE_SIZE) - 1, 0);
+    const bounded = Math.max(0, Math.min(Number(nextPage || 0), maxPage));
+    setHistoryPage(bounded);
+    setSelectedHistoryRunIds([]);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "history");
+    params.delete("batch");
+    if (bounded > 0) params.set("page", String(bounded + 1));
+    else params.delete("page");
     router.replace(`/runs?${params.toString()}`, { scroll: false });
   }
 
@@ -1300,8 +1367,60 @@ export function RunsPage() {
     }
   }
 
+  async function deleteSelectedHistoryRuns() {
+    const deletableIds = selectedHistoryRunIds.filter((runId) => {
+      const row = runHistory.find((item) => item.run_id === runId);
+      return row && canDeleteRun(row);
+    });
+    if (!deletableIds.length) return;
+    setHistoryBusyRunId("__bulk_delete__");
+    setActionError("");
+    try {
+      for (const runId of deletableIds) {
+        const response = await fetch(apiUrl(`/ui/runs/${runId}`), { method: "DELETE" });
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || `Failed to delete run ${runId}`);
+        }
+      }
+      setSelectedHistoryRunIds([]);
+      setRefreshTick((value) => value + 1);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to delete selected runs");
+    } finally {
+      setHistoryBusyRunId("");
+    }
+  }
+
   const allVisibleSelected = sites.length > 0 && selectedSiteIds.length === sites.length;
   const selectedUrls = selectedSites.map((site) => site.url).filter(Boolean);
+  const historyPageCount = Math.max(Math.ceil(runHistoryTotal / HISTORY_PAGE_SIZE), 1);
+  const historyStart = runHistoryTotal ? historyPage * HISTORY_PAGE_SIZE + 1 : 0;
+  const historyEnd = Math.min((historyPage + 1) * HISTORY_PAGE_SIZE, runHistoryTotal);
+  const visibleHistoryIds = runHistory.map((row) => row.run_id).filter(Boolean);
+  const deletableHistoryIds = runHistory.filter(canDeleteRun).map((row) => row.run_id).filter(Boolean);
+  const selectedDeletableHistoryIds = selectedHistoryRunIds.filter((runId) => deletableHistoryIds.includes(runId));
+  const allVisibleHistorySelected =
+    visibleHistoryIds.length > 0 && visibleHistoryIds.every((runId) => selectedHistoryRunIds.includes(runId));
+  const historyTotals = useMemo(() => {
+    return runHistory.reduce(
+      (acc, row) => {
+        const status = String(row.final_status || row.status || "").toLowerCase();
+        acc.tokens += Number(row.total_tokens_in || 0) + Number(row.total_tokens_out || 0);
+        acc.cost += Number(row.total_cost_usd ?? row.estimated_total_cost_usd ?? 0);
+        acc.streams += Number(row.stream_count || 0);
+        if (status === "success") acc.success += 1;
+        if (isActiveStatus(status)) acc.active += 1;
+        if (isFailureRunStatus(status)) acc.failed += 1;
+        return acc;
+      },
+      { tokens: 0, cost: 0, streams: 0, success: 0, active: 0, failed: 0 },
+    );
+  }, [runHistory]);
+  const globalRunTotal = Number(stats.total_runs || runHistoryTotal || 0);
+  const globalSuccessRate = globalRunTotal > 0
+    ? (Number(stats.successful_runs || 0) / globalRunTotal) * 100
+    : Number(stats.success_rate || 0);
   const batchTotals = useMemo(() => {
     return batchRuns.reduce(
       (acc, row) => {
@@ -1350,10 +1469,11 @@ export function RunsPage() {
           retryLabel="Retry sync"
         />
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricTile icon={Globe2} label="Websites" value={formatNumber(stats.total || siteTotal)} detail={`${formatNumber(stats.unlabeled || 0)} unlabeled`} />
-          <MetricTile icon={CheckCircle2} label="Success rate" value={`${formatNumber(stats.success_rate || 0)}%`} detail={`${formatNumber(stats.successful_runs || 0)} / ${formatNumber(stats.total_runs || 0)} completed`} />
-          <MetricTile icon={Activity} label="Batches" value={formatNumber(batches.length)} detail={hasActiveDatasetWork ? "Active work polling" : "No active batch"} />
+          <MetricTile icon={ListChecks} label="Persisted runs" value={formatNumber(globalRunTotal)} detail={`${formatNumber(stats.total_runs || 0)} dataset-linked`} />
+          <MetricTile icon={CheckCircle2} label="Success rate" value={pct(globalSuccessRate)} detail={`${formatNumber(stats.successful_runs || 0)} successful runs`} />
+          <MetricTile icon={Activity} label="Active work" value={hasActiveDatasetWork ? "Live" : "Idle"} detail={`${formatNumber(batches.length)} batches indexed`} />
           <MetricTile
             icon={Database}
             label="Pricing catalog"
@@ -1361,6 +1481,8 @@ export function RunsPage() {
             detail={isPricingLoading ? "Loading provider pricing..." : "Loaded from provider pricing API and stored pricing"}
           />
           <MetricTile icon={Clock} label="Latest batch" value={batches[0]?.status ? datasetStatusLabel(batches[0].status) : "--"} detail={batches[0]?.created_at ? formatDate(batches[0].created_at) : "No batch yet"} />
+          <MetricTile icon={BarChart3} label="Visible tokens" value={formatNumber(historyTotals.tokens || batchTotals.tokens || 0)} detail={tab === "history" ? "Current history page" : "Selected batch rows"} />
+          <MetricTile icon={Database} label="Visible cost" value={formatCurrency(historyTotals.cost || batchTotals.cost || 0)} detail={tab === "history" ? `${formatNumber(runHistory.length)} history rows` : `${formatNumber(batchRuns.length)} batch rows`} />
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2 text-xs">
@@ -1782,122 +1904,221 @@ export function RunsPage() {
           <TabsContent value="history">
             <Card className="overflow-hidden">
               <CardHeader className="border-b px-4 py-3">
-                <CardTitle className="text-base">Run history</CardTitle>
-                <CardDescription>
-                  The full persisted run table remains available for direct workflow and agent run debugging.
-                </CardDescription>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base">Run history</CardTitle>
+                    <CardDescription>
+                      Search, page, select, restart, stop, and delete persisted workflow and agent runs.
+                    </CardDescription>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone="default" className="font-mono">
+                      {formatNumber(runHistoryTotal)} total
+                    </Badge>
+                    {selectedHistoryRunIds.length ? (
+                      <Badge tone="signal" className="font-mono">
+                        {formatNumber(selectedHistoryRunIds.length)} selected
+                      </Badge>
+                    ) : null}
+                  </div>
+                </div>
               </CardHeader>
-              <div className="flex flex-wrap gap-1.5 border-b bg-muted/20 px-4 py-2">
-                {HISTORY_STATUS_FILTERS.map((item) => (
+              <div className="border-b bg-muted/20 px-4 py-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="relative min-w-[280px] flex-1">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={historyQuery}
+                      onChange={(event) => setHistorySearch(event.target.value)}
+                      placeholder="Search run ID, URL, status, actor, provider, or model"
+                      className="pl-9"
+                    />
+                  </div>
+                  <Select
+                    className="w-[190px]"
+                    value={historyStatus}
+                    onChange={setHistoryStatusFilter}
+                    options={HISTORY_STATUS_FILTERS}
+                    placeholder="Status"
+                  />
                   <Button
-                    key={item.value || "all"}
-                    size="sm"
-                    variant={historyStatus === item.value ? "accent" : "outline"}
-                    className="h-8"
-                    onClick={() => setHistoryStatusFilter(item.value)}
+                    variant="ghost"
+                    onClick={resetHistoryFilters}
                   >
-                    {item.label}
+                    Reset
                   </Button>
-                ))}
+                  <ConfirmAction
+                    title="Delete selected runs?"
+                    description={`Deletes ${selectedDeletableHistoryIds.length} selected persisted run records and their telemetry. Active runs are skipped.`}
+                    actionLabel="Delete selected"
+                    onConfirm={deleteSelectedHistoryRuns}
+                    trigger={(
+                      <Button
+                        variant="outline"
+                        disabled={!selectedDeletableHistoryIds.length || historyBusyRunId === "__bulk_delete__"}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete selected ({selectedDeletableHistoryIds.length})
+                      </Button>
+                    )}
+                  />
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
+                  <MetricTile icon={ListChecks} label="Rows on page" value={formatNumber(runHistory.length)} detail={`${formatNumber(historyStart)}-${formatNumber(historyEnd)} of ${formatNumber(runHistoryTotal)}`} />
+                  <MetricTile icon={CheckCircle2} label="Success" value={formatNumber(historyTotals.success)} detail={pct(runHistory.length ? (historyTotals.success / runHistory.length) * 100 : 0)} />
+                  <MetricTile icon={XCircle} label="Failures" value={formatNumber(historyTotals.failed)} detail="Visible rows" />
+                  <MetricTile icon={Activity} label="Active" value={formatNumber(historyTotals.active)} detail="Queued or running" />
+                  <MetricTile icon={BarChart3} label="Tokens" value={formatNumber(historyTotals.tokens)} detail="Visible rows" />
+                  <MetricTile icon={Database} label="Cost" value={formatCurrency(historyTotals.cost)} detail={`${formatNumber(historyTotals.streams)} streams`} />
+                </div>
               </div>
-              <Table>
-                <TableHeader className="bg-muted/40">
-                  <TableRow>
-                    <TableHead>Run</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actor/model</TableHead>
-                    <TableHead className="text-right">Tokens</TableHead>
-                    <TableHead className="text-right">Cost</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {runHistory.length ? (
-                    runHistory.map((row) => (
-                      <TableRow key={row.run_id} className="[&>td]:py-2.5">
-                        <TableCell className="align-top">
-                          <Link
-                            href={`/runs/${row.run_id}`}
-                            className="block max-w-[360px] break-all font-mono text-[11px] text-primary hover:underline"
-                            title={row.run_id}
-                          >
-                            {row.run_id}
-                          </Link>
-                          <div className="mt-0.5 max-w-[360px] truncate text-[11px] text-muted-foreground" title={row.url}>
-                            {row.url}
-                          </div>
-                        </TableCell>
-                        <TableCell className="align-top">
-                          <Badge tone={statusTone(row.final_status)}>{statusLabel(row.final_status)}</Badge>
-                        </TableCell>
-                        <TableCell className="align-top text-xs text-muted-foreground">
-                          <div>{row.root_actor || "--"}</div>
-                          <div className="mt-0.5">{[row.primary_provider, row.primary_model].filter(Boolean).join(" / ") || "--"}</div>
-                        </TableCell>
-                        <TableCell className="align-top text-right tabular-nums text-xs">
-                          {formatNumber((row.total_tokens_in || 0) + (row.total_tokens_out || 0))}
-                        </TableCell>
-                        <TableCell className="align-top text-right tabular-nums text-xs">
-                          {formatCurrency(row.total_cost_usd ?? row.estimated_total_cost_usd ?? 0)}
-                        </TableCell>
-                        <TableCell className="align-top">
-                          <div className="flex flex-wrap gap-1.5">
-                            <Button asChild size="sm" variant="outline">
-                              <Link href={`/runs/${row.run_id}`}>
-                                <Eye className="h-3.5 w-3.5" />
-                                View
-                              </Link>
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={!row.url || historyBusyRunId === row.run_id}
-                              onClick={() => createBatch({ urls: [row.url] })}
-                            >
-                              Restart
-                            </Button>
-                            {canCancelRun(row) ? (
-                              <Button size="sm" variant="outline" disabled={historyBusyRunId === row.run_id} onClick={() => cancelRun(row.run_id)}>
-                                Stop
-                              </Button>
-                            ) : null}
-                            {canDeleteRun(row) ? (
-                              <ConfirmAction
-                                title="Delete this run?"
-                                description="Removes the run and its persisted telemetry. Batch rows keep their run ID but the run detail will no longer be available."
-                                actionLabel="Delete run"
-                                onConfirm={() => deleteRun(row.run_id)}
-                                trigger={(
-                                  <Button size="sm" variant="outline" disabled={historyBusyRunId === row.run_id}>
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                    Delete
-                                  </Button>
-                                )}
-                              />
-                            ) : null}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : isHistoryLoading ? (
-                    Array.from({ length: 6 }).map((_, index) => (
-                      <TableRow key={`history-loading-${index}`}>
-                        <TableCell colSpan={6}>
-                          <Skeleton className="h-8 w-full" />
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
+              <div className="overflow-auto">
+                <Table className="min-w-[1120px] table-fixed">
+                  <TableHeader className="bg-muted/40">
                     <TableRow>
-                      <TableCell colSpan={6} className="py-14 text-center text-sm text-muted-foreground">
-                        No run history matched the current search.
-                      </TableCell>
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={allVisibleHistorySelected}
+                          onCheckedChange={(checked) => {
+                            setSelectedHistoryRunIds(checked === true ? visibleHistoryIds : []);
+                          }}
+                          aria-label="Select all visible runs"
+                        />
+                      </TableHead>
+                      <TableHead className="w-[360px]">Run</TableHead>
+                      <TableHead className="w-[135px]">Status</TableHead>
+                      <TableHead className="w-[230px]">Actor/model</TableHead>
+                      <TableHead className="w-[110px] text-right">Tokens</TableHead>
+                      <TableHead className="w-[110px] text-right">Cost</TableHead>
+                      <TableHead className="w-[260px]">Actions</TableHead>
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-              <div className="border-t px-4 py-3 text-xs text-muted-foreground">
-                Showing {formatNumber(runHistory.length)} of {formatNumber(runHistoryTotal)} runs.
+                  </TableHeader>
+                  <TableBody>
+                    {runHistory.length ? (
+                      runHistory.map((row) => (
+                        <TableRow key={row.run_id} className="[&>td]:py-2.5">
+                          <TableCell className="align-middle">
+                            <Checkbox
+                              checked={selectedHistoryRunIds.includes(row.run_id)}
+                              onCheckedChange={(checked) => {
+                                setSelectedHistoryRunIds((current) => {
+                                  if (checked === true) return Array.from(new Set([...current, row.run_id]));
+                                  return current.filter((runId) => runId !== row.run_id);
+                                });
+                              }}
+                              aria-label={`Select run ${row.run_id}`}
+                            />
+                          </TableCell>
+                          <TableCell className="align-top">
+                            <Link
+                              href={`/runs/${row.run_id}`}
+                              className="block max-w-[360px] break-all font-mono text-[11px] text-primary hover:underline"
+                              title={row.run_id}
+                            >
+                              {row.run_id}
+                            </Link>
+                            <div className="mt-0.5 max-w-[360px] truncate text-[11px] text-muted-foreground" title={row.url}>
+                              {row.url}
+                            </div>
+                            <div className="mt-1 text-[10px] text-muted-foreground">
+                              {formatDate(row.created_at || row.started_at)}
+                            </div>
+                          </TableCell>
+                          <TableCell className="align-top">
+                            <Badge tone={statusTone(row.final_status)}>{statusLabel(row.final_status)}</Badge>
+                          </TableCell>
+                          <TableCell className="align-top text-xs text-muted-foreground">
+                            <div>{row.root_actor || "--"}</div>
+                            <div className="mt-0.5">{[row.primary_provider, row.primary_model].filter(Boolean).join(" / ") || "--"}</div>
+                          </TableCell>
+                          <TableCell className="align-top text-right tabular-nums text-xs">
+                            {formatNumber((row.total_tokens_in || 0) + (row.total_tokens_out || 0))}
+                          </TableCell>
+                          <TableCell className="align-top text-right tabular-nums text-xs">
+                            {formatCurrency(row.total_cost_usd ?? row.estimated_total_cost_usd ?? 0)}
+                          </TableCell>
+                          <TableCell className="align-top">
+                            <div className="flex flex-wrap gap-1.5">
+                              <Button asChild size="sm" variant="outline">
+                                <Link href={`/runs/${row.run_id}`}>
+                                  <Eye className="h-3.5 w-3.5" />
+                                  View
+                                </Link>
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={!row.url || historyBusyRunId === row.run_id}
+                                onClick={() => createBatch({ urls: [row.url] })}
+                              >
+                                Restart
+                              </Button>
+                              {canCancelRun(row) ? (
+                                <Button size="sm" variant="outline" disabled={historyBusyRunId === row.run_id} onClick={() => cancelRun(row.run_id)}>
+                                  Stop
+                                </Button>
+                              ) : null}
+                              {canDeleteRun(row) ? (
+                                <ConfirmAction
+                                  title="Delete this run?"
+                                  description="Removes the run and its persisted telemetry. Batch rows keep their run ID but the run detail will no longer be available."
+                                  actionLabel="Delete run"
+                                  onConfirm={() => deleteRun(row.run_id)}
+                                  trigger={(
+                                    <Button size="sm" variant="outline" disabled={historyBusyRunId === row.run_id}>
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                      Delete
+                                    </Button>
+                                  )}
+                                />
+                              ) : null}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : isHistoryLoading ? (
+                      Array.from({ length: 6 }).map((_, index) => (
+                        <TableRow key={`history-loading-${index}`}>
+                          <TableCell colSpan={7}>
+                            <Skeleton className="h-8 w-full" />
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={7} className="py-14 text-center text-sm text-muted-foreground">
+                          No run history matched the current search.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3 text-xs text-muted-foreground">
+                <div>
+                  Showing {formatNumber(historyStart)}-{formatNumber(historyEnd)} of {formatNumber(runHistoryTotal)} runs.
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={historyPage <= 0 || isHistoryLoading}
+                    onClick={() => setHistoryPageIndex(historyPage - 1)}
+                  >
+                    Previous
+                  </Button>
+                  <span className="font-mono">
+                    Page {formatNumber(historyPage + 1)} / {formatNumber(historyPageCount)}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={historyPage >= historyPageCount - 1 || isHistoryLoading}
+                    onClick={() => setHistoryPageIndex(historyPage + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
               </div>
             </Card>
           </TabsContent>

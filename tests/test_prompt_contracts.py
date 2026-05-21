@@ -96,3 +96,43 @@ def test_prompts_preserve_live_focus_deep_link_recovery_and_short_memory() -> No
         "Keep short memory useful",
     ):
         assert phrase in hosting
+
+
+def test_landing_prompt_uses_adaptive_frontier_and_screenshot_efficiency() -> None:
+    landing = _prompt("landing_page_v1.md")
+
+    for phrase in (
+        "Screenshot-first efficiency",
+        "observed_change",
+        "Adaptive Frontier Policy",
+        "frontier by live/watch likelihood",
+        "next cheapest proof",
+        (
+            "After `navigate` or `interact`, first read the returned URL, status, "
+            "`screenshot_url`, and `observed_change`"
+        ),
+        (
+            "If the screenshot already proves a listing, player shell, blocker, article, "
+            "or off-target page"
+        ),
+        "Call `screenshot` only as a cheap visual refresh",
+        "If content changes without a full URL change",
+        "If filters/tabs/search produce the same pattern family",
+    ):
+        assert phrase in landing
+
+
+def test_hosting_and_embedded_prompts_keep_paused_stream_protocol_evidence() -> None:
+    for name in ("hosting_page_v1.md", "embedded_page_v1.md"):
+        text = _prompt(name)
+        for phrase in (
+            "Paused players can still expose real streams",
+            "A working-player verdict and a stream-discovery verdict are separate",
+            "Do not discard URLs only because the player did not play",
+            "Protocol detail rules",
+            "`protocol_details`",
+            "tokenized: true",
+            "Do not strip query strings",
+            'visual_confirmation: "player paused/loading but streams captured"',
+        ):
+            assert phrase in text, name

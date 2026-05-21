@@ -230,6 +230,104 @@ def _trace_screenshot_urls(trace: RunTrace | None) -> list[str]:
         _collect_screenshot_urls(event.message or "", urls)
     return urls
 
+
+def _event_tool_target(details: dict[str, Any], started: dict[str, Any] | None, fallback: str) -> str:
+    args = details.get("tool_args") or details.get("args") or (started or {}).get("args") or {}
+    if isinstance(args, dict):
+        for key in ("url", "mainUrl", "target_url", "player_iframe_url", "iframe_url", "base_url", "href"):
+            value = args.get(key)
+            if value:
+                return str(value)
+    for key in ("target_url", "source_url", "url", "mainUrl", "player_iframe_url", "base_url"):
+        value = details.get(key)
+        if value:
+            return str(value)
+    return fallback
+
+
+def _collect_attributed_screenshots(
+    trace: RunTrace | None,
+    agent_runs: list[dict[str, Any]],
+    *,
+    default_source_url: str,
+) -> list[dict[str, Any]]:
+    if trace is None:
+        return []
+
+    seq_to_agent: dict[int, dict[str, Any]] = {}
+    for agent_run in agent_runs:
+        for event in agent_run.get("events", []):
+            seq_to_agent[int(event.seq or 0)] = agent_run
+
+    pending_by_id: dict[str, dict[str, Any]] = {}
+    pending_by_actor: dict[str, list[dict[str, Any]]] = {}
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, int, str]] = set()
+
+    for event in trace.events:
+        details = event.details or {}
+        actor = str(event.actor or "")
+        stack = pending_by_actor.setdefault(actor, [])
+        if event.kind == "tool_call_started":
+            tool_call_id = str(details.get("tool_call_id", "") or "")
+            started = {
+                "tool_call_id": tool_call_id,
+                "tool_name": str(details.get("tool_name", "") or ""),
+                "args": details.get("tool_args", {}) or {},
+            }
+            stack.append(started)
+            if tool_call_id:
+                pending_by_id[tool_call_id] = started
+            continue
+
+        started = None
+        if event.kind == "tool_call_finished":
+            tool_call_id = str(details.get("tool_call_id", "") or "")
+            if tool_call_id:
+                started = pending_by_id.pop(tool_call_id, None)
+            if started is None and stack:
+                started = stack.pop()
+            elif started is not None:
+                for index in range(len(stack) - 1, -1, -1):
+                    if stack[index].get("tool_call_id") == started.get("tool_call_id"):
+                        stack.pop(index)
+                        break
+
+        screenshots = _collect_screenshot_urls(details, [])
+        _collect_screenshot_urls(event.message or "", screenshots)
+        if not screenshots:
+            continue
+
+        agent_run = seq_to_agent.get(int(event.seq or 0), {})
+        tool_name = str(details.get("tool_name", "") or (started or {}).get("tool_name", "") or "")
+        target_url = _event_tool_target(
+            details,
+            started,
+            str(agent_run.get("target_url") or default_source_url or ""),
+        )
+        for screenshot in screenshots:
+            if not _is_screenshot_url(screenshot):
+                continue
+            dedupe_key = (str(screenshot), actor, int(event.seq or 0), tool_name)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            rows.append(
+                {
+                    "agent_run_id": agent_run.get("id"),
+                    "actor": actor,
+                    "agent_type": str(agent_run.get("agent_type", "") or ""),
+                    "invocation_index": int(agent_run.get("invocation_index", 0) or 0),
+                    "tool_name": tool_name,
+                    "target_url": target_url,
+                    "source_url": target_url or default_source_url,
+                    "label": str(event.kind or ""),
+                    "seq": int(event.seq or 0),
+                    "screenshot_url": str(screenshot),
+                }
+            )
+    return rows
+
 _PROMPT_PATHS = {
     AgentType.CLASSIFICATION.value: Path("configs/prompts/classification_v1.md"),
     AgentType.LANDING_PAGE.value: Path("configs/prompts/landing_page_v1.md"),
@@ -270,7 +368,7 @@ class RunRepository:
             self._persist_runtime_events(pipeline.id, trace, agent_runs)
             self._persist_run_model_usage(pipeline.id, result)
             self._persist_run_streams(pipeline.id, result)
-            self._persist_run_screenshots(pipeline.id, result)
+            self._persist_run_screenshots(pipeline.id, result, trace=trace, agent_runs=agent_runs)
             self._persist_provider_analyses(pipeline.id, result)
             self._persist_takedown_emails(pipeline.id, result)
             self._persist_memory_entries(result.run_id, pipeline.id, agent_runs, result, trace)
@@ -421,7 +519,13 @@ class RunRepository:
             )
             self._persist_trace_runtime_events(pipeline.id, trace, agent_runs)
             self._persist_trace_model_usage(pipeline.id, trace)
-            self._persist_trace_screenshots(pipeline.id, screenshot_urls, source_url=url)
+            self._persist_trace_screenshots(
+                pipeline.id,
+                screenshot_urls,
+                source_url=url,
+                trace=trace,
+                agent_runs=agent_runs,
+            )
 
     def cleanup_old_artifacts(self, *, retention_days: int = 30) -> dict[str, int]:
         threshold = datetime.utcnow() - timedelta(days=max(1, int(retention_days)))
@@ -1307,8 +1411,42 @@ class RunRepository:
                 )
             )
 
-    def _persist_run_screenshots(self, pipeline_run_id: int, result: PipelineResult) -> None:
+    def _persist_run_screenshots(
+        self,
+        pipeline_run_id: int,
+        result: PipelineResult,
+        *,
+        trace: RunTrace | None = None,
+        agent_runs: list[dict[str, Any]] | None = None,
+    ) -> None:
+        persisted: set[str] = set()
+        for row in _collect_attributed_screenshots(
+            trace,
+            agent_runs or [],
+            default_source_url=result.url,
+        ):
+            screenshot_url = str(row.get("screenshot_url") or "").strip()
+            if not screenshot_url:
+                continue
+            persisted.add(screenshot_url)
+            self._session.add(
+                RunScreenshotRecord(
+                    pipeline_run_id=pipeline_run_id,
+                    agent_run_id=row.get("agent_run_id"),
+                    screenshot_url=screenshot_url,
+                    source_url=str(row.get("source_url") or result.url or ""),
+                    label=str(row.get("label") or ""),
+                    actor=str(row.get("actor") or ""),
+                    agent_type=str(row.get("agent_type") or ""),
+                    invocation_index=int(row.get("invocation_index", 0) or 0),
+                    tool_name=str(row.get("tool_name") or ""),
+                    target_url=str(row.get("target_url") or ""),
+                    seq=int(row.get("seq", 0) or 0),
+                )
+            )
         for screenshot in result.all_screenshots:
+            if screenshot in persisted:
+                continue
             self._session.add(
                 RunScreenshotRecord(
                     pipeline_run_id=pipeline_run_id,
@@ -1323,9 +1461,38 @@ class RunRepository:
         screenshots: list[str],
         *,
         source_url: str,
+        trace: RunTrace | None = None,
+        agent_runs: list[dict[str, Any]] | None = None,
     ) -> None:
+        persisted: set[str] = set()
+        for row in _collect_attributed_screenshots(
+            trace,
+            agent_runs or [],
+            default_source_url=source_url,
+        ):
+            screenshot_url = str(row.get("screenshot_url") or "").strip()
+            if not screenshot_url:
+                continue
+            persisted.add(screenshot_url)
+            self._session.add(
+                RunScreenshotRecord(
+                    pipeline_run_id=pipeline_run_id,
+                    agent_run_id=row.get("agent_run_id"),
+                    screenshot_url=screenshot_url,
+                    source_url=str(row.get("source_url") or source_url or ""),
+                    label=str(row.get("label") or ""),
+                    actor=str(row.get("actor") or ""),
+                    agent_type=str(row.get("agent_type") or ""),
+                    invocation_index=int(row.get("invocation_index", 0) or 0),
+                    tool_name=str(row.get("tool_name") or ""),
+                    target_url=str(row.get("target_url") or ""),
+                    seq=int(row.get("seq", 0) or 0),
+                )
+            )
         for screenshot in screenshots:
             if not _is_screenshot_url(screenshot):
+                continue
+            if screenshot in persisted:
                 continue
             self._session.add(
                 RunScreenshotRecord(

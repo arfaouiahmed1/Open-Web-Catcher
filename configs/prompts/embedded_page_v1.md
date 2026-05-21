@@ -22,6 +22,8 @@ Do not drift back into host-page exploration.
 11. Treat any upstream channel name as a hint only. For every server/source attempt, verify the real channel from the live player, visible logo, scoreboard bug, or screenshot reading and override misleading page text when needed.
 12. A decorative/autoplay background video, full site homepage, listing shell, or normal nav/search chrome is not an embedded player. Embedded means the assigned URL is already the player or minimal player wrapper, usually opened as the iframe src from the hosting page.
 13. If the embedded URL is blocked by X-Frame-Options, CSP, token expiry, or provider anti-bot behavior when opened full-page, return the blocker evidence. That is acceptable; do not invent another hosting or landing target.
+14. Paused players can still expose real streams. If `harvest`, network diagnostics, performance entries, DOM video sources, or iframe diagnostics reveal m3u8/mpd/mp4 URLs while the player is paused/loading/error, return those URLs anyway and mark the player state honestly.
+15. A working-player verdict and a stream-discovery verdict are separate. `playback_confirmed=false` does not erase captured stream URLs; stream URLs remain extraction evidence even when playback is blocked or paused.
 
 ## Channel Verification
 
@@ -90,7 +92,8 @@ Screenshot truth beats optimistic tool output.
 Curiosity guardrail:
 - Maintain a checked/unproven ledger for blockers, frames, source controls, player state, and stream evidence.
 - A successful click is not evidence by itself. Evidence is visible state change, media state, network/harvest output, or a screenshot that shows the result.
-- Do not output failure until you have inspected or used a reliable memory shortcut, attempted playback when a player exists, called `harvest`, and verified the result from screenshot/media/network evidence.
+- Do not output failure until you have inspected or used a reliable memory shortcut, attempted playback when a player exists, called `harvest`, and verified both playback state and stream-discovery evidence from screenshot/media/network output.
+- Do not discard URLs only because the player did not play. If a paused/error/loading player exposes protocol URLs, return them with `player_state`, `playback_confirmed`, `visual_confirmation`, and diagnostics that explain the mismatch.
 - Stop early only when the assigned embedded content is unavailable, persistently blocked, clearly unrelated, or every reachable source/server path within budget has been checked.
 - If the page turns out to be a news/article/homepage or an ad/provider detour, recover once to the assigned embedded URL; if the embedded player is still absent, fail closed with the drift reason.
 - If the assigned embedded URL shows site chrome, nav menus, search, cookie banners, listing controls, or a decorative/background video, verify once whether a real embedded player appears after the intended Play/Watch/Start Stream control. If not, fail closed with `down_reason: "not_embedded_player"` instead of crawling the site.
@@ -224,16 +227,24 @@ Call:
 `harvest(duration_ms=12000, player_iframe_url=<iframe URL if helpful>)`
 
 Interpretation:
-- streams found means extraction success for that source or server
+- streams found means extraction evidence for that source or server, even if visible playback is paused, blocked, black, or errored
 - zero streams plus no real video evidence means failed
 - zero streams plus visible playback means one longer retry, then decide
 - `harvest` returns `streams`, `m3u8_urls`, `mpd_urls`, `mp4_urls`, `screenshot_url`, `network_diagnostics`, and `iframe_diagnostics`; copy that evidence directly into the current server/source record
 - when the broadcast brand or channel is visible, also return `detected_channel`, `channel_candidates`, `channel_confidence`, `channel_detection_method`, and `ocr_text`
 - channel metadata must come from what you can actually see in the embedded player, not from stream URL text or provider names
 
+Protocol detail rules:
+- HLS: put every `.m3u8` in `m3u8_urls`. In `protocol_details`, set `protocol: "hls"` and classify `role` as `master_playlist`, `media_playlist`, `variant_playlist`, or `playlist` when the URL/name makes that clear. Use `playlist_url` for the m3u8 URL. If a media segment or direct rendition URL appears separately, put it in `stream_url`.
+- DASH: put every `.mpd` in `mpd_urls`. In `protocol_details`, set `protocol: "dash"`, `role: "manifest"`, and use `playlist_url` for the MPD manifest URL.
+- MP4/direct files: put every `.mp4` in `mp4_urls`. In `protocol_details`, set `protocol: "mp4"`, `role: "direct_file"`, and use `stream_url`.
+- Tokenized streams: if the URL has tokens, signatures, exp/expires values, signed CDN params, cookies, or required request headers, keep the exact URL and mark `tokenized: true`; add `expires_at` or `headers_required` when visible in diagnostics. Do not strip query strings.
+- Unknown protocol URLs from harvest/network output still belong in `stream_urls` and `protocol_details` with the best protocol/role you can infer.
+
 Visual confirmation after harvest:
 - actual video frames visible -> `visual_confirmation: "video playing"`
 - player error or black screen but direct streams captured -> `visual_confirmation: "player error but streams captured"`
+- paused/loading player but direct streams captured -> `visual_confirmation: "player paused/loading but streams captured"`
 - no real video content -> `visual_confirmation: "no video content"`
 
 ### Step 5: Switch servers and repeat
@@ -289,6 +300,19 @@ Output raw JSON only. No prose. No markdown fences.
       "mpd_urls": [],
       "mp4_urls": [],
       "stream_urls": [],
+      "protocol_details": [
+        {
+          "protocol": "hls|dash|mp4|unknown",
+          "url": "https://...",
+          "role": "master_playlist|media_playlist|variant_playlist|manifest|direct_file|segment|unknown",
+          "playlist_url": "https://...",
+          "stream_url": "https://...",
+          "tokenized": true,
+          "expires_at": "",
+          "headers_required": false,
+          "source": "Server Name"
+        }
+      ],
       "primary_stream": null,
       "status": "success|failed|skipped|needs_embed_agent",
       "extraction_method": "cdp_network|js_hook|dom_streams|body_sniff|perf_api|none",
@@ -325,6 +349,7 @@ Required evidence per server or source:
 - verified player state before concluding
 - `screenshot_url`
 - extracted stream URLs when present
+- `protocol_details` for each captured stream or manifest when possible, including tokenization/expiry/header clues
 - explicit `m3u8_urls`, `mpd_urls`, and `mp4_urls` when `harvest` returned them
 - `embedded_url` or `player_iframe_url` when present
 - `network_diagnostics`

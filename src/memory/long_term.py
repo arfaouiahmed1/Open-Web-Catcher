@@ -29,6 +29,12 @@ _PROFILE_ARRAY_LIMITS = {
     "server_screenshots": 60,
     "server_stream_urls": 160,
     "activated_servers": 80,
+    "playbook_steps": 80,
+    "rejected_patterns": 80,
+    "failure_cues": 80,
+    "pagination_rules": 48,
+    "landing_match_urls": 160,
+    "continuation_notes": 32,
 }
 
 
@@ -144,6 +150,12 @@ def _default_profile(domain: str, page_type: str) -> dict[str, Any]:
         "server_screenshots": [],
         "server_stream_urls": [],
         "activated_servers": [],
+        "playbook_steps": [],
+        "rejected_patterns": [],
+        "failure_cues": [],
+        "pagination_rules": [],
+        "landing_match_urls": [],
+        "continuation_notes": [],
     }
 
 
@@ -482,6 +494,11 @@ class LongTermMemory:
         pagination_counts: Counter[str] = Counter()
         critical_link_counts: Counter[str] = Counter()
         latest_step_playbook: list[str] = []
+        latest_detailed_playbook: list[str] = []
+        rejected_patterns: list[str] = []
+        pagination_rules: list[str] = []
+        landing_match_urls: list[str] = []
+        continuation_notes: list[str] = []
         failure_patterns: list[str] = []
         successes = 0
 
@@ -498,8 +515,14 @@ class LongTermMemory:
             critical_link_counts.update(data.get("critical_links", []))
             if not latest_step_playbook and data.get("success"):
                 latest_step_playbook = _coerce_string_list(data.get("tool_steps", []))
+                latest_detailed_playbook = _coerce_string_list(data.get("playbook_steps", []))
+            rejected_patterns.extend(_coerce_string_list(data.get("rejected_patterns", [])))
+            pagination_rules.extend(_coerce_string_list(data.get("pagination_rules", [])))
+            landing_match_urls.extend(_coerce_string_list(data.get("landing_match_urls", [])))
+            continuation_notes.extend(_coerce_string_list(data.get("continuation_notes", [])))
             if not data.get("success") and data.get("result_summary"):
                 failure_patterns.append(str(data["result_summary"]))
+            failure_patterns.extend(_coerce_string_list(data.get("failure_cues", [])))
 
         profile_selectors = _coerce_string_list(profile.get("selectors", [])) if profile else []
         profile_url_patterns = _coerce_string_list(profile.get("url_patterns", [])) if profile else []
@@ -508,6 +531,10 @@ class LongTermMemory:
         )
         profile_servers = _coerce_string_list(profile.get("activated_servers", [])) if profile else []
         profile_streams = _coerce_string_list(profile.get("server_stream_urls", [])) if profile else []
+        profile_playbook = _coerce_string_list(profile.get("playbook_steps", [])) if profile else []
+        profile_rejected = _coerce_string_list(profile.get("rejected_patterns", [])) if profile else []
+        profile_pagination_rules = _coerce_string_list(profile.get("pagination_rules", [])) if profile else []
+        profile_landing_urls = _coerce_string_list(profile.get("landing_match_urls", [])) if profile else []
 
         lines = [
             "SITE MEMORY PLAYBOOK",
@@ -518,6 +545,15 @@ class LongTermMemory:
                 " -> ".join(f"`{step}`" for step in latest_step_playbook[:5])
                 if latest_step_playbook
                 else _format_counter_items(tool_counts, 4)
+            ),
+            "- detailed playbook: "
+            + (
+                " -> ".join(
+                    f"`{step}`"
+                    for step in _dedupe_keep_order([*profile_playbook, *latest_detailed_playbook])[:6]
+                )
+                if (profile_playbook or latest_detailed_playbook)
+                else "`none`"
             ),
             "- selectors/clicks: "
             + _format_memory_items([*profile_selectors, *[item for item, _ in selector_counts.most_common(4)]], 5),
@@ -534,11 +570,18 @@ class LongTermMemory:
                 [*profile_pagination, *[item for item, _ in pagination_counts.most_common(3)]],
                 3,
             ),
+            "- pagination rules: "
+            + _format_memory_items([*profile_pagination_rules, *pagination_rules], 4),
         ]
 
         if page_type == "landing_page" and profile and profile.get("hosting_candidate_urls"):
             lines.append(
                 f"- landing: `{len(_coerce_string_list(profile.get('hosting_candidate_urls', [])))}` remembered hosting candidates; infer patterns, do not replay stale URLs"
+            )
+        if page_type == "landing_page" and (profile_landing_urls or landing_match_urls):
+            lines.append(
+                "- landing match urls: "
+                + _format_memory_items([*profile_landing_urls, *landing_match_urls], 5)
             )
         if page_type in {"hosting_page", "embedded_page"}:
             lines.append(
@@ -561,6 +604,11 @@ class LongTermMemory:
         if profile and profile.get("ui_change_detected"):
             notes = _coerce_string_list(profile.get("ui_change_notes", []))
             lines.append("- drift: " + _format_memory_items(notes or ["possible structural drift"], 2))
+        rejected = _dedupe_keep_order([*profile_rejected, *rejected_patterns])
+        if rejected:
+            lines.append("- rejected patterns: " + _format_memory_items(rejected, 4))
+        if continuation_notes:
+            lines.append("- continuation notes: " + _format_memory_items(continuation_notes, 2))
         if failure_patterns:
             lines.append(
                 "- recent failures: "
@@ -642,8 +690,15 @@ class LongTermMemory:
             "server_screenshots": _coerce_string_list(entry.get("server_screenshots", [])),
             "server_stream_urls": _coerce_string_list(entry.get("server_stream_urls", [])),
             "activated_servers": _coerce_string_list(entry.get("activated_servers", [])),
+            "playbook_steps": _coerce_string_list(entry.get("playbook_steps", [])),
+            "rejected_patterns": _coerce_string_list(entry.get("rejected_patterns", [])),
+            "failure_cues": _coerce_string_list(entry.get("failure_cues", [])),
+            "pagination_rules": _coerce_string_list(entry.get("pagination_rules", [])),
+            "landing_match_urls": _coerce_string_list(entry.get("landing_match_urls", [])),
+            "continuation_notes": _coerce_string_list(entry.get("continuation_notes", [])),
         }
         patch["navigation_hints"].extend(_coerce_string_list(entry.get("tool_steps", [])))
+        patch["playbook_steps"].extend(_coerce_string_list(entry.get("tool_steps", [])))
 
         for target in patch["navigation_hints"]:
             if "=" not in target:
@@ -666,6 +721,9 @@ class LongTermMemory:
                 pagination_pattern = pagination.get("url_pattern")
                 if pagination_pattern:
                     patch["pagination_url_patterns"].append(str(pagination_pattern))
+                for key, value in pagination.items():
+                    if value:
+                        patch["pagination_rules"].append(f"{key}={value}")
 
         run_memory = payload.get("run_memory", {}) if isinstance(payload, dict) else {}
         if isinstance(run_memory, dict):
@@ -711,6 +769,37 @@ class LongTermMemory:
                         _coerce_string_list(scoped.get("activated_servers", []))
                     )
 
+        extraction_summary = payload.get("extraction_summary", {}) if isinstance(payload, dict) else {}
+        if isinstance(extraction_summary, dict):
+            for key in ("pagination_detected", "pages_paginated", "pagination_rule", "stop_reason"):
+                if extraction_summary.get(key):
+                    patch["pagination_rules"].append(f"{key}={extraction_summary.get(key)}")
+            patch["rejected_patterns"].extend(
+                _coerce_string_list(extraction_summary.get("rejected_patterns", []))
+            )
+            patch["failure_cues"].extend(_coerce_string_list(extraction_summary.get("failure_cues", [])))
+
+        for key in ("rejected_patterns", "rejected_urls", "rejected_candidates", "blocked_patterns"):
+            patch["rejected_patterns"].extend(_coerce_string_list(payload.get(key, [])) if isinstance(payload, dict) else [])
+
+        agent_run = payload.get("agent_run", {}) if isinstance(payload, dict) else {}
+        if isinstance(agent_run, dict):
+            if agent_run.get("stop_reason"):
+                patch["failure_cues"].append(f"stop_reason={agent_run.get('stop_reason')}")
+            if agent_run.get("parse_error"):
+                patch["failure_cues"].append(f"parse_error={agent_run.get('parse_error')}")
+            for capsule in agent_run.get("continuation_capsules", []) or []:
+                if not isinstance(capsule, dict):
+                    continue
+                note = {
+                    "index": capsule.get("continuation_index"),
+                    "reason": capsule.get("compaction_reason"),
+                    "next_best_move": capsule.get("next_best_move"),
+                }
+                patch["continuation_notes"].append(
+                    json.dumps(note, ensure_ascii=False, sort_keys=True)
+                )
+
         hosting_pages = payload.get("hosting_pages", []) if isinstance(payload, dict) else []
         if isinstance(hosting_pages, list):
             for candidate in hosting_pages:
@@ -723,6 +812,7 @@ class LongTermMemory:
                 if not candidate_url.startswith(("http://", "https://")):
                     continue
                 patch["hosting_candidate_urls"].append(candidate_url)
+                patch["landing_match_urls"].append(candidate_url)
                 patch["critical_links"].append(candidate_url)
                 patch["url_patterns"].append(_generalize_url_pattern(candidate_url))
                 if _looks_like_pagination_url(candidate_url):
@@ -840,6 +930,12 @@ def build_site_memory_entry(
     server_screenshots: list[str] = []
     server_stream_urls: list[str] = []
     activated_servers: list[str] = []
+    playbook_steps: list[str] = []
+    rejected_patterns: list[str] = []
+    failure_cues: list[str] = []
+    pagination_rules: list[str] = []
+    landing_match_urls: list[str] = []
+    continuation_notes: list[str] = []
 
     if trace is not None:
         scoped_events = [event for event in trace.events if not actor or event.actor == actor]
@@ -869,6 +965,9 @@ def build_site_memory_entry(
                             step_target = f"{key}={value}"
                             break
                     tool_steps.append(f"{tool_name}({step_target})" if step_target else tool_name)
+                    playbook_steps.append(
+                        f"{event.seq}: {tool_name} used {step_target or 'no explicit target'}"
+                    )
                 for key in ("url", "mainUrl", "player_iframe_url", "base_url"):
                     if args.get(key):
                         candidate_url = str(args[key])
@@ -883,6 +982,19 @@ def build_site_memory_entry(
                         selectors.append(f"{key}={args[key]}")
             elif event.kind == "llm_response" and details.get("content_preview"):
                 llm_notes.append(str(details["content_preview"])[:240])
+            elif event.kind in {"context_compaction_started", "context_compaction_finished"}:
+                continuation_notes.append(
+                    json.dumps(
+                        {
+                            "seq": event.seq,
+                            "kind": event.kind,
+                            "usage": details.get("context_usage_pct"),
+                            "reason": details.get("compaction_reason"),
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                )
 
     servers = payload.get("servers", []) if isinstance(payload, dict) else []
     stream_urls: list[str] = []
@@ -960,6 +1072,7 @@ def build_site_memory_entry(
 
         if page_url:
             hosting_candidate_urls.append(page_url)
+            landing_match_urls.append(page_url)
 
         if isinstance(page, dict) and page.get("url"):
             navigation_targets.append(f"hosting_url={page_url}")
@@ -980,6 +1093,49 @@ def build_site_memory_entry(
                     pagination_url_pattern = patterns["pagination"].get("url_pattern")
                     if pagination_url_pattern:
                         pagination_patterns.append(str(pagination_url_pattern))
+                    for key, value in patterns["pagination"].items():
+                        if value:
+                            pagination_rules.append(f"{key}={value}")
+
+    site_patterns = payload.get("site_patterns", {}) if isinstance(payload, dict) else {}
+    if isinstance(site_patterns, dict):
+        pagination = site_patterns.get("pagination", {})
+        if isinstance(pagination, dict):
+            for key, value in pagination.items():
+                if value:
+                    pagination_rules.append(f"{key}={value}")
+
+    extraction_summary = payload.get("extraction_summary", {}) if isinstance(payload, dict) else {}
+    if isinstance(extraction_summary, dict):
+        for key in ("pagination_detected", "pages_paginated", "pagination_rule", "stop_reason"):
+            if extraction_summary.get(key):
+                pagination_rules.append(f"{key}={extraction_summary.get(key)}")
+        rejected_patterns.extend(_coerce_string_list(extraction_summary.get("rejected_patterns", [])))
+        failure_cues.extend(_coerce_string_list(extraction_summary.get("failure_cues", [])))
+
+    for key in ("rejected_patterns", "rejected_urls", "rejected_candidates", "blocked_patterns"):
+        rejected_patterns.extend(_coerce_string_list(payload.get(key, [])) if isinstance(payload, dict) else [])
+
+    agent_run = payload.get("agent_run", {}) if isinstance(payload, dict) else {}
+    if isinstance(agent_run, dict):
+        if agent_run.get("stop_reason"):
+            failure_cues.append(f"stop_reason={agent_run.get('stop_reason')}")
+        if agent_run.get("parse_error"):
+            failure_cues.append(f"parse_error={agent_run.get('parse_error')}")
+        for capsule in agent_run.get("continuation_capsules", []) or []:
+            if not isinstance(capsule, dict):
+                continue
+            continuation_notes.append(
+                json.dumps(
+                    {
+                        "index": capsule.get("continuation_index"),
+                        "reason": capsule.get("compaction_reason"),
+                        "next_best_move": capsule.get("next_best_move"),
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
 
     payload_urls = _extract_urls_from_payload(payload)
     critical_links.extend(payload_urls)
@@ -1042,6 +1198,12 @@ def build_site_memory_entry(
     server_stream_limit = 80 if is_stream_page else 20
     server_screenshot_limit = 48 if is_stream_page else 16
     activated_limit = 48 if is_stream_page else 16
+    playbook_limit = 56 if is_landing or is_stream_page else 16
+    rejected_limit = 56 if is_landing else 24
+    failure_limit = 32
+    pagination_rule_limit = 32 if is_landing else 16
+    landing_match_limit = 120 if is_landing else 32
+    continuation_limit = 12
 
     return {
         "domain": _normalize_domain(url),
@@ -1064,6 +1226,12 @@ def build_site_memory_entry(
         "server_stream_urls": _dedupe_keep_order(server_stream_urls)[:server_stream_limit],
         "server_screenshots": _dedupe_keep_order(server_screenshots)[:server_screenshot_limit],
         "activated_servers": _dedupe_keep_order(activated_servers)[:activated_limit],
+        "playbook_steps": _dedupe_keep_order([*playbook_steps, *tool_steps])[:playbook_limit],
+        "rejected_patterns": _dedupe_keep_order(rejected_patterns)[:rejected_limit],
+        "failure_cues": _dedupe_keep_order(failure_cues)[:failure_limit],
+        "pagination_rules": _dedupe_keep_order(pagination_rules)[:pagination_rule_limit],
+        "landing_match_urls": _dedupe_keep_order(landing_match_urls)[:landing_match_limit],
+        "continuation_notes": _dedupe_keep_order(continuation_notes)[:continuation_limit],
         "llm_notes": _dedupe_keep_order(llm_notes)[:4],
         "short_memory_summary": short_memory_summary[:700],
         "result_summary": result_summary,

@@ -25,6 +25,12 @@ const ARRAY_LIMITS = {
   server_screenshots: 360,
   server_stream_urls: 900,
   activated_servers: 260,
+  playbook_steps: 260,
+  rejected_patterns: 220,
+  failure_cues: 160,
+  pagination_rules: 120,
+  landing_match_urls: 900,
+  continuation_notes: 80,
 };
 
 function dedupe(values) {
@@ -128,6 +134,12 @@ function defaultProfile(domain, pageType) {
     server_screenshots: [],
     server_stream_urls: [],
     activated_servers: [],
+    playbook_steps: [],
+    rejected_patterns: [],
+    failure_cues: [],
+    pagination_rules: [],
+    landing_match_urls: [],
+    continuation_notes: [],
   };
 }
 
@@ -287,6 +299,12 @@ function buildDerivedPatch(rawPatch) {
     server_screenshots: asStringList(rawPatch.server_screenshots || []),
     server_stream_urls: asStringList(rawPatch.server_stream_urls || []),
     activated_servers: asStringList(rawPatch.activated_servers || []),
+    playbook_steps: asStringList(rawPatch.playbook_steps || []),
+    rejected_patterns: asStringList(rawPatch.rejected_patterns || []),
+    failure_cues: asStringList(rawPatch.failure_cues || []),
+    pagination_rules: asStringList(rawPatch.pagination_rules || []),
+    landing_match_urls: asStringList(rawPatch.landing_match_urls || []),
+    continuation_notes: asStringList(rawPatch.continuation_notes || []),
     ui_change_notes: asStringList(rawPatch.ui_change_notes || []),
     ui_change_detected: Boolean(rawPatch.ui_change_detected),
   };
@@ -312,6 +330,7 @@ function buildDerivedPatch(rawPatch) {
       continue;
     }
     patch.critical_links.push(link);
+    patch.landing_match_urls.push(link);
     patch.url_patterns.push(generalizeUrlPattern(link));
     if (looksLikePagination(link)) {
       patch.pagination_url_patterns.push(generalizeUrlPattern(link));
@@ -392,6 +411,12 @@ export async function memoryUpdate({
   server_screenshots = [],
   server_stream_urls = [],
   activated_servers = [],
+  playbook_steps = [],
+  rejected_patterns = [],
+  failure_cues = [],
+  pagination_rules = [],
+  landing_match_urls = [],
+  continuation_notes = [],
   ui_change_notes = [],
   ui_change_detected = false,
   refresh_reason = '',
@@ -423,6 +448,12 @@ export async function memoryUpdate({
     server_screenshots,
     server_stream_urls,
     activated_servers,
+    playbook_steps,
+    rejected_patterns,
+    failure_cues,
+    pagination_rules,
+    landing_match_urls,
+    continuation_notes,
     ui_change_notes,
     ui_change_detected,
   });
