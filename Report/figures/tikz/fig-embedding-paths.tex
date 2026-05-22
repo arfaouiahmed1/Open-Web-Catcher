@@ -1,24 +1,35 @@
 \begin{figure}[H]
 \centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[node distance=0.9cm]
-\node[flowbox, fill=orange!8, minimum width=4.2cm] (host) {Hosting page};
-\node[toolbox, fill=blue!6, below left=1.0cm and 1.4cm of host,
-      minimum width=3.6cm] (video) {\texttt{<video>} / \texttt{<source>}};
-\node[toolbox, fill=blue!6, below=1.0cm of host,
-      minimum width=3.6cm] (iframe) {\texttt{<iframe src>}};
-\node[toolbox, fill=blue!6, below right=1.0cm and 1.4cm of host,
-      minimum width=3.6cm] (js) {JS player setup};
-\node[flowbox, fill=green!8, below=2.1cm of host,
-      minimum width=4.6cm] (manifest) {Media manifest\\\texttt{.m3u8}, \texttt{.mpd}, \texttt{.mp4}};
-\draw[myarrow] (host) -- (video);
-\draw[myarrow] (host) -- (iframe);
-\draw[myarrow] (host) -- (js);
-\draw[myarrow] (video) -- (manifest);
-\draw[myarrow] (iframe) -- (manifest);
-\draw[myarrow] (js) -- (manifest);
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  host/.style={draw=orange!80!black, fill=orange!10, rounded corners=6pt,
+    minimum width=4.3cm, minimum height=0.9cm, align=center, font=\small\bfseries},
+  path/.style={draw=accent!70, fill=blue!5, rounded corners=5pt,
+    minimum width=3.75cm, minimum height=0.82cm, align=center, font=\footnotesize\bfseries},
+  fallback/.style={draw=orange!75!black, fill=orange!8, rounded corners=5pt,
+    minimum width=3.75cm, minimum height=0.82cm, align=center, font=\footnotesize\bfseries},
+  evidence/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
+    minimum width=4.6cm, minimum height=0.95cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80},
+  dasharr/.style={->, >=Stealth, thick, orange!80!black, dashed},
+  lab/.style={font=\scriptsize, text=gray!72, fill=white, inner sep=1pt}
+]
+\node[host] (host) at (0,3.2) {Hosting page\\watch URL assigned by orchestrator};
+\node[path] (direct) at (-5.0,1.35) {Direct media element\\\texttt{<video>} / \texttt{<source>}};
+\node[fallback] (iframe) at (0,1.35) {Embedded fallback\\\texttt{<iframe src>} / player URL};
+\node[path] (js) at (5.0,1.35) {JavaScript player setup\\tokens, config, server switch};
+\node[evidence] (network) at (0,-0.45) {Network and media evidence\\requests, manifests, screenshots};
+\node[evidence] (manifest) at (0,-2.15) {Stream candidate\\\texttt{.m3u8}, \texttt{.mpd}, \texttt{.mp4}};
+
+\draw[arr] (host.south west) -- node[lab, above left]{visible source} (direct.north);
+\draw[dasharr] (host.south) -- node[lab, right]{only if host exposes player URL} (iframe.north);
+\draw[arr] (host.south east) -- node[lab, above right]{runtime config} (js.north);
+\draw[arr] (direct.south) -- ++(0,-0.55) -| (network.west);
+\draw[dasharr] (iframe.south) -- (network.north);
+\draw[arr] (js.south) -- ++(0,-0.55) -| (network.east);
+\draw[arr] (network) -- (manifest);
 \end{tikzpicture}
 }
-\caption{General embedding paths from a hosting page to a media manifest.}
+\caption{Main paths from a hosting page to media evidence, with embedded pages treated as an explicit fallback when the hosting page exposes a player URL.}
 \label{fig:embedding-paths}
 \end{figure}

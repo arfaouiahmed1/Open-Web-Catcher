@@ -44,10 +44,19 @@ auditable.
 \section{Objectives and contributions}
 
 The objective of this project is to study and design a technical approach for
-evidence collection from illegal sports streaming websites. The work aims to
-move from a manual and case-by-case process toward a more structured process
-that can inspect target pages, preserve useful observations, and present results
-in a form that can be reviewed.
+evidence collection from illegal sports streaming websites. The work moved from
+a manual and case-by-case process toward a more structured process that can
+inspect target pages, preserve useful observations, and present results in a
+form that can be reviewed.
+
+Two artifacts were produced for different purposes. First, an n8n workflow was
+used to validate the operational idea quickly on real dynamic websites. Second,
+a Python reference architecture was designed to make the same workflow more
+maintainable and observable through specialist agents, versioned prompts,
+profile-scoped browser tools, memory, caching, traces, screenshots, and model
+usage records. The Python architecture should therefore be read as the
+engineering reference and evaluation platform for the agentic approach, not as a
+claim that the full company workflow was replaced during the internship.
 
 The main objectives are:
 
@@ -57,9 +66,10 @@ The main objectives are:
   \item analyze the technical behavior of illegal streaming websites, including
     dynamic pages, embedded players, redirects, and multilingual layouts;
   \item define a maintainable evidence-collection process that can adapt to
-    different website structures;
+    landing pages, hosting pages, embedded players, redirects, popups, and
+    repeated layout patterns;
   \item design a system architecture that separates observation, extraction,
-    persistence, review, and evaluation concerns;
+    persistence, memory, caching, review, and evaluation concerns;
   \item evaluate the approach on representative targets and document its limits.
 \end{itemize}
 
@@ -68,10 +78,13 @@ The main contributions of the internship are:
 \begin{itemize}
   \item a structured analysis of the evidence-collection problem in the sports
     piracy domain;
-  \item a progressive design of an automated collection approach, from general
-    requirements to implementation details;
+  \item a validated n8n prototype showing that LLM-guided browser observation
+    can follow dynamic streaming-site flows;
   \item a technical architecture for collecting, storing, and reviewing evidence
-    from suspicious streaming websites;
+    from suspicious streaming websites through specialized agents;
+  \item an explicit description of how prompts, browser tools, short-term
+    memory, long-term memory, caching, and context-window handling support the
+    agent workflow;
   \item an evaluation of the approach based on observed behavior, collected
     traces, and failure cases;
   \item a report structure that moves from the general business problem toward
@@ -86,8 +99,9 @@ used to frame the project. Chapter~3 introduces the technical background needed
 to understand streaming websites, browser-based observation, automation tools,
 agentic extraction, and media protocols. Chapter~4 describes the proposed
 architecture and explains how the main system responsibilities are organized.
-Chapter~5 details the implementation path, from exploration to the concrete
-software components and operational scope. Chapter~6 evaluates the system
-through agent, model, and tool testing. Chapter~7 concludes the report.
+Chapter~5 details the implementation path, from the n8n exploration workflow to
+the concrete software components and the final operational scope. Chapter~6
+evaluates the system through agent, model, cache, cost, and tool testing.
+Chapter~7 concludes the report.
 
 \input{figures/tikz/fig-01-report-map}

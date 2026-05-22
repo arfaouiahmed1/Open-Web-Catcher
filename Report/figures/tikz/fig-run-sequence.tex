@@ -1,41 +1,44 @@
 \begin{figure}[H]
 \centering
-\resizebox{\textwidth}{!}{%
+\resizebox{0.96\textwidth}{!}{%
 \begin{tikzpicture}[
   part/.style={draw=gray!55, fill=gray!8, rounded corners=3pt,
-    minimum width=2.2cm, minimum height=0.55cm, align=center, font=\scriptsize\bfseries},
-  msg/.style={->, >=Stealth, thick, accent!80},
+    minimum width=2.05cm, minimum height=0.58cm, align=center, font=\scriptsize\bfseries},
+  msg/.style={->, >=Stealth, thick, accent!85},
   ret/.style={->, >=Stealth, dashed, gray!70, thick},
   life/.style={gray!45, dashed},
   lab/.style={font=\scriptsize, fill=white, inner sep=1pt}
 ]
 
 \foreach \x/\name/\id in {
-  0/Operator/ui,
-  2.7/Next.js/next,
-  5.4/FastAPI/api,
-  8.1/Orchestrator/orch,
-  10.8/Agent/agent,
-  13.5/MCP tools/mcp,
-  16.2/Storage/db
+  0/Operator/op,
+  2.4/Console/ui,
+  4.8/FastAPI + job/api,
+  7.2/Orchestrator/graph,
+  9.6/Specialist/agent,
+  12.0/MCP + Gemini/tools,
+  14.4/Postgres/db
 }{
   \node[part] (\id) at (\x,0) {\name};
-  \draw[life] (\x,-0.35) -- (\x,-7.1);
+  \draw[life] (\x,-0.35) -- (\x,-8.9);
 }
 
-\draw[msg] (0,-0.8) -- node[lab, above]{launch URL} (2.7,-0.8);
-\draw[msg] (2.7,-1.45) -- node[lab, above]{POST run} (5.4,-1.45);
-\draw[msg] (5.4,-2.1) -- node[lab, above]{start pipeline} (8.1,-2.1);
-\draw[msg] (8.1,-2.75) -- node[lab, above]{handoff by page type} (10.8,-2.75);
-\draw[msg] (10.8,-3.4) -- node[lab, above]{inspect / interact / harvest} (13.5,-3.4);
-\draw[ret] (13.5,-4.05) -- node[lab, above]{DOM, network, screenshots} (10.8,-4.05);
-\draw[ret] (10.8,-4.7) -- node[lab, above]{structured result} (8.1,-4.7);
-\draw[msg] (8.1,-5.35) -- node[lab, above]{events and artifacts} (16.2,-5.35);
-\draw[ret] (16.2,-6.0) -- node[lab, above]{run detail} (2.7,-6.0);
-\draw[ret] (2.7,-6.65) -- node[lab, above]{review evidence} (0,-6.65);
+\draw[msg] (0,-0.8) -- node[lab, above]{submit URL} (2.4,-0.8);
+\draw[msg] (2.4,-1.45) -- node[lab, above]{POST workflow run} (4.8,-1.45);
+\draw[msg] (4.8,-2.1) -- node[lab, above]{create job + trace} (14.4,-2.1);
+\draw[ret] (4.8,-2.75) -- node[lab, above]{run id} (2.4,-2.75);
+\draw[msg] (4.8,-3.4) -- node[lab, above]{run\_pipeline(url)} (7.2,-3.4);
+\draw[msg] (7.2,-4.05) -- node[lab, above]{classification + handoffs} (9.6,-4.05);
+\draw[msg] (9.6,-4.7) -- node[lab, above]{model turns + browser tools} (12.0,-4.7);
+\draw[ret] (12.0,-5.35) -- node[lab, above]{observations + model output} (9.6,-5.35);
+\draw[ret] (9.6,-6.0) -- node[lab, above]{typed result} (7.2,-6.0);
+\draw[msg] (7.2,-6.65) -- node[lab, above]{persist result + telemetry} (14.4,-6.65);
+\draw[msg] (2.4,-7.3) -- node[lab, above]{GET run detail} (4.8,-7.3);
+\draw[ret] (4.8,-7.95) -- node[lab, above]{evidence + trace payload} (2.4,-7.95);
+\draw[ret] (2.4,-8.6) -- node[lab, above]{review} (0,-8.6);
 
 \end{tikzpicture}
 }
-\caption{Sequence diagram for a standard investigation run.}
+\caption{Sequence diagram for launching, executing, persisting, and reviewing a workflow run.}
 \label{fig:run-sequence}
 \end{figure}

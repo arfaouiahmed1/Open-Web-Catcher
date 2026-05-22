@@ -35,6 +35,10 @@ _AGENT_CONTRACT = """\
 - return detected channel/broadcast metadata per server only when a known broadcaster name is visible or strongly evidenced
 - crawl visible JS-driven player/server/source/language controls before falling back to URL-only evidence
 - preserve source language labels when they are shown as flags, country emoji, audio labels, captions, or short codes
+- work across any language or script; verify channel/source labels from player evidence instead of English-only terms
+- treat ad redirects, news/article detours, fake downloads, and unrelated provider pages as drift, then recover once
+- after every Play/Watch overlay click, check whether server/source controls or iframe/player evidence loaded before failing
+- if playback does not start, try distinct activation strategies instead of repeating the same click
 - if playback fails or no streams are recovered, return an embedded fallback only when the current hosting page exposes an explicit iframe src or embedded/player URL; otherwise stop with failure evidence and no fabricated next target
 """
 

@@ -22,8 +22,11 @@ from src.storage.models import (
     RunModelUsageRecord,
 )
 from src.utils.console_state import (
+    RUN_AGENT_FAILURE_STATUSES,
     RUN_CANCELLED_STATUSES,
+    RUN_EXTERNAL_BLOCKER_STATUSES,
     RUN_FAILURE_STATUSES,
+    RUN_PRODUCTIVE_SUCCESS_STATUSES,
     RUN_SUCCESS_STATUSES,
     RUN_TERMINAL_STATUSES,
     normalize_job_display_status,
@@ -46,6 +49,9 @@ LABELS = ["piracy", "sports", "news", "entertainment", "unknown"]
 SUCCESS_FINAL_STATUSES = set(RUN_SUCCESS_STATUSES)
 FAILED_FINAL_STATUSES = set(RUN_FAILURE_STATUSES)
 CANCELLED_FINAL_STATUSES = set(RUN_CANCELLED_STATUSES)
+PRODUCTIVE_SUCCESS_STATUSES = set(RUN_PRODUCTIVE_SUCCESS_STATUSES)
+EXTERNAL_BLOCKER_STATUSES = set(RUN_EXTERNAL_BLOCKER_STATUSES)
+AGENT_FAILURE_STATUSES = set(RUN_AGENT_FAILURE_STATUSES)
 TERMINAL_SITE_RUN_STATUSES = set(RUN_TERMINAL_STATUSES)
 ACTIVE_SITE_RUN_STATUSES = {"queued", "running", "retrying", "leased"}
 RUNNING_SITE_RUN_STATUSES = {"running", "retrying", "leased"}
@@ -93,6 +99,44 @@ def _serialize_datetime(value: Any) -> str:
 def _terminal_site_status(value: str) -> str:
     status = str(value or "").strip().lower()
     return status if status in TERMINAL_SITE_RUN_STATUSES else ""
+
+
+def _status_metrics_from_statuses(statuses: list[str]) -> dict[str, Any]:
+    terminal_statuses = [_terminal_site_status(status) for status in statuses]
+    terminal_statuses = [status for status in terminal_statuses if status]
+    productive_success_count = len(
+        [status for status in terminal_statuses if status in PRODUCTIVE_SUCCESS_STATUSES]
+    )
+    external_blocked_count = len(
+        [status for status in terminal_statuses if status in EXTERNAL_BLOCKER_STATUSES]
+    )
+    agent_failed_count = len(
+        [status for status in terminal_statuses if status in AGENT_FAILURE_STATUSES]
+    )
+    strict_failed_count = len(
+        [status for status in terminal_statuses if status in FAILED_FINAL_STATUSES]
+    )
+    cancelled_count = len(
+        [status for status in terminal_statuses if status in CANCELLED_FINAL_STATUSES]
+    )
+    terminal_non_cancelled_count = len(terminal_statuses) - cancelled_count
+    adjusted_successful_count = productive_success_count + external_blocked_count
+    return {
+        "terminal_count": len(terminal_statuses),
+        "terminal_non_cancelled_count": terminal_non_cancelled_count,
+        "productive_success_count": productive_success_count,
+        "adjusted_successful_count": adjusted_successful_count,
+        "external_blocked_count": external_blocked_count,
+        "agent_failed_count": agent_failed_count,
+        "strict_failed_count": strict_failed_count,
+        "cancelled_count": cancelled_count,
+        "adjusted_success_rate": round(
+            (adjusted_successful_count / terminal_non_cancelled_count) * 100.0,
+            1,
+        )
+        if terminal_non_cancelled_count
+        else 0.0,
+    }
 
 
 def _derive_failed_site_status(
@@ -324,6 +368,13 @@ class DatasetRepository:
             total_successes += int(row.successful_runs or 0)
             total_attempts += int(row.total_runs or 0)
 
+        status_rows = self._session.query(
+            DatasetSiteRunRecord.final_status,
+            DatasetSiteRunRecord.status,
+        ).all()
+        status_metrics = _status_metrics_from_statuses(
+            [str(final_status or status or "") for final_status, status in status_rows]
+        )
         success_rate = round((total_successes / total_attempts) * 100.0, 1) if total_attempts else 0.0
         return {
             "total": len(rows),
@@ -334,6 +385,11 @@ class DatasetRepository:
             "successful_runs": total_successes,
             "total_runs": total_attempts,
             "success_rate": success_rate,
+            "adjusted_success_rate": status_metrics["adjusted_success_rate"],
+            "agent_failed_count": status_metrics["agent_failed_count"],
+            "external_blocked_count": status_metrics["external_blocked_count"],
+            "strict_failed_count": status_metrics["strict_failed_count"],
+            "terminal_non_cancelled_count": status_metrics["terminal_non_cancelled_count"],
         }
 
     def update_site(
@@ -457,6 +513,7 @@ class DatasetRepository:
         successful = 0
         partial = 0
         failed = 0
+        statuses: list[str] = []
         by_language: dict[str, dict[str, Any]] = {}
         by_label: dict[str, dict[str, Any]] = {}
 
@@ -471,6 +528,7 @@ class DatasetRepository:
             if label and row_label != label:
                 continue
 
+            statuses.append(final_status)
             total += 1
             ok = final_status in SUCCESS_FINAL_STATUSES
             if final_status == "partial":
@@ -480,10 +538,11 @@ class DatasetRepository:
             else:
                 failed += 1
 
-            lang_bucket = by_language.setdefault(row_language, {"total": 0, "successful": 0, "partial": 0, "failed": 0})
-            label_bucket = by_label.setdefault(row_label, {"total": 0, "successful": 0, "partial": 0, "failed": 0})
+            lang_bucket = by_language.setdefault(row_language, {"total": 0, "successful": 0, "partial": 0, "failed": 0, "_statuses": []})
+            label_bucket = by_label.setdefault(row_label, {"total": 0, "successful": 0, "partial": 0, "failed": 0, "_statuses": []})
             for bucket in (lang_bucket, label_bucket):
                 bucket["total"] += 1
+                bucket["_statuses"].append(final_status)
                 if ok:
                     bucket["successful"] += 1
                 else:
@@ -493,13 +552,29 @@ class DatasetRepository:
 
         for bucket in list(by_language.values()) + list(by_label.values()):
             bucket["success_rate"] = round((bucket["successful"] / bucket["total"]) * 100.0, 1) if bucket["total"] else 0.0
+            bucket_metrics = _status_metrics_from_statuses(bucket.pop("_statuses", []))
+            bucket.update(
+                {
+                    "adjusted_success_rate": bucket_metrics["adjusted_success_rate"],
+                    "agent_failed_count": bucket_metrics["agent_failed_count"],
+                    "external_blocked_count": bucket_metrics["external_blocked_count"],
+                    "strict_failed_count": bucket_metrics["strict_failed_count"],
+                    "terminal_non_cancelled_count": bucket_metrics["terminal_non_cancelled_count"],
+                }
+            )
 
+        metrics = _status_metrics_from_statuses(statuses)
         return {
             "total": total,
             "successful": successful,
             "partial": partial,
             "failed": failed,
             "success_rate": round((successful / total) * 100.0, 1) if total else 0.0,
+            "adjusted_success_rate": metrics["adjusted_success_rate"],
+            "agent_failed_count": metrics["agent_failed_count"],
+            "external_blocked_count": metrics["external_blocked_count"],
+            "strict_failed_count": metrics["strict_failed_count"],
+            "terminal_non_cancelled_count": metrics["terminal_non_cancelled_count"],
             "by_language": by_language,
             "by_label": by_label,
         }
@@ -697,7 +772,20 @@ class DatasetRepository:
 
     def _site_payload(self, row: DatasetSiteRecord) -> dict[str, Any]:
         payload = _serialize_model(row)
+        status_rows = (
+            self._session.query(DatasetSiteRunRecord.final_status, DatasetSiteRunRecord.status)
+            .filter_by(site_id=row.id)
+            .all()
+        )
+        status_metrics = _status_metrics_from_statuses(
+            [str(final_status or status or "") for final_status, status in status_rows]
+        )
         payload["success_rate"] = round((float(row.successful_runs or 0) / float(row.total_runs or 1)) * 100.0, 1) if row.total_runs else 0.0
+        payload["adjusted_success_rate"] = status_metrics["adjusted_success_rate"]
+        payload["agent_failed_count"] = status_metrics["agent_failed_count"]
+        payload["external_blocked_count"] = status_metrics["external_blocked_count"]
+        payload["strict_failed_count"] = status_metrics["strict_failed_count"]
+        payload["terminal_non_cancelled_count"] = status_metrics["terminal_non_cancelled_count"]
         payload["latest_run"] = self._latest_site_run_payload(row.id)
         payload["active_run_count"] = int(
             self._session.query(DatasetSiteRunRecord)
@@ -722,6 +810,9 @@ class DatasetRepository:
             for item in run_payloads
             if _terminal_site_status(item.get("final_status") or item.get("status"))
         ]
+        status_metrics = _status_metrics_from_statuses(
+            [str(item.get("final_status") or item.get("status") or "") for item in run_payloads]
+        )
         passed_count = len(
             [
                 item
@@ -768,10 +859,15 @@ class DatasetRepository:
         payload["passed_count"] = passed_count
         payload["failed_count"] = failed_count
         payload["cancelled_count"] = cancelled_count
+        payload["agent_failed_count"] = status_metrics["agent_failed_count"]
+        payload["external_blocked_count"] = status_metrics["external_blocked_count"]
+        payload["strict_failed_count"] = status_metrics["strict_failed_count"]
+        payload["terminal_non_cancelled_count"] = status_metrics["terminal_non_cancelled_count"]
         payload["status"] = batch_status
         payload["success_rate"] = (
             round((float(passed_count) / float(len(completed) or 1)) * 100.0, 1) if completed else 0.0
         )
+        payload["adjusted_success_rate"] = status_metrics["adjusted_success_rate"]
         if len(completed) == len(run_payloads) and completed:
             finished_values = [
                 item.get("finished_at")
@@ -907,20 +1003,22 @@ class DatasetRepository:
             payload["duration_seconds"] = 0.0
         if not derived_error and resolved_status in FAILED_FINAL_STATUSES:
             derived_error = str(getattr(job, "error_text", "") or "")
-        resolved_status = _derive_failed_site_status(
-            status=resolved_status,
-            page_type=str(payload.get("page_type", "") or ""),
-            stream_count=int(payload.get("stream_count") or 0),
-            provider_analysis_count=0,
-            error_text=derived_error,
-        )
-        resolved_final_status = _derive_failed_site_status(
-            status=resolved_final_status or resolved_status,
-            page_type=str(payload.get("page_type", "") or ""),
-            stream_count=int(payload.get("stream_count") or 0),
-            provider_analysis_count=0,
-            error_text=derived_error,
-        )
+        if not (pipeline is None and resolved_status == "failed" and not derived_error):
+            resolved_status = _derive_failed_site_status(
+                status=resolved_status,
+                page_type=str(payload.get("page_type", "") or ""),
+                stream_count=int(payload.get("stream_count") or 0),
+                provider_analysis_count=0,
+                error_text=derived_error,
+            )
+        if not (pipeline is None and (resolved_final_status or resolved_status) == "failed" and not derived_error):
+            resolved_final_status = _derive_failed_site_status(
+                status=resolved_final_status or resolved_status,
+                page_type=str(payload.get("page_type", "") or ""),
+                stream_count=int(payload.get("stream_count") or 0),
+                provider_analysis_count=0,
+                error_text=derived_error,
+            )
         payload["status"] = resolved_status
         payload["final_status"] = resolved_final_status or payload.get("final_status") or payload.get("status") or ""
         payload["error_text"] = derived_error

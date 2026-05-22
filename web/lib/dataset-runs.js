@@ -1,5 +1,15 @@
-import { apiFetch } from "@/lib/api";
-import { estimateRunCost, synthCallsFromModelUsage } from "@/lib/pricing";
+import { apiFetch } from "./api.js";
+import { estimateRunCost, synthCallsFromModelUsage } from "./pricing.js";
+
+export const PRODUCTIVE_SUCCESS_STATUSES = new Set(["success", "partial"]);
+export const EXTERNAL_OR_EXPECTED_BLOCKER_STATUSES = new Set([
+  "page_inaccessible",
+  "site_dead",
+  "no_streams",
+  "no_hosting_pages",
+]);
+export const AGENT_FAILURE_STATUSES = new Set(["failed", "timeout", "redirect"]);
+export const CANCELLED_STATUSES = new Set(["cancelled"]);
 
 export function toNumber(value, fallback = 0) {
   const next = Number(value);
@@ -27,6 +37,61 @@ export function terminalStatus(value) {
 
 export function datasetRunStatus(row = {}) {
   return String(row.final_status || row.status || row.run?.final_status || "").trim().toLowerCase() || "queued";
+}
+
+export function statusMetricBucket(status) {
+  const value = String(status || "").trim().toLowerCase();
+  if (PRODUCTIVE_SUCCESS_STATUSES.has(value)) return "productive_success";
+  if (EXTERNAL_OR_EXPECTED_BLOCKER_STATUSES.has(value)) return "external_or_expected_blocker";
+  if (AGENT_FAILURE_STATUSES.has(value)) return "agent_failure";
+  if (CANCELLED_STATUSES.has(value)) return "cancelled";
+  if (["queued", "running", "retrying", "leased"].includes(value)) return "active";
+  return "unknown";
+}
+
+export function isAdjustedSuccessStatus(status) {
+  const value = String(status || "").trim().toLowerCase();
+  return PRODUCTIVE_SUCCESS_STATUSES.has(value) || EXTERNAL_OR_EXPECTED_BLOCKER_STATUSES.has(value);
+}
+
+export function summarizeStatusMetrics(rows = [], options = {}) {
+  const getStatus = typeof options.getStatus === "function" ? options.getStatus : datasetRunStatus;
+  const totals = {
+    terminal_count: 0,
+    terminal_non_cancelled_count: 0,
+    productive_success_count: 0,
+    adjusted_successful_count: 0,
+    external_blocked_count: 0,
+    agent_failed_count: 0,
+    strict_failed_count: 0,
+    cancelled_count: 0,
+    success_rate: 0,
+    adjusted_success_rate: 0,
+  };
+
+  for (const row of rows || []) {
+    const status = terminalStatus(getStatus(row));
+    if (!status) continue;
+    totals.terminal_count += 1;
+    const bucket = statusMetricBucket(status);
+    if (bucket !== "cancelled") totals.terminal_non_cancelled_count += 1;
+    if (bucket === "productive_success") totals.productive_success_count += 1;
+    if (bucket === "external_or_expected_blocker") totals.external_blocked_count += 1;
+    if (bucket === "agent_failure") totals.agent_failed_count += 1;
+    if (bucket === "cancelled") totals.cancelled_count += 1;
+    if (AGENT_FAILURE_STATUSES.has(status) || EXTERNAL_OR_EXPECTED_BLOCKER_STATUSES.has(status)) {
+      totals.strict_failed_count += 1;
+    }
+  }
+
+  totals.adjusted_successful_count = totals.productive_success_count + totals.external_blocked_count;
+  totals.success_rate = totals.terminal_count
+    ? Number(((totals.productive_success_count / totals.terminal_count) * 100).toFixed(1))
+    : 0;
+  totals.adjusted_success_rate = totals.terminal_non_cancelled_count
+    ? Number(((totals.adjusted_successful_count / totals.terminal_non_cancelled_count) * 100).toFixed(1))
+    : 0;
+  return totals;
 }
 
 export function statusToneForDataset(status) {

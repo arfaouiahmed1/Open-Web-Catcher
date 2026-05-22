@@ -476,15 +476,18 @@ outputs. \\
 The company preferred to keep n8n as the main operational workflow. For that reason, the
 cloud deployment did not attempt to replace the whole workflow with the Python
 multi-agent platform. Instead, the deployment focused on one validated agent: the landing
-page agent. This agent was packaged as a containerized worker and connected to Azure
-Container Apps Jobs through Azure Service Bus~\cite{azure-jobs,azure-servicebus}. The queue receives a landing-page job, the
-container job wakes up, runs the browser-agent logic, and returns extracted match and host
-candidate evidence.
+page agent. The deployment shape follows the same practical pattern already used for
+n8n: one containerized unit owns the runtime it needs. For the landing-agent job, this
+means the Azure Container Apps Job image contains the Python worker, the Puppeteer MCP
+server, and Chrome in the same container. Azure Service Bus~\cite{azure-jobs,azure-servicebus}
+passes a landing-page job message; the container job wakes up, runs the browser-agent
+logic through its local MCP endpoint, persists logs and evidence, and returns extracted
+match and host candidate evidence.
 
 This deployment choice matches the internship scope. The Python reference architecture
 shows how the full platform can be structured, but the company-side deployment remained
 focused: n8n orchestration stayed in place, while the landing-page agent was isolated as
-a cloud-executable unit.
+a cloud-executable single-container unit.
 
 \input{figures/tikz/fig-05-deployment-physical}
 
@@ -499,10 +502,10 @@ n8n workflow & Keeps the company-preferred orchestration layer. & Main operation
 workflow remained in n8n. \\
 Azure Service Bus & Decouples job submission from execution. & Used to pass landing-page
 jobs to the container worker. \\
-Container Apps Job & Runs one containerized agent when a job arrives. & Landing-page
-agent only. \\
-Puppeteer runtime & Opens the page and extracts match/host candidates. & Browser work
-for the deployed landing agent. \\
+Container Apps Job & Runs one containerized agent unit when a message arrives. &
+Single image for the Python worker, Puppeteer MCP server, and Chrome. \\
+Puppeteer runtime & Opens the page and extracts match/host candidates through the
+local MCP endpoint. & Runs inside the same job container as the landing agent. \\
 Outputs and artifacts & Return structured evidence, logs, and screenshots. & Used for
 review and integration back into the workflow. \\
 \bottomrule

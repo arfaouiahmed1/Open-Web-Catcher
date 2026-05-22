@@ -224,7 +224,7 @@ const TOOL_SPECS = {
       toolImpls.get_page_context({ ...args, browserWsEndpoint }),
   ),
   query_elements: spec(
-    "Use when you already know what to target and need element_ref handles for follow-up actions. Searches the normalized node index and can be scoped to a specific subtree.",
+    "Use when you already know what to target and need element_ref handles for follow-up actions. Provide a text/href/attr predicate or a scope; bare kind/limit queries return guidance instead of pretending to be meaningful.",
     {
       frame_path: "root",
       kind: "link",
@@ -239,6 +239,9 @@ const TOOL_SPECS = {
     {
       ok: true,
       total_matches: 3,
+      query_specificity: 2,
+      scope_applied: false,
+      recommended_next_tool: "interact, navigate, or get_element_detail using the returned handle",
       matches: [{ semantic_kind: "link", text_preview: "Watch now", element_ref: "..." }],
       screenshot_url: "https://res.cloudinary.com/...",
     },
@@ -697,7 +700,7 @@ const TOOL_SPECS = {
       toolImpls.inspect({ ...args, browserWsEndpoint }),
   ),
   inspect_landing: spec(
-    "Landing-page inspect optimized for routing. Returns grouped_sections, match_groups, navigation_groups, action_groups, top_match_candidates, iframe_overview, pagination, popups, lazy_load_warmup, and compression-aware stats after top-reset scrolling.",
+    "Landing-page inspect optimized for routing. Returns grouped_sections, match_groups, navigation_groups, action_groups, candidate_ledger, candidate_groups, reveal_actions, collapsed_sections, top_match_candidates, iframe_overview, pagination, popups, lazy_load_warmup, and compression-aware stats after safe reveal/top-reset scrolling.",
     { scroll: true, scroll_steps: 14 },
     {
       context_type: "landing",
@@ -705,6 +708,11 @@ const TOOL_SPECS = {
       grouped_sections: { groups: [{ label: "live_watch_cards", count: 8, pattern: "/watch/{slug}" }] },
       match_groups: [{ label: "live_watch_cards", count: 8 }],
       navigation_groups: [{ label: "header_nav", count: 4 }],
+      action_groups: [{ label: "reveal_controls", count: 2 }],
+      candidate_ledger: [{ url: "https://example.com/match/123", title: "Team A vs Team B", url_pattern: "https://example.com/match/{n}" }],
+      candidate_groups: [{ pattern: "https://example.com/match/{n}", count: 8, representative_url: "https://example.com/match/123" }],
+      reveal_actions: [{ text: "More channels", selector: ".channels-toggle", state: "collapsed" }],
+      collapsed_sections: [{ hidden_link_count: 3, reveal_selector: ".channels-toggle" }],
       top_match_candidates: [{ url: "https://example.com/match/123", selector: ".match-card a", x: 640, y: 360 }],
       iframe_overview: { total_frames: 2, frames_with_video: 1, iframe_groups: [] },
       lazy_load_warmup: { scroll_steps: 14, reset_to_top: true },

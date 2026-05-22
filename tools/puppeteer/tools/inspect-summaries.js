@@ -1,6 +1,6 @@
 const DEFAULT_BUDGETS = {
   classification: 8 * 1024,
-  landing: 18 * 1024,
+  landing: 32 * 1024,
   hosting: 14 * 1024,
   embedded: 14 * 1024,
 };
@@ -16,10 +16,10 @@ const NOISE_PATTERN =
   /(login|sign in|signup|register|privacy|terms|cookie|contact|about|help|faq|telegram|discord|twitter|facebook|instagram)/i;
 
 const WATCH_PATTERN =
-  /(\/watch\/|\/live\/|\/stream\/|watch|live|stream|match|fixture|kickoff|vs|versus|channel|game|event|play|championship|league|cup|tournament)/i;
+  /(\/watch\/|\/live\/|\/stream\/|watch|live|stream|match|fixture|kickoff|vs|versus|channel|canal|game|event|evento|eventos|play|championship|league|liga|cup|copa|tournament|programacion|programaci[oó]n|en vivo|directo|rojadirecta|tv)/i;
 
 const NAV_PATTERN =
-  /(home|schedule|api|status|channels|category|categories|today|live|leagues?)/i;
+  /(home|schedule|programacion|programaci[oó]n|api|status|channels|canales|category|categories|today|hoy|live|en vivo|leagues?|ligas?)/i;
 
 const CATEGORY_PATTERN =
   /(\/category\/|basketball|football|soccer|baseball|hockey|tennis|rugby|golf|nba|nhl|mlb|ufc|f1)/i;
@@ -168,10 +168,42 @@ function urlPattern(urls) {
   return "";
 }
 
+function generalizedUrlPattern(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    const path = parsed.pathname
+      .replace(/\/[A-Za-z0-9_-]{24,}(?=\/|$)/g, "/{token}")
+      .replace(/[0-9a-fA-F]{8,}/g, "{id}")
+      .replace(/\d+/g, "{n}");
+    const query = [];
+    for (const [key, value] of parsed.searchParams.entries()) {
+      let normalized = value;
+      if (/^\d+$/.test(normalized)) normalized = "{n}";
+      else if (/^[0-9a-fA-F]{8,}$/.test(normalized)) normalized = "{id}";
+      else if (normalized.length >= 16 && /^[A-Za-z0-9_-]+$/.test(normalized)) normalized = "{token}";
+      query.push([key, normalized]);
+    }
+    query.sort(([a], [b]) => a.localeCompare(b));
+    const queryText = query
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+      .join("&")
+      .replace(/%7B/g, "{")
+      .replace(/%7D/g, "}");
+    return `${parsed.origin}${path}${queryText ? `?${queryText}` : ""}`;
+  } catch {
+    return raw
+      .replace(/\d+/g, "{n}")
+      .replace(/[0-9a-fA-F]{8,}/g, "{id}")
+      .replace(/[A-Za-z0-9_-]{24,}/g, "{token}");
+  }
+}
+
 function representativeLimit(priority = "low") {
-  if (priority === "critical") return 4;
-  if (priority === "high") return 3;
-  if (priority === "medium") return 2;
+  if (priority === "critical") return 10;
+  if (priority === "high") return 8;
+  if (priority === "medium") return 5;
   return 1;
 }
 
@@ -199,6 +231,8 @@ function buildRawCounts(data) {
     videos: (data.videos || []).length,
     popups: (data.popups || []).length,
     frames: (data.frame_tree || []).length,
+    reveal_controls: (data.reveal_controls || []).length,
+    collapsed_sections: (data.collapsed_sections || []).length,
   };
 }
 
@@ -207,6 +241,7 @@ function buildOutputCounts(payload) {
     link_groups: (payload.link_groups || payload.match_groups || payload.navigation_groups || payload.grouped_sections?.groups || []).length,
     action_groups: (payload.action_groups || payload.control_groups || payload.playback_groups || payload.player_groups || []).length,
     top_watch_candidates: (payload.top_candidates?.watch || payload.top_match_candidates || []).length,
+    candidate_ledger: (payload.candidate_ledger || []).length,
     top_navigation_candidates: (payload.top_candidates?.navigation || []).length,
     top_action_candidates: (payload.top_candidates?.actions || payload.top_server_controls || payload.top_source_controls || payload.top_playback_targets || payload.top_player_targets || []).length,
   };
@@ -284,6 +319,8 @@ function fitPayloadToBudget(payload, { budgetTarget, reducers, rawCounts }) {
 function collectLinks(data) {
   const rootContent = (data.contentLinks || []).map((entry) => ({
     text: clean(entry.text, 140),
+    nearby_text: clean(entry.nearby_text, 180),
+    section_title: clean(entry.section_title, 120),
     url: entry.href || "",
     selector: entry.selector || "",
     xpath: entry.xpath || "",
@@ -294,6 +331,8 @@ function collectLinks(data) {
   }));
   const nav = (data.navLinks || []).map((entry) => ({
     text: clean(entry.text, 120),
+    nearby_text: clean(entry.nearby_text, 180),
+    section_title: clean(entry.section_title, 120),
     url: entry.href || "",
     selector: entry.selector || "",
     xpath: entry.xpath || "",
@@ -305,6 +344,8 @@ function collectLinks(data) {
   const frameLinks = (data.frame_tree || []).flatMap((frame) =>
     (frame.sample_links || []).map((entry) => ({
       text: clean(entry.text, 120),
+      nearby_text: clean(entry.nearby_text, 180),
+      section_title: clean(entry.section_title, 120),
       url: entry.href || "",
       selector: entry.selector || "",
       xpath: entry.xpath || "",
@@ -314,19 +355,52 @@ function collectLinks(data) {
       source: "frame",
     })),
   );
+  const collapsedLinks = [
+    ...(data.collapsed_sections || []).flatMap((section) =>
+      [...(section.hidden_link_samples || []), ...(section.sample_links || [])].map((entry) => ({
+        text: clean(entry.text, 120),
+        nearby_text: clean(entry.nearby_text, 180),
+        section_title: clean(entry.section_title, 120),
+        url: entry.href || "",
+        selector: entry.selector || "",
+        xpath: entry.xpath || "",
+        x: Math.round(entry.x || 0),
+        y: Math.round(entry.y || 0),
+        frame_path: entry.frame_path || "root",
+        source: "collapsed",
+        hidden: !entry.visible,
+      })),
+    ),
+    ...(data.reveal_controls || []).flatMap((control) =>
+      (control.sample_links || []).map((entry) => ({
+        text: clean(entry.text, 120),
+        nearby_text: clean(entry.nearby_text, 180),
+        section_title: clean(entry.section_title, 120),
+        url: entry.href || "",
+        selector: entry.selector || "",
+        xpath: entry.xpath || "",
+        x: Math.round(entry.x || 0),
+        y: Math.round(entry.y || 0),
+        frame_path: entry.frame_path || "root",
+        source: "reveal",
+        hidden: !entry.visible,
+      })),
+    ),
+  ];
 
   return dedupeBy(
-    [...rootContent, ...nav, ...frameLinks]
+    [...rootContent, ...nav, ...frameLinks, ...collapsedLinks]
       .filter((entry) => entry.url && !entry.url.startsWith("javascript:"))
       .filter((entry) => !NOISE_PATTERN.test(`${entry.text} ${entry.url}`))
       .map((entry) => ({ ...entry, status: inferStatus(entry.text, entry.url) })),
-    (entry) => `${entry.frame_path}|${entry.url}|${entry.text}`,
+    (entry) => `${entry.frame_path}|${entry.url}|${entry.text}|${entry.source}`,
   );
 }
 
 function collectActions(data, { linksOnlyIfPlayable = false } = {}) {
   const raw = [
     ...(data.buttons || []),
+    ...(data.reveal_controls || []),
     ...(data.elements || []).filter((entry) =>
       ["button", "tab", "select", "checkbox", "radio", "input", "link"].includes(entry.kind || entry.type || ""),
     ),
@@ -344,6 +418,9 @@ function collectActions(data, { linksOnlyIfPlayable = false } = {}) {
         frame_path: entry.frame_path || "root",
         href: entry.href || "",
         data: entry.data || {},
+        state: entry.state || "",
+        hidden_link_count: Number(entry.hidden_link_count || 0),
+        visible_link_count: Number(entry.visible_link_count || 0),
       }))
       .filter((entry) => entry.text || entry.selector || entry.xpath)
       .filter((entry) => !linksOnlyIfPlayable || PLAY_PATTERN.test(`${entry.text} ${entry.selector} ${entry.xpath}`) || entry.kind !== "link"),
@@ -446,7 +523,7 @@ function landingLinkGroup(entry) {
 }
 
 function priorityForLabel(label) {
-  if (["live_watch_cards", "watch_links", "server_switches", "source_switches", "play_controls"].includes(label)) return "high";
+  if (["live_watch_cards", "watch_links", "server_switches", "source_switches", "play_controls", "reveal_controls"].includes(label)) return "high";
   if (["sports_categories", "channel_watch_links", "live_channels", "filter_tabs", "schedule_links", "quality_switches"].includes(label)) return "medium";
   return "low";
 }
@@ -508,20 +585,110 @@ function compactActionCandidate(entry) {
     xpath: entry.xpath || "",
     x: Math.round(entry.x || 0),
     y: Math.round(entry.y || 0),
+    state: entry.state || "",
+    hidden_link_count: Number(entry.hidden_link_count || 0),
   };
 }
 
 function compactLinkCandidate(entry) {
   return {
     text: entry.text,
+    title: entry.text || entry.nearby_text || "",
+    nearby_text: entry.nearby_text || "",
+    source_section: entry.section_title || "",
     url: entry.url,
     status: entry.status,
     frame_path: entry.frame_path || "root",
+    source: entry.source || "",
+    hidden: Boolean(entry.hidden),
     selector: entry.selector || "",
     xpath: entry.xpath || "",
     x: Math.round(entry.x || 0),
     y: Math.round(entry.y || 0),
   };
+}
+
+function scheduledTimeFromText(...values) {
+  const haystack = values.map((value) => String(value || "")).join(" ");
+  const match = haystack.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/);
+  return match ? match[0] : "";
+}
+
+function compactLedgerCandidate(entry) {
+  const title = clean(entry.text || entry.nearby_text || "", 180);
+  const nearby = clean(entry.nearby_text || entry.text || "", 220);
+  const pattern = generalizedUrlPattern(entry.url);
+  return {
+    url: entry.url,
+    title,
+    nearby_text: nearby,
+    source_section: entry.section_title || "",
+    status: entry.status || inferStatus(`${entry.text} ${entry.nearby_text}`, entry.url),
+    scheduled_time: scheduledTimeFromText(entry.text, entry.nearby_text),
+    source: entry.source || "",
+    frame_path: entry.frame_path || "root",
+    selector: entry.selector || "",
+    xpath: entry.xpath || "",
+    x: Math.round(entry.x || 0),
+    y: Math.round(entry.y || 0),
+    hidden: Boolean(entry.hidden),
+    url_pattern: pattern,
+  };
+}
+
+function candidatePriority(entry) {
+  const sourceRank = { content: 6, collapsed: 5, reveal: 5, frame: 4, nav: 2 };
+  let score = sourceRank[entry.source] || 1;
+  const haystack = `${entry.text || entry.title || ""} ${entry.nearby_text} ${entry.url}`.toLowerCase();
+  if (/\blive\b|en vivo|directo|watch|play|stream|eventos|canal|channel|tv/.test(haystack)) score += 4;
+  if (WATCH_PATTERN.test(haystack)) score += 3;
+  if (entry.hidden) score -= 1;
+  return score;
+}
+
+function buildCandidateLedger(links, { limit = 100 } = {}) {
+  const rows = dedupeBy(
+    (links || [])
+      .filter((entry) => entry.url && WATCH_PATTERN.test(`${entry.text} ${entry.nearby_text} ${entry.url}`))
+      .map(compactLedgerCandidate)
+      .sort((a, b) => candidatePriority(b) - candidatePriority(a)),
+    (entry) => entry.url,
+  );
+  return rows.slice(0, limit);
+}
+
+function buildCandidateGroups(candidateLedger, { groupLimit = 24, sampleLimit = 24 } = {}) {
+  const grouped = new Map();
+  for (const candidate of candidateLedger || []) {
+    const key = candidate.url_pattern || generalizedUrlPattern(candidate.url);
+    if (!key) continue;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(candidate);
+  }
+  return Array.from(grouped.entries())
+    .map(([pattern, entries], index) => ({
+      group_id: `cg${index + 1}`,
+      label: "hosting_candidate_pattern",
+      priority: "high",
+      pattern,
+      count: entries.length,
+      representative_url: entries[0]?.url || "",
+      source_sections: dedupeBy(
+        entries.map((entry) => entry.source_section).filter(Boolean),
+        (item) => item,
+      ).slice(0, 6),
+      sample_items: entries.slice(0, sampleLimit).map((entry) => ({
+        url: entry.url,
+        title: entry.title,
+        status: entry.status,
+        scheduled_time: entry.scheduled_time,
+        selector: entry.selector,
+        xpath: entry.xpath,
+        source: entry.source,
+      })),
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, groupLimit);
 }
 
 function pickTopLinkCandidates(links, priority = "medium") {
@@ -563,9 +730,11 @@ function buildActionGroups(actions, mode = "classification") {
             frame_path: entry.frame_path || "root",
             selector: entry.selector || "",
             xpath: entry.xpath || "",
+            state: entry.state || "",
+            hidden_link_count: Number(entry.hidden_link_count || 0),
           })),
           priority,
-          (entry) => `${entry.kind}|${entry.text}|${entry.selector}|${entry.xpath}|${entry.frame_path}`,
+          (entry) => `${entry.kind}|${entry.text}|${entry.selector}|${entry.xpath}|${entry.frame_path}|${entry.state}`,
         ),
       };
     })
@@ -580,6 +749,12 @@ function buildActionGroups(actions, mode = "classification") {
 function actionGroupLabel(entry, mode) {
   const haystack =
     `${entry.text} ${entry.href} ${entry.selector} ${entry.xpath} ${entry.data?.server || ""} ${entry.data?.source || ""} ${entry.data?.embed || ""}`.toLowerCase();
+  if (
+    entry.kind === "reveal_control" ||
+    entry.data?.reveals_hidden_content ||
+    entry.state === "collapsed" ||
+    /aria-expanded|aria-controls|accordion|collapse|dropdown|show|view|more|load|expand|toggle|menu|channels|live tv|tv guide/.test(haystack)
+  ) return "reveal_controls";
   if (/server|source|mirror|backup/.test(haystack)) return mode === "embedded" ? "source_switches" : "server_switches";
   if (/audio|sub|caption/.test(haystack)) return "track_switches";
   if (/embed|iframe/.test(haystack)) return "embed_targets";
@@ -646,6 +821,62 @@ function buildPaginationSummary(data) {
       xpath: entry.xpath || "",
     })),
   };
+}
+
+function compactLinkSample(entry) {
+  return {
+    text: clean(entry.text, 100),
+    url: entry.href || entry.url || "",
+    selector: entry.selector || "",
+    xpath: entry.xpath || "",
+    frame_path: entry.frame_path || "root",
+    hidden: entry.visible === false || Boolean(entry.hidden),
+  };
+}
+
+function buildRevealActions(data, { limit = 14, sampleLimit = 4 } = {}) {
+  const rows = (data.reveal_controls || []).map((entry) => ({
+    kind: entry.kind || "reveal_control",
+    text: clean(entry.text, 100),
+    selector: entry.selector || "",
+    xpath: entry.xpath || "",
+    href: entry.href || "",
+    frame_path: entry.frame_path || "root",
+    state: entry.state || "unknown",
+    x: Math.round(entry.x || 0),
+    y: Math.round(entry.y || 0),
+    hidden_link_count: Number(entry.hidden_link_count || 0),
+    visible_link_count: Number(entry.visible_link_count || 0),
+    sample_links: (entry.sample_links || []).slice(0, sampleLimit).map(compactLinkSample),
+  }));
+
+  return dedupeBy(
+    rows.sort((a, b) =>
+      (b.hidden_link_count + b.visible_link_count) - (a.hidden_link_count + a.visible_link_count),
+    ),
+    (entry) => `${entry.selector}|${entry.xpath}|${entry.text}|${entry.state}`,
+  ).slice(0, limit);
+}
+
+function buildCollapsedSectionSummary(data, { limit = 10, sampleLimit = 5 } = {}) {
+  return dedupeBy(
+    (data.collapsed_sections || []).map((section) => ({
+      selector: section.selector || "",
+      xpath: section.xpath || "",
+      text: clean(section.text, 120),
+      state: section.state || "unknown",
+      link_count: Number(section.link_count || 0),
+      hidden_link_count: Number(section.hidden_link_count || 0),
+      button_count: Number(section.button_count || 0),
+      reveal_selector: section.reveal_selector || "",
+      reveal_xpath: section.reveal_xpath || "",
+      sample_links: (section.sample_links || []).slice(0, sampleLimit).map(compactLinkSample),
+      hidden_link_samples: (section.hidden_link_samples || []).slice(0, sampleLimit).map(compactLinkSample),
+    })),
+    (section) => `${section.selector}|${section.xpath}|${section.text}|${section.hidden_link_count}`,
+  )
+    .sort((a, b) => (b.hidden_link_count + b.link_count) - (a.hidden_link_count + a.link_count))
+    .slice(0, limit);
 }
 
 function buildPopupSummary(data) {
@@ -892,6 +1123,8 @@ export function summarizeLandingInspect(data, options = {}) {
   const playerEvidence = buildPlayerEvidence(data);
   const iframeGroups = buildIframeGroups(data, "landing");
   const playerHandoffCandidates = buildPlayerHandoffCandidates(data);
+  const candidateLedger = buildCandidateLedger(links, { limit: 100 });
+  const candidateGroups = buildCandidateGroups(candidateLedger);
 
   const payload = {
     context_type: "landing",
@@ -912,8 +1145,10 @@ export function summarizeLandingInspect(data, options = {}) {
     match_groups: matchGroups,
     navigation_groups: navigationGroups,
     action_groups: actionGroups,
+    candidate_ledger: candidateLedger,
+    candidate_groups: candidateGroups,
     top_match_candidates: pickTopLinkCandidates(
-      links.filter((entry) => WATCH_PATTERN.test(`${entry.text} ${entry.url}`)),
+      links.filter((entry) => WATCH_PATTERN.test(`${entry.text} ${entry.nearby_text} ${entry.url}`)),
       "high",
     ),
     iframe_overview: {
@@ -922,6 +1157,8 @@ export function summarizeLandingInspect(data, options = {}) {
     },
     player_evidence: playerEvidence,
     player_handoff_candidates: playerHandoffCandidates,
+    reveal_actions: buildRevealActions(data),
+    collapsed_sections: buildCollapsedSectionSummary(data),
     pagination: buildPaginationSummary(data),
     popups: buildPopupSummary(data),
     lazy_load_warmup: data.lazy_load_warmup,
@@ -931,12 +1168,14 @@ export function summarizeLandingInspect(data, options = {}) {
   return fitPayloadToBudget(payload, {
     budgetTarget,
     rawCounts,
-    reducers: commonReducers({
+    reducers: [
+      ...commonReducers({
       groupCollections: (result) => [
         result.grouped_sections.groups,
         result.match_groups,
         result.navigation_groups,
         result.action_groups,
+        result.candidate_groups,
         result.iframe_overview.iframe_groups,
       ],
       primaryCandidateCollections: [
@@ -953,11 +1192,20 @@ export function summarizeLandingInspect(data, options = {}) {
         (result) => (result.iframe_overview.iframe_groups || []).map((group) => group.sample_links || []),
       ],
       miscCollections: [
+        (result) => result.reveal_actions,
+        (result) => result.collapsed_sections,
         (result) => result.popups,
         (result) => result.pagination.sample_links,
         (result) => result.player_handoff_candidates,
       ],
-    }),
+      }),
+      {
+        name: "trim-candidate-ledger-to-floor",
+        apply(payload) {
+          return reduceArray(payload.candidate_ledger, 30);
+        },
+      },
+    ],
   });
 }
 

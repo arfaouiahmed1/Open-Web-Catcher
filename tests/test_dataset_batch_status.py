@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.storage.dataset_repository import DatasetRepository
-from src.storage.models import Base, DatasetBatchRecord, DatasetSiteRunRecord
+from src.storage.models import Base, DatasetBatchRecord, DatasetSiteRecord, DatasetSiteRunRecord
 
 
 def _repo_session():
@@ -105,5 +107,97 @@ def test_retrying_and_leased_site_runs_keep_batch_running(active_status: str) ->
 
         site_payload = repo.list_sites(query="active.example", limit=1)["sites"][0]
         assert site_payload["active_run_count"] == 1
+    finally:
+        session.close()
+
+
+def test_batch_adjusted_success_counts_external_blockers_and_excludes_cancelled() -> None:
+    repo, session = _repo_session()
+    try:
+        created = repo.create_batch(
+            urls=[
+                "https://success.example/live",
+                "https://inaccessible.example/live",
+                "https://empty.example/live",
+                "https://failed.example/live",
+                "https://cancelled.example/live",
+            ],
+            batch_name="Adjusted metrics",
+        )
+        batch = session.query(DatasetBatchRecord).filter_by(batch_id=created["batch_id"]).one()
+        rows = (
+            session.query(DatasetSiteRunRecord)
+            .filter_by(batch_id=batch.id)
+            .order_by(DatasetSiteRunRecord.id.asc())
+            .all()
+        )
+        statuses = ["success", "page_inaccessible", "no_streams", "failed", "cancelled"]
+        now = datetime.utcnow()
+        for row, status in zip(rows, statuses, strict=True):
+            row.status = status
+            row.final_status = status
+            row.started_at = now
+            row.finished_at = now
+        for site_id in {row.site_id for row in rows if row.site_id is not None}:
+            repo._refresh_site_metrics(int(site_id))
+        repo._refresh_batch_metrics(batch.id)
+        session.commit()
+
+        payload = repo.get_batch(created["batch_id"])
+
+        assert payload["status"] == "partial"
+        assert payload["success_rate"] == 20.0
+        assert payload["adjusted_success_rate"] == 75.0
+        assert payload["agent_failed_count"] == 1
+        assert payload["external_blocked_count"] == 2
+        assert payload["strict_failed_count"] == 3
+        assert payload["terminal_non_cancelled_count"] == 4
+    finally:
+        session.close()
+
+
+def test_site_payload_exposes_adjusted_metrics_without_changing_strict_counts() -> None:
+    repo, session = _repo_session()
+    try:
+        created = repo.create_batch(
+            urls=[
+                "https://one-site.example/live",
+                "https://one-site.example/live?retry=1",
+                "https://one-site.example/live?retry=2",
+                "https://one-site.example/live?retry=3",
+            ],
+            batch_name="Site metrics",
+        )
+        batch = session.query(DatasetBatchRecord).filter_by(batch_id=created["batch_id"]).one()
+        first_site = session.query(DatasetSiteRecord).filter_by(canonical_url="https://one-site.example/live").one()
+        rows = (
+            session.query(DatasetSiteRunRecord)
+            .filter_by(batch_id=batch.id)
+            .order_by(DatasetSiteRunRecord.id.asc())
+            .all()
+        )
+        statuses = ["success", "page_inaccessible", "failed", "cancelled"]
+        now = datetime.utcnow()
+        for row, status in zip(rows, statuses, strict=True):
+            row.site_id = first_site.id
+            row.status = status
+            row.final_status = status
+            row.started_at = now
+            row.finished_at = now
+        session.flush()
+        repo._refresh_site_metrics(first_site.id)
+        repo._refresh_batch_metrics(batch.id)
+        session.commit()
+
+        site_payload = repo._site_payload(first_site)
+
+        assert site_payload["total_runs"] == 4
+        assert site_payload["successful_runs"] == 1
+        assert site_payload["failed_runs"] == 2
+        assert site_payload["success_rate"] == 25.0
+        assert site_payload["adjusted_success_rate"] == 66.7
+        assert site_payload["external_blocked_count"] == 1
+        assert site_payload["agent_failed_count"] == 1
+        assert site_payload["strict_failed_count"] == 2
     finally:
         session.close()

@@ -1,78 +1,53 @@
 \begin{figure}[H]
 \centering
-\resizebox{\textwidth}{!}{%
+\resizebox{0.9\textwidth}{!}{%
 \begin{tikzpicture}[
-  uml/.style={draw=gray!78, fill=white, rounded corners=2pt,
-    text width=3.95cm, align=left, font=\scriptsize, inner sep=5pt},
-  agent/.style={draw=accent, fill=blue!5, rounded corners=2pt,
-    text width=3.55cm, align=left, font=\scriptsize, inner sep=5pt},
-  service/.style={draw=green!55!black, fill=green!7, rounded corners=2pt,
-    text width=3.55cm, align=left, font=\scriptsize, inner sep=5pt},
-  record/.style={draw=purple!65, fill=purple!6, rounded corners=2pt,
-    text width=3.55cm, align=left, font=\scriptsize, inner sep=5pt},
-  group/.style={draw=gray!45, dashed, rounded corners=6pt, inner sep=8pt},
-  assoc/.style={-, thick, gray!75},
-  dep/.style={->, >=Stealth, thick, accent!75},
-  use/.style={->, >=Stealth, thick, green!55!black},
-  store/.style={->, >=Stealth, thick, purple!70},
-  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.5pt, text=gray!70}
+  rel/.style={->, >=Stealth, thick, accent!78},
+  dep/.style={->, >=Stealth, thick, gray!68, dashed},
+  comp/.style={{Diamond[length=5pt,width=6pt]}-, thick, gray!72}
 ]
+\umlclass[x=-4.3,y=6.2,width=3.25cm,fill=blue!6,draw=accent!85]{OrchestratorAgent}
+{+ graph\\+ observer}
+{+ run()\\+ finalizeStatus()}
+\umlclass[x=0,y=6.2,width=3.25cm,fill=blue!4,draw=accent!70]{PipelineState}
+{+ route state\\+ evidence lists}
+{+ addResult()}
+\umlclass[x=4.3,y=6.2,width=3.25cm,fill=blue!4,draw=accent!70]{HandoffContext}
+{+ target URL\\+ policy}
+{+ render()}
 
-\node[uml] (orch) at (-2.5,10.85) {\centering\textbf{OrchestratorAgent}\\[-0.15em]\rule{3.55cm}{0.3pt}\\
-\raggedright + run(url)\\+ build\_graph()\\+ classify\_route()\\+ route\_hosting()\\+ finalize\_bundle()};
-\node[uml] (state) at (2.9,10.85) {\centering\textbf{PipelineState}\\[-0.15em]\rule{3.55cm}{0.3pt}\\
-\raggedright + run\_id\\+ page\_type\\+ matches[]\\+ host\_candidates[]\\+ stream\_candidates[]\\+ errors[]};
-\node[agent] (runtime) at (0.2,7.15) {\centering\textbf{AgentRuntime}\\[-0.15em]\rule{3.15cm}{0.3pt}\\
-\raggedright + compile\_prompt()\\+ bind\_profile\_tools()\\+ invoke\_model()\\+ validate\_output()\\+ record\_usage()};
+\umlclass[x=-4.3,y=2.3,width=3.25cm,fill=orange!8,draw=orange!80!black]{SpecialistAgents}
+{+ four page profiles\\+ MCP profile}
+{+ run()}
+\umlclass[x=0,y=2.3,width=3.25cm,fill=green!7,draw=green!55!black]{AgentLoopResult}
+{+ final text\\+ tool usage}
+{+ parseJson()}
+\umlclass[x=4.3,y=2.3,width=3.25cm,fill=green!7,draw=green!55!black]{RunObserver}
+{+ events\\+ metrics}
+{+ emit()\\+ finish()}
 
-\node[agent] (cls) at (-6.1,4.05) {\centering\textbf{ClassificationAgent}\\[-0.15em]\rule{3.15cm}{0.3pt}\\
-\raggedright + classify()\\+ confidence\\+ route\_reason\\+ fail\_closed()};
-\node[agent] (landing) at (-2.05,4.05) {\centering\textbf{LandingPageAgent}\\[-0.15em]\rule{3.15cm}{0.3pt}\\
-\raggedright + extract\_matches()\\+ find\_host\_links()\\+ inspect\_tabs()\\+ return\_candidates()};
-\node[agent] (hosting) at (2.05,4.05) {\centering\textbf{HostingPageAgent}\\[-0.15em]\rule{3.15cm}{0.3pt}\\
-\raggedright + switch\_server()\\+ activate\_player()\\+ find\_iframe()\\+ collect\_streams()};
-\node[agent] (embedded) at (6.1,4.05) {\centering\textbf{EmbeddedPageAgent}\\[-0.15em]\rule{3.15cm}{0.3pt}\\
-\raggedright + inspect\_frame()\\+ activate\_media()\\+ harvest\_manifest()\\+ screenshot()};
-\node[group, fit=(cls)(landing)(hosting)(embedded)] (agentgroup) {};
-\node[anchor=south west, font=\tiny\bfseries, text=accent] at ([xshift=0.12cm,yshift=0.08cm]agentgroup.north west)
-  {Specialist agents};
+\umlclass[x=-4.3,y=-1.6,width=3.25cm,fill=purple!6,draw=purple!65!black]{PipelineResult}
+{+ final status\\+ evidence}
+{+ toPayload()}
+\umlclass[x=0,y=-1.6,width=3.25cm,fill=purple!6,draw=purple!65!black]{EvidenceArtifacts}
+{+ streams\\+ screenshots\\+ emails}
+{+ linkToRun()}
+\umlclass[x=4.3,y=-1.6,width=3.25cm,fill=purple!6,draw=purple!65!black]{RunRepository}
+{+ normalized rows\\+ run detail}
+{+ save()\\+ getDetail()}
 
-\node[service] (mcp) at (-6.1,1.05) {\centering\textbf{MCPClient}\\[-0.15em]\rule{3.15cm}{0.3pt}\\
-\raggedright + open\_session()\\+ list\_tools()\\+ call\_tool()\\+ close\_session()};
-\node[service] (tools) at (-2.05,1.05) {\centering\textbf{BrowserToolRegistry}\\[-0.15em]\rule{3.15cm}{0.3pt}\\
-\raggedright + inspect\\+ navigate\\+ interact\\+ harvest\\+ screenshot};
-\node[service] (memory) at (2.05,1.05) {\centering\textbf{MemoryCache}\\[-0.15em]\rule{3.15cm}{0.3pt}\\
-\raggedright + short\_term\\+ site\_hints\\+ tool\_cache\\+ provider\_cache};
-\node[service] (intel) at (6.1,1.05) {\centering\textbf{ProviderIntel}\\[-0.15em]\rule{3.15cm}{0.3pt}\\
-\raggedright + resolve\_ip()\\+ ipinfo()\\+ RDAP()\\+ WHOIS()\\+ abuse\_contact()};
-
-\node[record] (run) at (-6.1,-2.45) {\centering\textbf{AgentRun}\\[-0.15em]\rule{3.15cm}{0.3pt}\\
-\raggedright + id\\+ profile\\+ status\\+ timings\\+ stop\_reason};
-\node[record] (toolcall) at (-2.05,-2.45) {\centering\textbf{ToolCall}\\[-0.15em]\rule{3.15cm}{0.3pt}\\
-\raggedright + name\\+ args\\+ duration\\+ success\\+ error};
-\node[record] (llm) at (2.05,-2.45) {\centering\textbf{LLMCall}\\[-0.15em]\rule{3.15cm}{0.3pt}\\
-\raggedright + model\\+ input\_tokens\\+ cached\_tokens\\+ output\_tokens\\+ cost};
-\node[record] (artifact) at (6.1,-2.45) {\centering\textbf{EvidenceArtifact}\\[-0.15em]\rule{3.15cm}{0.3pt}\\
-\raggedright + screenshot\\+ stream\_url\\+ provider\\+ country\\+ metadata};
-
-\draw[assoc] (orch.east) -- node[lab, above]{updates} (state.west);
-\draw[dep] (orch.south) -- ++(0,-0.35) -| ([xshift=-0.72cm]runtime.north);
-\draw[dep] (state.south) -- ++(0,-0.35) -| ([xshift=0.72cm]runtime.north);
-\draw[dep] (runtime.south) -- (agentgroup.north);
-
-\draw[use] (cls.south) -- (mcp.north);
-\draw[use] (landing.south) -- (tools.north);
-\draw[use] (hosting.south) -- (memory.north);
-\draw[use] (embedded.south) -- (intel.north);
-\draw[use] (tools.east) -- node[lab, above]{uses} (memory.west);
-\draw[use] (memory.east) -- node[lab, above]{enriches} (intel.west);
-
-\draw[store] (mcp.south) -- (run.north);
-\draw[store] (tools.south) -- (toolcall.north);
-\draw[store] (memory.south) -- (llm.north);
-\draw[store] (intel.south) -- (artifact.north);
+\draw[comp] (OrchestratorAgent) -- (PipelineState);
+\draw[comp] (OrchestratorAgent) -- (HandoffContext);
+\draw[rel] (OrchestratorAgent) -- (SpecialistAgents);
+\draw[dep] (SpecialistAgents) -- (HandoffContext);
+\draw[rel] (SpecialistAgents) -- (AgentLoopResult);
+\draw[rel] (OrchestratorAgent.east) -- ++(0.6,0) |- (RunObserver.north);
+\draw[rel] (PipelineState) -- (PipelineResult);
+\draw[rel] (PipelineResult) -- (EvidenceArtifacts);
+\draw[rel] (RunObserver) -- (RunRepository);
+\draw[rel] (EvidenceArtifacts) -- (RunRepository);
 \end{tikzpicture}
 }
-\caption{Detailed UML-style class and responsibility diagram for agents, tools, memory, and stored outputs.}
+\caption{Compact class view of orchestration state, specialist agents, observation, persistence, and evidence.}
 \label{fig:class-diagram}
 \end{figure}

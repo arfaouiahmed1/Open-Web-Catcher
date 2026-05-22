@@ -37,6 +37,11 @@ _AGENT_CONTRACT = """\
 - default downstream route is `stream_extractor`; landing does not route directly to the embedded agent
 - preserve exact iframe src, frame URL, video src, player URL, and direct stream URLs in structured fields as hosting/provider hints
 - act like a compact AI crawler: maintain a frontier of live/watch/listing patterns, verify representatives, expand siblings, and stop only when distinct useful patterns are exhausted
+- prioritize main body/content candidates before header navigation, sidebars, sticky bars, or footer links
+- stay anchored to the main URL's domain/site; external domains need explicit same-content hosting/player evidence before navigation or handoff
+- treat channel-logo grids and channel directory cards as hosting candidate patterns when they lead to same-site watch/channel pages
+- treat channel posters with Play/Watch overlays as hosting candidates and check for loaded server/source/player evidence after a reveal click
+- work across any language or script; use layout, logos, href patterns, and visible controls before English keywords
 - once a hosting pattern is verified, collect the best same-pattern siblings and keep checking other distinct live/watchable patterns instead of re-proving low-value alternatives
 - if no verified hosting targets remain after crawling useful patterns, return an empty result and stop instead of inventing a next hop
 """
@@ -59,9 +64,9 @@ def _generalize_url_pattern(url: str) -> str:
         return normalized
 
     path = parsed.path or "/"
-    path = re.sub(r"/\d+(?=/|$)", "/{n}", path)
-    path = re.sub(r"/[0-9a-fA-F]{8,}(?=/|$)", "/{id}", path)
     path = re.sub(r"/[A-Za-z0-9_-]{24,}(?=/|$)", "/{token}", path)
+    path = re.sub(r"[0-9a-fA-F]{8,}", "{id}", path)
+    path = re.sub(r"\d+", "{n}", path)
 
     query_pairs: list[tuple[str, str]] = []
     for key, value in parse_qsl(parsed.query or "", keep_blank_values=True):
@@ -269,7 +274,9 @@ def _has_verified_player_or_iframe(page: dict[str, Any]) -> bool:
         str(page.get(key) or "")
         for key in ("classification_reason", "route_source", "title", "participants")
     ).lower()
-    return any(token in reason for token in ("live", "watch", "player", "play", "iframe", "stream"))
+    if any(token in reason for token in ("replay", "vod", "archive", "finished", "full time", "full-time")):
+        return False
+    return bool(re.search(r"\b(live|watch|player|play|iframe|stream)\b", reason))
 
 
 def _is_explicit_non_live_candidate(page: dict[str, Any]) -> bool:
@@ -278,7 +285,9 @@ def _is_explicit_non_live_candidate(page: dict[str, Any]) -> bool:
         return False
     if status in {"live", "on_air", "on-air", "now", "in_progress", "streaming"}:
         return False
-    if status in {"upcoming", "scheduled", "replay", "vod", "ended", "finished", "not_live"}:
+    if status in {"upcoming", "scheduled", "not_live", "off_air", "off-air"}:
+        return False
+    if status in {"replay", "vod", "ended", "finished", "final", "full_time", "full-time"}:
         return not _has_verified_player_or_iframe(page)
     return False
 
@@ -328,19 +337,27 @@ def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[st
         for text_key in (
             "title",
             "participants",
+            "team1",
+            "team2",
+            "score",
             "channel",
             "sport",
             "league",
+            "type",
             "status",
             "scheduled_time",
             "route",
             "entry_point",
             "route_source",
+            "screenshot_url",
         ):
             if text_key in page_dict:
                 page_dict[text_key] = _clean_optional_text(page_dict.get(text_key))
         page_dict.setdefault("title", "")
         page_dict.setdefault("participants", "")
+        page_dict.setdefault("team1", "")
+        page_dict.setdefault("team2", "")
+        page_dict.setdefault("score", "")
         page_dict.setdefault("channel", "")
         if not isinstance(page_dict.get("channel_candidates"), list):
             page_dict["channel_candidates"] = []
@@ -349,10 +366,25 @@ def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[st
         ]
         page_dict.setdefault("sport", "")
         page_dict.setdefault("league", "")
+        page_dict.setdefault("type", "")
+        if not page_dict["league"] and page_dict["type"]:
+            page_dict["league"] = page_dict["type"]
+        if not page_dict["type"] and page_dict["league"]:
+            page_dict["type"] = page_dict["league"]
+        if not page_dict["participants"] and page_dict["team1"] and page_dict["team2"]:
+            page_dict["participants"] = f"{page_dict['team1']} vs {page_dict['team2']}"
         page_dict.setdefault("status", "unknown")
         page_dict.setdefault("scheduled_time", "")
+        page_dict.setdefault("screenshot_url", "")
+        if not isinstance(page_dict.get("visual_evidence"), list):
+            page_dict["visual_evidence"] = []
+        page_dict["visual_evidence"] = [
+            _clean_optional_text(item) for item in page_dict["visual_evidence"] if item
+        ]
         page_dict.setdefault("confidence", 85)
         page_dict.setdefault("route", "stream_extractor")
+        if str(page_dict.get("route") or "").strip().lower() == "embed_agent":
+            page_dict["route"] = "stream_extractor"
         page_dict.setdefault("entry_point", source_url)
         if not isinstance(page_dict.get("redirect_chain"), list):
             page_dict["redirect_chain"] = []
@@ -439,7 +471,7 @@ def _augment_landing_output(
             "sport": "",
             "league": "",
             "status": str(record.get("status") or "unknown"),
-            "scheduled_time": "",
+            "scheduled_time": str(record.get("scheduled_time") or ""),
             "confidence": 62,
             "classification_reason": (
                 "recovered from inspect_landing candidate memory; hosting agent must verify "
@@ -450,11 +482,27 @@ def _augment_landing_output(
             "video_srcs": [],
             "player_urls": [],
             "direct_stream_urls": [],
+            "screenshot_url": str(record.get("screenshot_url") or ""),
+            "visual_evidence": [
+                item
+                for item in [
+                    str(record.get("visual_evidence") or "").strip(),
+                    str(record.get("screenshot_cues") or "").strip(),
+                ]
+                if item
+            ],
             "entry_point": source_url,
             "route_source": "inspect_landing_short_memory",
             "redirect_chain": [source_url, candidate_url],
             "route": "stream_extractor",
-            "patterns": {"url_pattern": _generalize_url_pattern(candidate_url)},
+            "patterns": {"url_pattern": str(record.get("url_pattern") or "") or _generalize_url_pattern(candidate_url)},
+            "metadata": {
+                "source": str(record.get("source") or ""),
+                "source_section": str(record.get("source_section") or ""),
+                "selector": str(record.get("selector") or ""),
+                "xpath": str(record.get("xpath") or ""),
+                "recovered_from": "short_memory_candidate_ledger",
+            },
         }
         if _is_explicit_non_live_candidate(page_dict):
             continue
@@ -509,13 +557,23 @@ def _augment_landing_output(
     )
 
     source_domain = _normalize_domain(source_url)
+    allowed_domains = {source_domain} if source_domain else set()
+    for page in hosting_pages:
+        page_domain = _normalize_domain(str(page.get("url") or ""))
+        if page_domain:
+            allowed_domains.add(page_domain)
+    for record in _coerce_memory_match_records(run_memory):
+        record_domain = _normalize_domain(str(record.get("url") or ""))
+        if record_domain:
+            allowed_domains.add(record_domain)
     expanded_count = 0
     for candidate_url in candidate_pool:
         if candidate_url in existing_urls:
             continue
         if not candidate_url.startswith(("http://", "https://")):
             continue
-        if _normalize_domain(candidate_url) != source_domain:
+        candidate_domain = _normalize_domain(candidate_url)
+        if allowed_domains and candidate_domain not in allowed_domains:
             continue
         if _looks_like_low_value_url(candidate_url):
             continue
@@ -550,6 +608,8 @@ def _augment_landing_output(
                 "video_srcs": [],
                 "player_urls": [],
                 "direct_stream_urls": [],
+                "screenshot_url": "",
+                "visual_evidence": ["same-pattern sibling expanded from verified landing representative"],
                 "entry_point": source_url,
                 "route": "stream_extractor",
                 "patterns": {
@@ -854,6 +914,12 @@ class LandingPageAgent:
                 status="success" if hosting_pages or extraction.streams else "warning",
                 details={
                     "hosting_pages_found": len(hosting_pages),
+                    "hosting_page_urls": [
+                        str(page.get("url") or "").strip()
+                        for page in hosting_pages
+                        if isinstance(page, dict) and str(page.get("url") or "").strip()
+                    ],
+                    "hosting_pages": hosting_pages[:20],
                     "direct_streams_found": len(extraction.streams),
                     "pattern_expansion": extraction.metadata.get("pattern_expansion", {}),
                 },

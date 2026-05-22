@@ -241,7 +241,7 @@ orchestrator_model: gemini-3.1-flash-lite
 provider_cache_enabled: true
 provider_model_catalog_cache:
   google:
-    cached_at: '2026-05-20T12:55:51.256547+00:00'
+    cached_at: '2026-05-22T13:39:10.697429+00:00'
     models:
     - capabilities:
         allowed_tuning_keys: &id001

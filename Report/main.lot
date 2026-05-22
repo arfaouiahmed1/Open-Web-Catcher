@@ -1,0 +1,45 @@
+\addvspace {10\p@ }
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {2.1}{\ignorespaces Methodology selection matrix for the evidence-collection project.}}{7}{table.caption.9}%
+\contentsline {table}{\numberline {2.2}{\ignorespaces DSRM phase mapping to project activities and outputs.}}{9}{table.caption.11}%
+\contentsline {table}{\numberline {2.3}{\ignorespaces Functional requirements derived from the evidence-collection workflow.}}{11}{table.caption.13}%
+\contentsline {table}{\numberline {2.4}{\ignorespaces Non-functional requirements and implementation responses.}}{11}{table.caption.14}%
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {3.1}{\ignorespaces Streaming-site page taxonomy and evidence role.}}{16}{table.caption.17}%
+\contentsline {table}{\numberline {3.2}{\ignorespaces DOM signals used to understand streaming-site pages.}}{17}{table.caption.19}%
+\contentsline {table}{\numberline {3.3}{\ignorespaces Browser-level obstacles and handling strategies.}}{20}{table.caption.22}%
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {4.1}{\ignorespaces Use-case responsibilities across operator and administration workflows.}}{26}{table.caption.26}%
+\contentsline {table}{\numberline {4.2}{\ignorespaces Compact agent and tool responsibility map.}}{28}{table.caption.29}%
+\contentsline {table}{\numberline {4.3}{\ignorespaces Static architecture boundaries and persisted outputs.}}{31}{table.caption.32}%
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {5.1}{\ignorespaces n8n prototype agent roles and implementation lessons.}}{34}{table.caption.35}%
+\contentsline {table}{\numberline {5.2}{\ignorespaces n8n prototype limitations and engineering consequences.}}{35}{table.caption.36}%
+\contentsline {table}{\numberline {5.3}{\ignorespaces Backend API responsibilities in the reference implementation.}}{37}{table.caption.39}%
+\contentsline {table}{\numberline {5.4}{\ignorespaces Current Next.js operator-console surfaces and backend dependencies.}}{38}{table.caption.40}%
+\contentsline {table}{\numberline {5.5}{\ignorespaces Browser automation engine comparison for the MCP tool layer.}}{40}{table.caption.42}%
+\contentsline {table}{\numberline {5.6}{\ignorespaces Puppeteer MCP tool groups and responsibilities.}}{40}{table.caption.43}%
+\contentsline {table}{\numberline {5.7}{\ignorespaces Specialist agent objectives and assigned tool surfaces.}}{41}{table.caption.45}%
+\contentsline {table}{\numberline {5.8}{\ignorespaces Runtime constraints and their implementation responses.}}{42}{table.caption.46}%
+\contentsline {table}{\numberline {5.9}{\ignorespaces Model-runtime concerns handled by the agent platform.}}{44}{table.caption.49}%
+\contentsline {table}{\numberline {5.10}{\ignorespaces Prompt engineering rules enforced by the specialist agents.}}{45}{table.caption.50}%
+\contentsline {table}{\numberline {5.11}{\ignorespaces PostgreSQL observability records and their implementation role.}}{46}{table.caption.51}%
+\contentsline {table}{\numberline {5.12}{\ignorespaces Landing-agent deployment scope and responsibilities.}}{47}{table.caption.54}%
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {6.1}{\ignorespaces Evaluation test matrix executed over the website regression batch.}}{50}{table.caption.55}%
+\contentsline {table}{\numberline {6.2}{\ignorespaces Website-level acceptance criteria for regression success.}}{51}{table.caption.56}%
+\contentsline {table}{\numberline {6.3}{\ignorespaces Agent use cases and website-level success signals.}}{52}{table.caption.57}%
+\contentsline {table}{\numberline {6.4}{\ignorespaces Prompt regression history and batch-level behavioral focus.}}{53}{table.caption.58}%
+\contentsline {table}{\numberline {6.5}{\ignorespaces Use-case KPI results measured on the website regression batch.}}{54}{table.caption.59}%
+\contentsline {table}{\numberline {6.6}{\ignorespaces Dashboard telemetry values used as operational evidence.}}{55}{table.caption.61}%
+\contentsline {table}{\numberline {6.7}{\ignorespaces KPI formulas for model, agent, and website-batch evaluation.}}{56}{table.caption.62}%
+\contentsline {table}{\numberline {6.8}{\ignorespaces Model selection criteria for the regression batch.}}{57}{table.caption.63}%
+\contentsline {table}{\numberline {6.9}{\ignorespaces LLM model comparison.}}{58}{table.6.9}%
+\contentsline {table}{\numberline {6.10}{\ignorespaces Observed cost, token, and cache metrics from the dashboard.}}{60}{table.caption.64}%
+\contentsline {table}{\numberline {6.11}{\ignorespaces Provider-intelligence telemetry used to validate stream URL enrichment.}}{61}{table.caption.65}%
+\contentsline {table}{\numberline {6.12}{\ignorespaces Tool-family evaluation criteria for batch-level testing.}}{62}{table.caption.66}%
+\contentsline {table}{\numberline {6.13}{\ignorespaces Observed tool-health telemetry from the dashboard.}}{63}{table.caption.67}%
+\contentsline {table}{\numberline {6.14}{\ignorespaces Tool-level regressions found through website-batch testing.}}{64}{table.caption.68}%
+\contentsline {table}{\numberline {6.15}{\ignorespaces Tool-description improvements measured against the website batch.}}{64}{table.caption.69}%
+\addvspace {10\p@ }
+\contentsline {table}{\numberline {7.1}{\ignorespaces Final summary of project contributions and outcomes.}}{67}{table.caption.70}%

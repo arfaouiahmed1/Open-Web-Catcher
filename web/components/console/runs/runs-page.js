@@ -34,6 +34,7 @@ import {
   effectiveRunCost,
   runTokenTotal,
   statusToneForDataset,
+  summarizeStatusMetrics,
   summarizeModelUsage,
   toNumber,
 } from "@/lib/dataset-runs";
@@ -205,11 +206,6 @@ function labelOptions(metaLabels = [], includeAll = false) {
 
 function isActiveStatus(value) {
   return ["queued", "running", "retrying", "leased"].includes(String(value || "").toLowerCase());
-}
-
-function isFailureRunStatus(value) {
-  const status = String(value || "").toLowerCase();
-  return Boolean(status && !["success", "partial", "queued", "running", "cancelled"].includes(status));
 }
 
 function datasetStatusLabel(value) {
@@ -444,6 +440,11 @@ function SiteDetailSheet({
                   <Badge tone={site.success_rate >= 80 ? "success" : site.success_rate > 0 ? "warning" : "default"}>
                     {formatNumber(site.success_rate || 0)}% success
                   </Badge>
+                  {Number(site.adjusted_success_rate ?? site.success_rate ?? 0) !== Number(site.success_rate || 0) ? (
+                    <Badge tone="warning">
+                      {formatNumber(site.adjusted_success_rate || 0)}% agent
+                    </Badge>
+                  ) : null}
                 </div>
               </div>
               <Button size="sm" variant="accent" onClick={() => onRunSite(site)}>
@@ -1403,24 +1404,37 @@ export function RunsPage() {
   const allVisibleHistorySelected =
     visibleHistoryIds.length > 0 && visibleHistoryIds.every((runId) => selectedHistoryRunIds.includes(runId));
   const historyTotals = useMemo(() => {
+    const metrics = summarizeStatusMetrics(runHistory, {
+      getStatus: (row) => row.final_status || row.status,
+    });
     return runHistory.reduce(
       (acc, row) => {
         const status = String(row.final_status || row.status || "").toLowerCase();
         acc.tokens += Number(row.total_tokens_in || 0) + Number(row.total_tokens_out || 0);
         acc.cost += Number(row.total_cost_usd ?? row.estimated_total_cost_usd ?? 0);
         acc.streams += Number(row.stream_count || 0);
-        if (status === "success") acc.success += 1;
         if (isActiveStatus(status)) acc.active += 1;
-        if (isFailureRunStatus(status)) acc.failed += 1;
         return acc;
       },
-      { tokens: 0, cost: 0, streams: 0, success: 0, active: 0, failed: 0 },
+      {
+        tokens: 0,
+        cost: 0,
+        streams: 0,
+        success: metrics.productive_success_count,
+        active: 0,
+        failed: metrics.agent_failed_count,
+        externalBlocked: metrics.external_blocked_count,
+        strictFailed: metrics.strict_failed_count,
+        adjustedSuccessRate: metrics.adjusted_success_rate,
+        strictSuccessRate: metrics.success_rate,
+      },
     );
   }, [runHistory]);
   const globalRunTotal = Number(stats.total_runs || runHistoryTotal || 0);
   const globalSuccessRate = globalRunTotal > 0
     ? (Number(stats.successful_runs || 0) / globalRunTotal) * 100
     : Number(stats.success_rate || 0);
+  const globalAdjustedSuccessRate = Number(stats.adjusted_success_rate ?? globalSuccessRate ?? 0);
   const batchTotals = useMemo(() => {
     return batchRuns.reduce(
       (acc, row) => {
@@ -1472,7 +1486,8 @@ export function RunsPage() {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricTile icon={Globe2} label="Websites" value={formatNumber(stats.total || siteTotal)} detail={`${formatNumber(stats.unlabeled || 0)} unlabeled`} />
           <MetricTile icon={ListChecks} label="Persisted runs" value={formatNumber(globalRunTotal)} detail={`${formatNumber(stats.total_runs || 0)} dataset-linked`} />
-          <MetricTile icon={CheckCircle2} label="Success rate" value={pct(globalSuccessRate)} detail={`${formatNumber(stats.successful_runs || 0)} successful runs`} />
+          <MetricTile icon={CheckCircle2} label="Success rate" value={pct(globalSuccessRate)} detail="Strict stream success" />
+          <MetricTile icon={Bot} label="Agent success" value={pct(globalAdjustedSuccessRate)} detail={`${formatNumber(stats.external_blocked_count || 0)} site/server blockers`} />
           <MetricTile icon={Activity} label="Active work" value={hasActiveDatasetWork ? "Live" : "Idle"} detail={`${formatNumber(batches.length)} batches indexed`} />
           <MetricTile
             icon={Database}
@@ -1798,9 +1813,10 @@ export function RunsPage() {
               <CardContent className="space-y-4 p-4">
                 {displayedBatchDetail ? (
                   <>
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
                       <MetricTile icon={Activity} label="Status" value={datasetStatusLabel(displayedBatchDetail.status)} detail={displayedBatchDetail.batch_name || "Untitled batch"} />
-                      <MetricTile icon={CheckCircle2} label="Completed" value={`${formatNumber(displayedBatchDetail.completed_count || 0)} / ${formatNumber(displayedBatchDetail.requested_count || 0)}`} detail={`${formatNumber(displayedBatchDetail.success_rate || 0)}% success`} />
+                      <MetricTile icon={CheckCircle2} label="Completed" value={`${formatNumber(displayedBatchDetail.completed_count || 0)} / ${formatNumber(displayedBatchDetail.requested_count || 0)}`} detail={`${formatNumber(displayedBatchDetail.success_rate || 0)}% strict success`} />
+                      <MetricTile icon={Bot} label="Agent success" value={pct(displayedBatchDetail.adjusted_success_rate || 0)} detail={`${formatNumber(displayedBatchDetail.external_blocked_count || 0)} server/site blockers excluded`} />
                       <MetricTile icon={Database} label="Batch cost" value={formatCurrency(batchTotals.cost)} detail={`${formatNumber(batchRuns.length)} site runs`} />
                       <MetricTile icon={BarChart3} label="Tokens" value={formatNumber(batchTotals.tokens)} detail="Summed per site run" />
                       <MetricTile icon={Globe2} label="Streams" value={formatNumber(batchTotals.streams)} detail="Collected streams" />
@@ -1965,8 +1981,9 @@ export function RunsPage() {
                 </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
                   <MetricTile icon={ListChecks} label="Rows on page" value={formatNumber(runHistory.length)} detail={`${formatNumber(historyStart)}-${formatNumber(historyEnd)} of ${formatNumber(runHistoryTotal)}`} />
-                  <MetricTile icon={CheckCircle2} label="Success" value={formatNumber(historyTotals.success)} detail={pct(runHistory.length ? (historyTotals.success / runHistory.length) * 100 : 0)} />
-                  <MetricTile icon={XCircle} label="Failures" value={formatNumber(historyTotals.failed)} detail="Visible rows" />
+                  <MetricTile icon={CheckCircle2} label="Success" value={formatNumber(historyTotals.success)} detail={`${pct(historyTotals.strictSuccessRate)} strict`} />
+                  <MetricTile icon={XCircle} label="Agent failures" value={formatNumber(historyTotals.failed)} detail="Visible rows" />
+                  <MetricTile icon={Globe2} label="Site blockers" value={formatNumber(historyTotals.externalBlocked)} detail={`${pct(historyTotals.adjustedSuccessRate)} agent success`} />
                   <MetricTile icon={Activity} label="Active" value={formatNumber(historyTotals.active)} detail="Queued or running" />
                   <MetricTile icon={BarChart3} label="Tokens" value={formatNumber(historyTotals.tokens)} detail="Visible rows" />
                   <MetricTile icon={Database} label="Cost" value={formatCurrency(historyTotals.cost)} detail={`${formatNumber(historyTotals.streams)} streams`} />

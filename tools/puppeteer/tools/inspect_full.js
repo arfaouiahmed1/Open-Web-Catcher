@@ -16,6 +16,9 @@ const LIMITS = {
   paginationElements: 120,
   videos: 180,
   elements: 1600,
+  revealControls: 240,
+  collapsedSections: 120,
+  hiddenLinkSamples: 12,
   frameTree: 180,
   frameSampleLinks: 180,
   frameSampleButtons: 180,
@@ -68,9 +71,13 @@ async function warmLazyContent(page, { scanMode = "default", scrollSteps = 12 } 
           "[class*='show']",
           "[class*='next']",
           "[aria-expanded]",
+          "[aria-controls]",
+          "[data-toggle]",
+          "[data-bs-toggle]",
+          "summary",
         ].join(",");
         const clickPattern =
-          /(load more|show more|view more|see more|more matches|more events|more streams|expand|show all|view all|watch now|play now|more channels|next)/i;
+          /(load more|show more|view more|see more|more matches|more events|more streams|expand|show all|view all|more channels|channels|live tv|tv guide|filter|menu|dropdown|accordion|open|next)/i;
         let scrollCount = 0;
         let clicked = 0;
         const initialHeight = Math.max(
@@ -81,14 +88,31 @@ async function warmLazyContent(page, { scanMode = "default", scrollSteps = 12 } 
         for (let pass = 0; pass < 4; pass += 1) {
           const clickCandidates = Array.from(document.querySelectorAll(clickSelectors))
             .filter(visible)
-            .filter((node) =>
-              clickPattern.test(
-                (node.innerText ||
-                  node.textContent ||
-                  node.getAttribute("aria-label") ||
-                  "").trim(),
-              ),
-            )
+            .filter((node) => {
+              const href = node.getAttribute("href") || "";
+              const ariaExpanded = node.getAttribute("aria-expanded");
+              const hasSamePageTarget =
+                !href ||
+                href.startsWith("#") ||
+                /^javascript:/i.test(href) ||
+                Boolean(node.getAttribute("aria-controls")) ||
+                Boolean(node.getAttribute("data-toggle")) ||
+                Boolean(node.getAttribute("data-bs-toggle")) ||
+                ariaExpanded !== null ||
+                node.tagName.toLowerCase() === "summary";
+              if (!hasSamePageTarget) return false;
+
+              const haystack = (
+                node.innerText ||
+                node.textContent ||
+                node.getAttribute("aria-label") ||
+                node.getAttribute("title") ||
+                node.id ||
+                node.className ||
+                ""
+              ).trim();
+              return clickPattern.test(haystack) || ariaExpanded === "false";
+            })
             .slice(0, 20);
 
           for (const node of clickCandidates) {
@@ -261,7 +285,14 @@ async function collectRootData(page) {
 
     const isVisible = (el) => {
       const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0;
+      const style = window.getComputedStyle(el);
+      return (
+        r.width > 0 &&
+        r.height > 0 &&
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        style.opacity !== "0"
+      );
     };
 
     const selectorFor = (el) => {
@@ -292,8 +323,14 @@ async function collectRootData(page) {
 
     const elInfo = (el) => {
       const r = el.getBoundingClientRect();
+      const parentText = cleanText(el.parentElement?.innerText || el.parentElement?.textContent || "", 220);
+      const section = el.closest?.("section,article,main,table,tbody,ul,ol,[class*='content'],[class*='schedule'],[class*='event'],[class*='match']");
+      const sectionHeading =
+        section?.querySelector?.("h1,h2,h3,h4,[class*='title'],[class*='heading'],thead") || null;
       return {
         text: cleanText(el.innerText || el.textContent || el.value || "", 140),
+        nearby_text: parentText,
+        section_title: cleanText(sectionHeading?.innerText || sectionHeading?.textContent || "", 120),
         href: el.href || el.getAttribute("href") || "",
         src: el.src || el.currentSrc || el.getAttribute("src") || "",
         selector: selectorFor(el),
@@ -301,6 +338,7 @@ async function collectRootData(page) {
         x: Math.round(r.x + r.width / 2),
         y: Math.round(r.y + r.height / 2),
         frame_path: "root",
+        visible: isVisible(el),
       };
     };
 
@@ -315,6 +353,76 @@ async function collectRootData(page) {
       }
       return result;
     };
+
+    const linkSamples = (root, sampleLimit = 8) =>
+      Array.from(root?.querySelectorAll?.("a[href]") || [])
+        .map((link) => elInfo(link))
+        .filter((link) => link.href && !/^javascript:/i.test(link.href))
+        .slice(0, sampleLimit);
+
+    const findControlledRegion = (control) => {
+      const rawTargets = [
+        control.getAttribute("aria-controls"),
+        control.getAttribute("data-target"),
+        control.getAttribute("data-bs-target"),
+        control.getAttribute("href"),
+      ].filter(Boolean);
+
+      for (const raw of rawTargets) {
+        const value = String(raw).trim();
+        const id = value.startsWith("#") ? value.slice(1) : value;
+        if (!id || /^(javascript:|https?:)/i.test(value)) continue;
+        try {
+          const target =
+            document.getElementById(id) ||
+            (value.startsWith("#") ? document.querySelector(value) : null);
+          if (target) return target;
+        } catch {
+          // ignore invalid selector fragments
+        }
+      }
+
+      if (control.tagName.toLowerCase() === "summary" && control.parentElement) {
+        return control.parentElement;
+      }
+
+      let sibling = control.nextElementSibling;
+      for (let hops = 0; sibling && hops < 3; hops += 1) {
+        if (
+          sibling.querySelector?.("a[href],button,[role='button'],[onclick]") ||
+          /collapse|accordion|dropdown|menu|panel|content/i.test(
+            `${sibling.id || ""} ${sibling.className || ""}`,
+          )
+        ) {
+          return sibling;
+        }
+        sibling = sibling.nextElementSibling;
+      }
+
+      return control.closest?.(
+        "[class*='accordion'],[class*='collapse'],[class*='dropdown'],[class*='menu'],[class*='tab'],[class*='filter'],details",
+      );
+    };
+
+    const controlState = (control, region = null) => {
+      const ariaExpanded = control.getAttribute("aria-expanded");
+      if (ariaExpanded === "false") return "collapsed";
+      if (ariaExpanded === "true") return "expanded";
+      if (control.tagName.toLowerCase() === "summary") {
+        return control.parentElement?.hasAttribute("open") ? "expanded" : "collapsed";
+      }
+      if (region) {
+        const hidden =
+          region.hasAttribute("hidden") ||
+          region.getAttribute("aria-hidden") === "true" ||
+          !isVisible(region);
+        return hidden ? "collapsed" : "unknown";
+      }
+      return "unknown";
+    };
+
+    const revealPattern =
+      /(show|more|load|view|see|expand|collapse|toggle|open|close|next|older|channels?|live tv|tv guide|filter|menu|dropdown|accordion|tab|league|sport|category|server|source)/i;
 
     const mainSelectors = [
       "main",
@@ -527,6 +635,138 @@ async function collectRootData(page) {
       });
     });
 
+    const reveal_controls = [];
+    document
+      .querySelectorAll(
+        [
+          "button",
+          "a[href]",
+          "summary",
+          "[role='button']",
+          "[role='tab']",
+          "[aria-expanded]",
+          "[aria-controls]",
+          "[data-toggle]",
+          "[data-bs-toggle]",
+          "[data-action]",
+          "[onclick]",
+          "[class*='tab']",
+          "[class*='filter']",
+          "[class*='more']",
+          "[class*='load']",
+          "[class*='show']",
+        ].join(","),
+      )
+      .forEach((el) => {
+        if (!isVisible(el)) return;
+        const attrsText = [
+          el.innerText,
+          el.textContent,
+          el.getAttribute("aria-label"),
+          el.getAttribute("title"),
+          el.getAttribute("aria-controls"),
+          el.getAttribute("data-toggle"),
+          el.getAttribute("data-bs-toggle"),
+          el.getAttribute("data-action"),
+          el.id,
+          el.className,
+        ]
+          .filter(Boolean)
+          .join(" ");
+        const isReveal =
+          revealPattern.test(attrsText) ||
+          el.getAttribute("aria-expanded") !== null ||
+          el.getAttribute("aria-controls") ||
+          el.getAttribute("data-toggle") ||
+          el.getAttribute("data-bs-toggle") ||
+          el.tagName.toLowerCase() === "summary";
+        if (!isReveal) return;
+
+        const region = findControlledRegion(el);
+        const samples = linkSamples(region || el.parentElement || el, 6);
+        const hiddenLinkCount = samples.filter((link) => !link.visible).length;
+        const info = elInfo(el);
+        reveal_controls.push({
+          ...info,
+          kind: "reveal_control",
+          state: controlState(el, region),
+          sample_links: samples,
+          visible_link_count: samples.filter((link) => link.visible).length,
+          hidden_link_count: hiddenLinkCount,
+          data: {
+            aria_expanded: el.getAttribute("aria-expanded"),
+            aria_controls: el.getAttribute("aria-controls"),
+            data_toggle: el.getAttribute("data-toggle"),
+            data_bs_toggle: el.getAttribute("data-bs-toggle"),
+            data_target: el.getAttribute("data-target"),
+            data_bs_target: el.getAttribute("data-bs-target"),
+            reveals_hidden_content: hiddenLinkCount > 0 || controlState(el, region) === "collapsed",
+          },
+        });
+      });
+
+    const collapsed_sections = [];
+    document
+      .querySelectorAll(
+        [
+          "details:not([open])",
+          "[hidden]",
+          "[aria-hidden='true']",
+          "[class*='collapse']",
+          "[class*='accordion']",
+          "[class*='dropdown-menu']",
+          "[class*='submenu']",
+          "[class*='panel']",
+        ].join(","),
+      )
+      .forEach((section) => {
+        const samples = linkSamples(section, limits.hiddenLinkSamples);
+        const hiddenLinks = samples.filter((link) => !link.visible);
+        const controls = Array.from(
+          section.querySelectorAll("button,[role='button'],summary,[onclick]"),
+        );
+        const sectionText = cleanText(
+          section.innerText || section.textContent || section.getAttribute("aria-label") || "",
+          140,
+        );
+        if (!samples.length && !controls.length && !sectionText) return;
+
+        let trigger = null;
+        if (section.id) {
+          try {
+            const escapedId =
+              window.CSS && typeof window.CSS.escape === "function"
+                ? window.CSS.escape(section.id)
+                : String(section.id).replace(/["\\]/g, "\\$&");
+            trigger = document.querySelector(`[aria-controls="${escapedId}"],[href="#${escapedId}"]`);
+          } catch {
+            trigger = null;
+          }
+        }
+        if (!trigger) {
+          trigger = section.querySelector("summary,[aria-expanded],button,[role='button'],a[href^='#']");
+        }
+
+        collapsed_sections.push({
+          selector: selectorFor(section),
+          xpath: xpathFor(section),
+          text: sectionText,
+          state:
+            section.hasAttribute("hidden") ||
+            section.getAttribute("aria-hidden") === "true" ||
+            !isVisible(section)
+              ? "collapsed"
+              : "unknown",
+          link_count: samples.length,
+          hidden_link_count: hiddenLinks.length,
+          button_count: controls.length,
+          sample_links: samples.slice(0, 8),
+          hidden_link_samples: hiddenLinks.slice(0, 8),
+          reveal_selector: trigger ? selectorFor(trigger) : "",
+          reveal_xpath: trigger ? xpathFor(trigger) : "",
+        });
+      });
+
     const contentLinksDeduped = dedupeBy(
       contentLinks,
       (item) => `${item.href}|${item.text}|${item.selector}|${item.xpath}`,
@@ -553,6 +793,14 @@ async function collectRootData(page) {
       (item) =>
         `${item.kind}|${item.text}|${item.href}|${item.src}|${item.selector}|${item.xpath}|${item.data?.server || ""}|${item.data?.source || ""}|${item.data?.embed || ""}`,
     );
+    const revealControlsDeduped = dedupeBy(
+      reveal_controls,
+      (item) => `${item.kind}|${item.text}|${item.selector}|${item.xpath}|${item.state}`,
+    );
+    const collapsedSectionsDeduped = dedupeBy(
+      collapsed_sections,
+      (item) => `${item.selector}|${item.xpath}|${item.text}|${item.hidden_link_count}`,
+    );
     const videosDeduped = dedupeBy(
       videos,
       (item) => `${item.selector}|${item.xpath}|${item.src}`,
@@ -576,6 +824,8 @@ async function collectRootData(page) {
       },
       videos: videosDeduped.slice(0, limits.videos),
       elements: elementsDeduped.slice(0, limits.elements),
+      reveal_controls: revealControlsDeduped.slice(0, limits.revealControls),
+      collapsed_sections: collapsedSectionsDeduped.slice(0, limits.collapsedSections),
       text_sample: cleanText(document.body?.innerText || "", 320),
       html_size: (document.documentElement?.outerHTML || "").length,
       node_count: document.querySelectorAll("*").length,
@@ -793,6 +1043,8 @@ export async function inspect({
     pagination: rootData.pagination,
     videos: rootData.videos,
     elements: rootData.elements,
+    reveal_controls: rootData.reveal_controls,
+    collapsed_sections: rootData.collapsed_sections,
     frame_tree: frameRecordsDeduped,
     lazy_load_warmup,
     page_digest: {
@@ -809,6 +1061,8 @@ export async function inspect({
       videos: rootData.videos.length,
       popups: rootData.popups.length,
       elements: rootData.elements.length,
+      reveal_controls: rootData.reveal_controls.length,
+      collapsed_sections: rootData.collapsed_sections.length,
       frames_total: frameRecordsDeduped.length,
       frames_with_video: frameRecordsDeduped.filter((frame) => frame.video_count > 0).length,
       lazy_load_clicks: Number(lazy_load_warmup?.clicked || 0),

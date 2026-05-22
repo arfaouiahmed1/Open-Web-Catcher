@@ -19,6 +19,34 @@ RUN_FAILURE_STATUSES = {
 RUN_CANCELLED_STATUSES = {"cancelled"}
 RUN_TERMINAL_STATUSES = RUN_SUCCESS_STATUSES | RUN_FAILURE_STATUSES | RUN_CANCELLED_STATUSES
 RUN_ACTIVE_STATUSES = {"queued", "running", "retrying", "leased"}
+RUN_PRODUCTIVE_SUCCESS_STATUSES = set(RUN_SUCCESS_STATUSES)
+RUN_EXTERNAL_BLOCKER_STATUSES = {
+    "page_inaccessible",
+    "site_dead",
+    "no_streams",
+    "no_hosting_pages",
+}
+RUN_AGENT_FAILURE_STATUSES = {"failed", "timeout", "redirect"}
+RUN_ADJUSTED_SUCCESS_STATUSES = RUN_PRODUCTIVE_SUCCESS_STATUSES | RUN_EXTERNAL_BLOCKER_STATUSES
+
+
+def run_status_bucket(status: str) -> str:
+    normalized = str(status or "").strip().lower()
+    if normalized in RUN_PRODUCTIVE_SUCCESS_STATUSES:
+        return "productive_success"
+    if normalized in RUN_EXTERNAL_BLOCKER_STATUSES:
+        return "external_or_expected_blocker"
+    if normalized in RUN_AGENT_FAILURE_STATUSES:
+        return "agent_failure"
+    if normalized in RUN_CANCELLED_STATUSES:
+        return "cancelled"
+    if normalized in RUN_ACTIVE_STATUSES:
+        return "active"
+    return "unknown"
+
+
+def is_adjusted_success_status(status: str) -> bool:
+    return str(status or "").strip().lower() in RUN_ADJUSTED_SUCCESS_STATUSES
 
 
 def normalize_job_display_status(status: str) -> str:

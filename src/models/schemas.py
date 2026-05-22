@@ -94,11 +94,15 @@ class MatchInfo(BaseModel):
     url: str
     title: str = ""
     participants: str | None = None  # "Team A vs Team B"
+    team1: str | None = None
+    team2: str | None = None
+    score: str | None = None
     channel: str | None = None
     channel_candidates: list[str] = Field(default_factory=list)
     sport: str | None = None
     league: str | None = None
-    status: str = "unknown"  # live / upcoming / replay / unknown
+    type: str | None = None
+    status: str = "unknown"  # live / upcoming / not_live / unknown
     scheduled_time: str | None = None
     confidence: int = 70  # 0-100
     route: str = "stream_extractor"  # stream_extractor = hosting-first, embed_agent = direct embedded URL only
@@ -108,6 +112,8 @@ class MatchInfo(BaseModel):
     entry_point: str = ""
     route_source: str = ""
     redirect_chain: list[str] = Field(default_factory=list)
+    screenshot_url: str | None = None
+    visual_evidence: str | list[str] | None = None
     patterns: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 

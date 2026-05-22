@@ -22,7 +22,7 @@ failed_servers_count": 0
     assert payload["failed_servers_count"] == 0
 
 
-def test_landing_normalizer_coerces_nulls_and_drops_explicit_non_live_without_player() -> None:
+def test_landing_normalizer_coerces_nulls_keeps_upcoming_and_drops_replay() -> None:
     pages = _normalize_hosting_pages(
         [
             {
@@ -38,15 +38,76 @@ def test_landing_normalizer_coerces_nulls_and_drops_explicit_non_live_without_pl
                 "url": "/match/upcoming-1",
                 "title": "Tomorrow game",
                 "status": "upcoming",
+                "team1": "Team A",
+                "team2": "Team B",
+                "type": "League Cup",
+            },
+            {
+                "url": "/match/replay-1",
+                "title": "Yesterday replay",
+                "status": "replay",
             },
         ],
         source_url="https://site.example/v3",
     )
 
-    assert [page["url"] for page in pages] == ["https://site.example/match/live-1"]
+    assert [page["url"] for page in pages] == [
+        "https://site.example/match/live-1",
+        "https://site.example/match/upcoming-1",
+    ]
     assert pages[0]["title"] == ""
     assert pages[0]["participants"] == ""
     assert pages[0]["redirect_chain"] == ["https://site.example/v3"]
+    assert pages[1]["participants"] == "Team A vs Team B"
+    assert pages[1]["league"] == "League Cup"
+    assert pages[1]["type"] == "League Cup"
+
+
+def test_landing_normalizer_keeps_not_live_channel_candidates() -> None:
+    pages = _normalize_hosting_pages(
+        [
+            {
+                "url": "/channel/news-1",
+                "title": "News Channel",
+                "channel": "News Channel",
+                "status": "not_live",
+                "route_source": "channel_grid",
+            },
+        ],
+        source_url="https://site.example/",
+    )
+
+    assert pages[0]["url"] == "https://site.example/channel/news-1"
+    assert pages[0]["status"] == "not_live"
+    assert pages[0]["participants"] == ""
+
+
+def test_landing_normalizer_preserves_visual_handoff_evidence() -> None:
+    pages = _normalize_hosting_pages(
+        [
+            {
+                "url": "/watch/live-1",
+                "status": "live",
+                "screenshot_url": "https://img.example.com/landing-rep.png",
+                "visual_evidence": [
+                    "representative screenshot shows player shell",
+                    None,
+                    "same-pattern card grid",
+                ],
+                "iframes": ["https://embed.example.com/player/1"],
+                "route": "embed_agent",
+            }
+        ],
+        source_url="https://site.example/",
+    )
+
+    assert pages[0]["route"] == "stream_extractor"
+    assert pages[0]["screenshot_url"] == "https://img.example.com/landing-rep.png"
+    assert pages[0]["visual_evidence"] == [
+        "representative screenshot shows player shell",
+        "same-pattern card grid",
+    ]
+    assert pages[0]["iframes"] == ["https://embed.example.com/player/1"]
 
 
 def test_short_memory_saves_match_records_from_landing_tool_payload() -> None:
@@ -74,6 +135,45 @@ def test_short_memory_saves_match_records_from_landing_tool_payload() -> None:
     assert '"status": "live"' in run_memory["match_records"][0]
 
 
+def test_short_memory_saves_full_landing_candidate_ledger() -> None:
+    memory = ShortTermMemory(page_type="landing_page")
+    memory.ingest_tool_result(
+        "inspect_landing",
+        {"url": "https://pirlotv3.pl/index2.php"},
+        {
+            "candidate_ledger": [
+                {
+                    "url": "https://pirlotv3.pl/deportes/eventos.php?r=abc123",
+                    "title": "Bundesliga: Wolfsburg vs Paderborn 07",
+                    "nearby_text": "19:30 Bundesliga: Wolfsburg vs Paderborn 07",
+                    "scheduled_time": "19:30",
+                    "status": "unknown",
+                    "source": "content",
+                    "source_section": "Today's Programming on PIRLO TV",
+                    "selector": ".row a",
+                    "xpath": "//tr[4]/td[2]/a",
+                    "url_pattern": "https://pirlotv3.pl/deportes/eventos.php?r={token}",
+                },
+                {
+                    "url": "https://pirlotv3.pl/deportes/eventos.php?r=def456",
+                    "title": "NBA: Knicks vs Cavaliers",
+                    "scheduled_time": "01:00",
+                    "status": "unknown",
+                    "url_pattern": "https://pirlotv3.pl/deportes/eventos.php?r={token}",
+                },
+            ]
+        },
+    )
+
+    run_memory = memory.export_run_memory(page_type="landing_page")
+    assert run_memory["hosting_candidate_urls"] == [
+        "https://pirlotv3.pl/deportes/eventos.php?r=abc123",
+        "https://pirlotv3.pl/deportes/eventos.php?r=def456",
+    ]
+    assert "Wolfsburg vs Paderborn" in run_memory["match_records"][0]
+    assert '"scheduled_time": "19:30"' in run_memory["match_records"][0]
+
+
 def test_landing_output_recovers_candidates_from_short_memory_when_model_omits_them() -> None:
     output, expanded = _augment_landing_output(
         {"hosting_pages": [], "extraction_summary": {"hosting_pages_found": 0}},
@@ -90,6 +190,87 @@ def test_landing_output_recovers_candidates_from_short_memory_when_model_omits_t
     assert output["hosting_pages"][0]["url"] == "https://site.example/live/sweden-czechia/40925152"
     assert output["hosting_pages"][0]["route_source"] == "inspect_landing_short_memory"
     assert output["pattern_expansion"]["short_memory_recovered_candidates"] == 1
+
+
+def test_landing_output_recovers_candidate_ledger_siblings_when_model_returns_one() -> None:
+    output, expanded = _augment_landing_output(
+        {
+            "hosting_pages": [
+                {
+                    "url": "https://pirlotv3.pl/deportes/eventos.php?r=abc123",
+                    "title": "Bundesliga: Wolfsburg vs Paderborn 07",
+                    "status": "unknown",
+                    "iframes": ["https://www.capoplay.net/laliga5.php"],
+                    "patterns": {
+                        "url_pattern": "https://pirlotv3.pl/deportes/eventos.php?r={token}"
+                    },
+                }
+            ],
+            "extraction_summary": {"hosting_pages_found": 1},
+        },
+        source_url="https://www.pirlotv2.pl/",
+        run_memory={
+            "match_records": [
+                (
+                    '{"url":"https://pirlotv3.pl/deportes/eventos.php?r=def456",'
+                    '"title":"NBA: Knicks vs Cavaliers","scheduled_time":"01:00",'
+                    '"status":"unknown","url_pattern":"https://pirlotv3.pl/deportes/eventos.php?r={token}"}'
+                ),
+                (
+                    '{"url":"https://pirlotv3.pl/deportes/eventos.php?r=ghi789",'
+                    '"title":"Copa Sudamericana: Blooming vs Carabobo","scheduled_time":"01:30",'
+                    '"status":"unknown","url_pattern":"https://pirlotv3.pl/deportes/eventos.php?r={token}"}'
+                ),
+            ],
+            "common": {},
+        },
+    )
+
+    assert expanded == 0
+    assert [page["url"] for page in output["hosting_pages"]] == [
+        "https://pirlotv3.pl/deportes/eventos.php?r=abc123",
+        "https://pirlotv3.pl/deportes/eventos.php?r=def456",
+        "https://pirlotv3.pl/deportes/eventos.php?r=ghi789",
+    ]
+    assert output["hosting_pages"][1]["scheduled_time"] == "01:00"
+    assert output["pattern_expansion"]["short_memory_recovered_candidates"] == 2
+
+
+def test_landing_pattern_expansion_allows_redirected_landing_domain() -> None:
+    output, expanded = _augment_landing_output(
+        {
+            "hosting_pages": [
+                {
+                    "url": "https://pirlotv3.pl/deportes/eventos.php?r=abc123",
+                    "status": "unknown",
+                    "iframes": ["https://www.capoplay.net/laliga5.php"],
+                    "patterns": {
+                        "url_pattern": "https://pirlotv3.pl/deportes/eventos.php?r={token}"
+                    },
+                }
+            ],
+            "extraction_summary": {"hosting_pages_found": 1},
+        },
+        source_url="https://www.pirlotv2.pl/",
+        run_memory={
+            "hosting_candidate_urls": [
+                "https://pirlotv3.pl/deportes/eventos.php?r=def456",
+            ],
+            "match_records": [],
+            "common": {
+                "critical_links": [
+                    "https://pirlotv3.pl/deportes/eventos.php?r=def456",
+                    "https://unrelated.example/watch/1",
+                ]
+            },
+        },
+    )
+
+    assert expanded == 1
+    assert [page["url"] for page in output["hosting_pages"]] == [
+        "https://pirlotv3.pl/deportes/eventos.php?r=abc123",
+        "https://pirlotv3.pl/deportes/eventos.php?r=def456",
+    ]
 
 
 def test_long_memory_entry_keeps_playbook_pagination_and_continuation_fields() -> None:

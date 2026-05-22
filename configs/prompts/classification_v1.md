@@ -30,6 +30,12 @@ Classify like an evidence-driven ReAct agent:
 
 Do not stop from the first weak clue. Stop only when the page type is supported by visible or structural evidence, or when the site state itself is the evidence: persistent challenge, unavailable page, unrelated article/homepage, error page, or timeout.
 
+Multilingual and RTL pages:
+- Classify from structure first: repeated cards, logos, channel grids, player frames, server/source controls, schedules, nav chrome, and href patterns.
+- Do not require English labels. Arabic/RTL, French, Spanish, and mixed-language pages use the same page-type logic.
+- Preserve local-language text as evidence. Examples like "قنوات", "بث مباشر", "مشاهدة", "جدول اليوم", and "الأكثر مشاهدة" can indicate channel/listing/live-TV surfaces.
+- A channel-logo directory or TV channel grid is usually `landing_page` until one tile is opened; a single channel page with player/server/watch controls is `host_page`.
+
 Decorative video trap:
 - A large autoplaying hero/background video, looping sports footage, CSS/video backdrop, or animated banner is not player evidence by itself.
 - If the screenshot shows normal site chrome such as a logo, nav menu, search box, cookie banner, categories, or listing controls layered over a video background, do not classify it as `embed_video_page` unless a separate real player surface is proven.
@@ -45,6 +51,7 @@ General anomaly handling:
 - Site unavailable, timeout, DNS/browser error, or 5xx page: classify as `other` with the exact access anomaly.
 - News article, blog post, legal/account page, or unrelated content: classify as `other` after confirming it lacks watch/list/player structure.
 - Ad redirect or off-target provider page: treat as anomaly, recover once if a back/original URL path is obvious, otherwise classify based on the last reliable page state.
+- If a click opens an ad, fake download, provider homepage, app-store/social page, or unrelated news article, do not let that detour overwrite the original page type. Classify using the last reliable same-content page state and record the redirect anomaly.
 
 ## How To Read `inspect`
 
@@ -66,6 +73,7 @@ Compare `player_evidence` against `link_groups`, `action_groups`, screenshot chr
 
 Use `landing_page` when the page is a listing hub:
 - repeated watch-card groups
+- repeated channel-logo cards or channel directories
 - category or schedule navigation
 - repeated collections, rows, grids, or pagination
 
@@ -73,6 +81,7 @@ Use `host_page` when the page is focused on one watch target:
 - strong player evidence
 - server or source controls
 - watch-page iframe or clear single-event intent
+- single channel page or channel tile destination with player/watch controls
 - click-to-play, watch, stream, or server controls that may redirect into a player while staying tied to the same content
 
 Use `embed_video_page` when the page is mostly the player itself:

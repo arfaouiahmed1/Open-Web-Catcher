@@ -1,11 +1,15 @@
+import pytest
+
 from src.agents.email_generator import generate_takedown_emails
 from src.agents.hosting_page import _normalize_hosting_output
 from src.agents.orchestrator import (
+    _build_embedded_handoff,
     _build_hosting_handoff,
     _build_pipeline_result,
     _collect_all_streams,
     _embedded_target_allowed,
     _split_landing_match_handoff_targets,
+    landing_page_node,
     _requires_embedded_followup,
     route_after_classification,
 )
@@ -19,6 +23,7 @@ from src.models.schemas import (
     StreamURL,
     MatchInfo,
 )
+from src.utils.config import Settings
 
 
 def test_hosting_output_promotes_partial_success_embed_decision() -> None:
@@ -147,6 +152,153 @@ def test_hosting_handoff_preserves_landing_route_and_iframe_context() -> None:
     assert "landing iframes to watch" not in handoff
     assert "landing video srcs to inspect" not in handoff
     assert "landing player urls to inspect" not in handoff
+
+
+def test_hosting_handoff_preserves_landing_match_metadata() -> None:
+    handoff = _build_hosting_handoff(
+        {
+            "url": "https://sports.example",
+            "classification": ClassificationResult(
+                url="https://sports.example",
+                page_type=PageType.LANDING,
+                confidence=Confidence.HIGH,
+                reasoning="schedule grid with live rows",
+            ),
+            "matches": [
+                MatchInfo(
+                    url="https://sports.example/watch/ajax-groningen",
+                    title="Eredivisie: Ajax Amsterdam vs Groningen",
+                    participants="Ajax Amsterdam vs Groningen",
+                    team1="Ajax Amsterdam",
+                    team2="Groningen",
+                    score="1-0",
+                    status="live",
+                    scheduled_time="17:45",
+                    league="Eredivisie",
+                    type="football",
+                    sport="soccer",
+                    channel="Channel 1",
+                    channel_candidates=["Channel 1", "Canal 11"],
+                    screenshot_url="https://img.example/landing.png",
+                    visual_evidence="green expanded row with four channel links under the live fixture",
+                )
+            ],
+        },
+        target_url="https://sports.example/watch/ajax-groningen",
+        memory_hint_text="",
+    )
+
+    assert "teams: Ajax Amsterdam vs Groningen" in handoff
+    assert "landing status: live" in handoff
+    assert "landing score: 1-0" in handoff
+    assert "landing scheduled time: 17:45" in handoff
+    assert "landing league: Eredivisie" in handoff
+    assert "landing type: football" in handoff
+    assert "landing channel: Channel 1" in handoff
+    assert "landing channel candidates: Channel 1, Canal 11" in handoff
+    assert "landing screenshot evidence: https://img.example/landing.png" in handoff
+    assert "green expanded row" in handoff
+
+
+def test_embedded_handoff_preserves_landing_match_metadata_from_hosting_source() -> None:
+    handoff = _build_embedded_handoff(
+        {
+            "url": "https://sports.example",
+            "classification": ClassificationResult(
+                url="https://sports.example",
+                page_type=PageType.LANDING,
+                confidence=Confidence.HIGH,
+            ),
+            "matches": [
+                MatchInfo(
+                    url="https://sports.example/watch/ajax-groningen",
+                    title="Eredivisie: Ajax Amsterdam vs Groningen",
+                    team1="Ajax Amsterdam",
+                    team2="Groningen",
+                    status="live",
+                    scheduled_time="17:45",
+                    iframes=["https://embed.example/player/ajax-groningen"],
+                    visual_evidence="landing row expanded into server choices",
+                )
+            ],
+            "extraction_results": [
+                ExtractionResult(
+                    url="https://sports.example/watch/ajax-groningen",
+                    page_type=PageType.HOSTING,
+                    status=ExtractionStatus.FAILED,
+                    agent_type=AgentType.HOSTING_PAGE,
+                    metadata={
+                        "decision": "needs_embed_agent",
+                        "embedded_urls_for_processing": [
+                            "https://embed.example/player/ajax-groningen"
+                        ],
+                    },
+                )
+            ],
+        },
+        target_url="https://embed.example/player/ajax-groningen",
+        memory_hint_text="",
+    )
+
+    assert "teams: Ajax Amsterdam vs Groningen" in handoff
+    assert "landing status: live" in handoff
+    assert "landing scheduled time: 17:45" in handoff
+    assert "landing visual evidence: landing row expanded into server choices" in handoff
+    assert "source hosting page: https://sports.example/watch/ajax-groningen" in handoff
+    assert "route source: hosting output: explicit embedded_url/player_iframe handoff" in handoff
+
+
+@pytest.mark.asyncio
+async def test_landing_page_node_queues_hosting_pages_with_visual_evidence_list(monkeypatch) -> None:
+    async def fake_run(self, *, url, observer=None, orchestrator_handoff=""):
+        return ExtractionResult(
+            url=url,
+            page_type=PageType.LANDING,
+            status=ExtractionStatus.SUCCESS,
+            agent_type=AgentType.LANDING_PAGE,
+            metadata={
+                "hosting_pages": [
+                    {
+                        "url": "https://sports.example/watch/ajax-groningen",
+                        "title": "Ajax Amsterdam vs Groningen",
+                        "status": "live",
+                        "visual_evidence": [
+                            "green expanded row",
+                            "four channel/server links visible",
+                        ],
+                    }
+                ]
+            },
+        )
+
+    monkeypatch.setattr("src.agents.landing_page.LandingPageAgent.run", fake_run)
+
+    result = await landing_page_node(
+        {
+            "url": "https://sports.example",
+            "classification": ClassificationResult(
+                url="https://sports.example",
+                page_type=PageType.LANDING,
+                confidence=Confidence.HIGH,
+            ),
+            "matches": [],
+            "extraction_results": [],
+            "pending_hosting_urls": [],
+            "pending_embedded_urls": [],
+            "provider_analysis": [],
+            "takedown_emails": [],
+            "error": "",
+        },
+        settings=Settings(),
+        observer=None,
+        memory=None,
+    )
+
+    assert result["pending_hosting_urls"] == ["https://sports.example/watch/ajax-groningen"]
+    assert result["matches"][0].visual_evidence == [
+        "green expanded row",
+        "four channel/server links visible",
+    ]
 
 
 def test_landing_match_handoff_splits_embeds_from_direct_streams() -> None:

@@ -1,0 +1,48 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{tikz-uml}[2026/05/21 Local TikZ-UML compatibility layer]
+\RequirePackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,backgrounds}
+
+\pgfkeys{
+  /tikzuml/.is family,
+  /tikzuml,
+  x/.initial=0,
+  y/.initial=0,
+  width/.initial=3.6cm,
+  fill/.initial=blue!5,
+  draw/.initial=accent!80,
+  type/.initial=
+}
+
+\newcommand{\umlclass}[4][]{%
+  \pgfkeys{/tikzuml,x=0,y=0,width=3.6cm,fill=blue!5,draw=accent!80,type=,#1}%
+  \node[
+    draw=\pgfkeysvalueof{/tikzuml/draw},
+    fill=\pgfkeysvalueof{/tikzuml/fill},
+    rounded corners=2pt,
+    text width=\pgfkeysvalueof{/tikzuml/width},
+    align=left,
+    font=\scriptsize,
+    inner sep=5pt
+  ] (#2) at (\pgfkeysvalueof{/tikzuml/x},\pgfkeysvalueof{/tikzuml/y}) {%
+    \centering\textbf{#2}\\[-0.15em]\rule{0.88\linewidth}{0.3pt}\\
+    \raggedright #3\\[-0.1em]\rule{0.88\linewidth}{0.3pt}\\
+    #4%
+  };%
+}
+
+\tikzset{
+  umlrel/.style={-, thick, gray!72},
+  umluni/.style={->, >=Stealth, thick, gray!72},
+  umlinherit/.style={-{Triangle[open,length=5pt,width=6pt]}, thick, gray!72},
+  umlaggr/.style={{Diamond[open,length=5pt,width=6pt]}-, thick, gray!72},
+  umlcomp/.style={{Diamond[length=5pt,width=6pt]}-, thick, gray!72},
+  umldep/.style={->, >=Stealth, thick, gray!72, dashed}
+}
+
+\newcommand{\umlassoc}[3][]{\draw[umlrel] (#2) -- (#3);}
+\newcommand{\umluniassoc}[3][]{\draw[umluni] (#2) -- (#3);}
+\newcommand{\umlinherit}[3][]{\draw[umlinherit] (#2) -- (#3);}
+\newcommand{\umlaggreg}[3][]{\draw[umlaggr] (#2) -- (#3);}
+\newcommand{\umlcompo}[3][]{\draw[umlcomp] (#2) -- (#3);}
+\newcommand{\umldep}[3][]{\draw[umldep] (#2) -- (#3);}

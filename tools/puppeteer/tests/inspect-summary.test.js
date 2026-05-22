@@ -64,6 +64,80 @@ function largeLandingRaw() {
     navLinks,
     buttons,
     elements: buttons,
+    reveal_controls: [
+      {
+        text: "More channels",
+        selector: ".channels-toggle",
+        xpath: "//button[1]",
+        x: 480,
+        y: 420,
+        frame_path: "root",
+        kind: "reveal_control",
+        state: "collapsed",
+        hidden_link_count: 2,
+        visible_link_count: 0,
+        data: { reveals_hidden_content: true },
+        sample_links: [
+          {
+            text: "beIN SPORTS 1",
+            href: "https://streamed.pk/watch/bein-sports-1",
+            selector: ".hidden-channel a",
+            xpath: "//div[1]/a[1]",
+            x: 0,
+            y: 0,
+            frame_path: "root",
+            visible: false,
+          },
+        ],
+      },
+    ],
+    collapsed_sections: [
+      {
+        selector: ".channels-panel",
+        xpath: "//div[2]",
+        text: "Sports channels",
+        state: "collapsed",
+        link_count: 2,
+        hidden_link_count: 2,
+        button_count: 0,
+        reveal_selector: ".channels-toggle",
+        reveal_xpath: "//button[1]",
+        sample_links: [
+          {
+            text: "beIN SPORTS 1",
+            href: "https://streamed.pk/watch/bein-sports-1",
+            selector: ".hidden-channel a",
+            xpath: "//div[1]/a[1]",
+            x: 0,
+            y: 0,
+            frame_path: "root",
+            visible: false,
+          },
+          {
+            text: "Sky Sports",
+            href: "https://streamed.pk/watch/sky-sports",
+            selector: ".hidden-channel a:nth-of-type(2)",
+            xpath: "//div[1]/a[2]",
+            x: 0,
+            y: 0,
+            frame_path: "root",
+            visible: false,
+          },
+        ],
+        hidden_link_samples: [
+          {
+            text: "beIN SPORTS 1",
+            href: "https://streamed.pk/watch/bein-sports-1",
+            selector: ".hidden-channel a",
+            xpath: "//div[1]/a[1]",
+            x: 0,
+            y: 0,
+            frame_path: "root",
+            visible: false,
+          },
+        ],
+      },
+    ],
     iframes: [],
     popups: [],
     pagination: {
@@ -217,14 +291,26 @@ test("landing summary returns grouped sections and top representatives only", ()
 
   assert.equal(summary.context_type, "landing");
   assert.ok(Array.isArray(summary.grouped_sections.groups));
-  assert.ok(Array.isArray(summary.match_groups));
-  assert.ok(Array.isArray(summary.navigation_groups));
-  assert.ok(Array.isArray(summary.top_match_candidates));
-  assert.equal(summary.top_match_candidates[0].status, "live");
-  assert.ok(summary.top_match_candidates[0].selector);
-  assert.ok(summary.grouped_sections.groups.some((group) => group.label === "live_watch_cards"));
-  assert.ok(summary.stats.budget_fit);
-  assert.ok(summary.stats.compressed_bytes <= 18 * 1024);
+    assert.ok(Array.isArray(summary.match_groups));
+    assert.ok(Array.isArray(summary.navigation_groups));
+    assert.ok(Array.isArray(summary.top_match_candidates));
+  assert.ok(Array.isArray(summary.candidate_ledger));
+  assert.ok(Array.isArray(summary.candidate_groups));
+    assert.equal(summary.top_match_candidates[0].status, "live");
+    assert.ok(summary.top_match_candidates[0].selector);
+  assert.ok(summary.candidate_ledger.length > summary.top_match_candidates.length);
+  assert.ok(summary.candidate_ledger.some((candidate) => candidate.url_pattern.includes("/watch/match-{n}")));
+  assert.ok(summary.candidate_groups.some((group) => group.count > 1));
+  assert.ok(
+    summary.grouped_sections.groups.some((group) =>
+      ["live_watch_cards", "watch_links"].includes(group.label),
+    ),
+  );
+    assert.ok(summary.action_groups.some((group) => group.label === "reveal_controls"));
+    assert.ok(summary.reveal_actions[0].selector);
+    assert.equal(summary.collapsed_sections[0].hidden_link_count, 2);
+    assert.ok(summary.stats.budget_fit);
+  assert.ok(summary.stats.compressed_bytes <= 32 * 1024);
   assert.equal(summary.match_candidates, undefined);
 });
 

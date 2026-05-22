@@ -51,6 +51,18 @@ class HandoffContext(TypedDict, total=False):
     classification_reasoning: str
     candidate_title: str
     candidate_participants: str
+    candidate_team1: str
+    candidate_team2: str
+    candidate_score: str
+    candidate_status: str
+    candidate_time: str
+    candidate_league: str
+    candidate_type: str
+    candidate_sport: str
+    candidate_channel: str
+    candidate_channel_candidates: list[str]
+    landing_screenshot_url: str
+    landing_visual_evidence: str
     landing_route: str
     landing_route_source: str
     landing_redirect_chain: list[str]
@@ -123,6 +135,58 @@ def render_handoff(ctx: HandoffContext) -> str:
     candidate_participants = ctx.get("candidate_participants")
     if candidate_participants:
         lines.append(f"- participants: {_truncate(candidate_participants, max_chars=180)}")
+
+    candidate_team1 = ctx.get("candidate_team1")
+    candidate_team2 = ctx.get("candidate_team2")
+    if candidate_team1 or candidate_team2:
+        lines.append(
+            f"- teams: {_truncate(candidate_team1, max_chars=90) or 'unknown'} vs "
+            f"{_truncate(candidate_team2, max_chars=90) or 'unknown'}"
+        )
+
+    candidate_status = ctx.get("candidate_status")
+    if candidate_status:
+        lines.append(f"- landing status: {candidate_status}")
+
+    candidate_score = ctx.get("candidate_score")
+    if candidate_score:
+        lines.append(f"- landing score: {_truncate(candidate_score, max_chars=80)}")
+
+    candidate_time = ctx.get("candidate_time")
+    if candidate_time:
+        lines.append(f"- landing scheduled time: {_truncate(candidate_time, max_chars=80)}")
+
+    candidate_league = ctx.get("candidate_league")
+    if candidate_league:
+        lines.append(f"- landing league: {_truncate(candidate_league, max_chars=140)}")
+
+    candidate_type = ctx.get("candidate_type")
+    if candidate_type:
+        lines.append(f"- landing type: {_truncate(candidate_type, max_chars=140)}")
+
+    candidate_sport = ctx.get("candidate_sport")
+    if candidate_sport:
+        lines.append(f"- landing sport: {_truncate(candidate_sport, max_chars=120)}")
+
+    candidate_channel = ctx.get("candidate_channel")
+    if candidate_channel:
+        lines.append(f"- landing channel: {_truncate(candidate_channel, max_chars=140)}")
+
+    candidate_channel_candidates = ctx.get("candidate_channel_candidates")
+    if candidate_channel_candidates:
+        lines.append(
+            f"- landing channel candidates: {', '.join(candidate_channel_candidates[:6])}"
+        )
+
+    landing_screenshot_url = ctx.get("landing_screenshot_url")
+    if landing_screenshot_url:
+        lines.append(f"- landing screenshot evidence: {landing_screenshot_url}")
+
+    landing_visual_evidence = ctx.get("landing_visual_evidence")
+    if landing_visual_evidence:
+        lines.append(
+            f"- landing visual evidence: {_truncate(landing_visual_evidence, max_chars=240)}"
+        )
 
     landing_route = ctx.get("landing_route")
     if landing_route:
@@ -414,6 +478,34 @@ def _match_containing_handoff_url(matches: list[MatchInfo], target_url: str) -> 
     return None
 
 
+def _format_visual_evidence(value: str | list[str] | None) -> str:
+    if isinstance(value, list):
+        return "; ".join(str(item or "").strip() for item in value if item)
+    return str(value or "").strip()
+
+
+def _add_match_handoff_context(ctx: HandoffContext, match: MatchInfo) -> None:
+    ctx["candidate_title"] = match.title or ""
+    ctx["candidate_participants"] = match.participants or ""
+    ctx["candidate_team1"] = match.team1 or ""
+    ctx["candidate_team2"] = match.team2 or ""
+    ctx["candidate_score"] = match.score or ""
+    ctx["candidate_status"] = match.status or ""
+    ctx["candidate_time"] = match.scheduled_time or ""
+    ctx["candidate_league"] = match.league or ""
+    ctx["candidate_type"] = match.type or ""
+    ctx["candidate_sport"] = match.sport or ""
+    ctx["candidate_channel"] = match.channel or ""
+    ctx["candidate_channel_candidates"] = [
+        str(value or "").strip() for value in match.channel_candidates if value
+    ]
+    ctx["landing_screenshot_url"] = match.screenshot_url or ""
+    ctx["landing_visual_evidence"] = _format_visual_evidence(match.visual_evidence)
+    ctx["landing_route"] = match.route or ""
+    ctx["landing_route_source"] = match.route_source or ""
+    ctx["landing_redirect_chain"] = match.redirect_chain or []
+
+
 def _latest_hosting_context_for_embedded(
     extraction_results: list[ExtractionResult],
     *,
@@ -502,11 +594,7 @@ def _build_hosting_handoff(
     if pattern_context:
         ctx["pattern_context"] = pattern_context
     if match is not None:
-        ctx["candidate_title"] = match.title or ""
-        ctx["candidate_participants"] = match.participants or ""
-        ctx["landing_route"] = match.route or ""
-        ctx["landing_route_source"] = match.route_source or ""
-        ctx["landing_redirect_chain"] = match.redirect_chain or []
+        _add_match_handoff_context(ctx, match)
         if match.channel:
             ctx["focus"] += f"; landing hinted channel '{match.channel}' so verify it from the live player and override it if the site is misleading"
     return render_handoff(ctx)
@@ -536,11 +624,7 @@ def _build_embedded_handoff(
         "memory_hints": memory_hint_text,
     }
     if match is not None:
-        ctx["candidate_title"] = match.title or ""
-        ctx["candidate_participants"] = match.participants or ""
-        ctx["landing_route"] = match.route or ""
-        ctx["landing_route_source"] = match.route_source or ""
-        ctx["landing_redirect_chain"] = match.redirect_chain or []
+        _add_match_handoff_context(ctx, match)
         if match.channel:
             ctx["focus"] += f"; landing hinted channel '{match.channel}' so verify it from the live player and override it if the site is misleading"
     if source_hosting is not None:
@@ -656,6 +740,14 @@ async def landing_page_node(
             orchestrator_handoff=landing_handoff,
         )
         hosting_pages = landing_outcome.metadata.get("hosting_pages", [])
+        if not hosting_pages and isinstance(landing_outcome.metadata, dict):
+            landing_match_urls = landing_outcome.metadata.get("landing_match_urls", [])
+            if isinstance(landing_match_urls, list):
+                hosting_pages = [
+                    {"url": str(url or "").strip(), "route_source": "landing_match_urls_fallback"}
+                    for url in landing_match_urls
+                    if str(url or "").strip()
+                ]
     except Exception as exc:
         logger.warning("Landing page agent failed for %s: %s", state["url"], exc)
         error_text = str(exc)
@@ -678,8 +770,8 @@ async def landing_page_node(
             continue
         try:
             matches.append(MatchInfo(**page))
-        except Exception:
-            logger.warning("Skipping malformed landing-page match payload: %s", page)
+        except Exception as exc:
+            logger.warning("Skipping malformed landing-page match payload: %s (%s)", page, exc)
 
     pending_embedded_urls = list(state["pending_embedded_urls"])
     pending_hosting_urls: list[str] = []

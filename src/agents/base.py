@@ -179,6 +179,8 @@ class AgentGraphState(TypedDict):
     last_context_tokens: int
     continuation_index: int
     continuation_capsules: list[dict[str, Any]]
+    last_low_specificity_query_signature: str
+    repeated_low_specificity_query_count: int
 
 
 def _json_ready(value: Any) -> Any:
@@ -1402,6 +1404,43 @@ async def run_agent_loop(
             "last_context_tokens": context_tokens,
         }
 
+    def _low_specificity_query_signature(
+        tool_name: str,
+        tool_args: dict[str, Any],
+    ) -> str:
+        if tool_name != "query_elements":
+            return ""
+        specificity_keys = (
+            "text_contains",
+            "text_regex",
+            "href_contains",
+            "href_regex",
+            "attr_name",
+            "attr_value_contains",
+            "attr_value_regex",
+            "scope_node_id",
+            "scope_element_ref",
+            "scope_selector",
+            "scope_xpath",
+            "scope_text",
+        )
+        has_specificity = any(str(tool_args.get(key) or "").strip() for key in specificity_keys)
+        attr = tool_args.get("attr")
+        if isinstance(attr, dict) and any(str(value or "").strip() for value in attr.values()):
+            has_specificity = True
+        if has_specificity:
+            return ""
+        return json.dumps(
+            {
+                "tool_name": tool_name,
+                "kind": str(tool_args.get("kind") or ""),
+                "frame_path": str(tool_args.get("frame_path") or "root"),
+                "limit": int(tool_args.get("limit") or 20),
+            },
+            sort_keys=True,
+            default=str,
+        )
+
     async def tool_node(state: AgentGraphState) -> dict[str, Any]:
         _assert_not_cancelled(observer, "tool dispatch")
         response = _last_ai_message(state["messages"])
@@ -1417,6 +1456,12 @@ async def run_agent_loop(
         state_mutated = False
         site_down_detected = False
         batch_signatures: list[str] = []
+        last_low_specificity_query_signature = str(
+            state.get("last_low_specificity_query_signature", "") or ""
+        )
+        repeated_low_specificity_query_count = int(
+            state.get("repeated_low_specificity_query_count", 0) or 0
+        )
 
         for tc in allowed_tool_calls:
             tool_name = str(tc.get("name", ""))
@@ -1429,6 +1474,41 @@ async def run_agent_loop(
             batch_signatures.append(
                 json.dumps({"tool_name": tool_name, "tool_args": tool_args}, sort_keys=True, default=str)
             )
+            low_specificity_query_signature = _low_specificity_query_signature(
+                tool_name,
+                tool_args,
+            )
+            if low_specificity_query_signature:
+                repeated_low_specificity_query_count = (
+                    repeated_low_specificity_query_count + 1
+                    if low_specificity_query_signature == last_low_specificity_query_signature
+                    else 1
+                )
+                last_low_specificity_query_signature = low_specificity_query_signature
+                warning = (
+                    "query_elements is being used as a broad read. Use current screenshot/context, "
+                    "get_page_context, get_element_detail with a scope, navigate a representative "
+                    "href, or final JSON instead."
+                )
+                if working_memory is not None:
+                    working_memory.record_observation(warning, source="tool_guardrail")
+                if observer is not None and repeated_low_specificity_query_count >= 2:
+                    observer.emit(
+                        "tool_guardrail_warning",
+                        "Repeated low-specificity query_elements call",
+                        status="warning",
+                        details={
+                            "tool_name": tool_name,
+                            "tool_args": tool_args,
+                            "repeat_count": repeated_low_specificity_query_count,
+                            "recommended_next": (
+                                "Use screenshot/context evidence, get_page_context, scoped "
+                                "get_element_detail/query_elements, navigate, or final JSON."
+                            ),
+                        },
+                    )
+            else:
+                repeated_low_specificity_query_count = 0
 
             logger.debug(
                 "Tool call [%d/%d]: %s(%s)",
@@ -1616,6 +1696,8 @@ async def run_agent_loop(
             "last_tool_batch_signature": batch_signature,
             "repeated_tool_batch_count": repeated_tool_batch_count,
             "no_progress_turn_count": no_progress_turn_count,
+            "last_low_specificity_query_signature": last_low_specificity_query_signature,
+            "repeated_low_specificity_query_count": repeated_low_specificity_query_count,
         }
 
     async def compact_context_node(state: AgentGraphState) -> dict[str, Any]:
@@ -1980,6 +2062,8 @@ async def run_agent_loop(
         "last_context_tokens": 0,
         "continuation_index": 0,
         "continuation_capsules": [],
+        "last_low_specificity_query_signature": "",
+        "repeated_low_specificity_query_count": 0,
     }
 
     context_metadata = {

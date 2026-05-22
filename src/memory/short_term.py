@@ -25,9 +25,9 @@ def _generalize_url_pattern(url: str) -> str:
         return normalized
 
     path = parsed.path or "/"
-    path = re.sub(r"/\d+(?=/|$)", "/{n}", path)
-    path = re.sub(r"/[0-9a-fA-F]{8,}(?=/|$)", "/{id}", path)
     path = re.sub(r"/[A-Za-z0-9_-]{24,}(?=/|$)", "/{token}", path)
+    path = re.sub(r"[0-9a-fA-F]{8,}", "{id}", path)
+    path = re.sub(r"\d+", "{n}", path)
 
     query_pairs: list[tuple[str, str]] = []
     for key, value in parse_qsl(parsed.query or "", keep_blank_values=True):
@@ -600,7 +600,7 @@ class ShortTermMemory:
 
     def _capture_hosting_candidates(self, payload: dict[str, Any], *, base_url: str = "") -> None:
         discovered: list[str] = []
-        for key in ("hosting_pages", "match_candidates", "top_match_candidates"):
+        for key in ("hosting_pages", "match_candidates", "top_match_candidates", "candidate_ledger"):
             entries = payload.get(key, [])
             if not isinstance(entries, list):
                 continue
@@ -615,12 +615,29 @@ class ShortTermMemory:
                 if resolved:
                     discovered.append(resolved)
                     if isinstance(entry, dict):
+                        patterns = entry.get("patterns") if isinstance(entry.get("patterns"), dict) else {}
+                        url_pattern = str(
+                            entry.get("url_pattern") or patterns.get("url_pattern") or ""
+                        )
                         record = {
                             "url": resolved,
-                            "title": str(entry.get("title") or "")[:180],
-                            "participants": str(entry.get("participants") or "")[:160],
+                            "title": str(
+                                entry.get("title")
+                                or entry.get("text")
+                                or entry.get("nearby_text")
+                                or ""
+                            )[:180],
+                            "participants": str(
+                                entry.get("participants") or entry.get("nearby_text") or ""
+                            )[:220],
                             "status": str(entry.get("status") or "unknown")[:40],
                             "route": str(entry.get("route") or "")[:60],
+                            "scheduled_time": str(entry.get("scheduled_time") or "")[:40],
+                            "source": str(entry.get("source") or "")[:60],
+                            "source_section": str(entry.get("source_section") or "")[:120],
+                            "selector": str(entry.get("selector") or "")[:180],
+                            "xpath": str(entry.get("xpath") or "")[:220],
+                            "url_pattern": url_pattern[:240],
                             "iframe_count": len(entry.get("iframes") or [])
                             if isinstance(entry.get("iframes"), list)
                             else 0,

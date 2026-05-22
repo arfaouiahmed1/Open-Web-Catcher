@@ -45,6 +45,12 @@ const TABS = [
 
 const EMPTY_OBJECT = {};
 const EMPTY_ARRAY = [];
+const EXTERNAL_BLOCKER_STATUSES = new Set([
+  "page_inaccessible",
+  "site_dead",
+  "no_streams",
+  "no_hosting_pages",
+]);
 
 const PALETTE = [
   "var(--signal)",
@@ -894,6 +900,9 @@ function OverviewPageContent() {
   );
   const recentRuns = overview?.recent_runs ?? EMPTY_ARRAY;
   const failedRuns = failedData?.rows ?? EMPTY_ARRAY;
+  const blockerRuns = recentRuns
+    .filter((row) => EXTERNAL_BLOCKER_STATUSES.has(String(row.final_status || row.status || "").toLowerCase()))
+    .slice(0, 8);
 
   const modelRows = useMemo(() => {
     const syntheticCalls = synthCallsFromModelUsage(rawModelRows);
@@ -1215,9 +1224,16 @@ function OverviewPageContent() {
     {
       label: "Success rate",
       value: formatPercent(summary.success_rate || 0),
-      description: "Terminal successes",
+      description: "Strict stream success",
       bar: (summary.success_rate || 0) * 100,
       accent: "mint",
+    },
+    {
+      label: "Agent success",
+      value: formatPercent(summary.adjusted_success_rate || 0),
+      description: `${formatNumber(summary.external_blocked_count || 0)} site/server blockers`,
+      bar: (summary.adjusted_success_rate || 0) * 100,
+      accent: "signal",
     },
     {
       label: "Avg latency",
@@ -1789,17 +1805,19 @@ function OverviewPageContent() {
           {trend.length > 2 && (
             <BarTrendCard
               title="Run outcome mix"
-              description="Stacked daily successes, partial/running runs, and failures."
+              description="Stacked daily successes, partial/running runs, agent failures, and site/server blockers."
               data={trend.map((r) => ({
                 date: r.date || "",
                 successes: Number(r.successes || 0),
                 partials: Number(r.partials || 0),
-                failures: Number(r.failures || 0),
+                agent_failures: Number(r.agent_failures || 0),
+                external_blockers: Number(r.external_blockers || 0),
               }))}
               series={[
                 { key: "successes", label: "Success", color: "var(--chart-1)", stackId: "status" },
                 { key: "partials", label: "Partial", color: "var(--chart-2)", stackId: "status" },
-                { key: "failures", label: "Failed", color: "var(--chart-5)", stackId: "status" },
+                { key: "agent_failures", label: "Agent fail", color: "var(--chart-5)", stackId: "status" },
+                { key: "external_blockers", label: "Site/server", color: "var(--chart-4)", stackId: "status" },
               ]}
               height={210}
             />
@@ -2769,24 +2787,44 @@ function OverviewPageContent() {
           </Panel>
 
           {/* Failed runs */}
-          <Panel>
-            <PanelHead
-              title="Recent failures"
-              sub="Latest failed pipeline runs"
-              accent="var(--rose)"
-            />
-            {failedRuns.length ? (
-              failedRuns.map((row) => (
-                <FailedRunRow key={row.run_id} row={row} />
-              ))
-            ) : (
-              <div
-                className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40"
-              >
-                No failed runs recorded
-              </div>
-            )}
-          </Panel>
+          <div className="grid gap-5 xl:grid-cols-2">
+            <Panel>
+              <PanelHead
+                title="Recent agent failures"
+                sub="Workflow failures that still count against the agent"
+                accent="var(--rose)"
+              />
+              {failedRuns.length ? (
+                failedRuns.map((row) => (
+                  <FailedRunRow key={row.run_id} row={row} />
+                ))
+              ) : (
+                <div
+                  className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40"
+                >
+                  No agent failures recorded
+                </div>
+              )}
+            </Panel>
+            <Panel>
+              <PanelHead
+                title="Site/server blockers"
+                sub="Recent inaccessible pages or no-stream outcomes"
+                accent="var(--chart-4)"
+              />
+              {blockerRuns.length ? (
+                blockerRuns.map((row) => (
+                  <FailedRunRow key={row.run_id} row={row} />
+                ))
+              ) : (
+                <div
+                  className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40"
+                >
+                  No site/server blockers in recent runs
+                </div>
+              )}
+            </Panel>
+          </div>
         </div>
       )}
     </div>

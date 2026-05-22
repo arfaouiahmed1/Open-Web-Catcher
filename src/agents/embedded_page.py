@@ -35,6 +35,8 @@ _AGENT_CONTRACT = """\
 - return detected channel/broadcast metadata per server/source only when the player or screenshot reveals a known broadcaster name
 - crawl visible JS-driven player/source/language controls before falling back to URL-only evidence
 - preserve source language labels when they are shown as flags, country emoji, audio labels, captions, or short codes
+- work across any language or script; verify channel/source labels from player evidence instead of English-only terms
+- treat ad redirects, news/article detours, fake downloads, and unrelated provider pages as drift, then recover once
 - if no playable stream is recovered or the full-page embedded URL is blocked, stop with the failure evidence and do not invent another downstream fallback
 """
 
