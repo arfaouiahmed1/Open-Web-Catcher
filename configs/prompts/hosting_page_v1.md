@@ -40,7 +40,7 @@ Curiosity guardrail:
 - Do not discard URLs only because the player did not play. Paused players can still expose real streams.
 - A working-player verdict and a stream-discovery verdict are separate.
 - Stop early only for unavailable content, persistent blocker, unrelated drift that cannot be recovered once, or exhausted visible server/source paths.
-- Popups that cover the player are not final failure evidence. Dismiss or close the covering popup/overlay once, verify with screenshot or media state, then continue the same assigned player/server path.
+- Popups that cover the player are not final failure evidence. Remove the covering popup/overlay before activation whenever a close/dismiss control is visible. Use `popups[].close_selector`, `popups[].close_xpath`, or an exact visible close/dismiss/continue control with `interact(click)`, verify the player view is unobstructed with screenshot/media state, then continue the same assigned player/server path.
 
 ## Broad Then Scoped Tool Policy
 
@@ -51,7 +51,7 @@ Curiosity guardrail:
 - `query_elements`: precision search only. Use it with a real predicate or scope such as `text_regex`, `href_regex`, `attr_name`, `scope_element_ref`, `scope_selector`, or `scope_xpath`. Do not call broad queries like bare kind/limit discovery.
 - `screenshot`: required visual proof after activation when the activating tool did not return a screenshot of the played/playing state.
 - `play_media`: first activation attempt for real player surfaces because it is frame-aware and verifies media state. Use it before harvest on the default server and after every server/source switch when a player surface exists.
-- `interact`: exact fallback for overlays, tabs, server/source switches, JS-only Play/Watch controls, or dropdowns.
+- `interact`: exact fallback for overlays, tabs, server/source switches, JS-only Play/Watch controls, or dropdowns. When `inspect_hosting.popups[]` returns `close_selector` or `close_xpath`, click that close handle before player activation if it overlaps or visually blocks the player.
 - `harvest`: stream/network collection. Run it after initial activation and after each meaningful server/source switch.
 
 Do not repeat `inspect_hosting` or another broad read in the same page state. A meaningful state change is navigation, overlay dismissal, play activation, server/source switch, iframe replacement, load-more/reveal, or blocker clearance.
@@ -65,6 +65,13 @@ Channel/source accuracy:
 - Generic source labels are not channel names: server/source/quality/language/live/HD labels, flags, and short codes describe a source unless a logo/player bug/broadcast label proves channel identity.
 - Set `detected_channel` only when visible player evidence, screenshot/OCR text, page label near the player, or a broadcaster logo/bug supports it.
 - If landing gave a channel/title/status/time/team hint, treat it as context only and verify or override it from hosting evidence.
+
+Multilingual server/source detection:
+- Infer server switches from structure and role, not English words. Rows, cards, tabs, buttons, links, dropdown options, list items, or panels can all be sources.
+- Treat repeated provider groups and source rows as a frontier even when labels are generic or multilingual: `Stream 1`, `Stream 2`, `Server HD`, `HD`, `SD`, `FHD`, `Option 1`, `Link 1`, `Source A`, `Mirror`, `Backup`, language/flag rows, audio tracks, captions, and equivalent labels in any language/script.
+- Examples of source semantics include server/source/stream/mirror/backup/option/link/player/channel/quality/audio/language/caption labels, plus Spanish/French/Portuguese/Arabic equivalents such as servidor, fuente, canal, lien, fonte, opção, idioma, audio, سيرفر, مصدر, جودة, قناة, رابط, لينك, لغة. These are examples only; do not hardcode to them.
+- A source can be displayed as a card group with a provider header and count badge, such as one provider card containing multiple `Stream 1..N` rows and language/viewer metadata. Enumerate all rows in all visible provider groups before deciding the page has no more servers.
+- Preserve `label` as the visible row/group label plus useful metadata, for example `Admin / Stream 1 / HD / English`.
 
 Bad redirect handling:
 - Ad networks, fake download pages, social/app-store pages, unrelated provider homepages, news/article detours, and popups are drift.
@@ -94,15 +101,42 @@ Build a compact frontier from visible and tool evidence:
 - language/audio/caption/flag choices
 - iframe/player handoff URLs
 - Play/Watch/Start/reveal controls
+- repeated source cards, provider groups, row lists, table rows, badges, quality chips, language labels, and viewer-count rows
+
+Full server crawl loop:
+- Build `server_frontier[]` before the first risky click whenever the page shows a source list or the landing handoff includes server/source hints. Each entry should keep `source_group`, visible row `label`, `source_index`, quality, language/flag text, viewer/count text, `href`/selector/xpath, current marker, route pattern, and whether it came from landing handoff, inspect, screenshot, or a scoped detail read.
+- Landing handoff data is efficiency context: use assigned title/team/channel/time, `route_source`, `redirect_chain`, `screenshot_url`, `visual_evidence`, candidate pattern data, and any inline server/source hints to anchor same-content checks and find the likely server list quickly. Re-check all hints on the current hosting page before trusting them.
+- Event-page hierarchy rule: a hosting URL can be the event shell while its servers are same-event child routes. If `inspect_hosting.event_server_routes[]`, content links, or scoped detail shows links that keep the same event slug/title but add provider/index segments, treat them as server sources, not new matches. Example shape only: `/watch/<event>/<provider>/<number>`. Use `navigate` for each real same-event route, then popup removal -> activation/play -> post-activation screenshot -> harvest.
+- When the assigned URL already includes a provider/index child route, still inspect the page's available stream list and recover the sibling same-event routes from `event_server_routes[]`, source rows below/above the player, the current marker, or the base event URL when it is provided by handoff/recovery context.
+- If a visible badge says `3 of 3 sources`, `2 streams`, `5 streams`, or an equivalent count in another language, use that as the expected frontier size for that provider/section and reconcile it with attempted sources.
+- Process the frontier as a queue. The current marker source still must be activated, screenshotted, harvested, and recorded; unchecked sibling sources must be opened next.
+- Do not stop after first successful server. Continue until every visible/count-backed same-content source is checked, budget is near exhaustion, or a concrete blocker/drift reason is recorded for the remaining frontier.
+- After a server switch opens a route or replaces the page, return to `mainUrl` or last reliable server-list URL/state before taking the next frontier item unless the source list remains visible below/around the player.
+- Preserve route patterns when they are visible or inferable from same-content source URLs, but never generate unvisited server URLs from a pattern. URL patterns only help you recognize sibling server routes and recover to the list.
+- Store every attempted source as one `servers[]` entry with the best available `label`, `source_group`, `source_index`, `source_url`, `route_pattern`, `current_marker`, `screenshot_url`, activation/play state, streams or embedded handoff, and skip/failure reason.
 
 Process section by section inside the player area:
-1. Record all distinct controls before risky navigation.
-2. Try the default source first.
-3. Activate the player with `play_media` or an exact Play/Watch/Start/overlay click.
-4. Verify a played-state screenshot/media state: actual frames/progress, playing state, or a clear loading/paused player after a real activation attempt.
-5. Take or preserve `screenshot_url` for the activated player state before harvesting.
-6. Run `harvest`.
-7. Switch to the next distinct server/source/language and repeat the same activation -> played-state screenshot -> harvest sequence.
+1. Record all distinct controls before risky navigation. Include `control_groups`, `top_server_controls`, repeated cards/rows from `get_page_context`, and scoped details from the main source list.
+2. Build the server frontier from every visible provider group and source row, not just buttons. Count visible badges such as `3 of 3 sources`, `2 streams`, `5 streams`, or language/quality rows and reconcile them with the number of source attempts.
+3. Remove any popup/modal/overlay blocking the player view.
+4. Activate the player with `play_media` or an exact Play/Watch/Start/overlay click.
+5. Verify a played-state screenshot/media state: actual frames/progress, playing state, or a clear loading/paused player after a real activation attempt.
+6. Take or preserve `screenshot_url` for the activated player state before harvesting.
+7. Run `harvest`.
+8. Switch to the next distinct server/source/language and repeat the same popup removal -> activation -> played-state screenshot -> harvest sequence.
+
+Source enumeration rule:
+- If the screenshot or text says a source count, such as `3 of 3 sources`, `2 streams`, `5 streams`, or a language/source count in another language, try to enumerate that many same-content source rows unless blocked.
+- Do not stop at the first working source when sibling sources are visible. Try each distinct source row/control until all visible same-content source options are checked, budget is near exhaustion, or a concrete blocker is recorded.
+- If `inspect_hosting` misses visually obvious source rows, use `get_page_context` or `get_element_detail` scoped to the visible source/provider container. Use `query_elements` only with a scoped selector/xpath or text/href predicate for the source rows.
+- If a source row is a normal link or route, use `navigate` only when the destination clearly remains the same assigned event/channel/player. If it is JS-only or in-place, use `interact`.
+- After a navigation-based source switch, compare title/teams/channel/time and screenshot to the assigned content. If it changed to another match/channel, recover to `mainUrl` or last reliable source URL and mark that source skipped for drift.
+
+Popup removal rule:
+- Treat `popups[]`, `blockers.popups`, visible modals, overlays, cookie/consent banners, floating ads, and full-player click shields as blockers when they cover the player, steal clicks, or obscure the screenshot.
+- Prefer `close_selector` or `close_xpath` from inspect output. If absent, use an exact close/dismiss/continue/accept/skip control inside the popup. If no close control exists, try one safe outside-click or Escape only when it does not risk leaving the assigned player.
+- After closing, verify the popup is gone or no longer blocks the player with the returned screenshot or a `screenshot` call. If it remains, try one alternate visible close control, then record `down_reason: "player_blocked_by_popup"` if the player still cannot be activated.
+- Do not harvest or take final played-video evidence while a popup visibly covers the player unless the popup is impossible to remove and you record blocker evidence.
 
 Mandatory activation proof:
 - For the default server and every server/source switch, attempt to play the player before harvest when a player surface exists.
@@ -119,10 +153,10 @@ Server-only navigation rule:
 - Do not re-run landing discovery from a hosting page. The only downstream handoff is an explicit embedded/player URL from the current hosting page.
 
 After every Play/Watch/Start/overlay click, do a post-click server/source check. Read returned `observed_change`, URL/nav data, screenshot, frame hints, and media state. Do not call a Play/Watch overlay failed until you check whether it revealed server/source controls, iframe URLs, nested player frames, or network stream requests.
-After every server/source switch, treat the switched player as a fresh source: dismiss covering overlays, activate/play, verify screenshot/media state, then harvest. Do not reuse the previous server's played screenshot as evidence for the new server.
+After every server/source switch, treat the switched player as a fresh source: remove covering popups/overlays, activate/play, verify screenshot/media state, then harvest. Do not reuse the previous server's played screenshot as evidence for the new server.
 
 Activation strategy ladder:
-1. Dismiss a visible popup/modal/overlay that covers the player or steals clicks, then verify with screenshot/media state.
+1. Remove a visible popup/modal/overlay that covers the player or steals clicks using `close_selector`, `close_xpath`, or exact close/dismiss text, then verify with screenshot/media state.
 2. `play_media` on the best player/frame target.
 3. Click visible Play/Watch/Start with exact selector/text/xpath when it belongs to the assigned player.
 4. Inspect the scoped player/server region with `get_element_detail` or `get_frame_tree`.
@@ -193,6 +227,11 @@ Output raw JSON only. No prose. No markdown fences.
   "servers": [
     {
       "label": "default",
+      "source_group": "",
+      "source_index": 0,
+      "source_url": null,
+      "route_pattern": "",
+      "current_marker": false,
       "server_up": true,
       "screenshot_url": "https://...",
       "embedded_url": null,

@@ -36,10 +36,14 @@ _AGENT_CONTRACT = """\
 - crawl visible JS-driven player/server/source/language controls before falling back to URL-only evidence
 - preserve source language labels when they are shown as flags, country emoji, audio labels, captions, or short codes
 - work across any language or script; verify channel/source labels from player evidence instead of English-only terms
+- detect source/server switches from multilingual rows, cards, provider groups, dropdown options, quality chips, language labels, and repeated stream/link/option patterns, not only English server buttons
+- build a server_frontier from landing handoff hints plus visible provider groups/source rows, then open, activate/play, screenshot, harvest, and record every same-content source; do not stop after the first successful server
+- treat same-event child routes such as provider/index watch URLs as server sources for the current event, using navigate for each real route and rejecting other event slugs
+- preserve source_group, source_index, source_url, route_pattern, and current_marker for every attempted source when visible or inferable
 - activate/play the default player and every switched server before harvest, capture the post-activation screenshot, then harvest that server
 - treat ad redirects, news/article detours, fake downloads, and unrelated provider pages as drift, then recover once
 - after every Play/Watch overlay click, check whether server/source controls or iframe/player evidence loaded before failing
-- dismiss popups/modals/overlays that cover the assigned player before declaring the server failed
+- remove popups/modals/overlays that cover the assigned player using inspect popup close selectors/xpaths or exact close controls before activation, screenshots, harvest, or failure
 - switch only same-content server/source controls; never navigate to other matches, channels, listings, articles, or homepages
 - if playback does not start, try distinct activation strategies instead of repeating the same click
 - if playback fails or no streams are recovered, return an embedded fallback only when the current hosting page exposes an explicit iframe src or embedded/player URL; otherwise stop with failure evidence and no fabricated next target
@@ -554,6 +558,24 @@ def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any
 
     return {
         "label": label,
+        "source_group": str(
+            server.get("source_group")
+            or server.get("provider")
+            or server.get("group")
+            or server.get("server_group")
+            or ""
+        ).strip(),
+        "source_index": _safe_int(
+            server.get("source_index") if server.get("source_index") is not None else index,
+            index,
+        ),
+        "source_url": str(
+            server.get("source_url") or server.get("url") or server.get("href") or ""
+        ).strip(),
+        "route_pattern": str(server.get("route_pattern") or server.get("pattern") or "").strip(),
+        "current_marker": bool(
+            server.get("current_marker") or server.get("is_current") or server.get("current")
+        ),
         "server_up": server_up,
         "screenshot_url": str(server.get("screenshot_url") or "").strip(),
         "embedded_url": embedded_url,
@@ -848,6 +870,15 @@ def _build_server_results(servers: list[dict[str, Any]]) -> list[ServerResult]:
         result.append(
             ServerResult(
                 label=str(server.get("label") or "default"),
+                source_group=str(server.get("source_group") or "") or None,
+                source_index=(
+                    _safe_int(server.get("source_index"), 0)
+                    if server.get("source_index") is not None
+                    else None
+                ),
+                source_url=str(server.get("source_url") or "") or None,
+                route_pattern=str(server.get("route_pattern") or "") or None,
+                current_marker=bool(server.get("current_marker")),
                 server_up=bool(server.get("server_up")),
                 m3u8_urls=_normalize_url_list(server.get("m3u8_urls")),
                 mpd_urls=_normalize_url_list(server.get("mpd_urls")),

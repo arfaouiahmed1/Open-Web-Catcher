@@ -429,6 +429,29 @@ def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[st
         page_dict["visual_evidence"] = [
             _clean_optional_text(item) for item in page_dict["visual_evidence"] if item
         ]
+        if not isinstance(page_dict.get("server_hints"), list):
+            page_dict["server_hints"] = page_dict.get("servers", [])
+        page_dict["server_hints"] = [
+            {
+                "label": _clean_optional_text(
+                    item.get("label") or item.get("text") or item.get("name")
+                ),
+                "source_group": _clean_optional_text(
+                    item.get("source_group") or item.get("provider") or item.get("group")
+                ),
+                "source_index": item.get("source_index"),
+                "source_url": _clean_optional_text(
+                    item.get("source_url") or item.get("url") or item.get("href")
+                ),
+                "selector": _clean_optional_text(item.get("selector")),
+                "xpath": _clean_optional_text(item.get("xpath")),
+                "route_pattern": _clean_optional_text(
+                    item.get("route_pattern") or item.get("pattern")
+                ),
+            }
+            for item in page_dict["server_hints"]
+            if isinstance(item, dict)
+        ]
         page_dict.setdefault("confidence", 85)
         page_dict.setdefault("route", "stream_extractor")
         if str(page_dict.get("route") or "").strip().lower() == "embed_agent":
@@ -526,6 +549,7 @@ def _augment_landing_output(
                 "with screenshot/player evidence"
             ),
             "servers": [],
+            "server_hints": [],
             "iframes": [],
             "video_srcs": [],
             "player_urls": [],

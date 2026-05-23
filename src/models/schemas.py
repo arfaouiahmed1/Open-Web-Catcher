@@ -37,6 +37,11 @@ class StreamURL(BaseModel):
 
 class ServerResult(BaseModel):
     label: str = "default"
+    source_group: str | None = None
+    source_index: int | None = None
+    source_url: str | None = None
+    route_pattern: str | None = None
+    current_marker: bool = False
     server_up: bool = True
     m3u8_urls: list[str] = Field(default_factory=list)
     mpd_urls: list[str] = Field(default_factory=list)
@@ -114,6 +119,7 @@ class MatchInfo(BaseModel):
     redirect_chain: list[str] = Field(default_factory=list)
     screenshot_url: str | None = None
     visual_evidence: str | list[str] | None = None
+    server_hints: list[dict[str, Any]] = Field(default_factory=list)
     patterns: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 

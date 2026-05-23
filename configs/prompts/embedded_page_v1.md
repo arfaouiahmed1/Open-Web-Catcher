@@ -40,7 +40,7 @@ Curiosity guardrail:
 - A working-player verdict and a stream-discovery verdict are separate.
 - Do not discard URLs only because the player did not play.
 - Stop early only for unavailable content, persistent blocker, unrelated drift that cannot be recovered once, or exhausted visible source/server paths.
-- Popups that cover the player are not final failure evidence. Dismiss or close the covering popup/overlay once, verify with screenshot or media state, then continue the same assigned player/source path.
+- Popups that cover the player are not final failure evidence. Remove the covering popup/overlay before activation whenever a close/dismiss control is visible. Use `popups[].close_selector`, `popups[].close_xpath`, or an exact visible close/dismiss/continue control with `interact(click)`, verify the player view is unobstructed with screenshot/media state, then continue the same assigned player/source path.
 
 ## Broad Then Scoped Tool Policy
 
@@ -51,7 +51,7 @@ Curiosity guardrail:
 - `query_elements`: precision search only. Use it with a real predicate or scope such as `text_regex`, `href_regex`, `attr_name`, `scope_element_ref`, `scope_selector`, or `scope_xpath`. Do not call broad kind/limit discovery.
 - `screenshot`: required visual proof after activation when the activating tool did not return a screenshot of the played/playing state.
 - `play_media`: first activation attempt for real player surfaces because it is frame-aware and verifies media state. Use it before harvest on the default source and after every source/server switch when a player surface exists.
-- `interact`: exact fallback for overlays, source/server tabs, JS-only Play controls, dropdowns, or source switches.
+- `interact`: exact fallback for overlays, source/server tabs, JS-only Play controls, dropdowns, or source switches. When `inspect_embedded.popups[]` returns `close_selector` or `close_xpath`, click that close handle before player activation if it overlaps or visually blocks the player.
 - `harvest`: stream/network collection. Run it after initial activation and after each meaningful source/server switch.
 
 Do not repeat `inspect_embedded` in the same page state. A meaningful state change is overlay dismissal, play activation, source/server switch, iframe/frame replacement, navigation within the same player, or blocker clearance.
@@ -92,14 +92,28 @@ Build a compact frontier from visible and tool evidence:
 - nested player frames
 - Play/Watch/Start/reveal controls
 
+Embedded server/source loop:
+- Embedded pages are usually a single source, but keep the player open to more evidence: if server/source controls are present under or inside the iframe, player shell, nested frame, menu, language selector, or post-click overlay, crawl them instead of stopping after the default source.
+- Build `server_frontier[]` with `source_group`, visible label, `source_index`, quality, language/flag text, selector/xpath/href, current marker, and route pattern when visible.
+- A source switch may be in-frame JavaScript, iframe replacement, dropdown selection, or same-player source navigation. Use `interact` for in-place controls and `navigate` only for same-player source navigation that keeps the assigned content in focus.
+- Do not stop after the first successful embedded source when sibling source controls are visible. For each source, remove popups, activate/play, capture post-activation screenshot/media state, harvest, then move to the next source.
+- If the source switch route drifts into another match/channel/listing/provider shell, recover once to `embedded_url` or the last reliable same-player URL and mark that source skipped. Embedded has no fallback to landing/hosting discovery.
+
 Process sources inside the assigned player:
 1. Record distinct controls before risky clicks.
 2. Try the default source first.
-3. Activate the player with `play_media` or an exact Play/Watch/Start/overlay click.
-4. Verify a played-state screenshot/media state: actual frames/progress, playing state, or a clear loading/paused player after a real activation attempt.
-5. Take or preserve `screenshot_url` for the activated player state before harvesting.
-6. Run `harvest`.
-7. Switch to the next distinct source/server/language and repeat the same activation -> played-state screenshot -> harvest sequence.
+3. Remove any popup/modal/overlay blocking the player view.
+4. Activate the player with `play_media` or an exact Play/Watch/Start/overlay click.
+5. Verify a played-state screenshot/media state: actual frames/progress, playing state, or a clear loading/paused player after a real activation attempt.
+6. Take or preserve `screenshot_url` for the activated player state before harvesting.
+7. Run `harvest`.
+8. Switch to the next distinct source/server/language and repeat the same popup removal -> activation -> played-state screenshot -> harvest sequence.
+
+Popup removal rule:
+- Treat `popups[]`, `blockers.popups`, visible modals, overlays, cookie/consent banners, floating ads, and full-player click shields as blockers when they cover the player, steal clicks, or obscure the screenshot.
+- Prefer `close_selector` or `close_xpath` from inspect output. If absent, use an exact close/dismiss/continue/accept/skip control inside the popup. If no close control exists, try one safe outside-click or Escape only when it does not risk leaving the assigned player.
+- After closing, verify the popup is gone or no longer blocks the player with the returned screenshot or a `screenshot` call. If it remains, try one alternate visible close control, then record `down_reason: "player_blocked_by_popup"` if the player still cannot be activated.
+- Do not harvest or take final played-video evidence while a popup visibly covers the player unless the popup is impossible to remove and you record blocker evidence.
 
 Mandatory activation proof:
 - For the default source and every source/server switch, attempt to play the player before harvest when a player surface exists.
@@ -116,7 +130,7 @@ Server-only navigation rule:
 - Embedded has no downstream fallback. Extract streams or return blocker/failure evidence from this assigned player.
 
 Activation strategy ladder:
-1. Dismiss a visible popup/modal/overlay that covers the player or steals clicks, then verify with screenshot/media state.
+1. Remove a visible popup/modal/overlay that covers the player or steals clicks using `close_selector`, `close_xpath`, or exact close/dismiss text, then verify with screenshot/media state.
 2. `play_media` on the best player/frame target.
 3. Click visible Play/Watch/Start with exact selector/text/xpath when it belongs to the assigned player.
 4. Inspect the scoped player/source region with `get_element_detail` or `get_frame_tree`.
@@ -126,7 +140,7 @@ Activation strategy ladder:
 Max 2 distinct activation attempts per source before harvest and decision. Change tactic after a failed attempt; do not repeat the same click.
 
 If a click reveals new source controls, treat that as a new state, scope-read the player/source region once, then continue switching through the expanded set.
-After every source/server switch, treat the switched player as a fresh source: dismiss covering overlays, activate/play, verify screenshot/media state, then harvest. Do not reuse the previous source's played screenshot as evidence for the new source.
+After every source/server switch, treat the switched player as a fresh source: remove covering popups/overlays, activate/play, verify screenshot/media state, then harvest. Do not reuse the previous source's played screenshot as evidence for the new source.
 
 ## Harvest And Protocol Rules
 
@@ -179,7 +193,12 @@ Output raw JSON only. No prose. No markdown fences.
   "servers": [
     {
       "label": "default",
+      "source_group": "",
+      "source_index": 0,
       "url": null,
+      "source_url": null,
+      "route_pattern": "",
+      "current_marker": false,
       "screenshot_url": "https://...",
       "embedded_url": null,
       "embedded_url_source": null,

@@ -63,6 +63,7 @@ class HandoffContext(TypedDict, total=False):
     candidate_channel_candidates: list[str]
     landing_screenshot_url: str
     landing_visual_evidence: str
+    landing_server_hints: list[dict[str, Any]]
     landing_route: str
     landing_route_source: str
     landing_redirect_chain: list[str]
@@ -192,6 +193,22 @@ def render_handoff(ctx: HandoffContext) -> str:
         lines.append(
             f"- landing visual evidence: {_truncate(landing_visual_evidence, max_chars=240)}"
         )
+
+    landing_server_hints = ctx.get("landing_server_hints")
+    if landing_server_hints:
+        hint_lines: list[str] = []
+        for item in landing_server_hints[:8]:
+            if not isinstance(item, dict):
+                continue
+            label = _truncate(str(item.get("label") or item.get("text") or ""), max_chars=80)
+            source_group = _truncate(str(item.get("source_group") or item.get("provider") or ""), max_chars=60)
+            source_url = _truncate(str(item.get("source_url") or item.get("url") or item.get("href") or ""), max_chars=160)
+            selector = _truncate(str(item.get("selector") or item.get("xpath") or ""), max_chars=120)
+            parts = [part for part in (source_group, label, source_url, selector) if part]
+            if parts:
+                hint_lines.append(" / ".join(parts))
+        if hint_lines:
+            lines.append(f"- landing server/source hints: {'; '.join(hint_lines)}")
 
     landing_route = ctx.get("landing_route")
     if landing_route:
@@ -561,6 +578,7 @@ def _add_match_handoff_context(ctx: HandoffContext, match: MatchInfo) -> None:
     ]
     ctx["landing_screenshot_url"] = match.screenshot_url or ""
     ctx["landing_visual_evidence"] = _format_visual_evidence(match.visual_evidence)
+    ctx["landing_server_hints"] = match.server_hints or []
     ctx["landing_route"] = match.route or ""
     ctx["landing_route_source"] = match.route_source or ""
     ctx["landing_redirect_chain"] = match.redirect_chain or []
@@ -648,7 +666,7 @@ def _build_hosting_handoff(
         "route_source": "landing/hosting routing contract: hosting-first for site watch pages",
         "navigation_policy": _SAME_CONTENT_NAVIGATION_POLICY,
         "required_evidence": _HOSTING_EVIDENCE_CHECKLIST,
-        "focus": "stay on the assigned hosting content, activate the player, handle blockers/ads/server switches, extract direct m3u8/mpd/mp4 when possible, and return embedded handoff only for explicit embedded/player URLs",
+        "focus": "stay on the assigned hosting content, treat an event page with multiple same-event stream routes as a hosting mini-listing, build the same-event server frontier, activate the player for each source, handle blockers/ads/server switches, extract direct m3u8/mpd/mp4 when possible, and return embedded handoff only for explicit embedded/player URLs",
         "memory_hints": memory_hint_text,
     }
     if pattern_context:

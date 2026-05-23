@@ -110,6 +110,33 @@ def test_landing_normalizer_preserves_visual_handoff_evidence() -> None:
     assert pages[0]["iframes"] == ["https://embed.example.com/player/1"]
 
 
+def test_landing_normalizer_preserves_server_hints_for_hosting() -> None:
+    pages = _normalize_hosting_pages(
+        [
+            {
+                "url": "https://streamed.example/watch/game-1",
+                "server_hints": [
+                    {
+                        "label": "Admin Stream 1",
+                        "source_group": "Admin",
+                        "source_index": 1,
+                        "source_url": "https://streamed.example/watch/game-1/admin/1",
+                        "selector": ".admin a:nth-child(1)",
+                        "xpath": "//section[1]//a[1]",
+                        "route_pattern": "/watch/game-1/{provider}/{n}",
+                    }
+                ],
+            }
+        ],
+        source_url="https://streamed.example/",
+    )
+
+    assert pages[0]["server_hints"][0]["label"] == "Admin Stream 1"
+    assert pages[0]["server_hints"][0]["source_group"] == "Admin"
+    assert pages[0]["server_hints"][0]["source_url"] == "https://streamed.example/watch/game-1/admin/1"
+    assert pages[0]["server_hints"][0]["route_pattern"] == "/watch/game-1/{provider}/{n}"
+
+
 def test_short_memory_saves_match_records_from_landing_tool_payload() -> None:
     memory = ShortTermMemory(page_type="landing_page")
     memory.ingest_tool_result(
@@ -426,6 +453,31 @@ def test_hosting_normalizer_preserves_paused_tokenized_protocol_details() -> Non
     assert server["protocol_details"][0]["tokenized"] is True
 
 
+def test_hosting_normalizer_preserves_source_frontier_metadata() -> None:
+    output = _normalize_hosting_output(
+        {
+            "servers": [
+                {
+                    "label": "Admin / Stream 1 / HD / English",
+                    "source_group": "Admin",
+                    "source_index": 2,
+                    "source_url": "https://watch.example.com/game/admin-1",
+                    "route_pattern": "/game/{provider}-{n}",
+                    "current_marker": True,
+                    "status": "failed",
+                }
+            ]
+        }
+    )
+
+    server = output["servers"][0]
+    assert server["source_group"] == "Admin"
+    assert server["source_index"] == 2
+    assert server["source_url"] == "https://watch.example.com/game/admin-1"
+    assert server["route_pattern"] == "/game/{provider}-{n}"
+    assert server["current_marker"] is True
+
+
 def test_embedded_normalizer_infers_protocol_details_from_stream_objects() -> None:
     output = _normalize_embedded_output(
         {
@@ -451,3 +503,28 @@ def test_embedded_normalizer_infers_protocol_details_from_stream_objects() -> No
     assert server["protocol_details"][0]["protocol"] == "dash"
     assert server["protocol_details"][0]["role"] == "manifest"
     assert server["protocol_details"][0]["tokenized"] is True
+
+
+def test_embedded_normalizer_preserves_source_frontier_metadata() -> None:
+    output = _normalize_embedded_output(
+        {
+            "servers": [
+                {
+                    "label": "Source 2 / Spanish",
+                    "source_group": "player menu",
+                    "source_index": 1,
+                    "source_url": "https://embed.example.com/player?source=2",
+                    "route_pattern": "?source={n}",
+                    "current_marker": False,
+                    "status": "failed",
+                }
+            ]
+        }
+    )
+
+    server = output["servers"][0]
+    assert server["source_group"] == "player menu"
+    assert server["source_index"] == 1
+    assert server["source_url"] == "https://embed.example.com/player?source=2"
+    assert server["route_pattern"] == "?source={n}"
+    assert server["current_marker"] is False

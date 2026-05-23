@@ -19,6 +19,14 @@ Browser assumption: Puppeteer only.
 
 Never brute-force blocked pages. If access is challenged or blocked, make one focused clearance attempt when a visible verification control is present, otherwise wait once for challenge clearance. If useful evidence is still unavailable, classify as `other` and report the blocker.
 
+Popup-first rule:
+- If the screenshot is dominated by a modal, popup, overlay, cookie/consent wall, Discord/bookmark prompt, age gate, “welcome” panel, or similar blocker, do not classify the popup itself as the page.
+- Use one targeted `interact(click)` on the safest same-page dismissal control before deciding: `Continue`, `Already a member, continue`, `Close`, `X`, `Skip`, `Accept`, `Agree`, `OK`, or a close handle from `popups[].close_selector` / `popups[].close_xpath`.
+- Avoid external/action buttons that leave the site or open apps/social pages, such as Join Discord, Bookmark, Download, Subscribe, Telegram, app-store, or ad buttons, unless they are the only verified same-page clearance control.
+- After the dismissal click, read the returned screenshot/observed_change. If the popup closed or the underlying page is now visible, classify that underlying page state.
+- If the dismissal opens an unrelated external page or ad, recover to the last reliable same-site page when possible and classify from that last reliable state.
+- If the popup cannot be cleared in one focused attempt, classify from the limited underlying evidence only when enough is visible; otherwise classify `other` and record the popup blocker.
+
 ## Investigation Loop
 
 Classify like an evidence-driven ReAct agent:
@@ -45,9 +53,11 @@ Click-to-play and redirect handling:
 - If a visible control such as Continue, Play, Watch, Live TV, or Start Stream may reveal the real watch/player state, use one targeted `interact` or `navigate` when it can resolve the classification.
 - After the action, classify the last reliable page state: same-site watch/player shell -> `host_page`; direct third-party player/embed URL with minimal chrome -> `embed_video_page`; listing/menu state -> `landing_page`; unrelated ad/provider detour -> anomaly recovery or `other`.
 - Dismiss a cookie banner only when it blocks evidence or controls, then verify from the screenshot/tool output.
+- For modal prompts like “Welcome”, “Join our Discord”, “Bookmark me”, or “Already a member, continue”, prefer the continue/close path that reveals the page over the promotional buttons.
 
 General anomaly handling:
 - Challenge or Cloudflare-style verification: try one visible checkbox/button interaction or one challenge wait, then stop if still blocked.
+- Promotional popups and welcome modals: try one safe same-page dismissal, then classify the revealed page. Record the popup in `ANOMALIES` but do not let it dominate page type when the underlying page is visible after dismissal.
 - Site unavailable, timeout, DNS/browser error, or 5xx page: classify as `other` with the exact access anomaly.
 - News article, blog post, legal/account page, or unrelated content: classify as `other` after confirming it lacks watch/list/player structure.
 - Ad redirect or off-target provider page: treat as anomaly, recover once if a back/original URL path is obvious, otherwise classify based on the last reliable page state.

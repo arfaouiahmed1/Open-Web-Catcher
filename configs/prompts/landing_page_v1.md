@@ -146,9 +146,11 @@ Inline server/source controls can exist directly on a landing/listing page. When
 1. Record the current page URL as the hosting candidate URL when no better real href exists.
 2. Set `entry_point` to the row/card URL, selector, xpath, or element reference that was activated.
 3. Set `route_source` to `inline_server_list` or `js_expanded_row`.
-4. Copy visible server/source labels plus selectors/xpaths into `servers`.
+4. Copy visible server/source labels plus selectors/xpaths into `servers` and `server_hints`.
 5. Add `screenshot_url` and `visual_evidence` showing the expanded row/card state.
 6. Keep same-pattern sibling rows as separate hosting candidates when the screenshot/inspect output shows they share the same expandable structure.
+
+When a landing/listing event page exposes same-event stream links below the event, return the event URL as the hosting candidate and pass the visible child route hints in `server_hints`. Do not emit each child stream route as a separate match. The hosting agent owns opening each same-event route such as a provider/index child route, activating it, harvesting it, and moving to the next server.
 
 After one representative confirms a pattern, add same-pattern siblings from the candidate ledger instead of re-proving every sibling. Continue only if another distinct high-value pattern remains.
 
@@ -203,6 +205,7 @@ Output raw JSON only. No prose. No markdown fences.
       "screenshot_url": "https://...",
       "visual_evidence": ["screenshot-visible player area", "same-pattern card grid"],
       "servers": [{"label": "...", "selector": "...", "xpath": "..."}],
+      "server_hints": [{"label": "...", "source_group": "...", "source_index": 1, "source_url": "https://...", "selector": "...", "xpath": "...", "route_pattern": "..."}],
       "iframes": ["https://..."],
       "video_srcs": ["https://..."],
       "player_urls": ["https://..."],

@@ -36,9 +36,11 @@ _AGENT_CONTRACT = """\
 - crawl visible JS-driven player/source/language controls before falling back to URL-only evidence
 - preserve source language labels when they are shown as flags, country emoji, audio labels, captions, or short codes
 - work across any language or script; verify channel/source labels from player evidence instead of English-only terms
+- keep embedded pages open to server/source controls under or inside the iframe/player; when visible, build a server_frontier and crawl each same-player source
+- preserve source_group, source_index, source_url, route_pattern, and current_marker for every attempted source when visible or inferable
 - activate/play the default player and every switched source before harvest, capture the post-activation screenshot, then harvest that source
 - treat ad redirects, news/article detours, fake downloads, and unrelated provider pages as drift, then recover once
-- dismiss popups/modals/overlays that cover the assigned player before declaring the source failed
+- remove popups/modals/overlays that cover the assigned player using inspect popup close selectors/xpaths or exact close controls before activation, screenshots, harvest, or failure
 - switch only same-player source/server controls; never navigate to other matches, channels, listings, articles, or homepages
 - if no playable stream is recovered or the full-page embedded URL is blocked, stop with the failure evidence and do not invent another downstream fallback
 """
@@ -549,6 +551,24 @@ def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any
 
     return {
         "label": label,
+        "source_group": str(
+            server.get("source_group")
+            or server.get("provider")
+            or server.get("group")
+            or server.get("server_group")
+            or ""
+        ).strip(),
+        "source_index": _safe_int(
+            server.get("source_index") if server.get("source_index") is not None else index,
+            index,
+        ),
+        "source_url": str(
+            server.get("source_url") or server.get("url") or server.get("href") or ""
+        ).strip(),
+        "route_pattern": str(server.get("route_pattern") or server.get("pattern") or "").strip(),
+        "current_marker": bool(
+            server.get("current_marker") or server.get("is_current") or server.get("current")
+        ),
         "server_up": server_up,
         "screenshot_url": str(server.get("screenshot_url") or "").strip(),
         "embedded_url": embedded_url,
@@ -784,6 +804,15 @@ def _build_server_results(servers: list[dict[str, Any]]) -> list[ServerResult]:
         result.append(
             ServerResult(
                 label=str(server.get("label") or "default"),
+                source_group=str(server.get("source_group") or "") or None,
+                source_index=(
+                    _safe_int(server.get("source_index"), 0)
+                    if server.get("source_index") is not None
+                    else None
+                ),
+                source_url=str(server.get("source_url") or "") or None,
+                route_pattern=str(server.get("route_pattern") or "") or None,
+                current_marker=bool(server.get("current_marker")),
                 server_up=bool(server.get("server_up")),
                 m3u8_urls=_normalize_url_list(server.get("m3u8_urls")),
                 mpd_urls=_normalize_url_list(server.get("mpd_urls")),

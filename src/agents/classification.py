@@ -28,6 +28,8 @@ _AGENT_CONTRACT = """\
 - use live page evidence and tool results before deciding
 - respect the output format defined in the base policy
 - do not attempt downstream extraction in this step
+- when a popup/modal/overlay dominates the screenshot, remove it with the safest same-page continue/close/dismiss control before classifying the underlying page
+- avoid promotional/external popup actions such as Join Discord, Bookmark, Download, Telegram, app-store, or ad buttons unless they are the only verified same-page clearance control
 """
 
 

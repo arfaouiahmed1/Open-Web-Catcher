@@ -203,6 +203,50 @@ def test_hosting_handoff_preserves_landing_match_metadata() -> None:
     assert "dismiss popups/overlays" in handoff
 
 
+def test_hosting_handoff_preserves_landing_server_hints() -> None:
+    handoff = _build_hosting_handoff(
+        {
+            "url": "https://streamed.example",
+            "classification": ClassificationResult(
+                url="https://streamed.example",
+                page_type=PageType.LANDING,
+                confidence=Confidence.HIGH,
+                reasoning="event cards",
+            ),
+            "matches": [
+                MatchInfo(
+                    url="https://streamed.example/watch/bologna-vs-inter-milan-2265406",
+                    title="Bologna vs Inter Milan",
+                    status="live",
+                    route="stream_extractor",
+                    server_hints=[
+                        {
+                            "label": "Admin Stream 1",
+                            "source_group": "Admin",
+                            "source_index": 1,
+                            "source_url": "https://streamed.example/watch/bologna-vs-inter-milan-2265406/admin/1",
+                            "selector": ".provider-admin a:nth-child(1)",
+                        },
+                        {
+                            "label": "Delta Stream 1",
+                            "source_group": "Delta",
+                            "source_index": 1,
+                            "source_url": "https://streamed.example/watch/bologna-vs-inter-milan-2265406/delta/1",
+                        },
+                    ],
+                )
+            ],
+        },
+        target_url="https://streamed.example/watch/bologna-vs-inter-milan-2265406",
+        memory_hint_text="",
+    )
+
+    assert "landing server/source hints:" in handoff
+    assert "Admin / Admin Stream 1 / https://streamed.example/watch/bologna-vs-inter-milan-2265406/admin/1" in handoff
+    assert "Delta / Delta Stream 1 / https://streamed.example/watch/bologna-vs-inter-milan-2265406/delta/1" in handoff
+    assert "hosting mini-listing" in handoff
+
+
 def test_embedded_handoff_preserves_landing_match_metadata_from_hosting_source() -> None:
     handoff = _build_embedded_handoff(
         {

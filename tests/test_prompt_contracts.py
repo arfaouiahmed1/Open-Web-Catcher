@@ -45,6 +45,26 @@ def test_classification_and_orchestrator_prompts_preserve_failure_evidence() -> 
         assert phrase in orchestrator
 
 
+def test_classification_prompt_clears_visible_popups_before_deciding() -> None:
+    classification = _prompt("classification_v1.md")
+
+    for phrase in (
+        "Popup-first rule",
+        "do not classify the popup itself as the page",
+        "Already a member, continue",
+        "popups[].close_selector",
+        "popups[].close_xpath",
+        "Avoid external/action buttons",
+        "Join Discord",
+        "Bookmark",
+        "After the dismissal click",
+        "classify that underlying page state",
+        "Promotional popups and welcome modals",
+        "Record the popup in `ANOMALIES`",
+    ):
+        assert phrase in classification
+
+
 def test_prompts_handle_background_video_and_click_to_play_routing() -> None:
     classification = _prompt("classification_v1.md")
     landing = _prompt("landing_page_v1.md")
@@ -273,7 +293,14 @@ def test_hosting_and_embedded_prompts_dismiss_popups_and_stay_same_content() -> 
     for name, text in (("hosting", hosting), ("embedded", embedded)):
         for phrase in (
             "Popups that cover the player are not final failure evidence",
-            "Dismiss a visible popup/modal/overlay",
+            "Remove a visible popup/modal/overlay",
+            "Popup removal rule",
+            "popups[].close_selector",
+            "popups[].close_xpath",
+            "close_selector",
+            "close_xpath",
+            'down_reason: "player_blocked_by_popup"',
+            "Do not harvest or take final played-video evidence while a popup visibly covers the player",
             "Server-only navigation rule",
             "Do not navigate to another match",
             "If a click opens another match/channel/listing/category/news/homepage",
@@ -307,6 +334,97 @@ def test_hosting_and_embedded_prompts_require_played_screenshot_before_harvest()
     assert "After every server/source switch" in hosting
     assert "For the default source and every source/server switch" in embedded
     assert "After every source/server switch" in embedded
+
+
+def test_hosting_prompt_detects_multilingual_source_rows_and_navigation_switches() -> None:
+    hosting = _prompt("hosting_page_v1.md")
+
+    for phrase in (
+        "Multilingual server/source detection",
+        "Infer server switches from structure and role, not English words",
+        "Rows, cards, tabs, buttons, links, dropdown options",
+        "Stream 1",
+        "Server HD",
+        "Option 1",
+        "Link 1",
+        "servidor",
+        "fuente",
+        "opção",
+        "idioma",
+        "سيرفر",
+        "مصدر",
+        "جودة",
+        "Source enumeration rule",
+        "3 of 3 sources",
+        "2 streams",
+        "5 streams",
+        "Do not stop at the first working source",
+        "If `inspect_hosting` misses visually obvious source rows",
+        "use `navigate` only when the destination clearly remains the same assigned event/channel/player",
+        "If it is JS-only or in-place, use `interact`",
+    ):
+        assert phrase in hosting
+
+
+def test_hosting_prompt_requires_full_server_frontier_crawl() -> None:
+    hosting = _prompt("hosting_page_v1.md")
+
+    for phrase in (
+        "Full server crawl loop",
+        "Build `server_frontier[]` before the first risky click",
+        "landing handoff includes server/source hints",
+        "source_group",
+        "source_index",
+        "source_url",
+        "route_pattern",
+        "current marker",
+        "landing handoff",
+        "Do not stop after first successful server",
+        "return to `mainUrl` or last reliable server-list URL/state",
+        "Preserve route patterns",
+        "never generate unvisited server URLs from a pattern",
+        "Store every attempted source as one `servers[]` entry",
+        "Event-page hierarchy rule",
+        "`inspect_hosting.event_server_routes[]`",
+        "same event slug/title",
+        "/watch/<event>/<provider>/<number>",
+        "When the assigned URL already includes a provider/index child route",
+    ):
+        assert phrase in hosting
+
+
+def test_landing_prompt_passes_event_server_hints_to_hosting() -> None:
+    landing = _prompt("landing_page_v1.md")
+
+    for phrase in (
+        "server_hints",
+        "return the event URL as the hosting candidate",
+        "same-event stream links",
+        "Do not emit each child stream route as a separate match",
+        "The hosting agent owns opening each same-event route",
+        '"source_group"',
+        '"source_index"',
+        '"source_url"',
+        '"route_pattern"',
+    ):
+        assert phrase in landing
+
+
+def test_embedded_prompt_keeps_server_source_loop_open() -> None:
+    embedded = _prompt("embedded_page_v1.md")
+
+    for phrase in (
+        "Embedded server/source loop",
+        "usually a single source",
+        "server/source controls are present under or inside the iframe",
+        "Build `server_frontier[]`",
+        "same-player source navigation",
+        "Do not stop after the first successful embedded source",
+        "remove popups, activate/play, capture post-activation screenshot/media state, harvest",
+        "recover once to `embedded_url` or the last reliable same-player URL",
+        "Embedded has no fallback to landing/hosting discovery",
+    ):
+        assert phrase in embedded
 
 
 def test_landing_prompt_prioritizes_body_and_stays_on_main_domain() -> None:

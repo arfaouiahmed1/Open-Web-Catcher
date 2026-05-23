@@ -232,6 +232,71 @@ function hostingRaw() {
   };
 }
 
+function multilingualHostingRaw() {
+  const controls = [
+    {
+      text: "Admin HD Stream 1 English - Sky Sports Football",
+      selector: ".provider-admin .stream-row:nth-child(1)",
+      xpath: "//section[1]//button[1]",
+      x: 360,
+      y: 345,
+      frame_path: "root",
+      kind: "button",
+      href: "",
+      data: { source: "admin-1" },
+    },
+    {
+      text: "Admin SD Stream 2 English - Sky Sports Football",
+      selector: ".provider-admin .stream-row:nth-child(2)",
+      xpath: "//section[1]//button[2]",
+      x: 360,
+      y: 390,
+      frame_path: "root",
+      kind: "button",
+      href: "",
+      data: { source: "admin-2" },
+    },
+    {
+      text: "Delta Opcion 1 Espanol",
+      selector: ".provider-delta .option-row",
+      xpath: "//section[2]//a[1]",
+      x: 360,
+      y: 530,
+      frame_path: "root",
+      kind: "link",
+      href: "https://streamed.pk/watch/match-1?source=delta",
+      data: { source: "delta" },
+    },
+    {
+      text: "Echo مصدر 1 جودة HD",
+      selector: ".provider-echo .arabic-source",
+      xpath: "//section[3]//button[1]",
+      x: 360,
+      y: 675,
+      frame_path: "root",
+      kind: "button",
+      href: "",
+      data: {},
+    },
+  ];
+
+  return {
+    ...hostingRaw(),
+    title: "Live Hull City vs Middlesbrough Streams",
+    buttons: controls,
+    elements: controls,
+    contentLinks: controls.filter((entry) => entry.kind === "link"),
+    hosting_signals: {
+      has_video: false,
+      has_player_iframe: false,
+      player_iframe_src: null,
+      visible_content_iframes: 0,
+      player_libraries: false,
+      server_tabs: true,
+    },
+  };
+}
+
 function embeddedRaw() {
   const buttons = Array.from({ length: 20 }, (_, index) => ({
     text: index % 2 === 0 ? `Source ${index + 1}` : `Play ${index + 1}`,
@@ -329,6 +394,68 @@ test("hosting summary preserves actionable server controls while compressing", (
   assert.ok(summary.stats.budget_fit);
   assert.ok(summary.stats.compressed_bytes <= 14 * 1024);
   assert.equal(summary.server_controls, undefined);
+});
+
+test("hosting summary detects multilingual stream option rows as server switches", () => {
+  const summary = summarizeHostingInspect(multilingualHostingRaw());
+
+  assert.equal(summary.context_type, "hosting");
+  assert.ok(summary.control_groups.some((group) => group.label === "server_switches"));
+  const texts = summary.top_server_controls.map((item) => item.text).join(" ");
+  assert.match(texts, /Stream 1/);
+  assert.match(texts, /Opcion 1/);
+  assert.match(texts, /مصدر 1/);
+});
+
+test("hosting summary exposes same-event route server links", () => {
+  const raw = {
+    ...hostingRaw(),
+    url: "https://streamed.pk/watch/bologna-vs-inter-milan-2265406",
+    contentLinks: [
+      {
+        text: "Admin Stream 1 HD English - Serie A",
+        href: "https://streamed.pk/watch/bologna-vs-inter-milan-2265406/admin/1",
+        selector: ".provider-admin a:nth-child(1)",
+        xpath: "//section[1]//a[1]",
+      },
+      {
+        text: "Admin Stream 2 SD English - Serie A",
+        href: "https://streamed.pk/watch/bologna-vs-inter-milan-2265406/admin/2",
+        selector: ".provider-admin a:nth-child(2)",
+        xpath: "//section[1]//a[2]",
+      },
+      {
+        text: "Delta Stream 1 HD English",
+        href: "https://streamed.pk/watch/bologna-vs-inter-milan-2265406/delta/1",
+        selector: ".provider-delta a:nth-child(1)",
+        xpath: "//section[2]//a[1]",
+      },
+      {
+        text: "Other match",
+        href: "https://streamed.pk/watch/canadian-grand-prix-sprint-2408154/admin/1",
+        selector: ".other",
+        xpath: "//a[9]",
+      },
+    ],
+  };
+
+  const summary = summarizeHostingInspect(raw);
+
+  assert.equal(summary.event_server_routes.length, 3);
+  assert.deepEqual(
+    summary.event_server_routes.map((route) => route.source_url),
+    [
+      "https://streamed.pk/watch/bologna-vs-inter-milan-2265406/admin/1",
+      "https://streamed.pk/watch/bologna-vs-inter-milan-2265406/admin/2",
+      "https://streamed.pk/watch/bologna-vs-inter-milan-2265406/delta/1",
+    ],
+  );
+  assert.equal(summary.event_server_routes[0].source_group, "admin");
+  assert.equal(summary.event_server_routes[0].source_index, 1);
+  assert.equal(
+    summary.event_server_routes[0].route_pattern,
+    "https://streamed.pk/watch/bologna-vs-inter-milan-2265406/{provider}/{n}",
+  );
 });
 
 test("embedded summary preserves source controls and frame focus groups", () => {

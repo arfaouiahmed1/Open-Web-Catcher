@@ -24,8 +24,10 @@ const NAV_PATTERN =
 const CATEGORY_PATTERN =
   /(\/category\/|basketball|football|soccer|baseball|hockey|tennis|rugby|golf|nba|nhl|mlb|ufc|f1)/i;
 
-const PLAY_PATTERN = /(play|watch|resume|start|stream|server|source|mirror|backup|quality|tap)/i;
-const SERVER_PATTERN = /(server|source|mirror|backup|embed|stream|quality|cdn|audio|sub|caption)/i;
+const PLAY_PATTERN =
+  /(play|watch|resume|start|stream|server|source|mirror|backup|quality|tap|option|opci[oó]n|opcao|op[cç][aã]o|servidor|servidores|canal|canales|canaux|quelle|fonte|fuente|lien|link|enlace|ver|voir|assistir|izle|شاهد|تشغيل|سيرفر|مصدر|قناة|لينك|رابط)/i;
+const SERVER_PATTERN =
+  /(server|source|mirror|backup|embed|stream|quality|cdn|audio|sub|caption|option|opci[oó]n|opcao|op[cç][aã]o|servidor|servidores|servidor[ea]s?|fuente|fuentes|fonte|fontes|canal|canales|canaux|cha[iî]ne|quelle|lien|liens|link|links|enlace|enlaces|player|iframe|hd|sd|fhd|uhd|lang|language|idioma|idiomas|audio|áudio|sonido|voz|subt[ií]tulo|legenda|caption|زبان|لغة|لغات|سيرفر|سيرفرات|مصدر|مصادر|جودة|قناة|قنوات|رابط|روابط|لينك|لينكات)/i;
 const STREAM_URL_PATTERN = /(\.(m3u8|mpd|mp4|m4s|ts)(?:$|[?#])|\/(?:hls|dash|m3u8|mpd|manifest|playlist|tracks[^/]*)\/|(?:^|[?&])(format|type|protocol)=(hls|dash|m3u8|mpd)|(?:^|\/)(master|index|chunklist|playlist|manifest)(?:[.-]|$)|(?:^|\/)mono(?:[.-]|$).*?(token=|expires=))/i;
 const DIRECT_PLAYER_URL_PATTERN = /(embed|player|iframe|\/e\/|\/v\/|\/video\/|\/watch\/|stream)/i;
 
@@ -71,6 +73,67 @@ function looksLikelyDirectPlayerUrl(url) {
   if (!/^https?:\/\//i.test(candidate)) return false;
   if (looksLikelyStreamUrl(candidate)) return false;
   return DIRECT_PLAYER_URL_PATTERN.test(candidate);
+}
+
+function resolveUrlMaybe(url, baseUrl) {
+  const raw = String(url || "").trim();
+  if (!raw) return "";
+  try {
+    return new URL(raw, baseUrl || undefined).toString();
+  } catch {
+    return raw;
+  }
+}
+
+function eventWatchBase(url) {
+  try {
+    const parsed = new URL(url);
+    const match = parsed.pathname.match(/^(\/watch\/[^/?#]+)/i);
+    if (!match) return null;
+    return `${parsed.origin}${match[1]}`;
+  } catch {
+    return null;
+  }
+}
+
+function sameEventServerRoute(candidateUrl, currentUrl) {
+  const base = eventWatchBase(currentUrl);
+  if (!base) return null;
+  const resolved = resolveUrlMaybe(candidateUrl, currentUrl);
+  if (!resolved || !resolved.startsWith(`${base}/`)) return null;
+  try {
+    const basePath = new URL(base).pathname.replace(/\/+$/, "");
+    const candidate = new URL(resolved);
+    const current = new URL(currentUrl);
+    const suffix = candidate.pathname.slice(basePath.length).replace(/^\/+|\/+$/g, "");
+    if (!suffix) return null;
+    const segments = suffix.split("/").filter(Boolean);
+    if (!segments.length) return null;
+    const provider = segments[0] || "";
+    const sourceIndex = /^\d+$/.test(segments[1] || "") ? Number(segments[1]) : null;
+    return {
+      base_url: base,
+      provider,
+      source_index: sourceIndex,
+      route_pattern:
+        provider && sourceIndex !== null
+          ? `${base}/{provider}/{n}`
+          : `${base}/${segments.map((segment) => (/^\d+$/.test(segment) ? "{n}" : segment)).join("/")}`,
+      current_marker:
+        candidate.origin === current.origin &&
+        candidate.pathname.replace(/\/+$/, "") === current.pathname.replace(/\/+$/, ""),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function sourceCountFromText(text) {
+  const raw = String(text || "");
+  const match =
+    raw.match(/(\d+)\s*(?:of\s*\d+\s*)?(?:sources?|streams?|links?|options?)/i) ||
+    raw.match(/(?:sources?|streams?|links?|options?)\s*[:\-]?\s*(\d+)/i);
+  return match ? Number(match[1]) : null;
 }
 
 function buildPlayerHandoffCandidates(data, { limit = 28 } = {}) {
@@ -755,8 +818,10 @@ function actionGroupLabel(entry, mode) {
     entry.state === "collapsed" ||
     /aria-expanded|aria-controls|accordion|collapse|dropdown|show|view|more|load|expand|toggle|menu|channels|live tv|tv guide/.test(haystack)
   ) return "reveal_controls";
-  if (/server|source|mirror|backup/.test(haystack)) return mode === "embedded" ? "source_switches" : "server_switches";
-  if (/audio|sub|caption/.test(haystack)) return "track_switches";
+  if (
+    /server|source|mirror|backup|stream|option|opci[oó]n|opcao|op[cç][aã]o|servidor|servidores|fuente|fuentes|fonte|fontes|canal|canales|canaux|quelle|lien|liens|link|links|enlace|enlaces|سيرفر|سيرفرات|مصدر|مصادر|قناة|قنوات|رابط|روابط|لينك|لينكات/.test(haystack)
+  ) return mode === "embedded" ? "source_switches" : "server_switches";
+  if (/audio|sub|caption|lang|language|idioma|idiomas|áudio|sonido|voz|subt[ií]tulo|legenda|لغة|لغات/.test(haystack)) return "track_switches";
   if (/embed|iframe/.test(haystack)) return "embed_targets";
   if (/hd|sd|720|1080|quality/.test(haystack)) return "quality_switches";
   if (/play|watch|resume|start|stream|tap/.test(haystack)) return "play_controls";
@@ -855,6 +920,56 @@ function buildRevealActions(data, { limit = 14, sampleLimit = 4 } = {}) {
       (b.hidden_link_count + b.visible_link_count) - (a.hidden_link_count + a.visible_link_count),
     ),
     (entry) => `${entry.selector}|${entry.xpath}|${entry.text}|${entry.state}`,
+  ).slice(0, limit);
+}
+
+function buildEventServerRoutes(data, actions, { limit = 48 } = {}) {
+  const currentUrl = data.url || "";
+  const routeRows = [
+    ...collectLinks(data).map((entry) => ({
+      text: entry.text || entry.nearby_text || "",
+      href: entry.url || "",
+      selector: entry.selector || "",
+      xpath: entry.xpath || "",
+      frame_path: entry.frame_path || "root",
+      source: entry.source || "content",
+    })),
+    ...(actions || []).map((entry) => ({
+      text: entry.text || "",
+      href: entry.href || "",
+      selector: entry.selector || "",
+      xpath: entry.xpath || "",
+      frame_path: entry.frame_path || "root",
+      source: "action",
+    })),
+  ];
+
+  const candidates = [];
+  for (const entry of routeRows) {
+    const route = sameEventServerRoute(entry.href, currentUrl);
+    if (!route) continue;
+    candidates.push({
+      label: clean(entry.text || `${route.provider} ${route.source_index || ""}`, 120),
+      source_group: route.provider,
+      source_index: route.source_index,
+      source_url: resolveUrlMaybe(entry.href, currentUrl),
+      route_pattern: route.route_pattern,
+      current_marker: route.current_marker || /\bcurrent\b|active|selected/i.test(entry.text || ""),
+      selector: entry.selector || "",
+      xpath: entry.xpath || "",
+      frame_path: entry.frame_path || "root",
+      source: entry.source || "content",
+      expected_source_count: sourceCountFromText(entry.text),
+    });
+  }
+
+  return dedupeBy(
+    candidates.sort((a, b) => {
+      if (a.current_marker !== b.current_marker) return a.current_marker ? -1 : 1;
+      if (a.source_group !== b.source_group) return String(a.source_group).localeCompare(String(b.source_group));
+      return Number(a.source_index || 0) - Number(b.source_index || 0);
+    }),
+    (entry) => entry.source_url,
   ).slice(0, limit);
 }
 
@@ -1234,6 +1349,7 @@ export function summarizeHostingInspect(data, options = {}) {
   );
   const playerEvidence = buildPlayerEvidence(data);
   const playerHandoffCandidates = buildPlayerHandoffCandidates(data);
+  const eventServerRoutes = buildEventServerRoutes(data, serverControls);
 
   const payload = {
     context_type: "hosting",
@@ -1248,6 +1364,7 @@ export function summarizeHostingInspect(data, options = {}) {
     iframe_groups: buildIframeGroups(data, "hosting"),
     player_evidence: playerEvidence,
     player_handoff_candidates: playerHandoffCandidates,
+    event_server_routes: eventServerRoutes,
     top_server_controls: pickTopActionCandidates(serverControls, "high"),
     top_playback_targets: pickTopActionCandidates(playbackTargets, "high"),
     popups: buildPopupSummary(data),
@@ -1281,6 +1398,7 @@ export function summarizeHostingInspect(data, options = {}) {
       miscCollections: [
         (result) => result.popups,
         (result) => result.player_handoff_candidates,
+        (result) => result.event_server_routes,
       ],
     }),
   });
