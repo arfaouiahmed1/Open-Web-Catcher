@@ -120,6 +120,64 @@ def _extract_nested_strings(payload: Any, keys: set[str], *, limit: int = 150) -
     return _dedupe_keep_order(found)
 
 
+def _extract_live_count_signals(payload: Any, *, limit: int = 20) -> list[str]:
+    signals: list[str] = []
+    count_patterns = (
+        re.compile(
+            r"\b(live\s+(?:matches|streams?|events?|channels?|games?))\s*[:#-]?\s*\(?\s*(\d{1,4})\s*\)?",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"\b(\d{1,4})\s+(live\s+(?:matches|streams?|events?|channels?|games?))\b",
+            re.IGNORECASE,
+        ),
+    )
+
+    def _add(label: str, count: str) -> None:
+        try:
+            parsed = int(count)
+        except (TypeError, ValueError):
+            return
+        if parsed <= 0:
+            return
+        normalized_label = re.sub(r"\s+", "_", str(label or "live_items").strip().lower())
+        signals.append(f"{normalized_label}={parsed}")
+
+    def _walk(node: Any) -> None:
+        if len(signals) >= limit:
+            return
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if len(signals) >= limit:
+                    break
+                key_text = str(key or "").strip().lower()
+                if isinstance(value, int) and value > 0 and re.search(
+                    r"(live|on_air|online).*(count|total)|count.*(live|on_air|online)",
+                    key_text,
+                ):
+                    _add(key_text, str(value))
+                elif isinstance(value, str):
+                    _walk(value)
+                elif isinstance(value, (dict, list, tuple)):
+                    _walk(value)
+        elif isinstance(node, (list, tuple)):
+            for item in node:
+                if len(signals) >= limit:
+                    break
+                _walk(item)
+        elif isinstance(node, str):
+            for pattern in count_patterns:
+                for match in pattern.finditer(node):
+                    first, second = match.group(1), match.group(2)
+                    if first.isdigit():
+                        _add(second, first)
+                    else:
+                        _add(first, second)
+
+    _walk(payload)
+    return _dedupe_keep_order(signals)[:limit]
+
+
 def _resolve_url_candidate(candidate: str, *, base_url: str) -> str:
     raw = str(candidate or "").strip()
     if not raw:
@@ -156,6 +214,7 @@ class ShortTermMemory:
             "server_labels": [],
             "hosting_candidate_urls": [],
             "match_records": [],
+            "visible_live_counts": [],
             "server_records": [],
             "server_screenshots": [],
             "server_stream_urls": [],
@@ -276,6 +335,12 @@ class ShortTermMemory:
                 self._remember_signal("server_labels", cleaned, max_items=120)
 
         if isinstance(payload, dict):
+            for signal in _extract_live_count_signals(payload):
+                self._remember_signal(
+                    "visible_live_counts",
+                    signal,
+                    max_items=self._signal_limit("visible_live_counts"),
+                )
             self._capture_hosting_candidates(payload, base_url=base_url)
             self._capture_server_artifacts(payload)
 
@@ -376,6 +441,12 @@ class ShortTermMemory:
             lines.append(
                 f"- landing candidates remembered: {len(run_memory['hosting_candidate_urls'])}"
             )
+        if run_memory.get("page_type") == "landing_page" and run_memory.get(
+            "visible_live_counts"
+        ):
+            lines.append(
+                "- visible live counters: " + ", ".join(run_memory["visible_live_counts"][:3])
+            )
         if run_memory.get("page_type") in {"hosting_page", "embedded_page"} and run_memory.get(
             "server_records"
         ):
@@ -446,6 +517,12 @@ class ShortTermMemory:
                 "- landing hosting candidates remembered: "
                 + (f"`{len(candidates)}`" if candidates else "`none yet`")
             )
+            live_counts = run_memory.get("visible_live_counts", [])
+            if live_counts:
+                lines.append(
+                    "- visible live counters: "
+                    + ", ".join(f"`{item}`" for item in live_counts[:4])
+                )
             match_records = run_memory.get("match_records", [])
             if match_records:
                 lines.append(f"- landing match records remembered: `{len(match_records)}`")
@@ -484,11 +561,13 @@ class ShortTermMemory:
             "stream_urls": list(self._signals["stream_urls"]),
             "stream_hosts": list(self._signals["stream_hosts"]),
             "server_labels": list(self._signals["server_labels"]),
+            "visible_live_counts": list(self._signals["visible_live_counts"]),
         }
 
         landing_specific = {
             "hosting_candidate_urls": list(self._signals["hosting_candidate_urls"]),
             "match_records": list(self._signals["match_records"]),
+            "visible_live_counts": list(self._signals["visible_live_counts"]),
         }
         hosting_specific = {
             "server_records": list(self._signals["server_records"]),
@@ -509,6 +588,7 @@ class ShortTermMemory:
             **common,
             "hosting_candidate_urls": landing_specific["hosting_candidate_urls"],
             "match_records": landing_specific["match_records"],
+            "visible_live_counts": landing_specific["visible_live_counts"],
             "iframe_urls": common["iframe_urls"],
             "server_records": hosting_specific["server_records"],
             "server_screenshots": hosting_specific["server_screenshots"],
@@ -539,6 +619,7 @@ class ShortTermMemory:
             "server_labels": 120,
             "hosting_candidate_urls": 260,
             "match_records": 260,
+            "visible_live_counts": 60,
             "server_records": 220,
             "server_screenshots": 220,
             "server_stream_urls": 320,
@@ -551,6 +632,7 @@ class ShortTermMemory:
                     "url_patterns": 360,
                     "hosting_candidate_urls": 900,
                     "match_records": 900,
+                    "visible_live_counts": 80,
                 }
             )
         if page_type in {"hosting_page", "embedded_page"}:

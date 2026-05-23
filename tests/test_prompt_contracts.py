@@ -157,6 +157,13 @@ def test_landing_prompt_requires_section_and_pattern_complete_extraction() -> No
         "Do not abandon remaining body sections because the first bucket worked",
         "Final completeness check",
         "compare `hosting_pages` against the screenshot-visible rows/grids/sections",
+        "Visible count reconciliation",
+        "Live-count rule",
+        "Live Matches (36)",
+        "completion_gap=true",
+        "Context compression is allowed",
+        "visually count the live cards",
+        "screenshot_live_items_count",
     ):
         assert phrase in landing
 
@@ -251,8 +258,55 @@ def test_landing_and_hosting_handle_click_to_load_servers_after_play() -> None:
         "max 3 distinct activation strategies",
         "strategy ladder",
         "newly visible server/source button",
+        "Server-only navigation rule",
+        "Do not re-run landing discovery from a hosting page",
+        "another match or channel",
+        "popup/modal/overlay that covers the player",
     ):
         assert phrase in hosting
+
+
+def test_hosting_and_embedded_prompts_dismiss_popups_and_stay_same_content() -> None:
+    hosting = _prompt("hosting_page_v1.md")
+    embedded = _prompt("embedded_page_v1.md")
+
+    for name, text in (("hosting", hosting), ("embedded", embedded)):
+        for phrase in (
+            "Popups that cover the player are not final failure evidence",
+            "Dismiss a visible popup/modal/overlay",
+            "Server-only navigation rule",
+            "Do not navigate to another match",
+            "If a click opens another match/channel/listing/category/news/homepage",
+            "compare it to the assigned title/team/channel/time",
+        ):
+            assert phrase in text, name
+
+    assert "Do not re-run landing discovery from a hosting page" in hosting
+    assert "Embedded has no downstream fallback" in embedded
+
+
+def test_hosting_and_embedded_prompts_require_played_screenshot_before_harvest() -> None:
+    hosting = _prompt("hosting_page_v1.md")
+    embedded = _prompt("embedded_page_v1.md")
+
+    for name, text in (("hosting", hosting), ("embedded", embedded)):
+        for phrase in (
+            "Mandatory activation proof",
+            "attempt to play the player before harvest",
+            "post-activation player state",
+            "played-video screenshot",
+            "activation -> played-state screenshot -> harvest sequence",
+            "Do not reuse the previous",
+            "Harvest should normally happen after activation and post-activation screenshot evidence",
+            "Required per",
+            "post-activation screenshot",
+        ):
+            assert phrase in text, name
+
+    assert "For the default server and every server/source switch" in hosting
+    assert "After every server/source switch" in hosting
+    assert "For the default source and every source/server switch" in embedded
+    assert "After every source/server switch" in embedded
 
 
 def test_landing_prompt_prioritizes_body_and_stays_on_main_domain() -> None:

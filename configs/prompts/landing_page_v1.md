@@ -18,6 +18,8 @@ Collect only these landing targets:
 2. Upcoming sports events scheduled for later today or this week.
 3. Live TV/channel pages, including channels that are currently off-air or `not_live` because they can stream again.
 
+Live proof outranks everything else. If a row/card/channel has a visible LIVE badge, on-air state, active viewer count, live section membership, live-count header, playing indicator, red/green live pill, or equivalent visual proof, prioritize extracting it before upcoming/offline/unknown items.
+
 Reject replays, VODs, finished matches, final-score-only pages, archive pages, clips, social/share links, auth/paywall pages, boilerplate pages, app/download/VPN/betting promotions, ad exits, and chat widgets. Log match-looking rejected URLs in `rejected_urls` with a short reason.
 
 For each accepted target, preserve visible metadata when available: `team1`, `team2`, `score`, exact `scheduled_time`, `league`, `type`, `channel`, `status`, and original-language title/participants. Use `status` only as `live`, `upcoming`, `not_live`, or `unknown`; never output `replay`.
@@ -42,7 +44,7 @@ ACTION: one tool call and why it is the cheapest useful proof
 VERIFY: what must be confirmed or disproven after the tool returns
 ```
 
-After `inspect_landing`, `navigate`, `interact`, or `screenshot`, interpret the screenshot before asking for more DOM. Treat screenshots as evidence for repeated visual patterns, real player surfaces, blockers, redirects, article pages, tab/menu state, and off-target pages. Do not use screenshots as a wait loop.
+After `inspect_landing`, `navigate`, `interact`, or `screenshot`, interpret the screenshot before asking for more DOM. Treat screenshots as evidence for repeated visual patterns, real player surfaces, blockers, redirects, article pages, tab/menu state, and off-target pages. Do not use screenshots as a wait loop. When a returned screenshot shows a scrolled grid/list of LIVE cards or badges, visually count the live cards in that screenshot and use that count as a lower-bound extraction target if no larger textual live count is visible.
 
 ## Curiosity guardrail
 
@@ -75,8 +77,9 @@ Follow these steps in order unless a blocker or site-down state prevents progres
 4. Representative verification: verify one representative per distinct bucket. Use `navigate` for real hrefs, `interact` for JavaScript/no-href/disclosure rows, and scoped `get_element_detail` when the broad inspect missed visible row contents.
 5. Row-by-row and grid-by-grid completion: after a representative verifies a bucket, add all visible same-pattern rows/cards from that bucket to `hosting_pages`. Then move to the next unverified section or bucket. Do not abandon remaining body sections because the first bucket worked.
 6. Inline server/source pass: if a row/card expands and exposes servers or sources on the landing page, record that expanded state as the hosting evidence and continue checking sibling rows with the same expandable structure.
-7. Pagination and load-more pass: follow pagination or load-more only after current visible sections are inventoried. Use it to collect more candidates for the same proven pattern, not to wander into unrelated navigation.
-8. Final completeness check: before final JSON, compare `hosting_pages` against the screenshot-visible rows/grids/sections and the inspect candidate ledgers. If visible live events, upcoming events, or channel pages are missing, either extract them, reject them with evidence, or explain the blocker in `reasoning_log`.
+7. Visible count reconciliation: if the page visibly says a count such as `Live Matches (36)`, `36 live streams`, `live channels: 72`, or any language-equivalent live total, treat that number as an extraction target for that section. If there is no text count but the screenshot from `navigate`, `inspect_landing`, or a scrolled state visibly shows N live cards/badges, count them and use N as a lower-bound extraction target. Keep collecting live candidates through scroll, load-more, pagination, tabs, or scoped section reads until `hosting_pages` reaches the visible live count, the section is exhausted, or you record a concrete blocker in `reasoning_log`.
+8. Pagination and load-more pass: follow pagination, infinite scroll, load-more, or lazy-grid continuation only after current visible sections are inventoried. Use it to collect more candidates for the same proven live/watch/channel pattern, not to wander into unrelated navigation.
+9. Final completeness check: before final JSON, compare `hosting_pages` against the screenshot-visible rows/grids/sections, the inspect candidate ledgers, and any visible live-count header. If visible live events, upcoming events, or channel pages are missing, either extract them, reject them with evidence, or set `extraction_summary.completion_gap=true` with the expected count, returned count, and blocker/next continuation step.
 
 ## Frontier Policy
 
@@ -93,12 +96,13 @@ Maintain a compact frontier:
 Prioritize:
 
 1. Main body live/watch/channel tiles, cards, rows, and tables with same-site hrefs.
-2. Main body channel-logo or directory cards with same-site hrefs.
-3. Repeated link families whose path, surrounding text, iconography, or layout implies watch/channel/event content in any language.
-4. Visually repeated rows/cards with JavaScript expansion or disclosure controls that can reveal servers, sources, channels, player shells, or watch links.
-5. Body controls that can reveal watch links, channel lists, server/source areas, or a player shell.
-6. Pagination, load-more, filters, and tabs that extend a promising body pattern.
-7. Header navigation only when the body lacks candidates or the header leads back to body watch/channel content.
+2. Main body cards/rows with visible LIVE/on-air badges or active live-count section membership.
+3. Main body channel-logo or directory cards with same-site hrefs.
+4. Repeated link families whose path, surrounding text, iconography, or layout implies watch/channel/event content in any language.
+5. Visually repeated rows/cards with JavaScript expansion or disclosure controls that can reveal servers, sources, channels, player shells, or watch links.
+6. Body controls that can reveal watch links, channel lists, server/source areas, or a player shell.
+7. Pagination, infinite scroll, load-more, filters, and tabs that extend a promising body pattern, especially when a visible live count is not yet satisfied.
+8. Header navigation only when the body lacks candidates or the header leads back to body watch/channel content.
 
 Demote legal/contact/auth/footer links, social/app exits, ad or fake-download destinations, article-only pages, replay/VOD/archive/final-score rows, decorative video backgrounds, chat widgets, and already-checked sibling routes.
 
@@ -150,6 +154,8 @@ After one representative confirms a pattern, add same-pattern siblings from the 
 
 Full extraction rule: when the screenshot and inspect output show a repeated schedule/table/grid with many apparently watchable rows, extract the full visible candidate set for that pattern, not only the first representative. Verify one or two representatives per distinct pattern, then return the visible same-pattern siblings with titles, times/status, entry selectors, route source, confidence, and shared pattern evidence.
 
+Live-count rule: when the page declares a count of live matches/streams/channels, do not stop at a partial page of cards. If `Live Matches (36)` is visible and only 15 hosting candidates are collected, continue using scroll/load-more/pagination/tabs/scoped reads. If the screenshot itself shows 24 LIVE cards after `navigate` scrolls the page, use 24 as `extraction_summary.visual_live_items_count` or `screenshot_live_items_count` unless a larger textual count is visible. If budget or blocking prevents reaching the expected count, output the collected pages plus `extraction_summary.expected_live_items_count`, `hosting_pages_missing_from_visible_count`, `completion_gap=true`, and a concise continuation step in `reasoning_log`. Context compression is allowed; keep going after compaction from the latest candidate ledger instead of treating compression as a reason to finish.
+
 Do not output an empty `hosting_pages` list while `top_match_candidates`, `candidate_ledger`, or a high-priority watch/channel group exists until at least one representative from the group has been verified or rejected with evidence.
 
 ## Memory
@@ -171,6 +177,10 @@ Output raw JSON only. No prose. No markdown fences.
     "extraction_confidence": "HIGH|MEDIUM|LOW",
     "pagination_detected": false,
     "pages_paginated": 0,
+    "expected_live_items_count": 0,
+    "visual_live_items_count": 0,
+    "hosting_pages_missing_from_visible_count": 0,
+    "completion_gap": false,
     "categories_explored": []
   },
   "hosting_pages": [

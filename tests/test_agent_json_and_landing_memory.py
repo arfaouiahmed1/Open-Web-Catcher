@@ -236,6 +236,88 @@ def test_landing_output_recovers_candidate_ledger_siblings_when_model_returns_on
     assert output["pattern_expansion"]["short_memory_recovered_candidates"] == 2
 
 
+def test_short_memory_captures_visible_live_match_count() -> None:
+    memory = ShortTermMemory(page_type="landing_page")
+    memory.ingest_tool_result(
+        "inspect_landing",
+        {"url": "https://streamsports99.su/"},
+        {
+            "text_blocks": [
+                {"text": "Live Matches (36)"},
+                {"text": "Refreshed 54s ago"},
+            ],
+            "candidate_ledger": [
+                {
+                    "url": "/watch/1",
+                    "title": "Live match 1",
+                    "status": "live",
+                    "url_pattern": "https://streamsports99.su/watch/{n}",
+                }
+            ],
+        },
+    )
+
+    run_memory = memory.export_run_memory(page_type="landing_page")
+    assert run_memory["visible_live_counts"] == ["live_matches=36"]
+    assert run_memory["common"]["visible_live_counts"] == ["live_matches=36"]
+
+
+def test_landing_output_marks_completion_gap_when_visible_live_count_not_met() -> None:
+    output, expanded = _augment_landing_output(
+        {
+            "hosting_pages": [
+                {
+                    "url": f"https://streamsports99.su/watch/{index}",
+                    "title": f"Live match {index}",
+                    "status": "live",
+                    "patterns": {"url_pattern": "https://streamsports99.su/watch/{n}"},
+                }
+                for index in range(1, 16)
+            ],
+            "extraction_summary": {"hosting_pages_found": 15},
+        },
+        source_url="https://streamsports99.su/",
+        run_memory={
+            "visible_live_counts": ["live_matches=36"],
+            "common": {"visible_live_counts": ["live_matches=36"]},
+        },
+    )
+
+    assert expanded == 0
+    assert len(output["hosting_pages"]) == 15
+    assert output["extraction_summary"]["expected_live_items_count"] == 36
+    assert output["extraction_summary"]["hosting_pages_missing_from_visible_count"] == 21
+    assert output["extraction_summary"]["completion_gap"] is True
+    assert "expected 36" in output["extraction_summary"]["continuation_needed_reason"]
+
+
+def test_landing_output_uses_model_visual_live_count_from_screenshot() -> None:
+    output, expanded = _augment_landing_output(
+        {
+            "hosting_pages": [
+                {
+                    "url": f"https://streamsports99.su/watch/{index}",
+                    "title": f"Screenshot live card {index}",
+                    "status": "live",
+                }
+                for index in range(1, 16)
+            ],
+            "extraction_summary": {
+                "hosting_pages_found": 15,
+                "visual_live_items_count": 24,
+            },
+        },
+        source_url="https://streamsports99.su/",
+        run_memory={"common": {}},
+    )
+
+    assert expanded == 0
+    assert output["extraction_summary"]["expected_live_items_count"] == 24
+    assert output["extraction_summary"]["visible_live_count_source"] == "screenshot_visual_count"
+    assert output["extraction_summary"]["hosting_pages_missing_from_visible_count"] == 9
+    assert output["extraction_summary"]["completion_gap"] is True
+
+
 def test_landing_pattern_expansion_allows_redirected_landing_domain() -> None:
     output, expanded = _augment_landing_output(
         {

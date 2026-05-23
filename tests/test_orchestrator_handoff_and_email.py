@@ -9,6 +9,7 @@ from src.agents.orchestrator import (
     _collect_all_streams,
     _embedded_target_allowed,
     _split_landing_match_handoff_targets,
+    hosting_page_node,
     landing_page_node,
     _requires_embedded_followup,
     route_after_classification,
@@ -198,6 +199,8 @@ def test_hosting_handoff_preserves_landing_match_metadata() -> None:
     assert "landing channel candidates: Channel 1, Canal 11" in handoff
     assert "landing screenshot evidence: https://img.example/landing.png" in handoff
     assert "green expanded row" in handoff
+    assert "do not navigate to another match" in handoff
+    assert "dismiss popups/overlays" in handoff
 
 
 def test_embedded_handoff_preserves_landing_match_metadata_from_hosting_source() -> None:
@@ -246,6 +249,73 @@ def test_embedded_handoff_preserves_landing_match_metadata_from_hosting_source()
     assert "landing visual evidence: landing row expanded into server choices" in handoff
     assert "source hosting page: https://sports.example/watch/ajax-groningen" in handoff
     assert "route source: hosting output: explicit embedded_url/player_iframe handoff" in handoff
+    assert "do not navigate to another match" in handoff
+    assert "dismiss popups/overlays" in handoff
+
+
+@pytest.mark.asyncio
+async def test_hosting_page_node_filters_popup_ad_embedded_handoffs(monkeypatch) -> None:
+    async def fake_run(self, *, url, observer=None, orchestrator_handoff=""):
+        return ExtractionResult(
+            url=url,
+            page_type=PageType.HOSTING,
+            status=ExtractionStatus.FAILED,
+            agent_type=AgentType.HOSTING_PAGE,
+            servers=[
+                ServerResult(
+                    label="popup",
+                    status="needs_embed_agent",
+                    embedded_url="https://doubleclick.example/ad/player",
+                    player_iframe_url="https://doubleclick.example/ad/player",
+                ),
+                ServerResult(
+                    label="server 1",
+                    status="needs_embed_agent",
+                    embedded_url="https://embed.example/player/ajax-groningen",
+                    player_iframe_url="https://embed.example/player/ajax-groningen",
+                ),
+            ],
+            metadata={
+                "decision": "needs_embed_agent",
+                "embedded_urls_for_processing": [
+                    "https://doubleclick.example/ad/player",
+                    "https://embed.example/player/ajax-groningen",
+                ],
+            },
+        )
+
+    monkeypatch.setattr("src.agents.hosting_page.HostingPageAgent.run", fake_run)
+
+    result = await hosting_page_node(
+        {
+            "url": "https://sports.example",
+            "classification": ClassificationResult(
+                url="https://sports.example",
+                page_type=PageType.LANDING,
+                confidence=Confidence.HIGH,
+            ),
+            "matches": [
+                MatchInfo(
+                    url="https://sports.example/watch/ajax-groningen",
+                    title="Ajax Amsterdam vs Groningen",
+                    team1="Ajax Amsterdam",
+                    team2="Groningen",
+                    status="live",
+                )
+            ],
+            "extraction_results": [],
+            "pending_hosting_urls": ["https://sports.example/watch/ajax-groningen"],
+            "pending_embedded_urls": [],
+            "provider_analysis": [],
+            "takedown_emails": [],
+            "error": "",
+        },
+        settings=Settings(),
+        observer=None,
+        memory=None,
+    )
+
+    assert result["pending_embedded_urls"] == ["https://embed.example/player/ajax-groningen"]
 
 
 @pytest.mark.asyncio

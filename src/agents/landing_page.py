@@ -117,6 +117,54 @@ def _coerce_memory_match_records(run_memory: dict[str, Any]) -> list[dict[str, A
     return parsed
 
 
+def _max_visible_live_count(run_memory: dict[str, Any]) -> int:
+    if not isinstance(run_memory, dict):
+        return 0
+    values: list[Any] = [
+        *list(run_memory.get("visible_live_counts", []) or []),
+        *list(
+            (run_memory.get("common", {}) or {}).get("visible_live_counts", [])
+            if isinstance(run_memory.get("common"), dict)
+            else []
+        ),
+    ]
+    max_count = 0
+    for value in values:
+        text = str(value or "")
+        for match in re.finditer(r"=(\d{1,4})\b|\b(\d{1,4})\b", text):
+            raw_count = match.group(1) or match.group(2)
+            try:
+                max_count = max(max_count, int(raw_count))
+            except (TypeError, ValueError):
+                continue
+    return max_count
+
+
+def _safe_positive_int(value: Any) -> int:
+    try:
+        parsed = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return parsed if parsed > 0 else 0
+
+
+def _expected_live_count_from_summary(extraction_summary: dict[str, Any]) -> tuple[int, str]:
+    candidates = (
+        ("expected_live_items_count", "model_or_visual_estimate"),
+        ("visual_live_items_count", "screenshot_visual_count"),
+        ("screenshot_live_items_count", "screenshot_visual_count"),
+        ("visible_live_items_count", "screenshot_visual_count"),
+        ("live_items_visible_count", "screenshot_visual_count"),
+        ("live_matches_visible_count", "screenshot_visual_count"),
+        ("expected_hosting_pages_count", "model_expected_count"),
+    )
+    for key, source in candidates:
+        count = _safe_positive_int(extraction_summary.get(key))
+        if count:
+            return count, source
+    return 0, ""
+
+
 def _looks_like_low_value_url(url: str) -> bool:
     lowered = str(url or "").lower().strip()
     if not lowered:
@@ -643,6 +691,29 @@ def _augment_landing_output(
     extraction_summary = output.get("extraction_summary", {})
     if isinstance(extraction_summary, dict):
         extraction_summary["hosting_pages_found"] = len(hosting_pages)
+        summary_expected_count, summary_expected_source = _expected_live_count_from_summary(
+            extraction_summary
+        )
+        memory_expected_count = _max_visible_live_count(run_memory)
+        expected_live_count = max(summary_expected_count, memory_expected_count)
+        if expected_live_count:
+            extraction_summary["expected_live_items_count"] = expected_live_count
+            extraction_summary["visible_live_count_source"] = (
+                "tool_memory"
+                if memory_expected_count >= summary_expected_count and memory_expected_count
+                else summary_expected_source
+            )
+            missing_live_count = max(expected_live_count - len(hosting_pages), 0)
+            extraction_summary["hosting_pages_missing_from_visible_count"] = missing_live_count
+            extraction_summary["completion_gap"] = missing_live_count > 0
+            if missing_live_count > 0:
+                extraction_summary.setdefault(
+                    "continuation_needed_reason",
+                    (
+                        f"visible live counter expected {expected_live_count} items but "
+                        f"only {len(hosting_pages)} hosting pages were returned"
+                    ),
+                )
         pagination_patterns = list(
             common_memory.get("pagination_patterns", []) if isinstance(common_memory, dict) else []
         )

@@ -84,10 +84,13 @@ class HandoffContext(TypedDict, total=False):
 
 _SAME_CONTENT_NAVIGATION_POLICY = (
     "same-content okay: allow server/source URL changes only when the same event/player stays in focus; "
+    "do not navigate to another match, fixture, channel, listing, homepage, or article; "
     "treat ad redirects, unrelated pages, homepages, and off-target provider detours as drift and recover "
     "to the assigned target URL"
 )
 _HOSTING_EVIDENCE_CHECKLIST = [
+    "dismiss popups/overlays that cover the player before declaring a server failed",
+    "switch only same-content server/source controls, not other matches or channels",
     "verify the player works before extraction and after every server switch",
     "record screenshot_url for each server attempt",
     "record extracted m3u8/mpd/mp4 URLs for each server attempt",
@@ -97,6 +100,8 @@ _HOSTING_EVIDENCE_CHECKLIST = [
     "record detected channel metadata and screenshot-derived OCR text when the broadcast name is visible",
 ]
 _EMBEDDED_EVIDENCE_CHECKLIST = [
+    "dismiss popups/overlays that cover the player before declaring a source failed",
+    "switch only same-player source/server controls, not other matches or channels",
     "stay on the assigned embedded URL and do not drift back into host-page exploration",
     "record screenshot_url for each server/source attempt",
     "record extracted m3u8/mpd/mp4 URLs for each server/source attempt",
@@ -299,6 +304,55 @@ def _emit_orchestrator_decision(
     )
 
 
+_OFF_TARGET_EMBEDDED_URL_SIGNALS = (
+    "adserver",
+    "adsystem",
+    "doubleclick",
+    "googlesyndication",
+    "googleadservices",
+    "popads",
+    "popcash",
+    "propeller",
+    "onclick",
+    "taboola",
+    "outbrain",
+    "casino",
+    "betting",
+    "sportsbook",
+    "download",
+    "apk",
+    "appstore",
+    "play.google.com",
+    "facebook.com",
+    "telegram",
+    "twitter.com",
+    "x.com/",
+    "discord",
+    "whatsapp",
+    "/news/",
+    "/article/",
+    "/category/",
+    "/tag/",
+    "/login",
+    "/register",
+    "/subscribe",
+    "/premium",
+    "/checkout",
+)
+
+
+def _embedded_candidate_allowed_from_hosting(candidate_url: str, *, hosting_url: str) -> bool:
+    candidate = str(candidate_url or "").strip()
+    if not candidate.startswith(("http://", "https://")):
+        return False
+    if candidate.rstrip("/") == str(hosting_url or "").strip().rstrip("/"):
+        return False
+    if _looks_like_provider_stream_url(candidate):
+        return False
+    lowered = candidate.lower()
+    return not any(signal in lowered for signal in _OFF_TARGET_EMBEDDED_URL_SIGNALS)
+
+
 def _collect_embedded_urls(extraction: ExtractionResult) -> list[str]:
     urls = list(extraction.embedded_urls)
     for key in ("servers_needing_embed", "embedded_urls_for_processing", "embedded_urls"):
@@ -319,7 +373,13 @@ def _collect_embedded_urls(extraction: ExtractionResult) -> list[str]:
             candidate = str(server.get(key) or "").strip()
             if candidate:
                 urls.append(candidate)
-    return _dedupe_urls(urls)
+    return _dedupe_urls(
+        [
+            url
+            for url in urls
+            if _embedded_candidate_allowed_from_hosting(url, hosting_url=extraction.url)
+        ]
+    )
 
 
 def _extraction_evidence_overview(extraction_results: list[ExtractionResult]) -> dict[str, int]:

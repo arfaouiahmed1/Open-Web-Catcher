@@ -36,7 +36,10 @@ _AGENT_CONTRACT = """\
 - crawl visible JS-driven player/source/language controls before falling back to URL-only evidence
 - preserve source language labels when they are shown as flags, country emoji, audio labels, captions, or short codes
 - work across any language or script; verify channel/source labels from player evidence instead of English-only terms
+- activate/play the default player and every switched source before harvest, capture the post-activation screenshot, then harvest that source
 - treat ad redirects, news/article detours, fake downloads, and unrelated provider pages as drift, then recover once
+- dismiss popups/modals/overlays that cover the assigned player before declaring the source failed
+- switch only same-player source/server controls; never navigate to other matches, channels, listings, articles, or homepages
 - if no playable stream is recovered or the full-page embedded URL is blocked, stop with the failure evidence and do not invent another downstream fallback
 """
 
@@ -119,6 +122,7 @@ class EmbeddedPageAgent:
                         anchor_url=url,
                         navigation_policy=(
                             "same-content okay: allow server/source URL changes only when the same player stays in focus; "
+                            "do not navigate to other matches, channels, listings, articles, or homepages; "
                             "treat ad redirects, unrelated pages, homepages, and off-target provider detours as drift"
                         ),
                     ),
@@ -164,6 +168,7 @@ class EmbeddedPageAgent:
                             anchor_url=url,
                             navigation_policy=(
                                 "same-content okay: allow server/source URL changes only when the same player stays in focus; "
+                                "do not navigate to other matches, channels, listings, articles, or homepages; "
                                 "treat ad redirects, unrelated pages, homepages, and off-target provider detours as drift"
                             ),
                         ),

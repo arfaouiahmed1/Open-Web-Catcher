@@ -36,8 +36,11 @@ _AGENT_CONTRACT = """\
 - crawl visible JS-driven player/server/source/language controls before falling back to URL-only evidence
 - preserve source language labels when they are shown as flags, country emoji, audio labels, captions, or short codes
 - work across any language or script; verify channel/source labels from player evidence instead of English-only terms
+- activate/play the default player and every switched server before harvest, capture the post-activation screenshot, then harvest that server
 - treat ad redirects, news/article detours, fake downloads, and unrelated provider pages as drift, then recover once
 - after every Play/Watch overlay click, check whether server/source controls or iframe/player evidence loaded before failing
+- dismiss popups/modals/overlays that cover the assigned player before declaring the server failed
+- switch only same-content server/source controls; never navigate to other matches, channels, listings, articles, or homepages
 - if playback does not start, try distinct activation strategies instead of repeating the same click
 - if playback fails or no streams are recovered, return an embedded fallback only when the current hosting page exposes an explicit iframe src or embedded/player URL; otherwise stop with failure evidence and no fabricated next target
 """
@@ -121,6 +124,7 @@ class HostingPageAgent:
                         anchor_url=url,
                         navigation_policy=(
                             "same-content okay: allow server/source URL changes only when the same event/player stays in focus; "
+                            "do not navigate to other matches, channels, listings, articles, or homepages; "
                             "treat ad redirects, unrelated pages, homepages, and off-target provider detours as drift"
                         ),
                     ),
@@ -164,6 +168,7 @@ class HostingPageAgent:
                             anchor_url=url,
                             navigation_policy=(
                                 "same-content okay: allow server/source URL changes only when the same event/player stays in focus; "
+                                "do not navigate to other matches, channels, listings, articles, or homepages; "
                                 "treat ad redirects, unrelated pages, homepages, and off-target provider detours as drift"
                             ),
                         ),
