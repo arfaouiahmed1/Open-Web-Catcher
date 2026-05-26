@@ -80,6 +80,71 @@ flowchart TB
   ProviderConfig --> DataDir
 ```
 
+## Physical Architecture And Tech Stack
+
+The local/container deployment is a five-service Docker Compose stack plus external APIs. The UI and API are separate processes; browser automation runs in separate MCP tool containers; Postgres owns normalized persistence; `data/`, `configs/`, and `datasets/` are mounted into the runtime where needed.
+
+```mermaid
+flowchart TB
+  Operator["Operator browser"]
+
+  subgraph Web["owc-web container"]
+    NextRuntime["Node 20 Alpine<br/>Next.js 15 + React 19<br/>Radix UI + lucide-react + Recharts"]
+    WebPort["host :3000 -> container :3001"]
+  end
+
+  subgraph API["owc container"]
+    FastAPI["Python 3.11 slim<br/>FastAPI + Uvicorn"]
+    Runtime["LangChain Core<br/>LangGraph<br/>langchain-google-genai<br/>Pydantic v2"]
+    Persistence["SQLAlchemy 2 + Alembic<br/>psycopg2"]
+    ApiPort["host :8000 -> container :8000"]
+  end
+
+  subgraph BrowserTools["Browser MCP tool containers"]
+    PuppeteerSvc["owc-tools<br/>Node 22 + Puppeteer<br/>Chrome stable + uBOL<br/>MCP :3000, CDP :9222"]
+    PlaywrightSvc["owc-tools-playwright<br/>Playwright image v1.60<br/>Chrome + uBOL<br/>MCP :3001, CDP :9223"]
+  end
+
+  subgraph DataPlane["Data services and mounted files"]
+    Postgres[("postgres:16-alpine<br/>owc database")]
+    DataDir["./data<br/>site memory, datasets, runtime files"]
+    Configs["./configs<br/>prompt/config files mounted read-only"]
+    Datasets["./datasets<br/>seed/test datasets mounted read-only"]
+  end
+
+  subgraph External["External services"]
+    Gemini["Google GenAI / Gemini"]
+    Cloudinary["Cloudinary screenshots"]
+    IPInfo["IPInfo + RDAP/Whois"]
+  end
+
+  Operator --> WebPort --> NextRuntime
+  NextRuntime --> ApiPort --> FastAPI
+  FastAPI --> Runtime
+  Runtime --> Gemini
+  Runtime --> PuppeteerSvc
+  Runtime --> PlaywrightSvc
+  PuppeteerSvc --> Cloudinary
+  PlaywrightSvc --> Cloudinary
+  FastAPI --> Persistence --> Postgres
+  FastAPI --> IPInfo
+  FastAPI --> DataDir
+  FastAPI --> Configs
+  FastAPI --> Datasets
+  PuppeteerSvc --> DataDir
+  PlaywrightSvc --> DataDir
+```
+
+| Layer | Current stack |
+| --- | --- |
+| Operator console | Next.js `^15.1.0`, React `^19.0.0`, Radix UI primitives, lucide-react, React Flow, Recharts, Tailwind tooling |
+| Backend API | Python 3.11, FastAPI, Uvicorn, Pydantic v2, Pydantic Settings |
+| Agent runtime | LangChain Core, LangGraph, `langchain-google-genai`, `langchain-mcp-adapters`, Gemini model APIs |
+| Persistence | Postgres 16, SQLAlchemy 2, Alembic, psycopg2; agent-facing site memory also uses SQLite under `data/site_memory.db` |
+| Browser tooling | Node MCP servers, Puppeteer with Chrome stable, Playwright v1.60 image, uBlock Origin Lite extension assets, profile-scoped tool surfaces |
+| Evidence/storage integrations | Cloudinary for screenshots, IPInfo plus RDAP/Whois for provider enrichment |
+| Packaging | `Dockerfile` for API, `Dockerfile.web` for UI, `Dockerfile.tools` for Puppeteer MCP, `Dockerfile.tools.playwright` for Playwright MCP |
+
 ## Use Case Diagram
 
 ```mermaid

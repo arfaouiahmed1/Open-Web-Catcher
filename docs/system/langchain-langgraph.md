@@ -27,6 +27,24 @@ LangGraph keeps those decisions explicit. The model can propose tool calls and p
 | Prompt layering | `src/agents/prompting.py` |
 | Gemini/tool caches | `src/agents/cache.py` |
 
+## Which Agents Use LangChain And LangGraph
+
+All LLM-facing browser agents use LangChain abstractions. `src/agents/base.py` builds `ChatGoogleGenerativeAI`, exchanges LangChain `SystemMessage`, `HumanMessage`, `AIMessage`, and `ToolMessage` objects, and invokes LangChain `BaseTool` instances loaded from MCP adapters.
+
+LangGraph is used in two layers:
+
+| Runtime piece | Uses LangChain | Uses LangGraph | How |
+| --- | --- | --- | --- |
+| `OrchestratorAgent` | No direct model loop | Yes | Owns the pipeline `StateGraph` in `src/agents/orchestrator.py::build_graph`. |
+| `ClassificationAgent` | Yes | Yes, through `run_agent_loop` | Uses Gemini + browser tools, then the shared agent-loop graph controls model/tool turns. |
+| `LandingPageAgent` | Yes | Yes, through `run_agent_loop` | Same shared graph, with landing prompt, landing MCP profile, and landing short-memory state. |
+| `HostingPageAgent` | Yes | Yes, through `run_agent_loop` | Same shared graph, with hosting prompt, hosting MCP profile, and server/player state. |
+| `EmbeddedPageAgent` | Yes | Yes, through `run_agent_loop` | Same shared graph, with embedded prompt, embedded MCP profile, and iframe/player state. |
+| `IPInfoTool` | Yes | No standalone graph | It is a LangChain `BaseTool` called from an orchestrator node after stream extraction. |
+| `EmailTool` / `generate_takedown_emails` | Yes at tool wrapper, deterministic Python inside | No standalone graph | The tool wrapper is LangChain; email grouping/content generation is deterministic code. |
+
+So the short version is: every specialist browser agent uses LangChain, and the orchestrator plus the four browser-facing specialists use LangGraph. Provider analysis and email generation are downstream LangChain tools/nodes, not independent LangGraph agents.
+
 ## Context Continuation
 
 `run_agent_loop` monitors context usage from every `llm_response`. For landing, hosting, and embedded profiles, if `input_tokens + output_tokens` reaches `settings.context_continuation_threshold` (default `0.8`) and the model still requested tools, the graph routes through `compact_context` before the next model turn. Classification is excluded by `runtime_profile == classification`.
@@ -196,6 +214,55 @@ classDiagram
   AgentGraphState --> ToolResultCache
 ```
 
+The graph state is not the full run. It is the control envelope for one specialist loop. The heavy data stays in messages, runtime events, short memory, and persisted result rows.
+
+```mermaid
+flowchart TB
+  State["AgentGraphState"]
+  Messages["messages<br/>System + Human + AI + Tool"]
+  Budget["tool budget<br/>tool_calls_made / max_tool_calls"]
+  LoopGuards["loop guards<br/>repeated batch + no progress"]
+  Context["context pressure<br/>usage pct + last token count"]
+  Continuation["continuation<br/>index + capsules"]
+  QueryGuard["query specificity guard<br/>repeated broad reads"]
+
+  State --> Messages
+  State --> Budget
+  State --> LoopGuards
+  State --> Context
+  State --> Continuation
+  State --> QueryGuard
+
+  Messages --> ModelTurn["llm node"]
+  ModelTurn --> ToolTurn["tools node"]
+  ToolTurn --> State
+  Context --> Compact["compact_context node"]
+  Budget --> Final["budget_exhausted node"]
+  LoopGuards --> Final
+```
+
+`PipelineState` is the orchestrator-level state. It carries the run URL, classification result, discovered matches, extraction results, pending hosting targets, pending embedded targets, provider analysis rows, takedown drafts, and an error string. The orchestrator graph mutates those lists as each stage completes.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Classify
+  Classify --> LandingPage: page_type=landing
+  Classify --> QueueRootHosting: page_type=hosting
+  Classify --> QueueRootEmbedded: page_type=embedded
+  Classify --> AnalyzeProviders: unknown or unsupported
+  QueueRootHosting --> HostingPage
+  QueueRootEmbedded --> EmbeddedPage
+  LandingPage --> HostingPage: pending_hosting_urls
+  LandingPage --> EmbeddedPage: pending_embedded_urls
+  LandingPage --> AnalyzeProviders: no downstream targets
+  HostingPage --> HostingPage: more pending_hosting_urls
+  HostingPage --> EmbeddedPage: pending_embedded_urls
+  HostingPage --> AnalyzeProviders: streams or no more targets
+  EmbeddedPage --> AnalyzeProviders
+  AnalyzeProviders --> GenerateTakedownEmails
+  GenerateTakedownEmails --> [*]
+```
+
 ## Stop Conditions
 
 The loop is not allowed to run forever. The current runtime checks `max_tool_calls`, `agent_timeout_seconds`, `llm_turn_timeout_seconds`, `tool_timeout_seconds`, repeated identical tool batches, no-progress turns, user cancellation, and bounded provider retries.
@@ -224,7 +291,7 @@ stateDiagram-v2
   Cancelled --> [*]
 ```
 
-## Prompt Layering
+## Prompt And Memory Compilation
 
 Prompt compilation exists because the same base runtime rules must be combined with agent-specific behavior. Classification is not allowed to extract downstream streams, while hosting is expected to activate players and collect server-level evidence.
 
@@ -244,6 +311,120 @@ flowchart LR
   Memory --> Compiled
   Working --> Compiled
   Runtime --> Compiled
+```
+
+`compile_agent_prompt` normalizes six inputs and returns both the final prompt text and metadata. The static prefix is `BASE POLICY`, `AGENT CONTRACT`, and `RUNTIME CONTEXT`; that prefix is cached in-process and can be marked provider-cache eligible. The dynamic part is `TASK BRIEF`, `SITE MEMORY HINTS`, and `WORKING STATE`, because these change by URL, domain history, and current run state.
+
+The compiled metadata is recorded in `prompt_compiled` events and persisted through `prompt_versions` and `prompt_compilations`. That is why the dashboard can answer which prompt hash ran, whether memory was injected, what sections were present, whether the static prefix hit the app cache, and whether provider caching was eligible.
+
+Example compiled shape:
+
+```text
+BASE POLICY
+<contents of configs/prompts/hosting_page_v1.md or prompt override>
+
+AGENT CONTRACT
+<stage duties, output contract, evidence rules>
+
+RUNTIME CONTEXT
+- tool profile: `hosting`
+- tool-call budget: `24`
+- rely on live page evidence and tool results, not assumptions
+
+TASK BRIEF
+- target url: `https://example.test/watch/team-a-vs-team-b`
+- page type: `hosting_page`
+- run goal: extract working stream URLs and player evidence
+
+SITE MEMORY HINTS
+SITE MEMORY PLAYBOOK
+Use as hints only; re-verify on the live page.
+- scope: `example.test` `hosting_page`; remembered `3` runs, `2` successes
+- steps: `open_url` -> `inspect_player` -> `click_server` -> `harvest_network`
+
+WORKING STATE
+- current objective: activate same-event servers and capture stream evidence
+- steps already tried: `open_url`, `inspect_player`
+- server snapshots remembered: `2`
+- next best move: inspect or activate the next untried same-content server
+```
+
+## Short Memory
+
+Short memory is run-local. `ShortTermMemory` records recent navigation, tool calls, selectors/clicks, observations, URL patterns, critical links, iframes, stream URLs, landing candidates, live counters, server records, screenshots, activated servers, and per-server stream URLs. It is not generic chat history; it is a compact extraction ledger.
+
+The current state is compiled into the prompt before model turns through `turn_context_provider=lambda _state: short_memory.working_state(...)`. This keeps the model aware of what has already been tried without making it reread the whole transcript.
+
+```mermaid
+flowchart TB
+  Tools["tool result<br/>inspect, click, harvest, screenshot"]
+  Short["ShortTermMemory<br/>run-local ledger"]
+  Signals["signals<br/>selectors, links, candidates, streams, servers"]
+  Working["working_state()<br/>small current-state prompt"]
+  AgentLoop["run_agent_loop<br/>next LLM turn"]
+  Export["export_run_memory()<br/>structured run memory"]
+  Long["remember_agent_run<br/>long memory input"]
+
+  Tools --> Short
+  Short --> Signals
+  Short --> Working --> AgentLoop
+  Short --> Export --> Long
+```
+
+Example short-memory working state:
+
+```text
+- current objective: discover hosting pages from the landing page
+- current page type: `landing_page`
+- current target url: `https://example.test/live`
+- steps already tried: `open_url`, `inspect_landing`, `click Live`
+- blockers seen: `popup_overlay`
+- detected run url patterns: `https://example.test/watch/{id}`, `/live?page={n}`
+- critical links discovered this run: `https://example.test/watch/abc123`
+- landing hosting candidates remembered: `8`
+- visible live counters: `live_matches=12`
+- next best move: open a representative hosting candidate and verify same-event focus
+```
+
+## Long Memory
+
+Long memory is cross-run site memory. `LongTermMemory` writes compact entries into `data/site_memory.db` and maintains profile-style summaries in `data/site_memory_profiles.json`. The normalized Postgres `memory_entries` and `memory_hints_used` tables mirror useful run memory for dashboard/database views, but the agent-facing prompt lookup comes from the long-memory helper.
+
+Long memory is deliberately summarized. `build_site_memory_entry` compiles trace events, output payloads, and exported short memory into bounded arrays: tool sequence, tool steps, navigation targets, selectors, URL patterns, pagination patterns, critical links, server labels, stream hosts, hosting candidate URLs, server records, server screenshots, server stream URLs, activated servers, rejected patterns, failure cues, pagination rules, landing match URLs, continuation notes, and a short-memory summary. `LongTermMemory.build_prompt_context` then turns recent entries and profile data into a concise `SITE MEMORY PLAYBOOK`.
+
+```mermaid
+flowchart LR
+  RunTrace["RunTrace events"]
+  Output["agent output payload"]
+  ShortExport["short memory export"]
+  Entry["build_site_memory_entry<br/>bounded playbook fields"]
+  SQLite[("site_memory_entries<br/>data/site_memory.db")]
+  Profile["site profile<br/>profiles json"]
+  PromptContext["build_prompt_context()<br/>SITE MEMORY PLAYBOOK"]
+  Prompt["compile_agent_prompt<br/>SITE MEMORY HINTS"]
+
+  RunTrace --> Entry
+  Output --> Entry
+  ShortExport --> Entry
+  Entry --> SQLite
+  Entry --> Profile
+  SQLite --> PromptContext
+  Profile --> PromptContext
+  PromptContext --> Prompt
+```
+
+Example long-memory playbook:
+
+```text
+SITE MEMORY PLAYBOOK
+Use as hints only; re-verify on the live page.
+- scope: `example.test` `landing_page`; remembered `5` runs, `3` successes
+- steps: `open_url` -> `inspect_landing` -> `click text=Live` -> `inspect_landing`
+- selectors/clicks: `text=Live`, `selector=.match-card a`, `xpath=//a[contains(@href,'watch')]`
+- route patterns: `https://example.test/watch/{id}`, `https://example.test/live?page={n}`
+- pagination: `https://example.test/live?page={n}`
+- critical links: `https://example.test/watch/abc123`, `https://example.test/watch/def456`
+- failure cues: `popup_overlay`, `redirect_to_home`
 ```
 
 ## Why Not Let The LLM Route Everything

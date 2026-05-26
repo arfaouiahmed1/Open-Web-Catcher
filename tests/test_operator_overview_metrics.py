@@ -17,7 +17,7 @@ def _repo_session():
     return OperatorConsoleRepository(session), session
 
 
-def test_overview_returns_strict_adjusted_and_bucketed_trend_metrics() -> None:
+def test_overview_returns_strict_status_and_trend_metrics_without_agent_success() -> None:
     repo, session = _repo_session()
     try:
         now = datetime.utcnow()
@@ -70,17 +70,11 @@ def test_overview_returns_strict_adjusted_and_bucketed_trend_metrics() -> None:
         today = overview["trend"][-1]
 
         assert summary["success_rate"] == 0.2
-        assert summary["adjusted_success_rate"] == 0.75
-        assert summary["agent_failure_rate"] == 0.25
-        assert summary["external_blocked_rate"] == 0.5
-        assert summary["status_bucket_breakdown"] == {
-            "productive_success": 1,
-            "external_or_expected_blocker": 2,
-            "agent_failure": 1,
-            "cancelled": 1,
-        }
+        assert "adjusted_success_rate" not in summary
+        assert "agent_failure_rate" not in summary
+        assert "external_blocked_rate" not in summary
+        assert "status_bucket_breakdown" not in summary
         assert today["successes"] == 1
-        assert today["agent_failures"] == 1
-        assert today["external_blockers"] == 2
+        assert today["failures"] == 3
     finally:
         session.close()

@@ -1048,6 +1048,7 @@ class RunRepository:
         contexts = _extract_agent_contexts(trace, result)
         rows: list[dict[str, Any]] = []
         for ctx in contexts:
+            context_metrics = _agent_context_metrics(ctx)
             agent_run = AgentRunRecord(
                 pipeline_run_id=pipeline_run_id,
                 actor=ctx["actor"],
@@ -1060,6 +1061,15 @@ class RunRepository:
                 llm_calls_made=ctx["llm_calls_made"],
                 prompt_compiled=bool(ctx.get("prompt")),
                 memory_injected=bool(ctx.get("memory_loaded")),
+                provider=context_metrics["provider"],
+                model_name=context_metrics["model_name"],
+                input_tokens=context_metrics["input_tokens"],
+                cached_input_tokens=context_metrics["cached_input_tokens"],
+                new_input_tokens=context_metrics["new_input_tokens"],
+                output_tokens=context_metrics["output_tokens"],
+                context_window=context_metrics["context_window"],
+                context_tokens=context_metrics["context_tokens"],
+                context_usage_pct=context_metrics["context_usage_pct"],
                 started_at=ctx["started_at"],
                 finished_at=ctx["finished_at"],
                 duration_seconds=ctx["duration_seconds"],
@@ -1116,6 +1126,7 @@ class RunRepository:
         contexts = _extract_trace_agent_contexts(trace, default_url=url, root_actor=root_actor)
         rows: list[dict[str, Any]] = []
         for ctx in contexts:
+            context_metrics = _agent_context_metrics(ctx)
             agent_run = AgentRunRecord(
                 pipeline_run_id=pipeline_run_id,
                 actor=ctx["actor"],
@@ -1128,6 +1139,15 @@ class RunRepository:
                 llm_calls_made=ctx["llm_calls_made"],
                 prompt_compiled=bool(ctx.get("prompt")),
                 memory_injected=bool(ctx.get("memory_loaded")),
+                provider=context_metrics["provider"],
+                model_name=context_metrics["model_name"],
+                input_tokens=context_metrics["input_tokens"],
+                cached_input_tokens=context_metrics["cached_input_tokens"],
+                new_input_tokens=context_metrics["new_input_tokens"],
+                output_tokens=context_metrics["output_tokens"],
+                context_window=context_metrics["context_window"],
+                context_tokens=context_metrics["context_tokens"],
+                context_usage_pct=context_metrics["context_usage_pct"],
                 started_at=ctx["started_at"],
                 finished_at=ctx["finished_at"],
                 duration_seconds=ctx["duration_seconds"],
@@ -1855,6 +1875,77 @@ def _extract_agent_contexts(trace: RunTrace | None, result: PipelineResult) -> l
         ctx["duration_seconds"] = max((ctx["finished_at"] - ctx["started_at"]).total_seconds(), 0.0)
         ctx["status"] = _resolve_agent_status(ctx, result)
     return contexts
+
+
+def _agent_context_metrics(ctx: dict[str, Any]) -> dict[str, Any]:
+    input_tokens = 0
+    cached_input_tokens = 0
+    new_input_tokens = 0
+    output_tokens = 0
+    context_window = 0
+    context_tokens = 0
+    context_usage_pct = 0.0
+    provider = ""
+    model_name = ""
+
+    for event in ctx.get("events", []) or []:
+        if event.kind == "context_compaction_finished":
+            continue
+        details = event.details or {}
+        if not isinstance(details, dict):
+            continue
+
+        event_input_tokens = int(details.get("input_tokens", 0) or 0)
+        event_output_tokens = int(details.get("output_tokens", 0) or 0)
+        event_cached_tokens = int(details.get("cached_input_tokens", 0) or 0)
+        event_new_tokens = int(
+            details.get(
+                "new_input_tokens",
+                max(event_input_tokens - event_cached_tokens, 0),
+            )
+            or 0
+        )
+
+        if event.kind == "llm_response":
+            input_tokens += event_input_tokens
+            cached_input_tokens += event_cached_tokens
+            new_input_tokens += event_new_tokens
+            output_tokens += event_output_tokens
+            provider = str(details.get("provider", "") or provider)
+            model_name = str(details.get("model_name", "") or model_name)
+
+        event_window = int(details.get("context_window", 0) or 0)
+        if event_window > context_window:
+            context_window = event_window
+
+        event_context_tokens = int(
+            details.get("context_tokens", 0)
+            or (event_input_tokens + event_output_tokens if event.kind == "llm_response" else 0)
+            or 0
+        )
+        if event_context_tokens > context_tokens:
+            context_tokens = event_context_tokens
+
+        event_usage_pct = float(details.get("context_usage_pct", 0.0) or 0.0)
+        if not event_usage_pct and event_window > 0 and event_context_tokens > 0:
+            event_usage_pct = event_context_tokens / max(event_window, 1)
+        if event_usage_pct > context_usage_pct:
+            context_usage_pct = event_usage_pct
+
+    if context_window > 0 and context_tokens > 0:
+        context_usage_pct = max(context_usage_pct, context_tokens / max(context_window, 1))
+
+    return {
+        "provider": provider,
+        "model_name": model_name,
+        "input_tokens": input_tokens,
+        "cached_input_tokens": cached_input_tokens,
+        "new_input_tokens": new_input_tokens,
+        "output_tokens": output_tokens,
+        "context_window": context_window,
+        "context_tokens": context_tokens,
+        "context_usage_pct": round(context_usage_pct, 6),
+    }
 
 
 def _fallback_agent_contexts(result: PipelineResult) -> list[dict[str, Any]]:

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.storage.models import Base, LLMCallRecord, RuntimeEventRecord
+from src.storage.models import Base, AgentRunRecord, LLMCallRecord, RuntimeEventRecord
 from src.storage.repositories import RunRepository
 from src.storage.ui_repository import OperatorConsoleRepository
 from src.utils.observability import ObservabilityStatus, RunTrace, RuntimeEvent
@@ -156,6 +156,12 @@ def test_context_window_fields_are_persisted_into_llm_calls_and_rollups() -> Non
         assert [row.context_window for row in llm_rows] == [10000, 10000]
         assert [row.input_tokens + row.output_tokens for row in llm_rows] == [8500, 1400]
 
+        agent_rows = session.query(AgentRunRecord).order_by(AgentRunRecord.id.asc()).all()
+        assert [row.context_window for row in agent_rows] == [10000, 10000]
+        assert [row.context_tokens for row in agent_rows] == [8500, 1400]
+        assert [row.context_usage_pct for row in agent_rows] == [0.85, 0.14]
+        assert [row.model_name for row in agent_rows] == ["gemini-test", "gemini-test"]
+
         payload = OperatorConsoleRepository(session).get_run_detail(trace.run_id)
         rollups = [
             row for row in payload["agent_rollups"]
@@ -169,6 +175,13 @@ def test_context_window_fields_are_persisted_into_llm_calls_and_rollups() -> Non
         assert rollups[0]["model_name"] == "gemini-test"
         assert rollups[1]["context_tokens"] == 1400
         assert rollups[1]["context_usage_pct"] == 0.14
+
+        overview = OperatorConsoleRepository(session).get_overview(limit=10)
+        assert overview["summary"]["context_tracked_agent_runs"] == 2
+        assert overview["summary"]["context_tracked_llm_calls"] == 2
+        assert overview["summary"]["peak_context_window"] == 10000
+        assert overview["summary"]["peak_context_tokens"] == 8500
+        assert overview["summary"]["peak_context_usage_pct"] == 0.85
     finally:
         session.close()
 

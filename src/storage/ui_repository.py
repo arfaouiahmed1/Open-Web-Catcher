@@ -62,6 +62,13 @@ def _json_ready(value: Any) -> Any:
     return value
 
 
+def _positive_number(value: Any) -> bool:
+    try:
+        return float(value or 0) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 def _max_concurrency(items: list[dict[str, Any]]) -> int:
     timeline: list[tuple[datetime, int]] = []
     for item in items:
@@ -486,6 +493,7 @@ class OperatorConsoleRepository:
             if total_provider_analyses
             else 0.0
         )
+        context_summary = self._agent_context_summary()
 
         return {
             "summary": {
@@ -555,6 +563,13 @@ class OperatorConsoleRepository:
                 "failed_run_window_24h": failed_window_count,
                 "provider_coverage": provider_coverage,
                 "unique_providers": unique_provider_count,
+                "context_tracked_agent_runs": context_summary["tracked_agent_runs"],
+                "context_tracked_llm_calls": context_summary["tracked_llm_calls"],
+                "peak_context_usage_pct": context_summary["peak_context_usage_pct"],
+                "peak_context_tokens": context_summary["peak_context_tokens"],
+                "peak_context_window": context_summary["peak_context_window"],
+                "peak_context_actor": context_summary["peak_context_actor"],
+                "peak_context_model": context_summary["peak_context_model"],
             },
             "trend": trend_buckets,
             "model_breakdown": model_breakdown_rows,
@@ -828,15 +843,27 @@ class OperatorConsoleRepository:
             cache_write_cost = sum(float(item.estimated_cache_write_cost_usd or 0.0) for item in llm_rows)
             output_cost = sum(float(item.estimated_output_cost_usd or 0.0) for item in llm_rows)
             latest_llm_row = llm_rows[-1] if llm_rows else None
-            context_window = max((int(item.context_window or 0) for item in llm_rows), default=0)
+            stored_context_window = int(getattr(agent_row, "context_window", 0) or 0)
+            stored_context_tokens = int(getattr(agent_row, "context_tokens", 0) or 0)
+            stored_context_usage_pct = float(getattr(agent_row, "context_usage_pct", 0.0) or 0.0)
+            context_window = max(
+                [stored_context_window, *[int(item.context_window or 0) for item in llm_rows]],
+                default=0,
+            )
             context_tokens = max(
-                (int(item.input_tokens or 0) + int(item.output_tokens or 0) for item in llm_rows),
+                [
+                    stored_context_tokens,
+                    *[
+                        int(item.input_tokens or 0) + int(item.output_tokens or 0)
+                        for item in llm_rows
+                    ],
+                ],
                 default=0,
             )
             context_usage_pct = (
-                round(float(context_tokens) / float(context_window), 6)
+                max(stored_context_usage_pct, round(float(context_tokens) / float(context_window), 6))
                 if context_window > 0
-                else 0.0
+                else stored_context_usage_pct
             )
             stage_key = str(agent_row.agent_type or agent_row.actor or "unknown")
             status_value = normalize_run_display_status(
@@ -862,8 +889,16 @@ class OperatorConsoleRepository:
                 "new_input_tokens": new_input_tokens,
                 "output_tokens": output_tokens,
                 "total_tokens": input_tokens + output_tokens,
-                "provider": str(getattr(latest_llm_row, "provider", "") or ""),
-                "model_name": str(getattr(latest_llm_row, "model_name", "") or ""),
+                "provider": str(
+                    getattr(latest_llm_row, "provider", "")
+                    or getattr(agent_row, "provider", "")
+                    or ""
+                ),
+                "model_name": str(
+                    getattr(latest_llm_row, "model_name", "")
+                    or getattr(agent_row, "model_name", "")
+                    or ""
+                ),
                 "context_window": context_window,
                 "context_tokens": context_tokens,
                 "context_usage_pct": context_usage_pct,
@@ -896,6 +931,9 @@ class OperatorConsoleRepository:
                     "new_input_tokens": 0,
                     "output_tokens": 0,
                     "total_tokens": 0,
+                    "context_window": 0,
+                    "context_tokens": 0,
+                    "context_usage_pct": 0.0,
                     "cost_usd": 0.0,
                     "input_cost_usd": 0.0,
                     "cached_input_cost_usd": 0.0,
@@ -920,6 +958,18 @@ class OperatorConsoleRepository:
             stage_entry["new_input_tokens"] += new_input_tokens
             stage_entry["output_tokens"] += output_tokens
             stage_entry["total_tokens"] += input_tokens + output_tokens
+            stage_entry["context_window"] = max(
+                int(stage_entry["context_window"] or 0),
+                context_window,
+            )
+            stage_entry["context_tokens"] = max(
+                int(stage_entry["context_tokens"] or 0),
+                context_tokens,
+            )
+            stage_entry["context_usage_pct"] = max(
+                float(stage_entry["context_usage_pct"] or 0.0),
+                context_usage_pct,
+            )
             stage_entry["cost_usd"] += total_cost
             stage_entry["input_cost_usd"] += input_cost
             stage_entry["cached_input_cost_usd"] += cached_input_cost
@@ -962,6 +1012,9 @@ class OperatorConsoleRepository:
                     "new_input_tokens": int(values["new_input_tokens"] or 0),
                     "output_tokens": int(values["output_tokens"] or 0),
                     "total_tokens": int(values["total_tokens"] or 0),
+                    "context_window": int(values["context_window"] or 0),
+                    "context_tokens": int(values["context_tokens"] or 0),
+                    "context_usage_pct": round(float(values["context_usage_pct"] or 0.0), 6),
                     "input_cost_usd": round(float(values["input_cost_usd"] or 0.0), 6),
                     "cached_input_cost_usd": round(float(values["cached_input_cost_usd"] or 0.0), 6),
                     "cache_write_cost_usd": round(float(values["cache_write_cost_usd"] or 0.0), 6),
@@ -1490,6 +1543,116 @@ class OperatorConsoleRepository:
         payloads.reverse()
         return payloads
 
+    def _agent_context_summary(self) -> dict[str, Any]:
+        rows = (
+            self._session.query(
+                AgentRunRecord.id,
+                AgentRunRecord.actor,
+                AgentRunRecord.agent_type,
+                LLMCallRecord.provider,
+                LLMCallRecord.model_name,
+                LLMCallRecord.input_tokens,
+                LLMCallRecord.output_tokens,
+                LLMCallRecord.context_window,
+            )
+            .join(LLMCallRecord, LLMCallRecord.agent_run_id == AgentRunRecord.id)
+            .all()
+        )
+
+        tracked_agent_ids: set[int] = set()
+        tracked_llm_calls = 0
+        peak_usage_pct = 0.0
+        peak_context_tokens = 0
+        peak_context_window = 0
+        peak_context_actor = ""
+        peak_context_model = ""
+
+        for (
+            agent_run_id,
+            actor,
+            agent_type,
+            _provider,
+            model_name,
+            input_tokens,
+            output_tokens,
+            context_window,
+        ) in rows:
+            window = int(context_window or 0)
+            if window <= 0:
+                continue
+            tokens = int(input_tokens or 0) + int(output_tokens or 0)
+            usage_pct = tokens / max(window, 1)
+            tracked_llm_calls += 1
+            tracked_agent_ids.add(int(agent_run_id))
+            if usage_pct > peak_usage_pct:
+                peak_usage_pct = usage_pct
+                peak_context_tokens = tokens
+                peak_context_window = window
+                peak_context_actor = str(actor or agent_type or "")
+                peak_context_model = str(model_name or "")
+
+        return {
+            "tracked_agent_runs": len(tracked_agent_ids),
+            "tracked_llm_calls": tracked_llm_calls,
+            "peak_context_usage_pct": round(peak_usage_pct, 6),
+            "peak_context_tokens": peak_context_tokens,
+            "peak_context_window": peak_context_window,
+            "peak_context_actor": peak_context_actor,
+            "peak_context_model": peak_context_model,
+        }
+
+    def _agent_run_context_by_id(self, agent_run_ids: list[int]) -> dict[int, dict[str, Any]]:
+        if not agent_run_ids:
+            return {}
+
+        rows = (
+            self._session.query(LLMCallRecord)
+            .filter(LLMCallRecord.agent_run_id.in_(agent_run_ids))
+            .order_by(LLMCallRecord.agent_run_id.asc(), LLMCallRecord.created_at.asc())
+            .all()
+        )
+        context_by_id: dict[int, dict[str, Any]] = defaultdict(
+            lambda: {
+                "provider": "",
+                "model_name": "",
+                "input_tokens": 0,
+                "cached_input_tokens": 0,
+                "new_input_tokens": 0,
+                "output_tokens": 0,
+                "context_window": 0,
+                "context_tokens": 0,
+                "context_usage_pct": 0.0,
+            }
+        )
+        for row in rows:
+            agent_run_id = int(row.agent_run_id or 0)
+            entry = context_by_id[agent_run_id]
+            entry["provider"] = str(row.provider or entry["provider"])
+            entry["model_name"] = str(row.model_name or entry["model_name"])
+            entry["input_tokens"] += int(row.input_tokens or 0)
+            entry["cached_input_tokens"] += int(getattr(row, "cached_input_tokens", 0) or 0)
+            entry["new_input_tokens"] += int(getattr(row, "new_input_tokens", 0) or 0)
+            entry["output_tokens"] += int(row.output_tokens or 0)
+            window = int(row.context_window or 0)
+            tokens = int(row.input_tokens or 0) + int(row.output_tokens or 0)
+            if window > int(entry["context_window"] or 0):
+                entry["context_window"] = window
+            if tokens > int(entry["context_tokens"] or 0):
+                entry["context_tokens"] = tokens
+            if window > 0 and tokens > 0:
+                entry["context_usage_pct"] = max(
+                    float(entry["context_usage_pct"] or 0.0),
+                    tokens / max(window, 1),
+                )
+
+        return {
+            agent_run_id: {
+                **entry,
+                "context_usage_pct": round(float(entry["context_usage_pct"] or 0.0), 6),
+            }
+            for agent_run_id, entry in context_by_id.items()
+        }
+
     def list_database_table(
         self, table: str, *, limit: int = 50, offset: int = 0
     ) -> dict[str, Any]:
@@ -1498,12 +1661,27 @@ class OperatorConsoleRepository:
             raise ValueError(f"Unknown table '{table}'")
         query = self._session.query(model)
         total = query.count()
+        if table == "agent_runs":
+            query = query.order_by(AgentRunRecord.started_at.desc(), AgentRunRecord.id.desc())
         rows = query.offset(max(offset, 0)).limit(max(limit, 1)).all()
         columns = [column.name for column in model.__table__.columns]
+        serialized_rows = [self._serialize_model(row) for row in rows]
+        if table == "agent_runs":
+            context_by_id = self._agent_run_context_by_id(
+                [int(row.get("id", 0) or 0) for row in serialized_rows]
+            )
+            for row in serialized_rows:
+                context = context_by_id.get(int(row.get("id", 0) or 0), {})
+                for key, value in context.items():
+                    if key in {"provider", "model_name"}:
+                        if not str(row.get(key, "") or "").strip():
+                            row[key] = value
+                    elif not _positive_number(row.get(key)):
+                        row[key] = value
         return {
             "table": table,
             "columns": columns,
-            "rows": [self._serialize_model(row) for row in rows],
+            "rows": serialized_rows,
             "limit": limit,
             "offset": offset,
             "total": total,

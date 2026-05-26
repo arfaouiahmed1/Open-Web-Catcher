@@ -8,6 +8,7 @@ import { Bot, CircleDollarSign, Coins, Cpu, Globe2, LayoutGrid, Loader2 } from "
 import { apiUrl } from "@/lib/api";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/utils";
 import { estimateCallCost, loadPricing, synthCallsFromModelUsage } from "@/lib/pricing";
+import { statusLabel } from "@/lib/run-status";
 import { KpiCard } from "@/components/kpi-card";
 import { DashboardPersistencePanel } from "@/components/dashboard";
 import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
@@ -300,6 +301,21 @@ function formatCompactNumber(value) {
   if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
   if (abs >= 1_000) return `${Math.round(n / 1_000)}k`;
   return `${Math.round(n)}`;
+}
+
+function contextUsage(row = {}) {
+  const contextWindow = Number(row.context_window || 0);
+  const contextTokens = Number(row.context_tokens || 0);
+  const contextPct =
+    Number(row.context_usage_pct || 0) ||
+    (contextWindow > 0 ? contextTokens / contextWindow : 0);
+  return { contextWindow, contextTokens, contextPct };
+}
+
+function contextUsageLabel(row = {}) {
+  const { contextWindow, contextTokens, contextPct } = contextUsage(row);
+  if (contextWindow <= 0) return "not tracked";
+  return `${formatPercent(contextPct)} / ${formatNumber(contextTokens)} of ${formatCompactNumber(contextWindow)}`;
 }
 
 function chartMax(data = [], series = []) {
@@ -1054,21 +1070,35 @@ function OverviewPageContent() {
     const grouped = new Map();
     for (const row of rows) {
       const actor = row.actor || row.agent_type || "unknown";
+      const status = String(row.status || "unknown").trim().toLowerCase() || "unknown";
+      const { contextWindow, contextTokens, contextPct } = contextUsage(row);
       if (!grouped.has(actor))
         grouped.set(actor, {
           actor,
           total: 0,
-          success: 0,
+          statusCounts: {},
+          latestStatus: status,
           toolCalls: 0,
           llmCalls: 0,
           duration: 0,
+          contextWindow: 0,
+          contextTokens: 0,
+          peakContextPct: 0,
+          trackedContextRuns: 0,
         });
       const e = grouped.get(actor);
       e.total++;
-      if (row.status === "success" || row.status === "succeeded") e.success++;
+      e.statusCounts[status] = (e.statusCounts[status] || 0) + 1;
+      e.latestStatus = status;
       e.toolCalls += Number(row.tool_calls_made || 0);
       e.llmCalls += Number(row.llm_calls_made || 0);
       e.duration += Number(row.duration_seconds || 0);
+      if (contextWindow > 0) {
+        e.trackedContextRuns++;
+        e.contextWindow = Math.max(e.contextWindow, contextWindow);
+        e.contextTokens = Math.max(e.contextTokens, contextTokens);
+        e.peakContextPct = Math.max(e.peakContextPct, contextPct);
+      }
     }
     return Array.from(grouped.values())
       .map((r) => ({ ...r, avgDuration: r.total ? r.duration / r.total : 0 }))
@@ -1077,6 +1107,27 @@ function OverviewPageContent() {
   }, [agentRows]);
 
   const totalAgentRuns = agentSummary.reduce((s, r) => s + r.total, 0);
+  const trackedAgentContextRuns = agentRows.filter((row) => contextUsage(row).contextWindow > 0).length;
+  const peakAgentContext = agentRows.reduce(
+    (peak, row) => {
+      const usage = contextUsage(row);
+      if (usage.contextPct > peak.contextPct) {
+        return {
+          ...usage,
+          actor: row.actor || row.agent_type || "",
+          model: row.model_name || "",
+        };
+      }
+      return peak;
+    },
+    {
+      contextWindow: Number(summary.peak_context_window || 0),
+      contextTokens: Number(summary.peak_context_tokens || 0),
+      contextPct: Number(summary.peak_context_usage_pct || 0),
+      actor: summary.peak_context_actor || "",
+      model: summary.peak_context_model || "",
+    },
+  );
 
   const agentStatusRows = useMemo(() => {
     const grouped = new Map();
@@ -1229,10 +1280,12 @@ function OverviewPageContent() {
       accent: "mint",
     },
     {
-      label: "Agent success",
-      value: formatPercent(summary.adjusted_success_rate || 0),
-      description: `${formatNumber(summary.external_blocked_count || 0)} site/server blockers`,
-      bar: (summary.adjusted_success_rate || 0) * 100,
+      label: "Peak context",
+      value: peakAgentContext.contextWindow > 0 ? formatPercent(peakAgentContext.contextPct) : "--",
+      description: peakAgentContext.actor
+        ? `${peakAgentContext.actor}${peakAgentContext.model ? ` / ${peakAgentContext.model}` : ""}`
+        : `${formatNumber(summary.context_tracked_agent_runs || trackedAgentContextRuns)} tracked agents`,
+      bar: peakAgentContext.contextWindow > 0 ? peakAgentContext.contextPct * 100 : 0,
       accent: "signal",
     },
     {
@@ -1463,14 +1516,15 @@ function OverviewPageContent() {
       accent: "violet",
     },
     {
-      label: "Agent types",
-      value: formatNumber(agentSummary.length),
-      description: "Distinct agent actors",
+      label: "Tracked context",
+      value: formatNumber(trackedAgentContextRuns || summary.context_tracked_agent_runs || 0),
+      description: "Agent rows with context window",
+      accent: "mint",
     },
     {
-      label: "LLM calls",
-      value: formatNumber(agentSummary.reduce((s, r) => s + r.llmCalls, 0)),
-      description: "Total across agents",
+      label: "Peak context",
+      value: peakAgentContext.contextWindow > 0 ? formatPercent(peakAgentContext.contextPct) : "--",
+      description: peakAgentContext.actor || "No context window rows",
       accent: "signal",
     },
     {
@@ -2602,13 +2656,19 @@ function OverviewPageContent() {
             <div className="grid gap-3 sm:grid-cols-2">
               {agentSummary.length ? (
                 agentSummary.map((row) => {
-                  const sr = row.total ? row.success / row.total : 0;
-                  const srColor =
-                    sr >= 0.8
-                      ? "var(--mint)"
-                      : sr >= 0.5
+                  const contextRow = {
+                    context_window: row.contextWindow,
+                    context_tokens: row.contextTokens,
+                    context_usage_pct: row.peakContextPct,
+                  };
+                  const contextTone =
+                    row.peakContextPct >= 0.85
+                      ? "var(--rose)"
+                      : row.peakContextPct >= 0.6
                         ? "var(--signal)"
-                        : "var(--rose)";
+                        : row.contextWindow > 0
+                          ? "var(--mint)"
+                          : "var(--mute)";
                   return (
                     <Panel key={row.actor}>
                       <div
@@ -2634,8 +2694,8 @@ function OverviewPageContent() {
                           <div
                             className="h-full rounded-full transition-all"
                             style={{
-                              width: `${sr * 100}%`,
-                              background: srColor,
+                              width: row.contextWindow > 0 ? `${Math.min(100, Math.max(0, row.peakContextPct * 100))}%` : "0%",
+                              background: contextTone,
                             }}
                           />
                         </div>
@@ -2646,9 +2706,9 @@ function OverviewPageContent() {
                       >
                         {[
                           {
-                            label: "success",
-                            value: formatPercent(sr),
-                            color: srColor,
+                            label: "status",
+                            value: statusLabel(row.latestStatus),
+                            color: "var(--ink)",
                           },
                           {
                             label: "tools",
@@ -2661,15 +2721,16 @@ function OverviewPageContent() {
                             color: "var(--violet)",
                           },
                           {
-                            label: "avg",
-                            value: `${Number(row.avgDuration || 0).toFixed(1)}s`,
-                            color: "var(--mute)",
+                            label: "context",
+                            value: row.contextWindow > 0 ? formatPercent(row.peakContextPct) : "--",
+                            color: contextTone,
                           },
                         ].map(({ label, value, color }) => (
-                          <div key={label} className="py-3 px-1">
+                          <div key={label} className="min-w-0 px-1 py-3">
                             <div
-                              className="font-mono text-[13px] font-semibold"
+                              className="truncate font-mono text-[13px] font-semibold"
                               style={{ color }}
+                              title={value}
                             >
                               {value}
                             </div>
@@ -2680,6 +2741,11 @@ function OverviewPageContent() {
                             </div>
                           </div>
                         ))}
+                      </div>
+                      <div className="border-t px-4 py-2.5 text-[11px] text-muted-foreground">
+                        <span className="font-mono text-foreground/70">
+                          {contextUsageLabel(contextRow)}
+                        </span>
                       </div>
                     </Panel>
                   );
@@ -2750,10 +2816,10 @@ function OverviewPageContent() {
             />
             {recentAgentRows.length ? (
               <div className="overflow-x-auto">
-                <Table className="min-w-full text-[12px]">
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      {["Agent", "Status", "Target", "LLM", "Tools", "Duration"].map((h) => (
+                  <Table className="min-w-full text-[12px]">
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                      {["Agent", "Status", "Target", "Context", "LLM", "Tools", "Duration"].map((h) => (
                         <TableHead key={h} className="px-4 py-2.5 text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/60">
                           {h}
                         </TableHead>
@@ -2770,6 +2836,9 @@ function OverviewPageContent() {
                         <TableCell className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">{row.status || "-"}</TableCell>
                         <TableCell className="max-w-[340px] truncate px-4 py-2.5 font-mono text-[11px] text-muted-foreground" title={row.target_url}>
                           {row.target_url || "-"}
+                        </TableCell>
+                        <TableCell className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground" title={contextUsageLabel(row)}>
+                          {contextUsage(row).contextWindow > 0 ? formatPercent(contextUsage(row).contextPct) : "--"}
                         </TableCell>
                         <TableCell className="px-4 py-2.5 font-mono text-[11px]">{formatNumber(row.llm_calls_made || 0)}</TableCell>
                         <TableCell className="px-4 py-2.5 font-mono text-[11px]">{formatNumber(row.tool_calls_made || 0)}</TableCell>

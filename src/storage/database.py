@@ -75,7 +75,7 @@ def create_tables() -> None:
     metadata.create_all to keep unit tests fast and self-contained.
     """
 
-    if DATABASE_URL == "sqlite:///:memory:" or DATABASE_URL.startswith("sqlite:///"):
+    if DATABASE_URL == "sqlite:///:memory:":
         Base.metadata.create_all(bind=engine)
         return
 

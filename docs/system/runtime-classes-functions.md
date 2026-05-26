@@ -205,6 +205,18 @@ classDiagram
 
 ```mermaid
 classDiagram
+  class RunRecord {
+    +run_id
+    +url
+    +page_type
+    +status
+    +streams_found
+    +tokens_in
+    +tokens_out
+    +tool_calls
+    +result_json
+  }
+
   class PipelineRunRecord {
     +run_id
     +root_url
@@ -367,63 +379,17 @@ classDiagram
     +domain
     +page_type
     +source_run_id
-    +source_agent
+    +source_agent_run_id
     +status
     +success
     +url
     +data_json
   }
 
-  PipelineRunRecord --> AgentRunRecord
-  PipelineRunRecord --> RuntimeEventRecord
-  PipelineRunRecord --> RunModelUsageRecord
-  PipelineRunRecord --> RunStreamRecord
-  PipelineRunRecord --> ProviderAnalysisRecord
-  PipelineRunRecord --> TakedownEmailRecord
-  AgentRunRecord --> LLMCallRecord
-  AgentRunRecord --> ToolCallRecord
-  AgentRunRecord --> PromptCompilationRecord
-```
-
-## Function-Level Run Flow
-
-```mermaid
-flowchart TD
-  UI["POST /ui/workflows/run"]
-  Enqueue["_enqueue_background_job(job_type=workflow)"]
-  Claim["_claim_background_job"]
-  Execute["_execute_background_job"]
-  Workflow["_background_workflow"]
-  Pipeline["orchestrator.run_pipeline"]
-  Graph["build_graph(...).ainvoke"]
-  PersistLoop["_trace_persist_loop"]
-  PersistResult["_persist_pipeline_result"]
-  Detail["GET /ui/runs/{run_id}"]
-  Payload["_build_trace_detail_payload"]
-
-  UI --> Enqueue
-  Enqueue --> Claim
-  Claim --> Execute
-  Execute --> Workflow
-  Workflow --> PersistLoop
-  Workflow --> Pipeline
-  Pipeline --> Graph
-  Graph --> PersistResult
-  PersistLoop --> Payload
-  Detail --> Payload
-```
-
-## Supporting SQLAlchemy Tables
-
-The previous class diagram focuses on the core runtime. These supporting tables are also active and are exposed through database views or console features.
-
-```mermaid
-classDiagram
   class RunSnapshotRecord {
     +pipeline_run_id
     +run_id
     +snapshot_json
-    +created_at
   }
 
   class AgentOutputRecord {
@@ -494,9 +460,16 @@ classDiagram
 
   class RunScreenshotRecord {
     +pipeline_run_id
+    +agent_run_id
     +screenshot_url
     +source_url
     +label
+    +actor
+    +agent_type
+    +invocation_index
+    +tool_name
+    +target_url
+    +seq
   }
 
   class MemoryHintUsedRecord {
@@ -532,6 +505,9 @@ classDiagram
     +batch_id
     +batch_name
     +status
+    +source
+    +language_filter
+    +label_filter
     +requested_count
     +completed_count
     +passed_count
@@ -545,6 +521,8 @@ classDiagram
     +site_id
     +run_id
     +url
+    +language
+    +label
     +status
     +final_status
     +stream_count
@@ -552,16 +530,60 @@ classDiagram
     +error_text
   }
 
+  PipelineRunRecord --> AgentRunRecord
   PipelineRunRecord --> RunSnapshotRecord
+  PipelineRunRecord --> RuntimeEventRecord
+  PipelineRunRecord --> RunModelUsageRecord
+  PipelineRunRecord --> RunStreamRecord
   PipelineRunRecord --> RunScreenshotRecord
+  PipelineRunRecord --> ProviderAnalysisRecord
+  PipelineRunRecord --> TakedownEmailRecord
   PipelineRunRecord --> RunDecisionRecord
   PipelineRunRecord --> RunTaskRecord
+  AgentRunRecord --> LLMCallRecord
+  AgentRunRecord --> ToolCallRecord
   AgentRunRecord --> AgentOutputRecord
+  AgentRunRecord --> PromptCompilationRecord
+  AgentRunRecord --> RunScreenshotRecord
   AgentRunRecord --> MemoryHintUsedRecord
+  AgentRunRecord --> MemoryEntryRecord
   PromptVersionRecord --> PromptCompilationRecord
+  MemoryEntryRecord --> MemoryHintUsedRecord
   DatasetBatchRecord --> DatasetSiteRunRecord
   DatasetSiteRecord --> DatasetSiteRunRecord
 ```
+
+## Function-Level Run Flow
+
+```mermaid
+flowchart TD
+  UI["POST /ui/workflows/run"]
+  Enqueue["_enqueue_background_job(job_type=workflow)"]
+  Claim["_claim_background_job"]
+  Execute["_execute_background_job"]
+  Workflow["_background_workflow"]
+  Pipeline["orchestrator.run_pipeline"]
+  Graph["build_graph(...).ainvoke"]
+  PersistLoop["_trace_persist_loop"]
+  PersistResult["_persist_pipeline_result"]
+  Detail["GET /ui/runs/{run_id}"]
+  Payload["_build_trace_detail_payload"]
+
+  UI --> Enqueue
+  Enqueue --> Claim
+  Claim --> Execute
+  Execute --> Workflow
+  Workflow --> PersistLoop
+  Workflow --> Pipeline
+  Pipeline --> Graph
+  Graph --> PersistResult
+  PersistLoop --> Payload
+  Detail --> Payload
+```
+
+## SQLAlchemy Coverage Note
+
+The class diagram above includes the runtime tables and the supporting tables from `src/storage/models.py` in one place. `RunRecord` is the legacy result table; `PipelineRunRecord` and its linked tables are the normalized run store; `ToolPlaygroundCallRecord`, `ProviderLookupCheckRecord`, `PricingConfigRecord`, and the dataset records are active console/support tables even though they do not all hang directly from one pipeline run.
 
 ## Why This Shape Is Useful
 
