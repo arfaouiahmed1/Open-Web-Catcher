@@ -12,6 +12,8 @@ classDiagram
     +Settings settings
     +RunObserver observer
     +run(url) PipelineResult
+    +build_graph(settings, observer) StateGraph
+    +run_pipeline(url, settings, observer) PipelineResult
   }
 
   class PipelineState {
@@ -25,6 +27,10 @@ classDiagram
     +list~ProviderInfo~ provider_analysis
     +list~TakedownEmail~ takedown_emails
     +str error
+    +route_after_classification(state) str
+    +route_after_landing(state) str
+    +route_after_hosting(state) str
+    +route_after_embedded(state) str
   }
 
   class HandoffContext {
@@ -35,6 +41,7 @@ classDiagram
     +list~str~ required_evidence
     +str navigation_policy
     +str memory_hints
+    +render_handoff(ctx) str
   }
 
   class ClassificationAgent {
@@ -72,6 +79,9 @@ classDiagram
     +increment_tool_calls(count) void
     +finish(success, failure_mode) void
     +request_cancel(reason) void
+    +is_cancel_requested() bool
+    +cancel_reason() str
+    +trace() RunTrace
   }
 
   OrchestratorAgent --> PipelineState
@@ -156,10 +166,20 @@ classDiagram
   class RunRepository {
     +save(result, trace) void
     +save_trace_snapshot(run_id, root_actor, url, trace) void
-    +get_run(run_id) PipelineResult
-    +list_runs(limit) list
+    +cleanup_old_artifacts(retention_days) dict
+    +hard_delete_run(run_id) dict
+    +get_by_run_id(run_id) RunRecord
+    +list_recent(limit) list
+    +success_rate() float
     +list_runtime_events(run_id) list
     +get_run_snapshot(run_id) dict
+    +get_run_emails(run_id) dict
+    +get_observability_summary(limit) dict
+    +list_agent_runs(run_id) list
+    +list_llm_calls(run_id) list
+    +list_tool_calls(run_id) list
+    +list_memory_entries(domain, page_type, limit) list
+    +list_prompt_compilations(run_id) list
   }
 
   class BackgroundJobRepository {
@@ -179,21 +199,44 @@ classDiagram
     +get_overview(active_traces, limit) dict
     +list_runs(status, limit, offset) dict
     +get_run_detail(run_id, active_trace) dict
-    +list_table(table, limit, offset) dict
+    +list_database_table(table, limit, offset) dict
     +list_pricing_configs() list
     +upsert_pricing_config(config) PricingConfig
     +upsert_pricing_configs(configs) int
+    +list_run_decisions(run_id) list
+    +create_run_decision(run_id, payload) dict
+    +update_run_decision(run_id, decision_id, payload) dict
+    +delete_run_decision(run_id, decision_id) bool
+    +list_run_tasks(run_id) list
+    +create_run_task(run_id, payload) dict
+    +update_run_task(run_id, task_id, payload) dict
+    +delete_run_task(run_id, task_id) bool
+    +record_tool_playground_call(payload) dict
+    +list_tool_playground_calls(limit, offset) dict
+    +record_provider_lookup_batch(payload) dict
+    +get_provider_lookup_history(limit, offset) dict
+    +list_recent_runtime_events(limit) list
   }
 
   class DatasetRepository {
+    +ensure_seeded_from_csv(csv_path) dict
+    +import_csv(csv_path, source) dict
     +list_sites(...) dict
     +create_site(...) dict
+    +get_site_detail(site_id, limit) dict
+    +get_run_context(run_id) dict
+    +site_stats() dict
     +update_site(...) dict
     +delete_site(site_id) void
+    +bulk_update(site_ids, updates) dict
+    +record_result(run_id, result) void
+    +results_summary(language, label) dict
     +create_batch(...) dict
+    +list_batches(limit, offset) dict
     +get_batch(batch_id) dict
     +mark_site_run_running(run_id) void
     +mark_site_run_cancelled(run_id) void
+    +cancel_batch(batch_id, reason) dict
   }
 
   BackgroundJobRepository --> OperatorConsoleRepository
@@ -205,18 +248,6 @@ classDiagram
 
 ```mermaid
 classDiagram
-  class RunRecord {
-    +run_id
-    +url
-    +page_type
-    +status
-    +streams_found
-    +tokens_in
-    +tokens_out
-    +tool_calls
-    +result_json
-  }
-
   class PipelineRunRecord {
     +run_id
     +root_url
@@ -379,17 +410,63 @@ classDiagram
     +domain
     +page_type
     +source_run_id
-    +source_agent_run_id
+    +source_agent
     +status
     +success
     +url
     +data_json
   }
 
+  PipelineRunRecord --> AgentRunRecord
+  PipelineRunRecord --> RuntimeEventRecord
+  PipelineRunRecord --> RunModelUsageRecord
+  PipelineRunRecord --> RunStreamRecord
+  PipelineRunRecord --> ProviderAnalysisRecord
+  PipelineRunRecord --> TakedownEmailRecord
+  AgentRunRecord --> LLMCallRecord
+  AgentRunRecord --> ToolCallRecord
+  AgentRunRecord --> PromptCompilationRecord
+```
+
+## Function-Level Run Flow
+
+```mermaid
+flowchart TD
+  UI["POST /ui/workflows/run"]
+  Enqueue["_enqueue_background_job(job_type=workflow)"]
+  Claim["_claim_background_job"]
+  Execute["_execute_background_job"]
+  Workflow["_background_workflow"]
+  Pipeline["orchestrator.run_pipeline"]
+  Graph["build_graph(...).ainvoke"]
+  PersistLoop["_trace_persist_loop"]
+  PersistResult["_persist_pipeline_result"]
+  Detail["GET /ui/runs/{run_id}"]
+  Payload["_build_trace_detail_payload"]
+
+  UI --> Enqueue
+  Enqueue --> Claim
+  Claim --> Execute
+  Execute --> Workflow
+  Workflow --> PersistLoop
+  Workflow --> Pipeline
+  Pipeline --> Graph
+  Graph --> PersistResult
+  PersistLoop --> Payload
+  Detail --> Payload
+```
+
+## Supporting SQLAlchemy Tables
+
+The previous class diagram focuses on the core runtime. These supporting tables are also active and are exposed through database views or console features.
+
+```mermaid
+classDiagram
   class RunSnapshotRecord {
     +pipeline_run_id
     +run_id
     +snapshot_json
+    +created_at
   }
 
   class AgentOutputRecord {
@@ -460,16 +537,9 @@ classDiagram
 
   class RunScreenshotRecord {
     +pipeline_run_id
-    +agent_run_id
     +screenshot_url
     +source_url
     +label
-    +actor
-    +agent_type
-    +invocation_index
-    +tool_name
-    +target_url
-    +seq
   }
 
   class MemoryHintUsedRecord {
@@ -505,9 +575,6 @@ classDiagram
     +batch_id
     +batch_name
     +status
-    +source
-    +language_filter
-    +label_filter
     +requested_count
     +completed_count
     +passed_count
@@ -521,8 +588,6 @@ classDiagram
     +site_id
     +run_id
     +url
-    +language
-    +label
     +status
     +final_status
     +stream_count
@@ -530,60 +595,16 @@ classDiagram
     +error_text
   }
 
-  PipelineRunRecord --> AgentRunRecord
   PipelineRunRecord --> RunSnapshotRecord
-  PipelineRunRecord --> RuntimeEventRecord
-  PipelineRunRecord --> RunModelUsageRecord
-  PipelineRunRecord --> RunStreamRecord
   PipelineRunRecord --> RunScreenshotRecord
-  PipelineRunRecord --> ProviderAnalysisRecord
-  PipelineRunRecord --> TakedownEmailRecord
   PipelineRunRecord --> RunDecisionRecord
   PipelineRunRecord --> RunTaskRecord
-  AgentRunRecord --> LLMCallRecord
-  AgentRunRecord --> ToolCallRecord
   AgentRunRecord --> AgentOutputRecord
-  AgentRunRecord --> PromptCompilationRecord
-  AgentRunRecord --> RunScreenshotRecord
   AgentRunRecord --> MemoryHintUsedRecord
-  AgentRunRecord --> MemoryEntryRecord
   PromptVersionRecord --> PromptCompilationRecord
-  MemoryEntryRecord --> MemoryHintUsedRecord
   DatasetBatchRecord --> DatasetSiteRunRecord
   DatasetSiteRecord --> DatasetSiteRunRecord
 ```
-
-## Function-Level Run Flow
-
-```mermaid
-flowchart TD
-  UI["POST /ui/workflows/run"]
-  Enqueue["_enqueue_background_job(job_type=workflow)"]
-  Claim["_claim_background_job"]
-  Execute["_execute_background_job"]
-  Workflow["_background_workflow"]
-  Pipeline["orchestrator.run_pipeline"]
-  Graph["build_graph(...).ainvoke"]
-  PersistLoop["_trace_persist_loop"]
-  PersistResult["_persist_pipeline_result"]
-  Detail["GET /ui/runs/{run_id}"]
-  Payload["_build_trace_detail_payload"]
-
-  UI --> Enqueue
-  Enqueue --> Claim
-  Claim --> Execute
-  Execute --> Workflow
-  Workflow --> PersistLoop
-  Workflow --> Pipeline
-  Pipeline --> Graph
-  Graph --> PersistResult
-  PersistLoop --> Payload
-  Detail --> Payload
-```
-
-## SQLAlchemy Coverage Note
-
-The class diagram above includes the runtime tables and the supporting tables from `src/storage/models.py` in one place. `RunRecord` is the legacy result table; `PipelineRunRecord` and its linked tables are the normalized run store; `ToolPlaygroundCallRecord`, `ProviderLookupCheckRecord`, `PricingConfigRecord`, and the dataset records are active console/support tables even though they do not all hang directly from one pipeline run.
 
 ## Why This Shape Is Useful
 

@@ -1,0 +1,76 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  core/.style={draw=accent!90!black, fill=blue!10, rounded corners=5pt,
+    minimum width=3.05cm, minimum height=0.86cm, align=center,
+    font=\scriptsize\bfseries},
+  memory/.style={draw=teal!70!black, fill=teal!8, rounded corners=5pt,
+    minimum width=3.05cm, minimum height=0.86cm, align=center,
+    font=\scriptsize\bfseries},
+  agent/.style={draw=orange!75!black, fill=orange!9, rounded corners=5pt,
+    minimum width=3.15cm, minimum height=0.86cm, align=center,
+    font=\scriptsize\bfseries},
+  tool/.style={draw=purple!70!black, fill=purple!8, rounded corners=5pt,
+    minimum width=3.05cm, minimum height=0.86cm, align=center,
+    font=\scriptsize\bfseries},
+  skip/.style={draw=gray!65, fill=gray!9, rounded corners=5pt,
+    minimum width=3.45cm, minimum height=0.86cm, align=center,
+    font=\scriptsize\bfseries},
+  result/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
+    minimum width=3.05cm, minimum height=0.86cm, align=center,
+    font=\scriptsize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!82},
+  soft/.style={->, >=Stealth, thick, teal!70!black},
+  route/.style={->, >=Stealth, thick, orange!75!black},
+  stream/.style={->, >=Stealth, thick, green!55!black},
+  skipped/.style={->, >=Stealth, thick, gray!65, dashed},
+  lbl/.style={font=\tiny\bfseries, fill=white, inner sep=1.3pt, text=black}
+]
+
+\node[core] (orchestrator) at (0,0) {OrchestratorAgent};
+\node[memory] (memory) at (3.55,2.75) {LongTermMemory\\soft hints};
+\node[agent] (classifier) at (3.55,0) {ClassificationAgent};
+
+\node[agent] (landing) at (7.45,3.05) {LandingPageAgent};
+\node[agent] (hosting) at (7.45,0.95) {HostingPageAgent\\parallel targets};
+\node[agent] (embedded) at (7.45,-1.35) {EmbeddedPageAgent\\iframe/player targets};
+\node[skip] (nostreams) at (7.45,-3.85) {analyze\_providers node\\skips because no streams};
+
+\node[tool] (providers) at (11.65,-0.25) {IPInfoTool\\provider analysis};
+\node[tool] (emails) at (15.35,1.25) {EmailTool\\takedown drafts};
+\node[result] (result) at (15.35,-2.55) {PipelineResult};
+
+\draw[soft] (orchestrator) -- (memory);
+\draw[arr] (orchestrator) -- (classifier);
+
+\draw[route] (classifier.north east) to[out=18,in=190]
+  node[lbl, pos=0.42, above, sloped]{landing} (landing.west);
+\draw[route] (classifier.east) to[out=0,in=180]
+  node[lbl, pos=0.46, above]{hosting} (hosting.west);
+\draw[route] (classifier.south east) to[out=-18,in=170]
+  node[lbl, pos=0.43, below, sloped]{embedded} (embedded.west);
+\coordinate (unknownLeft) at (1.65,-1.85);
+\coordinate (unknownBottom) at (1.65,-3.85);
+\draw[skipped] (classifier.south) -- ++(0,-0.85) -- 
+  node[lbl, pos=0.48, below]{unknown/other} (unknownLeft) --
+  (unknownBottom) -- (nostreams.west);
+
+\draw[route] (landing.south) -- node[lbl, left]{hosting\_pages} (hosting.north);
+\draw[route] (landing.east) to[out=5,in=45,looseness=1.15]
+  node[lbl, pos=0.48, above, sloped]{direct embedded urls} (embedded.east);
+\draw[route] (hosting.south) -- node[lbl, right]{embedded\_url/player\_iframe} (embedded.north);
+
+\draw[stream] (hosting.east) -- node[lbl, above, sloped]{streams} (providers.west);
+\draw[stream] (embedded.east) to[out=0,in=215]
+  node[lbl, pos=0.42, below, sloped]{streams} (providers.south west);
+\draw[arr] (providers) -- (emails);
+\draw[arr] (emails) -- (result);
+\draw[arr] (providers) -- (result);
+\draw[skipped] (nostreams.east) -- (result.west);
+
+\end{tikzpicture}
+}
+\caption{Agent interconnection graph based on the architecture documentation.}
+\label{fig:agent-interconnection}
+\end{figure}

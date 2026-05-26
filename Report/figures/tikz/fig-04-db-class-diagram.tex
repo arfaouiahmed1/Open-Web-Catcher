@@ -1,0 +1,178 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  dbclass/.style={draw=gray!70, fill=white, rounded corners=2pt,
+    text width=2.75cm, align=left, inner sep=3.5pt, font=\scriptsize},
+  root/.style={dbclass, draw=accent!85!black, fill=blue!5},
+  trace/.style={dbclass, draw=purple!70!black, fill=purple!5},
+  evidence/.style={dbclass, draw=green!55!black, fill=green!5},
+  support/.style={dbclass, draw=gray!70, fill=gray!6},
+  assoc/.style={->, >=Stealth, thick, gray!68, shorten <=2pt, shorten >=2pt},
+  weak/.style={->, >=Stealth, thick, gray!55, dashed, shorten <=2pt, shorten >=2pt},
+  label/.style={font=\tiny\bfseries, fill=white, inner sep=1pt, text=black}
+]
+
+\node[support] (job) at (-3.45,4.55) {
+  {\centering\textbf{BackgroundJobRecord}\par}
+  \rule{\linewidth}{0.25pt}\\[-1pt]
+  \texttt{+ job\_id}: string PK\\
+  \texttt{+ run\_id}: string\\
+  \texttt{+ job\_type}: string\\
+  \texttt{+ status}: string\\
+  \texttt{+ payload/result JSON}
+};
+
+\node[support] (snapshot) at (-3.45,2.05) {
+  {\centering\textbf{RunSnapshotRecord}\par}
+  \rule{\linewidth}{0.25pt}\\[-1pt]
+  \texttt{+ id}: int PK\\
+  \texttt{+ pipeline\_run\_id}: FK\\
+  \texttt{+ run\_id}: string\\
+  \texttt{+ snapshot\_json}: JSON
+};
+
+\node[support] (usage) at (-3.45,-0.25) {
+  {\centering\textbf{RunModelUsageRecord}\par}
+  \rule{\linewidth}{0.25pt}\\[-1pt]
+  \texttt{+ pipeline\_run\_id}: FK\\
+  \texttt{+ provider}: string\\
+  \texttt{+ model\_name}: string\\
+  \texttt{+ tokens/cost}: totals
+};
+
+\node[root] (run) at (0,4.55) {
+  {\centering\textbf{PipelineRunRecord}\par}
+  \rule{\linewidth}{0.25pt}\\[-1pt]
+  \texttt{+ id}: int PK\\
+  \texttt{+ run\_id}: string\\
+  \texttt{+ root\_url}: text\\
+  \texttt{+ final\_status}: string\\
+  \texttt{+ stream/email counts}\\
+  \texttt{+ token/cost totals}
+};
+
+\node[trace] (agent) at (4.05,4.55) {
+  {\centering\textbf{AgentRunRecord}\par}
+  \rule{\linewidth}{0.25pt}\\[-1pt]
+  \texttt{+ id}: int PK\\
+  \texttt{+ pipeline\_run\_id}: FK\\
+  \texttt{+ actor/agent\_type}\\
+  \texttt{+ target\_url}: text\\
+  \texttt{+ status}: string\\
+  \texttt{+ prompt/memory flags}
+};
+
+\node[trace] (output) at (4.05,2.15) {
+  {\centering\textbf{AgentOutputRecord}\par}
+  \rule{\linewidth}{0.25pt}\\[-1pt]
+  \texttt{+ agent\_run\_id}: FK\\
+  \texttt{+ output\_json}: JSON\\
+  \texttt{+ summary\_text}: text\\
+  \texttt{+ stream/embed counts}
+};
+
+\node[trace] (llm) at (2.45,-0.15) {
+  {\centering\textbf{LLMCallRecord}\par}
+  \rule{\linewidth}{0.25pt}\\[-1pt]
+  \texttt{+ agent\_run\_id}: FK\\
+  \texttt{+ provider/model}\\
+  \texttt{+ prompt\_hash}\\
+  \texttt{+ tokens/cost}\\
+  \texttt{+ cache\_mode}
+};
+
+\node[trace] (tool) at (5.65,-0.15) {
+  {\centering\textbf{ToolCallRecord}\par}
+  \rule{\linewidth}{0.25pt}\\[-1pt]
+  \texttt{+ agent\_run\_id}: FK\\
+  \texttt{+ tool\_name}: string\\
+  \texttt{+ status}: string\\
+  \texttt{+ args/result/error}
+};
+
+\node[trace] (prompt) at (2.45,-2.25) {
+  {\centering\textbf{PromptCompilationRecord}\par}
+  \rule{\linewidth}{0.25pt}\\[-1pt]
+  \texttt{+ agent\_run\_id}: FK\\
+  \texttt{+ prompt\_version\_id}: FK\\
+  \texttt{+ compiled\_hash}\\
+  \texttt{+ memory\_injected}
+};
+
+\node[trace] (memory) at (5.65,-2.25) {
+  {\centering\textbf{MemoryHintUsedRecord}\par}
+  \rule{\linewidth}{0.25pt}\\[-1pt]
+  \texttt{+ agent\_run\_id}: FK\\
+  \texttt{+ memory\_entry\_id}: FK\\
+  \texttt{+ created\_at}
+};
+
+\node[evidence] (stream) at (8.45,4.55) {
+  {\centering\textbf{RunStreamRecord}\par}
+  \rule{\linewidth}{0.25pt}\\[-1pt]
+  \texttt{+ pipeline\_run\_id}: FK\\
+  \texttt{+ stream\_url}: text\\
+  \texttt{+ protocol/quality}\\
+  \texttt{+ server\_label}\\
+  \texttt{+ dedupe\_hash}
+};
+
+\node[evidence] (shot) at (8.45,2.15) {
+  {\centering\textbf{RunScreenshotRecord}\par}
+  \rule{\linewidth}{0.25pt}\\[-1pt]
+  \texttt{+ pipeline\_run\_id}: FK\\
+  \texttt{+ agent\_run\_id}: FK?\\
+  \texttt{+ screenshot\_url}: text\\
+  \texttt{+ source/target URL}\\
+  \texttt{+ tool\_name + seq}
+};
+
+\node[evidence] (provider) at (8.45,-0.15) {
+  {\centering\textbf{ProviderAnalysisRecord}\par}
+  \rule{\linewidth}{0.25pt}\\[-1pt]
+  \texttt{+ pipeline\_run\_id}: FK\\
+  \texttt{+ stream\_url}: text\\
+  \texttt{+ hostname/ip}\\
+  \texttt{+ provider/org}\\
+  \texttt{+ abuse\_email}
+};
+
+\node[evidence] (email) at (8.45,-2.25) {
+  {\centering\textbf{TakedownEmailRecord}\par}
+  \rule{\linewidth}{0.25pt}\\[-1pt]
+  \texttt{+ pipeline\_run\_id}: FK\\
+  \texttt{+ provider/contact}\\
+  \texttt{+ subject/body}\\
+  \texttt{+ stream\_urls\_json}\\
+  \texttt{+ evidence JSON}
+};
+
+\coordinate (runAgentMid) at (2.0,4.55);
+\coordinate (evidenceBus) at (7.15,3.35);
+\coordinate (supportBus) at (-1.78,3.05);
+\coordinate (agentBus) at (4.05,3.05);
+
+\draw[weak] (job.east) -- node[label, above]{same run\_id before persistence} (run.west);
+\draw[assoc] (run.west) -- (supportBus |- run.west);
+\draw[assoc] (supportBus |- run.west) |- node[label, near end, above]{1:1} (snapshot.east);
+\draw[assoc] (supportBus |- run.west) |- node[label, near end, above]{0..*} (usage.east);
+\draw[assoc] (run.east) -- node[label, above]{1} node[label, below]{0..*} (agent.west);
+
+\draw[assoc] (agent.south) -- node[label, right]{1:1} (output.north);
+\draw[assoc] (agent.south west) to[out=-135,in=90] node[label, near end, left]{0..*} (llm.north);
+\draw[assoc] (agent.south east) to[out=-45,in=90] node[label, near end, right]{0..*} (tool.north);
+\draw[assoc] (llm.south) -- node[label, left]{prompt lineage} (prompt.north);
+\draw[assoc] (tool.south) -- node[label, right]{memory hint FK} (memory.north);
+
+\draw[assoc] (run.east) -- ++(0.95,0) |- (evidenceBus);
+\draw[assoc] (evidenceBus) |- node[label, near end, above]{0..*} (stream.west);
+\draw[assoc] (evidenceBus) |- node[label, near end, above]{0..*} (shot.west);
+\draw[assoc] (evidenceBus) |- node[label, near end, above]{0..*} (provider.west);
+\draw[assoc] (evidenceBus) |- node[label, near end, above]{0..*} (email.west);
+
+\end{tikzpicture}
+}
+\caption{StarUML-style database class diagram for the main persisted run, telemetry, prompt, memory, and evidence tables.}
+\label{fig:db-class-diagram}
+\end{figure}

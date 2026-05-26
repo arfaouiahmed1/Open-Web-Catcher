@@ -1,0 +1,86 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  lane/.style={draw=gray!35, fill=gray!4, rounded corners=6pt, inner sep=7pt},
+  sys/.style={draw=accent!85, fill=blue!6, rounded corners=5pt,
+    minimum width=2.8cm, minimum height=0.82cm, align=center, font=\scriptsize\bfseries},
+  orch/.style={draw=accent!95!black, fill=blue!12, rounded corners=5pt,
+    minimum width=3.2cm, minimum height=0.95cm, align=center, font=\scriptsize\bfseries},
+  agent/.style={draw=orange!80!black, fill=orange!9, rounded corners=5pt,
+    minimum width=2.85cm, minimum height=0.88cm, align=center, font=\scriptsize\bfseries},
+  tool/.style={draw=purple!65!black, fill=purple!7, rounded corners=5pt,
+    minimum width=2.75cm, minimum height=0.78cm, align=center, font=\scriptsize\bfseries},
+  data/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
+    minimum width=2.95cm, minimum height=0.78cm, align=center, font=\scriptsize\bfseries},
+  ext/.style={draw=gray!60, fill=gray!10, rounded corners=5pt,
+    minimum width=2.55cm, minimum height=0.74cm, align=center, font=\scriptsize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!82},
+  hand/.style={->, >=Stealth, thick, orange!75!black, dashed},
+  soft/.style={->, >=Stealth, thick, gray!65}
+]
+
+\node[sys] (operator) at (0,5.4) {Operator\\console};
+\node[sys] (api) at (3.0,5.4) {FastAPI\\run API};
+\node[orch] (orch) at (6.3,5.4) {Orchestrator\\LangGraph route};
+\node[data] (trace) at (9.9,5.4) {Observer\\trace events};
+\node[data] (store) at (13.0,5.4) {Postgres\\run detail};
+
+\node[agent] (cls) at (1.3,3.45) {Classification\\agent};
+\node[agent] (land) at (4.6,3.45) {Landing-page\\agent};
+\node[agent] (host) at (7.9,3.45) {Hosting-page\\agent(s)};
+\node[agent] (emb) at (11.2,3.45) {Embedded-page\\agent(s)};
+\node[data] (evidence) at (14.4,3.45) {Evidence bundle\\streams + shots};
+
+\node[tool] (langchain) at (3.0,1.55) {LangChain\\model + tools};
+\node[tool] (langgraph) at (6.3,1.55) {LangGraph\\state edges};
+\node[tool] (mcp) at (9.6,1.55) {MCP browser\\profile tools};
+\node[ext] (gemini) at (12.75,1.55) {Gemini\\LLM calls};
+\node[ext] (sites) at (15.7,1.55) {Target sites\\players};
+
+\node[tool] (provider) at (6.4,-0.2) {Provider analysis\\IP / RDAP};
+\node[tool] (email) at (10.0,-0.2) {Email drafts\\human review};
+\node[data] (result) at (13.5,-0.2) {PipelineResult\\status + payload};
+
+\begin{scope}[on background layer]
+\node[lane, fit=(cls)(land)(host)(emb)(evidence)] {};
+\node[lane, fit=(langchain)(langgraph)(mcp)(gemini)(sites)] {};
+\end{scope}
+
+\draw[arr] (operator) -- (api);
+\draw[arr] (api) -- (orch);
+\draw[soft] (api) -- (store);
+\draw[soft] (orch) -- (trace);
+\draw[soft] (trace) -- (store);
+
+\coordinate (handoffbus) at (6.3,4.55);
+\draw[hand] (orch.south) -- (handoffbus);
+\draw[hand] (handoffbus) -| (cls.north);
+\draw[hand] (handoffbus) -| (land.north);
+\draw[hand] (handoffbus) -| (host.north);
+\draw[hand] (handoffbus) -| (emb.north);
+
+\draw[arr] (cls) -- node[font=\tiny, fill=white, inner sep=1pt, above]{page type} (land);
+\draw[arr] (land) -- node[font=\tiny, fill=white, inner sep=1pt, above]{hosting queue} (host);
+\draw[arr] (host) -- node[font=\tiny, fill=white, inner sep=1pt, above]{iframe queue} (emb);
+\draw[arr] (host) -- (evidence);
+\draw[arr] (emb) -- (evidence);
+
+\coordinate (runtimeDrop) at (7.9,2.78);
+\draw[soft] (runtimeDrop) -- node[font=\tiny, fill=white, inner sep=1pt, right]{uses shared runtime} (7.9,2.05);
+\draw[soft] (orch.south) -- ++(0,-2.95) -| (langgraph.north);
+\draw[soft] (langchain) -- (langgraph);
+\draw[soft] (langgraph) -- (mcp);
+\draw[soft] (mcp) -- (gemini);
+\draw[arr] (mcp) -- (sites);
+
+\draw[arr] (evidence) |- (provider);
+\draw[arr] (provider) -- (email);
+\draw[arr] (email) -- (result);
+\draw[soft] (result.east) -- ++(0.85,0) |- (store.east);
+
+\end{tikzpicture}
+}
+\caption{End-to-end agent architecture at workflow scale.}
+\label{fig:end-to-end-agent-map}
+\end{figure}

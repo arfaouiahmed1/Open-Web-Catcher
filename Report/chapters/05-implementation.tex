@@ -43,7 +43,7 @@ prototype phase.
 
 \input{figures/tikz/fig-n8n-agent-screenshots}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.2cm}
                               >{\raggedright\arraybackslash}X
@@ -76,7 +76,7 @@ The n8n workflow was valuable, but it reached clear limits when the task became
 larger than a single experimental run. These limits explain why the second
 implementation was necessary.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{Q{3.0cm} Y Y}
 \toprule
@@ -133,7 +133,7 @@ The FastAPI backend is the control plane of the reference solution~\cite{fastapi
 runs, checks runtime readiness, streams or returns run state, exposes settings,
 stores observability records, and gives the frontend a stable API surface.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.4cm}
                               >{\raggedright\arraybackslash}X
@@ -170,7 +170,7 @@ The Next.js frontend is not just a dashboard~\cite{nextjs}. It is the operator c
 reference implementation: launching runs, following execution, reviewing
 evidence, and changing runtime configuration.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.4cm}
                               >{\raggedright\arraybackslash}X
@@ -212,7 +212,7 @@ session ownership outside the LLM prompt.
 The engine comparison below is based on the official Playwright and Puppeteer
 documentation and the project's integration constraints~\cite{playwright,puppeteer,cdp}.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.8cm}
                               >{\raggedright\arraybackslash}X
@@ -233,7 +233,7 @@ as the main browser engine for the implemented agent prompts and tool runtime. \
 \label{tab:playwright-puppeteer}
 \end{table}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.2cm}
                               >{\raggedright\arraybackslash}X}
@@ -264,7 +264,7 @@ The reference solution uses specialist agents rather than one general browser
 agent. Each specialist receives a role-specific prompt, a profile-specific tool
 set, and a bounded execution budget.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.8cm}
                               >{\raggedright\arraybackslash}X
@@ -295,7 +295,7 @@ The agent runtime was shaped by constraints that became clear during prototyping
 constraints are implementation concerns, not only methodology notes, because each one
 changed how the agents, prompts, tools, memory, and stopping rules were built.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.6cm}
                               >{\raggedright\arraybackslash}X
@@ -375,7 +375,7 @@ requests per day, and states that limits depend on model and usage tier and can
 change in AI Studio \cite{gemini-rate-limits}. The implementation therefore treats rate
 limits as configuration and observability concerns rather than hard-coded constants.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.1cm}
                               >{\raggedright\arraybackslash}X
@@ -410,7 +410,7 @@ respected, and when the agent should stop. The strongest prompt pattern was an
 evidence-based loop: observe, state the current hypothesis, choose one action,
 verify the result, then either continue or return a structured failure.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.3cm}
                               >{\raggedright\arraybackslash}X}
@@ -441,7 +441,7 @@ and configuration. It is not the product database of the external organization.
 Its purpose in this project is to preserve what happened during a run so that
 failures and successes can be inspected later.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.4cm}
                               >{\raggedright\arraybackslash}X
@@ -491,7 +491,7 @@ a cloud-executable single-container unit.
 
 \input{figures/tikz/fig-05-deployment-physical}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{Q{2.8cm} Y Y}
 \toprule

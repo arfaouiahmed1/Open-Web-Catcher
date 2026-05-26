@@ -96,7 +96,7 @@ there. A static request to the hosting page may not show any \texttt{.m3u8} or
 \texttt{.mpd} URL, while the embedded player requests the manifest after user
 activation.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.2cm}
                               >{\raggedright\arraybackslash}X
@@ -149,7 +149,7 @@ containers. Hosting pages expose player containers and server controls. Embedded
 often expose a reduced tree with one \texttt{<video>} element or a JavaScript player
 root.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.4cm}
                               >{\raggedright\arraybackslash}X
@@ -256,7 +256,7 @@ behaviors are not just inconvenient; they change the extraction problem because 
 automation may click the wrong layer, follow an ad redirect, or lose the original player
 context.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.1cm}
                               >{\raggedright\arraybackslash}X
@@ -374,6 +374,7 @@ The important concept is separation of responsibility. The LLM decides what to t
 while tools perform bounded actions and return structured evidence. This keeps the
 agentic process auditable.
 
+\clearpage
 \section{Chapter Summary}
 
 This chapter established the technical background for the rest of the report. It

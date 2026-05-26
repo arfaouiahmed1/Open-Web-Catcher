@@ -1,8 +1,15 @@
-\documentclass[12pt,a4paper,oneside]{report}
+\documentclass[12pt,a4paper,twoside]{report}
 
-\usepackage[T1]{fontenc}
-\usepackage[utf8]{inputenc}
-\usepackage{lmodern}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{newtxtext}
+  \usepackage{newtxmath}
+\else
+  \usepackage{fontspec}
+  \setmainfont{Times New Roman}
+\fi
 \usepackage[a4paper,margin=2.5cm]{geometry}
 \usepackage{setspace}
 \usepackage{graphicx}
@@ -17,11 +24,14 @@
 \usepackage{xcolor}
 \usepackage{colortbl}
 \usepackage{caption}
+\usepackage{totpages}
 \usepackage{hyperref}
 \usepackage{xurl}
 \usepackage{listings}
 \usepackage{fancyhdr}
 \usepackage{titlesec}
+\usepackage{indentfirst}
+\usepackage{needspace}
 \usepackage{tikz}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
@@ -36,23 +46,40 @@
 
 \hypersetup{
   colorlinks=true,
-  linkcolor=blue!50!black,
-  urlcolor=blue!60!black,
-  citecolor=blue!50!black,
+  linkcolor=black,
+  urlcolor=black,
+  citecolor=black,
   pdftitle={Design of a Multi-Agent AI Pipeline for Evidence Collection from Illegal Streaming Sites},
   pdfauthor={Ahmed ARFAOUI}
 }
 
-\onehalfspacing
-\setlength{\parindent}{0pt}
-\setlength{\parskip}{0.6em}
+\setstretch{1.15}
+\setlength{\parindent}{0.5cm}
+\setlength{\parskip}{0.12em plus 0.03em}
 \setlength{\headheight}{15pt}
 \setlength{\emergencystretch}{3em}
-\raggedbottom
-\setlist{nosep}
+\flushbottom
+\clubpenalty=10000
+\widowpenalty=10000
+\displaywidowpenalty=10000
+\interlinepenalty=100
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{3}
+\setlist{leftmargin=0.85cm,itemsep=0.18em,topsep=0.35em,parsep=0pt,partopsep=0pt}
 \urlstyle{tt}
 \Urlmuskip=0mu plus 2mu\relax
-\captionsetup[table]{font=small,skip=6pt}
+\captionsetup{font=small,labelfont=bf,justification=centering,skip=8pt}
+\captionsetup[figure]{aboveskip=8pt,belowskip=6pt}
+\captionsetup[table]{position=above,aboveskip=6pt,belowskip=8pt}
+\floatplacement{figure}{!htbp}
+\floatplacement{table}{!htbp}
+\setlength{\floatsep}{1.0em plus 0.2em minus 0.1em}
+\setlength{\textfloatsep}{1.2em plus 0.2em minus 0.1em}
+\setlength{\intextsep}{1.0em plus 0.2em minus 0.1em}
+\renewcommand{\topfraction}{0.85}
+\renewcommand{\bottomfraction}{0.75}
+\renewcommand{\textfraction}{0.12}
+\renewcommand{\floatpagefraction}{0.72}
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \newcolumntype{B}{>{\raggedright\arraybackslash\bfseries}X}
 \newcolumntype{C}{>{\centering\arraybackslash}X}
@@ -60,8 +87,8 @@
 \newcolumntype{Q}[1]{>{\raggedright\arraybackslash\bfseries}p{#1}}
 \AtBeginEnvironment{tabularx}{%
   \small
-  \setlength{\tabcolsep}{4.5pt}%
-  \renewcommand{\arraystretch}{1.18}%
+  \setlength{\tabcolsep}{5pt}%
+  \renewcommand{\arraystretch}{1.24}%
 }
 
 \definecolor{codebg}{RGB}{247,247,247}
@@ -110,17 +137,47 @@
   grayarrow/.style={->, >=Stealth, thick, gray!70},
 }
 
-\titleformat{\chapter}[display]
-  {\bfseries\Huge\color{accent}}
-  {\filright\MakeUppercase{\chaptername} \thechapter}
-  {1ex}
-  {\filright}
+\titleformat{\chapter}[hang]
+  {\bfseries\fontsize{18}{22}\selectfont}
+  {\thechapter}
+  {0.2cm}
+  {}
+  [\vspace{0.25em}\titlerule]
+\titlespacing*{\chapter}{0.2cm}{0pt}{1.35em}
+\titleformat{\section}[hang]
+  {\bfseries\fontsize{16}{19}\selectfont}
+  {\thesection}
+  {0.2cm}
+  {}
+\titlespacing*{\section}{0.2cm}{1.45em plus 0.2em minus 0.1em}{0.7em}
+\titleformat{\subsection}[hang]
+  {\bfseries\fontsize{14}{17}\selectfont}
+  {\thesubsection}
+  {0.2cm}
+  {}
+\titlespacing*{\subsection}{0.2cm}{1.05em plus 0.15em minus 0.1em}{0.55em}
+\titleformat{\subsubsection}[hang]
+  {\bfseries\fontsize{12}{15}\selectfont}
+  {\thesubsubsection}
+  {0.2cm}
+  {}
+\titlespacing*{\subsubsection}{0.2cm}{0.85em plus 0.1em minus 0.05em}{0.4em}
+\preto{\chapter}{\Needspace{10\baselineskip}}
+\preto{\section}{\Needspace{4\baselineskip}}
+\preto{\subsection}{\Needspace{3\baselineskip}}
+\preto{\subsubsection}{\Needspace{3\baselineskip}}
 
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[L]{Internship Report}
-\fancyhead[R]{\thepage}
-\renewcommand{\headrulewidth}{0.4pt}
+\fancyfoot[R]{\thepage/\ref{TotPages}}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \fancyfoot[R]{\thepage/\ref{TotPages}}%
+  \renewcommand{\headrulewidth}{0pt}%
+  \renewcommand{\footrulewidth}{0pt}%
+}
 
 \newcommand{\reportTitle}{Design of a Multi-Agent AI Pipeline for Evidence Collection from Illegal Streaming Sites}
 \newcommand{\reportType}{Internship Report}
@@ -133,7 +190,7 @@
 \newcommand{\supervisorName}{[Academic Supervisor]}
 \newcommand{\industrySupervisorName}{Wael Hkiri}
 \newcommand{\placeholderfigure}[3]{
-  \begin{figure}[H]
+  \begin{figure}[!htbp]
     \centering
     \fbox{
       \parbox[c][#2][c]{0.88\textwidth}{
@@ -146,7 +203,7 @@
   \end{figure}
 }
 \newcommand{\placeholdertable}[2]{
-  \begin{table}[H]
+  \begin{table}[!htbp]
     \centering
     \fbox{
       \parbox[c][5cm][c]{0.88\textwidth}{
@@ -170,7 +227,7 @@
 \hypersetup{pageanchor=false}
 
 % =====================================================================
-%  PAGE 1 — ESPRIT GRADUATION PROJECT COVER
+%  PAGE 1 -- ESPRIT GRADUATION PROJECT COVER
 % =====================================================================
 \begin{titlepage}
 \newgeometry{margin=0pt}
@@ -242,7 +299,7 @@
   ([xshift= 5.4cm, yshift= 2.2cm]current page.south west) -- cycle;
 
 % ==========================================================
-%  TOP-RIGHT — ESPRIT WORD MARK
+%  TOP-RIGHT -- ESPRIT WORD MARK
 % ==========================================================
 \node[anchor=north east, inner sep=0pt]
   at ([xshift=-1.5cm, yshift=-1.2cm]current page.north east) {%
@@ -268,7 +325,7 @@
 };
 
 % ==========================================================
-%  RED BANNER — NATIONAL ENGINEERING DEGREE
+%  RED BANNER -- NATIONAL ENGINEERING DEGREE
 % ==========================================================
 \fill[espritred]
   ([xshift=4.5cm, yshift=-9.4cm]current page.north west) rectangle
@@ -279,7 +336,7 @@
 };
 
 % ==========================================================
-%  DARK RED BANNER — SPECIALTY
+%  DARK RED BANNER -- SPECIALTY
 % ==========================================================
 \fill[espritdarkred]
   ([xshift=4.5cm, yshift=-11.3cm]current page.north west) rectangle
@@ -290,7 +347,7 @@
 };
 
 % ==========================================================
-%  MAIN CONTENT — TITLE + STUDENT INFO
+%  MAIN CONTENT -- TITLE + STUDENT INFO
 % ==========================================================
 \node[anchor=north west, text width=13.5cm, align=left, inner sep=0pt]
   at ([xshift=5.2cm, yshift=-13.2cm]current page.north west) {%
@@ -319,7 +376,7 @@
   {\textit{LOGO ENTREPRISE}};
 
 % ==========================================================
-%  BOTTOM LOGO STRIP — accreditation logos (text placeholders)
+%  BOTTOM LOGO STRIP -- accreditation logos (text placeholders)
 % ==========================================================
 \draw[espritgray!50, line width=0.4pt]
   ([xshift=0cm, yshift=2.0cm]current page.south west) --
@@ -355,7 +412,7 @@
 \end{titlepage}
 
 % =====================================================================
-%  PAGE 2 — VALIDATION FORM  (inserted after cover page)
+%  PAGE 2 -- VALIDATION FORM  (inserted after cover page)
 % =====================================================================
 \newpage
 \thispagestyle{empty}
@@ -621,6 +678,12 @@ LangChain,
 Official documentation, 2026.
 Available: \url{https://docs.langchain.com/oss/python/langchain/agents}
 
+\bibitem{langgraph-docs}
+LangChain,
+\emph{LangGraph Overview},
+Official documentation, 2026.
+Available: \url{https://docs.langchain.com/oss/python/langgraph/overview}
+
 \bibitem{mcp-spec}
 Model Context Protocol,
 \emph{Model Context Protocol Specification},
@@ -711,7 +774,7 @@ Available: \url{https://rm.coe.int/}
 \endgroup
 
 % =====================================================================
-%  LAST PAGE — ESPRIT BACK COVER
+%  LAST PAGE -- ESPRIT BACK COVER
 % =====================================================================
 \clearpage
 \thispagestyle{empty}

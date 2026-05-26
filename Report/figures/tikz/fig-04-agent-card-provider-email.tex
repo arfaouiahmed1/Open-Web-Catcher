@@ -1,0 +1,34 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.9\textwidth}{!}{%
+\begin{tikzpicture}[
+  input/.style={draw=accent!75, fill=blue!6, rounded corners=5pt,
+    minimum width=3.8cm, minimum height=1.0cm, align=center, font=\scriptsize\bfseries},
+  agent/.style={draw=orange!80!black, fill=orange!10, rounded corners=6pt,
+    minimum width=3.8cm, minimum height=1.0cm, align=center, font=\scriptsize\bfseries},
+  output/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
+    minimum width=3.8cm, minimum height=1.0cm, align=center, font=\scriptsize\bfseries},
+  detail/.style={draw=purple!65!black, fill=purple!7, rounded corners=5pt,
+    minimum width=8.4cm, minimum height=0.96cm, align=center, font=\scriptsize\bfseries},
+  guard/.style={draw=red!55!black, fill=red!5, rounded corners=5pt,
+    minimum width=8.4cm, minimum height=0.86cm, align=center, font=\scriptsize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80, shorten <=2pt, shorten >=2pt},
+  guardarr/.style={->, >=Stealth, thick, red!65!black, shorten <=2pt, shorten >=2pt}
+]
+
+\node[input] (input) at (-5.1,0) {Input\\stream URLs, screenshots, extraction results};
+\node[agent] (agent) at (0,0) {Provider + Email tools\\downstream packaging};
+\node[output] (output) at (5.1,0) {Output\\ProviderInfo rows\\TakedownEmail drafts};
+\node[detail] (detail) at (0,-1.75) {Details\\resolve ownership, group evidence, draft reviewable notices};
+\node[guard] (guard) at (0,-3.15) {Guardrails\\not browser agents; never run when no stream evidence exists};
+
+\draw[arr] (input.east) -- (agent.west);
+\draw[arr] (agent.east) -- (output.west);
+\draw[arr] (agent.south) -- (detail.north);
+\draw[guardarr] (detail.south) -- (guard.north);
+
+\end{tikzpicture}
+}
+\caption{Provider-analysis and email-generation design card.}
+\label{fig:agent-card-provider-email}
+\end{figure}

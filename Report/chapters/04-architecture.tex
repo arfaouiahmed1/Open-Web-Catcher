@@ -2,12 +2,36 @@
 \label{chap:architecture}
 
 This chapter presents the reference architecture of the evidence-collection
-platform before Chapter~5 moves into implementation details. The goal is to
-show the system through a small set of complementary views: who uses it, which
-runtime components cooperate, how the agent route is controlled, what a normal
-run sequence looks like, and which data structures make the result reviewable.
+platform from general to specific. It starts with the user-facing system and
+runtime components, then narrows into the multi-agent pipeline, the handoff
+contract between agents, the responsibilities of each agent, and the data that
+makes a run reviewable. Chapter~5 then maps these architectural decisions to the
+implementation.
 
-\section{System Purpose and Actors}
+\begin{tcolorbox}[
+  enhanced,
+  breakable,
+  colback=blue!3,
+  colframe=accent!75,
+  boxrule=0.6pt,
+  arc=2pt,
+  left=6pt,
+  right=6pt,
+  top=6pt,
+  bottom=6pt,
+  title=\textbf{Chapter focus}
+]
+The system is a staged evidence pipeline, not a single unrestricted browser
+agent. FastAPI starts and records runs. The orchestrator owns the LangGraph
+route, memory lookup, queues, handoffs, aggregation, provider analysis, and email
+draft generation. Four browser-facing specialists perform bounded work:
+classification, landing-page discovery, hosting-page extraction, and
+embedded-player extraction. Each specialist receives a narrow task, uses only
+its profile-scoped MCP browser tools, returns typed output, and leaves events
+that explain both success and failure.
+\end{tcolorbox}
+
+\section{System Purpose and Architecture Reading Path}
 
 The platform is an evidence-collection workbench for illegal streaming
 websites. The operator launches investigations and reviews the resulting
@@ -18,7 +42,19 @@ and provider ownership data.
 
 \input{figures/tikz/fig-use-case-overview}
 
-\begin{table}[H]
+The architecture should be read in four layers:
+\begin{enumerate}
+  \item \textbf{Product layer}: the operator console launches runs, monitors
+  progress, and reviews evidence.
+  \item \textbf{Runtime layer}: FastAPI validates runtime readiness, schedules
+  jobs, resolves settings, and persists trace data.
+  \item \textbf{Agent layer}: the orchestrator routes work through specialized
+  agents instead of asking one prompt to do every task.
+  \item \textbf{Evidence layer}: streams, screenshots, provider rows, emails,
+  events, model calls, and tool calls are normalized for later review.
+\end{enumerate}
+
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{Q{3.25cm} Y Y}
 \toprule
@@ -41,7 +77,7 @@ before runs start. \\
 \label{tab:architecture-actors}
 \end{table}
 
-\section{Runtime Component Architecture}
+\section{Global Runtime Architecture}
 
 The runtime separates the operator console, API, agent execution, browser
 automation, persistence, and external enrichment services. The Next.js console
@@ -52,43 +88,107 @@ agents receive only the tools allowed for their page type.
 
 \input{figures/tikz/fig-component}
 
-This separation is practical rather than cosmetic. LLM reasoning, browser
-automation, persistence, and dashboard rendering fail in different ways, so the
-architecture keeps their boundaries visible. Runtime memory, prompt caching,
-tool-result caching, and validation/repair behavior support the agent loop, but
-they are not separate product flows in this chapter; Chapter~5 describes those
-implementation mechanisms.
+\begin{table}[!htbp]
+\centering
+\begin{tabularx}{\textwidth}{Q{3.15cm} Y Y}
+\toprule
+\rowcolor{accent!8}
+Runtime area & Main responsibility & Why it is separate \\
+\midrule
+Operator console & Launch workflow runs, inspect run detail, manage datasets,
+providers, tools, browser settings, and model configuration. & The UI stays
+thin; it consumes API payloads instead of owning persistence. \\
+FastAPI backend & Validate preflight state, create jobs, run background work,
+assemble active and persisted traces, and expose review payloads. & Runtime
+control and database access remain testable from backend routes. \\
+Agent runtime & Execute the orchestrator graph and the specialist model/tool
+loops. & Routing policy remains explicit instead of hidden inside one prompt. \\
+MCP browser tooling & Provide profile-scoped page, frame, screenshot,
+interaction, and network tools. & Browser dependencies and page failures are
+isolated from the API process. \\
+Persistence and services & Store normalized run records and call Gemini,
+Cloudinary, IPInfo, RDAP, and local runtime files. & The final answer and the
+failure path can be reviewed after execution. \\
+\bottomrule
+\end{tabularx}
+\caption{Global runtime boundaries used by the reference architecture.}
+\label{tab:global-runtime-boundaries}
+\end{table}
 
-\section{Logical Workflow and Agent Routing}
+This separation is practical rather than cosmetic. Browser automation, LLM
+reasoning, dashboard rendering, and persistence fail in different ways. Keeping
+their boundaries visible makes failures easier to classify: a browser-tool
+timeout, a model retry, a missing stream, a skipped provider lookup, and a
+dashboard payload issue are different problems.
 
-The orchestrator is the routing authority. It checks memory as soft guidance,
-calls classification, prepares handoffs, executes landing, hosting, and
-embedded specialists as needed, aggregates structured outputs, then runs
-provider analysis and email generation only when stream evidence exists. This
-keeps failures interpretable: a classification timeout, missing hosting
-candidate, hosting-player failure, embedded-player failure, and provider skip
-are different operational states.
+\section{End-to-End Agent Pipeline}
 
-\input{figures/tikz/fig-logical-workflow}
+At large scale, the platform behaves as a controlled multi-agent pipeline, not
+as one unrestricted browser agent. The operator gives the system a seed URL.
+The API starts a run, creates an active trace, and calls the orchestrator. The
+orchestrator checks memory as soft guidance, calls classification, routes to the
+appropriate specialist path, collects evidence, and only then runs provider
+analysis and email generation.
 
-\begin{table}[H]
+\input{figures/tikz/fig-04-end-to-end-agent-map}
+
+The sequence view shows the same workflow as a runtime contract. A run starts as
+an API request, becomes a background job and active trace, executes through the
+orchestrator graph, records model and tool activity, and is finally returned to
+the console as normalized run-detail data.
+
+\input{figures/tikz/fig-run-sequence}
+
+The pipeline has three important rules:
+\begin{itemize}
+  \item \textbf{Agents do not call each other directly}: every specialist
+  returns typed output to the orchestrator.
+  \item \textbf{The orchestrator owns queues}: landing can add hosting or
+  embedded targets, hosting can add more hosting or embedded targets, and
+  embedded returns final media evidence.
+  \item \textbf{Downstream stages require streams}: provider analysis and email
+  generation are skipped when no stream URL exists.
+\end{itemize}
+
+\section{Agent Communication and Orchestrator Handoffs}
+
+The orchestrator is the routing authority. It builds the LangGraph state machine,
+checks memory as soft guidance, calls classification, prepares handoffs, executes
+landing, hosting, and embedded specialists as needed, aggregates structured
+outputs, then runs provider analysis and email generation only when stream
+evidence exists. This keeps failures interpretable: a classification timeout,
+missing hosting candidate, hosting-player failure, embedded-player failure, and
+provider skip are different operational states.
+
+\input{figures/tikz/fig-04-agent-interconnection}
+
+\input{figures/tikz/fig-04-orchestrator-flowchart}
+
+The handoff is the main communication contract between agents. It contains the
+root URL, target URL, page type, classification reasoning, route source, memory
+hints, navigation policy, required evidence, and known pattern context. A
+specialist receives this context inside its task brief, performs only its
+bounded job, and returns a schema that the orchestrator can normalize and route.
+
+\begin{table}[!htbp]
 \centering
 {\small
 \setlength{\tabcolsep}{4pt}
-\renewcommand{\arraystretch}{1.12}
-\begin{tabularx}{\textwidth}{Q{2.7cm} Y Y Y}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{\textwidth}{Q{2.65cm} Y Y Y}
 \toprule
 \rowcolor{accent!8}
 Stage & Main input & Responsibility & Main output \\
 \midrule
-Orchestrator & Seed URL, settings, observer, and memory hints. & Route,
-prepare handoffs, aggregate results, compute final status, and call downstream
-tools. & \texttt{PipelineResult}, trace events, provider rows, and email drafts. \\
+Orchestrator & Seed URL, settings, observer, and memory hints. & Build the
+LangGraph route, prepare handoffs, aggregate results, compute final status, and
+call downstream tools. & \texttt{PipelineResult}, trace events, provider rows,
+and email drafts. \\
 Classification & URL and profile-scoped browser context tools. & Decide page
 type without extracting streams or provider data. & Classification result with
 page type, confidence, and reasoning. \\
 Landing & Landing URL plus orchestrator handoff. & Discover watch or hosting
-candidates while preserving match, iframe, and player hints. &
+candidates while preserving match, iframe, channel, and player hints. &
 \texttt{ExtractionResult} with match records and hosting or embedded candidates. \\
 Hosting & Assigned hosting URL plus evidence checklist and navigation policy.
 & Operate server/source controls, activate playback, collect network evidence,
@@ -103,30 +203,126 @@ extractions. & Enrich stream hosts and draft reviewable takedown notices. &
 \bottomrule
 \end{tabularx}
 }
-\caption{Compact agent and tool responsibility map.}
+\caption{Agent and tool responsibility map.}
 \label{tab:agent-responsibilities}
 \end{table}
 
-\section{Run Sequence}
+In this design, communication is visible at three levels. First, route decisions
+are graph edges, so the next stage is explicit. Second, handoff text gives each
+specialist the local context it needs without making it own the whole pipeline.
+Third, the observer records agent starts, model calls, tool calls, screenshots,
+status changes, costs, and final rollups so the dashboard can explain what
+happened.
 
-The sequence view shows the runtime contract from the operator request to the
-review payload. A run starts as an API request, becomes a background job and
-active trace, executes through the orchestrator graph, records model and tool
-activity, and is finally returned to the console as normalized run-detail data.
+Prompt compilation is also part of the communication contract. Each
+browser-facing specialist receives the same architectural ingredients but a
+different stage contract. The compiled prompt combines the base policy, the
+agent-specific contract, the URL task brief, runtime context, long-memory hints,
+and short-memory working state. Short memory is run-local: it tracks recent
+navigation, tool calls, selectors, candidates, streams, server records,
+screenshots, and the next working objective. Long memory is cross-run site
+memory: it stores summarized playbooks in the site-memory database and profile
+JSON so a future run can receive hints without trusting them blindly. Both are
+soft context; live browser evidence still decides the route.
 
-\input{figures/tikz/fig-run-sequence}
+\input{figures/tikz/fig-04-prompt-memory-compilation}
 
-\section{Static Class and Data View}
+\section{Agent-by-Agent Design}
 
-The static view is intentionally compact. It does not try to reproduce the full
-database schema or every helper function. Instead, it shows the durable
-architecture relationships: the orchestrator owns state and handoffs, specialist
-agents return typed results, the observer records execution, and repositories
-persist evidence and telemetry for the run-detail console.
+\subsection{Orchestrator Agent}
 
-\input{figures/tikz/fig-04-class-diagram}
+The orchestrator is the control plane for one run. It owns state, queues,
+handoffs, aggregation, provider and email execution, final status, and trace
+emission, but it does not inspect pages directly.
 
-\begin{table}[H]
+\input{figures/tikz/fig-04-agent-card-orchestrator}
+
+\input{figures/tikz/fig-04-seq-orchestrator}
+
+\subsection{Classification Agent}
+
+The classification agent answers one question: what type of page is this URL?
+It distinguishes landing, hosting, embedded, unknown, and irrelevant pages before
+extraction begins.
+
+\input{figures/tikz/fig-04-agent-card-classification}
+
+A landing result sends the run to the landing agent. A hosting result queues the
+root URL for the hosting agent. An embedded result queues the root URL for the
+embedded agent only when the page looks like a direct player. Unknown or
+irrelevant pages skip provider and email stages because no stream evidence
+exists.
+
+\input{figures/tikz/fig-04-seq-classification}
+
+\subsection{Landing-Page Agent}
+
+The landing-page agent turns broad site pages into bounded downstream targets.
+It discovers useful watch, hosting, embedded, or direct-stream candidates from
+homepages, schedule pages, directory pages, and match listings.
+
+\input{figures/tikz/fig-04-agent-card-landing}
+
+The orchestrator deduplicates landing outputs. Normal watch or server pages go
+to the hosting queue, direct player URLs go to the embedded queue, and
+provider-like media URLs are preserved as stream evidence.
+
+\input{figures/tikz/fig-04-seq-landing}
+
+\subsection{Hosting-Page Agent}
+
+The hosting-page agent owns watch pages and server/source selection pages.
+It activates players, operates server controls, handles overlays, captures
+screenshots, and returns streams or explicit embedded-player handoffs.
+
+\input{figures/tikz/fig-04-agent-card-hosting}
+
+If the page exposes an iframe or direct player URL instead of a stream, the
+hosting result carries that URL as an embedded handoff. If playback fails, it
+still returns diagnostics so the run explains why extraction stopped.
+
+\input{figures/tikz/fig-04-seq-hosting}
+
+\subsection{Embedded-Page Agent}
+
+The embedded-page agent owns direct player or iframe URLs.
+It stays inside the assigned player context, inspects frames, activates
+iframe-local controls, recovers from popup or redirect drift, and collects final
+media evidence.
+
+\input{figures/tikz/fig-04-agent-card-embedded}
+
+\input{figures/tikz/fig-04-seq-embedded}
+
+\subsection{Provider Analysis and Email Generation}
+
+Provider analysis and email generation are downstream evidence-packaging stages.
+They are not page-navigation specialists. Provider analysis reads the collected
+stream URLs, resolves host or IP ownership, and returns provider information and
+abuse contact data. Email generation groups provider rows and stream evidence
+into reviewable takedown drafts. These drafts are not sent automatically; they
+are artifacts for human review.
+
+\input{figures/tikz/fig-04-agent-card-provider-email}
+
+\section{Data, Trace, and Reviewability View}
+
+The reviewability view is stored as normalized database records, not only as one
+large final JSON object. The central class is \texttt{PipelineRunRecord}. It
+stores the stable run identity, root URL, final status, aggregate counts, token
+totals, cost totals, and high-level classification fields. Background jobs can
+exist before a pipeline row is finalized, but once the run is persisted the
+agent, telemetry, prompt, memory, evidence, provider, screenshot, and email
+records attach back to \texttt{pipeline\_runs}.
+
+This is the database shape behind the run-detail console. The dashboard can show
+the final answer and the failure path because agent runs, model calls, browser
+tool calls, runtime events, prompt compilations, memory hints, streams,
+screenshots, providers, and email drafts are queryable as separate rows.
+
+\input{figures/tikz/fig-04-db-class-diagram}
+
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{Q{3.1cm} Y Y}
 \toprule
@@ -147,7 +343,7 @@ screenshots, streams, provider rows, and email drafts. & The data behind
 \texttt{GET /ui/runs/\{run\_id\}}. \\
 \bottomrule
 \end{tabularx}
-\caption{Static architecture boundaries and persisted outputs.}
+\caption{Runtime data boundaries and persisted review outputs.}
 \label{tab:architecture-data-boundaries}
 \end{table}
 
@@ -155,7 +351,10 @@ screenshots, streams, provider rows, and email drafts. & The data behind
 
 The architecture is a staged, reviewable evidence pipeline. The operator starts
 and reviews runs through the console. FastAPI controls execution and persistence.
-The orchestrator routes across page-type specialists, MCP browser tools gather
-page and network evidence, provider and email tools run only after streams
-exist, and storage preserves both the final answer and the failure path. The
-next chapter maps these architecture boundaries to the concrete implementation.
+The orchestrator uses LangGraph to route between agents and to preserve
+handoff state~\cite{langchain-docs,langgraph-docs}. Each specialist agent uses
+LangChain and LangGraph for the model and tool loop, while MCP browser tools
+gather page, frame, screenshot, and network evidence. Provider and email tools
+run only after streams exist, and storage preserves both the final answer and
+the failure path. The next chapter maps these architecture boundaries to the
+concrete implementation.

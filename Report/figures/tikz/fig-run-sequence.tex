@@ -1,41 +1,41 @@
-\begin{figure}[H]
+\begin{figure}[!htbp]
 \centering
 \resizebox{0.96\textwidth}{!}{%
 \begin{tikzpicture}[
   part/.style={draw=gray!55, fill=gray!8, rounded corners=3pt,
-    minimum width=2.05cm, minimum height=0.58cm, align=center, font=\scriptsize\bfseries},
-  msg/.style={->, >=Stealth, thick, accent!85},
-  ret/.style={->, >=Stealth, dashed, gray!70, thick},
-  life/.style={gray!45, dashed},
-  lab/.style={font=\scriptsize, fill=white, inner sep=1pt}
+    minimum width=2.08cm, minimum height=0.58cm, align=center, font=\scriptsize\bfseries},
+  msg/.style={->, >=Stealth, thick, accent!85, shorten <=2pt, shorten >=2pt},
+  ret/.style={->, >=Stealth, dashed, gray!70, thick, shorten <=2pt, shorten >=2pt},
+  life/.style={gray!28, dashed},
+  lab/.style={font=\tiny, fill=white, inner sep=1.2pt, align=center}
 ]
 
 \foreach \x/\name/\id in {
   0/Operator/op,
-  2.4/Console/ui,
-  4.8/FastAPI + job/api,
-  7.2/Orchestrator/graph,
-  9.6/Specialist/agent,
-  12.0/MCP + Gemini/tools,
-  14.4/Postgres/db
+  2.45/Console/ui,
+  4.9/FastAPI + job/api,
+  7.35/Orchestrator/graph,
+  9.8/Specialist/agent,
+  12.25/MCP + Gemini/tools,
+  14.7/Postgres/db
 }{
   \node[part] (\id) at (\x,0) {\name};
-  \draw[life] (\x,-0.35) -- (\x,-8.9);
+  \draw[life] (\x,-0.42) -- (\x,-8.85);
 }
 
-\draw[msg] (0,-0.8) -- node[lab, above]{submit URL} (2.4,-0.8);
-\draw[msg] (2.4,-1.45) -- node[lab, above]{POST workflow run} (4.8,-1.45);
-\draw[msg] (4.8,-2.1) -- node[lab, above]{create job + trace} (14.4,-2.1);
-\draw[ret] (4.8,-2.75) -- node[lab, above]{run id} (2.4,-2.75);
-\draw[msg] (4.8,-3.4) -- node[lab, above]{run\_pipeline(url)} (7.2,-3.4);
-\draw[msg] (7.2,-4.05) -- node[lab, above]{classification + handoffs} (9.6,-4.05);
-\draw[msg] (9.6,-4.7) -- node[lab, above]{model turns + browser tools} (12.0,-4.7);
-\draw[ret] (12.0,-5.35) -- node[lab, above]{observations + model output} (9.6,-5.35);
-\draw[ret] (9.6,-6.0) -- node[lab, above]{typed result} (7.2,-6.0);
-\draw[msg] (7.2,-6.65) -- node[lab, above]{persist result + telemetry} (14.4,-6.65);
-\draw[msg] (2.4,-7.3) -- node[lab, above]{GET run detail} (4.8,-7.3);
-\draw[ret] (4.8,-7.95) -- node[lab, above]{evidence + trace payload} (2.4,-7.95);
-\draw[ret] (2.4,-8.6) -- node[lab, above]{review} (0,-8.6);
+\draw[msg] (op.south) ++(0,-0.45) -- node[lab, above]{submit URL} ++(2.45,0);
+\draw[msg] (ui.south) ++(0,-0.78) -- node[lab, above]{POST workflow run} ++(2.45,0);
+\draw[msg] (api.south) ++(0,-1.48) -- node[lab, above, text width=2.2cm]{create job and trace} ++(9.8,0);
+\draw[ret] (api.south) ++(0,-2.18) -- node[lab, above]{run id} ++(-2.45,0);
+\draw[msg] (api.south) ++(0,-2.88) -- node[lab, above]{run\_pipeline(url)} ++(2.45,0);
+\draw[msg] (graph.south) ++(0,-3.58) -- node[lab, above, text width=2.25cm]{classification and handoffs} ++(2.45,0);
+\draw[msg] (agent.south) ++(0,-4.28) -- node[lab, above, text width=2.1cm]{model turns and browser tools} ++(2.45,0);
+\draw[ret] (tools.south) ++(0,-4.98) -- node[lab, above, text width=2.25cm]{observations and model output} ++(-2.45,0);
+\draw[ret] (agent.south) ++(0,-5.68) -- node[lab, above]{typed result} ++(-2.45,0);
+\draw[msg] (graph.south) ++(0,-6.38) -- node[lab, above, text width=2.35cm]{persist result and telemetry} ++(7.35,0);
+\draw[msg] (ui.south) ++(0,-7.08) -- node[lab, above]{GET run detail} ++(2.45,0);
+\draw[ret] (api.south) ++(0,-7.78) -- node[lab, above, text width=2.2cm]{evidence and trace payload} ++(-2.45,0);
+\draw[ret] (ui.south) ++(0,-8.48) -- node[lab, above]{review} ++(-2.45,0);
 
 \end{tikzpicture}
 }

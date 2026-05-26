@@ -33,7 +33,7 @@ hosting agents activate players and switch servers, and embedded agents inspect 
 and harvest network media evidence. Fourth, the run output is checked against the
 acceptance rule. Finally, results are compared with previous runs for the same website.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.2cm}
                               >{\raggedright\arraybackslash}X
@@ -74,7 +74,7 @@ A website batch row is counted as successful only when the investigation returns
 evidence to be useful. The acceptance rule is stricter than a simple ``run completed''
 status.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{4.0cm}
                               >{\raggedright\arraybackslash}X}
@@ -122,7 +122,7 @@ failures easier to diagnose: a run can fail because the classifier routed incorr
 landing agent missed host candidates, the hosting agent failed to activate a server, or
 the embedded agent harvested too early.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.2cm}
                               >{\raggedright\arraybackslash}X
@@ -157,7 +157,7 @@ Prompt evaluation uses the same website batch for every prompt generation. The v
 the final column is the percentage of websites in the batch that still met the acceptance
 rule after that prompt change. It is not an average number of tool calls.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{1.6cm}
                               >{\raggedright\arraybackslash}X
@@ -188,7 +188,7 @@ instead of guessing from the first page. Later versions improved the hard cases:
 server switching, media-state checks, tokenized streams, and early exit after sufficient
 evidence was collected.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabular}{>{\raggedright\arraybackslash\bfseries}p{4.2cm}
                 >{\centering\arraybackslash}p{2.2cm}
@@ -221,7 +221,7 @@ are checked after experiments. The screenshots used for this report show a large
 dashboard snapshot than the earlier local test database: model costs, tokens, provider
 lookups, and tool health are all visible.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{4.1cm}
                               >{\raggedright\arraybackslash}X
@@ -267,7 +267,7 @@ number correctly classified, $H$ the number where valid host candidates are foun
 number where the player is activated, and $E$ the number where media/network evidence is
 returned.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{4.1cm}
                               >{\raggedright\arraybackslash}X}
@@ -304,7 +304,7 @@ the acceptance rule. \\
 A stronger model is not selected only because it produces longer reasoning. It must
 improve the website-level score while staying operationally usable.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.6cm}
                               >{\raggedright\arraybackslash}X
@@ -447,7 +447,7 @@ total cost. In the dashboard snapshot, the model-spend view reports \$4.505017 t
 recorded spend, \$0.047926 average cost per run, 883 LLM calls, four provider names, and a
 blended cost of \$0.000112 per 1k tokens.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{4.0cm}
                               >{\raggedright\arraybackslash}X
@@ -489,7 +489,7 @@ data sources such as IPinfo and RDAP/WHOIS lookups~\cite{ipinfo-api,icann-rdap}.
 stream URL is stronger evidence when it can be connected to a hosting provider, CDN, or
 network operator.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.8cm}
                               >{\raggedright\arraybackslash}X
@@ -528,7 +528,7 @@ network evidence, and capture a screenshot-supported result.
 
 \subsection{Tool Success Criteria}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.4cm}
                               >{\raggedright\arraybackslash}X
@@ -562,7 +562,7 @@ agent is reasoning. In the observed dashboard, the browser/tool layer recorded 1
 calls with a 96.7\% success rate. There were 46 failed calls, eight distinct tools, an
 average duration of 6.51 seconds per call, and 14 tool calls per pipeline run.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.6cm}
                               >{\raggedright\arraybackslash}X
@@ -596,7 +596,7 @@ The main tool failures were behavioral. The tools often worked technically, but 
 used them at the wrong time or for the wrong page type. Regression testing catches these
 cases because a website that previously returned evidence stops passing the batch.
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.8cm}
                               >{\raggedright\arraybackslash}X
@@ -622,7 +622,7 @@ fallback. \\
 \label{tab:tool-regressions}
 \end{table}
 
-\begin{table}[H]
+\begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{4.2cm}
                               >{\centering\arraybackslash}p{2.2cm}

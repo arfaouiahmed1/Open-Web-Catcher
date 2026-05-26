@@ -1,47 +1,77 @@
-\begin{figure}[H]
+\begin{figure}[!htbp]
 \centering
-\resizebox{0.96\textwidth}{!}{%
+\resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  core/.style={draw=accent, fill=blue!5, rounded corners=5pt,
-    minimum width=2.45cm, minimum height=0.95cm, align=center, font=\footnotesize\bfseries},
-  runtime/.style={draw=orange!75!black, fill=orange!9, rounded corners=5pt,
-    minimum width=2.45cm, minimum height=0.95cm, align=center, font=\footnotesize\bfseries},
-  support/.style={draw=green!55!black, fill=green!7, rounded corners=5pt,
-    minimum width=2.45cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  ext/.style={draw=gray!65, fill=gray!10, rounded corners=5pt,
-    minimum width=2.45cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80},
-  soft/.style={->, >=Stealth, thick, gray!62}
+  cluster/.style={draw=gray!30, fill=gray!3, rounded corners=7pt, inner sep=8pt},
+  ui/.style={draw=accent!80, fill=blue!6, rounded corners=5pt,
+    minimum width=3.15cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
+  backend/.style={draw=accent!85!black, fill=blue!8, rounded corners=5pt,
+    minimum width=3.15cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
+  agent/.style={draw=orange!80!black, fill=orange!9, rounded corners=5pt,
+    minimum width=3.0cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
+  tool/.style={draw=purple!65!black, fill=purple!7, rounded corners=5pt,
+    minimum width=3.15cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
+  data/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
+    minimum width=2.65cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
+  ext/.style={draw=gray!60, fill=gray!10, rounded corners=5pt,
+    minimum width=2.65cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!82, shorten <=2pt, shorten >=2pt},
+  route/.style={->, >=Stealth, thick, orange!80!black, shorten <=2pt, shorten >=2pt},
+  soft/.style={->, >=Stealth, thick, gray!65, shorten <=2pt, shorten >=2pt}
 ]
 
-\node[core] (console) at (0,3.6) {Next.js\\operator console};
-\node[core] (api) at (3.0,3.6) {FastAPI\\API + SSE};
-\node[runtime] (orch) at (6.0,3.6) {Orchestrator\\routing graph};
-\node[runtime] (agents) at (9.0,3.6) {Specialist\\agents};
-\node[core] (mcp) at (12.0,3.6) {MCP browser\\tool profiles};
-\node[ext] (site) at (15.0,3.6) {Target\\websites};
+\node[ui] (next) at (0,5.1) {Next.js app\\operator routes};
+\node[ui] (detail) at (0,4.0) {Run detail\\live trace view};
+\node[ui] (settings) at (0,2.9) {Settings UI\\models + tools};
 
-\node[support] (db) at (2.55,1.1) {Postgres\\runs + telemetry};
-\node[support] (files) at (5.8,1.1) {Runtime files\\settings + memory};
-\node[ext] (gemini) at (9.05,1.1) {Gemini\\model inference};
-\node[ext] (enrich) at (12.3,1.1) {IPInfo / RDAP\\Cloudinary};
+\node[backend] (app) at (4.25,5.1) {FastAPI routes\\src/api/app.py};
+\node[backend] (jobs) at (4.25,4.0) {background jobs\\workflow + agent runs};
+\node[backend] (registry) at (4.25,2.9) {run registry\\active traces};
+\node[backend] (providerconfig) at (4.25,1.8) {provider config\\runtime settings};
 
-\draw[arr] (console) -- (api);
-\draw[arr] (api) -- (orch);
-\draw[arr] (orch) -- (agents);
-\draw[arr] (agents) -- (mcp);
-\draw[arr] (mcp) -- (site);
+\node[agent] (orch) at (8.9,5.1) {OrchestratorAgent\\LangGraph route};
+\node[agent] (browseragents) at (8.9,3.8) {Browser specialists\\classification, landing, hosting, embedded};
+\node[agent] (downstream) at (8.9,2.5) {Downstream tools\\provider analysis, email drafts};
 
-\draw[soft] (api) -- (db);
-\draw[soft] (orch) -- (db);
-\draw[soft] (orch) -- (files);
-\draw[soft] (agents) -- (files);
-\draw[soft] (agents) -- (gemini);
-\draw[soft] (agents) -- (enrich);
-\draw[soft] (mcp) -- (enrich);
+\node[tool] (mcpclient) at (13.6,5.1) {MCP client\\profile sessions};
+\node[tool] (browsers) at (13.6,4.0) {Puppeteer + Playwright\\Chrome profiles};
+\node[tool] (policy) at (13.6,2.9) {shared browser policy\\proxy, runtime, errors};
+\node[ext] (targets) at (17.5,4.0) {Target sites\\pages + players};
+
+\node[data] (db) at (2.1,0.05) {Postgres\\runs + telemetry};
+\node[data] (datafiles) at (5.2,0.05) {data/\\memory + runtime};
+\node[ext] (gemini) at (8.3,0.05) {Gemini\\LLM calls};
+\node[ext] (ipinfo) at (11.4,0.05) {IPInfo + RDAP\\ownership};
+\node[ext] (cloudinary) at (14.5,0.05) {Cloudinary\\screenshots};
+
+\begin{scope}[on background layer]
+\node[cluster, fit=(next)(detail)(settings), label={[font=\scriptsize\bfseries]above:Operator Console}] (uibox) {};
+\node[cluster, fit=(app)(jobs)(registry)(providerconfig), label={[font=\scriptsize\bfseries]above:FastAPI Backend}] (backendbox) {};
+\node[cluster, fit=(orch)(browseragents)(downstream), label={[font=\scriptsize\bfseries]above:LangGraph / LangChain Runtime}] (runtimebox) {};
+\node[cluster, fit=(mcpclient)(browsers)(policy), label={[font=\scriptsize\bfseries]above:MCP Browser Tooling}] (toolbox) {};
+\node[cluster, fit=(db)(datafiles)(gemini)(ipinfo)(cloudinary), label={[font=\scriptsize\bfseries]below:Persistence And External Services}] (databox) {};
+\end{scope}
+
+\draw[arr] (uibox.east) -- (backendbox.west);
+\draw[arr] (backendbox.east) -- (runtimebox.west);
+\draw[arr] (runtimebox.east) -- (toolbox.west);
+\draw[arr] (toolbox.east) -- (targets.west);
+
+\draw[arr] (app.south) -- (jobs.north);
+\draw[arr] (jobs.south) -- (registry.north);
+\draw[route] (orch.south) -- (browseragents.north);
+\draw[route] (browseragents.south) -- (downstream.north);
+\draw[arr] (mcpclient.south) -- (browsers.north);
+\draw[arr] (browsers.south) -- (policy.north);
+
+\draw[soft] (backendbox.south) -- ++(0,-0.35) -| (db.north);
+\draw[soft] (backendbox.south) -- ++(0,-0.35) -| (datafiles.north);
+\draw[soft] (runtimebox.south) -- ++(0,-0.35) -| (gemini.north);
+\draw[soft] (runtimebox.south) -- ++(0,-0.35) -| (ipinfo.north);
+\draw[soft] (toolbox.south) -- ++(0,-0.35) -| (cloudinary.north);
 
 \end{tikzpicture}
 }
-\caption{Component architecture of the runtime and its supporting services.}
+\caption{Component architecture based on the documented UI, backend, agent runtime, MCP tooling, persistence, and external-service boundaries.}
 \label{fig:component}
 \end{figure}
