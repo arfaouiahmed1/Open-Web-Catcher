@@ -1,0 +1,33 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.9\textwidth}{!}{%
+\begin{tikzpicture}[
+  core/.style={draw=accent, fill=blue!5, rounded corners=5pt,
+    minimum width=3.4cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
+  data/.style={draw=purple!60, fill=purple!7, rounded corners=5pt,
+    minimum width=3.4cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80}
+]
+
+\node[core] (run) at (0,3.0) {PipelineRun};
+\node[data] (agents) at (-5.0,1.35) {AgentRun\\AgentOutput};
+\node[data] (calls) at (0,1.35) {LLMCall\\ToolCall};
+\node[data] (events) at (5.0,1.35) {RuntimeEvent};
+\node[data] (evidence) at (-5.0,-0.45) {Streams\\Screenshots};
+\node[data] (provider) at (0,-0.45) {ProviderAnalysis\\TakedownEmail};
+\node[data] (usage) at (5.0,-0.45) {ModelUsage\\Pricing};
+
+\draw[arr] (run) -- (agents);
+\draw[arr] (run) -- (calls);
+\draw[arr] (run) -- (events);
+\draw[arr] (agents) -- (evidence);
+\draw[arr] (agents) -- (provider);
+\draw[arr] (calls) -- (usage);
+\draw[arr] (events) -- (usage);
+\draw[arr] (evidence) -- (provider);
+
+\end{tikzpicture}
+}
+\caption{Simplified database relationship map for run review.}
+\label{fig:postgres-run-map}
+\end{figure}

@@ -32,7 +32,7 @@
 \contentsline {section}{\numberline {3.5}Agentic Evidence Collection Concepts}{16}{section.3.5}%
 \contentsline {subsection}{\numberline {3.5.1}Agents and ReAct-style loops}{17}{subsection.3.5.1}%
 \contentsline {subsection}{\numberline {3.5.2}Prompt engineering, tokens, and token usage}{17}{subsection.3.5.2}%
-\contentsline {subsection}{\numberline {3.5.3}Workflow automation tools}{18}{subsection.3.5.3}%
+\contentsline {subsection}{\numberline {3.5.3}Workflow automation tools}{17}{subsection.3.5.3}%
 \contentsline {subsection}{\numberline {3.5.4}LangChain, tools, and MCP servers}{18}{subsection.3.5.4}%
 \contentsline {section}{\numberline {3.6}Chapter Summary}{19}{section.3.6}%
 \contentsline {chapter}{\numberline {4}System Architecture}{20}{chapter.4}%
@@ -42,13 +42,13 @@
 \contentsline {section}{\numberline {4.4}Agent Communication and Orchestrator Handoffs}{24}{section.4.4}%
 \contentsline {section}{\numberline {4.5}Agent-by-Agent Design}{26}{section.4.5}%
 \contentsline {subsection}{\numberline {4.5.1}Orchestrator Agent}{26}{subsection.4.5.1}%
-\contentsline {subsection}{\numberline {4.5.2}Classification Agent}{26}{subsection.4.5.2}%
+\contentsline {subsection}{\numberline {4.5.2}Classification Agent}{27}{subsection.4.5.2}%
 \contentsline {subsection}{\numberline {4.5.3}Landing-Page Agent}{27}{subsection.4.5.3}%
-\contentsline {subsection}{\numberline {4.5.4}Hosting-Page Agent}{29}{subsection.4.5.4}%
-\contentsline {subsection}{\numberline {4.5.5}Embedded-Page Agent}{29}{subsection.4.5.5}%
-\contentsline {subsection}{\numberline {4.5.6}Provider Analysis and Email Generation}{30}{subsection.4.5.6}%
-\contentsline {section}{\numberline {4.6}Data, Trace, and Reviewability View}{30}{section.4.6}%
-\contentsline {section}{\numberline {4.7}Chapter Summary}{32}{section.4.7}%
+\contentsline {subsection}{\numberline {4.5.4}Hosting-Page Agent}{28}{subsection.4.5.4}%
+\contentsline {subsection}{\numberline {4.5.5}Embedded-Page Agent}{28}{subsection.4.5.5}%
+\contentsline {subsection}{\numberline {4.5.6}Provider Analysis and Email Generation}{29}{subsection.4.5.6}%
+\contentsline {section}{\numberline {4.6}Data, Trace, and Reviewability View}{29}{section.4.6}%
+\contentsline {section}{\numberline {4.7}Chapter Summary}{30}{section.4.7}%
 \contentsline {chapter}{\numberline {5}Implementation}{33}{chapter.5}%
 \contentsline {section}{\numberline {5.1}Part 1: n8n Workflow Prototype}{33}{section.5.1}%
 \contentsline {subsection}{\numberline {5.1.1}Purpose of the n8n phase}{33}{subsection.5.1.1}%
@@ -59,40 +59,40 @@
 \contentsline {subsection}{\numberline {5.2.2}Next.js Operator Console}{37}{subsection.5.2.2}%
 \contentsline {subsection}{\numberline {5.2.3}MCP Browser Containers and Puppeteer Tools}{37}{subsection.5.2.3}%
 \contentsline {subsection}{\numberline {5.2.4}Agents, Models, Memory, and Prompts}{37}{subsection.5.2.4}%
-\contentsline {subsubsection}{\numberline {5.2.4.1}Design constraints implemented in the agent runtime}{39}{subsubsection.5.2.4.1}%
-\contentsline {subsubsection}{\numberline {5.2.4.2}Prompt evolution in the implementation}{39}{subsubsection.5.2.4.2}%
+\contentsline {subsubsection}{\numberline {5.2.4.1}Design constraints implemented in the agent runtime}{40}{subsubsection.5.2.4.1}%
+\contentsline {subsubsection}{\numberline {5.2.4.2}Prompt evolution in the implementation}{40}{subsubsection.5.2.4.2}%
 \contentsline {subsubsection}{\numberline {5.2.4.3}Agent design principles}{40}{subsubsection.5.2.4.3}%
 \contentsline {subsubsection}{\numberline {5.2.4.4}Model behavior, token usage, and rate limits}{41}{subsubsection.5.2.4.4}%
 \contentsline {subsubsection}{\numberline {5.2.4.5}Prompt engineering and stopping behavior}{41}{subsubsection.5.2.4.5}%
-\contentsline {subsection}{\numberline {5.2.5}PostgreSQL Database and Observability}{41}{subsection.5.2.5}%
+\contentsline {subsection}{\numberline {5.2.5}PostgreSQL Database and Observability}{42}{subsection.5.2.5}%
 \contentsline {section}{\numberline {5.3}Part 3: Deployment}{43}{section.5.3}%
-\contentsline {section}{\numberline {5.4}Implementation Summary}{43}{section.5.4}%
-\contentsline {chapter}{\numberline {6}Evaluation and Testing}{45}{chapter.6}%
-\contentsline {section}{\numberline {6.1}Agent Evaluation and Website Regression}{45}{section.6.1}%
-\contentsline {subsection}{\numberline {6.1.1}Test Protocol}{45}{subsection.6.1.1}%
-\contentsline {subsection}{\numberline {6.1.2}Batch Acceptance Rule}{46}{subsection.6.1.2}%
-\contentsline {subsection}{\numberline {6.1.3}Agent Use Cases}{47}{subsection.6.1.3}%
-\contentsline {subsection}{\numberline {6.1.4}Prompt Regression Results}{47}{subsection.6.1.4}%
-\contentsline {subsection}{\numberline {6.1.5}Dashboard Snapshot}{48}{subsection.6.1.5}%
-\contentsline {section}{\numberline {6.2}Model Evaluation, KPI Selection, and Cache}{50}{section.6.2}%
-\contentsline {subsection}{\numberline {6.2.1}KPI Formulas}{50}{subsection.6.2.1}%
-\contentsline {subsection}{\numberline {6.2.2}Model Selection Criteria}{50}{subsection.6.2.2}%
-\contentsline {subsection}{\numberline {6.2.3}LLM Model Comparison}{50}{subsection.6.2.3}%
-\contentsline {subsection}{\numberline {6.2.4}Cost Estimation}{53}{subsection.6.2.4}%
-\contentsline {subsection}{\numberline {6.2.5}Provider Intelligence Test}{54}{subsection.6.2.5}%
-\contentsline {section}{\numberline {6.3}Tool Evaluation}{54}{section.6.3}%
-\contentsline {subsection}{\numberline {6.3.1}Tool Success Criteria}{54}{subsection.6.3.1}%
-\contentsline {subsection}{\numberline {6.3.2}Tool Regression Findings}{56}{subsection.6.3.2}%
-\contentsline {section}{\numberline {6.4}Chapter Conclusion}{56}{section.6.4}%
-\contentsline {chapter}{\numberline {7}Conclusion and Perspectives}{58}{chapter.7}%
-\contentsline {section}{\numberline {7.1}General Conclusion}{58}{section.7.1}%
-\contentsline {section}{\numberline {7.2}Main Contributions}{58}{section.7.2}%
-\contentsline {section}{\numberline {7.3}Technical Lessons}{59}{section.7.3}%
-\contentsline {subsection}{\numberline {7.3.1}Prompt structure matters}{59}{subsection.7.3.1}%
-\contentsline {subsection}{\numberline {7.3.2}Browser evidence must be layered}{59}{subsection.7.3.2}%
-\contentsline {subsection}{\numberline {7.3.3}Fallbacks are part of the architecture}{59}{subsection.7.3.3}%
-\contentsline {subsection}{\numberline {7.3.4}Evaluation must be regression-oriented}{59}{subsection.7.3.4}%
-\contentsline {section}{\numberline {7.4}Limitations}{59}{section.7.4}%
-\contentsline {section}{\numberline {7.5}Future Work}{60}{section.7.5}%
-\contentsline {subsection}{\numberline {7.5.1}Screenshot annotation layer}{60}{subsection.7.5.1}%
-\contentsline {section}{\numberline {7.6}Final Remarks}{60}{section.7.6}%
+\contentsline {section}{\numberline {5.4}Implementation Summary}{44}{section.5.4}%
+\contentsline {chapter}{\numberline {6}Evaluation and Testing}{46}{chapter.6}%
+\contentsline {section}{\numberline {6.1}Agent Evaluation and Website Regression}{46}{section.6.1}%
+\contentsline {subsection}{\numberline {6.1.1}Test Protocol}{46}{subsection.6.1.1}%
+\contentsline {subsection}{\numberline {6.1.2}Batch Acceptance Rule}{47}{subsection.6.1.2}%
+\contentsline {subsection}{\numberline {6.1.3}Agent Use Cases}{48}{subsection.6.1.3}%
+\contentsline {subsection}{\numberline {6.1.4}Prompt Regression Results}{48}{subsection.6.1.4}%
+\contentsline {subsection}{\numberline {6.1.5}Dashboard Snapshot}{49}{subsection.6.1.5}%
+\contentsline {section}{\numberline {6.2}Model Evaluation, KPI Selection, and Cache}{51}{section.6.2}%
+\contentsline {subsection}{\numberline {6.2.1}KPI Formulas}{51}{subsection.6.2.1}%
+\contentsline {subsection}{\numberline {6.2.2}Model Selection Criteria}{51}{subsection.6.2.2}%
+\contentsline {subsection}{\numberline {6.2.3}LLM Model Comparison}{51}{subsection.6.2.3}%
+\contentsline {subsection}{\numberline {6.2.4}Cost Estimation}{54}{subsection.6.2.4}%
+\contentsline {subsection}{\numberline {6.2.5}Provider Intelligence Test}{55}{subsection.6.2.5}%
+\contentsline {section}{\numberline {6.3}Tool Evaluation}{55}{section.6.3}%
+\contentsline {subsection}{\numberline {6.3.1}Tool Success Criteria}{55}{subsection.6.3.1}%
+\contentsline {subsection}{\numberline {6.3.2}Tool Regression Findings}{57}{subsection.6.3.2}%
+\contentsline {section}{\numberline {6.4}Chapter Conclusion}{57}{section.6.4}%
+\contentsline {chapter}{\numberline {7}Conclusion and Perspectives}{59}{chapter.7}%
+\contentsline {section}{\numberline {7.1}General Conclusion}{59}{section.7.1}%
+\contentsline {section}{\numberline {7.2}Main Contributions}{59}{section.7.2}%
+\contentsline {section}{\numberline {7.3}Technical Lessons}{60}{section.7.3}%
+\contentsline {subsection}{\numberline {7.3.1}Prompt structure matters}{60}{subsection.7.3.1}%
+\contentsline {subsection}{\numberline {7.3.2}Browser evidence must be layered}{60}{subsection.7.3.2}%
+\contentsline {subsection}{\numberline {7.3.3}Fallbacks are part of the architecture}{60}{subsection.7.3.3}%
+\contentsline {subsection}{\numberline {7.3.4}Evaluation must be regression-oriented}{60}{subsection.7.3.4}%
+\contentsline {section}{\numberline {7.4}Limitations}{60}{section.7.4}%
+\contentsline {section}{\numberline {7.5}Future Work}{61}{section.7.5}%
+\contentsline {subsection}{\numberline {7.5.1}Screenshot annotation layer}{61}{subsection.7.5.1}%
+\contentsline {section}{\numberline {7.6}Final Remarks}{61}{section.7.6}%

@@ -1,0 +1,199 @@
+\chapter{Introduction}
+
+The internship was carried out in a company engineering context where the goal
+was not only to find links on suspected illegal streaming websites. For
+rights-enforcement review, a useful result must show the page path, visible
+context, screenshots, stream or embedded-player indicators, provider context,
+and the trace of the browser actions that produced the result. The project
+therefore addresses evidence collection, not simple scraping.
+
+Premium sports broadcasting depends on exclusive distribution rights. Rights
+holders and broadcasters pay to transmit competitions in specific territories,
+on specific platforms, and under controlled commercial conditions. Illegal
+streaming websites weaken that model by redistributing protected events without
+authorization, often through domains, mirrors, and player pages that change
+frequently. In that environment, technical evidence must be collected quickly
+but also carefully enough to remain reviewable after the page has changed.
+
+The first practical challenge is therefore not only discovering suspicious
+websites. It is preserving enough evidence to explain what was observed:
+which URL was opened, what visible page state appeared, which player or iframe
+was reached, which stream or manifest indicator was detected, which provider or
+channel clues were available, and which browser actions produced those results.
+Screenshots, DOM structure, frame paths, network requests, stream references,
+and runtime traces all become part of the evidence picture. They are often
+hidden behind JavaScript interfaces, popups, nested frames, language variation,
+server tabs, redirects, and short-lived media URLs.
+
+This turns the internship problem into an engineering problem rather than a
+simple scraping task. Manual review is slow and inconsistent when the number of
+targets grows. Static extraction is too fragile for modern streaming pages
+because the useful evidence may appear only after the page loads scripts,
+reacts to clicks, switches servers, or redirects through several layers. The
+report therefore starts from the business need, then progressively narrows
+toward the browser-agent artifact designed to make this evidence collection
+more traceable and maintainable.
+
+\section{Host Organization and Internship Context}
+
+\subsection{Host Organization}
+
+Soft Stars is a software company working in digital media intelligence and
+technical support for online content-protection operations. Its work focuses
+on helping media organizations observe online distribution channels, identify
+unauthorized use of protected content, and prepare technical material that can
+be reviewed by operational, legal, or business teams. The PFE work was
+connected to the beIN SPORTS rights-enforcement context, where reviewers need
+technical evidence that can be inspected before any operational or legal action
+is considered.
+
+\subsection{Existing Technical Context}
+
+Before this internship, the company already relied on Puppeteer-based crawlers
+to inspect streaming websites. These crawlers were useful on known website
+patterns: they could visit prepared targets, follow expected selectors, collect
+candidate links, and support established evidence-collection flows. Their main
+limit was maintenance. Small website changes could break selectors, navigation
+paths, popup behavior, iframe discovery, server switching, or stream-detection
+logic. The internship therefore explored a more traceable and adaptable
+browser-agent workflow that could support the existing crawler environment.
+
+\subsection{Operational Evidence-Collection Context}
+
+Sports-streaming investigations are difficult because evidence is often hidden
+behind dynamic pages, scripts, popups, server buttons, redirects, and nested
+iframes. A suspicious website can expose one page for discovery, another page
+for hosting the visible player, and a separate embedded player URL that finally
+produces media requests. The evidence path therefore matters as much as the
+final stream candidate.
+
+For a rights-enforcement team, a final URL by itself is not enough. The
+reviewer needs to understand how the browser reached the page, whether the
+player was visible, whether the stream indicator appeared after a valid action,
+and whether screenshots or runtime traces support the result. The same website
+can behave differently by date, event, country, browser profile, mirror, or
+server tab. A traceable workflow makes those differences explicit instead of
+hiding them behind a single success or failure label.
+
+The system also needs to identify visible channel or broadcaster context when
+the page exposes it. The workflow is connected to beIN SPORTS, but the evidence
+model is not hardcoded only for beIN SPORTS. It attempts to detect channel
+signals from the page, screenshot, DOM text, stream context, and metadata, then
+uses that context later when preparing reviewable email drafts.
+
+\section{Problem Statement}
+
+\subsection{Existing Crawler Limitations}
+
+The existing crawler baseline solved useful collection tasks on known layouts,
+but it was fragile when websites changed. Selectors could disappear, player
+buttons could move, server labels could change, popups could steal focus, and a
+previously direct iframe could become hidden behind a new interaction. Each
+change created a maintenance task before evidence could be collected reliably
+again.
+
+This limitation does not mean that the previous crawlers were useless. On
+stable patterns, a Puppeteer crawler is fast, deterministic, and easier to run
+at scale than a fully adaptive agent. The problem appears when the crawler's
+assumptions no longer match the live site. In those cases the system needs a
+way to observe the current rendered page, reason about the next browser action,
+verify the result, and preserve a trace that explains the failure or recovered
+evidence.
+
+\subsection{Limits of Static or Rule-Based Extraction}
+
+Static scraping misses JavaScript-rendered players, delayed iframes, post-click
+media requests, and tokenized manifests. A simple HTTP request can miss the
+real player state, while manual review becomes slow and inconsistent when the
+number of targets increases. Rule-based automation also struggles when a page
+requires observation, action, and verification rather than one fixed selector
+chain.
+
+\subsection{Need for Traceable Browser-Agent Evidence Collection}
+
+The problem addressed in this report is the following: how can a browser-based
+system support evidence collection from dynamic illegal streaming websites
+while keeping the investigation traceable, repeatable, and measurable? The
+answer explored during the internship is a browser-agent artifact where each
+specialist owns a bounded part of the task and where screenshots, network
+signals, model calls, tool calls, and final outputs are preserved for review.
+
+\input{figures/tikz/fig-01-crawler-limitation}
+
+\section{Internship Mission and Scope}
+
+\subsection{Assigned Mission}
+
+My mission was to study the evidence-collection workflow, analyze the limits of
+the existing crawler context, validate whether an LLM-guided browser agent
+could operate on real streaming pages, and design Open Web Catcher (OWC) as a
+maintainable reference architecture for that approach.
+
+\subsection{Mission Deliverables}
+
+The internship produced three connected deliverables. The first was an analysis
+of the crawler maintenance problem and the evidence expected by reviewers. The
+second was an n8n landing-agent workflow used to validate browser-agent
+behavior on real targets and deployed as a backup solution to support the
+existing crawler workflow when crawler rules failed to recover useful
+landing-page candidates. The third was OWC, a modular browser-agent
+architecture with an orchestrator, classification, landing, hosting, embedded,
+provider, and email-review stages.
+
+\subsection{Scope Boundaries}
+
+The work remained focused on evidence collection and review support. It did not
+send takedown emails automatically, it did not download protected content, it
+did not claim legal certainty from technical signals alone, and it did not
+claim that the full Python/FastAPI/Puppeteer platform replaced the operational
+company crawler. OWC should be read as a maintainable browser-agent
+architecture and evaluation foundation.
+
+\section{Objectives and Main Contributions}
+
+\subsection{Project Objectives}
+
+The project objectives were to classify pages, route work to specialist agents,
+interact with browser state, capture screenshots, preserve manifests and media
+indicators, detect channel or broadcaster context where possible, enrich
+provider metadata, store traces, and expose reviewable outputs for a human
+operator.
+
+These objectives were defined from the real evidence path. A landing page must
+be inspected for event cards and candidate hosting links. A hosting page must
+be able to deal with play controls, server buttons, popups, redirects, and
+iframes. An embedded player page must be inspected with a narrower focus on
+player state and stream indicators. Provider and channel enrichment then adds
+context that helps reviewers understand who may be involved and which rights
+holder context may be relevant.
+
+\subsection{Engineering Contributions}
+
+The engineering contributions are a browser-agent architecture, a clear browser
+tool layer, specialist prompts with explicit handoffs, a trace model for
+successful and failed runs, and a persistence design that stores both evidence
+and runtime events. These contributions make future maintenance easier because
+a failure can be tied to a route decision, browser action, tool result,
+provider lookup, or persistence issue.
+
+\subsection{Review and Evaluation Contributions}
+
+The review contribution is an evidence bundle that groups screenshots, stream
+or embedded-player candidates, channel/provider context, tool calls, model
+usage, and reviewable email drafts. The evaluation contribution is a
+regression-oriented approach that compares browser-agent behavior across
+website batches instead of relying on one successful demonstration.
+
+\section{Report Organization}
+
+The report follows a general-to-specific structure. Chapter~2 presents DSRM as
+the sole methodology and defines requirements and constraints. Chapter~3
+introduces streaming-page roles, browser-rendered evidence, media manifests,
+browser automation, and traceability. Chapter~4 presents the architecture,
+including the browser tool layer and agent responsibility views. Chapter~5
+describes the implementation from the existing crawler baseline and n8n backup
+workflow to OWC. Chapter~6 evaluates the workflow through regression results,
+tool behavior, cost telemetry, provider/channel enrichment, and representative
+cases. Chapter~7 gives the general conclusion.
+
+\input{figures/tikz/fig-01-report-map}

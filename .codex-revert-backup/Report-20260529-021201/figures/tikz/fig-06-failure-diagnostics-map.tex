@@ -1,0 +1,52 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  node distance=0.9cm,
+  symptom/.style={draw=red!65!black, fill=red!5, rounded corners=4pt,
+    minimum width=3.55cm, minimum height=0.88cm, align=center, font=\footnotesize\bfseries},
+  inspect/.style={draw=accent!75, fill=blue!5, rounded corners=4pt,
+    minimum width=3.75cm, minimum height=0.88cm, align=center, font=\footnotesize},
+  fix/.style={draw=green!45!black, fill=green!6, rounded corners=4pt,
+    minimum width=3.75cm, minimum height=0.88cm, align=center, font=\footnotesize},
+  arrow/.style={->, >=Stealth, thick, gray!75}
+]
+
+\node[symptom] (s1) {No hosting candidates};
+\node[symptom, below=0.38cm of s1] (s2) {Player not activated};
+\node[symptom, below=0.38cm of s2] (s3) {No stream after harvest};
+\node[symptom, below=0.38cm of s3] (s4) {Wrong page or popup};
+\node[symptom, below=0.38cm of s4] (s5) {Provider contact missing};
+
+\node[inspect, right=1.15cm of s1] (i1) {Landing inspect output\\candidate ledger, screenshots};
+\node[inspect, below=0.38cm of i1] (i2) {Hosting trace\\click result, media state};
+\node[inspect, below=0.38cm of i2] (i3) {Harvest diagnostics\\network, iframe, video state};
+\node[inspect, below=0.38cm of i3] (i4) {Tab and frame events\\final URL, active page};
+\node[inspect, below=0.38cm of i4] (i5) {Provider rows\\host, IP, lookup status};
+
+\node[fix, right=1.15cm of i1] (f1) {Reveal sections\\rank candidates};
+\node[fix, below=0.38cm of f1] (f2) {Try server controls\\verify after action};
+\node[fix, below=0.38cm of f2] (f3) {Delay harvest\\require readiness};
+\node[fix, below=0.38cm of f3] (f4) {Close popup\\restore focus};
+\node[fix, below=0.38cm of f4] (f5) {Keep partial context\\flag missing contact};
+
+\draw[arrow] (s1) -- (i1);
+\draw[arrow] (s2) -- (i2);
+\draw[arrow] (s3) -- (i3);
+\draw[arrow] (s4) -- (i4);
+\draw[arrow] (s5) -- (i5);
+\draw[arrow] (i1) -- (f1);
+\draw[arrow] (i2) -- (f2);
+\draw[arrow] (i3) -- (f3);
+\draw[arrow] (i4) -- (f4);
+\draw[arrow] (i5) -- (f5);
+
+\node[font=\small\bfseries\color{accent}, above=0.35cm of s1] {Failure symptom};
+\node[font=\small\bfseries\color{accent}, above=0.35cm of i1] {Records to inspect};
+\node[font=\small\bfseries\color{accent}, above=0.35cm of f1] {Engineering response};
+
+\end{tikzpicture}%
+}
+\caption{Failure-diagnostics map used during evaluation: each visible failure is traced to specific records and a concrete engineering response.}
+\label{fig:failure-diagnostics-map}
+\end{figure}

@@ -1,0 +1,56 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  node distance=1.05cm,
+  core/.style={draw=accent, fill=blue!6, rounded corners=4pt,
+    minimum width=3.35cm, minimum height=1.0cm, align=center, font=\small\bfseries},
+  evidence/.style={draw=green!45!black, fill=green!6, rounded corners=3pt,
+    minimum width=3.25cm, minimum height=0.82cm, align=center, font=\footnotesize},
+  telemetry/.style={draw=orange!70!black, fill=orange!8, rounded corners=3pt,
+    minimum width=3.25cm, minimum height=0.82cm, align=center, font=\footnotesize},
+  review/.style={draw=gray!70, fill=gray!8, rounded corners=4pt,
+    minimum width=3.35cm, minimum height=1.0cm, align=center, font=\small\bfseries},
+  arrow/.style={->, >=Stealth, thick, accent}
+]
+
+\node[core] (run) {Run identity\\target, status, route};
+
+\node[evidence, right=1.45cm of run, yshift=1.95cm] (screens) {Screenshots\\evidence and failure};
+\node[evidence, below=0.28cm of screens] (streams) {Streams and embeds\\m3u8, mpd, mp4, iframe};
+\node[evidence, below=0.28cm of streams] (provider) {Provider and channel\\host, IP, contact status};
+\node[evidence, below=0.28cm of provider] (drafts) {Review drafts\\not sent automatically};
+
+\node[telemetry, right=1.35cm of screens] (events) {Runtime events\\ordered timeline};
+\node[telemetry, below=0.28cm of events] (tools) {Tool calls\\action, status, duration};
+\node[telemetry, below=0.28cm of tools] (models) {Model calls\\prompt, tokens, cost};
+\node[telemetry, below=0.28cm of models] (errors) {Errors and memory\\failure cues, hints};
+
+\node[review, right=1.45cm of tools] (console) {Operator console\\run detail and evidence};
+\node[review, above=0.9cm of console] (dashboard) {Telemetry dashboard\\cost, tools, success};
+\node[review, below=0.9cm of console] (regression) {Regression analysis\\compare old and new runs};
+
+\draw[arrow] (run) -- (screens);
+\draw[arrow] (run) -- (streams);
+\draw[arrow] (run) -- (provider);
+\draw[arrow] (run) -- (drafts);
+\draw[arrow] (screens) -- (events);
+\draw[arrow] (streams) -- (tools);
+\draw[arrow] (provider) -- (models);
+\draw[arrow] (drafts) -- (errors);
+\draw[arrow] (events) -- (dashboard);
+\draw[arrow] (tools) -- (console);
+\draw[arrow] (models) -- (console);
+\draw[arrow] (errors) -- (regression);
+\draw[arrow] (console) -- (dashboard);
+\draw[arrow] (console) -- (regression);
+
+\node[font=\footnotesize, align=center, text=gray!70]
+  at ($(events.north)!0.5!(models.south)+(0.2,0)$)
+  {};
+
+\end{tikzpicture}%
+}
+\caption{Persistence and observability flow: evidence records support review, while telemetry records support diagnosis and regression.}
+\label{fig:persistence-review-flow}
+\end{figure}

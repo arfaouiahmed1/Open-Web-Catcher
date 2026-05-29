@@ -1,0 +1,231 @@
+\chapter{Detailed Agent Responsibility Views}
+\label{app:agent-responsibilities}
+
+The main architecture chapter keeps the agent design compact. This appendix
+keeps the additional responsibility views that are useful for technical review
+but would make the main chapter too heavy. Each view follows the same pattern:
+input context, agent responsibility, output contract, and guardrails.
+
+\section{Orchestrator}
+
+The orchestrator owns the route graph. It does not inspect websites directly.
+Its value is control: it builds handoffs, keeps state, aggregates evidence, and
+decides whether downstream provider and email steps should run.
+
+\input{figures/tikz/fig-04-agent-card-orchestrator}
+
+\begin{table}[!htbp]
+\centering
+\begin{tabularx}{\textwidth}{Q{3.5cm}Y}
+\toprule
+\rowcolor{accent!8}
+Responsibility & Detail \\
+\midrule
+Input control & Receives the seed URL, settings, memory hints, browser profile,
+and observer handle. \\
+Route ownership & Calls classification first, then selects landing, hosting, or
+embedded specialists. \\
+State aggregation & Combines specialist outputs into one pipeline result. \\
+Guardrail & Does not browse directly and does not let specialists call each
+other outside the route graph. \\
+\bottomrule
+\end{tabularx}
+\caption{Orchestrator responsibility checklist.}
+\label{tab:appendix-orchestrator-checklist}
+\end{table}
+
+\section{Classification Agent}
+
+The classification agent has the smallest browser budget because its task is
+narrow. It must identify the page role, not solve the whole investigation. This
+keeps the first decision fast and prevents the system from wasting browser
+actions on the wrong page type.
+
+\input{figures/tikz/fig-04-agent-card-classification}
+
+\begin{table}[!htbp]
+\centering
+\begin{tabularx}{\textwidth}{Q{3.5cm}Y}
+\toprule
+\rowcolor{accent!8}
+Responsibility & Detail \\
+\midrule
+Signals used & Title, visible text, links, iframes, player hints, screenshots,
+and page structure. \\
+Output & \texttt{ClassificationResult} with page type, confidence, and route
+reason. \\
+Failure mode & Mixed-role pages can contain both listing and player signals. \\
+Guardrail & The classifier does not click, navigate, or harvest streams. \\
+\bottomrule
+\end{tabularx}
+\caption{Classification-agent responsibility checklist.}
+\label{tab:appendix-classification-checklist}
+\end{table}
+
+\section{Landing-Page Agent}
+
+The landing-page agent is responsible for discovery. It should not try to
+activate players unless the page clearly becomes a hosting page. Its job is to
+inspect event cards, tabs, schedules, and links, then pass good candidates to
+the next stage.
+
+\input{figures/tikz/fig-04-agent-card-landing}
+
+\begin{table}[!htbp]
+\centering
+\begin{tabularx}{\textwidth}{Q{3.5cm}Y}
+\toprule
+\rowcolor{accent!8}
+Responsibility & Detail \\
+\midrule
+Evidence target & Match cards, event links, channel pages, watch buttons, host
+candidates, and visible broadcaster hints. \\
+Interaction policy & Scroll, open date tabs, reveal hidden sections, and avoid
+unrelated navigation. \\
+Output & Candidate URLs ranked with match or page context. \\
+Guardrail & Stop after visible discovery is covered; do not crawl the entire
+domain. \\
+\bottomrule
+\end{tabularx}
+\caption{Landing-agent responsibility checklist.}
+\label{tab:appendix-landing-checklist}
+\end{table}
+
+\section{Hosting-Page Agent}
+
+The hosting-page agent performs the most fragile browser work. It must activate
+server buttons and player controls while handling popups and redirects. It also
+decides when a page should be handed to the embedded agent.
+
+\input{figures/tikz/fig-04-agent-card-hosting}
+
+\begin{table}[!htbp]
+\centering
+\begin{tabularx}{\textwidth}{Q{3.5cm}Y}
+\toprule
+\rowcolor{accent!8}
+Responsibility & Detail \\
+\midrule
+Evidence target & Player activation, stream candidates, iframe URLs, server
+attempts, and screenshots. \\
+Interaction policy & Try server buttons deliberately, close popups, restore
+focus, and verify player state before harvesting. \\
+Output & Streams when available, otherwise embedded-player handoff or clear
+failure reason. \\
+Guardrail & Do not mark success from a screenshot alone; require stream,
+embedded, or blocker evidence. \\
+\bottomrule
+\end{tabularx}
+\caption{Hosting-agent responsibility checklist.}
+\label{tab:appendix-hosting-checklist}
+\end{table}
+
+\section{Embedded-Page Agent}
+
+The embedded-page agent works on direct player or iframe URLs. It is often the
+fallback when a hosting page exposes an iframe but does not return media
+evidence at the host level.
+
+\input{figures/tikz/fig-04-agent-card-embedded}
+
+\begin{table}[!htbp]
+\centering
+\begin{tabularx}{\textwidth}{Q{3.5cm}Y}
+\toprule
+\rowcolor{accent!8}
+Responsibility & Detail \\
+\midrule
+Evidence target & Player runtime, nested frame URLs, manifests, media requests,
+and visual playback state. \\
+Interaction policy & Inspect first, click play only when needed, wait for
+network activity, then harvest. \\
+Output & Stream evidence, player type, screenshots, or reason why playback was
+blocked. \\
+Guardrail & Do not crawl away from the assigned embedded/player context. \\
+\bottomrule
+\end{tabularx}
+\caption{Embedded-agent responsibility checklist.}
+\label{tab:appendix-embedded-checklist}
+\end{table}
+
+\section{Provider and Email Stage}
+
+Provider analysis and email drafting run only after stream or embedded evidence
+exists. They are downstream packaging stages, not browser investigators. This
+separation avoids mixing technical extraction with review communication.
+
+\input{figures/tikz/fig-04-agent-card-provider-email}
+
+\begin{table}[!htbp]
+\centering
+\begin{tabularx}{\textwidth}{Q{3.5cm}Y}
+\toprule
+\rowcolor{accent!8}
+Responsibility & Detail \\
+\midrule
+Input & Stream URLs, source pages, screenshots, provider lookups, and rights
+context. \\
+Output & Provider rows and email drafts that remain subject to human approval. \\
+Failure mode & Provider can be known while abuse contact is missing. \\
+Guardrail & Do not run when no stream or embedded evidence exists, and do not
+invent missing provider details. \\
+\bottomrule
+\end{tabularx}
+\caption{Provider/email responsibility checklist.}
+\label{tab:appendix-provider-email-checklist}
+\end{table}
+
+\section{Responsibility Matrix}
+
+\begin{longtable}{>{\raggedright\arraybackslash\bfseries}p{3.0cm}
+                  >{\raggedright\arraybackslash}p{4.1cm}
+                  >{\raggedright\arraybackslash}p{4.1cm}
+                  >{\raggedright\arraybackslash}p{2.7cm}}
+\caption{Detailed agent responsibility matrix.}
+\label{tab:detailed-agent-responsibility-matrix}\\
+\toprule
+\rowcolor{accent!8}
+Agent or stage & Owns & Does not own & Main output \\
+\midrule
+\endfirsthead
+\toprule
+\rowcolor{accent!8}
+Agent or stage & Owns & Does not own & Main output \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Orchestrator & Route graph, handoffs, state, final aggregation. & Direct
+browser clicks, provider assumptions, manual decisions. & Pipeline result. \\
+Classification & Page type and route reason. & Navigation, extraction, provider
+lookup. & Classification result. \\
+Landing & Candidate discovery from schedules and event lists. & Player
+activation and provider analysis. & Candidate list. \\
+Hosting & Server/player interaction and host-level stream extraction. & Whole
+site crawling and email generation. & Streams or embedded handoff. \\
+Embedded & Player-only and iframe-level extraction. & Landing-page discovery
+and unrelated redirects. & Streams or player failure. \\
+Provider/email & Infrastructure enrichment and reviewable draft. & Browser
+investigation and final human approval. & Provider rows and draft email. \\
+\end{longtable}
+
+\section{Why These Boundaries Matter}
+
+The boundaries were introduced because early experiments mixed too many
+responsibilities. A single broad agent could classify a page, click a link,
+open a popup, harvest too early, and still produce a confident final message.
+That made failures difficult to understand. Splitting the runtime into bounded
+agents made each failure more concrete:
+
+\begin{itemize}
+  \item wrong page type means classification or handoff issue;
+  \item no candidate links means landing extraction issue;
+  \item no player activation means hosting interaction issue;
+  \item no manifest after iframe handoff means embedded extraction issue;
+  \item provider found but no abuse contact means enrichment coverage issue;
+  \item high cost with no new evidence means tool-budget or prompt issue.
+\end{itemize}
+
+This responsibility model also supports future work. New specialists can be
+added without rewriting the whole pipeline, and regression tests can target one
+stage at a time.

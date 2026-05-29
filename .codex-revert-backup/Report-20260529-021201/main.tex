@@ -1,0 +1,768 @@
+\documentclass[12pt,a4paper,twoside]{report}
+
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{newtxtext}
+  \usepackage{newtxmath}
+\else
+  \usepackage{fontspec}
+  \setmainfont{Times New Roman}
+\fi
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{setspace}
+\usepackage{graphicx}
+\graphicspath{{figures/}}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{etoolbox}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{colortbl}
+\usepackage{caption}
+\usepackage{totpages}
+\usepackage{hyperref}
+\usepackage{xurl}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{indentfirst}
+\usepackage{needspace}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta,shapes.geometric,positioning,fit,backgrounds,calc,decorations.pathreplacing}
+\usepackage{tikz-uml}
+\usepackage{mdframed}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+\usepackage{pifont}
+\newcommand{\sstar}{\ding{72}}
+\newcommand{\hstar}{\ding{73}}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=black,
+  citecolor=black,
+  pdftitle={Design of a Multi-Agent AI Pipeline for Evidence Collection from Illegal Streaming Sites},
+  pdfauthor={Ahmed ARFAOUI}
+}
+
+\setstretch{1.15}
+\setlength{\parindent}{0.5cm}
+\setlength{\parskip}{0.12em plus 0.03em}
+\setlength{\headheight}{15pt}
+\setlength{\emergencystretch}{3em}
+\flushbottom
+\clubpenalty=10000
+\widowpenalty=10000
+\displaywidowpenalty=10000
+\interlinepenalty=100
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{3}
+\setlist{leftmargin=0.85cm,itemsep=0.18em,topsep=0.35em,parsep=0pt,partopsep=0pt}
+\urlstyle{tt}
+\Urlmuskip=0mu plus 2mu\relax
+\captionsetup{font=small,labelfont=bf,justification=centering,skip=8pt}
+\captionsetup[figure]{aboveskip=8pt,belowskip=6pt}
+\captionsetup[table]{position=above,aboveskip=6pt,belowskip=8pt}
+\floatplacement{figure}{!htbp}
+\floatplacement{table}{!htbp}
+\setlength{\floatsep}{1.0em plus 0.2em minus 0.1em}
+\setlength{\textfloatsep}{1.2em plus 0.2em minus 0.1em}
+\setlength{\intextsep}{1.0em plus 0.2em minus 0.1em}
+\renewcommand{\topfraction}{0.85}
+\renewcommand{\bottomfraction}{0.75}
+\renewcommand{\textfraction}{0.12}
+\renewcommand{\floatpagefraction}{0.72}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{B}{>{\raggedright\arraybackslash\bfseries}X}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\newcolumntype{Z}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{Q}[1]{>{\raggedright\arraybackslash\bfseries}p{#1}}
+\AtBeginEnvironment{tabularx}{%
+  \small
+  \setlength{\tabcolsep}{5pt}%
+  \renewcommand{\arraystretch}{1.24}%
+}
+
+\definecolor{codebg}{RGB}{247,247,247}
+\definecolor{codeframe}{RGB}{220,220,220}
+\definecolor{codetext}{RGB}{40,40,40}
+\definecolor{accent}{RGB}{25,78,121}
+
+\lstdefinestyle{reportstyle}{
+  basicstyle=\ttfamily\small\color{codetext},
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codeframe},
+  breaklines=true,
+  showstringspaces=false,
+  columns=fullflexible,
+  keepspaces=true
+}
+
+\lstdefinestyle{promptstyle}{
+  basicstyle=\ttfamily\footnotesize\color{codetext},
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{accent},
+  breaklines=true,
+  showstringspaces=false,
+  columns=fullflexible,
+  keepspaces=true,
+  xleftmargin=6pt,
+  xrightmargin=6pt
+}
+
+\tikzset{
+  sysbox/.style={draw=accent, fill=blue!4, rounded corners=4pt,
+    minimum width=11cm, minimum height=1.0cm,
+    text width=10.5cm, align=center,
+    font=\small\bfseries, text=black, inner sep=6pt},
+  agentbox/.style={draw=accent, fill=blue!8, rounded corners=4pt, minimum width=5.2cm,
+    minimum height=2.8cm, text centered, font=\small, align=center},
+  toolbox/.style={draw=gray!60, fill=gray!10, rounded corners=3pt, minimum width=4.8cm,
+    minimum height=0.75cm, text centered, font=\footnotesize, align=center},
+  flowbox/.style={draw=accent!70, fill=blue!5, rounded corners=4pt, minimum width=3.8cm,
+    minimum height=0.9cm, text centered, font=\small, align=center},
+  decisionbox/.style={draw=orange!70, fill=orange!10, diamond, shape aspect=2.2,
+    minimum width=4.5cm, minimum height=1.2cm, text centered, font=\small, align=center},
+  myarrow/.style={->, >=Stealth, thick, accent},
+  grayarrow/.style={->, >=Stealth, thick, gray!70},
+}
+
+\titleformat{\chapter}[display]
+  {\bfseries\filcenter}
+  {\colorbox{accent}{\makebox[0.88\textwidth][c]{%
+    \color{white}\fontsize{13}{16}\selectfont\MakeUppercase{\chaptername}\ \thechapter}}}
+  {1.1em}
+  {\fontsize{28}{34}\selectfont\color{black}}
+  [\vspace{0.75em}{\color{accent!45}\titlerule[1pt]}]
+\titlespacing*{\chapter}{0pt}{0pt}{2.25em}
+\titleformat{\section}[block]
+  {\bfseries\Large\color{accent}}
+  {\colorbox{accent}{\makebox[2.75em][c]{\color{white}\thesection}}}
+  {0.75em}
+  {}
+  [\vspace{0.25em}{\color{accent!35}\titlerule[0.55pt]}]
+\titlespacing*{\section}{0pt}{1.75em plus 0.25em minus 0.1em}{0.85em}
+\titleformat{\subsection}[hang]
+  {\bfseries\large\color{black}}
+  {\color{accent}\thesubsection}
+  {0.6em}
+  {}
+\titlespacing*{\subsection}{0pt}{1.25em plus 0.15em minus 0.08em}{0.6em}
+\titleformat{\subsubsection}[hang]
+  {\bfseries\normalsize\itshape\color{black!82}}
+  {\color{accent!85}\thesubsubsection}
+  {0.55em}
+  {}
+\titlespacing*{\subsubsection}{0pt}{0.9em plus 0.1em minus 0.05em}{0.45em}
+\titleformat{\paragraph}[runin]
+  {\bfseries\normalsize}
+  {}
+  {0pt}
+  {}
+  [.]
+\titlespacing*{\paragraph}{0.2cm}{0.55em plus 0.08em minus 0.04em}{0.45em}
+\preto{\chapter}{\Needspace{10\baselineskip}}
+\preto{\section}{\Needspace{4\baselineskip}}
+\preto{\subsection}{\Needspace{3\baselineskip}}
+\preto{\subsubsection}{\Needspace{3\baselineskip}}
+\preto{\paragraph}{\Needspace{2\baselineskip}}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[R]{\thepage/\ref{TotPages}}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \fancyfoot[R]{\thepage/\ref{TotPages}}%
+  \renewcommand{\headrulewidth}{0pt}%
+  \renewcommand{\footrulewidth}{0pt}%
+}
+
+\newcommand{\reportTitle}{Design of a Multi-Agent AI Pipeline for Evidence Collection from Illegal Streaming Sites}
+\newcommand{\reportType}{Internship Report}
+\newcommand{\studentName}{Ahmed ARFAOUI}
+\newcommand{\schoolName}{ESPRIT School of Engineering}
+\newcommand{\departmentName}{Information Technology}
+\newcommand{\hostOrganization}{Soft Stars}
+\newcommand{\clientName}{beIN SPORTS}
+\newcommand{\internshipPeriod}{2025--2026}
+\newcommand{\supervisorName}{Naadine Maazoun}
+\newcommand{\industrySupervisorName}{Wael Hkiri}
+
+% ===== ESPRIT COVER PAGE COLORS =====
+\definecolor{espritred}{RGB}{176,28,36}
+\definecolor{espritdarkred}{RGB}{130,10,20}
+\definecolor{espritgray}{RGB}{140,140,140}
+\definecolor{espritdarkgray}{RGB}{75,75,75}
+
+\begin{document}
+
+\hypersetup{pageanchor=false}
+
+% =====================================================================
+%  PAGE 1 -- ESPRIT GRADUATION PROJECT COVER
+% =====================================================================
+\begin{titlepage}
+\newgeometry{margin=0pt}
+\thispagestyle{empty}
+
+\begin{tikzpicture}[remember picture, overlay]
+
+% ---------- LIGHT GREY BACKGROUND (matches ESPRIT template) ----------
+\fill[espritgray!18] (current page.south west) rectangle (current page.north east);
+
+% ==========================================================
+%  LEFT-SIDE TRIANGLE CLUSTER  (top group)
+% ==========================================================
+% Large red inverted triangle (top-left dominant)
+\fill[espritred]
+  ([xshift=-0.2cm, yshift=-1.8cm]current page.north west) --
+  ([xshift= 4.2cm, yshift=-1.8cm]current page.north west) --
+  ([xshift= 2.0cm, yshift=-7.8cm]current page.north west) -- cycle;
+
+% Grey triangle left of the red one (outlined)
+\draw[espritgray, line width=1.2pt]
+  ([xshift=-0.1cm, yshift=-4.2cm]current page.north west) --
+  ([xshift= 2.4cm, yshift=-4.2cm]current page.north west) --
+  ([xshift= 1.15cm,yshift=-6.8cm]current page.north west) -- cycle;
+
+% Small dark grey solid triangle (lower inside the grey)
+\fill[espritdarkgray]
+  ([xshift= 0.8cm, yshift=-5.2cm]current page.north west) --
+  ([xshift= 2.0cm, yshift=-5.2cm]current page.north west) --
+  ([xshift= 1.4cm, yshift=-6.5cm]current page.north west) -- cycle;
+
+% ==========================================================
+%  LEFT-SIDE TRIANGLE CLUSTER  (lower-left group)
+% ==========================================================
+% Red triangle - lower left, pointing right
+\fill[espritred]
+  ([xshift=-0.2cm, yshift= 8.8cm]current page.south west) --
+  ([xshift=-0.2cm, yshift= 5.6cm]current page.south west) --
+  ([xshift= 2.5cm, yshift= 7.2cm]current page.south west) -- cycle;
+
+% Larger grey filled triangle
+\fill[espritgray]
+  ([xshift= 0.5cm, yshift= 5.8cm]current page.south west) --
+  ([xshift= 3.6cm, yshift= 5.8cm]current page.south west) --
+  ([xshift= 2.1cm, yshift= 3.4cm]current page.south west) -- cycle;
+
+% Small red solid - bottom left
+\fill[espritred]
+  ([xshift= 0.2cm, yshift= 3.6cm]current page.south west) --
+  ([xshift= 1.8cm, yshift= 3.6cm]current page.south west) --
+  ([xshift= 1.0cm, yshift= 2.2cm]current page.south west) -- cycle;
+
+% Outlined grey triangle - bottom center-left
+\draw[espritgray, line width=1pt]
+  ([xshift= 2.2cm, yshift= 3.0cm]current page.south west) --
+  ([xshift= 4.4cm, yshift= 3.0cm]current page.south west) --
+  ([xshift= 3.3cm, yshift= 1.4cm]current page.south west) -- cycle;
+
+% Dark grey small filled - far right of cluster
+\fill[espritdarkgray]
+  ([xshift= 3.8cm, yshift= 5.0cm]current page.south west) --
+  ([xshift= 5.4cm, yshift= 5.0cm]current page.south west) --
+  ([xshift= 4.6cm, yshift= 3.6cm]current page.south west) -- cycle;
+
+% Small red accent - right of lower cluster
+\fill[espritred]
+  ([xshift= 4.8cm, yshift= 3.2cm]current page.south west) --
+  ([xshift= 6.0cm, yshift= 3.2cm]current page.south west) --
+  ([xshift= 5.4cm, yshift= 2.2cm]current page.south west) -- cycle;
+
+% ==========================================================
+%  TOP-RIGHT -- ESPRIT WORD MARK
+% ==========================================================
+\node[anchor=north east, inner sep=0pt]
+  at ([xshift=-1.5cm, yshift=-1.2cm]current page.north east) {%
+  \sffamily%
+  {\fontsize{42}{42}\selectfont\bfseries\color{black}espr}%
+  {\fontsize{42}{42}\selectfont\bfseries\color{espritred}it}%
+};
+\node[anchor=north east, inner sep=0pt]
+  at ([xshift=-1.5cm, yshift=-4.2cm]current page.north east) {%
+  {\small\sffamily\itshape\color{black} Se former autrement}%
+};
+
+% ==========================================================
+%  YEAR + PROJECT TYPE
+% ==========================================================
+\node[anchor=north west, inner sep=0pt]
+  at ([xshift=5.0cm, yshift=-5.5cm]current page.north west) {%
+  {\fontsize{22}{22}\selectfont\bfseries\color{espritred}2025 -- 2026}%
+};
+\node[anchor=north west, inner sep=0pt]
+  at ([xshift=5.0cm, yshift=-7.6cm]current page.north west) {%
+  {\fontsize{16}{16}\selectfont\bfseries\color{black}GRADUATION PROJECT}%
+};
+
+% ==========================================================
+%  RED BANNER -- NATIONAL ENGINEERING DEGREE
+% ==========================================================
+\fill[espritred]
+  ([xshift=4.5cm, yshift=-9.4cm]current page.north west) rectangle
+  ([xshift=21.0cm, yshift=-11.0cm]current page.north west);
+\node[anchor=west, inner sep=0pt, text=white]
+  at ([xshift=5.2cm, yshift=-10.2cm]current page.north west) {%
+  {\fontsize{14}{14}\selectfont\bfseries NATIONAL ENGINEERING DEGREE}%
+};
+
+% ==========================================================
+%  DARK RED BANNER -- SPECIALTY
+% ==========================================================
+\fill[espritdarkred]
+  ([xshift=4.5cm, yshift=-11.3cm]current page.north west) rectangle
+  ([xshift=21.0cm, yshift=-12.6cm]current page.north west);
+\node[anchor=west, inner sep=0pt, text=white]
+  at ([xshift=5.2cm, yshift=-11.95cm]current page.north west) {%
+  {\fontsize{11}{11}\selectfont\bfseries SPECIALTY:\ INFORMATION TECHNOLOGY}%
+};
+
+% ==========================================================
+%  MAIN CONTENT -- TITLE + STUDENT INFO
+% ==========================================================
+\node[anchor=north west, text width=13.5cm, align=left, inner sep=0pt]
+  at ([xshift=5.2cm, yshift=-13.2cm]current page.north west) {%
+  {\fontsize{13}{17}\selectfont\bfseries\color{black}
+   Design of a Multi-Agent AI Pipeline\\
+   for Evidence Collection from\\
+   Illegal Streaming Sites}%
+};
+
+\node[anchor=north west, text width=13.5cm, align=left, inner sep=0pt]
+  at ([xshift=5.2cm, yshift=-17.0cm]current page.north west) {%
+  {\fontsize{11}{18}\selectfont\color{black}
+   \textbf{By:} \hspace{0.4em} Ahmed ARFAOUI \\[4pt]
+   \textbf{Academic supervisor:} \hspace{0.4em} \supervisorName \\[4pt]
+   \textbf{Corporate Internship Supervisor:} \hspace{0.4em} Wael Hkiri}%
+};
+
+% ==========================================================
+%  HOST ORGANIZATION MARK
+% ==========================================================
+\node[draw=espritgray, line width=0.7pt, rounded corners=2pt,
+      text=espritdarkgray, font=\small\bfseries, align=center,
+      minimum width=5.5cm, minimum height=1.6cm]
+  at ([xshift=13.25cm, yshift=-20.15cm]current page.north west)
+  {\hostOrganization};
+
+% ==========================================================
+%  BOTTOM LOGO STRIP -- accreditation logos (text placeholders)
+% ==========================================================
+\draw[espritgray!50, line width=0.4pt]
+  ([xshift=0cm, yshift=2.0cm]current page.south west) --
+  ([xshift=21cm, yshift=2.0cm]current page.south west);
+
+\node[font=\fontsize{7}{8}\selectfont\color{espritdarkgray},
+      anchor=south, align=center, text width=2.8cm]
+  at ([xshift= 2.5cm, yshift=0.3cm]current page.south west)
+  {\textbf{uni Tunis}\\Universit\'e de Tunis};
+
+\node[font=\fontsize{8}{8}\selectfont\bfseries\color{espritdarkgray},
+      anchor=south, align=center]
+  at ([xshift= 6.5cm, yshift=0.6cm]current page.south west)
+  {cdio};
+
+\node[font=\fontsize{7}{8}\selectfont\color{espritdarkgray},
+      anchor=south, align=center, text width=2.8cm]
+  at ([xshift=10.5cm, yshift=0.3cm]current page.south west)
+  {\textbf{EUR-ACE}\\Accredited};
+
+\node[font=\fontsize{7}{8}\selectfont\color{espritdarkgray},
+      anchor=south, align=center, text width=2.2cm]
+  at ([xshift=14.5cm, yshift=0.3cm]current page.south west)
+  {\textbf{CTi}\\Accredited};
+
+\node[font=\fontsize{7}{8}\selectfont\color{espritdarkgray},
+      anchor=south, align=center, text width=3.4cm]
+  at ([xshift=18.5cm, yshift=0.3cm]current page.south west)
+  {\textbf{CONF\'ERENCE DES}\\GRANDES \'ECOLES};
+
+\end{tikzpicture}
+\restoregeometry
+\end{titlepage}
+
+% =====================================================================
+%  PAGE 2 -- VALIDATION FORM  (inserted after cover page)
+% =====================================================================
+\newpage
+\thispagestyle{empty}
+{%
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.5em}
+
+Je valide le dépôt du rapport PFE relatif à l'étudiant nommé ci-dessous / I validate the submission of the student's report:
+
+\begin{itemize}
+  \item \textbf{Nom \& Prénom / Name \& Surname :} Ahmed ARFAOUI
+\end{itemize}
+
+\vspace{1.2cm}
+
+% === Box 1: Business Supervisor ===
+\begin{center}
+\begin{tabular}{|p{14cm}|}
+\hline
+\vspace{0.4cm}
+\begin{center}
+{\large Encadrant Entreprise / Business site Supervisor}
+\end{center}
+\vspace{0.6cm}
+
+\begin{itemize}
+  \item \textbf{Nom \& Prénom / Name \& Surname :} Wael Hkiri
+\end{itemize}
+
+\vspace{0.3cm}
+\begin{center}
+\textbf{Cachet \& Signature / Stamp \& Signature}
+\end{center}
+
+\vspace{3.5cm}
+\\
+\hline
+\end{tabular}
+\end{center}
+
+\vspace{1.0cm}
+
+% === Box 2: Academic Supervisor ===
+\begin{center}
+\begin{tabular}{|p{14cm}|}
+\hline
+\vspace{0.4cm}
+\begin{center}
+{\large Encadrant Académique / Academic Supervisor}
+\end{center}
+\vspace{0.6cm}
+
+\begin{itemize}
+  \item \textbf{Nom \& Prénom / Name \& Surname :} \supervisorName
+\end{itemize}
+
+\vspace{0.3cm}
+\begin{center}
+\textbf{Signature / Signature}
+\end{center}
+
+\vspace{3.5cm}
+\\
+\hline
+\end{tabular}
+\end{center}
+
+\vspace{0.8cm}
+Ce formulaire doit être rempli, signé et \underline{\textbf{scanné}} / This form must be completed, signed and \underline{\textbf{scanned}}.
+
+Ce formulaire doit être introduit après la page de garde / This form must be inserted after the cover page.
+}
+\newpage
+
+\hypersetup{pageanchor=true}
+
+\pagenumbering{roman}
+
+\chapter*{Abstract}
+This report presents the design, development, and evaluation of a browser-agent evidence-collection artifact for illegal streaming websites. The work was carried out during an internship at Soft Stars in the context of sports media protection for beIN SPORTS. Before the internship, the company already relied on Puppeteer-based crawlers for known website patterns, but those crawlers required continuous maintenance when selectors, popups, iframes, server switches, or stream-detection logic changed.
+
+The report adopts Design Science Research Methodology (DSRM) as its sole methodological frame because the internship produced and evaluated an engineering artifact for a real organizational problem. The internship produced two related artifacts: an n8n landing-agent workflow used to validate browser-agent behavior and support the crawler workflow as a backup, and \textbf{Open Web Catcher (OWC)}, a maintainable reference architecture for traceable browser-agent evidence collection. OWC does not claim to replace the operational company crawler. It formalizes the approach through an orchestrator, specialist agents, browser tools, traces, screenshots, stream evidence, channel/provider enrichment, and reviewable email drafts.
+
+The final architecture organizes evidence collection around specialized agents, browser automation tools, structured outputs, trace storage, screenshot capture, and evaluation metrics. The database described in this report is limited to observability, evaluation, traces, metrics, screenshots, errors, tool calls, and structured outputs; it is not the enterprise production database of the client organization.
+
+\paragraph*{Keywords:} multi-agent system; browser automation; illegal streaming; evidence collection; stream extraction; observability; provider analysis.
+
+\chapter*{R\'esum\'e}
+Ce rapport pr\'esente la conception, la r\'ealisation et l'\'evaluation d'un syst\`eme agentique de collecte de preuves sur des sites de streaming ill\'egal. Le travail a \'et\'e effectu\'e durant un stage chez Soft Stars, dans un contexte de protection des droits sportifs pour beIN SPORTS. L'objectif \'etait de rendre l'observation des sites plus tra\c{c}able: classification des pages, extraction des pages d'h\'ebergement et des flux, capture de captures d'\'ecran, conservation des traces et pr\'eparation d'\'el\'ements exploitables pour une revue humaine.
+
+Le projet a d'abord utilis\'e un prototype n8n afin de valider le comportement des agents navigateur sur des sites r\'eels. Les limites observ\'ees pendant cette phase ont ensuite guid\'e Open Web Catcher (OWC), la plateforme compl\`ete organis\'ee autour d'agents sp\'ecialis\'es, d'outils navigateur, d'une persistance des traces et d'une \'evaluation par r\'egression. Ce nom interne refl\`ete l'objectif de capturer des preuves visibles sur le Web ouvert. Le r\'esultat constitue une base technique pour poursuivre l'industrialisation de la collecte de preuves.
+
+\paragraph*{Mots cl\'es:} syst\`eme multi-agent; automatisation navigateur; streaming ill\'egal; collecte de preuves; extraction de flux; observabilit\'e; analyse fournisseur.
+
+\chapter*{Acknowledgements}
+I would like to thank my academic supervisor, \supervisorName, and my professional supervisor, \industrySupervisorName, for their guidance throughout this internship. I also thank the Soft Stars team for the technical discussions, feedback, and trust that made this work possible.
+
+\tableofcontents
+\clearpage
+\listoffigures
+\clearpage
+\listoftables
+\clearpage
+\input{chapters/front-acronyms}
+\input{chapters/front-terminology}
+
+\pagenumbering{arabic}
+
+\input{chapters/01-introduction}
+\input{chapters/02-methodology}
+\input{chapters/03-technical-background}
+\input{chapters/04-architecture}
+\input{chapters/05-implementation}
+\input{chapters/06-evaluation}
+\input{chapters/07-conclusion}
+
+\clearpage
+\phantomsection
+\addcontentsline{toc}{chapter}{Bibliography}
+\begingroup
+\small
+\begin{thebibliography}{99}
+
+% ---- Model Pricing and Runtime Limits ----
+
+\bibitem{openrouter-models}
+OpenRouter,
+\emph{Models API},
+technical reference, 2026.
+Available: \url{https://openrouter.ai/api/v1/models}
+
+\bibitem{gemini-rate-limits}
+Google,
+\emph{Gemini API Rate Limits},
+Google AI for Developers, 2026.
+Available: \href{https://ai.google.dev/gemini-api/docs/rate-limits}{Google AI for Developers}.
+
+\bibitem{gemini-pricing}
+Google,
+\emph{Gemini Developer API Pricing},
+Google AI for Developers, 2026.
+Available: \href{https://ai.google.dev/gemini-api/docs/pricing}{Google AI for Developers}.
+
+\bibitem{gemini-caching}
+Google,
+\emph{Context Caching in the Gemini API},
+Google AI for Developers, 2026.
+Available: \href{https://ai.google.dev/gemini-api/docs/caching}{Google AI for Developers}.
+
+% ---- Browser Automation and Web Agents ----
+
+\bibitem{puppeteer}
+Google Chrome Developers,
+\emph{Puppeteer API Reference},
+API reference, 2026.
+Available: \url{https://pptr.dev}
+
+\bibitem{playwright}
+Microsoft,
+\emph{Playwright Browser Automation Guide},
+developer reference, 2026.
+Available: \href{https://playwright.dev/docs/intro}{Playwright}.
+
+\bibitem{cdp}
+Chrome DevTools Protocol,
+\emph{Chrome DevTools Protocol},
+protocol reference, 2026.
+Available: \url{https://chromedevtools.github.io/devtools-protocol/}
+
+% ---- Web Technologies and APIs ----
+
+\bibitem{whatwg-html}
+WHATWG,
+\emph{HTML Living Standard},
+Web Hypertext Application Technology Working Group, 2026.
+Available: \url{https://html.spec.whatwg.org/}
+
+\bibitem{fastapi}
+S. Ram\'irez,
+\emph{FastAPI: Modern, Fast Web Framework for Building APIs with Python},
+2024. Available: \url{https://fastapi.tiangolo.com}
+
+\bibitem{nextjs}
+Vercel,
+\emph{Next.js: The React Framework for the Web},
+Vercel, 2024.
+Available: \href{https://nextjs.org/docs}{Next.js}.
+
+\bibitem{mcp-spec}
+Model Context Protocol,
+\emph{Model Context Protocol Specification},
+protocol specification, 2024.
+Available: \url{https://modelcontextprotocol.io/specification/2024-11-05/basic/index}
+
+\bibitem{peffers-dsrm}
+K. Peffers, T. Tuunanen, M. A. Rothenberger, and S. Chatterjee,
+``A Design Science Research Methodology for Information Systems Research,''
+\emph{Journal of Management Information Systems}, vol. 24, no. 3, pp. 45--77,
+2007.
+
+\bibitem{hevner-dsr}
+A. R. Hevner, S. T. March, J. Park, and S. Ram,
+``Design Science in Information Systems Research,''
+\emph{MIS Quarterly}, vol. 28, no. 1, pp. 75--105, 2004.
+
+\bibitem{n8n}
+n8n GmbH,
+\emph{n8n: Workflow Automation for Technical People},
+2024.
+Available: \href{https://docs.n8n.io}{n8n}.
+
+% ---- Cloud and Deployment ----
+
+\bibitem{azure-servicebus}
+Microsoft,
+``Azure Service Bus Messaging Service,''
+\emph{Microsoft Learn}, 2024.
+Available: \url{https://learn.microsoft.com/en-us/azure/service-bus-messaging/}
+
+\bibitem{ipinfo-api}
+IPinfo,
+\emph{IPinfo API},
+developer reference, 2026.
+Available: \url{https://ipinfo.io/developers/ipinfo-api}
+
+\bibitem{icann-rdap}
+ICANN,
+\emph{Registration Data Access Protocol (RDAP)},
+technical reference, 2026.
+Available: \url{https://www.icann.org/rdap/}
+
+\bibitem{cloudflare-challenges}
+Cloudflare,
+\emph{How Cloudflare Challenges Work},
+technical reference, 2026.
+Available: \url{https://developers.cloudflare.com/cloudflare-challenges/concepts/how-challenges-work/}
+
+% ---- Streaming Protocols and Media ----
+
+\bibitem{hls-rfc}
+R. Pantos and W. May,
+\emph{HTTP Live Streaming}, RFC 8216,
+Internet Engineering Task Force (IETF), August 2017.
+Available: \url{https://www.rfc-editor.org/rfc/rfc8216}
+
+\bibitem{dash-standard}
+ISO/IEC,
+\emph{Information technology --- Dynamic adaptive streaming over HTTP (DASH) --- Part 1:
+Media presentation description and segment formats}, ISO/IEC 23009-1,
+2022.
+
+% ---- Ad Blocking and Privacy Tools ----
+
+\bibitem{ublock}
+R. Hill,
+\emph{uBlock Origin: An Efficient Blocker for Chromium and Firefox},
+GitHub, 2024.
+Available: \url{https://github.com/gorhill/uBlock}
+
+\end{thebibliography}
+\endgroup
+
+% =====================================================================
+%  LAST PAGE -- ESPRIT BACK COVER
+% =====================================================================
+\clearpage
+\thispagestyle{empty}
+\newgeometry{margin=0pt}
+
+\begin{tikzpicture}[remember picture, overlay]
+
+% Light grey background
+\fill[espritgray!18] (current page.south west) rectangle (current page.north east);
+
+% ---- Top: large central downward triangle with cap icon ----
+\fill[espritred]
+  ([xshift= 5.5cm, yshift=-0.5cm]current page.north west) --
+  ([xshift=15.5cm, yshift=-0.5cm]current page.north west) --
+  ([xshift=10.5cm, yshift=-9.5cm]current page.north west) -- cycle;
+
+% Red horizontal ribbon across upper-middle
+\fill[espritred!90]
+  ([xshift=-0.5cm, yshift=-5.8cm]current page.north west) rectangle
+  ([xshift=21.5cm, yshift=-7.5cm]current page.north west);
+
+% ---- Left side scattered triangles ----
+% Top-left grey triangle (outline)
+\draw[espritgray, line width=1.2pt]
+  ([xshift=-0.3cm, yshift=-3.5cm]current page.north west) --
+  ([xshift= 2.2cm, yshift=-3.5cm]current page.north west) --
+  ([xshift= 0.95cm,yshift=-5.8cm]current page.north west) -- cycle;
+
+% Small dark grey left
+\fill[espritdarkgray]
+  ([xshift= 0.2cm, yshift=-6.5cm]current page.north west) --
+  ([xshift= 1.4cm, yshift=-6.5cm]current page.north west) --
+  ([xshift= 0.8cm, yshift=-7.8cm]current page.north west) -- cycle;
+
+% Lower-left red triangle
+\fill[espritred]
+  ([xshift=-0.3cm, yshift= 9.0cm]current page.south west) --
+  ([xshift= 2.5cm, yshift= 9.0cm]current page.south west) --
+  ([xshift= 1.1cm, yshift= 7.0cm]current page.south west) -- cycle;
+
+% Lower-left grey filled
+\fill[espritgray]
+  ([xshift= 0.4cm, yshift= 7.2cm]current page.south west) --
+  ([xshift= 3.0cm, yshift= 7.2cm]current page.south west) --
+  ([xshift= 1.7cm, yshift= 5.2cm]current page.south west) -- cycle;
+
+% Bottom-left cluster
+\fill[espritdarkgray]
+  ([xshift= 1.0cm, yshift= 5.4cm]current page.south west) --
+  ([xshift= 2.8cm, yshift= 5.4cm]current page.south west) --
+  ([xshift= 1.9cm, yshift= 4.0cm]current page.south west) -- cycle;
+
+\fill[espritred]
+  ([xshift= 2.6cm, yshift= 4.2cm]current page.south west) --
+  ([xshift= 4.2cm, yshift= 4.2cm]current page.south west) --
+  ([xshift= 3.4cm, yshift= 3.0cm]current page.south west) -- cycle;
+
+\draw[espritgray, line width=1pt]
+  ([xshift= 3.5cm, yshift= 5.8cm]current page.south west) --
+  ([xshift= 5.4cm, yshift= 5.8cm]current page.south west) --
+  ([xshift= 4.45cm,yshift= 4.2cm]current page.south west) -- cycle;
+
+% ---- Right side scattered triangles ----
+\fill[espritgray]
+  ([xshift=16.5cm, yshift=-2.5cm]current page.north west) --
+  ([xshift=18.8cm, yshift=-2.5cm]current page.north west) --
+  ([xshift=17.65cm,yshift=-4.5cm]current page.north west) -- cycle;
+
+\fill[espritdarkgray]
+  ([xshift=18.2cm, yshift=-4.0cm]current page.north west) --
+  ([xshift=20.2cm, yshift=-4.0cm]current page.north west) --
+  ([xshift=19.2cm, yshift=-5.8cm]current page.north west) -- cycle;
+
+\draw[espritgray, line width=1pt]
+  ([xshift=15.8cm, yshift= 7.5cm]current page.south west) --
+  ([xshift=18.2cm, yshift= 7.5cm]current page.south west) --
+  ([xshift=17.0cm, yshift= 5.8cm]current page.south west) -- cycle;
+
+\fill[espritred]
+  ([xshift=17.8cm, yshift= 5.0cm]current page.south west) --
+  ([xshift=20.0cm, yshift= 5.0cm]current page.south west) --
+  ([xshift=18.9cm, yshift= 3.5cm]current page.south west) -- cycle;
+
+% ---- ESPRIT SCHOOL OF ENGINEERING text block ----
+\node[anchor=south, text=black, font=\large\bfseries\sffamily]
+  at ([xshift=10.5cm, yshift=2.8cm]current page.south west)
+  {ESPRIT SCHOOL OF ENGINEERING};
+
+\node[anchor=south, font=\footnotesize\sffamily, text=espritdarkgray, align=center]
+  at ([xshift=10.5cm, yshift=1.7cm]current page.south west)
+  {\textbf{www.esprit.tn}\ \ --\ \ E-mail : contact@esprit.tn};
+
+\node[anchor=south, font=\fontsize{6.5}{8}\selectfont\sffamily, text=espritdarkgray, align=center,
+      text width=17cm]
+  at ([xshift=10.5cm, yshift=0.85cm]current page.south west)
+  {Si\`{e}ge Social : 18 rue de l'Usine - Charguia II - 2035 - T\'{e}l. : +216 71 941 541 - Fax. : +216 71 941 889};
+
+\node[anchor=south, font=\fontsize{6.5}{8}\selectfont\sffamily, text=espritdarkgray, align=center,
+      text width=17cm]
+  at ([xshift=10.5cm, yshift=0.2cm]current page.south west)
+  {Annexe : Z.I. Chotrana II - B.P. 160 - 2083 - P\^{o}le Technologique - El Ghazala - T\'{e}l. : +216 70 685 685 - Fax : +216 70 685 454};
+
+\end{tikzpicture}
+\restoregeometry
+
+\end{document}

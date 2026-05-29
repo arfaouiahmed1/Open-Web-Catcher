@@ -1,0 +1,262 @@
+\chapter{Methodology, Requirements, and Design Constraints}
+
+The internship produced a designed software artifact for a real organizational
+problem: fragile browser evidence collection on volatile streaming websites.
+The methodology therefore had to connect problem identification, artifact
+design, demonstration, evaluation, and communication. For that reason, this
+report adopts Design Science Research Methodology (DSRM) as the sole
+methodological frame~\cite{peffers-dsrm,hevner-dsr}.
+
+\section{Methodology Selection}
+
+\subsection{Nature of the Project}
+
+The project was not a pure research survey and not primarily a data-mining or
+model-training lifecycle. It produced an artifact: an n8n browser-agent backup
+workflow and the OWC browser-agent architecture. The artifact was designed to
+address an observed company problem, then demonstrated and evaluated through
+real website runs, screenshots, traces, tool calls, provider enrichment, and
+regression batches.
+
+\subsection{Why DSRM Fits the Project}
+
+DSRM fits because it provides a clear chain from the organizational problem to
+the evaluated artifact. The method starts with the problem and motivation,
+defines solution objectives, guides design and development, requires
+demonstration, evaluates the artifact, and communicates the result. This maps
+directly to the internship work: crawler fragility motivated the project,
+browser-agent evidence collection defined the artifact, n8n and OWC formed the
+design outputs, real streaming websites demonstrated the approach, and
+regression telemetry evaluated it.
+
+\subsection{Why Other Methodologies Were Not Selected}
+
+Agile was not adopted as a methodology in this report. Short correction cycles
+were used during implementation, but they are treated as engineering practice
+inside the DSRM design-and-evaluation process rather than as a separate
+methodology. CRISP-DM was also not selected because the project is not
+primarily a data-mining or model-training lifecycle. Batch data and telemetry
+are used for evaluation, but the central contribution is an engineering
+artifact.
+
+\input{figures/tikz/fig-02-methodology-comparison}
+
+\section{Adopted Methodology: Design Science Research Methodology}
+
+The report adopts DSRM as the sole methodological frame. The sections below map
+the project to the six phases normally used to present DSRM work.
+
+\subsection{Problem Identification and Motivation}
+
+The initial problem was the maintenance burden of existing Puppeteer crawlers
+when illegal streaming websites changed. Dynamic pages, popups, hidden iframes,
+server switching, tokenized media URLs, and anti-bot behavior made static or
+selector-heavy extraction fragile. The motivation was therefore to create a
+more traceable browser-agent workflow that could support evidence review.
+
+\subsection{Objectives of the Solution}
+
+The solution objectives were to classify pages, route work to specialist
+agents, interact with browser state, capture screenshots, preserve manifests
+and media indicators, detect channel or broadcaster context, enrich provider
+metadata, and store traces for operator review.
+
+\subsection{Design and Development}
+
+The design phase produced two related artifacts. The n8n workflow validated
+browser-agent behavior quickly and served as a backup to the existing crawler
+workflow. OWC then formalized the maintainable reference architecture: FastAPI
+run control, a Next.js operator console, an orchestrator, specialist agents,
+browser tools, persistence, screenshots, provider enrichment, and reviewable
+email drafts.
+
+\subsection{Demonstration}
+
+The artifact was demonstrated on real streaming-site cases: landing pages with
+repeated event cards, hosting pages with popups and server buttons, embedded
+players, iframe handoffs, delayed manifests, tokenized stream URLs, and blocked
+or irrelevant pages.
+
+\subsection{Evaluation}
+
+Evaluation used regression batches, screenshots, tool success telemetry,
+strict stream success, stream yield, channel/provider coverage, token usage,
+cached-token visibility, model spend, and manual review of representative
+cases. A run counted as useful only when it produced reviewable evidence or a
+defensible traceable failure.
+
+\subsection{Communication}
+
+The final communication artifacts are this PFE report, the diagrams, the
+tables, and the evaluation synthesis. They explain the problem, the design
+decisions, the implementation, the evaluation evidence, and the remaining
+limits.
+
+\input{figures/tikz/fig-02-dsrm}
+
+\section{Mapping DSRM to the Internship Work}
+
+\begin{table}[!htbp]
+\centering
+\begin{tabularx}{\textwidth}{Q{3.1cm} Y Y}
+\toprule
+\rowcolor{accent!8}
+DSRM phase & Internship activity & Output \\
+\midrule
+Problem identification & Analyze existing crawler fragility, dynamic streaming
+sites, and the need for traceable evidence. & Problem statement and motivation. \\
+Objectives & Define adaptable browser-agent evidence collection with
+screenshots, streams, channel detection, provider enrichment, and traces. &
+Functional and non-functional requirements. \\
+Design and development & Build the n8n validation/backup workflow and derive
+the OWC architecture with agents, tools, persistence, and review surfaces. &
+Prototype and reference architecture. \\
+Demonstration & Run the workflow on landing, hosting, embedded, popup, iframe,
+and tokenized-manifest cases. & Demonstration traces and screenshots. \\
+Evaluation & Run regression batches and inspect stream yield, strict success,
+tool behavior, provider/channel coverage, and cost telemetry. & Evaluation
+tables and failure analysis. \\
+Communication & Prepare the PFE report with diagrams, tables, and conclusions.
+& Submitted report. \\
+\bottomrule
+\end{tabularx}
+\caption{DSRM mapping to internship activities and outputs.}
+\label{tab:dsrm-application}
+\end{table}
+
+\section{Project Evolution}
+
+\subsection{Existing Crawler Analysis}
+
+The first phase studied the company crawler context. The crawlers already
+performed useful browser automation on known patterns, but their behavior
+needed continuous updates when sites changed selectors, player paths, popups,
+iframes, server controls, or stream-detection logic.
+
+\subsection{n8n Prototype and Landing-Agent Validation}
+
+The second phase used n8n to validate the browser-agent idea quickly on real
+pages. In the company context, the n8n landing agent was deployed as a backup
+solution to support the existing crawler workflow. Its role was not to replace
+the full crawler system, but to provide a flexible fallback when crawler rules
+failed to recover useful landing-page candidates after website changes.
+
+\subsection{Failure Analysis on Dynamic Websites}
+
+The prototype exposed recurring failure modes: popup focus loss, premature
+media harvesting, hidden date tabs, repeated event cards, iframe handoffs,
+tokenized streams, and pages that mixed landing and hosting signals.
+
+\subsection{Open Web Catcher Reference Architecture}
+
+OWC formalized the approach into a maintainable reference architecture. It
+separates the orchestrator, classifier, landing agent, hosting agent, embedded
+agent, provider/channel enrichment, email preparation, browser tool layer,
+persistence, and operator console.
+
+\subsection{Evaluation and Report Synthesis}
+
+The final phase organized evaluation evidence and report material. The
+evaluation remains a snapshot of a volatile target space, so the report avoids
+claiming stronger production guarantees than the data supports.
+
+\input{figures/tikz/fig-02-project-timeline}
+
+\section{Functional Requirements}
+
+\begin{table}[!htbp]
+\centering
+\begin{tabularx}{\textwidth}{Q{1.35cm} Y Q{2.1cm}}
+\toprule
+\rowcolor{accent!8}
+ID & Requirement & Priority \\
+\midrule
+FR-1 & Ingest a target URL and create a traceable investigation run. & Critical \\
+FR-2 & Classify the page as landing, hosting, embedded, other, or blocked. & Critical \\
+FR-3 & Route work to the correct specialist agent. & Critical \\
+FR-4 & Discover landing-page events, channels, match cards, and hosting candidates. & High \\
+FR-5 & Operate hosting-page play buttons, server controls, overlays, popups, and iframes. & Critical \\
+FR-6 & Inspect embedded-player pages and recover media or manifest evidence. & Critical \\
+FR-7 & Detect broadcaster/channel indicators from visible page, DOM, screenshot, stream context, and metadata where possible. & High \\
+FR-8 & Capture screenshots at evidence and failure moments. & High \\
+FR-9 & Persist \texttt{m3u8}, \texttt{mpd}, \texttt{mp4}, \texttt{webm}, iframe, and media evidence. & Critical \\
+FR-10 & Prepare provider and channel-based reviewable email drafts when evidence exists. & Medium \\
+FR-11 & Expose evidence bundles and traces for operator review. & High \\
+\bottomrule
+\end{tabularx}
+\caption{Functional requirements for the evidence-collection artifact.}
+\label{tab:fr-summary}
+\end{table}
+
+\section{Non-Functional Requirements}
+
+\begin{table}[!htbp]
+\centering
+\begin{tabularx}{\textwidth}{Q{1.35cm} Y Y}
+\toprule
+\rowcolor{accent!8}
+ID & Requirement & Design response \\
+\midrule
+NFR-1 & Traceability & Store events, tool calls, model calls, screenshots,
+outputs, and failure reasons under the same run. \\
+NFR-2 & Observability & Keep runtime records that allow engineers to diagnose
+failed routing, browser, model, provider, or persistence behavior. \\
+NFR-3 & Maintainability & Separate agents, prompts, browser tools,
+persistence, configuration, and UI review. \\
+NFR-4 & Reliability & Use bounded tools, observe--act--verify discipline,
+fail-closed routing, and evidence verification. \\
+NFR-5 & Cost control & Track model calls, input tokens, cached input tokens,
+output tokens, and estimated spend. \\
+NFR-6 & Scalability & Support batch execution and a queue-driven target
+deployment direction. \\
+NFR-7 & Portability & Keep runtime configuration and browser execution
+separable from the API and console. \\
+\bottomrule
+\end{tabularx}
+\caption{Non-functional requirements and design responses.}
+\label{tab:nfr-summary}
+\end{table}
+
+\section{Design Constraints}
+
+\subsection{Website Volatility}
+
+Layouts, domains, mirror chains, server labels, iframe structures, and media
+URLs change frequently. The system must therefore record the live evidence path
+instead of trusting memory or old selectors.
+
+\subsection{Browser Runtime Instability}
+
+Browser runs can fail because of timeouts, popups, redirects, blocked
+requests, focus changes, or challenge pages. The design must keep those
+failures visible.
+
+\subsection{Dynamic Player and Iframe Behavior}
+
+Some pages expose stream evidence only after a click, server switch, iframe
+handoff, or wait period. Harvesting too early can create a false failure.
+
+\subsection{Token and Context-Window Pressure}
+
+Browser traces can be long. The agent prompts, tool outputs, memory hints, and
+evaluation records must be compact enough to remain usable.
+
+\subsection{Human Review Boundary}
+
+The system prepares evidence and reviewable email drafts. A human reviewer
+validates the evidence and decides any downstream action.
+
+\subsection{Ethical and Legal Scope Boundary}
+
+The artifact does not download protected content and does not automatically
+send takedown messages. It captures reviewable technical indicators such as
+screenshots, manifests, stream candidates, provider context, and traces.
+
+\section{Chapter Summary}
+
+DSRM is the only methodology adopted by this report. Short implementation
+corrections happened inside the DSRM process, but they are not presented as a
+separate Agile or CRISP-DM methodology. The next chapter introduces the
+technical concepts needed to understand the artifact: streaming-page roles,
+browser-rendered evidence, media manifests, browser automation, and
+traceability.

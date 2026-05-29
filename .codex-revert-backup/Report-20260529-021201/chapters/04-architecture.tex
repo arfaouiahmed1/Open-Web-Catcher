@@ -1,0 +1,518 @@
+\chapter{System Architecture}
+\label{chap:architecture}
+
+The OWC architecture was designed around one constraint: every result must be
+reviewable. A final stream URL is useful only if the system can explain how the
+browser reached it, which agent made the decision, which tools were used, which
+screenshot supports the claim, and where the workflow failed when no evidence
+was found.
+
+\section{Architectural Overview}
+
+\subsection{Architecture Objective}
+
+OWC formalizes the browser-agent approach into a modular reference
+architecture. It is not presented as a microservices architecture and it does
+not claim to replace the operational company crawler. Its objective is to make
+evidence collection more adaptable, observable, and maintainable.
+
+\subsection{Existing Crawler Problem and Architectural Response}
+
+The existing Puppeteer crawlers were useful on known website patterns, but
+required continuous updates when pages changed. OWC responds by separating
+classification, landing discovery, hosting interaction, embedded-player
+inspection, provider/channel enrichment, browser tools, and persistence. This
+does not remove the need for maintenance, but it makes the failing boundary
+clearer.
+
+\subsection{Reviewability as the Main Design Constraint}
+
+The architecture preserves evidence and decisions as normalized records:
+runtime events, tool calls, model calls, screenshots, streams, embedded URLs,
+provider rows, detected channel context, generated drafts, and final statuses.
+When a run fails, the failure should be inspectable rather than hidden behind a
+generic status.
+
+\section{Use-Case View}
+
+\subsection{Main Actors}
+
+OWC has two main human roles. The operator launches investigations and reviews
+evidence. The engineer maintains runtime settings, prompts, browser tools,
+datasets, and evaluation behavior.
+
+\subsection{Main Use Cases}
+
+\input{figures/tikz/fig-use-case-overview}
+
+\begin{table}[!htbp]
+\centering
+\begin{tabularx}{\textwidth}{Q{3.2cm} Y Y}
+\toprule
+\rowcolor{accent!8}
+Use-case group & User intent & System response \\
+\midrule
+Launch investigation & Submit one URL or a dataset batch. & Create a run,
+validate runtime readiness, and start execution. \\
+Monitor execution & Follow agent transitions, browser actions, screenshots,
+and errors. & Stream active state and persist runtime events. \\
+Review evidence & Inspect streams, screenshots, provider results, channel
+signals, costs, and drafts. & Assemble a reviewable evidence bundle. \\
+Tune runtime & Adjust models, prompts, browser settings, tool profiles, and
+pricing. & Store configuration and expose preflight feedback. \\
+\bottomrule
+\end{tabularx}
+\caption{Main use cases supported by the evidence-collection platform.}
+\label{tab:architecture-actors}
+\end{table}
+
+\subsection{Evidence Review Workflow}
+
+The review workflow moves from run status to evidence bundle. The operator can
+inspect screenshots, media candidates, channel/provider context, tool history,
+model usage, and generated email drafts before deciding whether the result is
+usable.
+
+\section{Component Architecture}
+
+OWC is split into the Next.js operator console, FastAPI backend, agent runtime,
+MCP browser tool layer, PostgreSQL persistence, and external services. The
+console does not own business logic or direct database access. FastAPI starts
+jobs, resolves settings, assembles traces, and reads or writes normalized rows.
+Browser interaction is handled through tools so the agent runtime remains
+observable and bounded.
+
+\input{figures/tikz/fig-component}
+
+\subsection{Operator Console}
+
+The console launches runs, follows live progress, exposes screenshots and
+streams, shows provider/channel context, and lets engineers inspect settings,
+pricing, datasets, and tool behavior.
+
+\subsection{FastAPI Backend}
+
+The backend owns run control, configuration access, active run state, API
+responses, persistence writes, and trace assembly. It is the endpoint-driven
+control layer for the platform.
+
+\subsection{Agent Runtime}
+
+The agent runtime executes the orchestrator and specialist agents. Each agent
+receives a narrow task and returns structured output or a failure reason.
+
+\subsection{Browser Tool Layer}
+
+The browser tool layer exposes navigation, inspection, interaction, screenshot,
+stream-capture, harvest, and memory tools. Tool calls are logged so their
+inputs, outputs, status, and duration remain reviewable.
+
+\subsection{Persistence Layer}
+
+PostgreSQL stores run records, agent runs, runtime events, model calls, tool
+calls, screenshots, streams, provider rows, email drafts, and final outputs.
+
+\subsection{External Services}
+
+External services include model providers, screenshot storage, provider/IP
+lookup services, RDAP/WHOIS data, target websites, and queue infrastructure for
+deployment direction.
+
+\section{Browser Tool Architecture}
+
+\subsection{Tool Layer Design Role}
+
+The tool layer is the practical boundary between model reasoning and browser
+state. Agents are not allowed to perform arbitrary browser automation. They
+must call named tools, read structured results, and verify evidence after
+state-changing actions.
+
+\input{figures/tikz/fig-04-browser-tool-architecture}
+
+\subsection{Navigation Tools}
+
+Navigation tools move the browser to a target URL or page state. The exposed
+tools are \texttt{open\_url}, \texttt{navigate}, \texttt{go\_back},
+\texttt{scroll\_page}, \texttt{scroll\_to\_element}, and
+\texttt{wait\_for\_page\_state}. \texttt{open\_url} includes challenge-page
+detection and optional retry/wait handling. \texttt{navigate} reports final
+URL, redirects or status, and a screenshot. \texttt{wait\_for\_page\_state}
+supports network idle, navigation complete, selector or text presence, video
+readiness, and challenge clearing.
+
+\subsection{Inspection Tools}
+
+Inspection tools observe rendered page state without changing it. The exposed
+tools are \texttt{get\_page\_context}, \texttt{query\_elements},
+\texttt{get\_element\_detail}, \texttt{get\_media\_state},
+\texttt{get\_frame\_tree}, \texttt{inspect}, \texttt{inspect\_landing},
+\texttt{inspect\_hosting}, and \texttt{inspect\_embedded}.
+\texttt{get\_page\_context} is a lightweight compatibility read.
+\texttt{query\_elements} returns targeted \texttt{element\_ref} handles.
+\texttt{get\_element\_detail} reads localized detail around one DOM element or
+subtree. \texttt{get\_frame\_tree} returns deterministic frame paths.
+\texttt{get\_media\_state} focuses on playback readiness. The broad
+\texttt{inspect} tool is classification-oriented, while
+\texttt{inspect\_landing}, \texttt{inspect\_hosting}, and
+\texttt{inspect\_embedded} are optimized for candidate discovery, player
+activation, and nested player contexts.
+
+\subsection{Interaction Tools}
+
+Interaction tools deliberately change page state. The exposed tools are
+\texttt{click\_element}, \texttt{click\_css}, \texttt{click\_text},
+\texttt{click\_xpath}, \texttt{click\_checkbox}, \texttt{click\_radio},
+\texttt{type\_into}, \texttt{select\_option}, \texttt{play\_media},
+\texttt{swipe\_region}, \texttt{click\_coordinates}, and \texttt{interact}.
+The \texttt{interact} tool supports modes such as click, play, type, select,
+coordinates, check, checkbox, and radio, with locator strategies such as
+\texttt{strict}, \texttt{xpath\_first}, \texttt{selector\_first}, and
+\texttt{text\_first}. Interaction is not evidence by itself; it must be
+followed by verification.
+
+\subsection{Evidence Capture and Harvesting Tools}
+
+Evidence tools preserve proof. The exposed tools are \texttt{screenshot},
+\texttt{capture\_streams}, and \texttt{harvest}. \texttt{screenshot} supports
+viewport, full-page, and element captures. \texttt{capture\_streams} is used
+after playback starts and captures \texttt{m3u8}, \texttt{mpd}, and
+\texttt{mp4} evidence from CDP, DOM, player objects, iframe sources, and
+performance entries. \texttt{harvest} captures streaming URLs using six
+detection layers and returns stream rows, protocol-split URL lists, screenshot
+URL, network diagnostics, iframe diagnostics, and video state.
+
+\subsection{Tool Modes and Output Depth}
+
+The tool layer has several output depths. Lightweight context tools are used
+for small compatibility reads. Targeted tools return narrow element or frame
+detail. Broad inspect tools summarize a page after navigation or a meaningful
+state change. Profile-specific inspect tools give landing, hosting, or
+embedded agents compressed evidence for their task. Screenshot modes preserve
+visual state, and harvest outputs preserve stream evidence and diagnostics.
+
+\subsection{Tool Results as Traceable Runtime Events}
+
+Every tool result contributes to the run trace. This matters for evaluation:
+a tool can technically succeed while still being badly timed. The trace shows
+whether the tool helped the evidence path.
+
+\begin{table}[!htbp]
+\centering
+\begin{tabularx}{\textwidth}{Q{2.35cm} Y Y Y Y}
+\toprule
+\rowcolor{accent!8}
+Category & Tools & Main purpose & Typical output & Verification rule \\
+\midrule
+Navigation & \texttt{open\_url}, \texttt{navigate}, \texttt{go\_back},
+\texttt{scroll\_page}, \texttt{scroll\_to\_element},
+\texttt{wait\_for\_page\_state}. & Move the browser to a URL, prior page, or
+visible state. & Final URL, status, wait result, screenshot. & Verify URL,
+status, visible page, or readiness signal. \\
+Inspection & \texttt{get\_page\_context}, \texttt{query\_elements},
+\texttt{get\_element\_detail}, \texttt{get\_media\_state},
+\texttt{get\_frame\_tree}, \texttt{inspect}, \texttt{inspect\_landing},
+\texttt{inspect\_hosting}, \texttt{inspect\_embedded}. & Observe rendered page
+state without changing it. & Page role hints, elements, frame paths, media
+state, candidates. & Use evidence to choose the next action; do not repeat
+broad reads without state change. \\
+Interaction & Click tools, typing/select tools, \texttt{play\_media},
+gesture/coordinate tools, and \texttt{interact}. & Change page state
+deliberately. & Observed change, screenshot, playback or navigation signals. &
+Follow with inspection, screenshot, media-state, or harvest verification. \\
+Evidence capture and harvesting & \texttt{screenshot},
+\texttt{capture\_streams}, \texttt{harvest}. & Preserve proof and stream
+candidates. & Screenshot URL, stream rows, diagnostics, video state. & Capture
+after the relevant page state exists. \\
+Memory support & \texttt{memory\_lookup}, \texttt{memory\_update}. & Read or
+update domain and page-type hints. & Selectors, playbooks, failure cues,
+continuation notes. & Treat memory as hint; live browser evidence remains
+truth. \\
+\bottomrule
+\end{tabularx}
+\caption{Browser tool categories and verification rules.}
+\label{tab:browser-tool-categories}
+\end{table}
+
+\section{Agent Pipeline Architecture}
+
+The pipeline is staged. The orchestrator receives the seed URL and controls the
+run. It calls classification first, then routes to landing, hosting, or
+embedded specialists. After stream evidence exists, provider/channel analysis
+and email drafting can run. If no stream or embedded evidence exists, those
+downstream stages are skipped.
+
+\input{figures/tikz/fig-04-agent-pipeline-tools-evidence}
+
+\subsection{Orchestrator}
+
+The orchestrator initializes the run, calls classification, prepares handoffs,
+aggregates outputs, decides final status, and records failure reasons.
+
+\subsection{Classification Agent}
+
+The classification agent identifies whether the current page is landing,
+hosting, embedded, blocked, or other. It does not click, navigate through the
+site, or harvest streams.
+
+\subsection{Landing Page Agent}
+
+The landing agent finds events, channels, match cards, candidate hosting URLs,
+collapsed sections, and visible broadcaster hints.
+
+\subsection{Hosting Page Agent}
+
+The hosting agent activates players, handles popups, switches servers, finds
+iframe or media candidates, and verifies state before harvesting.
+
+\subsection{Embedded Page Agent}
+
+The embedded agent focuses on player-only or iframe contexts, activates the
+player when required, waits for media readiness, and harvests stream evidence.
+
+\subsection{Provider and Channel Email Stage}
+
+The provider and channel stage detects provider/channel context and prepares a
+reviewable email draft. It does not browse websites and it does not send
+emails automatically.
+
+\section{Detailed Agent Responsibility Views}
+
+The responsibility views below were moved from appendix-style material into the
+architecture chapter because they define the ownership boundaries of the
+system.
+
+\subsection{Orchestrator Responsibility View}
+
+\input{figures/tikz/fig-04-agent-card-orchestrator}
+
+The orchestrator owns the route graph, handoff creation, state aggregation,
+and final pipeline result. It does not browse directly.
+
+\subsection{Classification Agent Responsibility View}
+
+\input{figures/tikz/fig-04-agent-card-classification}
+
+The classifier owns page-type and route reasoning. Its guardrail is to avoid
+interactions and return a defensible classification based on page evidence.
+
+\subsection{Landing Agent Responsibility View}
+
+\input{figures/tikz/fig-04-agent-card-landing}
+
+The landing agent owns visible discovery: event cards, schedules, channels,
+host candidates, reveal actions, pagination hints, and candidate ranking.
+
+\subsection{Hosting Agent Responsibility View}
+
+\input{figures/tikz/fig-04-agent-card-hosting}
+
+The hosting agent owns player activation, server switching, popup recovery,
+iframe capture, stream evidence, screenshots, and host-level failure reasons.
+
+\subsection{Embedded Agent Responsibility View}
+
+\input{figures/tikz/fig-04-agent-card-embedded}
+
+The embedded agent owns player-only inspection, nested frame evidence,
+playback readiness, delayed manifest capture, and blocked-player failure
+states.
+
+\subsection{Provider and Email Responsibility View}
+
+\input{figures/tikz/fig-04-agent-card-provider-email}
+
+The provider/email stage owns downstream packaging: provider rows, channel or
+rights-holder context, grouped streams, missing-contact flags, and reviewable
+email drafts.
+
+\subsection{Agent Responsibility Matrix}
+
+\begin{longtable}{>{\raggedright\arraybackslash\bfseries}p{3.0cm}
+                  >{\raggedright\arraybackslash}p{4.1cm}
+                  >{\raggedright\arraybackslash}p{4.1cm}
+                  >{\raggedright\arraybackslash}p{2.7cm}}
+\caption{Agent responsibility matrix.}
+\label{tab:detailed-agent-responsibility-matrix}\\
+\toprule
+\rowcolor{accent!8}
+Agent or stage & Owns & Does not own & Main output \\
+\midrule
+\endfirsthead
+\toprule
+\rowcolor{accent!8}
+Agent or stage & Owns & Does not own & Main output \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Orchestrator & Route graph, handoffs, state, and final aggregation. & Direct
+browser clicks, provider assumptions, and manual decisions. & Pipeline result. \\
+Classification & Page type and route reason. & Navigation, extraction, and
+provider lookup. & Classification result. \\
+Landing & Candidate discovery from schedules, events, channels, and links. &
+Player activation and provider analysis. & Candidate list. \\
+Hosting & Server/player interaction and host-level stream extraction. & Whole
+site crawling and email generation. & Streams or embedded handoff. \\
+Embedded & Player-only and iframe-level extraction. & Landing-page discovery
+and unrelated redirects. & Streams or player failure. \\
+Provider/email & Infrastructure enrichment, channel context, and reviewable
+drafts. & Browser investigation and final human approval. & Provider rows and
+draft email. \\
+\end{longtable}
+
+\section{Routing and Handoff Rules}
+
+\subsection{Page-Type Routing Table}
+
+\begin{table}[!htbp]
+\centering
+\begin{tabularx}{\textwidth}{Q{2.7cm} Y Y Y Y}
+\toprule
+\rowcolor{accent!8}
+Detected page type & Routed agent & Expected input & Expected output & Stop condition \\
+\midrule
+Landing & Landing agent & Seed URL, listings, event cards, channel hints. &
+Hosting candidates and screenshots. & \texttt{no\_hosting\_\allowbreak pages}
+when no credible candidate exists. \\
+Hosting & Hosting agent & Watch page, server buttons, overlays, popups,
+iframe hints. & Streams, embedded URLs, screenshots, diagnostics. &
+\texttt{no\_streams} when activation produces no evidence. \\
+Embedded & Embedded agent & Iframe or player URL. & Manifest/media
+candidates, screenshots, frame diagnostics. & Failure reason when blocked or
+no media is observable. \\
+Blocked or other & Terminal status after classification. & Current URL,
+screenshot, classification reason. & Failure evidence. & Skip extraction and
+downstream provider/email work. \\
+Stream evidence exists & Provider/channel and email stage. & Stream URL,
+source page, screenshots, channel/provider context. & Provider rows and
+reviewable draft. & Skip when no stream or embedded evidence exists. \\
+\bottomrule
+\end{tabularx}
+\caption{Page-type routing table.}
+\label{tab:routing-decision}
+\end{table}
+
+\subsection{Handoff Payload Structure}
+
+A handoff includes target URL, page type, route source, evidence need, known
+candidates, memory hints, navigation policy, tool budget, screenshot policy,
+and failure-reporting rule. This prevents agents from inventing missing
+context.
+
+\subsection{Success and Failure States}
+
+Common states are \texttt{success}, \texttt{partial}, \texttt{failed},
+\texttt{no\_streams}, \texttt{no\_hosting\_\allowbreak pages}, and
+\texttt{blocked}. The status must be tied to evidence or a clear failure
+reason.
+
+\subsection{Fail-Closed Routing}
+
+If evidence is uncertain, the system should return a traceable failure rather
+than hallucinated success. This rule is especially important when a page is
+blocked, the stream is absent, or provider metadata is incomplete.
+
+\section{Data and Evidence Persistence}
+
+Persistence is part of the architecture, not a secondary storage detail. The
+system produces reviewable evidence only when the final result can be connected
+to the route, browser state, screenshots, stream candidates, tool calls, model
+calls, provider lookups, and failure reasons that produced it. For this reason,
+OWC stores evidence records and telemetry records separately but exposes them
+together in the operator review flow.
+
+\input{figures/tikz/fig-04-data-evidence-lifecycle}
+
+\input{figures/tikz/fig-04-db-class-diagram}
+
+\subsection{Run Records}
+
+Run records are the root of the investigation. They store the submitted URL,
+normalized URL, creation and completion timestamps, current status, final
+status, route summary, evidence counts, cost totals, and final output summary.
+The run record gives the operator a stable object to open, compare, rerun, and
+cite during review. It also prevents evidence from becoming detached from the
+target that originally produced it.
+
+\subsection{Agent Run Records}
+
+Agent run records describe what each specialist was asked to do and what it
+returned. A classification record preserves page type, confidence, and route
+reason. A landing record preserves candidate links and checked sections. A
+hosting record preserves server attempts, popup handling, player state, and
+embedded handoffs. An embedded record preserves player context and stream
+harvest outcome. Provider and email records preserve enrichment status and
+draft-generation state. This separation makes regression comparison practical:
+an engineer can see which agent changed behavior between two runs.
+
+\subsection{Runtime Events}
+
+Runtime events preserve the investigation timeline. They answer the question
+``what happened next?'' with small timestamped records: run started, agent
+started, tool requested, tool completed, screenshot captured, stream found,
+provider resolved, failure recorded, and run completed. When a run returns
+\texttt{no\_streams}, the event timeline shows whether the agent never clicked
+play, clicked the wrong control, lost focus to a popup, harvested too early, or
+reached a blocked player.
+
+\subsection{Tool Calls}
+
+Tool call rows store tool name, input summary, output summary, status,
+duration, active URL, and error detail. They are different from model calls:
+the model explains an intended decision, while a tool row records an attempted
+browser or provider operation. For browser-agent evaluation, call order is often
+more important than call count. A successful \toolname{harvest} call before
+player activation is still an implementation failure.
+
+\subsection{Model Calls}
+
+Model call rows store model provider, model name, prompt or agent version,
+input tokens, cached input tokens, output tokens, estimated input cost,
+estimated output cost, and total cost. These records make it possible to
+compare prompt and model changes by useful evidence, not just by total token
+volume. A cheaper run that fails important sites is not necessarily cheaper
+operationally.
+
+\subsection{Screenshots}
+
+Screenshots preserve classification, evidence, playback, popup, blocked, and
+failure states. They give reviewers a visual anchor for the final claim. A
+useful screenshot should explain one moment: the landing candidates that were
+visible, the hosting player before or after activation, the embedded player
+state, a blocker page, or the final evidence state. Capturing every wait state
+would create noise, so screenshots are tied to meaningful transitions.
+
+\subsection{Stream Candidates}
+
+Stream candidates store \texttt{m3u8}, \texttt{mpd}, \texttt{mp4},
+\texttt{webm}, iframe, media, protocol, detection layer, source page, frame
+context, timestamp, and screenshot reference where available. This matters for
+tokenized media URLs: the URL can expire after the run, but the stored
+timestamp, page context, and screenshot still explain where it was observed.
+
+\subsection{Channel and Provider Records}
+
+Channel/provider records store detected broadcaster context, hostnames, IP
+information, provider names, countries, contacts when available, and missing
+data flags. Provider lookup can partially succeed: a hostname and provider may
+be identified even when no abuse contact is available. The architecture keeps
+those states separate so the review output does not confuse missing contact
+data with total enrichment failure.
+
+\subsection{Evidence Bundle}
+
+The evidence bundle groups status, screenshots, stream candidates,
+channel/provider context, tool/model history, and reviewable email drafts for
+operator inspection. It is not a new source of truth; it is a review grouping
+assembled from the normalized records above. The bundle lets a human reviewer
+accept the evidence, mark it partial, request a rerun, or reject it without
+reconstructing the investigation from raw logs.
+
+\section{Architecture Summary}
+
+OWC is a controlled browser-agent architecture rather than one unrestricted AI
+crawler. The operator starts a run, FastAPI controls execution and persistence,
+the orchestrator routes work, specialists collect browser evidence, the tool
+layer records observable actions, and normalized records preserve successful
+outputs and failure paths. The next chapter explains how this design was
+implemented from the crawler baseline and n8n validation workflow.

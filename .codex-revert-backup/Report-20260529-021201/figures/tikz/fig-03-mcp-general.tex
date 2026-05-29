@@ -1,0 +1,39 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  main/.style={draw=accent, fill=blue!6, rounded corners=5pt,
+    minimum width=3.05cm, minimum height=0.82cm, align=center, font=\scriptsize\bfseries},
+  mcp/.style={draw=orange!75, fill=orange!10, rounded corners=5pt,
+    minimum width=3.05cm, minimum height=0.82cm, align=center, font=\scriptsize\bfseries},
+  tool/.style={draw=gray!65, fill=gray!8, rounded corners=5pt,
+    minimum width=3.2cm, minimum height=0.82cm, text width=3.0cm, align=center, font=\scriptsize\bfseries},
+  result/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
+    minimum width=4.35cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80},
+  ret/.style={->, >=Stealth, thick, gray!70, dashed},
+  lab/.style={font=\scriptsize, fill=white, inner sep=1.5pt}
+]
+\node[main] (llm) at (0,3.45) {Agent turn\\Gemini + tool choice};
+\node[mcp] (client) at (4.0,3.45) {MCP client\\agent profile};
+\node[mcp] (server) at (8.0,3.45) {MCP server\\allowed tools};
+\node[tool] (inspect) at (0,1.55) {Broad inspect\\tree context};
+\node[tool] (detail) at (4.0,1.55) {Scoped detail\\selectors + frames};
+\node[tool] (actions) at (8.0,1.55) {Action / harvest\\click + play + screenshot};
+\node[result] (result) at (4.0,-0.2) {Structured observation\\summary, evidence, raw payload};
+
+\draw[arr] (llm.east) -- node[lab, above]{tool call} (client.west);
+\draw[arr] (client.east) -- node[lab, above]{profile URL} (server.west);
+\draw[arr] (server.south) -- ++(0,-0.5) -| (inspect.north);
+\draw[arr] (server.south) -- ++(0,-0.5) -| (detail.north);
+\draw[arr] (server.south) -- ++(0,-0.5) -| (actions.north);
+
+\draw[ret] (inspect.south) -- ++(0,-0.45) -| (result.north west);
+\draw[ret] (detail.south) -- (result.north);
+\draw[ret] (actions.south) -- ++(0,-0.45) -| (result.north east);
+\draw[ret] (result.west) -- ++(-4.0,0) |- node[lab, pos=0.18, left]{evidence} (llm.south);
+\end{tikzpicture}
+}
+\caption{General relationship between an LLM agent, profile-scoped MCP tools, and structured browser observations.}
+\label{fig:mcp-general}
+\end{figure}

@@ -1,0 +1,81 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  flowstep/.style={draw=accent!85, fill=blue!6, rounded corners=5pt,
+    minimum width=2.55cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
+  routebox/.style={draw=accent!70, fill=blue!4, rounded corners=5pt,
+    minimum width=2.38cm, minimum height=0.66cm, align=center, font=\scriptsize\bfseries},
+  agent/.style={draw=orange!80!black, fill=orange!9, rounded corners=5pt,
+    minimum width=2.42cm, minimum height=0.74cm, align=center, font=\scriptsize\bfseries},
+  queue/.style={draw=orange!70!black, fill=orange!5, rounded corners=4pt,
+    minimum width=2.08cm, minimum height=0.58cm, align=center, font=\tiny\bfseries},
+  evidence/.style={draw=green!55!black, fill=green!8, rounded corners=4pt,
+    minimum width=2.25cm, minimum height=0.62cm, align=center, font=\tiny\bfseries},
+  outputbox/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
+    minimum width=2.45cm, minimum height=0.74cm, align=center, font=\scriptsize\bfseries},
+  skipbox/.style={draw=red!55, fill=red!4, rounded corners=5pt,
+    minimum width=2.6cm, minimum height=0.74cm, align=center, font=\scriptsize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80, shorten <=2pt, shorten >=2pt},
+  route/.style={->, >=Stealth, thick, orange!75!black, shorten <=2pt, shorten >=2pt},
+  stream/.style={->, >=Stealth, thick, green!55!black, shorten <=2pt, shorten >=2pt},
+  skip/.style={->, >=Stealth, thick, red!58, dashed, shorten <=2pt, shorten >=2pt}
+]
+
+\node[flowstep] (start) at (0,5.7) {Start run\\seed URL};
+\node[flowstep] (settings) at (2.85,5.7) {Load settings\\memory hints};
+\node[agent] (classify) at (5.7,5.7) {Classification\\agent};
+
+\node[routebox] (rlanding) at (0.6,4.25) {route: landing};
+\node[routebox] (rhosting) at (4.95,4.25) {route: hosting};
+\node[routebox] (rembedded) at (9.3,4.25) {route: embedded};
+\node[routebox] (runknown) at (12.1,4.25) {unknown/other};
+
+\node[agent] (landing) at (0.6,2.92) {Landing\\agent};
+\node[queue] (hostingq) at (2.78,2.92) {hosting\_pages\\queue};
+\node[agent] (hosting) at (4.95,2.92) {Hosting\\agent(s)};
+\node[queue] (embeddedq) at (7.12,2.92) {embedded URLs\\iframe queue};
+\node[agent] (embedded) at (9.3,2.92) {Embedded\\agent(s)};
+\node[skipbox] (skipstage) at (12.1,2.92) {No stream evidence\\skip provider/email};
+
+\node[evidence] (streamq) at (7.12,1.12) {streams\\evidence};
+\node[skipbox] (nostreams) at (12.1,1.12) {no streams\\record skipped};
+
+\node[outputbox] (provider) at (5.35,-0.62) {Provider\\analysis};
+\node[outputbox] (email) at (8.2,-0.62) {Email draft\\generation};
+\node[outputbox] (final) at (12.1,-0.62) {Final status\\and trace};
+
+\coordinate (routebus) at (5.7,4.9);
+
+\draw[arr] (start) -- (settings);
+\draw[arr] (settings) -- (classify);
+\draw[arr] (classify.south) -- (routebus);
+\draw[arr] (routebus) -| (rlanding.north);
+\draw[arr] (routebus) -| (rhosting.north);
+\draw[arr] (routebus) -| (rembedded.north);
+\draw[skip] (routebus) -| (runknown.north);
+
+\draw[route] (rlanding.south) -- (landing.north);
+\draw[route] (rhosting.south) -- (hosting.north);
+\draw[route] (rembedded.south) -- (embedded.north);
+\draw[skip] (runknown.south) -- (skipstage.north);
+
+\draw[route] (landing) -- (hostingq);
+\draw[route] (hostingq) -- (hosting);
+\draw[route] (hosting) -- (embeddedq);
+\draw[route] (embeddedq) -- (embedded);
+
+\draw[stream] (hosting.south east) to[out=-55,in=180] (streamq.west);
+\draw[stream] (embedded.south west) to[out=-125,in=0] (streamq.east);
+\draw[stream] (streamq.south west) to[out=-125,in=70] (provider.north);
+\draw[arr] (provider) -- (email);
+\draw[arr] (email) -- (final);
+
+\draw[skip] (skipstage.south) -- (nostreams.north);
+\draw[skip] (nostreams.south) -- (final.north);
+
+\end{tikzpicture}
+}
+\caption{Orchestrator routing flowchart and handoff decisions.}
+\label{fig:orchestrator-flowchart}
+\end{figure}

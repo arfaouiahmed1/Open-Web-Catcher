@@ -1,0 +1,40 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.9\textwidth}{!}{%
+\begin{tikzpicture}[
+  phase/.style={draw=accent!75, fill=blue!5, rounded corners=6pt,
+                minimum width=4.0cm, minimum height=1.04cm,
+                text centered, font=\small\bfseries, align=center},
+  centerbox/.style={draw=orange!70, fill=orange!10, rounded corners=6pt,
+                minimum width=3.35cm, minimum height=1.0cm,
+                text centered, font=\small\bfseries, align=center},
+  arr/.style={->, >=Stealth, thick, accent!72, shorten <=3pt, shorten >=3pt},
+  iter/.style={->, >=Stealth, dashed, thick, orange!70!black, shorten <=3pt, shorten >=3pt}
+]
+
+\node[phase] (problem) at (0,4.0) {Problem Identification\\and Motivation};
+\node[phase] (objectives) at (5.1,2.35) {Objectives of\\the Solution};
+\node[phase] (design) at (5.1,-0.75) {Design and\\Development};
+\node[phase] (demo) at (0,-2.4) {Demonstration};
+\node[phase] (eval) at (-5.1,-0.75) {Evaluation};
+\node[phase] (comm) at (-5.1,2.35) {Communication};
+\node[centerbox] (loop) at (0,0.75) {Agile-Style\\Short Iterations};
+
+\draw[arr] (problem.east) to[bend left=10] (objectives.north west);
+\draw[arr] (objectives.south) -- (design.north);
+\draw[arr] (design.south west) to[bend left=10] (demo.east);
+\draw[arr] (demo.west) to[bend left=10] (eval.south east);
+\draw[arr] (eval.north) -- (comm.south);
+\draw[arr] (comm.north east) to[bend left=10] (problem.west);
+
+\draw[iter] (loop.north) -- (problem.south);
+\draw[iter] (loop.east) -- (objectives.west);
+\draw[iter] (loop.east) -- (design.west);
+\draw[iter] (loop.south) -- (demo.north);
+\draw[iter] (loop.west) -- (eval.east);
+\draw[iter] (loop.west) -- (comm.east);
+\end{tikzpicture}
+}
+\caption{DSRM adopted for the project, with Agile-style short iterations inside each phase.}
+\label{fig:dsrm}
+\end{figure}

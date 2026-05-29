@@ -1,0 +1,35 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.94\textwidth}{!}{%
+\begin{tikzpicture}[
+  card/.style={draw=gray!60, fill=white, rounded corners=6pt,
+    text width=3.55cm, minimum height=2.05cm, align=left,
+    font=\footnotesize, inner sep=7pt},
+  support/.style={card, draw=orange!70!black, fill=orange!8},
+  chosen/.style={card, draw=green!55!black, fill=green!8},
+  decision/.style={draw=accent!70, fill=blue!5, rounded corners=6pt,
+    text width=11.65cm, minimum height=0.9cm, align=center,
+    font=\footnotesize\bfseries, inner sep=6pt},
+  arr/.style={->, >=Stealth, thick, accent!70, shorten <=3pt, shorten >=3pt}
+]
+\node[support] (agile) at (-4.65,0) {\centering\textbf{Agile}\par
+\vspace{0.25em}\raggedright Short iterations for prompts, tools, browser actions,
+and bug fixes.};
+\node[support] (crisp) at (0,0) {\centering\textbf{CRISP-DM}\par
+\vspace{0.25em}\raggedright Useful for business context, data observation,
+evaluation, and operational review.};
+\node[chosen] (dsrm) at (4.65,0) {\centering\textbf{DSRM}\par
+\vspace{0.25em}\raggedright Main backbone because the contribution is a designed
+and evaluated engineering artifact.};
+
+\node[decision] (method) at (0,-2.25)
+  {Adopted method: DSRM backbone + Agile iterations + CRISP-DM evaluation lens};
+
+\draw[arr] (agile.south) to[out=-90,in=170] (method.west);
+\draw[arr] (crisp.south) -- (method.north);
+\draw[arr] (dsrm.south) to[out=-90,in=10] (method.east);
+\end{tikzpicture}
+}
+\caption{Methodology selection logic used for the internship work.}
+\label{fig:methodology-selection}
+\end{figure}
