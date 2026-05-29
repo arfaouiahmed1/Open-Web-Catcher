@@ -1,99 +1,106 @@
 \chapter{Methodology, Requirements Analysis, and Design Constraints}
+\label{chap:methodology}
 
-This chapter presents the methodological frame adopted for the internship, explains why
-Design Science Research Methodology (DSRM) was selected, maps the six DSRM phases to
-the concrete work carried out, and derives the requirements and constraints that shaped
-the artifact described in Chapters~4 and~5. Because the internship delivered and
-evaluated technical artifacts rather than a predictive model, the methodological
-emphasis is on artifact design, demonstration, and evaluation.
+The internship was organized around Design Science Research Methodology (DSRM). This
+choice is deliberate: the work did not consist of studying a phenomenon from the
+outside or training a predictive model. It consisted of designing, building,
+demonstrating, and evaluating an engineering artifact for a concrete organizational
+problem. In this report, that artifact is Open Web Catcher (OWC), the evidence
+collection platform built around browser tooling, specialist agents, trace storage,
+screenshots, provider enrichment, and reviewable outputs.
 
-\section{Methodology options considered}
+DSRM provides the backbone for the chapter structure that follows. The problem is first
+identified and motivated, then solution objectives are defined, the artifact is designed
+and developed, the artifact is demonstrated, the artifact is evaluated, and finally the
+work is communicated through this PFE report and its diagrams. This phase logic follows
+the design-science view of information-systems artifacts proposed by Hevner et
+al.~\cite{hevner-ds} and the DSRM process described by Peffers et
+al.~\cite{peffers-dsrm}.
 
-The internship combined software engineering, browser automation, prompt design, and
-evidence-oriented investigation. Three methodological options were considered: Agile,
-CRISP-DM, and Design Science Research Methodology (DSRM).
+\section{DSRM as the Methodological Backbone}
+
+DSRM was selected because it gives equal importance to the organizational problem and
+to the engineered artifact. A static crawler already existed in the company context,
+but it was limited when the useful evidence appeared only after browser rendering,
+interaction, iframe traversal, server switching, or media activation. The PFE work
+therefore needed a methodology that could justify a new artifact, not only describe a
+work plan.
 
 \input{figures/tikz/fig-02-methodology-comparison}
 
-\subsection{Agile}
+\subsection{Why DSRM Fits the Internship}
 
-Agile practices matched the day-to-day execution rhythm of the internship. Short cycles
-of implementation, run inspection, failure analysis, and prompt or tool revision were
-essential because illegal streaming sites change quickly and often expose new obstacles
-only during live testing. Agile was therefore used as an execution discipline: it helped
-turn each failed run into a small correction to a prompt, browser tool, selector strategy,
-or evaluation check. It was not used as the full research methodology, because it does
-not by itself explain how the artifact is justified, demonstrated, and evaluated.
+The project has three properties that make DSRM suitable. First, it is
+artifact-centered: the final contribution is a platform and workflow design, not a
+pure analysis. Second, the artifact is evaluated through use: it is meaningful only if
+it can inspect real pages, produce traces, capture screenshots, and return evidence.
+Third, the organizational relevance is explicit: Soft Stars needed a more adaptable
+way to complement crawler-based monitoring when illegal streaming pages became too
+dynamic for static extraction.
 
-\subsection{CRISP-DM}
+\subsection{DSRM Phases Used in the Report}
 
-CRISP-DM~\cite{crispdm} offers a clear sequence from business understanding to
-data understanding, preparation, modeling, evaluation, and operational review. Parts
-of that logic were useful for organizing observations: understanding the enforcement
-context, studying page structures, preparing test cases, evaluating evidence quality,
-and discussing operational deployment. However, the project was not a classical
-data-mining lifecycle and did not aim to optimize a predictive model on a labeled
-dataset. CRISP-DM is therefore kept as an evaluation and operational-review lens.
-
-\input{figures/tikz/fig-02-crispdm-agile}
-
-\subsection{Design Science Research Methodology (DSRM)}
-
-Design science research focuses on the creation and evaluation of artifacts that solve
-relevant organizational problems~\cite{hevner-ds,peffers-dsrm}. This framing matches the
-internship more closely because the central deliverable is an engineering artifact: an
-agentic browser-based evidence-collection pipeline composed of prompts, tools, browser
-traces, screenshots, structured outputs, and evaluation metrics.
-
-\begin{table}[!htbp]
-\centering
-\begin{tabularx}{\textwidth}{Q{2.7cm} Y Y}
-\toprule
-\rowcolor{accent!8}
-Methodology & Strength for this project & Limitation for this project \\
-\midrule
-Agile & Excellent short-cycle execution and adaptation during prompt, tool, and
-browser refinement & Less explicit about how to justify and evaluate a technical
-artifact as a research contribution \\
-CRISP-DM & Useful discipline for scoping, evaluation, and operationalization discussion &
-Dataset/model-centered framing is not the main logic of this internship \\
-DSRM & Artifact-centered framing that explicitly links problem, design, demonstration,
-and evaluation & Needs complementary iteration rhythm for fast engineering feedback \\
-\bottomrule
-\end{tabularx}
-\caption{Methodology selection matrix for the evidence-collection project.}
-\label{tab:method-compare}
-\end{table}
-
-\section{Chosen methodology: DSRM with iterative prototyping}
-
-DSRM was adopted as the overall methodology, while Agile-style short iterations were
-used inside each phase to refine prompts, tools, and browser behavior based on observed
-failures. This means that the report follows the DSRM logic, but the practical work did
-not move through the phases only once. Each failed run could send the work back to the
-objectives, design, or evaluation step.
-
-DSRM fits the project better than CRISP-DM for three reasons. First, the project is
-artifact-centered, not dataset-centered or model-centered: the main work was to design a
-reliable evidence-collection system under adversarial web conditions. Second, the main
-output is a working and proposed system architecture together with a validated agent
-workflow, not a trained predictive model. Third, evaluation focuses on tool behavior,
-evidence quality, trace completeness, extraction success and failure patterns, cost, and
-robustness rather than on statistical accuracy against a fixed labeled benchmark.
-
-CRISP-DM remains a useful secondary lens for discussing operational context and
-evaluation discipline, but it is not the primary methodological backbone of the report.
-Figure~\ref{fig:dsrm} summarizes the adopted DSRM view, while
-Figure~\ref{fig:crispdm-agile} already placed the supporting Agile and CRISP-DM logic
-under the methodology options.
+The six DSRM phases are not treated as abstract theory. Each one corresponds to work
+carried out during the internship. Figure~\ref{fig:dsrm} summarizes the adopted
+backbone.
 
 \input{figures/tikz/fig-02-dsrm}
 
-\section{DSRM applied to this project}
+\subsubsection{Problem identification and motivation}
 
-Following Peffers et al.~\cite{peffers-dsrm}, the project was organized around six DSRM
-phases. Table~\ref{tab:dsrm-application} maps each phase to the concrete internship
-work and its main outputs.
+The first phase established the practical problem: suspicious streaming pages could be
+found, but collecting reviewable evidence was difficult. Some pages exposed only lists
+of matches or channels. Others required a click on a server button before a player
+loaded. Others hid the player in an iframe or generated short-lived manifest URLs only
+after playback. A crawler that reads static HTML can miss these states because it does
+not perform the same sequence of visual and network actions as a browser user.
+
+\subsubsection{Objectives of the solution}
+
+The second phase translated the problem into objectives. The artifact needed to ingest
+a URL, classify the page role, follow landing-to-hosting and hosting-to-embedded
+handoffs, activate players when necessary, collect screenshots, detect stream evidence,
+preserve channel and provider metadata when available, and store enough trace data for
+later review. These objectives became the functional and non-functional requirements
+listed later in this chapter.
+
+\subsubsection{Design and development}
+
+The third phase produced the artifacts. The n8n workflow was used first because it
+allowed fast operational validation of an AI-assisted landing workflow and could act as
+a backup path beside the existing crawler. OWC then formalized the same ideas in a
+maintainable platform with FastAPI, Next.js, PostgreSQL, MCP browser tooling,
+Puppeteer/Chrome, profile-scoped sessions, model telemetry, and specialist agents.
+
+\subsubsection{Demonstration}
+
+The fourth phase demonstrated that the artifact could operate on representative page
+types: landing pages, hosting pages, embedded player pages, popup-heavy pages,
+tokenized manifest cases, and pages where channel evidence had to be verified from
+visible player or screenshot context. Demonstration was not limited to a happy path; it
+included runs where the system returned explicit failures such as no hosting pages, no
+streams, or skipped downstream enrichment.
+
+\subsubsection{Evaluation}
+
+The fifth phase evaluated the artifact through trace inspection, tool telemetry,
+screenshots, token and cost records, stream yield, provider enrichment, and dashboard
+snapshots. The aim was not to claim that every illegal streaming page can be solved.
+The aim was to verify whether the artifact made the extraction process more
+observable, repeatable, and reviewable than a one-shot crawler or a manually inspected
+page.
+
+\subsubsection{Communication}
+
+The final phase is the communication of the artifact. This report presents the problem,
+methodology, technical background, architecture, implementation, evaluation, and final
+limitations. The diagrams and tables are included to make the artifact understandable
+as an engineering contribution, not to reproduce internal source files.
+
+\section{DSRM Mapping to the Internship Work}
+
+Table~\ref{tab:dsrm-application} maps each DSRM phase to the work performed during the
+internship and to the concrete outputs used in the rest of the report.
 
 \begin{table}[!htbp]
 \centering
@@ -102,55 +109,42 @@ work and its main outputs.
 \rowcolor{accent!8}
 DSRM phase & Application in this project & Main output \\
 \midrule
-Problem identification and motivation & Illegal streaming evidence collection is
- dynamic, adversarial, multilingual, and difficult for static scrapers because evidence
- may appear only after runtime interaction, iframe traversal, or player activation. &
- Problem framing and motivation for the artifact \\
-Objectives of the solution & Define that the artifact must classify pages, extract
- host/embed/stream evidence, capture screenshots, preserve traces, and calculate
- evaluation metrics that support reviewable evidence collection. & Solution objectives
- and acceptance criteria \\
-Design and development & Build an exploratory workflow and a validated single-agent
-path; derive a Python/FastAPI reference architecture for modularity, observability,
-memory, evaluation, and future scalability. & Validated workflow plus reference
-architecture \\
-Demonstration & Run the artifact on representative streaming-site families: landing
- pages, hosting pages, embedded player pages, and iframe/popup/tokenized-stream cases. &
- Demonstration cases and observed behaviors \\
-Evaluation & Measure prompt behavior, tool usage, extraction success and failure,
- token and cost metrics, cache behavior, trace quality, and practical limitations. &
- Evaluation traces, metrics, and findings \\
-Communication & Produce the internship report, diagrams, architecture documentation,
- and implementation roadmap. & Communicated artifact and roadmap \\
+Problem identification and motivation & Analyze crawler limitations, dynamic
+page behavior, stream activation, iframe traversal, channel ambiguity, and the
+need for reviewable evidence. & Problem statement and motivation for OWC \\
+Objectives of the solution & Define the extraction, traceability, screenshot,
+channel, provider, cost, and review requirements that the artifact must satisfy.
+& Functional and non-functional requirements \\
+Design and development & Build the n8n validation workflow, then design OWC as a
+platform with backend, frontend, database, browser tools, agents, and
+observability. & n8n workflow and OWC architecture \\
+Demonstration & Run the artifact on representative landing, hosting, embedded,
+popup, iframe, and tokenized-stream scenarios. & Demonstrated evidence paths and
+failure paths \\
+Evaluation & Inspect traces, screenshots, stream evidence, provider enrichment,
+tool behavior, token usage, costs, and dashboard telemetry. & Evaluation metrics,
+results, and limitations \\
+Communication & Produce the PFE report, diagrams, final PDF, and design
+explanation for academic and company review. & Written report and final synthesis \\
 \bottomrule
 \end{tabularx}
 \caption{DSRM phase mapping to project activities and outputs.}
 \label{tab:dsrm-application}
 \end{table}
 
-\section{Project evolution timeline}
+\section{Project Evolution Timeline}
 
-The internship evolved from domain study and exploratory validation to a
-single-agent operational path, then to the Python reference architecture and
-evaluation campaigns. Figure~\ref{fig:timeline} summarizes this sequence.
+The timeline follows the DSRM logic but remains concrete. The internship started with
+evidence needs and crawler limitations, moved to browser-agent experiments, then to
+the n8n landing-agent backup workflow, and finally to the OWC platform architecture
+and evaluation.
 
 \input{figures/tikz/fig-02-project-timeline}
 
-The validated workflow established the operational baseline used in the company
-context. The Python reference architecture should be interpreted as the
-maintainability-oriented evolution of the same evidence-collection logic, not as
-a claim that the full operational workflow was replaced during the internship.
+\section{Functional Requirements}
 
-\section{Functional and non-functional requirements}
-
-The requirements were addressed across two complementary levels. At the operational
-level, the validated workflow covered the core evidence-collection tasks used in the
-company context. At the reference-architecture level, the Python implementation
-generalized those tasks into a more maintainable design with stronger observability,
-memory, evaluation support, and future scalability.
-
-Table~\ref{tab:fr-summary} summarizes the ten functional requirements derived from the
-operational context.
+The functional requirements describe what the artifact must do to support the
+evidence-collection workflow.
 
 \begin{table}[!htbp]
 \centering
@@ -160,23 +154,32 @@ operational context.
 ID & Requirement summary & Priority \\
 \midrule
 FR-1 & URL ingestion and run lifecycle management & Critical \\
-FR-2 & Page-type classification with DOM and screenshot signals & Critical \\
-FR-3 & Specialist routing by page type & Critical \\
-FR-4 & Tab-aware landing-page candidate discovery & High \\
-FR-5 & Multi-server hosting extraction loop & Critical \\
-FR-6 & Embedded player activation and stream capture & Critical \\
-FR-7 & Hosting-to-embedded fallback & High \\
-FR-8 & Screenshot capture and persistent evidence storage & High \\
-FR-9 & WHOIS / IP infrastructure enrichment & Medium \\
-FR-10 & Operator review surface and trace inspection & High \\
+FR-2 & Page-type classification using rendered browser evidence & Critical \\
+FR-3 & Orchestrator handoff from classification to landing, hosting, or embedded
+agents & Critical \\
+FR-4 & Landing-page discovery of match, event, channel, and hosting candidates & High \\
+FR-5 & Hosting-page interaction with server/source controls, overlays, and play
+buttons & Critical \\
+FR-6 & Embedded-player inspection through frame trees, player state, and media
+signals & Critical \\
+FR-7 & Screenshot capture at important evidence and failure points & High \\
+FR-8 & Stream evidence extraction for manifests, media URLs, and embedded
+fallbacks & Critical \\
+FR-9 & Channel detection from landing hints, player context, screenshot/OCR text,
+and structured agent output & High \\
+FR-10 & Provider enrichment and reviewable evidence bundle generation & Medium \\
+FR-11 & Operator console views for runs, telemetry, screenshots, tools, settings,
+and provider results & High \\
 \bottomrule
 \end{tabularx}
 \caption{Functional requirements derived from the evidence-collection workflow.}
 \label{tab:fr-summary}
 \end{table}
 
-Table~\ref{tab:nfr-summary} lists the non-functional requirements and the design choices
-used to address them across the validated workflow and the Python reference architecture.
+\section{Non-Functional Requirements}
+
+The non-functional requirements explain the qualities required for the artifact to be
+useful after a run finishes.
 
 \begin{table}[!htbp]
 \centering
@@ -185,26 +188,29 @@ used to address them across the validated workflow and the Python reference arch
 \rowcolor{accent!8}
 ID & Non-functional requirement & How it is addressed \\
 \midrule
-NFR-1 & Maintainability & Validated workflow behavior; Python modular agents, versioned
-  prompts, and tool registry \\
-NFR-2 & Observability & Structured event log, evaluation database, SSE review surface,
-  and trace persistence \\
-NFR-3 & Cost control & Model routing, provider-side caching, and token budgets \\
-NFR-4 & Reliability & Tool error contracts, popup handling, and bounded retry logic \\
-NFR-5 & Scalability & Queue-backed worker execution and separable browser services \\
-NFR-6 & Portability & Docker Compose, configurable browser profiles, and separable
-  worker services \\
-NFR-7 & Evidence traceability & Run-linked artifact chain: event $\to$ screenshot $\to$
-  structured output \\
+NFR-1 & Maintainability & OWC separates backend routes, frontend views, agent
+contracts, browser tools, runtime settings, and persistence records. \\
+NFR-2 & Observability & Runs persist runtime events, agent runs, LLM calls, tool
+calls, screenshots, streams, provider rows, and final statuses. \\
+NFR-3 & Traceability & Each result can be connected back to a URL, agent, tool
+call, screenshot, stream candidate, and final decision. \\
+NFR-4 & Reliability & Profile-scoped sessions, bounded retries, popup recovery,
+iframe recovery, media verification, and explicit failure states reduce silent
+errors. \\
+NFR-5 & Cost control & Token counters, cached input tracking, model settings,
+rate-limit awareness, and dashboard cost summaries make model usage visible. \\
+NFR-6 & Adaptability & Page-type specialists, browser profile controls, proxy
+configuration, fingerprint rotation, and memory hints support changing site
+behavior. \\
+NFR-7 & Deployment fit & The company deployment keeps n8n as a backup operational
+orchestrator and runs the landing agent through queue-driven container jobs. \\
 \bottomrule
 \end{tabularx}
 \caption{Non-functional requirements and implementation responses.}
 \label{tab:nfr-summary}
 \end{table}
 
-Taken together, the DSRM framing and the two-level requirement view establish the
-evaluation scope of the artifact. The implementation-specific constraints, prompt
-evolution, and agent design principles are presented in Chapter~5 where they directly
-explain the runtime decisions. The next chapter establishes the technical background
-needed to understand the website structures, browser tools, streaming protocols, and
-agentic concepts used by the artifact.
+This DSRM framing defines the rest of the report. Chapter~3 introduces the technical
+concepts needed to understand the artifact. Chapter~4 describes the OWC architecture,
+including the agent routing, browser tool layer, fingerprint and proxy controls, and
+channel-detection path. Chapter~5 then explains how those decisions were implemented.

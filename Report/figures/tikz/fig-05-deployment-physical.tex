@@ -2,54 +2,52 @@
 \centering
 \resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  service/.style={draw=accent, fill=blue!6, rounded corners=5pt,
-    minimum width=3.25cm, minimum height=0.86cm, align=center, font=\footnotesize\bfseries},
-  job/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
-    minimum width=3.35cm, minimum height=0.86cm, align=center, font=\footnotesize\bfseries},
-  inner/.style={draw=green!55!black, fill=green!4, rounded corners=4pt,
-    minimum width=2.85cm, minimum height=0.76cm, align=center, font=\scriptsize\bfseries},
-  store/.style={draw=purple!60, fill=purple!7, rounded corners=5pt,
-    minimum width=3.25cm, minimum height=0.86cm, align=center, font=\footnotesize\bfseries},
-  ext/.style={draw=gray!65, fill=gray!10, rounded corners=5pt,
-    minimum width=3.25cm, minimum height=0.86cm, align=center, font=\footnotesize\bfseries},
-  note/.style={draw=orange!70, fill=orange!10, rounded corners=5pt,
-    minimum width=3.55cm, minimum height=0.86cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80},
-  supp/.style={->, >=Stealth, thick, gray!65, dashed},
-  group/.style={draw=gray!50, dashed, rounded corners=8pt, inner sep=10pt},
-  lab/.style={font=\tiny, fill=white, inner sep=1pt}
+  source/.style={draw=gray!65, fill=gray!10, rounded corners=6pt,
+    text width=2.85cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  queue/.style={draw=accent!75, fill=blue!6, rounded corners=6pt,
+    text width=2.85cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
+  comp/.style={draw=green!55!black, fill=green!7, rounded corners=6pt,
+    text width=3.05cm, minimum height=0.78cm, align=center, font=\scriptsize\bfseries},
+  service/.style={draw=purple!65!black, fill=purple!7, rounded corners=6pt,
+    text width=2.8cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
+  result/.style={draw=orange!80!black, fill=orange!10, rounded corners=6pt,
+    text width=3.05cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80, shorten <=4pt, shorten >=4pt},
+  soft/.style={->, >=Stealth, thick, dashed, gray!65, shorten <=4pt, shorten >=4pt},
+  group/.style={draw=gray!50, dashed, rounded corners=9pt, inner sep=11pt}
 ]
-\node[note] (n8n) at (0,3.6) {n8n operational\\workflow};
-\node[job] (bus) at (4.0,3.6) {Azure Service Bus\\landing jobs};
+\node[source] (crawler) at (0,2.9) {Existing crawler\\and n8n flow};
+\node[queue] (tasks) at (4.0,2.9) {Azure Service Bus\\\texttt{agent\_tasks}};
 
-\node[inner] (worker) at (8.8,4.35) {Python worker\\landing agent};
-\node[inner] (mcp) at (8.8,3.25) {Puppeteer MCP\\localhost};
-\node[inner] (chrome) at (8.8,2.15) {Chrome\\localhost};
-\node[group, fit=(worker)(mcp)(chrome)] (container) {};
+\node[comp] (n8n) at (8.2,4.0) {n8n backup\\orchestration};
+\node[comp] (worker) at (8.2,2.95) {Landing-agent\\worker};
+\node[comp] (mcp) at (8.2,1.9) {Puppeteer MCP\\local endpoint};
+\node[comp] (chrome) at (8.2,0.85) {Chrome instances\\browser profiles};
+\node[group, fit=(n8n)(worker)(mcp)(chrome)] (container) {};
 \node[anchor=south, font=\footnotesize\bfseries, text=green!45!black] at ([yshift=0.08cm]container.north)
-  {single ACA Job container};
+  {single Azure Container Apps Job container};
 
-\node[ext] (sites) at (13.8,3.25) {Target streaming\\websites};
+\node[source] (sites) at (12.6,3.25) {Target streaming\\landing pages};
+\node[service] (llm) at (12.6,1.65) {Gemini model\\LLM calls};
+\node[result] (payload) at (8.2,-1.0) {Matched URLs\\metadata + evidence};
+\node[queue] (results) at (4.0,-1.0) {Azure Service Bus\\\texttt{agent\_results}};
 
-\node[store] (logs) at (4.0,0.35) {Run logs\\and outputs};
-\node[ext] (llm) at (8.8,0.35) {Gemini model\\provider};
-\node[store] (artifacts) at (13.8,0.35) {Screenshots\\and evidence};
+\draw[arr] (crawler) -- (tasks);
+\draw[arr] (tasks) -- (container.west);
+\draw[arr] (n8n) -- (worker);
+\draw[arr] (worker) -- (mcp);
+\draw[arr] (mcp) -- (chrome);
+\draw[arr] (chrome.east) -- (sites.west);
+\draw[soft] (worker.east) -- (llm.west);
+\draw[arr] (container.south) -- (payload.north);
+\draw[arr] (payload) -- (results);
+\draw[soft] (results.west) to[out=180,in=-90,looseness=0.9] (crawler.south);
 
-\draw[arr] (n8n) -- node[lab, above]{enqueue URL} (bus);
-\draw[arr] (bus) -- node[lab, above]{trigger job} (container.west);
-\draw[arr] (worker) -- node[lab, right]{MCP calls} (mcp);
-\draw[arr] (mcp) -- node[lab, right]{CDP} (chrome);
-\draw[arr] (chrome) -- node[lab, above]{inspect pages} (sites);
-\draw[supp] (worker) -- (llm);
-\draw[supp] (worker) -- (logs);
-\draw[supp] (chrome) -- (artifacts);
-\draw[supp] (artifacts.south) -- ++(0,-0.55) -| (n8n.south);
-
-\node[group, fit=(bus)(container)(logs)(llm)(artifacts)] (azure) {};
-\node[anchor=south, font=\small\bfseries, text=accent] at ([yshift=0.1cm]azure.north)
-  {Azure deployment boundary};
+\node[group, fit=(tasks)(container)(results)(payload)(llm), inner sep=14pt] (boundary) {};
+\node[anchor=south, font=\small\bfseries, text=accent] at ([yshift=0.08cm]boundary.north)
+  {Company deployment boundary};
 \end{tikzpicture}
 }
-\caption{Azure Container Apps Job deployment using one container for worker, Puppeteer MCP, and Chrome.}
+\caption{Company deployment flow using \texttt{agent\_tasks}, a single n8n/Puppeteer landing-agent container, and \texttt{agent\_results}.}
 \label{fig:physical-architecture}
 \end{figure}

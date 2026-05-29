@@ -415,8 +415,8 @@ per million tokens \cite{openrouter-models}. The cache column uses OpenRouter's
 \texttt{input\_cache\_read} field when available; \texttt{--} means that no cache-read
 price was exposed for that model.
 
-Google's Gemini pricing and caching documentation separates normal input, cached input,
-and output pricing, while the rate-limit documentation describes RPM, TPM, and RPD as
+Google's Gemini pricing and caching references separate normal input, cached input,
+and output pricing, while the rate-limit reference describes RPM, TPM, and RPD as
 operational limits that vary by model and usage tier~\cite{gemini-pricing,gemini-caching,gemini-rate-limits}.
 Those properties match the project constraints: the agents need a large context window
 for page state and traces, low latency for browser loops, low cost for repeated 200+

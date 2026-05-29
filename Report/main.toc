@@ -1,98 +1,109 @@
+\contentsline {chapter}{Abstract}{i}{chapter*.1}%
+\contentsline {chapter}{R\'esum\'e}{ii}{chapter*.2}%
+\contentsline {chapter}{Acknowledgements}{iii}{chapter*.3}%
+\contentsline {chapter}{List of Acronyms}{xii}{chapter*.7}%
+\contentsline {chapter}{Terminology}{xiv}{chapter*.8}%
 \contentsline {chapter}{\numberline {1}Introduction}{1}{chapter.1}%
-\contentsline {section}{\numberline {1.1}Host organization -- Soft Stars}{1}{section.1.1}%
-\contentsline {section}{\numberline {1.2}Sports piracy and the evidence collection challenge}{1}{section.1.2}%
-\contentsline {section}{\numberline {1.3}Objectives and contributions}{1}{section.1.3}%
-\contentsline {section}{\numberline {1.4}Report structure}{2}{section.1.4}%
-\contentsline {chapter}{\numberline {2}Methodology, Requirements Analysis, and Design Constraints}{4}{chapter.2}%
-\contentsline {section}{\numberline {2.1}Methodology options considered}{4}{section.2.1}%
-\contentsline {subsection}{\numberline {2.1.1}Agile}{4}{subsection.2.1.1}%
-\contentsline {subsection}{\numberline {2.1.2}CRISP-DM}{4}{subsection.2.1.2}%
-\contentsline {subsection}{\numberline {2.1.3}Design Science Research Methodology (DSRM)}{5}{subsection.2.1.3}%
-\contentsline {section}{\numberline {2.2}Chosen methodology: DSRM with iterative prototyping}{6}{section.2.2}%
-\contentsline {section}{\numberline {2.3}DSRM applied to this project}{6}{section.2.3}%
-\contentsline {section}{\numberline {2.4}Project evolution timeline}{7}{section.2.4}%
-\contentsline {section}{\numberline {2.5}Functional and non-functional requirements}{8}{section.2.5}%
-\contentsline {chapter}{\numberline {3}Technical Background}{10}{chapter.3}%
-\contentsline {section}{\numberline {3.1}Streaming Website Structures}{10}{section.3.1}%
-\contentsline {subsection}{\numberline {3.1.1}The normal page flow}{10}{subsection.3.1.1}%
-\contentsline {subsection}{\numberline {3.1.2}Landing pages}{11}{subsection.3.1.2}%
-\contentsline {subsection}{\numberline {3.1.3}Hosting pages}{11}{subsection.3.1.3}%
-\contentsline {subsection}{\numberline {3.1.4}Embedded pages}{12}{subsection.3.1.4}%
-\contentsline {section}{\numberline {3.2}DOM Structures and Web Page Representation}{12}{section.3.2}%
-\contentsline {subsection}{\numberline {3.2.1}A simplified DOM tree}{12}{subsection.3.2.1}%
-\contentsline {subsection}{\numberline {3.2.2}DOM signals on streaming pages}{13}{subsection.3.2.2}%
-\contentsline {section}{\numberline {3.3}Streaming Protocols and Embedded Players}{14}{section.3.3}%
-\contentsline {subsection}{\numberline {3.3.1}Common embedding patterns}{14}{subsection.3.3.1}%
-\contentsline {subsection}{\numberline {3.3.2}HLS and MPEG-DASH}{14}{subsection.3.3.2}%
-\contentsline {subsection}{\numberline {3.3.3}Tokens, cookies, referers, and provider checks}{15}{subsection.3.3.3}%
-\contentsline {section}{\numberline {3.4}Browser Automation, Scraping, and Runtime Obstacles}{15}{section.3.4}%
-\contentsline {subsection}{\numberline {3.4.1}Puppeteer as a browser control layer}{15}{subsection.3.4.1}%
-\contentsline {subsection}{\numberline {3.4.2}Ads, cookies, popups, and other annoyances}{16}{subsection.3.4.2}%
-\contentsline {subsection}{\numberline {3.4.3}Why screenshots and network logs matter}{16}{subsection.3.4.3}%
-\contentsline {section}{\numberline {3.5}Agentic Evidence Collection Concepts}{16}{section.3.5}%
-\contentsline {subsection}{\numberline {3.5.1}Agents and ReAct-style loops}{17}{subsection.3.5.1}%
-\contentsline {subsection}{\numberline {3.5.2}Prompt engineering, tokens, and token usage}{17}{subsection.3.5.2}%
-\contentsline {subsection}{\numberline {3.5.3}Workflow automation tools}{17}{subsection.3.5.3}%
-\contentsline {subsection}{\numberline {3.5.4}LangChain, tools, and MCP servers}{18}{subsection.3.5.4}%
-\contentsline {section}{\numberline {3.6}Chapter Summary}{19}{section.3.6}%
-\contentsline {chapter}{\numberline {4}System Architecture}{20}{chapter.4}%
-\contentsline {section}{\numberline {4.1}System Purpose and Architecture Reading Path}{20}{section.4.1}%
-\contentsline {section}{\numberline {4.2}Global Runtime Architecture}{20}{section.4.2}%
-\contentsline {section}{\numberline {4.3}End-to-End Agent Pipeline}{23}{section.4.3}%
-\contentsline {section}{\numberline {4.4}Agent Communication and Orchestrator Handoffs}{24}{section.4.4}%
-\contentsline {section}{\numberline {4.5}Agent-by-Agent Design}{26}{section.4.5}%
-\contentsline {subsection}{\numberline {4.5.1}Orchestrator Agent}{26}{subsection.4.5.1}%
-\contentsline {subsection}{\numberline {4.5.2}Classification Agent}{27}{subsection.4.5.2}%
-\contentsline {subsection}{\numberline {4.5.3}Landing-Page Agent}{27}{subsection.4.5.3}%
-\contentsline {subsection}{\numberline {4.5.4}Hosting-Page Agent}{28}{subsection.4.5.4}%
-\contentsline {subsection}{\numberline {4.5.5}Embedded-Page Agent}{28}{subsection.4.5.5}%
-\contentsline {subsection}{\numberline {4.5.6}Provider Analysis and Email Generation}{29}{subsection.4.5.6}%
-\contentsline {section}{\numberline {4.6}Data, Trace, and Reviewability View}{29}{section.4.6}%
-\contentsline {section}{\numberline {4.7}Chapter Summary}{30}{section.4.7}%
-\contentsline {chapter}{\numberline {5}Implementation}{33}{chapter.5}%
-\contentsline {section}{\numberline {5.1}Part 1: n8n Workflow Prototype}{33}{section.5.1}%
-\contentsline {subsection}{\numberline {5.1.1}Purpose of the n8n phase}{33}{subsection.5.1.1}%
-\contentsline {subsection}{\numberline {5.1.2}n8n workflow screenshots}{33}{subsection.5.1.2}%
-\contentsline {subsection}{\numberline {5.1.3}Limitations of the n8n implementation}{35}{subsection.5.1.3}%
-\contentsline {section}{\numberline {5.2}Part 2: Implemented Reference Solution}{35}{section.5.2}%
-\contentsline {subsection}{\numberline {5.2.1}FastAPI Backend}{36}{subsection.5.2.1}%
-\contentsline {subsection}{\numberline {5.2.2}Next.js Operator Console}{37}{subsection.5.2.2}%
-\contentsline {subsection}{\numberline {5.2.3}MCP Browser Containers and Puppeteer Tools}{37}{subsection.5.2.3}%
-\contentsline {subsection}{\numberline {5.2.4}Agents, Models, Memory, and Prompts}{37}{subsection.5.2.4}%
-\contentsline {subsubsection}{\numberline {5.2.4.1}Design constraints implemented in the agent runtime}{40}{subsubsection.5.2.4.1}%
-\contentsline {subsubsection}{\numberline {5.2.4.2}Prompt evolution in the implementation}{40}{subsubsection.5.2.4.2}%
-\contentsline {subsubsection}{\numberline {5.2.4.3}Agent design principles}{40}{subsubsection.5.2.4.3}%
-\contentsline {subsubsection}{\numberline {5.2.4.4}Model behavior, token usage, and rate limits}{41}{subsubsection.5.2.4.4}%
-\contentsline {subsubsection}{\numberline {5.2.4.5}Prompt engineering and stopping behavior}{41}{subsubsection.5.2.4.5}%
-\contentsline {subsection}{\numberline {5.2.5}PostgreSQL Database and Observability}{42}{subsection.5.2.5}%
-\contentsline {section}{\numberline {5.3}Part 3: Deployment}{43}{section.5.3}%
-\contentsline {section}{\numberline {5.4}Implementation Summary}{44}{section.5.4}%
-\contentsline {chapter}{\numberline {6}Evaluation and Testing}{46}{chapter.6}%
-\contentsline {section}{\numberline {6.1}Agent Evaluation and Website Regression}{46}{section.6.1}%
-\contentsline {subsection}{\numberline {6.1.1}Test Protocol}{46}{subsection.6.1.1}%
-\contentsline {subsection}{\numberline {6.1.2}Batch Acceptance Rule}{47}{subsection.6.1.2}%
-\contentsline {subsection}{\numberline {6.1.3}Agent Use Cases}{48}{subsection.6.1.3}%
-\contentsline {subsection}{\numberline {6.1.4}Prompt Regression Results}{48}{subsection.6.1.4}%
-\contentsline {subsection}{\numberline {6.1.5}Dashboard Snapshot}{49}{subsection.6.1.5}%
-\contentsline {section}{\numberline {6.2}Model Evaluation, KPI Selection, and Cache}{51}{section.6.2}%
-\contentsline {subsection}{\numberline {6.2.1}KPI Formulas}{51}{subsection.6.2.1}%
-\contentsline {subsection}{\numberline {6.2.2}Model Selection Criteria}{51}{subsection.6.2.2}%
-\contentsline {subsection}{\numberline {6.2.3}LLM Model Comparison}{51}{subsection.6.2.3}%
-\contentsline {subsection}{\numberline {6.2.4}Cost Estimation}{54}{subsection.6.2.4}%
-\contentsline {subsection}{\numberline {6.2.5}Provider Intelligence Test}{55}{subsection.6.2.5}%
-\contentsline {section}{\numberline {6.3}Tool Evaluation}{55}{section.6.3}%
-\contentsline {subsection}{\numberline {6.3.1}Tool Success Criteria}{55}{subsection.6.3.1}%
-\contentsline {subsection}{\numberline {6.3.2}Tool Regression Findings}{57}{subsection.6.3.2}%
-\contentsline {section}{\numberline {6.4}Chapter Conclusion}{57}{section.6.4}%
-\contentsline {chapter}{\numberline {7}Conclusion and Perspectives}{59}{chapter.7}%
-\contentsline {section}{\numberline {7.1}General Conclusion}{59}{section.7.1}%
-\contentsline {section}{\numberline {7.2}Main Contributions}{59}{section.7.2}%
-\contentsline {section}{\numberline {7.3}Technical Lessons}{60}{section.7.3}%
-\contentsline {subsection}{\numberline {7.3.1}Prompt structure matters}{60}{subsection.7.3.1}%
-\contentsline {subsection}{\numberline {7.3.2}Browser evidence must be layered}{60}{subsection.7.3.2}%
-\contentsline {subsection}{\numberline {7.3.3}Fallbacks are part of the architecture}{60}{subsection.7.3.3}%
-\contentsline {subsection}{\numberline {7.3.4}Evaluation must be regression-oriented}{60}{subsection.7.3.4}%
-\contentsline {section}{\numberline {7.4}Limitations}{60}{section.7.4}%
-\contentsline {section}{\numberline {7.5}Future Work}{61}{section.7.5}%
-\contentsline {subsection}{\numberline {7.5.1}Screenshot annotation layer}{61}{subsection.7.5.1}%
-\contentsline {section}{\numberline {7.6}Final Remarks}{61}{section.7.6}%
+\contentsline {section}{\numberline {1.1}Host Organization and Internship Context}{1}{section.1.1}%
+\contentsline {section}{\numberline {1.2}Existing Crawler and Operational Limitations}{1}{section.1.2}%
+\contentsline {section}{\numberline {1.3}Problem Statement}{2}{section.1.3}%
+\contentsline {section}{\numberline {1.4}Internship Mission and Scope}{2}{section.1.4}%
+\contentsline {subsection}{\numberline {1.4.1}Mission Deliverables}{3}{subsection.1.4.1}%
+\contentsline {subsection}{\numberline {1.4.2}Scope Boundaries}{3}{subsection.1.4.2}%
+\contentsline {section}{\numberline {1.5}Main Contributions}{3}{section.1.5}%
+\contentsline {section}{\numberline {1.6}Report Structure}{4}{section.1.6}%
+\contentsline {chapter}{\numberline {2}Methodology, Requirements Analysis, and Design Constraints}{5}{chapter.2}%
+\contentsline {section}{\numberline {2.1}DSRM as the Methodological Backbone}{5}{section.2.1}%
+\contentsline {subsection}{\numberline {2.1.1}Why DSRM Fits the Internship}{5}{subsection.2.1.1}%
+\contentsline {subsection}{\numberline {2.1.2}DSRM Phases Used in the Report}{6}{subsection.2.1.2}%
+\contentsline {subsubsection}{\numberline {2.1.2.1}Problem identification and motivation}{6}{subsubsection.2.1.2.1}%
+\contentsline {subsubsection}{\numberline {2.1.2.2}Objectives of the solution}{6}{subsubsection.2.1.2.2}%
+\contentsline {subsubsection}{\numberline {2.1.2.3}Design and development}{7}{subsubsection.2.1.2.3}%
+\contentsline {subsubsection}{\numberline {2.1.2.4}Demonstration}{7}{subsubsection.2.1.2.4}%
+\contentsline {subsubsection}{\numberline {2.1.2.5}Evaluation}{7}{subsubsection.2.1.2.5}%
+\contentsline {subsubsection}{\numberline {2.1.2.6}Communication}{7}{subsubsection.2.1.2.6}%
+\contentsline {section}{\numberline {2.2}DSRM Mapping to the Internship Work}{7}{section.2.2}%
+\contentsline {section}{\numberline {2.3}Project Evolution Timeline}{7}{section.2.3}%
+\contentsline {section}{\numberline {2.4}Functional Requirements}{9}{section.2.4}%
+\contentsline {section}{\numberline {2.5}Non-Functional Requirements}{9}{section.2.5}%
+\contentsline {chapter}{\numberline {3}Technical Background}{11}{chapter.3}%
+\contentsline {section}{\numberline {3.1}Streaming Website Structures}{11}{section.3.1}%
+\contentsline {subsection}{\numberline {3.1.1}The normal page flow}{11}{subsection.3.1.1}%
+\contentsline {subsection}{\numberline {3.1.2}Landing pages}{12}{subsection.3.1.2}%
+\contentsline {subsection}{\numberline {3.1.3}Hosting pages}{12}{subsection.3.1.3}%
+\contentsline {subsection}{\numberline {3.1.4}Embedded pages}{13}{subsection.3.1.4}%
+\contentsline {section}{\numberline {3.2}DOM Structures and Web Page Representation}{13}{section.3.2}%
+\contentsline {subsection}{\numberline {3.2.1}A simplified DOM tree}{14}{subsection.3.2.1}%
+\contentsline {subsection}{\numberline {3.2.2}DOM signals on streaming pages}{14}{subsection.3.2.2}%
+\contentsline {section}{\numberline {3.3}Streaming Protocols and Embedded Players}{15}{section.3.3}%
+\contentsline {subsection}{\numberline {3.3.1}Common embedding patterns}{15}{subsection.3.3.1}%
+\contentsline {subsection}{\numberline {3.3.2}HLS and MPEG-DASH}{15}{subsection.3.3.2}%
+\contentsline {subsection}{\numberline {3.3.3}Tokens, cookies, referers, and provider checks}{16}{subsection.3.3.3}%
+\contentsline {section}{\numberline {3.4}Browser Automation, Scraping, and Runtime Obstacles}{16}{section.3.4}%
+\contentsline {subsection}{\numberline {3.4.1}Static crawler versus rendered browser state}{16}{subsection.3.4.1}%
+\contentsline {subsubsection}{\numberline {3.4.1.1}Rendered state as evidence}{17}{subsubsection.3.4.1.1}%
+\contentsline {subsection}{\numberline {3.4.2}Puppeteer as a browser control layer}{17}{subsection.3.4.2}%
+\contentsline {subsection}{\numberline {3.4.3}Ads, cookies, popups, and other annoyances}{17}{subsection.3.4.3}%
+\contentsline {subsection}{\numberline {3.4.4}Why screenshots and network logs matter}{18}{subsection.3.4.4}%
+\contentsline {section}{\numberline {3.5}Agentic Evidence Collection Concepts}{18}{section.3.5}%
+\contentsline {subsection}{\numberline {3.5.1}Agents and ReAct-style loops}{18}{subsection.3.5.1}%
+\contentsline {subsection}{\numberline {3.5.2}Prompt engineering, tokens, and token usage}{18}{subsection.3.5.2}%
+\contentsline {subsection}{\numberline {3.5.3}Workflow automation tools}{19}{subsection.3.5.3}%
+\contentsline {subsection}{\numberline {3.5.4}LangChain, tools, and MCP servers}{19}{subsection.3.5.4}%
+\contentsline {section}{\numberline {3.6}Chapter Summary}{21}{section.3.6}%
+\contentsline {chapter}{\numberline {4}System Architecture}{22}{chapter.4}%
+\contentsline {section}{\numberline {4.1}System Purpose and Architecture Reading Path}{22}{section.4.1}%
+\contentsline {section}{\numberline {4.2}Global Runtime Architecture}{24}{section.4.2}%
+\contentsline {section}{\numberline {4.3}Browser Tooling and Runtime Controls}{25}{section.4.3}%
+\contentsline {subsection}{\numberline {4.3.1}Tool Families}{25}{subsection.4.3.1}%
+\contentsline {subsubsection}{\numberline {4.3.1.1}Inspection and context tools}{25}{subsubsection.4.3.1.1}%
+\contentsline {subsubsection}{\numberline {4.3.1.2}Navigation, interaction, and evidence tools}{26}{subsubsection.4.3.1.2}%
+\contentsline {subsection}{\numberline {4.3.2}Fingerprint Handling and Proxy Rotation}{26}{subsection.4.3.2}%
+\contentsline {subsection}{\numberline {4.3.3}Channel Detection}{26}{subsection.4.3.3}%
+\contentsline {section}{\numberline {4.4}End-to-End Agent Pipeline}{26}{section.4.4}%
+\contentsline {section}{\numberline {4.5}Agent Communication and Orchestrator Handoffs}{28}{section.4.5}%
+\contentsline {section}{\numberline {4.6}Agent-by-Agent Design}{29}{section.4.6}%
+\contentsline {subsection}{\numberline {4.6.1}Orchestrator Agent}{29}{subsection.4.6.1}%
+\contentsline {subsection}{\numberline {4.6.2}Classification Agent}{31}{subsection.4.6.2}%
+\contentsline {subsection}{\numberline {4.6.3}Landing-Page Agent}{32}{subsection.4.6.3}%
+\contentsline {subsection}{\numberline {4.6.4}Hosting-Page Agent}{33}{subsection.4.6.4}%
+\contentsline {subsection}{\numberline {4.6.5}Embedded-Page Agent}{33}{subsection.4.6.5}%
+\contentsline {subsection}{\numberline {4.6.6}Provider Analysis and Email Generation}{34}{subsection.4.6.6}%
+\contentsline {section}{\numberline {4.7}Data, Trace, and Reviewability View}{34}{section.4.7}%
+\contentsline {section}{\numberline {4.8}Chapter Summary}{35}{section.4.8}%
+\contentsline {chapter}{\numberline {5}Implementation}{38}{chapter.5}%
+\contentsline {section}{\numberline {5.1}Part 1: n8n Workflow Prototype}{38}{section.5.1}%
+\contentsline {subsection}{\numberline {5.1.1}Purpose of the n8n phase}{38}{subsection.5.1.1}%
+\contentsline {subsection}{\numberline {5.1.2}n8n workflow screenshots}{38}{subsection.5.1.2}%
+\contentsline {subsection}{\numberline {5.1.3}Limitations of the n8n implementation}{39}{subsection.5.1.3}%
+\contentsline {section}{\numberline {5.2}Part 2: Open Web Catcher Platform}{41}{section.5.2}%
+\contentsline {subsection}{\numberline {5.2.1}FastAPI Backend}{41}{subsection.5.2.1}%
+\contentsline {subsection}{\numberline {5.2.2}Next.js Operator Console}{43}{subsection.5.2.2}%
+\contentsline {subsection}{\numberline {5.2.3}MCP Browser Containers and Puppeteer Tools}{43}{subsection.5.2.3}%
+\contentsline {subsection}{\numberline {5.2.4}Agents, Models, Memory, and Prompts}{43}{subsection.5.2.4}%
+\contentsline {subsubsection}{\numberline {5.2.4.1}Design constraints implemented in the agent runtime}{48}{subsubsection.5.2.4.1}%
+\contentsline {subsubsection}{\numberline {5.2.4.2}Prompt evolution in the implementation}{48}{subsubsection.5.2.4.2}%
+\contentsline {subsubsection}{\numberline {5.2.4.3}Agent design principles}{48}{subsubsection.5.2.4.3}%
+\contentsline {subsubsection}{\numberline {5.2.4.4}Model behavior, token usage, and rate limits}{49}{subsubsection.5.2.4.4}%
+\contentsline {subsubsection}{\numberline {5.2.4.5}Prompt engineering and stopping behavior}{49}{subsubsection.5.2.4.5}%
+\contentsline {subsection}{\numberline {5.2.5}PostgreSQL Database and Observability}{50}{subsection.5.2.5}%
+\contentsline {section}{\numberline {5.3}Part 3: Deployment}{51}{section.5.3}%
+\contentsline {section}{\numberline {5.4}Implementation Summary}{53}{section.5.4}%
+\contentsline {chapter}{\numberline {6}Evaluation and Testing}{54}{chapter.6}%
+\contentsline {section}{\numberline {6.1}Agent Evaluation and Website Regression}{54}{section.6.1}%
+\contentsline {subsection}{\numberline {6.1.1}Test Protocol}{54}{subsection.6.1.1}%
+\contentsline {subsection}{\numberline {6.1.2}Batch Acceptance Rule}{55}{subsection.6.1.2}%
+\contentsline {subsection}{\numberline {6.1.3}Agent Use Cases}{56}{subsection.6.1.3}%
+\contentsline {subsection}{\numberline {6.1.4}Prompt Regression Results}{56}{subsection.6.1.4}%
+\contentsline {subsection}{\numberline {6.1.5}Dashboard Snapshot}{57}{subsection.6.1.5}%
+\contentsline {section}{\numberline {6.2}Model Evaluation, KPI Selection, and Cache}{59}{section.6.2}%
+\contentsline {subsection}{\numberline {6.2.1}KPI Formulas}{59}{subsection.6.2.1}%
+\contentsline {subsection}{\numberline {6.2.2}Model Selection Criteria}{59}{subsection.6.2.2}%
+\contentsline {subsection}{\numberline {6.2.3}LLM Model Comparison}{59}{subsection.6.2.3}%
+\contentsline {subsection}{\numberline {6.2.4}Cost Estimation}{62}{subsection.6.2.4}%
+\contentsline {subsection}{\numberline {6.2.5}Provider Intelligence Test}{63}{subsection.6.2.5}%
+\contentsline {section}{\numberline {6.3}Tool Evaluation}{63}{section.6.3}%
+\contentsline {subsection}{\numberline {6.3.1}Tool Success Criteria}{63}{subsection.6.3.1}%
+\contentsline {subsection}{\numberline {6.3.2}Tool Regression Findings}{65}{subsection.6.3.2}%
+\contentsline {section}{\numberline {6.4}Chapter Conclusion}{65}{section.6.4}%
+\contentsline {chapter}{\numberline {7}General Conclusion}{67}{chapter.7}%

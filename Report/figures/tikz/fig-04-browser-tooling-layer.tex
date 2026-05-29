@@ -1,0 +1,60 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  profile/.style={draw=orange!80!black, fill=orange!9, rounded corners=6pt,
+    minimum width=3.0cm, minimum height=0.8cm, align=center, font=\scriptsize\bfseries},
+  tool/.style={draw=purple!65!black, fill=purple!7, rounded corners=6pt,
+    minimum width=3.25cm, minimum height=0.78cm, align=center, font=\scriptsize\bfseries},
+  runtime/.style={draw=accent!75, fill=blue!6, rounded corners=6pt,
+    minimum width=3.25cm, minimum height=0.78cm, align=center, font=\scriptsize\bfseries},
+  evidence/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
+    minimum width=3.25cm, minimum height=0.78cm, align=center, font=\scriptsize\bfseries},
+  ext/.style={draw=gray!60, fill=gray!10, rounded corners=6pt,
+    minimum width=3.25cm, minimum height=0.78cm, align=center, font=\scriptsize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!75, shorten <=3pt, shorten >=3pt},
+  soft/.style={->, >=Stealth, thick, dashed, gray!65, shorten <=3pt, shorten >=3pt},
+  group/.style={draw=gray!45, fill=gray!3, rounded corners=7pt, inner sep=8pt}
+]
+\node[profile] (class) at (0,4.1) {Classification\\profile};
+\node[profile] (landing) at (0,3.0) {Landing\\profile};
+\node[profile] (hosting) at (0,1.9) {Hosting\\profile};
+\node[profile] (embedded) at (0,0.8) {Embedded\\profile};
+
+\node[runtime] (mcp) at (4.2,3.55) {MCP client\\tool filtering};
+\node[runtime] (session) at (4.2,2.15) {Profile-scoped\\browser session};
+\node[runtime] (policy) at (4.2,0.75) {Runtime policy\\fingerprint + proxy};
+
+\node[tool] (inspect) at (8.4,4.2) {Inspect + context\\page, frames, candidates};
+\node[tool] (actions) at (8.4,3.05) {Navigation + actions\\open, click, play, scroll};
+\node[tool] (media) at (8.4,1.9) {Media extraction\\state, harvest, capture};
+\node[tool] (memory) at (8.4,0.75) {Memory hints\\lookup + update};
+
+\node[ext] (browser) at (12.8,3.2) {Chrome / Puppeteer\\rendered target page};
+\node[evidence] (output) at (12.8,1.55) {Evidence outputs\\screenshots, streams, trace};
+
+\begin{scope}[on background layer]
+\node[group, fit=(class)(landing)(hosting)(embedded), label={[font=\scriptsize\bfseries]above:Agent Profiles}] {};
+\node[group, fit=(mcp)(session)(policy), label={[font=\scriptsize\bfseries]above:Runtime Control}] {};
+\node[group, fit=(inspect)(actions)(media)(memory), label={[font=\scriptsize\bfseries]above:Tool Families}] {};
+\node[group, fit=(browser)(output), label={[font=\scriptsize\bfseries]above:Browser Evidence}] {};
+\end{scope}
+
+\draw[arr] (class.east) -- (mcp.west);
+\draw[arr] (landing.east) -- (mcp.west);
+\draw[arr] (hosting.east) -- (session.west);
+\draw[arr] (embedded.east) -- (session.west);
+\draw[arr] (mcp) -- (inspect);
+\draw[arr] (session) -- (actions);
+\draw[arr] (session) -- (media);
+\draw[arr] (policy) -- (memory);
+\draw[arr] (inspect) -- (browser);
+\draw[arr] (actions) -- (browser);
+\draw[arr] (media) -- (output);
+\draw[soft] (browser) -- (output);
+\draw[soft] (policy) -- (browser);
+\end{tikzpicture}
+}
+\caption{Profile-scoped MCP browser tooling and runtime controls used by OWC agents.}
+\label{fig:browser-tooling-layer}
+\end{figure}

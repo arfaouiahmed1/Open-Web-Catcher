@@ -1,8 +1,8 @@
 \chapter{System Architecture}
 \label{chap:architecture}
 
-This chapter presents the reference architecture of the evidence-collection
-platform from general to specific. It starts with the user-facing system and
+This chapter presents the architecture of Open Web Catcher (OWC), the
+evidence-collection platform developed during the internship. It starts with the user-facing system and
 runtime components, then narrows into the multi-agent pipeline, the handoff
 contract between agents, the responsibilities of each agent, and the data that
 makes a run reviewable. Chapter~5 then maps these architectural decisions to the
@@ -28,7 +28,9 @@ draft generation. Four browser-facing specialists perform bounded work:
 classification, landing-page discovery, hosting-page extraction, and
 embedded-player extraction. Each specialist receives a narrow task, uses only
 its profile-scoped MCP browser tools, returns typed output, and leaves events
-that explain both success and failure.
+that explain both success and failure. The browser runtime also carries the
+practical controls required by this domain: screenshot capture, channel-signal
+detection, profile-scoped sessions, fingerprint handling, and proxy rotation.
 \end{tcolorbox}
 
 \section{System Purpose and Architecture Reading Path}
@@ -111,7 +113,7 @@ Cloudinary, IPInfo, RDAP, and local runtime files. & The final answer and the
 failure path can be reviewed after execution. \\
 \bottomrule
 \end{tabularx}
-\caption{Global runtime boundaries used by the reference architecture.}
+\caption{Global runtime boundaries used by OWC.}
 \label{tab:global-runtime-boundaries}
 \end{table}
 
@@ -120,6 +122,99 @@ reasoning, dashboard rendering, and persistence fail in different ways. Keeping
 their boundaries visible makes failures easier to classify: a browser-tool
 timeout, a model retry, a missing stream, a skipped provider lookup, and a
 dashboard payload issue are different problems.
+
+\section{Browser Tooling and Runtime Controls}
+
+The browser layer is central to OWC because the evidence is not always present in the
+first HTML response. Each agent receives a profile-scoped tool surface through MCP:
+classification can inspect broadly, landing can discover candidate pages, hosting can
+activate players and server controls, and embedded can inspect frame-local media
+behavior. The architecture intentionally keeps the browser tools outside the prompt so
+that tool availability, timeouts, screenshots, proxy configuration, and profile state
+can be controlled by the runtime.
+
+\input{figures/tikz/fig-04-browser-tooling-layer}
+
+\subsection{Tool Families}
+
+The Puppeteer tool layer is organized into clear families. Broad inspection tools
+summarize the rendered page and reduce repeated DOM dumps. Context and detail tools
+return specific selectors, frame paths, element references, and local subtrees. Action
+tools click, type, select, scroll, play media, or recover from popup and navigation
+drift. Evidence tools capture screenshots, media state, stream candidates, and network
+diagnostics. Memory tools read and update reusable site hints, but those hints remain
+soft guidance: live browser evidence still decides the result.
+
+\subsubsection{Inspection and context tools}
+
+Inspection tools such as the general inspector and the landing, hosting, and embedded
+inspectors are used after navigation or after a meaningful page-state change. They
+return compact page summaries, grouped links and buttons, candidate ledgers, iframe
+overviews, player signals, reveal actions, and screenshot links. When the agent needs a
+precise target, it uses narrower tools for element queries, element details, frame
+trees, or media state instead of repeating a broad page scan.
+
+\subsubsection{Navigation, interaction, and evidence tools}
+
+Navigation tools open URLs, wait for page state, handle redirects, and recover from
+overshooting through browser history. Interaction tools operate on element references,
+CSS selectors, XPath locators, visible text, coordinates, checkboxes, radio inputs,
+select boxes, scrolling, and media playback. Evidence tools are used after a browser
+action changes the page: screenshots prove the visual state, media-state reads confirm
+playback, and stream-harvesting tools collect \texttt{m3u8}, \texttt{mpd}, \texttt{mp4},
+or related media candidates from browser and network signals.
+
+\subsection{Fingerprint Handling and Proxy Rotation}
+
+OWC treats browser identity as a runtime setting rather than as prompt text. Browser
+profiles keep cookies, cache, and session state scoped to the current run or agent
+profile. Fingerprint handling controls properties such as browser identity, navigator
+surface, viewport-related behavior, and profile fallback so that repeated browser
+sessions do not expose an obviously inconsistent automation profile.
+
+Proxy rotation is handled at runtime as a validated sticky strategy. Candidate proxies
+can be collected from configured remote or custom sources, validated against a test
+endpoint, and kept for the current browser profile while they remain healthy. Rotation
+occurs after failure instead of on every click, because changing network identity during
+one investigation can break cookies, session-bound player URLs, and tokenized media
+links. If no proxy candidate works, the runtime can fall back to direct browsing
+instead of incorrectly reporting the target site as unreachable.
+
+\subsection{Channel Detection}
+
+Channel detection is part of the evidence model because the rights-protection context
+often needs to know which broadcaster or channel signal was exposed. OWC collects
+channel hints from landing cards, page titles, player labels, server/source metadata,
+screenshot-derived text, and structured agent output. Landing hints are treated as
+candidates, not final truth. Hosting and embedded specialists are asked to verify or
+override those hints from live player evidence when the page reveals a stronger signal.
+
+\begin{table}[!htbp]
+\centering
+\begin{tabularx}{\textwidth}{Q{3.2cm} Y Y}
+\toprule
+\rowcolor{accent!8}
+Runtime concern & Architectural rule & Reviewable output \\
+\midrule
+Tool scope & Each specialist receives only the tools needed for its page role. &
+Tool calls and profile identifiers attached to the run trace. \\
+Browser profile & State is scoped by browser/profile so cookies, cache, and
+session-bound pages stay coherent during a run. & Profile, runtime settings, and
+browser events. \\
+Fingerprint handling & Browser identity is hardened and rotated according to
+runtime policy, not improvised by the agent. & Runtime configuration and browser
+diagnostics. \\
+Proxy rotation & Proxies are validated and kept sticky until failure; direct
+fallback avoids false site-down conclusions. & Proxy strategy, failures, and final
+navigation status. \\
+Channel detection & Channel names are accepted only when supported by page,
+player, screenshot, or structured agent evidence. & Detected channel, candidates,
+confidence, method, and evidence lines. \\
+\bottomrule
+\end{tabularx}
+\caption{Browser runtime controls that support reliable and reviewable evidence collection.}
+\label{tab:browser-runtime-controls}
+\end{table}
 
 \section{End-to-End Agent Pipeline}
 
@@ -351,10 +446,12 @@ screenshots, streams, provider rows, and email drafts. & The data behind
 
 The architecture is a staged, reviewable evidence pipeline. The operator starts
 and reviews runs through the console. FastAPI controls execution and persistence.
-The orchestrator uses LangGraph to route between agents and to preserve
-handoff state~\cite{langchain-docs,langgraph-docs}. Each specialist agent uses
-LangChain and LangGraph for the model and tool loop, while MCP browser tools
-gather page, frame, screenshot, and network evidence. Provider and email tools
-run only after streams exist, and storage preserves both the final answer and
-the failure path. The next chapter maps these architecture boundaries to the
-concrete implementation.
+The orchestrator uses LangGraph to route between agents and to preserve handoff
+state~\cite{langchain-docs,langgraph-docs}. Each specialist agent uses LangChain
+and LangGraph for the model and tool loop, while profile-scoped MCP browser tools
+gather page, frame, screenshot, channel, media, and network evidence. Browser
+runtime controls handle profile state, fingerprint behavior, proxy selection,
+popup recovery, iframe recovery, and screenshot capture. Provider and email tools
+run only after streams exist, and storage preserves both the final answer and the
+failure path. The next chapter maps these architecture boundaries to the concrete
+implementation.

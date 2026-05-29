@@ -1,40 +1,42 @@
 \begin{figure}[!htbp]
 \centering
-\resizebox{0.92\textwidth}{!}{%
+\resizebox{0.94\textwidth}{!}{%
 \begin{tikzpicture}[
-  phase/.style={draw=accent, fill=blue!8, rounded corners=6pt,
-                minimum width=4.2cm, minimum height=1.1cm,
+  phase/.style={draw=accent!75, fill=blue!6, rounded corners=7pt,
+                minimum width=4.25cm, minimum height=1.05cm,
                 text centered, font=\small\bfseries, align=center},
-  centerbox/.style={draw=orange!70, fill=orange!10, rounded corners=6pt,
-                minimum width=3.45cm, minimum height=1.05cm,
+  phaseg/.style={draw=green!55!black, fill=green!8, rounded corners=7pt,
+                minimum width=4.25cm, minimum height=1.05cm,
                 text centered, font=\small\bfseries, align=center},
-  arr/.style={->, >=Stealth, thick, accent!70},
-  iter/.style={->, >=Stealth, dashed, thick, orange!70}
+  center/.style={draw=orange!70!black, fill=orange!9, rounded corners=7pt,
+                minimum width=3.8cm, minimum height=1.05cm,
+                text centered, font=\small\bfseries, align=center},
+  arr/.style={->, >=Stealth, thick, accent!70, shorten <=3pt, shorten >=3pt},
+  fb/.style={->, >=Stealth, dashed, thick, gray!60, shorten <=3pt, shorten >=3pt}
 ]
+\node[phase] (problem) at (0,4.25) {1. Problem\\Identification};
+\node[phase] (objectives) at (5.35,2.35) {2. Objectives\\of the Solution};
+\node[phaseg] (design) at (5.35,-1.0) {3. Design and\\Development};
+\node[phaseg] (demo) at (0,-2.95) {4. Demonstration};
+\node[phase] (eval) at (-5.35,-1.0) {5. Evaluation};
+\node[phase] (comm) at (-5.35,2.35) {6. Communication};
+\node[center] (artifact) at (0,0.65) {OWC Artifact\\and Evidence Workflow};
 
-\node[phase] (problem) at (0,4.2) {Problem Identification\\and Motivation};
-\node[phase] (objectives) at (5.3,2.45) {Objectives of\\the Solution};
-\node[phase] (design) at (5.3,-0.85) {Design and\\Development};
-\node[phase] (demo) at (0,-2.55) {Demonstration};
-\node[phase] (eval) at (-5.3,-0.85) {Evaluation};
-\node[phase] (comm) at (-5.3,2.45) {Communication};
-\node[centerbox] (loop) at (0,0.75) {Agile-Style\\Short Iterations};
-
-\draw[arr] (problem.east) to[bend left=10] (objectives.north west);
+\draw[arr] (problem.east) to[bend left=8] (objectives.north west);
 \draw[arr] (objectives.south) -- (design.north);
-\draw[arr] (design.south west) to[bend left=10] (demo.east);
-\draw[arr] (demo.west) to[bend left=10] (eval.south east);
+\draw[arr] (design.south west) to[bend left=8] (demo.east);
+\draw[arr] (demo.west) to[bend left=8] (eval.south east);
 \draw[arr] (eval.north) -- (comm.south);
-\draw[arr] (comm.north east) to[bend left=10] (problem.west);
+\draw[arr] (comm.north east) to[bend left=8] (problem.west);
 
-\draw[iter] (loop.north) -- (problem.south);
-\draw[iter] (loop.east) -- (objectives.west);
-\draw[iter] (loop.east) -- (design.west);
-\draw[iter] (loop.south) -- (demo.north);
-\draw[iter] (loop.west) -- (eval.east);
-\draw[iter] (loop.west) -- (comm.east);
+\draw[fb] (artifact.north) -- (problem.south);
+\draw[fb] (artifact.east) -- (objectives.west);
+\draw[fb] (artifact.east) -- (design.west);
+\draw[fb] (artifact.south) -- (demo.north);
+\draw[fb] (artifact.west) -- (eval.east);
+\draw[fb] (artifact.west) -- (comm.east);
 \end{tikzpicture}
 }
-\caption{DSRM adopted for the project, with Agile-style short iterations inside each phase.}
+\caption{DSRM backbone used to structure the OWC problem, artifact, demonstration, evaluation, and communication.}
 \label{fig:dsrm}
 \end{figure}

@@ -1,46 +1,45 @@
 \addvspace {10\p@ }
 \addvspace {10\p@ }
-\contentsline {table}{\numberline {2.1}{\ignorespaces Methodology selection matrix for the evidence-collection project.}}{5}{table.caption.9}%
-\contentsline {table}{\numberline {2.2}{\ignorespaces DSRM phase mapping to project activities and outputs.}}{7}{table.caption.11}%
-\contentsline {table}{\numberline {2.3}{\ignorespaces Functional requirements derived from the evidence-collection workflow.}}{8}{table.caption.13}%
-\contentsline {table}{\numberline {2.4}{\ignorespaces Non-functional requirements and implementation responses.}}{9}{table.caption.14}%
+\contentsline {table}{\numberline {2.1}{\ignorespaces DSRM phase mapping to project activities and outputs.}}{8}{table.caption.13}%
+\contentsline {table}{\numberline {2.2}{\ignorespaces Functional requirements derived from the evidence-collection workflow.}}{9}{table.caption.15}%
+\contentsline {table}{\numberline {2.3}{\ignorespaces Non-functional requirements and implementation responses.}}{10}{table.caption.16}%
 \addvspace {10\p@ }
-\contentsline {table}{\numberline {3.1}{\ignorespaces Streaming-site page taxonomy and evidence role.}}{12}{table.caption.17}%
-\contentsline {table}{\numberline {3.2}{\ignorespaces DOM signals used to understand streaming-site pages.}}{13}{table.caption.19}%
-\contentsline {table}{\numberline {3.3}{\ignorespaces Browser-level obstacles and handling strategies.}}{16}{table.caption.22}%
+\contentsline {table}{\numberline {3.1}{\ignorespaces Streaming-site page taxonomy and evidence role.}}{13}{table.caption.19}%
+\contentsline {table}{\numberline {3.2}{\ignorespaces DOM signals used to understand streaming-site pages.}}{14}{table.caption.21}%
+\contentsline {table}{\numberline {3.3}{\ignorespaces Browser-level obstacles and handling strategies.}}{17}{table.caption.24}%
 \addvspace {10\p@ }
-\contentsline {table}{\numberline {4.1}{\ignorespaces Use-case responsibilities across operator and administration workflows.}}{21}{table.caption.26}%
-\contentsline {table}{\numberline {4.2}{\ignorespaces Global runtime boundaries used by the reference architecture.}}{22}{table.caption.28}%
-\contentsline {table}{\numberline {4.3}{\ignorespaces Agent and tool responsibility map.}}{25}{table.caption.33}%
-\contentsline {table}{\numberline {4.4}{\ignorespaces Runtime data boundaries and persisted review outputs.}}{32}{table.caption.47}%
+\contentsline {table}{\numberline {4.1}{\ignorespaces Use-case responsibilities across operator and administration workflows.}}{23}{table.caption.28}%
+\contentsline {table}{\numberline {4.2}{\ignorespaces Global runtime boundaries used by OWC.}}{24}{table.caption.30}%
+\contentsline {table}{\numberline {4.3}{\ignorespaces Browser runtime controls that support reliable and reviewable evidence collection.}}{27}{table.caption.32}%
+\contentsline {table}{\numberline {4.4}{\ignorespaces Agent and tool responsibility map.}}{30}{table.caption.37}%
+\contentsline {table}{\numberline {4.5}{\ignorespaces Runtime data boundaries and persisted review outputs.}}{36}{table.caption.51}%
 \addvspace {10\p@ }
-\contentsline {table}{\numberline {5.1}{\ignorespaces n8n prototype agent roles and implementation lessons.}}{34}{table.caption.50}%
-\contentsline {table}{\numberline {5.2}{\ignorespaces n8n prototype limitations and engineering consequences.}}{35}{table.caption.51}%
-\contentsline {table}{\numberline {5.3}{\ignorespaces Backend API responsibilities in the reference implementation.}}{36}{table.caption.54}%
-\contentsline {table}{\numberline {5.4}{\ignorespaces Current Next.js operator-console surfaces and backend dependencies.}}{37}{table.caption.55}%
-\contentsline {table}{\numberline {5.5}{\ignorespaces Browser automation engine comparison for the MCP tool layer.}}{38}{table.caption.57}%
-\contentsline {table}{\numberline {5.6}{\ignorespaces Puppeteer MCP tool groups and responsibilities.}}{39}{table.caption.58}%
-\contentsline {table}{\numberline {5.7}{\ignorespaces Specialist agent objectives and assigned tool surfaces.}}{39}{table.caption.60}%
-\contentsline {table}{\numberline {5.8}{\ignorespaces Runtime constraints and their implementation responses.}}{40}{table.caption.61}%
-\contentsline {table}{\numberline {5.9}{\ignorespaces Model-runtime concerns handled by the agent platform.}}{42}{table.caption.64}%
-\contentsline {table}{\numberline {5.10}{\ignorespaces Prompt engineering rules enforced by the specialist agents.}}{42}{table.caption.65}%
-\contentsline {table}{\numberline {5.11}{\ignorespaces PostgreSQL observability records and their implementation role.}}{43}{table.caption.66}%
-\contentsline {table}{\numberline {5.12}{\ignorespaces Landing-agent deployment scope and responsibilities.}}{44}{table.caption.69}%
+\contentsline {table}{\numberline {5.1}{\ignorespaces n8n prototype agent roles and implementation lessons.}}{40}{table.caption.56}%
+\contentsline {table}{\numberline {5.2}{\ignorespaces n8n prototype limitations and engineering consequences.}}{41}{table.caption.57}%
+\contentsline {table}{\numberline {5.3}{\ignorespaces Backend API responsibilities in OWC.}}{42}{table.caption.60}%
+\contentsline {table}{\numberline {5.4}{\ignorespaces Current Next.js operator-console surfaces and backend dependencies.}}{43}{table.caption.61}%
+\contentsline {table}{\numberline {5.5}{\ignorespaces Browser automation engine comparison for the MCP tool layer.}}{46}{table.caption.65}%
+\contentsline {table}{\numberline {5.6}{\ignorespaces Puppeteer MCP tool groups and responsibilities.}}{47}{table.caption.66}%
+\contentsline {table}{\numberline {5.7}{\ignorespaces Specialist agent objectives and assigned tool surfaces.}}{47}{table.caption.68}%
+\contentsline {table}{\numberline {5.8}{\ignorespaces Runtime constraints and their implementation responses.}}{48}{table.caption.69}%
+\contentsline {table}{\numberline {5.9}{\ignorespaces Model-runtime concerns handled by the agent platform.}}{50}{table.caption.72}%
+\contentsline {table}{\numberline {5.10}{\ignorespaces Prompt engineering rules enforced by the specialist agents.}}{50}{table.caption.73}%
+\contentsline {table}{\numberline {5.11}{\ignorespaces PostgreSQL observability records and their implementation role.}}{51}{table.caption.74}%
+\contentsline {table}{\numberline {5.12}{\ignorespaces Landing-agent deployment scope and responsibilities.}}{52}{table.caption.77}%
 \addvspace {10\p@ }
-\contentsline {table}{\numberline {6.1}{\ignorespaces Evaluation test matrix executed over the website regression batch.}}{47}{table.caption.70}%
-\contentsline {table}{\numberline {6.2}{\ignorespaces Website-level acceptance criteria for regression success.}}{47}{table.caption.71}%
-\contentsline {table}{\numberline {6.3}{\ignorespaces Agent use cases and website-level success signals.}}{48}{table.caption.72}%
-\contentsline {table}{\numberline {6.4}{\ignorespaces Prompt regression history and batch-level behavioral focus.}}{49}{table.caption.73}%
-\contentsline {table}{\numberline {6.5}{\ignorespaces Use-case KPI results measured on the website regression batch.}}{49}{table.caption.74}%
-\contentsline {table}{\numberline {6.6}{\ignorespaces Dashboard telemetry values used as operational evidence.}}{50}{table.caption.76}%
-\contentsline {table}{\numberline {6.7}{\ignorespaces KPI formulas for model, agent, and website-batch evaluation.}}{51}{table.caption.77}%
-\contentsline {table}{\numberline {6.8}{\ignorespaces Model selection criteria for the regression batch.}}{52}{table.caption.78}%
-\contentsline {table}{\numberline {6.9}{\ignorespaces LLM model comparison.}}{52}{table.6.9}%
-\contentsline {table}{\numberline {6.10}{\ignorespaces Observed cost, token, and cache metrics from the dashboard.}}{54}{table.caption.79}%
-\contentsline {table}{\numberline {6.11}{\ignorespaces Provider-intelligence telemetry used to validate stream URL enrichment.}}{55}{table.caption.80}%
-\contentsline {table}{\numberline {6.12}{\ignorespaces Tool-family evaluation criteria for batch-level testing.}}{56}{table.caption.81}%
-\contentsline {table}{\numberline {6.13}{\ignorespaces Observed tool-health telemetry from the dashboard.}}{56}{table.caption.82}%
-\contentsline {table}{\numberline {6.14}{\ignorespaces Tool-level regressions found through website-batch testing.}}{57}{table.caption.83}%
-\contentsline {table}{\numberline {6.15}{\ignorespaces Tool-description improvements measured against the website batch.}}{57}{table.caption.84}%
+\contentsline {table}{\numberline {6.1}{\ignorespaces Evaluation test matrix executed over the website regression batch.}}{55}{table.caption.78}%
+\contentsline {table}{\numberline {6.2}{\ignorespaces Website-level acceptance criteria for regression success.}}{55}{table.caption.79}%
+\contentsline {table}{\numberline {6.3}{\ignorespaces Agent use cases and website-level success signals.}}{56}{table.caption.80}%
+\contentsline {table}{\numberline {6.4}{\ignorespaces Prompt regression history and batch-level behavioral focus.}}{57}{table.caption.81}%
+\contentsline {table}{\numberline {6.5}{\ignorespaces Use-case KPI results measured on the website regression batch.}}{57}{table.caption.82}%
+\contentsline {table}{\numberline {6.6}{\ignorespaces Dashboard telemetry values used as operational evidence.}}{58}{table.caption.84}%
+\contentsline {table}{\numberline {6.7}{\ignorespaces KPI formulas for model, agent, and website-batch evaluation.}}{59}{table.caption.85}%
+\contentsline {table}{\numberline {6.8}{\ignorespaces Model selection criteria for the regression batch.}}{60}{table.caption.86}%
+\contentsline {table}{\numberline {6.9}{\ignorespaces LLM model comparison.}}{60}{table.6.9}%
+\contentsline {table}{\numberline {6.10}{\ignorespaces Observed cost, token, and cache metrics from the dashboard.}}{62}{table.caption.87}%
+\contentsline {table}{\numberline {6.11}{\ignorespaces Provider-intelligence telemetry used to validate stream URL enrichment.}}{63}{table.caption.88}%
+\contentsline {table}{\numberline {6.12}{\ignorespaces Tool-family evaluation criteria for batch-level testing.}}{64}{table.caption.89}%
+\contentsline {table}{\numberline {6.13}{\ignorespaces Observed tool-health telemetry from the dashboard.}}{64}{table.caption.90}%
+\contentsline {table}{\numberline {6.14}{\ignorespaces Tool-level regressions found through website-batch testing.}}{65}{table.caption.91}%
+\contentsline {table}{\numberline {6.15}{\ignorespaces Tool-description improvements measured against the website batch.}}{65}{table.caption.92}%
 \addvspace {10\p@ }
-\contentsline {table}{\numberline {7.1}{\ignorespaces Final summary of project contributions and outcomes.}}{59}{table.caption.85}%

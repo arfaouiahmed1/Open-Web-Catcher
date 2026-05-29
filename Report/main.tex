@@ -49,7 +49,7 @@
   linkcolor=black,
   urlcolor=black,
   citecolor=black,
-  pdftitle={Design of a Multi-Agent AI Pipeline for Evidence Collection from Illegal Streaming Sites},
+  pdftitle={Open Web Catcher: Design of a Multi-Agent AI Pipeline for Evidence Collection from Illegal Streaming Sites},
   pdfauthor={Ahmed ARFAOUI}
 }
 
@@ -137,31 +137,32 @@
   grayarrow/.style={->, >=Stealth, thick, gray!70},
 }
 
-\titleformat{\chapter}[hang]
-  {\bfseries\fontsize{18}{22}\selectfont}
-  {\thechapter}
-  {0.2cm}
-  {}
-  [\vspace{0.25em}\titlerule]
-\titlespacing*{\chapter}{0.2cm}{0pt}{1.35em}
+\titleformat{\chapter}[display]
+  {\bfseries}
+  {\color{accent}\fontsize{12}{15}\selectfont\MakeUppercase{\chaptername}\ \thechapter}
+  {0.35em}
+  {\fontsize{24}{29}\selectfont}
+  [\vspace{0.2em}{\color{accent!35}\titlerule[0.9pt]}]
+\titlespacing*{\chapter}{0.2cm}{0pt}{1.55em}
 \titleformat{\section}[hang]
-  {\bfseries\fontsize{16}{19}\selectfont}
+  {\bfseries\fontsize{16}{19}\selectfont\color{accent!88!black}}
   {\thesection}
-  {0.2cm}
+  {0.35cm}
   {}
-\titlespacing*{\section}{0.2cm}{1.45em plus 0.2em minus 0.1em}{0.7em}
+  [{\vspace{0.1em}\color{accent!20}\titlerule[0.35pt]}]
+\titlespacing*{\section}{0.2cm}{1.55em plus 0.2em minus 0.1em}{0.75em}
 \titleformat{\subsection}[hang]
-  {\bfseries\fontsize{14}{17}\selectfont}
+  {\bfseries\fontsize{14}{17}\selectfont\color{black}}
   {\thesubsection}
-  {0.2cm}
+  {0.3cm}
   {}
-\titlespacing*{\subsection}{0.2cm}{1.05em plus 0.15em minus 0.1em}{0.55em}
+\titlespacing*{\subsection}{0.2cm}{1.15em plus 0.15em minus 0.1em}{0.58em}
 \titleformat{\subsubsection}[hang]
-  {\bfseries\fontsize{12}{15}\selectfont}
+  {\bfseries\fontsize{12.4}{15.2}\selectfont\color{accent!80!black}}
   {\thesubsubsection}
-  {0.2cm}
+  {0.28cm}
   {}
-\titlespacing*{\subsubsection}{0.2cm}{0.85em plus 0.1em minus 0.05em}{0.4em}
+\titlespacing*{\subsubsection}{0.2cm}{0.9em plus 0.1em minus 0.05em}{0.42em}
 \preto{\chapter}{\Needspace{10\baselineskip}}
 \preto{\section}{\Needspace{4\baselineskip}}
 \preto{\subsection}{\Needspace{3\baselineskip}}
@@ -179,43 +180,16 @@
   \renewcommand{\footrulewidth}{0pt}%
 }
 
-\newcommand{\reportTitle}{Design of a Multi-Agent AI Pipeline for Evidence Collection from Illegal Streaming Sites}
+\newcommand{\reportTitle}{Open Web Catcher: Design of a Multi-Agent AI Pipeline for Evidence Collection from Illegal Streaming Sites}
 \newcommand{\reportType}{Internship Report}
 \newcommand{\studentName}{Ahmed ARFAOUI}
-\newcommand{\schoolName}{[University / School]}
-\newcommand{\departmentName}{[Department / Program]}
+\newcommand{\schoolName}{ESPRIT School of Engineering}
+\newcommand{\departmentName}{Information Technology}
 \newcommand{\hostOrganization}{Soft Stars}
 \newcommand{\clientName}{beIN SPORTS}
-\newcommand{\internshipPeriod}{[Internship Period]}
-\newcommand{\supervisorName}{[Academic Supervisor]}
+\newcommand{\internshipPeriod}{2025--2026}
+\newcommand{\supervisorName}{Naadine Maazoun}
 \newcommand{\industrySupervisorName}{Wael Hkiri}
-\newcommand{\placeholderfigure}[3]{
-  \begin{figure}[!htbp]
-    \centering
-    \fbox{
-      \parbox[c][#2][c]{0.88\textwidth}{
-        \centering
-        \textbf{Image Placeholder}\\[0.5em]
-        #1
-      }
-    }
-    \caption{#3}
-  \end{figure}
-}
-\newcommand{\placeholdertable}[2]{
-  \begin{table}[!htbp]
-    \centering
-    \fbox{
-      \parbox[c][5cm][c]{0.88\textwidth}{
-        \centering
-        \textbf{Table Placeholder}\\[0.5em]
-        #1
-      }
-    }
-    \caption{#2}
-  \end{table}
-}
-
 % ===== ESPRIT COVER PAGE COLORS =====
 \definecolor{espritred}{RGB}{176,28,36}
 \definecolor{espritdarkred}{RGB}{130,10,20}
@@ -352,6 +326,7 @@
 \node[anchor=north west, text width=13.5cm, align=left, inner sep=0pt]
   at ([xshift=5.2cm, yshift=-13.2cm]current page.north west) {%
   {\fontsize{13}{17}\selectfont\bfseries\color{black}
+   Open Web Catcher:\\
    Design of a Multi-Agent AI Pipeline\\
    for Evidence Collection from\\
    Illegal Streaming Sites}%
@@ -366,14 +341,14 @@
 };
 
 % ==========================================================
-%  COMPANY LOGO PLACEHOLDER BOX
+%  HOST ORGANIZATION BLOCK
 % ==========================================================
-\draw[espritgray, dashed, line width=0.8pt]
+\draw[espritgray, line width=0.6pt]
   ([xshift=10.5cm, yshift=-19.0cm]current page.north west) rectangle
   ([xshift=16.0cm, yshift=-21.8cm]current page.north west);
-\node[text=espritgray, font=\small\itshape]
+\node[text=espritdarkgray, align=center, text width=5.0cm]
   at ([xshift=13.25cm, yshift=-20.4cm]current page.north west)
-  {\textit{LOGO ENTREPRISE}};
+  {{\bfseries Soft Stars}\\[0.35em]{\small Host organization}};
 
 % ==========================================================
 %  BOTTOM LOGO STRIP -- accreditation logos (text placeholders)
@@ -420,10 +395,10 @@
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{0.5em}
 
-Je valide le dépôt du rapport PFE relatif à l'étudiant nommé ci-dessous / I validate the submission of the student's report:
+Je valide le d\'ep\^ot du rapport PFE relatif \`a l'\'etudiant nomm\'e ci-dessous / I validate the submission of the student's report:
 
 \begin{itemize}
-  \item \textbf{Nom \& Prénom / Name \& Surname :} Ahmed ARFAOUI
+  \item \textbf{Nom \& Pr\'enom / Name \& Surname :} Ahmed ARFAOUI
 \end{itemize}
 
 \vspace{1.2cm}
@@ -439,7 +414,7 @@ Je valide le dépôt du rapport PFE relatif à l'étudiant nommé ci-dessous / I
 \vspace{0.6cm}
 
 \begin{itemize}
-  \item \textbf{Nom \& Prénom / Name \& Surname :} Wael Hkiri
+  \item \textbf{Nom \& Pr\'enom / Name \& Surname :} Wael Hkiri
 \end{itemize}
 
 \vspace{0.3cm}
@@ -461,12 +436,12 @@ Je valide le dépôt du rapport PFE relatif à l'étudiant nommé ci-dessous / I
 \hline
 \vspace{0.4cm}
 \begin{center}
-{\large Encadrant Académique / Academic Supervisor}
+{\large Encadrant Acad\'emique / Academic Supervisor}
 \end{center}
 \vspace{0.6cm}
 
 \begin{itemize}
-  \item \textbf{Nom \& Prénom / Name \& Surname :} \supervisorName
+  \item \textbf{Nom \& Pr\'enom / Name \& Surname :} \supervisorName
 \end{itemize}
 
 \vspace{0.3cm}
@@ -481,9 +456,9 @@ Je valide le dépôt du rapport PFE relatif à l'étudiant nommé ci-dessous / I
 \end{center}
 
 \vspace{0.8cm}
-Ce formulaire doit être rempli, signé et \underline{\textbf{scanné}} / This form must be completed, signed and \underline{\textbf{scanned}}.
+Ce formulaire doit \^etre rempli, sign\'e et \underline{\textbf{scann\'e}} / This form must be completed, signed and \underline{\textbf{scanned}}.
 
-Ce formulaire doit être introduit après la page de garde / This form must be inserted after the cover page.
+Ce formulaire doit \^etre introduit apr\`es la page de garde / This form must be inserted after the cover page.
 }
 \newpage
 
@@ -492,14 +467,32 @@ Ce formulaire doit être introduit après la page de garde / This form must be i
 \pagenumbering{roman}
 
 \chapter*{Abstract}
-This report presents the design, development, and evaluation of an agentic evidence-collection system for illegal streaming websites. The work was carried out during an internship at Soft Stars for the client beIN SPORTS. The objective was to support rights-enforcement workflows by visiting target websites, classifying their pages, extracting hosting and stream evidence, and preserving auditable outputs such as screenshots, traces, and structured results.
+\addcontentsline{toc}{chapter}{Abstract}
+This report presents the design, development, and evaluation of Open Web Catcher (OWC), an agentic evidence-collection platform for illegal streaming websites. The work was carried out during a PFE internship at Soft Stars in the beIN SPORTS rights-protection context. The objective was to support evidence review by visiting target websites, classifying their pages, extracting hosting and stream evidence, detecting channel signals when visible, and preserving auditable outputs such as screenshots, traces, structured results, and provider metadata.
 
-The internship produced two related artifacts: an exploratory workflow used to validate browser-agent behavior on real targets, and a \textbf{Python}-based reference architecture designed to improve maintainability, observability, memory, evaluation, and scalability. The report presents these artifacts progressively, starting from the general evidence-collection problem and moving toward the concrete implementation and evaluation details.
+The internship produced two related artifacts. The first was an exploratory n8n workflow used to validate browser-agent behavior on real dynamic targets and to provide a practical backup path for the existing company crawler. The second was OWC: the complete engineering platform composed of a FastAPI backend, Next.js operator console, PostgreSQL persistence, MCP browser tooling, Puppeteer/Chrome runtime, specialist agents, model telemetry, and review outputs. The internal name Open Web Catcher was used because the platform focuses on catching evidence that is visible only through open-web browser interaction rather than through a static crawler response.
 
-The proposed architecture organizes evidence collection around specialized reasoning agents, browser automation tools, structured outputs, trace storage, screenshot capture, and evaluation metrics. The database described in this report is limited to observability, evaluation, traces, metrics, screenshots, errors, tool calls, and structured outputs; it is not the enterprise production database of the client organization.
+The proposed architecture organizes evidence collection around specialized reasoning agents, browser automation tools, profile-scoped sessions, fingerprint and proxy controls, structured outputs, trace storage, screenshot capture, and evaluation metrics. The database described in this report is limited to observability, evaluation, traces, metrics, screenshots, errors, tool calls, and structured outputs; it is not the enterprise production database of the client organization.
+
+\textbf{Keywords:} Open Web Catcher; multi-agent system; browser automation; illegal streaming; evidence collection; stream extraction; channel detection; observability.
+
+\chapter*{R\'esum\'e}
+\addcontentsline{toc}{chapter}{R\'esum\'e}
+Ce rapport pr\'esente la conception, le d\'eveloppement et l'\'evaluation d'Open Web Catcher (OWC), une plateforme agentique de collecte de preuves pour les sites de streaming ill\'egal. Le travail a \'et\'e r\'ealis\'e dans le cadre d'un projet de fin d'\'etudes chez Soft Stars, dans un contexte de protection des droits li\'e \`a beIN SPORTS. L'objectif \'etait d'am\'eliorer l'observation des pages suspectes, la classification des pages, l'extraction des liens d'h\'ebergement et des preuves de flux, ainsi que la conservation de traces exploitables pour une revue humaine.
+
+Le projet s'est appuy\'e sur deux r\'ealisations compl\'ementaires. La premi\`ere est un workflow n8n utilis\'e pour valider rapidement l'id\'ee d'un agent capable de naviguer sur des pages dynamiques et de servir de solution de secours au crawler existant de l'entreprise. La seconde est OWC, une plateforme compos\'ee d'un backend FastAPI, d'une console Next.js, d'une base PostgreSQL, d'outils MCP bas\'es sur Puppeteer et Chrome, d'agents sp\'ecialis\'es, de m\'etriques d'utilisation des mod\`eles et d'artefacts de revue. L'architecture met l'accent sur la tra\c{c}abilit\'e, les captures d'\'ecran, les traces d'ex\'ecution, la d\'etection de canaux visibles, l'enrichissement fournisseur et l'observabilit\'e.
+
+\textbf{Mots cl\'es :} Open Web Catcher; syst\`eme multi-agent; automatisation navigateur; streaming ill\'egal; collecte de preuves; extraction de flux; d\'etection de canaux; observabilit\'e.
 
 \chapter*{Acknowledgements}
-I would like to thank my academic and professional supervisors for their guidance throughout this internship. I also thank the Soft Stars team for the technical discussions, feedback, and trust that made this work possible.
+\addcontentsline{toc}{chapter}{Acknowledgements}
+I would like to express my sincere gratitude to my academic supervisor, Naadine Maazoun, for her guidance, feedback, and support throughout this PFE internship. Her remarks helped me keep the report focused on the engineering contribution, the methodology, and the clarity expected from an academic submission.
+
+I would also like to thank my corporate supervisor, Wael Hkiri, for his technical direction, availability, and trust during the project. The discussions around real operational constraints, crawler limitations, browser tooling, deployment choices, and evidence review shaped the work described in this report.
+
+I am grateful to the Soft Stars team for the professional environment, the technical exchanges, and the opportunity to work on a concrete rights-protection problem connected to the beIN SPORTS context. Their feedback helped turn early experiments into a clearer platform design.
+
+Finally, I thank my family and friends for their encouragement and patience during the internship and the preparation of this report.
 
 \tableofcontents
 \clearpage
@@ -507,6 +500,8 @@ I would like to thank my academic and professional supervisors for their guidanc
 \clearpage
 \listoftables
 \clearpage
+\input{chapters/front-acronyms}
+\input{chapters/front-terminology}
 
 \pagenumbering{arabic}
 
@@ -640,12 +635,6 @@ Official documentation, 2026.
 Available: \url{https://chromedevtools.github.io/devtools-protocol/}
 
 % ---- Methodology ----
-
-\bibitem{crispdm}
-R. Wirth and J. Hipp,
-``CRISP-DM: Towards a Standard Process Model for Data Mining,''
-in \emph{Proceedings of the 4th International Conference on the Practical
-Application of Knowledge Discovery and Data Mining (PAKDD)}, 2000, pp.~29--39.
 
 \bibitem{hevner-ds}
 A. R. Hevner, S. T. March, J. Park, and S. Ram,

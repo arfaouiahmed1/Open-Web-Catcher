@@ -2,19 +2,20 @@
 \label{chap:implementation}
 
 The implementation progressed in three major parts. The first part was an n8n
-workflow used as a fast exploration and validation environment. The second part
-was a Python reference solution built around FastAPI, Next.js, MCP browser-tool
-containers, specialist agents, model/runtime management, and PostgreSQL
-observability. The third part was the deployment direction: the company preferred to keep
-n8n as the operational workflow, while one agent was deployed as a focused cloud job.
+workflow used as a fast exploration, validation, and crawler-backup environment.
+The second part was Open Web Catcher (OWC), the platform built around FastAPI,
+Next.js, MCP browser-tool containers, specialist agents, model/runtime management,
+and PostgreSQL observability. The third part was the deployment direction: the
+company preferred to keep n8n as the operational backup workflow while deploying
+the landing agent as a focused cloud job.
 
 This split matters because the two systems did not have the same purpose. The
 n8n workflow was useful for testing whether agentic browsing could handle the
-domain at all. The Python implementation was built after those lessons, with
-cleaner engineering boundaries, persistent traces, configurable runtime
-settings, and a better foundation for evaluation. The deployment work then narrowed the
-cloud target to the part that the company actually wanted to operationalize during the
-internship.
+domain at all and whether it could complement the existing crawler when static
+collection missed dynamic evidence. OWC was built after those lessons, with cleaner
+engineering boundaries, persistent traces, configurable runtime settings, and a
+better foundation for evaluation. The deployment work then narrowed the cloud target
+to the part that the company actually wanted to operationalize during the internship.
 
 \section{Part 1: n8n Workflow Prototype}
 
@@ -38,10 +39,12 @@ runtime length, and evidence validation.
 
 The n8n workflow used agent-like nodes to test the same page-type responsibilities
 that later became specialist agents. Figure~\ref{fig:n8n-agent-screenshots} shows the
-full sequential workflow and the four agent workflow captures used during the
-prototype phase.
+full sequential workflow used during the prototype phase. The following figures give
+the specialist-agent screenshots more space so they remain readable when printed.
 
 \input{figures/tikz/fig-n8n-agent-screenshots}
+\input{figures/tikz/fig-n8n-classification-landing}
+\input{figures/tikz/fig-n8n-hosting-embedded}
 
 \begin{table}[!htbp]
 \centering
@@ -118,9 +121,9 @@ manual reconstruction. \\
 
 \input{figures/tikz/fig-n8n-to-reference}
 
-\section{Part 2: Implemented Reference Solution}
+\section{Part 2: Open Web Catcher Platform}
 
-The reference solution keeps the useful extraction logic from the n8n phase but
+OWC keeps the useful extraction logic from the n8n phase but
 moves it into explicit software components. It is organized into five main
 implementation areas: FastAPI, Next.js, MCP browser containers, agents and model
 runtime, and PostgreSQL.
@@ -129,7 +132,7 @@ runtime, and PostgreSQL.
 
 \subsection{FastAPI Backend}
 
-The FastAPI backend is the control plane of the reference solution~\cite{fastapi}. It starts
+The FastAPI backend is the control plane of OWC~\cite{fastapi}. It starts
 runs, checks runtime readiness, streams or returns run state, exposes settings,
 stores observability records, and gives the frontend a stable API surface.
 
@@ -156,7 +159,7 @@ Evaluation routes & Run or review batches and reliability checks. & Provides the
 foundation that the n8n prototype lacked. \\
 \bottomrule
 \end{tabularx}
-\caption{Backend API responsibilities in the reference implementation.}
+\caption{Backend API responsibilities in OWC.}
 \label{tab:fastapi-responsibilities}
 \end{table}
 
@@ -166,8 +169,8 @@ run summaries.
 
 \subsection{Next.js Operator Console}
 
-The Next.js frontend is not just a dashboard~\cite{nextjs}. It is the operator console for the
-reference implementation: launching runs, following execution, reviewing
+The Next.js frontend is not just a dashboard~\cite{nextjs}. It is the operator console for
+OWC: launching runs, following execution, reviewing
 evidence, and changing runtime configuration.
 
 \begin{table}[!htbp]
@@ -202,6 +205,8 @@ failed. A completed run should show what the agent actually did, which tools it
 called, what evidence it found, and where the model or browser runtime failed.
 
 \input{figures/tikz/fig-frontend-console-screenshots}
+\input{figures/tikz/fig-frontend-review-settings}
+\input{figures/tikz/fig-frontend-tools-settings}
 
 \subsection{MCP Browser Containers and Puppeteer Tools}
 
@@ -210,7 +215,7 @@ MCP browser services~\cite{mcp-spec}. Each agent profile receives a filtered too
 through an MCP endpoint. This reduces tool-selection noise and keeps browser
 session ownership outside the LLM prompt.
 The engine comparison below is based on the official Playwright and Puppeteer
-documentation and the project's integration constraints~\cite{playwright,puppeteer,cdp}.
+references and the project's integration constraints~\cite{playwright,puppeteer,cdp}.
 
 \begin{table}[!htbp]
 \centering
@@ -260,7 +265,7 @@ Memory tools & Read or update reusable site hints from the memory layer. \\
 
 \subsection{Agents, Models, Memory, and Prompts}
 
-The reference solution uses specialist agents rather than one general browser
+OWC uses specialist agents rather than one general browser
 agent. Each specialist receives a role-specific prompt, a profile-specific tool
 set, and a bounded execution budget.
 
@@ -344,7 +349,7 @@ The resulting agent design follows seven practical principles:
 
 \begin{itemize}
   \item classify the page role before deep extraction;
-  \item separate operational n8n validation from the Python reference architecture;
+  \item separate operational n8n validation from the OWC platform architecture;
   \item ground every conclusion in browser evidence rather than textual guessing;
   \item preserve traces, screenshots, and structured outputs for each critical step;
   \item use specialist agents and explicit fallbacks instead of one unconstrained agent;
@@ -370,7 +375,7 @@ therefore tracks context windows, input tokens, output tokens, cached tokens,
 cache writes, and estimated cost.
 
 Gemini rate limits are evaluated across RPM, TPM, and RPD. Google's current
-documentation defines these as requests per minute, input tokens per minute, and
+provider reference defines these as requests per minute, input tokens per minute, and
 requests per day, and states that limits depend on model and usage tier and can
 change in AI Studio \cite{gemini-rate-limits}. The implementation therefore treats rate
 limits as configuration and observability concerns rather than hard-coded constants.
@@ -473,21 +478,26 @@ outputs. \\
 
 \section{Part 3: Deployment}
 
-The company preferred to keep n8n as the main operational workflow. For that reason, the
-cloud deployment did not attempt to replace the whole workflow with the Python
-multi-agent platform. Instead, the deployment focused on one validated agent: the landing
-page agent. The deployment shape follows the same practical pattern already used for
-n8n: one containerized unit owns the runtime it needs. For the landing-agent job, this
-means the Azure Container Apps Job image contains the Python worker, the Puppeteer MCP
-server, and Chrome in the same container. Azure Service Bus~\cite{azure-jobs,azure-servicebus}
-passes a landing-page job message; the container job wakes up, runs the browser-agent
-logic through its local MCP endpoint, persists logs and evidence, and returns extracted
-match and host candidate evidence.
+The company preferred to keep n8n as the operational backup workflow around the
+existing crawler. For that reason, the cloud deployment did not attempt to replace the
+whole workflow with the complete OWC platform. Instead, the deployment focused on one
+validated unit: the landing-page agent. The deployment shape follows the practical
+company decision: target URLs, which are usually landing pages, arrive through an Azure
+Service Bus queue named \texttt{agent\_tasks}; one Azure Container Apps Job container
+owns n8n, the landing-agent worker, the Puppeteer MCP server, and Chrome instances; and
+the extracted matched URLs plus metadata are returned through a second Azure Service
+Bus queue named \texttt{agent\_results}~\cite{azure-jobs,azure-servicebus}.
 
-This deployment choice matches the internship scope. The Python reference architecture
-shows how the full platform can be structured, but the company-side deployment remained
-focused: n8n orchestration stayed in place, while the landing-page agent was isolated as
-a cloud-executable single-container unit.
+This flow keeps the crawler, n8n, and the AI browser agent loosely coupled. The crawler
+can continue broad discovery. n8n can decide when a page needs the backup landing
+agent. The container can perform the expensive rendered-page work outside a synchronous
+web request. The result queue can then return candidate hosting URLs, channel hints,
+screenshots, trace metadata, and failure reasons to the operational workflow.
+
+This deployment choice matches the internship scope. OWC shows how the full platform
+can be structured, but the company-side deployment remained focused: n8n stayed in
+place as the backup orchestrator, while the landing-page agent was isolated as a
+cloud-executable single-container unit.
 
 \input{figures/tikz/fig-05-deployment-physical}
 
@@ -503,11 +513,12 @@ workflow remained in n8n. \\
 Azure Service Bus & Decouples job submission from execution. & Used to pass landing-page
 jobs to the container worker. \\
 Container Apps Job & Runs one containerized agent unit when a message arrives. &
-Single image for the Python worker, Puppeteer MCP server, and Chrome. \\
+Single image for n8n, the landing-agent worker, Puppeteer MCP, and Chrome. \\
 Puppeteer runtime & Opens the page and extracts match/host candidates through the
 local MCP endpoint. & Runs inside the same job container as the landing agent. \\
-Outputs and artifacts & Return structured evidence, logs, and screenshots. & Used for
-review and integration back into the workflow. \\
+Output queue & Publishes matched URLs, metadata, screenshots, logs, and failure
+reasons to \texttt{agent\_results}. & Used for review and integration back into the
+workflow. \\
 \bottomrule
 \end{tabularx}
 \caption{Landing-agent deployment scope and responsibilities.}
@@ -516,12 +527,11 @@ review and integration back into the workflow. \\
 
 \section{Implementation Summary}
 
-The implementation moved from a useful but limited n8n prototype to a structured
-reference solution. The n8n phase validated the feasibility of agentic browser
-extraction and exposed the main runtime problems. The Python solution addressed
-those problems with explicit backend routes, a reviewable frontend, profiled MCP
-browser tools, specialist agents, memory and caching, model-usage tracking, and
-PostgreSQL observability.
+The implementation moved from a useful but limited n8n prototype to the structured OWC
+platform. The n8n phase validated the feasibility of agentic browser extraction and
+exposed the main runtime problems. OWC addressed those problems with explicit backend
+routes, a reviewable frontend, profiled MCP browser tools, specialist agents, memory
+and caching, model-usage tracking, and PostgreSQL observability.
 
 The result is not only an extraction script. It is a reviewable agent platform
 where failures can be diagnosed, prompts can be evaluated, tool behavior can be

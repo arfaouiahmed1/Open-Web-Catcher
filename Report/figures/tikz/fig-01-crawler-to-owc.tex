@@ -1,0 +1,41 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.96\textwidth}{!}{%
+\begin{tikzpicture}[
+  box/.style={draw=accent!70, fill=blue!6, rounded corners=6pt,
+    minimum width=3.65cm, minimum height=0.95cm, align=center,
+    font=\footnotesize\bfseries},
+  weak/.style={draw=gray!60, fill=gray!9, rounded corners=6pt,
+    minimum width=3.65cm, minimum height=0.95cm, align=center,
+    font=\footnotesize\bfseries},
+  ai/.style={draw=orange!80!black, fill=orange!10, rounded corners=6pt,
+    minimum width=3.65cm, minimum height=0.95cm, align=center,
+    font=\footnotesize\bfseries},
+  evidence/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
+    minimum width=3.65cm, minimum height=0.95cm, align=center,
+    font=\footnotesize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!80, shorten <=3pt, shorten >=3pt},
+  dashedarr/.style={->, >=Stealth, thick, dashed, gray!65, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\scriptsize, fill=white, inner sep=1pt}
+]
+\node[box] (crawler) at (0,2.0) {Existing crawler\\broad discovery};
+\node[weak] (html) at (4.3,2.0) {Static response\\HTML + links};
+\node[weak] (gap) at (8.6,2.0) {Evidence gap\\JS, iframe, play action};
+\node[ai] (n8n) at (0,-0.2) {n8n landing agent\\backup path};
+\node[ai] (owc) at (4.3,-0.2) {OWC browser workflow\\agents + tools};
+\node[evidence] (bundle) at (8.6,-0.2) {Reviewable evidence\\screenshots + streams + trace};
+
+\draw[arr] (crawler) -- node[lab, above]{find targets} (html);
+\draw[arr] (html) -- node[lab, above]{static limit} (gap);
+\draw[dashedarr] (gap.south) -- node[lab, right]{send dynamic cases} (owc.north);
+\draw[arr] (n8n) -- node[lab, above]{queue URL + metadata} (owc);
+\draw[arr] (owc) -- node[lab, above]{return evidence} (bundle);
+
+\node[draw=gray!55, fill=gray!6, rounded corners=5pt, text width=11.5cm,
+      align=center, font=\footnotesize] at (4.3,-1.65)
+{The crawler remains useful for discovery; the AI browser workflow is used when evidence depends on rendered state, interaction, frames, or media activation.};
+\end{tikzpicture}
+}
+\caption{How the AI browser workflow complements the existing crawler when static collection misses dynamic evidence.}
+\label{fig:crawler-to-owc}
+\end{figure}

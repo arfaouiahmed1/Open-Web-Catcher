@@ -1,28 +1,29 @@
 \begin{figure}[!htbp]
 \centering
-\resizebox{0.95\textwidth}{!}{%
+\resizebox{0.96\textwidth}{!}{%
 \begin{tikzpicture}[
-  card/.style={draw=accent, fill=blue!5, rounded corners=6pt,
-    text width=4.2cm, minimum height=2.0cm, align=left,
+  card/.style={draw=accent!70, fill=blue!5, rounded corners=6pt,
+    text width=3.6cm, minimum height=1.35cm, align=center,
     font=\footnotesize, inner sep=7pt},
-  chosen/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
-    text width=4.2cm, minimum height=2.0cm, align=left,
-    font=\footnotesize, inner sep=7pt},
-  weak/.style={draw=orange!70, fill=orange!10, rounded corners=6pt,
-    text width=4.2cm, minimum height=2.0cm, align=left,
-    font=\footnotesize, inner sep=7pt},
+  artifact/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
+    text width=4.2cm, minimum height=1.35cm, align=center,
+    font=\footnotesize\bfseries, inner sep=7pt},
+  arr/.style={->, >=Stealth, thick, accent!75, shorten <=3pt, shorten >=3pt}
 ]
-\node[weak] (agile) at (0,0) {\centering\textbf{Agile}\\[0.25em]
-\raggedright Fast feedback loop for prompts, tools, browser actions, and bug fixes.};
-\node[weak] (crisp) at (4.7,0) {\centering\textbf{CRISP-DM}\\[0.25em]
-\raggedright Useful for business context, data/site understanding, evaluation, and operational review.};
-\node[chosen] (dsrm) at (9.4,0) {\centering\textbf{DSRM}\\[0.25em]
-\raggedright Best fit because the main contribution is a designed and evaluated engineering artifact.};
+\node[card] (problem) at (0,0) {\textbf{Real problem}\\Dynamic evidence is missed by static crawling};
+\node[card] (objectives) at (4.25,0) {\textbf{Clear objectives}\\Classify, interact, capture, trace, review};
+\node[artifact] (artifact) at (8.75,0) {Designed artifact\\Open Web Catcher};
+\node[card] (evaluation) at (13.25,0) {\textbf{Evaluation}\\Evidence quality, traceability, cost, failures};
 
-\node[card, fill=gray!8, draw=gray!55, text width=12.4cm, minimum height=0.9cm] (decision) at (4.7,-2.12)
-{\centering\textbf{Adopted method:} DSRM backbone + Agile iterations + CRISP-DM evaluation lens.};
+\draw[arr] (problem) -- (objectives);
+\draw[arr] (objectives) -- (artifact);
+\draw[arr] (artifact) -- (evaluation);
+
+\node[draw=gray!55, fill=gray!7, rounded corners=5pt, text width=12.6cm,
+      minimum height=0.78cm, align=center, font=\footnotesize] at (6.65,-1.65)
+{\textbf{Methodological decision:} DSRM is used as the sole backbone because the PFE contribution is a designed, demonstrated, and evaluated information-system artifact.};
 \end{tikzpicture}
 }
-\caption{Methodology selection logic: Agile and CRISP-DM used as supporting lenses, DSRM used as the main backbone.}
+\caption{DSRM selection logic for an artifact-centered PFE project.}
 \label{fig:methodology-selection}
 \end{figure}

@@ -64,6 +64,12 @@ Queue message & A structured payload sent through a queue to start work or retur
 \texttt{agent\_results} & The Azure Service Bus output queue used in the company deployment flow to return matched URLs and metadata. \\
 Browser profile & A browser context with its own state, cookies, cache, and execution settings for a run or agent. \\
 Profile-scoped session & A browser session tied to one profile so page state can be preserved while avoiding uncontrolled sharing across unrelated runs. \\
+Static crawler & A monitoring component that fetches pages or links without completing the full rendered browser interaction path. In this project it remains useful for discovery but can miss evidence that appears only after scripts, clicks, frames, or playback. \\
+Rendered browser state & The visible and runtime state produced after the browser executes JavaScript, handles frames, loads media, and reacts to user-like actions. OWC treats this state as an evidence surface. \\
+Channel detection & The process of identifying a broadcaster or channel signal from landing hints, player labels, screenshots, OCR text, structured agent output, or stream metadata. Landing hints must be verified by hosting or embedded evidence when possible. \\
+Fingerprint profile & A browser identity profile used to keep navigator, viewport, session, and related browser-surface behavior coherent during a run. It reduces obvious automation inconsistencies but does not guarantee bypass of anti-bot systems. \\
+Proxy rotation & The runtime selection of a network proxy for browser execution. In OWC, proxy candidates are validated and kept sticky until failure to avoid breaking session-bound pages. \\
+Sticky proxy & A proxy selected for a browser profile and reused while it remains healthy. This prevents identity changes in the middle of one investigation. \\
 \bottomrule
 \end{longtable}
 \clearpage

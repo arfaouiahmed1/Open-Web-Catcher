@@ -1,49 +1,54 @@
 \addvspace {10\p@ }
-\contentsline {figure}{\numberline {1.1}{\ignorespaces Report reading map connecting the internship context, design, implementation, evaluation, and conclusion.}}{3}{figure.caption.6}%
+\contentsline {figure}{\numberline {1.1}{\ignorespaces How the AI browser workflow complements the existing crawler when static collection misses dynamic evidence.}}{2}{figure.caption.9}%
+\contentsline {figure}{\numberline {1.2}{\ignorespaces Report reading map connecting the internship context, design, implementation, evaluation, and conclusion.}}{4}{figure.caption.10}%
 \addvspace {10\p@ }
-\contentsline {figure}{\numberline {2.1}{\ignorespaces Methodology selection logic: Agile and CRISP-DM used as supporting lenses, DSRM used as the main backbone.}}{4}{figure.caption.7}%
-\contentsline {figure}{\numberline {2.2}{\ignorespaces CRISP-DM structure and Agile iterations used as supporting methodology lenses.}}{5}{figure.caption.8}%
-\contentsline {figure}{\numberline {2.3}{\ignorespaces DSRM adopted for the project, with Agile-style short iterations inside each phase.}}{6}{figure.caption.10}%
-\contentsline {figure}{\numberline {2.4}{\ignorespaces Internship timeline from evidence needs analysis to evaluated OWC architecture.}}{8}{figure.caption.12}%
+\contentsline {figure}{\numberline {2.1}{\ignorespaces DSRM selection logic for an artifact-centered PFE project.}}{5}{figure.caption.11}%
+\contentsline {figure}{\numberline {2.2}{\ignorespaces DSRM backbone used to structure the OWC problem, artifact, demonstration, evaluation, and communication.}}{6}{figure.caption.12}%
+\contentsline {figure}{\numberline {2.3}{\ignorespaces Internship timeline from evidence needs analysis to evaluated OWC architecture.}}{8}{figure.caption.14}%
 \addvspace {10\p@ }
-\contentsline {figure}{\numberline {3.1}{\ignorespaces Common navigation flow from event listing to hosting page and embedded player.}}{10}{figure.caption.15}%
-\contentsline {figure}{\numberline {3.2}{\ignorespaces Comparison of the three page roles used by the extraction workflow.}}{11}{figure.caption.16}%
-\contentsline {figure}{\numberline {3.3}{\ignorespaces Simplified DOM tree showing how a browser represents an HTML document.}}{13}{figure.caption.18}%
-\contentsline {figure}{\numberline {3.4}{\ignorespaces Main paths from a hosting page to media evidence, with embedded pages treated as an explicit fallback when the hosting page exposes a player URL.}}{14}{figure.caption.20}%
-\contentsline {figure}{\numberline {3.5}{\ignorespaces Simplified adaptive streaming hierarchy used by HLS and MPEG-DASH.}}{15}{figure.caption.21}%
-\contentsline {figure}{\numberline {3.6}{\ignorespaces Observe--act--verify loop used by browser agents.}}{17}{figure.caption.23}%
-\contentsline {figure}{\numberline {3.7}{\ignorespaces General relationship between an LLM agent, profile-scoped MCP tools, and structured browser observations.}}{18}{figure.caption.24}%
+\contentsline {figure}{\numberline {3.1}{\ignorespaces Common navigation flow from event listing to hosting page and embedded player.}}{11}{figure.caption.17}%
+\contentsline {figure}{\numberline {3.2}{\ignorespaces Comparison of the three page roles used by the extraction workflow.}}{12}{figure.caption.18}%
+\contentsline {figure}{\numberline {3.3}{\ignorespaces Simplified DOM tree showing how a browser represents an HTML document.}}{14}{figure.caption.20}%
+\contentsline {figure}{\numberline {3.4}{\ignorespaces Main paths from a hosting page to media evidence, with embedded pages treated as an explicit fallback when the hosting page exposes a player URL.}}{15}{figure.caption.22}%
+\contentsline {figure}{\numberline {3.5}{\ignorespaces Simplified adaptive streaming hierarchy used by HLS and MPEG-DASH.}}{16}{figure.caption.23}%
+\contentsline {figure}{\numberline {3.6}{\ignorespaces Observe--act--verify loop used by browser agents.}}{18}{figure.caption.25}%
+\contentsline {figure}{\numberline {3.7}{\ignorespaces General relationship between an LLM agent, profile-scoped MCP tools, and structured browser observations.}}{20}{figure.caption.26}%
 \addvspace {10\p@ }
-\contentsline {figure}{\numberline {4.1}{\ignorespaces Use-case overview of the evidence-collection platform.}}{21}{figure.caption.25}%
-\contentsline {figure}{\numberline {4.2}{\ignorespaces Component architecture linking the operator console, backend, agent runtime, MCP tooling, persistence, and external services.}}{22}{figure.caption.27}%
-\contentsline {figure}{\numberline {4.3}{\ignorespaces End-to-end agent architecture at workflow scale.}}{23}{figure.caption.29}%
-\contentsline {figure}{\numberline {4.4}{\ignorespaces Sequence diagram for launching, executing, persisting, and reviewing a workflow run.}}{23}{figure.caption.30}%
-\contentsline {figure}{\numberline {4.5}{\ignorespaces Agent interconnection graph showing orchestrator-owned routing and specialist responsibilities.}}{24}{figure.caption.31}%
-\contentsline {figure}{\numberline {4.6}{\ignorespaces Orchestrator routing flowchart and handoff decisions.}}{25}{figure.caption.32}%
-\contentsline {figure}{\numberline {4.7}{\ignorespaces Prompt compilation and memory inputs for each browser-facing specialist.}}{26}{figure.caption.34}%
-\contentsline {figure}{\numberline {4.8}{\ignorespaces Orchestrator-agent design card.}}{26}{figure.caption.35}%
-\contentsline {figure}{\numberline {4.9}{\ignorespaces Sequence diagram for orchestrator handoff, trace recording, and route updates.}}{27}{figure.caption.36}%
-\contentsline {figure}{\numberline {4.10}{\ignorespaces Classification-agent design card.}}{27}{figure.caption.37}%
-\contentsline {figure}{\numberline {4.11}{\ignorespaces Classification-agent sequence: inspect page state and return a routing decision.}}{28}{figure.caption.38}%
-\contentsline {figure}{\numberline {4.12}{\ignorespaces Landing-page-agent design card.}}{28}{figure.caption.39}%
-\contentsline {figure}{\numberline {4.13}{\ignorespaces Landing-agent sequence: convert listing-page evidence into downstream queues.}}{29}{figure.caption.40}%
-\contentsline {figure}{\numberline {4.14}{\ignorespaces Hosting-page-agent design card.}}{29}{figure.caption.41}%
-\contentsline {figure}{\numberline {4.15}{\ignorespaces Hosting-agent sequence: activate watch pages and return stream or iframe evidence.}}{30}{figure.caption.42}%
-\contentsline {figure}{\numberline {4.16}{\ignorespaces Embedded-page-agent design card.}}{30}{figure.caption.43}%
-\contentsline {figure}{\numberline {4.17}{\ignorespaces Embedded-agent sequence: stay in the player context and harvest final media evidence.}}{31}{figure.caption.44}%
-\contentsline {figure}{\numberline {4.18}{\ignorespaces Provider-analysis and email-generation design card.}}{31}{figure.caption.45}%
-\contentsline {figure}{\numberline {4.19}{\ignorespaces Persistence model for run evidence, telemetry, and review outputs.}}{32}{figure.caption.46}%
+\contentsline {figure}{\numberline {4.1}{\ignorespaces Use-case overview of the evidence-collection platform.}}{23}{figure.caption.27}%
+\contentsline {figure}{\numberline {4.2}{\ignorespaces Component architecture linking the operator console, backend, agent runtime, MCP tooling, persistence, and external services.}}{24}{figure.caption.29}%
+\contentsline {figure}{\numberline {4.3}{\ignorespaces Profile-scoped MCP browser tooling and runtime controls used by OWC agents.}}{25}{figure.caption.31}%
+\contentsline {figure}{\numberline {4.4}{\ignorespaces End-to-end agent architecture at workflow scale.}}{27}{figure.caption.33}%
+\contentsline {figure}{\numberline {4.5}{\ignorespaces Sequence diagram for launching, executing, persisting, and reviewing a workflow run.}}{28}{figure.caption.34}%
+\contentsline {figure}{\numberline {4.6}{\ignorespaces Agent interconnection graph showing orchestrator-owned routing and specialist responsibilities.}}{28}{figure.caption.35}%
+\contentsline {figure}{\numberline {4.7}{\ignorespaces Orchestrator routing flowchart and handoff decisions.}}{29}{figure.caption.36}%
+\contentsline {figure}{\numberline {4.8}{\ignorespaces Prompt compilation and memory inputs for each browser-facing specialist.}}{30}{figure.caption.38}%
+\contentsline {figure}{\numberline {4.9}{\ignorespaces Orchestrator-agent design card.}}{31}{figure.caption.39}%
+\contentsline {figure}{\numberline {4.10}{\ignorespaces Sequence diagram for orchestrator handoff, trace recording, and route updates.}}{31}{figure.caption.40}%
+\contentsline {figure}{\numberline {4.11}{\ignorespaces Classification-agent design card.}}{31}{figure.caption.41}%
+\contentsline {figure}{\numberline {4.12}{\ignorespaces Classification-agent sequence: inspect page state and return a routing decision.}}{32}{figure.caption.42}%
+\contentsline {figure}{\numberline {4.13}{\ignorespaces Landing-page-agent design card.}}{32}{figure.caption.43}%
+\contentsline {figure}{\numberline {4.14}{\ignorespaces Landing-agent sequence: convert listing-page evidence into downstream queues.}}{33}{figure.caption.44}%
+\contentsline {figure}{\numberline {4.15}{\ignorespaces Hosting-page-agent design card.}}{33}{figure.caption.45}%
+\contentsline {figure}{\numberline {4.16}{\ignorespaces Hosting-agent sequence: activate watch pages and return stream or iframe evidence.}}{34}{figure.caption.46}%
+\contentsline {figure}{\numberline {4.17}{\ignorespaces Embedded-page-agent design card.}}{34}{figure.caption.47}%
+\contentsline {figure}{\numberline {4.18}{\ignorespaces Embedded-agent sequence: stay in the player context and harvest final media evidence.}}{35}{figure.caption.48}%
+\contentsline {figure}{\numberline {4.19}{\ignorespaces Provider-analysis and email-generation design card.}}{35}{figure.caption.49}%
+\contentsline {figure}{\numberline {4.20}{\ignorespaces Persistence model for run evidence, telemetry, and review outputs.}}{36}{figure.caption.50}%
 \addvspace {10\p@ }
-\contentsline {figure}{\numberline {5.1}{\ignorespaces Role of the n8n workflow as a feasibility playground.}}{33}{figure.caption.48}%
-\contentsline {figure}{\numberline {5.2}{\ignorespaces n8n workflow screenshots: full sequential workflow and the four specialist agent workflows.}}{34}{figure.caption.49}%
-\contentsline {figure}{\numberline {5.3}{\ignorespaces How n8n limitations shaped the Open Web Catcher implementation.}}{36}{figure.caption.52}%
-\contentsline {figure}{\numberline {5.4}{\ignorespaces Five implementation areas of the reference solution.}}{36}{figure.caption.53}%
-\contentsline {figure}{\numberline {5.5}{\ignorespaces Current Next.js operator-console screens used for launch, review, telemetry, provider enrichment, and runtime configuration.}}{38}{figure.caption.56}%
-\contentsline {figure}{\numberline {5.6}{\ignorespaces Browser tool execution loop through MCP and Puppeteer.}}{39}{figure.caption.59}%
-\contentsline {figure}{\numberline {5.7}{\ignorespaces Prompt evolution from one-pass intent prompts to evidence-driven agent loops.}}{41}{figure.caption.62}%
-\contentsline {figure}{\numberline {5.8}{\ignorespaces Agent reasoning loop with memory and tool feedback.}}{41}{figure.caption.63}%
-\contentsline {figure}{\numberline {5.9}{\ignorespaces Simplified database relationship map for run review.}}{43}{figure.caption.67}%
-\contentsline {figure}{\numberline {5.10}{\ignorespaces Azure Container Apps Job deployment using one container for worker, Puppeteer MCP, and Chrome.}}{44}{figure.caption.68}%
+\contentsline {figure}{\numberline {5.1}{\ignorespaces Role of the n8n workflow as a feasibility playground.}}{38}{figure.caption.52}%
+\contentsline {figure}{\numberline {5.2}{\ignorespaces Full n8n workflow used to validate the browser-agent extraction path before OWC formalized the platform architecture.}}{39}{figure.caption.53}%
+\contentsline {figure}{\numberline {5.3}{\ignorespaces n8n classification and landing workflows, enlarged for printed review.}}{39}{figure.caption.54}%
+\contentsline {figure}{\numberline {5.4}{\ignorespaces n8n hosting and embedded-player workflows, enlarged to show the browser-agent execution steps clearly.}}{40}{figure.caption.55}%
+\contentsline {figure}{\numberline {5.5}{\ignorespaces How n8n limitations shaped the Open Web Catcher implementation.}}{42}{figure.caption.58}%
+\contentsline {figure}{\numberline {5.6}{\ignorespaces Five implementation areas of the Open Web Catcher platform.}}{42}{figure.caption.59}%
+\contentsline {figure}{\numberline {5.7}{\ignorespaces Main OWC operator-console screens for dashboard telemetry and live run launch.}}{44}{figure.caption.62}%
+\contentsline {figure}{\numberline {5.8}{\ignorespaces OWC review screens for run results and provider enrichment, enlarged so tables remain readable in print.}}{45}{figure.caption.63}%
+\contentsline {figure}{\numberline {5.9}{\ignorespaces OWC tool telemetry and runtime configuration screens, enlarged for printed review.}}{46}{figure.caption.64}%
+\contentsline {figure}{\numberline {5.10}{\ignorespaces Browser tool execution loop through MCP and Puppeteer.}}{47}{figure.caption.67}%
+\contentsline {figure}{\numberline {5.11}{\ignorespaces Prompt evolution from one-pass intent prompts to evidence-driven agent loops.}}{49}{figure.caption.70}%
+\contentsline {figure}{\numberline {5.12}{\ignorespaces Agent reasoning loop with memory and tool feedback.}}{49}{figure.caption.71}%
+\contentsline {figure}{\numberline {5.13}{\ignorespaces Simplified database relationship map for run review.}}{51}{figure.caption.75}%
+\contentsline {figure}{\numberline {5.14}{\ignorespaces Company deployment flow using \texttt {agent\_tasks}, a single n8n/Puppeteer landing-agent container, and \texttt {agent\_results}.}}{52}{figure.caption.76}%
 \addvspace {10\p@ }
-\contentsline {figure}{\numberline {6.1}{\ignorespaces Regression-batch improvement across the main browser-agent KPIs.}}{50}{figure.caption.75}%
+\contentsline {figure}{\numberline {6.1}{\ignorespaces Regression-batch improvement across the main browser-agent KPIs.}}{58}{figure.caption.83}%
 \addvspace {10\p@ }

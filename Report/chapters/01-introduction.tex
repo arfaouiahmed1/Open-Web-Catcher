@@ -1,107 +1,142 @@
 \chapter{Introduction}
+\label{chap:introduction}
 
-\section{Host organization -- Soft Stars}
+This PFE report presents the work carried out at Soft Stars in the context of
+illegal sports-streaming evidence collection for beIN SPORTS. The project started from
+a concrete operational need: suspicious pages could be discovered, but the evidence
+needed for review was often hidden behind browser-rendered interfaces, popups, iframe
+players, server buttons, redirects, and short-lived media manifests. The internship
+therefore focused on designing an evidence workflow that could observe the page like a
+browser user, keep a trace of what happened, and return reviewable evidence instead of
+only a final URL.
+
+\section{Host Organization and Internship Context}
 
 Soft Stars is a software company working in digital media intelligence, content
-protection, and technical support for rights-enforcement operations. Its work
-focuses on helping media organizations observe online distribution channels,
-identify unauthorized use of protected content, and prepare technical evidence
-that can be reviewed by operational, legal, or business teams.
+protection, and technical support for rights-enforcement operations. Its work focuses
+on helping media organizations observe online distribution channels, identify
+unauthorized use of protected content, and prepare technical evidence that can be
+reviewed by operational, legal, or business teams.
 
-The internship was carried out within Soft Stars in the context of sports media
-protection. The project was connected to the broader problem of monitoring
-illegal streaming websites and improving the way evidence is collected from
-them. At this stage of the report, the system is introduced only from a general
-business and engineering perspective. The detailed process, implementation
-choices, and evaluation are developed progressively in the following chapters.
+The internship took place in a sports media-protection context connected to beIN
+SPORTS. In this domain, the practical problem is not only detecting that a suspicious
+website exists. A rights-protection workflow also needs enough evidence to understand
+what was visible, which channel or event was exposed, which page led to the player,
+which technical host or provider was involved, and whether a human reviewer can trust
+the result after the browser session has ended.
 
-\section{Sports piracy and the evidence collection challenge}
+\section{Existing Crawler and Operational Limitations}
 
-Premium sports broadcasting depends on exclusive distribution rights. Broadcasters
-pay for the right to transmit competitions in specific territories, on specific
-platforms, and under controlled commercial conditions. Illegal streaming websites
-undermine this model by redistributing protected events without authorization,
-often through domains that change frequently and through pages designed to be
-difficult to monitor manually.
+Before this PFE work, the company already had crawler-based monitoring capabilities.
+That crawler remained useful for broad discovery, static page collection, and recurring
+checks over known website families. However, illegal streaming websites increasingly
+hide the useful evidence behind runtime behavior. A static crawler may see the landing
+page but miss the hosting page. It may capture the first HTML response but miss the
+server button that appears after JavaScript execution. It may collect links but miss
+the iframe, player state, screenshot evidence, channel hint, or final \texttt{m3u8}
+or \texttt{mpd} request generated only after a play action.
 
-The first practical challenge in this context is not only finding suspicious
-websites. It is collecting evidence that is precise, traceable, and useful. A
-rights holder needs to know which page was reachable, when it was observed, what
-content or player it exposed, and which technical indicators can support a later
-review or enforcement action. Screenshots, visible page state, embedded players,
-network indicators, and stream references can all become important, but they are
-often hidden behind dynamic interfaces, popups, nested frames, language variation,
-and short-lived links.
+\input{figures/tikz/fig-01-crawler-to-owc}
 
-This makes evidence collection an engineering problem. Manual review is slow and
-inconsistent when the number of targets grows. Simple scraping is too fragile for
-modern streaming pages, because the useful evidence may appear only after the
-page loads scripts, reacts to user actions, or redirects through several layers.
-The general goal is therefore to support a more reliable way of observing these
-websites, collecting evidence, and keeping enough context for the result to be
-auditable.
+This limitation explains the move toward an AI-assisted browser workflow. The goal was
+not to discard crawling. The goal was to add a second path for cases where crawling
+finds a target but cannot prove the stream path. The n8n landing-agent workflow was
+therefore deployed by the company as a backup plan beside the crawler: when a target
+needed browser reasoning, the workflow could open the page, inspect the rendered state,
+discover match or channel candidates, and return structured URLs and metadata through a
+queue-based operational flow.
 
-\section{Objectives and contributions}
+\section{Problem Statement}
 
-The objective of this project is to study and design a technical approach for
-evidence collection from illegal sports streaming websites. The work moved from
-a manual and case-by-case process toward a more structured process that can
-inspect target pages, preserve useful observations, and present results in a
-form that can be reviewed.
-
-Two artifacts were produced for different purposes. First, an n8n workflow was
-used to validate the operational idea quickly on real dynamic websites. Second,
-a Python reference architecture was designed to make the same workflow more
-maintainable and observable through specialist agents, versioned prompts,
-profile-scoped browser tools, memory, caching, traces, screenshots, and model
-usage records. The Python architecture should therefore be read as the
-engineering reference and evaluation platform for the agentic approach, not as a
-claim that the full company workflow was replaced during the internship.
-
-The main objectives are:
+Illegal streaming websites are difficult to investigate because they combine unstable
+content, dynamic rendering, misleading navigation, popup traps, nested frames, and
+short-lived media URLs. The evidence path often has several roles:
 
 \begin{itemize}
-  \item understand the operational context of sports piracy monitoring and the
-    type of evidence required by rights-protection teams;
-  \item analyze the technical behavior of illegal streaming websites, including
-    dynamic pages, embedded players, redirects, and multilingual layouts;
-  \item define a maintainable evidence-collection process that can adapt to
-    landing pages, hosting pages, embedded players, redirects, popups, and
-    repeated layout patterns;
-  \item design a system architecture that separates observation, extraction,
-    persistence, memory, caching, review, and evaluation concerns;
-  \item evaluate the approach on representative targets and document its limits.
+  \item a landing page lists matches, events, schedules, or channel cards;
+  \item a hosting page exposes play buttons, server controls, overlays, and iframe
+  candidates;
+  \item an embedded page or direct player exposes the final media behavior;
+  \item a provider-enrichment stage connects collected stream evidence to host,
+  network, country, or abuse-contact information.
 \end{itemize}
 
-The main contributions of the internship are:
+If those roles are mixed together, the system becomes hard to debug. A failed result
+could mean that the page was classified incorrectly, that a landing candidate was
+missed, that a hosting server was not activated, that an iframe was not inspected, or
+that the final media request expired. The project therefore required an architecture
+that separates page roles, specialist agents, browser tools, screenshots, traces, model
+usage, and final review outputs.
+
+\section{Internship Mission and Scope}
+
+My mission during the internship was to study, design, and validate an evidence
+collection workflow that complements the existing crawler with browser-based AI
+reasoning. The work produced two related artifacts.
+
+The first artifact was an n8n workflow. It was used to validate the idea quickly in the
+company environment and to provide a deployable landing-agent backup path. This workflow
+helped test whether an agent could inspect rendered pages, follow candidate links,
+handle page-specific obstacles, and return useful match or hosting metadata.
+
+The second artifact was Open Web Catcher (OWC), the complete platform designed during
+the internship. The internal name was chosen because the project catches evidence from
+the open web through browser-visible behavior rather than through a static HTML
+response. In this report, OWC refers to the whole project: the FastAPI backend, Next.js
+operator console, PostgreSQL persistence, MCP browser tooling, Puppeteer/Chrome
+runtime, specialist agents, model telemetry, and evidence review outputs.
+
+\subsection{Mission Deliverables}
+
+The internship deliverables were:
 
 \begin{itemize}
-  \item a structured analysis of the evidence-collection problem in the sports
-    piracy domain;
-  \item a validated n8n prototype showing that LLM-guided browser observation
-    can follow dynamic streaming-site flows;
-  \item a technical architecture for collecting, storing, and reviewing evidence
-    from suspicious streaming websites through specialized agents;
-  \item an explicit description of how prompts, browser tools, short-term
-    memory, long-term memory, caching, and context-window handling support the
-    agent workflow;
-  \item an evaluation of the approach based on observed behavior, collected
-    traces, and failure cases;
-  \item a report structure that moves from the general business problem toward
-    the specialized implementation and validation work.
+  \item a validated n8n landing-agent workflow used as a crawler backup path;
+  \item an OWC architecture separating backend, frontend, database, agents, browser
+  tools, and evidence outputs;
+  \item browser-tool profiles for classification, landing, hosting, and embedded-player
+  investigation;
+  \item support for screenshots, stream candidates, provider enrichment, channel
+  metadata, tool traces, model telemetry, and cost visibility;
+  \item an evaluation and reporting structure based on traceability and reviewability.
 \end{itemize}
 
-\section{Report structure}
+\subsection{Scope Boundaries}
 
-This report is organized from general context to specialized implementation.
-Chapter~2 presents the methodology, requirements analysis, and design constraints
-used to frame the project. Chapter~3 introduces the technical background needed
-to understand streaming websites, browser-based observation, automation tools,
-agentic extraction, and media protocols. Chapter~4 describes the proposed
-architecture and explains how the main system responsibilities are organized.
-Chapter~5 details the implementation path, from the n8n exploration workflow to
-the concrete software components and the final operational scope. Chapter~6
-evaluates the system through agent, model, cache, cost, and tool testing.
-Chapter~7 concludes the report.
+The project did not replace the full company enforcement process. It did not
+automatically send takedown messages, and it did not claim to solve every anti-bot
+mechanism or every illegal streaming website. The practical scope was to produce an
+engineering foundation that could investigate dynamic pages, preserve evidence, expose
+failures clearly, and support future operational integration.
+
+\section{Main Contributions}
+
+The main contributions of the PFE work are:
+
+\begin{itemize}
+  \item a clear analysis of why static crawling is insufficient for many dynamic
+  streaming-evidence paths;
+  \item a DSRM-based artifact design centered on Open Web Catcher;
+  \item an n8n landing-agent workflow deployed as an operational backup beside the
+  existing crawler;
+  \item a multi-agent architecture that separates classification, landing discovery,
+  hosting interaction, embedded-player inspection, provider enrichment, and review
+  output generation;
+  \item a browser-tool layer with profile-scoped inspection, navigation, interaction,
+  screenshot, media extraction, memory, fingerprint, and proxy controls;
+  \item an operator console and persistence model that make traces, screenshots, model
+  usage, tool calls, costs, channel signals, and failure reasons reviewable.
+\end{itemize}
+
+\section{Report Structure}
+
+Chapter~2 presents DSRM as the sole methodology and derives the project requirements.
+Chapter~3 introduces the technical background needed to understand streaming pages,
+browser automation, media manifests, agent workflows, and evidence traceability.
+Chapter~4 describes the OWC architecture, including the agent responsibilities, browser
+tooling, fingerprint and proxy handling, channel detection, persistence, and
+reviewability. Chapter~5 explains the implementation path from the n8n backup workflow
+to the OWC platform and the company deployment flow. Chapter~6 presents evaluation and
+testing results. Chapter~7 provides the general conclusion.
 
 \input{figures/tikz/fig-01-report-map}
