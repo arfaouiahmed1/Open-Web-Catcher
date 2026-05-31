@@ -1,0 +1,31 @@
+\documentclass[12pt]{article}
+\usepackage[a4paper,margin=1.4cm]{geometry}
+\usepackage{iftex}
+\ifXeTeX
+  \usepackage{fontspec}
+  \setmainfont{Times New Roman}
+\fi
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds,calc}
+\definecolor{accent}{RGB}{25,78,121}
+\captionsetup{font=small,labelfont=bf}
+\pagestyle{empty}
+
+\begin{document}
+\input{figures/tikz/fig-page-flow-general}
+\clearpage
+\input{figures/tikz/fig-page-type-visuals}
+\clearpage
+\input{figures/tikz/fig-dom-tree-general}
+\clearpage
+\input{figures/tikz/fig-embedding-paths}
+\clearpage
+\input{figures/tikz/fig-adaptive-streaming}
+\clearpage
+\input{figures/tikz/fig-react-loop-general}
+\clearpage
+\input{figures/tikz/fig-03-mcp-general}
+\end{document}

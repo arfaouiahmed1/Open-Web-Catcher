@@ -1,0 +1,46 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  start/.style={draw=orange!80!black, fill=orange!9, rounded corners=6pt,
+    text width=2.65cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  tool/.style={draw=purple!65!black, fill=purple!7, rounded corners=6pt,
+    text width=2.85cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  browser/.style={draw=accent!75, fill=blue!6, rounded corners=6pt,
+    text width=2.85cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  result/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
+    text width=2.85cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  warn/.style={draw=gray!65, fill=gray!10, rounded corners=6pt,
+    text width=2.85cm, minimum height=0.8cm, align=center, font=\scriptsize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!75, shorten <=3pt, shorten >=3pt},
+  soft/.style={->, >=Stealth, thick, dashed, gray!65, shorten <=3pt, shorten >=3pt}
+]
+\node[start] (target) at (0,2.2) {Candidate target\\from inspection};
+\node[tool] (choice) at (3.2,2.2) {Choose movement\\link or page action};
+
+\node[tool] (url) at (6.55,3.05) {URL navigation\\open discovered link};
+\node[tool] (js) at (6.55,1.35) {JavaScript action\\click, scroll, load};
+
+\node[browser] (urlstate) at (9.95,3.05) {New document\\wait + settle};
+\node[browser] (jsstate) at (9.95,1.35) {Same page state\\DOM changes};
+
+\node[result] (inspect) at (13.2,2.2) {Re-inspect\\visible result};
+\node[result] (next) at (16.45,2.2) {Continue route\\or handoff};
+\node[warn] (recover) at (9.95,-0.25) {Recovery\\popup, focus, back};
+
+\draw[arr] (target) -- (choice);
+\draw[arr] (choice.east) -- ++(0.45,0) |- (url.west);
+\draw[arr] (choice.east) -- ++(0.45,0) |- (js.west);
+\draw[arr] (url) -- (urlstate);
+\draw[arr] (js) -- (jsstate);
+\draw[arr] (urlstate.east) -- ++(0.45,0) |- (inspect.west);
+\draw[arr] (jsstate.east) -- ++(0.45,0) |- (inspect.west);
+\draw[arr] (inspect) -- (next);
+\draw[soft] (jsstate.south) -- (recover.north);
+\draw[soft] (urlstate.south) to[out=-90,in=90] (recover.north);
+\draw[soft] (recover.east) to[out=0,in=-90] (inspect.south);
+\end{tikzpicture}
+}
+\caption{Navigation flow split between direct URL navigation and JavaScript-driven page interaction.}
+\label{fig:tool-navigation-flow}
+\end{figure}

@@ -1,10 +1,9 @@
 \relax 
 \providecommand\zref@newlabel[2]{}
 \providecommand\hyper@newdestlabel[2]{}
-\providecommand*\HyPL@Entry[1]{}
-\HyPL@Entry{0<</S/D>>}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
 \pgfsyspdfmark {pgfid1}{932339}{54594558}
-\HyPL@Entry{2<</S/r>>}
 \@writefile{toc}{\contentsline {chapter}{Abstract}{i}{chapter*.1}\protected@file@percent }
 \@writefile{toc}{\contentsline {chapter}{R\'esum\'e}{ii}{chapter*.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {chapter}{Acknowledgements}{iii}{chapter*.3}\protected@file@percent }
@@ -16,7 +15,6 @@
     {1}{128.65646pt}\LT@entry 
     {1}{287.99164pt}}
 \@writefile{toc}{\contentsline {chapter}{Terminology}{xiv}{chapter*.8}\protected@file@percent }
-\HyPL@Entry{20<</S/D>>}
 \@writefile{toc}{\contentsline {chapter}{\numberline {1}Introduction}{1}{chapter.1}\protected@file@percent }
 \@writefile{lof}{\addvspace {10\p@ }}
 \@writefile{lot}{\addvspace {10\p@ }}
@@ -115,12 +113,12 @@
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.5.1}Agents and ReAct-style loops}{18}{subsection.3.5.1}\protected@file@percent }
 \@writefile{lof}{\contentsline {figure}{\numberline {3.6}{\ignorespaces Observe--act--verify loop used by browser agents.}}{18}{figure.caption.25}\protected@file@percent }
 \newlabel{fig:react-loop-general}{{3.6}{18}{Observe--act--verify loop used by browser agents}{figure.caption.25}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.5.2}Prompt engineering, tokens, and token usage}{18}{subsection.3.5.2}\protected@file@percent }
 \citation{gemini}
 \citation{gemini-pricing}
 \citation{gemini-caching}
 \citation{langchain-docs}
 \citation{mcp-spec}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5.2}Prompt engineering, tokens, and token usage}{19}{subsection.3.5.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.5.3}Workflow automation tools}{19}{subsection.3.5.3}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.5.4}LangChain, tools, and MCP servers}{19}{subsection.3.5.4}\protected@file@percent }
 \@writefile{lof}{\contentsline {figure}{\numberline {3.7}{\ignorespaces General relationship between an LLM agent, profile-scoped MCP tools, and structured browser observations.}}{20}{figure.caption.26}\protected@file@percent }
@@ -135,185 +133,200 @@
 \newlabel{fig:use-case-overview}{{4.1}{23}{Use-case overview of the evidence-collection platform}{figure.caption.27}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {4.1}{\ignorespaces Use-case responsibilities across operator and administration workflows.}}{23}{table.caption.28}\protected@file@percent }
 \newlabel{tab:architecture-actors}{{4.1}{23}{Use-case responsibilities across operator and administration workflows}{table.caption.28}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {4.2}Global Runtime Architecture}{24}{section.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4.2}Global Runtime Architecture}{23}{section.4.2}\protected@file@percent }
 \@writefile{lof}{\contentsline {figure}{\numberline {4.2}{\ignorespaces Component architecture linking the operator console, backend, agent runtime, MCP tooling, persistence, and external services.}}{24}{figure.caption.29}\protected@file@percent }
 \newlabel{fig:component}{{4.2}{24}{Component architecture linking the operator console, backend, agent runtime, MCP tooling, persistence, and external services}{figure.caption.29}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {4.2}{\ignorespaces Global runtime boundaries used by OWC.}}{24}{table.caption.30}\protected@file@percent }
 \newlabel{tab:global-runtime-boundaries}{{4.2}{24}{Global runtime boundaries used by OWC}{table.caption.30}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {4.3}Browser Tooling and Runtime Controls}{25}{section.4.3}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {4.3}{\ignorespaces Profile-scoped MCP browser tooling and runtime controls used by OWC agents.}}{25}{figure.caption.31}\protected@file@percent }
-\newlabel{fig:browser-tooling-layer}{{4.3}{25}{Profile-scoped MCP browser tooling and runtime controls used by OWC agents}{figure.caption.31}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.3.1}Tool Families}{25}{subsection.4.3.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.1.1}Inspection and context tools}{25}{subsubsection.4.3.1.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.1.2}Navigation, interaction, and evidence tools}{26}{subsubsection.4.3.1.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.3.2}Fingerprint Handling and Proxy Rotation}{26}{subsection.4.3.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.3.3}Channel Detection}{26}{subsection.4.3.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {4.4}End-to-End Agent Pipeline}{26}{section.4.4}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {4.3}{\ignorespaces Browser runtime controls that support reliable and reviewable evidence collection.}}{27}{table.caption.32}\protected@file@percent }
-\newlabel{tab:browser-runtime-controls}{{4.3}{27}{Browser runtime controls that support reliable and reviewable evidence collection}{table.caption.32}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {4.4}{\ignorespaces End-to-end agent architecture at workflow scale.}}{27}{figure.caption.33}\protected@file@percent }
-\newlabel{fig:end-to-end-agent-map}{{4.4}{27}{End-to-end agent architecture at workflow scale}{figure.caption.33}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {4.5}{\ignorespaces Sequence diagram for launching, executing, persisting, and reviewing a workflow run.}}{28}{figure.caption.34}\protected@file@percent }
-\newlabel{fig:run-sequence}{{4.5}{28}{Sequence diagram for launching, executing, persisting, and reviewing a workflow run}{figure.caption.34}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {4.5}Agent Communication and Orchestrator Handoffs}{28}{section.4.5}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {4.6}{\ignorespaces Agent interconnection graph showing orchestrator-owned routing and specialist responsibilities.}}{28}{figure.caption.35}\protected@file@percent }
-\newlabel{fig:agent-interconnection}{{4.6}{28}{Agent interconnection graph showing orchestrator-owned routing and specialist responsibilities}{figure.caption.35}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {4.7}{\ignorespaces Orchestrator routing flowchart and handoff decisions.}}{29}{figure.caption.36}\protected@file@percent }
-\newlabel{fig:orchestrator-flowchart}{{4.7}{29}{Orchestrator routing flowchart and handoff decisions}{figure.caption.36}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {4.6}Agent-by-Agent Design}{29}{section.4.6}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.6.1}Orchestrator Agent}{29}{subsection.4.6.1}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {4.4}{\ignorespaces Agent and tool responsibility map.}}{30}{table.caption.37}\protected@file@percent }
-\newlabel{tab:agent-responsibilities}{{4.4}{30}{Agent and tool responsibility map}{table.caption.37}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {4.8}{\ignorespaces Prompt compilation and memory inputs for each browser-facing specialist.}}{30}{figure.caption.38}\protected@file@percent }
-\newlabel{fig:prompt-memory-compilation}{{4.8}{30}{Prompt compilation and memory inputs for each browser-facing specialist}{figure.caption.38}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {4.9}{\ignorespaces Orchestrator-agent design card.}}{31}{figure.caption.39}\protected@file@percent }
-\newlabel{fig:agent-card-orchestrator}{{4.9}{31}{Orchestrator-agent design card}{figure.caption.39}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {4.10}{\ignorespaces Sequence diagram for orchestrator handoff, trace recording, and route updates.}}{31}{figure.caption.40}\protected@file@percent }
-\newlabel{fig:seq-orchestrator}{{4.10}{31}{Sequence diagram for orchestrator handoff, trace recording, and route updates}{figure.caption.40}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.6.2}Classification Agent}{31}{subsection.4.6.2}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {4.11}{\ignorespaces Classification-agent design card.}}{31}{figure.caption.41}\protected@file@percent }
-\newlabel{fig:agent-card-classification}{{4.11}{31}{Classification-agent design card}{figure.caption.41}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {4.12}{\ignorespaces Classification-agent sequence: inspect page state and return a routing decision.}}{32}{figure.caption.42}\protected@file@percent }
-\newlabel{fig:seq-classification}{{4.12}{32}{Classification-agent sequence: inspect page state and return a routing decision}{figure.caption.42}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.6.3}Landing-Page Agent}{32}{subsection.4.6.3}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {4.13}{\ignorespaces Landing-page-agent design card.}}{32}{figure.caption.43}\protected@file@percent }
-\newlabel{fig:agent-card-landing}{{4.13}{32}{Landing-page-agent design card}{figure.caption.43}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {4.14}{\ignorespaces Landing-agent sequence: convert listing-page evidence into downstream queues.}}{33}{figure.caption.44}\protected@file@percent }
-\newlabel{fig:seq-landing}{{4.14}{33}{Landing-agent sequence: convert listing-page evidence into downstream queues}{figure.caption.44}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.6.4}Hosting-Page Agent}{33}{subsection.4.6.4}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {4.15}{\ignorespaces Hosting-page-agent design card.}}{33}{figure.caption.45}\protected@file@percent }
-\newlabel{fig:agent-card-hosting}{{4.15}{33}{Hosting-page-agent design card}{figure.caption.45}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.6.5}Embedded-Page Agent}{33}{subsection.4.6.5}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {4.16}{\ignorespaces Hosting-agent sequence: activate watch pages and return stream or iframe evidence.}}{34}{figure.caption.46}\protected@file@percent }
-\newlabel{fig:seq-hosting}{{4.16}{34}{Hosting-agent sequence: activate watch pages and return stream or iframe evidence}{figure.caption.46}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {4.17}{\ignorespaces Embedded-page-agent design card.}}{34}{figure.caption.47}\protected@file@percent }
-\newlabel{fig:agent-card-embedded}{{4.17}{34}{Embedded-page-agent design card}{figure.caption.47}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.6.6}Provider Analysis and Email Generation}{34}{subsection.4.6.6}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {4.7}Data, Trace, and Reviewability View}{34}{section.4.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4.3}End-to-End Agent Pipeline}{24}{section.4.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4.3}{\ignorespaces End-to-end agent architecture at workflow scale.}}{25}{figure.caption.31}\protected@file@percent }
+\newlabel{fig:end-to-end-agent-map}{{4.3}{25}{End-to-end agent architecture at workflow scale}{figure.caption.31}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4.4}{\ignorespaces Sequence diagram for launching, executing, persisting, and reviewing a workflow run.}}{25}{figure.caption.32}\protected@file@percent }
+\newlabel{fig:run-sequence}{{4.4}{25}{Sequence diagram for launching, executing, persisting, and reviewing a workflow run}{figure.caption.32}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4.4}Agent Communication and Orchestrator Handoffs}{26}{section.4.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4.5}{\ignorespaces Agent interconnection graph showing orchestrator-owned routing and specialist responsibilities.}}{26}{figure.caption.33}\protected@file@percent }
+\newlabel{fig:agent-interconnection}{{4.5}{26}{Agent interconnection graph showing orchestrator-owned routing and specialist responsibilities}{figure.caption.33}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {4.3}{\ignorespaces Agent and tool responsibility map.}}{27}{table.caption.34}\protected@file@percent }
+\newlabel{tab:agent-responsibilities}{{4.3}{27}{Agent and tool responsibility map}{table.caption.34}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4.6}{\ignorespaces Prompt compilation and memory inputs for each browser-facing specialist.}}{27}{figure.caption.35}\protected@file@percent }
+\newlabel{fig:prompt-memory-compilation}{{4.6}{27}{Prompt compilation and memory inputs for each browser-facing specialist}{figure.caption.35}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4.5}Agent-by-Agent Design}{28}{section.4.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5.1}Orchestrator Agent}{28}{subsection.4.5.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4.7}{\ignorespaces Orchestrator-agent design card.}}{28}{figure.caption.36}\protected@file@percent }
+\newlabel{fig:agent-card-orchestrator}{{4.7}{28}{Orchestrator-agent design card}{figure.caption.36}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4.8}{\ignorespaces Sequence diagram for orchestrator handoff, trace recording, and route updates.}}{28}{figure.caption.37}\protected@file@percent }
+\newlabel{fig:seq-orchestrator}{{4.8}{28}{Sequence diagram for orchestrator handoff, trace recording, and route updates}{figure.caption.37}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5.2}Classification Agent}{28}{subsection.4.5.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4.9}{\ignorespaces Classification-agent design card.}}{29}{figure.caption.38}\protected@file@percent }
+\newlabel{fig:agent-card-classification}{{4.9}{29}{Classification-agent design card}{figure.caption.38}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4.10}{\ignorespaces Classification-agent sequence: inspect page state and return a routing decision.}}{29}{figure.caption.39}\protected@file@percent }
+\newlabel{fig:seq-classification}{{4.10}{29}{Classification-agent sequence: inspect page state and return a routing decision}{figure.caption.39}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5.3}Landing-Page Agent}{29}{subsection.4.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5.4}Hosting-Page Agent}{29}{subsection.4.5.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4.11}{\ignorespaces Landing-page-agent design card.}}{30}{figure.caption.40}\protected@file@percent }
+\newlabel{fig:agent-card-landing}{{4.11}{30}{Landing-page-agent design card}{figure.caption.40}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4.12}{\ignorespaces Landing-agent sequence: convert listing-page evidence into downstream queues.}}{30}{figure.caption.41}\protected@file@percent }
+\newlabel{fig:seq-landing}{{4.12}{30}{Landing-agent sequence: convert listing-page evidence into downstream queues}{figure.caption.41}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4.13}{\ignorespaces Hosting-page-agent design card.}}{30}{figure.caption.42}\protected@file@percent }
+\newlabel{fig:agent-card-hosting}{{4.13}{30}{Hosting-page-agent design card}{figure.caption.42}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4.14}{\ignorespaces Hosting-agent sequence: activate watch pages and return stream or iframe evidence.}}{31}{figure.caption.43}\protected@file@percent }
+\newlabel{fig:seq-hosting}{{4.14}{31}{Hosting-agent sequence: activate watch pages and return stream or iframe evidence}{figure.caption.43}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5.5}Embedded-Page Agent}{31}{subsection.4.5.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4.15}{\ignorespaces Embedded-page-agent design card.}}{31}{figure.caption.44}\protected@file@percent }
+\newlabel{fig:agent-card-embedded}{{4.15}{31}{Embedded-page-agent design card}{figure.caption.44}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5.6}Channel Detection Across Agents}{31}{subsection.4.5.6}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4.16}{\ignorespaces Embedded-agent sequence: stay in the player context and harvest final media evidence.}}{32}{figure.caption.45}\protected@file@percent }
+\newlabel{fig:seq-embedded}{{4.16}{32}{Embedded-agent sequence: stay in the player context and harvest final media evidence}{figure.caption.45}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {4.4}{\ignorespaces Channel detection responsibilities across the specialist agents.}}{32}{table.caption.46}\protected@file@percent }
+\newlabel{tab:channel-detection-agents}{{4.4}{32}{Channel detection responsibilities across the specialist agents}{table.caption.46}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5.7}Provider Analysis and Email Generation}{33}{subsection.4.5.7}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4.17}{\ignorespaces Provider-analysis and email-generation design card.}}{33}{figure.caption.47}\protected@file@percent }
+\newlabel{fig:agent-card-provider-email}{{4.17}{33}{Provider-analysis and email-generation design card}{figure.caption.47}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4.6}Browser Tooling and Runtime Controls}{33}{section.4.6}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4.18}{\ignorespaces Profile-scoped MCP browser tooling and runtime controls used by OWC agents.}}{33}{figure.caption.48}\protected@file@percent }
+\newlabel{fig:browser-tooling-layer}{{4.18}{33}{Profile-scoped MCP browser tooling and runtime controls used by OWC agents}{figure.caption.48}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.6.1}Tool Families}{33}{subsection.4.6.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4.19}{\ignorespaces Global browser-tool flow: inspect first, choose URL navigation or JavaScript action, then validate evidence.}}{34}{figure.caption.49}\protected@file@percent }
+\newlabel{fig:tool-family-overview}{{4.19}{34}{Global browser-tool flow: inspect first, choose URL navigation or JavaScript action, then validate evidence}{figure.caption.49}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.6.1.1}Inspection and context retrieval}{34}{subsubsection.4.6.1.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4.20}{\ignorespaces Inspection and context-retrieval flow from rendered DOM observation to scoped targets.}}{34}{figure.caption.50}\protected@file@percent }
+\newlabel{fig:tool-inspection-flow}{{4.20}{34}{Inspection and context-retrieval flow from rendered DOM observation to scoped targets}{figure.caption.50}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.6.1.2}Navigation and interaction}{34}{subsubsection.4.6.1.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4.21}{\ignorespaces Navigation flow split between direct URL navigation and JavaScript-driven page interaction.}}{35}{figure.caption.51}\protected@file@percent }
+\newlabel{fig:tool-navigation-flow}{{4.21}{35}{Navigation flow split between direct URL navigation and JavaScript-driven page interaction}{figure.caption.51}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.6.1.3}Evidence and media extraction}{35}{subsubsection.4.6.1.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4.22}{\ignorespaces Evidence and media-extraction flow from page state to reviewable artifacts.}}{35}{figure.caption.52}\protected@file@percent }
+\newlabel{fig:tool-evidence-flow}{{4.22}{35}{Evidence and media-extraction flow from page state to reviewable artifacts}{figure.caption.52}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.6.1.4}Memory and site hints}{35}{subsubsection.4.6.1.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4.23}{\ignorespaces Memory-tool flow showing hints as guidance that must be validated live.}}{35}{figure.caption.53}\protected@file@percent }
+\newlabel{fig:tool-memory-flow}{{4.23}{35}{Memory-tool flow showing hints as guidance that must be validated live}{figure.caption.53}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.6.2}Fingerprint Handling and Proxy Rotation}{36}{subsection.4.6.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4.5}{\ignorespaces Browser runtime controls that support reliable and reviewable evidence collection.}}{36}{table.caption.54}\protected@file@percent }
+\newlabel{tab:browser-runtime-controls}{{4.5}{36}{Browser runtime controls that support reliable and reviewable evidence collection}{table.caption.54}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4.7}Data, Trace, and Reviewability View}{36}{section.4.7}\protected@file@percent }
 \citation{langchain-docs}
 \citation{langgraph-docs}
-\@writefile{lof}{\contentsline {figure}{\numberline {4.18}{\ignorespaces Embedded-agent sequence: stay in the player context and harvest final media evidence.}}{35}{figure.caption.48}\protected@file@percent }
-\newlabel{fig:seq-embedded}{{4.18}{35}{Embedded-agent sequence: stay in the player context and harvest final media evidence}{figure.caption.48}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {4.19}{\ignorespaces Provider-analysis and email-generation design card.}}{35}{figure.caption.49}\protected@file@percent }
-\newlabel{fig:agent-card-provider-email}{{4.19}{35}{Provider-analysis and email-generation design card}{figure.caption.49}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {4.8}Chapter Summary}{35}{section.4.8}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {4.20}{\ignorespaces Persistence model for run evidence, telemetry, and review outputs.}}{36}{figure.caption.50}\protected@file@percent }
-\newlabel{fig:db-class-diagram}{{4.20}{36}{Persistence model for run evidence, telemetry, and review outputs}{figure.caption.50}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {4.5}{\ignorespaces Runtime data boundaries and persisted review outputs.}}{36}{table.caption.51}\protected@file@percent }
-\newlabel{tab:architecture-data-boundaries}{{4.5}{36}{Runtime data boundaries and persisted review outputs}{table.caption.51}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4.24}{\ignorespaces Persistence model for run evidence, telemetry, and review outputs.}}{37}{figure.caption.55}\protected@file@percent }
+\newlabel{fig:db-class-diagram}{{4.24}{37}{Persistence model for run evidence, telemetry, and review outputs}{figure.caption.55}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {4.6}{\ignorespaces Runtime data boundaries and persisted review outputs.}}{37}{table.caption.56}\protected@file@percent }
+\newlabel{tab:architecture-data-boundaries}{{4.6}{37}{Runtime data boundaries and persisted review outputs}{table.caption.56}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4.8}Chapter Summary}{38}{section.4.8}\protected@file@percent }
 \citation{n8n}
-\@writefile{toc}{\contentsline {chapter}{\numberline {5}Implementation}{38}{chapter.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {chapter}{\numberline {5}Implementation}{39}{chapter.5}\protected@file@percent }
 \@writefile{lof}{\addvspace {10\p@ }}
 \@writefile{lot}{\addvspace {10\p@ }}
-\newlabel{chap:implementation}{{5}{38}{Implementation}{chapter.5}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {5.1}Part 1: n8n Workflow Prototype}{38}{section.5.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.1.1}Purpose of the n8n phase}{38}{subsection.5.1.1}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {5.1}{\ignorespaces Role of the n8n workflow as a feasibility playground.}}{38}{figure.caption.52}\protected@file@percent }
-\newlabel{fig:n8n-playground-flow}{{5.1}{38}{Role of the n8n workflow as a feasibility playground}{figure.caption.52}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.1.2}n8n workflow screenshots}{38}{subsection.5.1.2}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {5.2}{\ignorespaces Full n8n workflow used to validate the browser-agent extraction path before OWC formalized the platform architecture.}}{39}{figure.caption.53}\protected@file@percent }
-\newlabel{fig:n8n-agent-screenshots}{{5.2}{39}{Full n8n workflow used to validate the browser-agent extraction path before OWC formalized the platform architecture}{figure.caption.53}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {5.3}{\ignorespaces n8n classification and landing workflows, enlarged for printed review.}}{39}{figure.caption.54}\protected@file@percent }
-\newlabel{fig:n8n-classification-landing}{{5.3}{39}{n8n classification and landing workflows, enlarged for printed review}{figure.caption.54}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.1.3}Limitations of the n8n implementation}{39}{subsection.5.1.3}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {5.4}{\ignorespaces n8n hosting and embedded-player workflows, enlarged to show the browser-agent execution steps clearly.}}{40}{figure.caption.55}\protected@file@percent }
-\newlabel{fig:n8n-hosting-embedded}{{5.4}{40}{n8n hosting and embedded-player workflows, enlarged to show the browser-agent execution steps clearly}{figure.caption.55}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {5.1}{\ignorespaces n8n prototype agent roles and implementation lessons.}}{40}{table.caption.56}\protected@file@percent }
-\newlabel{tab:n8n-agent-lessons}{{5.1}{40}{n8n prototype agent roles and implementation lessons}{table.caption.56}{}}
+\newlabel{chap:implementation}{{5}{39}{Implementation}{chapter.5}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5.1}Part 1: n8n Workflow Prototype}{39}{section.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1.1}Purpose of the n8n phase}{39}{subsection.5.1.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5.1}{\ignorespaces Role of the n8n workflow as a feasibility playground.}}{39}{figure.caption.57}\protected@file@percent }
+\newlabel{fig:n8n-playground-flow}{{5.1}{39}{Role of the n8n workflow as a feasibility playground}{figure.caption.57}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1.2}n8n workflow screenshots}{39}{subsection.5.1.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5.2}{\ignorespaces Full n8n workflow used to validate the browser-agent extraction path before OWC formalized the platform architecture.}}{40}{figure.caption.58}\protected@file@percent }
+\newlabel{fig:n8n-agent-screenshots}{{5.2}{40}{Full n8n workflow used to validate the browser-agent extraction path before OWC formalized the platform architecture}{figure.caption.58}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5.3}{\ignorespaces n8n classification and landing workflows, enlarged for printed review.}}{40}{figure.caption.59}\protected@file@percent }
+\newlabel{fig:n8n-classification-landing}{{5.3}{40}{n8n classification and landing workflows, enlarged for printed review}{figure.caption.59}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1.3}Limitations of the n8n implementation}{40}{subsection.5.1.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5.4}{\ignorespaces n8n hosting and embedded-player workflows, enlarged to show the browser-agent execution steps clearly.}}{41}{figure.caption.60}\protected@file@percent }
+\newlabel{fig:n8n-hosting-embedded}{{5.4}{41}{n8n hosting and embedded-player workflows, enlarged to show the browser-agent execution steps clearly}{figure.caption.60}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {5.1}{\ignorespaces n8n prototype agent roles and implementation lessons.}}{41}{table.caption.61}\protected@file@percent }
+\newlabel{tab:n8n-agent-lessons}{{5.1}{41}{n8n prototype agent roles and implementation lessons}{table.caption.61}{}}
 \citation{fastapi}
-\@writefile{lot}{\contentsline {table}{\numberline {5.2}{\ignorespaces n8n prototype limitations and engineering consequences.}}{41}{table.caption.57}\protected@file@percent }
-\newlabel{tab:n8n-limitations}{{5.2}{41}{n8n prototype limitations and engineering consequences}{table.caption.57}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {5.2}Part 2: Open Web Catcher Platform}{41}{section.5.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.2.1}FastAPI Backend}{41}{subsection.5.2.1}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {5.5}{\ignorespaces How n8n limitations shaped the Open Web Catcher implementation.}}{42}{figure.caption.58}\protected@file@percent }
-\newlabel{fig:n8n-to-reference}{{5.5}{42}{How n8n limitations shaped the Open Web Catcher implementation}{figure.caption.58}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {5.6}{\ignorespaces Five implementation areas of the Open Web Catcher platform.}}{42}{figure.caption.59}\protected@file@percent }
-\newlabel{fig:implementation-five-areas}{{5.6}{42}{Five implementation areas of the Open Web Catcher platform}{figure.caption.59}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {5.3}{\ignorespaces Backend API responsibilities in OWC.}}{42}{table.caption.60}\protected@file@percent }
-\newlabel{tab:fastapi-responsibilities}{{5.3}{42}{Backend API responsibilities in OWC}{table.caption.60}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {5.2}{\ignorespaces n8n prototype limitations and engineering consequences.}}{42}{table.caption.62}\protected@file@percent }
+\newlabel{tab:n8n-limitations}{{5.2}{42}{n8n prototype limitations and engineering consequences}{table.caption.62}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5.2}Part 2: Open Web Catcher Platform}{42}{section.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2.1}FastAPI Backend}{42}{subsection.5.2.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5.5}{\ignorespaces How n8n limitations shaped the Open Web Catcher implementation.}}{43}{figure.caption.63}\protected@file@percent }
+\newlabel{fig:n8n-to-reference}{{5.5}{43}{How n8n limitations shaped the Open Web Catcher implementation}{figure.caption.63}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5.6}{\ignorespaces Five implementation areas of the Open Web Catcher platform.}}{43}{figure.caption.64}\protected@file@percent }
+\newlabel{fig:implementation-five-areas}{{5.6}{43}{Five implementation areas of the Open Web Catcher platform}{figure.caption.64}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {5.3}{\ignorespaces Backend API responsibilities in OWC.}}{43}{table.caption.65}\protected@file@percent }
+\newlabel{tab:fastapi-responsibilities}{{5.3}{43}{Backend API responsibilities in OWC}{table.caption.65}{}}
 \citation{nextjs}
 \citation{mcp-spec}
 \citation{playwright}
 \citation{puppeteer}
 \citation{cdp}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.2.2}Next.js Operator Console}{43}{subsection.5.2.2}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {5.4}{\ignorespaces Current Next.js operator-console surfaces and backend dependencies.}}{43}{table.caption.61}\protected@file@percent }
-\newlabel{tab:nextjs-surfaces}{{5.4}{43}{Current Next.js operator-console surfaces and backend dependencies}{table.caption.61}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.2.3}MCP Browser Containers and Puppeteer Tools}{43}{subsection.5.2.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.2.4}Agents, Models, Memory, and Prompts}{43}{subsection.5.2.4}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {5.7}{\ignorespaces Main OWC operator-console screens for dashboard telemetry and live run launch.}}{44}{figure.caption.62}\protected@file@percent }
-\newlabel{fig:frontend-console-screenshots}{{5.7}{44}{Main OWC operator-console screens for dashboard telemetry and live run launch}{figure.caption.62}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {5.8}{\ignorespaces OWC review screens for run results and provider enrichment, enlarged so tables remain readable in print.}}{45}{figure.caption.63}\protected@file@percent }
-\newlabel{fig:frontend-review-settings}{{5.8}{45}{OWC review screens for run results and provider enrichment, enlarged so tables remain readable in print}{figure.caption.63}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {5.9}{\ignorespaces OWC tool telemetry and runtime configuration screens, enlarged for printed review.}}{46}{figure.caption.64}\protected@file@percent }
-\newlabel{fig:frontend-tools-settings}{{5.9}{46}{OWC tool telemetry and runtime configuration screens, enlarged for printed review}{figure.caption.64}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {5.5}{\ignorespaces Browser automation engine comparison for the MCP tool layer.}}{46}{table.caption.65}\protected@file@percent }
-\newlabel{tab:playwright-puppeteer}{{5.5}{46}{Browser automation engine comparison for the MCP tool layer}{table.caption.65}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {5.6}{\ignorespaces Puppeteer MCP tool groups and responsibilities.}}{47}{table.caption.66}\protected@file@percent }
-\newlabel{tab:puppeteer-tool-groups}{{5.6}{47}{Puppeteer MCP tool groups and responsibilities}{table.caption.66}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {5.10}{\ignorespaces Browser tool execution loop through MCP and Puppeteer.}}{47}{figure.caption.67}\protected@file@percent }
-\newlabel{fig:mcp-tool-loop}{{5.10}{47}{Browser tool execution loop through MCP and Puppeteer}{figure.caption.67}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {5.7}{\ignorespaces Specialist agent objectives and assigned tool surfaces.}}{47}{table.caption.68}\protected@file@percent }
-\newlabel{tab:agent-objectives-tools}{{5.7}{47}{Specialist agent objectives and assigned tool surfaces}{table.caption.68}{}}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.4.1}Design constraints implemented in the agent runtime}{48}{subsubsection.5.2.4.1}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {5.8}{\ignorespaces Runtime constraints and their implementation responses.}}{48}{table.caption.69}\protected@file@percent }
-\newlabel{tab:agent-runtime-constraints}{{5.8}{48}{Runtime constraints and their implementation responses}{table.caption.69}{}}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.4.2}Prompt evolution in the implementation}{48}{subsubsection.5.2.4.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.4.3}Agent design principles}{48}{subsubsection.5.2.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2.2}Next.js Operator Console}{44}{subsection.5.2.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5.4}{\ignorespaces Current Next.js operator-console surfaces and backend dependencies.}}{44}{table.caption.66}\protected@file@percent }
+\newlabel{tab:nextjs-surfaces}{{5.4}{44}{Current Next.js operator-console surfaces and backend dependencies}{table.caption.66}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2.3}MCP Browser Containers and Puppeteer Tools}{44}{subsection.5.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.3.1}Tool registry and profile filtering}{44}{subsubsection.5.2.3.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5.7}{\ignorespaces Main OWC operator-console screens for dashboard telemetry and live run launch.}}{45}{figure.caption.67}\protected@file@percent }
+\newlabel{fig:frontend-console-screenshots}{{5.7}{45}{Main OWC operator-console screens for dashboard telemetry and live run launch}{figure.caption.67}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5.8}{\ignorespaces OWC review screens for run results and provider enrichment, enlarged so tables remain readable in print.}}{46}{figure.caption.68}\protected@file@percent }
+\newlabel{fig:frontend-review-settings}{{5.8}{46}{OWC review screens for run results and provider enrichment, enlarged so tables remain readable in print}{figure.caption.68}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5.9}{\ignorespaces OWC tool telemetry and runtime configuration screens, enlarged for printed review.}}{47}{figure.caption.69}\protected@file@percent }
+\newlabel{fig:frontend-tools-settings}{{5.9}{47}{OWC tool telemetry and runtime configuration screens, enlarged for printed review}{figure.caption.69}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {5.5}{\ignorespaces Browser automation engine comparison for the MCP tool layer.}}{47}{table.caption.70}\protected@file@percent }
+\newlabel{tab:playwright-puppeteer}{{5.5}{47}{Browser automation engine comparison for the MCP tool layer}{table.caption.70}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {5.6}{\ignorespaces Puppeteer MCP tool groups and responsibilities.}}{48}{table.caption.71}\protected@file@percent }
+\newlabel{tab:puppeteer-tool-groups}{{5.6}{48}{Puppeteer MCP tool groups and responsibilities}{table.caption.71}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.3.2}Rendered DOM context retrieval}{48}{subsubsection.5.2.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.3.3}Puppeteer actions and evidence feedback}{48}{subsubsection.5.2.3.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5.10}{\ignorespaces Browser tool execution loop through MCP and Puppeteer.}}{48}{figure.caption.72}\protected@file@percent }
+\newlabel{fig:mcp-tool-loop}{{5.10}{48}{Browser tool execution loop through MCP and Puppeteer}{figure.caption.72}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2.4}Agents, Models, Memory, and Prompts}{49}{subsection.5.2.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5.7}{\ignorespaces Specialist agent objectives and assigned tool surfaces.}}{49}{table.caption.73}\protected@file@percent }
+\newlabel{tab:agent-objectives-tools}{{5.7}{49}{Specialist agent objectives and assigned tool surfaces}{table.caption.73}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.4.1}Design constraints implemented in the agent runtime}{49}{subsubsection.5.2.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.4.2}Prompt evolution in the implementation}{49}{subsubsection.5.2.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.4.3}Agent design principles}{49}{subsubsection.5.2.4.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5.8}{\ignorespaces Runtime constraints and their implementation responses.}}{50}{table.caption.74}\protected@file@percent }
+\newlabel{tab:agent-runtime-constraints}{{5.8}{50}{Runtime constraints and their implementation responses}{table.caption.74}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5.11}{\ignorespaces Prompt evolution from one-pass intent prompts to evidence-driven agent loops.}}{50}{figure.caption.75}\protected@file@percent }
+\newlabel{fig:prompt-evolution}{{5.11}{50}{Prompt evolution from one-pass intent prompts to evidence-driven agent loops}{figure.caption.75}{}}
 \citation{langchain-docs}
 \citation{gemini-rate-limits}
-\@writefile{lof}{\contentsline {figure}{\numberline {5.11}{\ignorespaces Prompt evolution from one-pass intent prompts to evidence-driven agent loops.}}{49}{figure.caption.70}\protected@file@percent }
-\newlabel{fig:prompt-evolution}{{5.11}{49}{Prompt evolution from one-pass intent prompts to evidence-driven agent loops}{figure.caption.70}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {5.12}{\ignorespaces Agent reasoning loop with memory and tool feedback.}}{49}{figure.caption.71}\protected@file@percent }
-\newlabel{fig:agent-memory-loop}{{5.12}{49}{Agent reasoning loop with memory and tool feedback}{figure.caption.71}{}}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.4.4}Model behavior, token usage, and rate limits}{49}{subsubsection.5.2.4.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.4.5}Prompt engineering and stopping behavior}{49}{subsubsection.5.2.4.5}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {5.9}{\ignorespaces Model-runtime concerns handled by the agent platform.}}{50}{table.caption.72}\protected@file@percent }
-\newlabel{tab:model-runtime-concerns}{{5.9}{50}{Model-runtime concerns handled by the agent platform}{table.caption.72}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {5.10}{\ignorespaces Prompt engineering rules enforced by the specialist agents.}}{50}{table.caption.73}\protected@file@percent }
-\newlabel{tab:prompt-engineering-rules}{{5.10}{50}{Prompt engineering rules enforced by the specialist agents}{table.caption.73}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.2.5}PostgreSQL Database and Observability}{50}{subsection.5.2.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5.12}{\ignorespaces Agent reasoning loop with memory and tool feedback.}}{51}{figure.caption.76}\protected@file@percent }
+\newlabel{fig:agent-memory-loop}{{5.12}{51}{Agent reasoning loop with memory and tool feedback}{figure.caption.76}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.4.4}Model behavior, token usage, and rate limits}{51}{subsubsection.5.2.4.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5.9}{\ignorespaces Model-runtime concerns handled by the agent platform.}}{51}{table.caption.77}\protected@file@percent }
+\newlabel{tab:model-runtime-concerns}{{5.9}{51}{Model-runtime concerns handled by the agent platform}{table.caption.77}{}}
 \citation{azure-jobs}
 \citation{azure-servicebus}
-\@writefile{lot}{\contentsline {table}{\numberline {5.11}{\ignorespaces PostgreSQL observability records and their implementation role.}}{51}{table.caption.74}\protected@file@percent }
-\newlabel{tab:postgres-record-groups}{{5.11}{51}{PostgreSQL observability records and their implementation role}{table.caption.74}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {5.13}{\ignorespaces Simplified database relationship map for run review.}}{51}{figure.caption.75}\protected@file@percent }
-\newlabel{fig:postgres-run-map}{{5.13}{51}{Simplified database relationship map for run review}{figure.caption.75}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {5.3}Part 3: Deployment}{51}{section.5.3}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {5.14}{\ignorespaces Company deployment flow using \texttt  {agent\_tasks}, a single n8n/Puppeteer landing-agent container, and \texttt  {agent\_results}.}}{52}{figure.caption.76}\protected@file@percent }
-\newlabel{fig:physical-architecture}{{5.14}{52}{Company deployment flow using \texttt {agent\_tasks}, a single n8n/Puppeteer landing-agent container, and \texttt {agent\_results}}{figure.caption.76}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {5.12}{\ignorespaces Landing-agent deployment scope and responsibilities.}}{52}{table.caption.77}\protected@file@percent }
-\newlabel{tab:deployment-scope}{{5.12}{52}{Landing-agent deployment scope and responsibilities}{table.caption.77}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.4.5}Prompt engineering and stopping behavior}{52}{subsubsection.5.2.4.5}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5.10}{\ignorespaces Prompt engineering rules enforced by the specialist agents.}}{52}{table.caption.78}\protected@file@percent }
+\newlabel{tab:prompt-engineering-rules}{{5.10}{52}{Prompt engineering rules enforced by the specialist agents}{table.caption.78}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2.5}PostgreSQL Database and Observability}{52}{subsection.5.2.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5.13}{\ignorespaces Simplified database relationship map for run review.}}{52}{figure.caption.80}\protected@file@percent }
+\newlabel{fig:postgres-run-map}{{5.13}{52}{Simplified database relationship map for run review}{figure.caption.80}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5.3}Part 3: Deployment}{52}{section.5.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5.11}{\ignorespaces PostgreSQL observability records and their implementation role.}}{53}{table.caption.79}\protected@file@percent }
+\newlabel{tab:postgres-record-groups}{{5.11}{53}{PostgreSQL observability records and their implementation role}{table.caption.79}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {5.4}Implementation Summary}{53}{section.5.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {chapter}{\numberline {6}Evaluation and Testing}{54}{chapter.6}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5.14}{\ignorespaces Company deployment flow using \texttt  {agent\_tasks}, a single n8n/Puppeteer landing-agent container, and \texttt  {agent\_results}.}}{54}{figure.caption.81}\protected@file@percent }
+\newlabel{fig:physical-architecture}{{5.14}{54}{Company deployment flow using \texttt {agent\_tasks}, a single n8n/Puppeteer landing-agent container, and \texttt {agent\_results}}{figure.caption.81}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {5.12}{\ignorespaces Landing-agent deployment scope and responsibilities.}}{54}{table.caption.82}\protected@file@percent }
+\newlabel{tab:deployment-scope}{{5.12}{54}{Landing-agent deployment scope and responsibilities}{table.caption.82}{}}
+\@writefile{toc}{\contentsline {chapter}{\numberline {6}Evaluation and Testing}{56}{chapter.6}\protected@file@percent }
 \@writefile{lof}{\addvspace {10\p@ }}
 \@writefile{lot}{\addvspace {10\p@ }}
-\@writefile{toc}{\contentsline {section}{\numberline {6.1}Agent Evaluation and Website Regression}{54}{section.6.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.1.1}Test Protocol}{54}{subsection.6.1.1}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {6.1}{\ignorespaces Evaluation test matrix executed over the website regression batch.}}{55}{table.caption.78}\protected@file@percent }
-\newlabel{tab:evaluation-test-protocol}{{6.1}{55}{Evaluation test matrix executed over the website regression batch}{table.caption.78}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.1.2}Batch Acceptance Rule}{55}{subsection.6.1.2}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {6.2}{\ignorespaces Website-level acceptance criteria for regression success.}}{55}{table.caption.79}\protected@file@percent }
-\newlabel{tab:website-acceptance-rule}{{6.2}{55}{Website-level acceptance criteria for regression success}{table.caption.79}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.1.3}Agent Use Cases}{56}{subsection.6.1.3}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {6.3}{\ignorespaces Agent use cases and website-level success signals.}}{56}{table.caption.80}\protected@file@percent }
-\newlabel{tab:agent-usecase-evaluation}{{6.3}{56}{Agent use cases and website-level success signals}{table.caption.80}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.1.4}Prompt Regression Results}{56}{subsection.6.1.4}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {6.4}{\ignorespaces Prompt regression history and batch-level behavioral focus.}}{57}{table.caption.81}\protected@file@percent }
-\newlabel{tab:prompt-regression}{{6.4}{57}{Prompt regression history and batch-level behavioral focus}{table.caption.81}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {6.5}{\ignorespaces Use-case KPI results measured on the website regression batch.}}{57}{table.caption.82}\protected@file@percent }
-\newlabel{tab:manual-reference-results}{{6.5}{57}{Use-case KPI results measured on the website regression batch}{table.caption.82}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.1.5}Dashboard Snapshot}{57}{subsection.6.1.5}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {6.1}{\ignorespaces Regression-batch improvement across the main browser-agent KPIs.}}{58}{figure.caption.83}\protected@file@percent }
-\newlabel{fig:manual-kpi-bars}{{6.1}{58}{Regression-batch improvement across the main browser-agent KPIs}{figure.caption.83}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {6.6}{\ignorespaces Dashboard telemetry values used as operational evidence.}}{58}{table.caption.84}\protected@file@percent }
-\newlabel{tab:dashboard-operational-values}{{6.6}{58}{Dashboard telemetry values used as operational evidence}{table.caption.84}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {6.2}Model Evaluation, KPI Selection, and Cache}{59}{section.6.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.2.1}KPI Formulas}{59}{subsection.6.2.1}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {6.7}{\ignorespaces KPI formulas for model, agent, and website-batch evaluation.}}{59}{table.caption.85}\protected@file@percent }
-\newlabel{tab:kpi-formulas}{{6.7}{59}{KPI formulas for model, agent, and website-batch evaluation}{table.caption.85}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.2.2}Model Selection Criteria}{59}{subsection.6.2.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.2.3}LLM Model Comparison}{59}{subsection.6.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.1}Agent Evaluation and Website Regression}{56}{section.6.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1.1}Test Protocol}{56}{subsection.6.1.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6.1}{\ignorespaces Evaluation test matrix executed over the website regression batch.}}{57}{table.caption.83}\protected@file@percent }
+\newlabel{tab:evaluation-test-protocol}{{6.1}{57}{Evaluation test matrix executed over the website regression batch}{table.caption.83}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1.2}Batch Acceptance Rule}{57}{subsection.6.1.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6.2}{\ignorespaces Website-level acceptance criteria for regression success.}}{57}{table.caption.84}\protected@file@percent }
+\newlabel{tab:website-acceptance-rule}{{6.2}{57}{Website-level acceptance criteria for regression success}{table.caption.84}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1.3}Agent Use Cases}{58}{subsection.6.1.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6.3}{\ignorespaces Agent use cases and website-level success signals.}}{58}{table.caption.85}\protected@file@percent }
+\newlabel{tab:agent-usecase-evaluation}{{6.3}{58}{Agent use cases and website-level success signals}{table.caption.85}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1.4}Prompt Regression Results}{58}{subsection.6.1.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6.4}{\ignorespaces Prompt regression history and batch-level behavioral focus.}}{59}{table.caption.86}\protected@file@percent }
+\newlabel{tab:prompt-regression}{{6.4}{59}{Prompt regression history and batch-level behavioral focus}{table.caption.86}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {6.5}{\ignorespaces Use-case KPI results measured on the website regression batch.}}{59}{table.caption.87}\protected@file@percent }
+\newlabel{tab:manual-reference-results}{{6.5}{59}{Use-case KPI results measured on the website regression batch}{table.caption.87}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1.5}Dashboard Snapshot}{59}{subsection.6.1.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6.1}{\ignorespaces Regression-batch improvement across the main browser-agent KPIs.}}{60}{figure.caption.88}\protected@file@percent }
+\newlabel{fig:manual-kpi-bars}{{6.1}{60}{Regression-batch improvement across the main browser-agent KPIs}{figure.caption.88}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {6.6}{\ignorespaces Dashboard telemetry values used as operational evidence.}}{60}{table.caption.89}\protected@file@percent }
+\newlabel{tab:dashboard-operational-values}{{6.6}{60}{Dashboard telemetry values used as operational evidence}{table.caption.89}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.2}Model Evaluation, KPI Selection, and Cache}{61}{section.6.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2.1}KPI Formulas}{61}{subsection.6.2.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6.7}{\ignorespaces KPI formulas for model, agent, and website-batch evaluation.}}{61}{table.caption.90}\protected@file@percent }
+\newlabel{tab:kpi-formulas}{{6.7}{61}{KPI formulas for model, agent, and website-batch evaluation}{table.caption.90}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2.2}Model Selection Criteria}{61}{subsection.6.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2.3}LLM Model Comparison}{61}{subsection.6.2.3}\protected@file@percent }
 \gdef \LT@iii {\LT@entry 
     {1}{105.89418pt}\LT@entry 
     {1}{46.14322pt}\LT@entry 
@@ -321,38 +334,38 @@
     {1}{53.25641pt}\LT@entry 
     {1}{50.41139pt}\LT@entry 
     {1}{145.72786pt}}
-\@writefile{lot}{\contentsline {table}{\numberline {6.8}{\ignorespaces Model selection criteria for the regression batch.}}{60}{table.caption.86}\protected@file@percent }
-\newlabel{tab:model-selection}{{6.8}{60}{Model selection criteria for the regression batch}{table.caption.86}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {6.9}{\ignorespaces LLM model comparison.}}{60}{table.6.9}\protected@file@percent }
-\newlabel{tab:llm-model-comparison}{{6.9}{60}{LLM model comparison}{table.6.9}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {6.8}{\ignorespaces Model selection criteria for the regression batch.}}{62}{table.caption.91}\protected@file@percent }
+\newlabel{tab:model-selection}{{6.8}{62}{Model selection criteria for the regression batch}{table.caption.91}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {6.9}{\ignorespaces LLM model comparison.}}{62}{table.6.9}\protected@file@percent }
+\newlabel{tab:llm-model-comparison}{{6.9}{62}{LLM model comparison}{table.6.9}{}}
 \citation{openrouter-models}
 \citation{gemini-pricing}
 \citation{gemini-caching}
 \citation{gemini-rate-limits}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.2.4}Cost Estimation}{62}{subsection.6.2.4}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {6.10}{\ignorespaces Observed cost, token, and cache metrics from the dashboard.}}{62}{table.caption.87}\protected@file@percent }
-\newlabel{tab:dashboard-cost-token-values}{{6.10}{62}{Observed cost, token, and cache metrics from the dashboard}{table.caption.87}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2.4}Cost Estimation}{64}{subsection.6.2.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6.10}{\ignorespaces Observed cost, token, and cache metrics from the dashboard.}}{64}{table.caption.92}\protected@file@percent }
+\newlabel{tab:dashboard-cost-token-values}{{6.10}{64}{Observed cost, token, and cache metrics from the dashboard}{table.caption.92}{}}
 \citation{ipinfo-api}
 \citation{icann-rdap}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.2.5}Provider Intelligence Test}{63}{subsection.6.2.5}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {6.11}{\ignorespaces Provider-intelligence telemetry used to validate stream URL enrichment.}}{63}{table.caption.88}\protected@file@percent }
-\newlabel{tab:provider-intelligence-values}{{6.11}{63}{Provider-intelligence telemetry used to validate stream URL enrichment}{table.caption.88}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {6.3}Tool Evaluation}{63}{section.6.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.3.1}Tool Success Criteria}{63}{subsection.6.3.1}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {6.12}{\ignorespaces Tool-family evaluation criteria for batch-level testing.}}{64}{table.caption.89}\protected@file@percent }
-\newlabel{tab:tool-success-criteria}{{6.12}{64}{Tool-family evaluation criteria for batch-level testing}{table.caption.89}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {6.13}{\ignorespaces Observed tool-health telemetry from the dashboard.}}{64}{table.caption.90}\protected@file@percent }
-\newlabel{tab:dashboard-tool-health}{{6.13}{64}{Observed tool-health telemetry from the dashboard}{table.caption.90}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.3.2}Tool Regression Findings}{65}{subsection.6.3.2}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {6.14}{\ignorespaces Tool-level regressions found through website-batch testing.}}{65}{table.caption.91}\protected@file@percent }
-\newlabel{tab:tool-regressions}{{6.14}{65}{Tool-level regressions found through website-batch testing}{table.caption.91}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {6.15}{\ignorespaces Tool-description improvements measured against the website batch.}}{65}{table.caption.92}\protected@file@percent }
-\newlabel{tab:tool-description-effect}{{6.15}{65}{Tool-description improvements measured against the website batch}{table.caption.92}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {6.4}Chapter Conclusion}{65}{section.6.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {chapter}{\numberline {7}General Conclusion}{67}{chapter.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2.5}Provider Intelligence Test}{65}{subsection.6.2.5}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6.11}{\ignorespaces Provider-intelligence telemetry used to validate stream URL enrichment.}}{65}{table.caption.93}\protected@file@percent }
+\newlabel{tab:provider-intelligence-values}{{6.11}{65}{Provider-intelligence telemetry used to validate stream URL enrichment}{table.caption.93}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.3}Tool Evaluation}{65}{section.6.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3.1}Tool Success Criteria}{65}{subsection.6.3.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6.12}{\ignorespaces Tool-family evaluation criteria for batch-level testing.}}{66}{table.caption.94}\protected@file@percent }
+\newlabel{tab:tool-success-criteria}{{6.12}{66}{Tool-family evaluation criteria for batch-level testing}{table.caption.94}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {6.13}{\ignorespaces Observed tool-health telemetry from the dashboard.}}{66}{table.caption.95}\protected@file@percent }
+\newlabel{tab:dashboard-tool-health}{{6.13}{66}{Observed tool-health telemetry from the dashboard}{table.caption.95}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3.2}Tool Regression Findings}{67}{subsection.6.3.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6.14}{\ignorespaces Tool-level regressions found through website-batch testing.}}{67}{table.caption.96}\protected@file@percent }
+\newlabel{tab:tool-regressions}{{6.14}{67}{Tool-level regressions found through website-batch testing}{table.caption.96}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {6.15}{\ignorespaces Tool-description improvements measured against the website batch.}}{67}{table.caption.97}\protected@file@percent }
+\newlabel{tab:tool-description-effect}{{6.15}{67}{Tool-description improvements measured against the website batch}{table.caption.97}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.4}Chapter Conclusion}{67}{section.6.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {chapter}{\numberline {7}General Conclusion}{69}{chapter.7}\protected@file@percent }
 \@writefile{lof}{\addvspace {10\p@ }}
 \@writefile{lot}{\addvspace {10\p@ }}
-\newlabel{chap:conclusion}{{7}{67}{General Conclusion}{chapter.7}{}}
+\newlabel{chap:conclusion}{{7}{69}{General Conclusion}{chapter.7}{}}
 \bibcite{react}{1}
 \bibcite{toolformer}{2}
 \bibcite{agent-survey}{3}
@@ -390,6 +403,6 @@
 \bibcite{ublock}{35}
 \bibcite{muso-piracy}{36}
 \bibcite{audiovisual-obs}{37}
-\pgfsyspdfmark {pgfid45}{932339}{54594558}
-\newlabel{TotPages}{{92}{72}{}{page.72}{}}
-\gdef \@abspage@last{92}
+\pgfsyspdfmark {pgfid49}{932339}{54594558}
+\newlabel{TotPages}{{94}{74}{}{page.74}{}}
+\gdef \@abspage@last{94}

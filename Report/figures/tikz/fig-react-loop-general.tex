@@ -1,25 +1,29 @@
 \begin{figure}[!htbp]
 \centering
-\resizebox{0.72\textwidth}{!}{%
+\resizebox{0.82\textwidth}{!}{%
 \begin{tikzpicture}[
-  stepbox/.style={draw=accent!70, fill=blue!5, rounded corners=5pt,
-    minimum width=3.0cm, minimum height=0.82cm, align=center, font=\footnotesize\bfseries},
-  reasonbox/.style={stepbox, draw=orange!75!black, fill=orange!9},
-  verifybox/.style={stepbox, draw=green!55!black, fill=green!8},
-  arr/.style={->, >=Stealth, thick, accent!78, shorten <=3pt, shorten >=3pt}
+  loopstep/.style={draw=accent!75, fill=blue!6, rounded corners=7pt,
+    text width=2.75cm, minimum height=0.86cm, align=center, font=\footnotesize\bfseries},
+  reason/.style={draw=orange!75!black, fill=orange!9, rounded corners=7pt,
+    text width=2.75cm, minimum height=0.86cm, align=center, font=\footnotesize\bfseries},
+  verify/.style={draw=green!55!black, fill=green!8, rounded corners=7pt,
+    text width=2.75cm, minimum height=0.86cm, align=center, font=\footnotesize\bfseries},
+  stop/.style={draw=gray!65, fill=gray!10, rounded corners=7pt,
+    text width=2.75cm, minimum height=0.82cm, align=center, font=\scriptsize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!78, shorten <=4pt, shorten >=4pt},
+  soft/.style={->, >=Stealth, thick, dashed, gray!65, shorten <=4pt, shorten >=4pt}
 ]
-\node[stepbox] (observe) at (0,1.2) {Observe\\page state};
-\node[reasonbox] (reason) at (4.0,1.2)
-  {Reason\\next step};
-\node[stepbox] (act) at (8.0,1.2)
-  {Act\\with tool};
-\node[verifybox] (verify) at (4.0,-0.7)
-  {Verify\\evidence};
+\node[loopstep] (observe) at (0,1.35) {Observe\\page state};
+\node[reason] (reason) at (3.65,1.35) {Reason\\choose next step};
+\node[loopstep] (act) at (7.3,1.35) {Act\\with bounded tool};
+\node[verify] (verify) at (7.3,-0.6) {Verify\\evidence changed};
+\node[stop] (stop) at (3.65,-0.6) {Stop\\success or limit};
 
 \draw[arr] (observe) -- (reason);
 \draw[arr] (reason) -- (act);
-\draw[arr] (act.south) |- (verify.east);
-\draw[arr] (verify.west) -| (observe.south);
+\draw[arr] (act.south) -- (verify.north);
+\draw[soft] (verify.west) -- (stop.east);
+\draw[arr] (verify.south) -- ++(0,-0.55) -| (observe.south);
 \end{tikzpicture}
 }
 \caption{Observe--act--verify loop used by browser agents.}

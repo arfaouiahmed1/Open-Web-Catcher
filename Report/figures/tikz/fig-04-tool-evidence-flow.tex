@@ -1,0 +1,41 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  start/.style={draw=orange!80!black, fill=orange!9, rounded corners=6pt,
+    text width=2.65cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  tool/.style={draw=purple!65!black, fill=purple!7, rounded corners=6pt,
+    text width=2.7cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  browser/.style={draw=accent!75, fill=blue!6, rounded corners=6pt,
+    text width=2.7cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  result/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
+    text width=2.8cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  warn/.style={draw=gray!65, fill=gray!10, rounded corners=6pt,
+    text width=2.9cm, minimum height=0.82cm, align=center, font=\scriptsize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!75, shorten <=3pt, shorten >=3pt},
+  soft/.style={->, >=Stealth, thick, dashed, gray!65, shorten <=3pt, shorten >=3pt}
+]
+\node[start] (state) at (0,1.7) {Post-action\\page state};
+\node[tool] (shot) at (3.1,1.7) {Screenshot\\visual proof};
+\node[browser] (media) at (6.2,1.7) {Media state\\player + frame};
+\node[tool] (harvest) at (9.3,1.7) {Network harvest\\m3u8, mpd, mp4};
+\node[result] (filter) at (12.4,1.7) {Evidence filter\\source + type};
+\node[result] (bundle) at (15.5,1.7) {Evidence artifact\\stream + proof};
+
+\node[warn] (fail) at (9.3,0.0) {No stream path\\reason + diagnostics};
+\node[warn] (trace) at (12.4,0.0) {Stored trace\\tool call + screenshot};
+
+\draw[arr] (state) -- (shot);
+\draw[arr] (shot) -- (media);
+\draw[arr] (media) -- (harvest);
+\draw[arr] (harvest) -- (filter);
+\draw[arr] (filter) -- (bundle);
+\draw[soft] (media.south) -- (fail.north);
+\draw[soft] (harvest.south) -- (fail.north);
+\draw[soft] (fail) -- (trace);
+\draw[soft] (trace.east) to[out=0,in=-90] (bundle.south);
+\end{tikzpicture}
+}
+\caption{Evidence and media-extraction flow from page state to reviewable artifacts.}
+\label{fig:tool-evidence-flow}
+\end{figure}

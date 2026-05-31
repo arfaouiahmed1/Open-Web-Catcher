@@ -2,36 +2,44 @@
 \centering
 \resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  main/.style={draw=accent, fill=blue!6, rounded corners=5pt,
-    minimum width=3.05cm, minimum height=0.82cm, align=center, font=\scriptsize\bfseries},
-  mcp/.style={draw=orange!75, fill=orange!10, rounded corners=5pt,
-    minimum width=3.05cm, minimum height=0.82cm, align=center, font=\scriptsize\bfseries},
-  tool/.style={draw=gray!65, fill=gray!8, rounded corners=5pt,
-    minimum width=3.2cm, minimum height=0.82cm, text width=3.0cm, align=center, font=\scriptsize\bfseries},
-  result/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
-    minimum width=4.35cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80},
-  ret/.style={->, >=Stealth, thick, gray!70, dashed},
-  lab/.style={font=\scriptsize, fill=white, inner sep=1.5pt}
+  agent/.style={draw=orange!80!black, fill=orange!9, rounded corners=7pt,
+    text width=3.15cm, minimum height=0.9cm, align=center, font=\scriptsize\bfseries},
+  mcp/.style={draw=accent!75, fill=blue!6, rounded corners=7pt,
+    text width=3.15cm, minimum height=0.9cm, align=center, font=\scriptsize\bfseries},
+  tool/.style={draw=purple!65!black, fill=purple!7, rounded corners=7pt,
+    text width=2.95cm, minimum height=0.78cm, align=center, font=\scriptsize\bfseries},
+  router/.style={draw=accent!70, fill=blue!4, rounded corners=7pt,
+    text width=3.4cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
+  evidence/.style={draw=green!55!black, fill=green!8, rounded corners=7pt,
+    text width=3.25cm, minimum height=0.9cm, align=center, font=\scriptsize\bfseries},
+  boundary/.style={draw=gray!42, rounded corners=9pt, dashed, inner xsep=8pt, inner ysep=9pt},
+  arr/.style={->, >=Stealth, thick, accent!78, shorten <=4pt, shorten >=4pt},
+  ret/.style={->, >=Stealth, thick, dashed, gray!65, shorten <=4pt, shorten >=4pt}
 ]
-\node[main] (llm) at (0,3.45) {Agent turn\\Gemini + tool choice};
-\node[mcp] (client) at (4.0,3.45) {MCP client\\agent profile};
-\node[mcp] (server) at (8.0,3.45) {MCP server\\allowed tools};
-\node[tool] (inspect) at (0,1.55) {Broad inspect\\tree context};
-\node[tool] (detail) at (4.0,1.55) {Scoped detail\\selectors + frames};
-\node[tool] (actions) at (8.0,1.55) {Action / harvest\\click + play + screenshot};
-\node[result] (result) at (4.0,-0.2) {Structured observation\\summary, evidence, raw payload};
+\node[agent] (agent) at (0,2.8) {LLM agent\\task + tool choice};
+\node[mcp] (client) at (4.0,2.8) {MCP client\\profile filter};
+\node[mcp] (server) at (8.0,2.8) {MCP server\\tool contracts};
 
-\draw[arr] (llm.east) -- node[lab, above]{tool call} (client.west);
-\draw[arr] (client.east) -- node[lab, above]{profile URL} (server.west);
-\draw[arr] (server.south) -- ++(0,-0.5) -| (inspect.north);
-\draw[arr] (server.south) -- ++(0,-0.5) -| (detail.north);
-\draw[arr] (server.south) -- ++(0,-0.5) -| (actions.north);
+\node[router] (router) at (8.0,1.55) {Allowed browser\\tool family};
+\node[tool] (inspect) at (4.0,0.3) {Inspect\\page context};
+\node[tool] (interact) at (8.0,0.3) {Interact\\click, scroll, play};
+\node[tool] (harvest) at (12.0,0.3) {Harvest\\screenshots, streams};
+\node[evidence] (result) at (8.0,-1.45) {Structured observation\\summary + evidence};
 
-\draw[ret] (inspect.south) -- ++(0,-0.45) -| (result.north west);
-\draw[ret] (detail.south) -- (result.north);
-\draw[ret] (actions.south) -- ++(0,-0.45) -| (result.north east);
-\draw[ret] (result.west) -- ++(-4.0,0) |- node[lab, pos=0.18, left]{evidence} (llm.south);
+\begin{scope}[on background layer]
+\node[boundary, fit=(inspect)(interact)(harvest)(router)] (toolszone) {};
+\end{scope}
+
+\draw[arr] (agent.east) -- (client.west);
+\draw[arr] (client.east) -- (server.west);
+\draw[arr] (server.south) -- (router.north);
+\draw[arr] (router.west) -- ++(-1.55,0) -| (inspect.north);
+\draw[arr] (router.south) -- (interact.north);
+\draw[arr] (router.east) -- ++(1.55,0) -| (harvest.north);
+\draw[ret] (inspect.south) -- ++(0,-0.35) -| (result.north west);
+\draw[ret] (interact.south) -- (result.north);
+\draw[ret] (harvest.south) -- ++(0,-0.35) -| (result.north east);
+\draw[ret] (result.west) -- ++(-6.7,0) |- (agent.south);
 \end{tikzpicture}
 }
 \caption{General relationship between an LLM agent, profile-scoped MCP tools, and structured browser observations.}

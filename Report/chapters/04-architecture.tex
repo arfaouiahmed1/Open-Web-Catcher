@@ -4,7 +4,8 @@
 This chapter presents the architecture of Open Web Catcher (OWC), the
 evidence-collection platform developed during the internship. It starts with the user-facing system and
 runtime components, then narrows into the multi-agent pipeline, the handoff
-contract between agents, the responsibilities of each agent, and the data that
+contract between agents, the responsibilities of each agent, and the browser-tool
+layer that lets agents read and act on rendered pages. It closes with the data that
 makes a run reviewable. Chapter~5 then maps these architectural decisions to the
 implementation.
 
@@ -28,9 +29,11 @@ draft generation. Four browser-facing specialists perform bounded work:
 classification, landing-page discovery, hosting-page extraction, and
 embedded-player extraction. Each specialist receives a narrow task, uses only
 its profile-scoped MCP browser tools, returns typed output, and leaves events
-that explain both success and failure. The browser runtime also carries the
-practical controls required by this domain: screenshot capture, channel-signal
-detection, profile-scoped sessions, fingerprint handling, and proxy rotation.
+  that explain both success and failure. Channel detection is handled by the
+  agents as part of evidence interpretation, while the browser runtime carries the
+  practical controls required by this domain: rendered-page context retrieval,
+  screenshot capture, profile-scoped sessions, fingerprint handling, and proxy
+  rotation.
 \end{tcolorbox}
 
 \section{System Purpose and Architecture Reading Path}
@@ -123,99 +126,6 @@ their boundaries visible makes failures easier to classify: a browser-tool
 timeout, a model retry, a missing stream, a skipped provider lookup, and a
 dashboard payload issue are different problems.
 
-\section{Browser Tooling and Runtime Controls}
-
-The browser layer is central to OWC because the evidence is not always present in the
-first HTML response. Each agent receives a profile-scoped tool surface through MCP:
-classification can inspect broadly, landing can discover candidate pages, hosting can
-activate players and server controls, and embedded can inspect frame-local media
-behavior. The architecture intentionally keeps the browser tools outside the prompt so
-that tool availability, timeouts, screenshots, proxy configuration, and profile state
-can be controlled by the runtime.
-
-\input{figures/tikz/fig-04-browser-tooling-layer}
-
-\subsection{Tool Families}
-
-The Puppeteer tool layer is organized into clear families. Broad inspection tools
-summarize the rendered page and reduce repeated DOM dumps. Context and detail tools
-return specific selectors, frame paths, element references, and local subtrees. Action
-tools click, type, select, scroll, play media, or recover from popup and navigation
-drift. Evidence tools capture screenshots, media state, stream candidates, and network
-diagnostics. Memory tools read and update reusable site hints, but those hints remain
-soft guidance: live browser evidence still decides the result.
-
-\subsubsection{Inspection and context tools}
-
-Inspection tools such as the general inspector and the landing, hosting, and embedded
-inspectors are used after navigation or after a meaningful page-state change. They
-return compact page summaries, grouped links and buttons, candidate ledgers, iframe
-overviews, player signals, reveal actions, and screenshot links. When the agent needs a
-precise target, it uses narrower tools for element queries, element details, frame
-trees, or media state instead of repeating a broad page scan.
-
-\subsubsection{Navigation, interaction, and evidence tools}
-
-Navigation tools open URLs, wait for page state, handle redirects, and recover from
-overshooting through browser history. Interaction tools operate on element references,
-CSS selectors, XPath locators, visible text, coordinates, checkboxes, radio inputs,
-select boxes, scrolling, and media playback. Evidence tools are used after a browser
-action changes the page: screenshots prove the visual state, media-state reads confirm
-playback, and stream-harvesting tools collect \texttt{m3u8}, \texttt{mpd}, \texttt{mp4},
-or related media candidates from browser and network signals.
-
-\subsection{Fingerprint Handling and Proxy Rotation}
-
-OWC treats browser identity as a runtime setting rather than as prompt text. Browser
-profiles keep cookies, cache, and session state scoped to the current run or agent
-profile. Fingerprint handling controls properties such as browser identity, navigator
-surface, viewport-related behavior, and profile fallback so that repeated browser
-sessions do not expose an obviously inconsistent automation profile.
-
-Proxy rotation is handled at runtime as a validated sticky strategy. Candidate proxies
-can be collected from configured remote or custom sources, validated against a test
-endpoint, and kept for the current browser profile while they remain healthy. Rotation
-occurs after failure instead of on every click, because changing network identity during
-one investigation can break cookies, session-bound player URLs, and tokenized media
-links. If no proxy candidate works, the runtime can fall back to direct browsing
-instead of incorrectly reporting the target site as unreachable.
-
-\subsection{Channel Detection}
-
-Channel detection is part of the evidence model because the rights-protection context
-often needs to know which broadcaster or channel signal was exposed. OWC collects
-channel hints from landing cards, page titles, player labels, server/source metadata,
-screenshot-derived text, and structured agent output. Landing hints are treated as
-candidates, not final truth. Hosting and embedded specialists are asked to verify or
-override those hints from live player evidence when the page reveals a stronger signal.
-
-\begin{table}[!htbp]
-\centering
-\begin{tabularx}{\textwidth}{Q{3.2cm} Y Y}
-\toprule
-\rowcolor{accent!8}
-Runtime concern & Architectural rule & Reviewable output \\
-\midrule
-Tool scope & Each specialist receives only the tools needed for its page role. &
-Tool calls and profile identifiers attached to the run trace. \\
-Browser profile & State is scoped by browser/profile so cookies, cache, and
-session-bound pages stay coherent during a run. & Profile, runtime settings, and
-browser events. \\
-Fingerprint handling & Browser identity is hardened and rotated according to
-runtime policy, not improvised by the agent. & Runtime configuration and browser
-diagnostics. \\
-Proxy rotation & Proxies are validated and kept sticky until failure; direct
-fallback avoids false site-down conclusions. & Proxy strategy, failures, and final
-navigation status. \\
-Channel detection & Channel names are accepted only when supported by page,
-player, screenshot, or structured agent evidence. & Detected channel, candidates,
-confidence, method, and evidence lines. \\
-\bottomrule
-\end{tabularx}
-\caption{Browser runtime controls that support reliable and reviewable evidence collection.}
-\label{tab:browser-runtime-controls}
-\end{table}
-
 \section{End-to-End Agent Pipeline}
 
 At large scale, the platform behaves as a controlled multi-agent pipeline, not
@@ -256,8 +166,6 @@ missing hosting candidate, hosting-player failure, embedded-player failure, and
 provider skip are different operational states.
 
 \input{figures/tikz/fig-04-agent-interconnection}
-
-\input{figures/tikz/fig-04-orchestrator-flowchart}
 
 The handoff is the main communication contract between agents. It contains the
 root URL, target URL, page type, classification reasoning, route source, memory
@@ -389,6 +297,48 @@ media evidence.
 
 \input{figures/tikz/fig-04-seq-embedded}
 
+\subsection{Channel Detection Across Agents}
+
+Channel detection is an agent responsibility, not a standalone browser tool. The
+tools expose page text, DOM structure, frame state, screenshots, server labels, and
+media requests; the agents decide whether those signals are strong enough to become
+evidence. This distinction matters because a channel name printed on a landing page
+is only a hint, while a channel label near an activated player or inside the embedded
+player context is stronger evidence.
+
+The responsibility is shared across the route. Classification can preserve obvious
+channel text from the first page observation. The landing agent keeps channel and
+match hints attached to candidate hosting URLs. The hosting agent verifies whether
+the selected server or player still corresponds to the same channel. The embedded
+agent has the final opportunity to confirm, refine, or reject the channel signal from
+iframe-local text, player overlays, and screenshot evidence. The orchestrator then
+normalizes these observations as candidates, final channel fields, and confidence
+notes in the pipeline result.
+
+\begin{table}[!htbp]
+\centering
+\begin{tabularx}{\textwidth}{Q{2.9cm} Y Y}
+\toprule
+\rowcolor{accent!8}
+Agent stage & Channel evidence it can read & How the signal is treated \\
+\midrule
+Classification & Page title, visible headings, URL text, and broad page context.
+& Preserved as an initial hint, not accepted as final proof. \\
+Landing & Match cards, league labels, event rows, revealed tabs, and candidate
+hosting links. & Attached to each downstream candidate so the route keeps its
+sports context. \\
+Hosting & Server labels, player container text, active source state, screenshots,
+and network-adjacent player metadata. & Used to verify or override landing hints
+after the watch page is activated. \\
+Embedded & Iframe-local DOM, player overlays, frame title, screenshot text, and
+final media evidence context. & Treated as the strongest page-level confirmation
+before provider analysis. \\
+\bottomrule
+\end{tabularx}
+\caption{Channel detection responsibilities across the specialist agents.}
+\label{tab:channel-detection-agents}
+\end{table}
+
 \subsection{Provider Analysis and Email Generation}
 
 Provider analysis and email generation are downstream evidence-packaging stages.
@@ -399,6 +349,121 @@ into reviewable takedown drafts. These drafts are not sent automatically; they
 are artifacts for human review.
 
 \input{figures/tikz/fig-04-agent-card-provider-email}
+
+\section{Browser Tooling and Runtime Controls}
+
+After the agent responsibilities are clear, the browser-tool layer explains how the
+agents observe and change real web pages. OWC does not ask an agent to reason from
+raw HTML alone. Illegal streaming pages are usually rendered by JavaScript, split
+across nested frames, and guarded by overlays, popups, server tabs, tokenized URLs,
+or delayed media requests. For that reason, every browser-facing specialist receives
+a profile-scoped MCP tool surface backed by Puppeteer and Chrome.
+
+\input{figures/tikz/fig-04-browser-tooling-layer}
+
+\subsection{Tool Families}
+
+The Puppeteer tool layer is divided into tool families so that each agent can ask for
+the smallest useful observation or action. This keeps context growth under control:
+the model receives a compact view of the rendered page, then requests a narrower
+element, frame, media, or screenshot operation when it needs proof.
+
+\input{figures/tikz/fig-04-tool-family-overview}
+
+\subsubsection{Inspection and context retrieval}
+
+Inspection tools are the first read layer. They inspect the rendered Document Object
+Model (DOM), not only the first server response. Broad inspectors summarize visible
+text, grouped anchors, buttons, candidate cards, server controls, iframe trees,
+player containers, media clues, and screenshot links. Page-type inspectors specialize
+that same idea: the landing inspector looks for match cards and hosting candidates,
+the hosting inspector looks for server/source controls and player state, and the
+embedded inspector focuses on iframe-local player evidence.
+
+Context tools are narrower. When an agent sees a possible target in a broad
+observation, it can request element details, a selector-specific subtree, a frame
+tree, candidate element references, or media state. This avoids repeatedly sending a
+large DOM summary back to the model. The architectural rule is simple: broad context
+is used to choose where to look, and scoped context is used before acting.
+
+\input{figures/tikz/fig-04-tool-inspection-flow}
+
+\subsubsection{Navigation and interaction}
+
+Navigation has two different meanings in OWC. When inspection returns a real link or
+candidate URL, the agent uses URL navigation: open the link, wait for the document to
+settle, then inspect the new page. When the page requires JavaScript to reveal content,
+the agent stays in the same browser context and uses interaction tools: click a tab or
+server button, scroll to trigger lazy loading, type into an input, select a control, or
+attempt playback. Both paths must be followed by a new observation because either a new
+document or a changed DOM state can invalidate the previous context.
+
+\input{figures/tikz/fig-04-tool-navigation-flow}
+
+\subsubsection{Evidence and media extraction}
+
+Evidence tools convert browser state into reviewable artifacts. Screenshots show what
+the page looked like after navigation or interaction. Media-state tools confirm
+whether a player is present, whether playback started, and whether the active frame
+changed. Stream-harvesting tools collect \texttt{m3u8}, \texttt{mpd}, \texttt{mp4},
+or related candidates from network and browser signals. The agent still decides
+whether the candidate is acceptable evidence, but the tools provide the structured
+facts that make the decision auditable.
+
+\input{figures/tikz/fig-04-tool-evidence-flow}
+
+\subsubsection{Memory and site hints}
+
+Memory tools read and update reusable site hints such as known server tabs, useful
+selectors, common iframe patterns, and previous failure causes. They do not replace
+live browser evidence. A memory hint can tell an agent where to start, but the agent
+must still inspect the current page, act through Puppeteer if needed, and validate the
+result with screenshots, player state, or stream evidence.
+
+\input{figures/tikz/fig-04-tool-memory-flow}
+
+\subsection{Fingerprint Handling and Proxy Rotation}
+
+OWC treats browser identity as a runtime setting rather than as prompt text. Browser
+profiles keep cookies, cache, and session state scoped to the current run or agent
+profile. Fingerprint handling controls properties such as browser identity, navigator
+surface, viewport-related behavior, and profile fallback so that repeated browser
+sessions do not expose an obviously inconsistent automation profile.
+
+Proxy rotation is handled at runtime as a validated sticky strategy. Candidate proxies
+can be collected from configured remote or custom sources, validated against a test
+endpoint, and kept for the current browser profile while they remain healthy. Rotation
+occurs after failure instead of on every click, because changing network identity during
+one investigation can break cookies, session-bound player URLs, and tokenized media
+links. If no proxy candidate works, the runtime can fall back to direct browsing
+instead of incorrectly reporting the target site as unreachable.
+
+\begin{table}[!htbp]
+\centering
+\begin{tabularx}{\textwidth}{Q{3.2cm} Y Y}
+\toprule
+\rowcolor{accent!8}
+Runtime concern & Architectural rule & Reviewable output \\
+\midrule
+Tool scope & Each specialist receives only the tools needed for its page role. &
+Tool calls and profile identifiers attached to the run trace. \\
+Browser profile & State is scoped by browser/profile so cookies, cache, and
+session-bound pages stay coherent during a run. & Profile, runtime settings, and
+browser events. \\
+Fingerprint handling & Browser identity is hardened and rotated according to
+runtime policy, not improvised by the agent. & Runtime configuration and browser
+diagnostics. \\
+Proxy rotation & Proxies are validated and kept sticky until failure; direct
+fallback avoids false site-down conclusions. & Proxy strategy, failures, and final
+navigation status. \\
+Context retrieval & Agents request broad DOM summaries first, then scoped element,
+frame, or media details before acting. & Inspector output, selectors, frame paths,
+and observation events. \\
+\bottomrule
+\end{tabularx}
+\caption{Browser runtime controls that support reliable and reviewable evidence collection.}
+\label{tab:browser-runtime-controls}
+\end{table}
 
 \section{Data, Trace, and Reviewability View}
 
@@ -448,8 +513,9 @@ The architecture is a staged, reviewable evidence pipeline. The operator starts
 and reviews runs through the console. FastAPI controls execution and persistence.
 The orchestrator uses LangGraph to route between agents and to preserve handoff
 state~\cite{langchain-docs,langgraph-docs}. Each specialist agent uses LangChain
-and LangGraph for the model and tool loop, while profile-scoped MCP browser tools
-gather page, frame, screenshot, channel, media, and network evidence. Browser
+and LangGraph for the model and tool loop, interprets channel evidence according
+to its page role, and calls profile-scoped MCP browser tools for rendered DOM
+context, frame inspection, screenshots, media state, and network evidence. Browser
 runtime controls handle profile state, fingerprint behavior, proxy selection,
 popup recovery, iframe recovery, and screenshot capture. Provider and email tools
 run only after streams exist, and storage preserves both the final answer and the

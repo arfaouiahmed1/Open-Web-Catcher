@@ -52,7 +52,7 @@
 \draw[arr] (actions) -- (browser);
 \draw[arr] (media) -- (output);
 \draw[soft] (browser) -- (output);
-\draw[soft] (policy) -- (browser);
+\draw[soft] (policy.south) -- ++(0,-0.38) -| ([xshift=-0.45cm]browser.west) -- (browser.west);
 \end{tikzpicture}
 }
 \caption{Profile-scoped MCP browser tooling and runtime controls used by OWC agents.}

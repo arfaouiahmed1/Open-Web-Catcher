@@ -1,23 +1,39 @@
 \begin{figure}[!htbp]
 \centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[node distance=1.2cm]
-\node[flowbox, minimum width=4.2cm, minimum height=1.4cm, fill=blue!8] (landing)
-  {\textbf{Landing page}\\Match cards, schedule, leagues, dates};
-\node[flowbox, minimum width=4.2cm, minimum height=1.4cm, fill=orange!10,
-      right=1.8cm of landing] (hosting)
-  {\textbf{Hosting page}\\One match, server buttons, player area};
-\node[flowbox, minimum width=4.2cm, minimum height=1.4cm, fill=green!10,
-      right=1.8cm of hosting] (embedded)
-  {\textbf{Embedded page}\\Iframe or player link, media runtime};
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  stage/.style={draw=accent!70, fill=blue!6, rounded corners=7pt,
+    text width=3.25cm, minimum height=1.05cm, align=center, font=\footnotesize\bfseries},
+  action/.style={draw=orange!80!black, fill=orange!9, rounded corners=7pt,
+    text width=3.25cm, minimum height=1.05cm, align=center, font=\footnotesize\bfseries},
+  evidence/.style={draw=green!55!black, fill=green!8, rounded corners=7pt,
+    text width=3.25cm, minimum height=1.05cm, align=center, font=\footnotesize\bfseries},
+  noise/.style={draw=gray!65, fill=gray!10, rounded corners=7pt,
+    text width=3.35cm, minimum height=0.82cm, align=center, font=\scriptsize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!78, shorten <=4pt, shorten >=4pt},
+  soft/.style={->, >=Stealth, thick, dashed, gray!65, shorten <=4pt, shorten >=4pt},
+  lab/.style={font=\scriptsize\bfseries, fill=white, inner sep=2pt, text=gray!70!black}
+]
+\node[stage] (landing) at (0,1.7) {Landing page\\event discovery};
+\node[action] (hosting) at (5.2,1.7) {Hosting page\\match + server choice};
+\node[evidence] (embedded) at (10.4,1.7) {Embedded page\\player runtime};
+\node[evidence] (stream) at (15.6,1.7) {Stream evidence\\manifest or media URL};
 
-\draw[myarrow, very thick] (landing) -- node[above, font=\small]{select match} (hosting);
-\draw[myarrow, very thick] (hosting) -- node[above, font=\small]{open server/player} (embedded);
+\node[noise] (ads) at (5.2,-0.05) {Ads, redirects, popups};
+\node[noise] (shortcut) at (10.4,-1.02) {Direct iframe shortcut};
 
-\node[toolbox, fill=red!8, draw=red!50, minimum width=3.6cm, below=1.0cm of hosting] (noise)
-  {Ads, redirects, popups,\\blocked players};
-\draw[->, >=Stealth, dashed, thick, red!60] (hosting.south) -- (noise.north);
-\draw[->, >=Stealth, dashed, thick, red!60] (noise.east) -| (embedded.south);
+\node[lab] at (2.6,2.35) {watch link};
+\node[lab] at (7.8,2.35) {server or iframe};
+\node[lab] at (13.0,2.35) {media request};
+
+\draw[arr] (landing.east) -- (hosting.west);
+\draw[arr] (hosting.east) -- (embedded.west);
+\draw[arr] (embedded.east) -- (stream.west);
+
+\draw[soft] (hosting.south) -- (ads.north);
+\draw[soft] (ads.east) -- ++(0.5,0) |- (embedded.south);
+\draw[soft] (landing.south east) to[out=-58,in=190] (shortcut.west);
+\draw[soft] (shortcut.north) -- (embedded.south);
 \end{tikzpicture}
 }
 \caption{Common navigation flow from event listing to hosting page and embedded player.}

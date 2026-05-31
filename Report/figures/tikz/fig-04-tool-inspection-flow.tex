@@ -1,0 +1,37 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  start/.style={draw=orange!80!black, fill=orange!9, rounded corners=6pt,
+    text width=2.6cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  tool/.style={draw=purple!65!black, fill=purple!7, rounded corners=6pt,
+    text width=2.75cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  browser/.style={draw=accent!75, fill=blue!6, rounded corners=6pt,
+    text width=2.75cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  result/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
+    text width=2.8cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!75, shorten <=3pt, shorten >=3pt},
+  soft/.style={->, >=Stealth, thick, dashed, gray!65, shorten <=3pt, shorten >=3pt}
+]
+\node[start] (task) at (0,1.55) {Agent asks\\what is visible?};
+\node[tool] (broad) at (3.15,1.55) {Broad inspector\\page-type context};
+\node[browser] (dom) at (6.3,1.55) {Rendered DOM\\links, text, frames};
+\node[result] (summary) at (9.45,1.55) {Compact observation\\cards + controls};
+\node[tool] (detail) at (12.6,1.55) {Scoped detail\\element or frame};
+\node[result] (decision) at (15.75,1.55) {Candidate target\\or next action};
+
+\node[result] (trace) at (9.45,-0.05) {Trace output\\selectors, frame paths, clues};
+
+\draw[arr] (task) -- (broad);
+\draw[arr] (broad) -- (dom);
+\draw[arr] (dom) -- (summary);
+\draw[arr] (summary) -- (detail);
+\draw[arr] (detail) -- (decision);
+\draw[arr] (summary) -- (trace);
+\draw[soft] (trace.east) to[out=0,in=-90] (decision.south);
+\draw[soft] (detail.south) to[out=-90,in=-20] (summary.south);
+\end{tikzpicture}
+}
+\caption{Inspection and context-retrieval flow from rendered DOM observation to scoped targets.}
+\label{fig:tool-inspection-flow}
+\end{figure}

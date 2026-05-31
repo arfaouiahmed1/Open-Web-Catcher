@@ -261,6 +261,39 @@ Memory tools & Read or update reusable site hints from the memory layer. \\
 \label{tab:puppeteer-tool-groups}
 \end{table}
 
+\subsubsection{Tool registry and profile filtering}
+
+The MCP server exposes a larger internal tool registry than any one agent should use.
+During a run, OWC binds only the profile-specific subset required by the current
+stage. Classification receives broad page inspection and screenshot access. Landing
+receives tools for listing-page context, candidate extraction, reveal actions,
+scrolling, and element details. Hosting receives tools for server controls, playback
+activation, popup recovery, media state, and stream harvesting. Embedded receives
+frame-focused tools that keep the run inside the assigned iframe or player URL. This
+filtering prevents a landing task from drifting into provider analysis or a hosting
+task from rewriting the whole route.
+
+\subsubsection{Rendered DOM context retrieval}
+
+The implementation uses Puppeteer because the useful evidence is usually in the
+rendered browser state rather than the initial HTML response. Context tools execute
+inside the active Chrome page, read visible text and DOM structure, group anchors and
+buttons, inspect iframe trees, and return compact JSON observations. The agent first
+asks for a broad page context, then asks for a scoped element or frame detail before
+acting. This two-step pattern reduced repeated full-page dumps and made long runs
+cheaper to review because the trace shows why a selector, server tab, iframe, or
+candidate URL was chosen.
+
+\subsubsection{Puppeteer actions and evidence feedback}
+
+Action tools are implemented as browser-state changes followed by explicit evidence
+checks. A click, scroll, text input, server switch, play action, or popup recovery is
+not considered useful by itself. The agent must inspect the page again, capture a
+screenshot when the visual state matters, read media state when a player is involved,
+or harvest network candidates after playback. This is why the tool trace alternates
+between observation, action, and verification instead of showing one large scripted
+Puppeteer procedure.
+
 \input{figures/tikz/fig-mcp-tool-loop}
 
 \subsection{Agents, Models, Memory, and Prompts}
@@ -279,15 +312,17 @@ set, and a bounded execution budget.
 Agent & Objective & Main tools used \\
 \midrule
 Classification & Decide whether the seed is landing, hosting, embedded, or
-other. & Generic inspection, screenshot, frame tree, memory lookup. \\
+other, while preserving obvious channel hints. & Generic inspection, screenshot,
+frame tree, memory lookup. \\
 Landing & Discover match cards, listing tabs, pagination, and hosting
-candidates. & Landing inspect, element queries, click/scroll, screenshot,
-memory tools. \\
+candidates with match and channel context. & Landing inspect, element queries,
+click/scroll, screenshot, memory tools. \\
 Hosting & Activate server controls, verify player state, and extract streams or
-embedded fallbacks. & Hosting inspect, click/play tools, media state, frame tree,
-harvest, screenshot. \\
+embedded fallbacks while checking channel/player labels. & Hosting inspect,
+click/play tools, media state, frame tree, harvest, screenshot. \\
 Embedded & Work only on embedded/player URLs and harvest final stream evidence.
-& Embedded inspect, play/media tools, harvest, screenshot, frame diagnostics. \\
+& Embedded inspect, play/media tools, harvest, screenshot, frame diagnostics,
+iframe-local text checks. \\
 \bottomrule
 \end{tabularx}
 \caption{Specialist agent objectives and assigned tool surfaces.}

@@ -1,31 +1,50 @@
 \begin{figure}[!htbp]
 \centering
-\resizebox{0.9\textwidth}{!}{%
+\resizebox{0.94\textwidth}{!}{%
 \begin{tikzpicture}[
-  manifest/.style={draw=accent!75, fill=blue!5, rounded corners=5pt,
-    minimum width=4.2cm, minimum height=0.95cm, align=center, font=\footnotesize\bfseries},
-  variant/.style={draw=gray!65, fill=gray!9, rounded corners=5pt,
-    minimum width=3.2cm, minimum height=0.75cm, align=center, font=\footnotesize\bfseries},
-  segment/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
-    minimum width=4.0cm, minimum height=0.95cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!78, shorten <=3pt, shorten >=3pt}
+  manifest/.style={draw=accent!75, fill=blue!6, rounded corners=7pt,
+    text width=3.45cm, minimum height=0.95cm, align=center, font=\footnotesize\bfseries},
+  variant/.style={draw=orange!75!black, fill=orange!9, rounded corners=7pt,
+    text width=2.95cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
+  segment/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
+    text width=1.55cm, minimum height=0.58cm, align=center, font=\tiny\bfseries},
+  evidence/.style={draw=gray!65, fill=gray!10, rounded corners=7pt,
+    text width=3.2cm, minimum height=0.82cm, align=center, font=\scriptsize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!78, shorten <=4pt, shorten >=4pt},
+  seq/.style={-, thick, accent!58, shorten <=4pt, shorten >=4pt},
+  soft/.style={->, >=Stealth, thick, dashed, gray!65, shorten <=4pt, shorten >=4pt}
 ]
-\node[manifest] (master) at (0,0)
-  {Master manifest\\\texttt{index.m3u8} or \texttt{manifest.mpd}};
-\node[variant] (mid) at (5.0,1.05)
-  {Medium quality\\variant};
-\node[variant] (high) at (5.0,0)
-  {High quality\\variant};
-\node[variant] (low) at (5.0,-1.05)
-  {Low quality\\variant};
-\node[segment] (segments) at (9.9,0)
-  {Media segments\\\texttt{.ts}, \texttt{.m4s}, fMP4};
+\node[manifest] (master) at (0,0) {Master manifest\\\texttt{m3u8} or \texttt{mpd}};
+\node[variant] (low) at (4.35,1.15) {Low bitrate\\variant};
+\node[variant] (mid) at (4.35,0) {Medium bitrate\\variant};
+\node[variant] (high) at (4.35,-1.15) {High bitrate\\variant};
+
+\node[segment] (s1) at (8.15,1.15) {seg 01};
+\node[segment] (s2) at (10.35,1.15) {seg 02};
+\node[segment] (s3) at (12.55,1.15) {seg 03};
+\node[segment] (s4) at (8.15,0) {seg 01};
+\node[segment] (s5) at (10.35,0) {seg 02};
+\node[segment] (s6) at (12.55,0) {seg 03};
+\node[segment] (s7) at (8.15,-1.15) {seg 01};
+\node[segment] (s8) at (10.35,-1.15) {seg 02};
+\node[segment] (s9) at (12.55,-1.15) {seg 03};
+
+\node[evidence] (proof) at (8.95,-2.65) {Evidence focus\\manifest URL + host};
+
+\draw[arr] (master.east) -- (low.west);
 \draw[arr] (master.east) -- (mid.west);
 \draw[arr] (master.east) -- (high.west);
-\draw[arr] (master.east) -- (low.west);
-\draw[arr] (mid.east) -- (segments.west);
-\draw[arr] (high.east) -- (segments.west);
-\draw[arr] (low.east) -- (segments.west);
+\draw[arr] (low.east) -- (s1.west);
+\draw[arr] (mid.east) -- (s4.west);
+\draw[arr] (high.east) -- (s7.west);
+\draw[seq] (s1.east) -- (s2.west);
+\draw[seq] (s2.east) -- (s3.west);
+\draw[seq] (s4.east) -- (s5.west);
+\draw[seq] (s5.east) -- (s6.west);
+\draw[seq] (s7.east) -- (s8.west);
+\draw[seq] (s8.east) -- (s9.west);
+\draw[soft] (master.south) to[out=-70,in=180] (proof.west);
+\draw[soft] (mid.south) to[out=-40,in=140] (proof.north);
 \end{tikzpicture}
 }
 \caption{Simplified adaptive streaming hierarchy used by HLS and MPEG-DASH.}

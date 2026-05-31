@@ -1,33 +1,39 @@
 \begin{figure}[!htbp]
 \centering
-\resizebox{0.96\textwidth}{!}{%
+\resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  host/.style={draw=orange!80!black, fill=orange!10, rounded corners=6pt,
-    minimum width=4.3cm, minimum height=0.9cm, align=center, font=\small\bfseries},
-  path/.style={draw=accent!70, fill=blue!5, rounded corners=5pt,
-    minimum width=3.75cm, minimum height=0.82cm, align=center, font=\footnotesize\bfseries},
-  fallback/.style={draw=orange!75!black, fill=orange!8, rounded corners=5pt,
-    minimum width=3.75cm, minimum height=0.82cm, align=center, font=\footnotesize\bfseries},
-  evidence/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
-    minimum width=4.6cm, minimum height=0.95cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80, shorten <=3pt, shorten >=3pt},
-  dasharr/.style={->, >=Stealth, thick, orange!80!black, dashed, shorten <=3pt, shorten >=3pt},
-  lab/.style={font=\scriptsize, text=gray!72, fill=white, inner sep=1pt}
+  host/.style={draw=orange!80!black, fill=orange!10, rounded corners=8pt,
+    text width=3.8cm, minimum height=0.95cm, align=center, font=\footnotesize\bfseries},
+  lane/.style={draw=purple!65!black, fill=purple!7, rounded corners=7pt,
+    text width=3.35cm, minimum height=0.88cm, align=center, font=\scriptsize\bfseries},
+  observe/.style={draw=accent!75, fill=blue!6, rounded corners=7pt,
+    text width=3.35cm, minimum height=0.88cm, align=center, font=\scriptsize\bfseries},
+  evidence/.style={draw=green!55!black, fill=green!8, rounded corners=7pt,
+    text width=3.6cm, minimum height=0.9cm, align=center, font=\scriptsize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!78, shorten <=4pt, shorten >=4pt},
+  soft/.style={->, >=Stealth, thick, dashed, orange!80!black, shorten <=4pt, shorten >=4pt}
 ]
-\node[host] (host) at (0,3.1) {Hosting page\\watch URL assigned by orchestrator};
-\node[path] (direct) at (-5.0,1.35) {Direct media element\\\texttt{<video>} / \texttt{<source>}};
-\node[fallback] (iframe) at (0,1.35) {Embedded fallback\\\texttt{<iframe src>} / player URL};
-\node[path] (js) at (5.0,1.35) {JavaScript player setup\\tokens, config, server switch};
-\node[evidence] (network) at (0,-0.45) {Network and media evidence\\requests, manifests, screenshots};
-\node[evidence] (manifest) at (0,-2.15) {Stream candidate\\\texttt{.m3u8}, \texttt{.mpd}, \texttt{.mp4}};
+\node[host] (host) at (0,2.75) {Hosting page\\assigned watch URL};
 
-\draw[arr] (host.south west) -- node[lab, above left]{visible source} (direct.north);
-\draw[dasharr] (host.south) -- node[lab, right, text width=2.2cm, align=left]{host exposes player URL} (iframe.north);
-\draw[arr] (host.south east) -- node[lab, above right]{runtime config} (js.north);
-\draw[arr] (direct.south) -- ++(0,-0.55) -| (network.west);
-\draw[dasharr] (iframe.south) -- (network.north);
-\draw[arr] (js.south) -- ++(0,-0.55) -| (network.east);
-\draw[arr] (network) -- (manifest);
+\node[lane] (direct) at (-4.7,1.05) {Direct media element\\\texttt{video} / \texttt{source}};
+\node[lane] (iframe) at (0,1.05) {Iframe player\\external player page};
+\node[lane] (js) at (4.7,1.05) {JavaScript player\\config + token setup};
+
+\node[observe] (dom) at (-4.7,-0.65) {DOM read\\source attribute};
+\node[observe] (frames) at (0,-0.65) {Frame traversal\\iframe context};
+\node[observe] (network) at (4.7,-0.65) {Runtime wait\\network requests};
+
+\node[evidence] (bundle) at (0,-2.35) {Media evidence\\manifest, request, screenshot};
+
+\draw[arr] (host.south west) -- (direct.north);
+\draw[soft] (host.south) -- (iframe.north);
+\draw[arr] (host.south east) -- (js.north);
+\draw[arr] (direct) -- (dom);
+\draw[arr] (iframe) -- (frames);
+\draw[arr] (js) -- (network);
+\draw[arr] (dom.south) -- ++(0,-0.35) -| (bundle.west);
+\draw[arr] (frames.south) -- (bundle.north);
+\draw[arr] (network.south) -- ++(0,-0.35) -| (bundle.east);
 \end{tikzpicture}
 }
 \caption{Main paths from a hosting page to media evidence, with embedded pages treated as an explicit fallback when the hosting page exposes a player URL.}

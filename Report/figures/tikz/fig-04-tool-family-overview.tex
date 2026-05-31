@@ -1,0 +1,42 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  agent/.style={draw=orange!80!black, fill=orange!9, rounded corners=6pt,
+    text width=2.75cm, minimum height=0.9cm, align=center, font=\scriptsize\bfseries},
+  inspect/.style={draw=purple!65!black, fill=purple!7, rounded corners=6pt,
+    text width=2.9cm, minimum height=0.9cm, align=center, font=\scriptsize\bfseries},
+  action/.style={draw=accent!75, fill=blue!6, rounded corners=6pt,
+    text width=2.9cm, minimum height=0.9cm, align=center, font=\scriptsize\bfseries},
+  evidence/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
+    text width=2.95cm, minimum height=0.9cm, align=center, font=\scriptsize\bfseries},
+  memory/.style={draw=gray!65, fill=gray!10, rounded corners=6pt,
+    text width=2.95cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  arr/.style={->, >=Stealth, thick, accent!75, shorten <=3pt, shorten >=3pt},
+  soft/.style={->, >=Stealth, thick, dashed, gray!65, shorten <=3pt, shorten >=3pt}
+]
+\node[agent] (agent) at (0,2.35) {Specialist agent\\current objective};
+\node[inspect] (inspect) at (3.4,2.35) {Inspect + context\\DOM, frames, candidates};
+\node[action] (nav) at (6.8,3.15) {URL navigation\\open discovered link};
+\node[action] (js) at (6.8,1.55) {JavaScript action\\click, scroll, play};
+\node[evidence] (evidence) at (10.2,2.35) {Evidence tools\\screenshots + media};
+\node[agent] (decision) at (13.6,2.35) {Agent decision\\handoff or retry};
+
+\node[memory] (memory) at (3.4,0.25) {Memory hints\\soft guidance};
+\node[memory] (trace) at (10.2,0.25) {Trace output\\tool calls + result};
+
+\draw[arr] (agent) -- (inspect);
+\draw[arr] (inspect.east) -- ++(0.45,0) |- (nav.west);
+\draw[arr] (inspect.east) -- ++(0.45,0) |- (js.west);
+\draw[arr] (nav.east) -- ++(0.45,0) |- (evidence.west);
+\draw[arr] (js.east) -- ++(0.45,0) |- (evidence.west);
+\draw[arr] (evidence) -- (decision);
+\draw[soft] (memory.north) -- (inspect.south);
+\draw[soft] (evidence.south) -- (trace.north);
+\draw[soft] (trace.east) to[out=0,in=-90] (decision.south);
+\draw[soft] (decision.north) to[out=90,in=90,looseness=0.8] (inspect.north);
+\end{tikzpicture}
+}
+\caption{Global browser-tool flow: inspect first, choose URL navigation or JavaScript action, then validate evidence.}
+\label{fig:tool-family-overview}
+\end{figure}

@@ -20,53 +20,48 @@
   result/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
     minimum width=3.05cm, minimum height=0.86cm, align=center,
     font=\scriptsize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!82},
-  soft/.style={->, >=Stealth, thick, teal!70!black},
-  route/.style={->, >=Stealth, thick, orange!75!black},
-  stream/.style={->, >=Stealth, thick, green!55!black},
-  skipped/.style={->, >=Stealth, thick, gray!65, dashed},
+  arr/.style={->, >=Stealth, thick, accent!82, shorten <=3pt, shorten >=3pt},
+  soft/.style={->, >=Stealth, thick, teal!70!black, shorten <=3pt, shorten >=3pt},
+  route/.style={->, >=Stealth, thick, orange!75!black, shorten <=3pt, shorten >=3pt},
+  stream/.style={->, >=Stealth, thick, green!55!black, shorten <=3pt, shorten >=3pt},
+  skipped/.style={->, >=Stealth, thick, gray!65, dashed, shorten <=3pt, shorten >=3pt},
   lbl/.style={font=\tiny\bfseries, fill=white, inner sep=1.3pt, text=black}
 ]
 
-\node[core] (orchestrator) at (0,0) {OrchestratorAgent};
-\node[memory] (memory) at (3.55,2.75) {LongTermMemory\\soft hints};
-\node[agent] (classifier) at (3.55,0) {ClassificationAgent};
+\node[core] (orchestrator) at (0,1.6) {OrchestratorAgent};
+\node[memory] (memory) at (3.2,3.65) {LongTermMemory\\soft hints};
+\node[agent] (classifier) at (3.2,1.6) {ClassificationAgent};
 
-\node[agent] (landing) at (7.45,3.05) {LandingPageAgent};
-\node[agent] (hosting) at (7.45,0.95) {HostingPageAgent\\parallel targets};
-\node[agent] (embedded) at (7.45,-1.35) {EmbeddedPageAgent\\iframe/player targets};
-\node[skip] (nostreams) at (7.45,-3.85) {analyze\_providers node\\skips because no streams};
+\node[agent] (landing) at (7.0,3.3) {LandingPageAgent};
+\node[agent] (hosting) at (7.0,1.65) {HostingPageAgent\\parallel targets};
+\node[agent] (embedded) at (7.0,0.0) {EmbeddedPageAgent\\iframe/player targets};
+\node[skip] (nostreams) at (7.0,-2.0) {analyze\_providers node\\skips because no streams};
 
-\node[tool] (providers) at (11.65,-0.25) {IPInfoTool\\provider analysis};
-\node[tool] (emails) at (15.35,1.25) {EmailTool\\takedown drafts};
-\node[result] (result) at (15.35,-2.55) {PipelineResult};
+\node[tool] (providers) at (12.05,1.0) {IPInfoTool\\provider analysis};
+\node[tool] (emails) at (15.75,2.65) {EmailTool\\takedown drafts};
+\node[result] (result) at (15.75,-0.85) {PipelineResult};
 
 \draw[soft] (orchestrator) -- (memory);
 \draw[arr] (orchestrator) -- (classifier);
 
-\draw[route] (classifier.north east) to[out=18,in=190]
-  node[lbl, pos=0.42, above, sloped]{landing} (landing.west);
-\draw[route] (classifier.east) to[out=0,in=180]
-  node[lbl, pos=0.46, above]{hosting} (hosting.west);
-\draw[route] (classifier.south east) to[out=-18,in=170]
-  node[lbl, pos=0.43, below, sloped]{embedded} (embedded.west);
-\coordinate (unknownLeft) at (1.65,-1.85);
-\coordinate (unknownBottom) at (1.65,-3.85);
-\draw[skipped] (classifier.south) -- ++(0,-0.85) -- 
-  node[lbl, pos=0.48, below]{unknown/other} (unknownLeft) --
-  (unknownBottom) -- (nostreams.west);
+\draw[route] (classifier.north east) to[out=28,in=180] (landing.west);
+\draw[route] (classifier.east) -- (hosting.west);
+\draw[route] (classifier.south east) to[out=-28,in=180] (embedded.west);
+\draw[skipped] (classifier.south) -- ++(0,-0.6) -|
+  node[lbl, pos=0.27, below]{unknown/other} (nostreams.west);
 
-\draw[route] (landing.south) -- node[lbl, left]{hosting\_pages} (hosting.north);
-\draw[route] (landing.east) to[out=5,in=45,looseness=1.15]
-  node[lbl, pos=0.48, above, sloped]{direct embedded urls} (embedded.east);
-\draw[route] (hosting.south) -- node[lbl, right]{embedded\_url/player\_iframe} (embedded.north);
+\draw[route] (landing.south) -- node[lbl, right]{hosting\_pages} (hosting.north);
+\draw[route] (hosting.south) -- node[lbl, right]{embedded\_url / player\_frame} (embedded.north);
+\draw[route] (landing.east) to[out=0,in=0,looseness=1.08]
+  node[lbl, pos=0.44, right]{direct embedded URLs} (embedded.east);
 
-\draw[stream] (hosting.east) -- node[lbl, above, sloped]{streams} (providers.west);
+\draw[stream] (hosting.east) --
+  node[lbl, pos=0.47, above]{streams} (providers.west);
 \draw[stream] (embedded.east) to[out=0,in=215]
-  node[lbl, pos=0.42, below, sloped]{streams} (providers.south west);
-\draw[arr] (providers) -- (emails);
-\draw[arr] (emails) -- (result);
-\draw[arr] (providers) -- (result);
+  node[lbl, pos=0.52, below, sloped]{streams} (providers.south west);
+\draw[arr] (providers.north east) -- (emails.south west);
+\draw[arr] (providers.south east) -- (result.north west);
+\draw[arr] (emails.south) -- (result.north);
 \draw[skipped] (nostreams.east) -- (result.west);
 
 \end{tikzpicture}
