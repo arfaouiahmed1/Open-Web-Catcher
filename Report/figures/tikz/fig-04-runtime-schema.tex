@@ -1,0 +1,114 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  umlbox/.style={
+    rectangle split,
+    rectangle split parts=2,
+    rectangle split draw splits=true,
+    rectangle split part fill={blue!6,white},
+    draw=accent!78,
+    line width=0.55pt,
+    rounded corners=2pt,
+    inner xsep=5pt,
+    inner ysep=4pt,
+    text width=3.15cm,
+    font=\fontsize{6.2}{7.4}\selectfont,
+    rectangle split part align={center,left},
+    align=left
+  },
+  root/.style={umlbox, text width=4.40cm, line width=0.72pt,
+    draw=accent!88!black, rectangle split part fill={accent!12,white}},
+  evidence/.style={umlbox, draw=green!55!black, rectangle split part fill={green!8,white}},
+  agent/.style={umlbox, draw=orange!80!black, rectangle split part fill={orange!10,white}},
+  downstream/.style={umlbox, draw=purple!65!black, rectangle split part fill={purple!7,white}},
+  metric/.style={umlbox, draw=gray!65, rectangle split part fill={gray!10,white}},
+  assoc/.style={draw=accent!74, line width=0.62pt, -{Stealth[length=4pt,width=3.5pt]}, rounded corners=6pt},
+  dep/.style={draw=gray!62, line width=0.55pt, dash pattern=on 2.2pt off 1.8pt, -{Stealth[length=4pt,width=3.5pt]}, rounded corners=6pt},
+  note/.style={font=\fontsize{5.8}{6.8}\selectfont, text=gray!70!black, align=center}
+]
+\newcommand{\field}[1]{+\,#1\\}
+
+\node[root] (result) at (0,4.50) {%
+  {\bfseries PipelineResult}\nodepart{two}%
+  \field{run\_id: str}\field{url: str}\field{classification: ClassificationResult}%
+  \field{matches: list[MatchInfo]}\field{extraction\_results: list[ExtractionResult]}%
+  \field{final\_status: ExtractionStatus}\field{all\_streams: list[StreamURL]}%
+  \field{all\_screenshots: list[str]}\field{provider\_analysis: list[ProviderInfo]}%
+  \field{takedown\_emails: list[TakedownEmail]}\field{metrics: RunMetrics}%
+};
+
+\node[agent] (classification) at (-7.25,1.45) {%
+  {\bfseries ClassificationResult}\nodepart{two}%
+  \field{url: str}\field{page\_type: PageType}\field{confidence: Confidence}%
+  \field{reasoning: str}\field{agent\_type: AgentType}%
+};
+
+\node[evidence] (match) at (-3.55,1.45) {%
+  {\bfseries MatchInfo}\nodepart{two}%
+  \field{url: str}\field{title: str}\field{channel: str}%
+  \field{route: str}\field{iframes: list[str]}\field{player\_urls: list[str]}%
+  \field{server\_hints: list[dict]}\field{metadata: dict}%
+};
+
+\node[evidence] (extract) at (0.15,1.45) {%
+  {\bfseries ExtractionResult}\nodepart{two}%
+  \field{url: str}\field{page\_type: PageType}\field{status: ExtractionStatus}%
+  \field{servers: list[ServerResult]}\field{streams: list[StreamURL]}%
+  \field{screenshots: list[str]}\field{embedded\_urls: list[str]}%
+  \field{primary\_channel: str}\field{detected\_channels: list[str]}%
+};
+
+\node[evidence] (stream) at (3.85,1.45) {%
+  {\bfseries StreamURL}\nodepart{two}%
+  \field{url: str}\field{protocol: str}\field{quality: str}%
+  \field{source\_layer: str}\field{channel\_name: str}\field{captured\_at: datetime}%
+};
+
+\node[metric] (metrics) at (7.55,1.45) {%
+  {\bfseries RunMetrics}\nodepart{two}%
+  \field{duration and counts}\field{tool calls}\field{LLM usage}%
+  \field{token totals}\field{cost totals}%
+};
+
+\node[evidence] (server) at (-1.70,-1.95) {%
+  {\bfseries ServerResult}\nodepart{two}%
+  \field{label: str}\field{server\_up: bool}\field{m3u8/mpd/mp4 URLs}%
+  \field{primary\_stream: str}\field{screenshot\_url: str}\field{embedded\_url: str}%
+  \field{status: str}%
+};
+
+\node[downstream] (provider) at (2.05,-1.95) {%
+  {\bfseries ProviderInfo}\nodepart{two}%
+  \field{stream\_url: str}\field{ip / hostname: str}\field{org: str}%
+  \field{provider: str}\field{country: str}\field{abuse\_email: str}%
+  \field{whois\_raw: str}%
+};
+
+\node[downstream] (email) at (5.80,-1.95) {%
+  {\bfseries TakedownEmail}\nodepart{two}%
+  \field{provider: str}\field{abuse\_email: str}\field{channel\_name: str}%
+  \field{subject: str}\field{body: str}\field{infringing\_url: str}%
+  \field{stream\_urls: list[str]}\field{screenshot\_urls: list[str]}%
+};
+
+\draw[assoc] (result.south west) -- (classification.north);
+\draw[assoc] (result.south) -- (match.north);
+\draw[assoc] (result.south) -- (extract.north);
+\draw[assoc] (result.south) -- (stream.north);
+\draw[assoc] (result.south east) -- (metrics.north);
+\draw[assoc] (result.south) |- (provider.north);
+\draw[assoc] (result.south east) |- (email.north);
+\draw[assoc] (extract.south) -- (server.north);
+\draw[assoc] (extract.south east) -- (stream.south west);
+\draw[dep] (email.west) -- (provider.east);
+
+\node[note, text width=11.5cm] at (2.05,-4.05)
+  {Solid arrows indicate objects aggregated into the runtime result; dashed arrows indicate referenced enrichment data.};
+
+\end{tikzpicture}
+}
+\caption{Runtime schema class diagram centered on \texttt{PipelineResult}, the aggregate Pydantic object that groups classification, matches, extraction results, streams, screenshots, provider analysis, email drafts, status, and metrics.}\label{fig:runtime-schema}
+\end{figure}

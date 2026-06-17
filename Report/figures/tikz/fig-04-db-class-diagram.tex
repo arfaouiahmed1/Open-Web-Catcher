@@ -1,70 +1,218 @@
-\begin{figure}[!htbp]
+\clearpage
+\newgeometry{margin=0.9cm}
+\begin{landscape}
+\begingroup
+\newcommand{\at}[1]{+\,#1\\}
+
+\begin{figure}[p]
 \centering
-\resizebox{0.98\textwidth}{!}{%
-\begin{tikzpicture}[
-  box/.style={draw=gray!70, fill=white, rounded corners=2pt,
-    text width=3.0cm, align=center, inner sep=5pt, font=\scriptsize},
-  run/.style={box, draw=accent!85, fill=blue!5, font=\scriptsize\bfseries,
-    minimum width=3.65cm, minimum height=1.15cm},
-  obs/.style={box, draw=purple!65!black, fill=purple!6},
-  ev/.style={box, draw=green!55!black, fill=green!6},
-  sup/.style={box, draw=gray!70, fill=gray!8},
-  zone/.style={draw=gray!32, fill=gray!3, rounded corners=6pt, inner sep=8pt},
-  arr/.style={->, >=Stealth, thick, gray!68, shorten <=3pt, shorten >=3pt},
-  dasharr/.style={->, >=Stealth, thick, gray!58, dashed, shorten <=3pt, shorten >=3pt}
+\vspace*{\fill}
+\resizebox{0.98\linewidth}{!}{%
+\begin{tikzpicture}[x=1cm,y=1cm,
+  umlbox/.style={%
+    rectangle split,
+    rectangle split parts=2,
+    rectangle split draw splits=true,
+    rectangle split part fill={blue!6,white},
+    draw=accent!78,
+    line width=0.55pt,
+    rounded corners=2pt,
+    inner xsep=6pt,
+    inner ysep=4.5pt,
+    text width=3.75cm,
+    font=\fontsize{6.1}{7.3}\selectfont,
+    rectangle split part align={center,left},
+    align=left,
+  },
+  rootbox/.style={umlbox, text width=4.15cm, line width=0.75pt,
+    draw=accent!88!black, rectangle split part fill={accent!12,white}},
+  contextbox/.style={umlbox, draw=gray!64, rectangle split part fill={gray!10,white}},
+  evidencebox/.style={umlbox, draw=green!55!black, rectangle split part fill={green!8,white}},
+  agentrecord/.style={umlbox, draw=orange!82!black, rectangle split part fill={orange!10,white}},
+  telemetrybox/.style={umlbox, draw=purple!65!black, rectangle split part fill={purple!7,white}},
+  memorybox/.style={umlbox, draw=accent!72, rectangle split part fill={blue!6,white}},
+  assoc/.style={draw=accent!74, line width=0.55pt, -{Stealth[length=4pt,width=3.5pt]}},
+  dep/.style={draw=gray!65, line width=0.55pt, dash pattern=on 2.2pt off 1.8pt, -{Stealth[length=4pt,width=3.5pt]}},
+  compo/.style={draw=accent!82, line width=0.6pt, {Diamond[length=6pt,width=4.6pt,fill=accent!82]}-{Stealth[length=4pt,width=3.5pt]}},
+  lanecontext/.style={draw=gray!30, fill=gray!3, rounded corners=6pt, line width=0.55pt},
+  laneevidence/.style={draw=green!30, fill=green!3, rounded corners=6pt, line width=0.55pt},
+  laneagent/.style={draw=orange!30, fill=orange!3, rounded corners=6pt, line width=0.55pt},
+  lanetitle/.style={font=\bfseries\fontsize{8}{9.6}\selectfont, align=center, inner sep=0pt},
+  note/.style={font=\fontsize{5.7}{6.8}\selectfont, text=gray!70!black, align=center},
+  rt/.style={rounded corners=4pt},
 ]
 
-\node[run] (run) at (0,4.25)
-  {PipelineRunRecord\\run identity + final status};
-
-\node[sup] (job) at (-5.9,5.75) {BackgroundJobRecord\\queued/running state};
-\node[sup] (snap) at (-5.9,4.25) {RunSnapshotRecord\\trace fallback};
-\node[sup] (usage) at (-5.9,2.75) {RunModelUsageRecord\\cost rollup};
-
-\node[obs] (agent) at (0,2.45) {AgentRunRecord\\stage execution};
-\node[obs] (event) at (0,0.98) {RuntimeEventRecord\\timeline events};
-\node[obs] (llm) at (-3.0,-0.72) {LLMCallRecord\\tokens + model};
-\node[obs] (tool) at (3.0,-0.72) {ToolCallRecord\\browser actions};
-\node[obs] (prompt) at (-3.0,-2.22) {PromptCompilation\\Record\\prompt version};
-\node[obs] (memory) at (3.0,-2.22) {MemoryHintUsedRecord\\reused hints};
-
-\node[ev] (stream) at (7.5,5.75) {RunStreamRecord\\stream evidence};
-\node[ev] (shot) at (7.5,4.25) {RunScreenshotRecord\\visual proof};
-\node[ev] (provider) at (7.5,2.75) {ProviderAnalysisRecord\\host enrichment};
-\node[ev] (email) at (7.5,1.25) {TakedownEmailRecord\\review draft};
+\path[use as bounding box] (-14.75,-10.85) rectangle (17.15,6.45);
 
 \begin{scope}[on background layer]
-  \node[zone, fit=(job)(snap)(usage)] {};
-  \node[zone, fit=(agent)(event)(llm)(tool)(prompt)(memory)] {};
-  \node[zone, fit=(stream)(shot)(provider)(email)] {};
+  \node[lanecontext, minimum width=5.05cm, minimum height=17.0cm, anchor=north west] at (-14.4,6.25) {};
+  \node[laneevidence, minimum width=10.65cm, minimum height=17.0cm, anchor=north west] at (-8.95,6.25) {};
+  \node[laneagent, minimum width=14.55cm, minimum height=17.0cm, anchor=north west] at (2.25,6.25) {};
+
+  \node[lanetitle, text=gray!70!black, minimum width=5.05cm] at (-11.875,5.80) {JOB AND RUN CONTEXT};
+  \node[lanetitle, text=green!45!black, minimum width=10.65cm] at (-3.625,5.80) {PIPELINE RUN, EVIDENCE AND REVIEW OUTPUTS};
+  \node[lanetitle, text=orange!82!black, minimum width=14.55cm] at (9.525,5.80) {AGENT RUNS, TELEMETRY AND MEMORY};
 \end{scope}
 
-\draw[dasharr] (job.east) -- ++(0.7,0) |- (run.west);
-\draw[arr] (snap.east) -- (run.west);
-\draw[arr] (usage.east) -- ++(0.7,0) |- (run.west);
+% -------------------------------------------------------------------
+% Left lane: job and run context
+% -------------------------------------------------------------------
+\node[contextbox, anchor=north] (job) at (-11.9,4.85) {%
+  {\bfseries BackgroundJobRecord}\nodepart{two}%
+  \at{job\_id: Integer}\at{run\_id: String}\at{job\_type: String}%
+  \at{status: String}\at{actor: String}%
+  \at{attempts: Integer}\at{error\_text: String}%
+};
 
-\draw[arr] (run.south) -- (agent.north);
-\draw[arr] (agent.south) -- (event.north);
-\draw[arr] (agent.south west) -- ++(-0.7,-0.55) -| (llm.north);
-\draw[arr] (agent.south east) -- ++(0.7,-0.55) -| (tool.north);
-\draw[arr] (llm.south) -- (prompt.north);
-\draw[arr] (tool.south) -- (memory.north);
+\node[contextbox, anchor=north] (snap) at (-11.9,0.35) {%
+  {\bfseries RunSnapshotRecord}\nodepart{two}%
+  \at{run\_id: String}\at{root\_actor: String}\at{created\_at: DateTime}%
+  \at{trace\_json: JSON}%
+};
 
-\coordinate (evbus) at (4.6,4.25);
-\draw[arr] (run.east) -- (evbus);
-\draw[arr] (evbus) |- (stream.west);
-\draw[arr] (evbus) -- (shot.west);
-\draw[arr] (evbus) |- (provider.west);
-\draw[arr] (evbus) |- (email.west);
-\draw[dasharr] (stream.east) -- ++(0.55,0) |- (provider.east);
-\draw[dasharr] (provider.east) -- ++(0.55,0) |- (email.east);
+\node[contextbox, anchor=north] (usage) at (-11.9,-3.85) {%
+  {\bfseries RunModelUsageRecord}\nodepart{two}%
+  \at{pipeline\_run\_id: Integer}\at{provider: String}\at{model\_name: String}%
+  \at{llm\_calls / cache\_hit\_calls: Integer}\at{input / output\_tokens: Integer}%
+  \at{estimated\_total\_cost\_usd: Float}%
+};
 
-\node[font=\scriptsize\bfseries, text=gray!65] at (-5.9,6.55) {job and context};
-\node[font=\scriptsize\bfseries, text=gray!65] at (0,-3.05) {telemetry};
-\node[font=\scriptsize\bfseries, text=gray!65] at (7.5,6.55) {evidence and review};
+% -------------------------------------------------------------------
+% Center lane: aggregate root and evidence records
+% -------------------------------------------------------------------
+\node[rootbox, anchor=north] (run) at (-3.625,4.85) {%
+  {\bfseries PipelineRunRecord}\nodepart{two}%
+  \at{run\_id: String}\at{root\_url: String}\at{page\_type: String}%
+  \at{final\_status: String}\at{success: Boolean}\at{failure\_mode: String}%
+  \at{stream / screenshot / email counts: Integer}\at{total\_llm\_calls / tool\_calls: Integer}%
+  \at{total\_tokens\_in / out: Integer}\at{estimated\_total\_cost\_usd: Float}%
+};
 
-\end{tikzpicture}
+% Spaced out the X coordinate to -6.15 and -1.10 to allow arrows room
+\node[evidencebox, anchor=north] (stream) at (-6.15,-1.15) {%
+  {\bfseries RunStreamRecord}\nodepart{two}%
+  \at{pipeline\_run\_id: Integer}\at{stream\_url: String}\at{source\_url: String}%
+  \at{protocol: String}\at{quality: String}\at{source\_layer: String}%
+  \at{server\_label: String}\at{dedupe\_hash: String}%
+};
+
+\node[evidencebox, anchor=north] (shot) at (-1.10,-1.15) {%
+  {\bfseries RunScreenshotRecord}\nodepart{two}%
+  \at{pipeline\_run\_id: Integer}\at{agent\_run\_id: Integer}\at{seq: Integer}%
+  \at{screenshot\_url: String}\at{source\_url: String}\at{target\_url: String}%
+  \at{actor: String}\at{tool\_name: String}%
+};
+
+\node[evidencebox, anchor=north] (provider) at (-6.15,-5.95) {%
+  {\bfseries ProviderAnalysisRecord}\nodepart{two}%
+  \at{pipeline\_run\_id: Integer}\at{stream\_url: String}\at{ip / hostname: String}%
+  \at{org: String}\at{provider: String}\at{country: String}%
+  \at{abuse\_email: String}\at{whois\_raw: String}%
+};
+
+\node[evidencebox, anchor=north] (email) at (-1.10,-5.95) {%
+  {\bfseries TakedownEmailRecord}\nodepart{two}%
+  \at{pipeline\_run\_id: Integer}\at{provider: String}\at{abuse\_email: String}%
+  \at{channel\_name: String}\at{subject: String}\at{body: String}%
+  \at{infringing\_url: String}\at{stream\_evidence\_json: JSON}%
+};
+
+% -------------------------------------------------------------------
+% Right lane: agent run, calls, events, prompt and memory
+% -------------------------------------------------------------------
+\node[agentrecord, anchor=north, text width=4.15cm, line width=0.75pt] (agent) at (4.55,4.70) {%
+  {\bfseries AgentRunRecord}\nodepart{two}%
+  \at{pipeline\_run\_id: Integer}\at{actor: String}\at{agent\_type: String}%
+  \at{target\_url: String}\at{page\_type: String}\at{status: String}%
+  \at{tool\_call\_budget / made: Integer}\at{llm\_calls\_made: Integer}%
+  \at{prompt\_compiled: Boolean}\at{memory\_injected: Boolean}%
+};
+
+\node[telemetrybox, anchor=north] (tool) at (9.55,4.70) {%
+  {\bfseries ToolCallRecord}\nodepart{two}%
+  \at{agent\_run\_id: Integer}\at{seq: Integer}\at{tool\_name: String}%
+  \at{args\_json: JSON}\at{target\_summary: String}\at{status: String}%
+  \at{duration\_seconds: Float}\at{error\_text: String}%
+};
+
+\node[telemetrybox, anchor=north] (llm) at (14.55,4.70) {%
+  {\bfseries LLMCallRecord}\nodepart{two}%
+  \at{agent\_run\_id: Integer}\at{seq: Integer}\at{provider: String}%
+  \at{model\_name: String}\at{prompt\_hash: String}\at{cache\_mode: String}%
+  \at{input / cached / output tokens: Integer}%
+  \at{estimated\_total\_cost\_usd: Float}\at{usage\_metadata\_json: JSON}%
+};
+
+\node[telemetrybox, anchor=north] (event) at (4.55,-1.15) {%
+  {\bfseries RuntimeEventRecord}\nodepart{two}%
+  \at{pipeline\_run\_id: Integer}\at{agent\_run\_id: Integer}\at{actor: String}%
+  \at{seq: Integer}\at{kind: String}\at{status: String}%
+  \at{message: String}\at{details\_json: JSON}%
+};
+
+\node[telemetrybox, anchor=north] (prompt) at (9.55,-1.15) {%
+  {\bfseries PromptCompilationRecord}\nodepart{two}%
+  \at{prompt\_version\_id: Integer}\at{agent\_run\_id: Integer}\at{cache\_mode: String}%
+  \at{compiled\_prompt\_hash: String}\at{provider\_cache\_key: String}%
+  \at{provider\_cache\_eligible: Boolean}\at{static\_cache\_hit: Boolean}%
+  \at{sections\_json: JSON}%
+};
+
+\node[memorybox, anchor=north] (hint) at (14.55,-1.15) {%
+  {\bfseries MemoryHintUsedRecord}\nodepart{two}%
+  \at{agent\_run\_id: Integer}\at{memory\_entry\_id: Integer}\at{domain: String}%
+  \at{page\_type: String}\at{success: Boolean}%
+};
+
+\node[memorybox, anchor=north] (entry) at (14.55,-5.95) {%
+  {\bfseries MemoryEntryRecord}\nodepart{two}%
+  \at{domain: String}\at{page\_type: String}\at{source\_run\_id: String}%
+  \at{status: String}\at{success: Boolean}\at{url: String}%
+  \at{data\_json: JSON}\at{created\_at: DateTime}%
+};
+
+% -------------------------------------------------------------------
+% Relationship legend
+% -------------------------------------------------------------------
+\begin{scope}[on background layer]
+  \node[note, anchor=west] at (-14.1,-10.35) {Filled diamond = owned record / same run lifecycle \hspace{1cm} Solid arrow = direct association \hspace{1cm} Dashed arrow = derived or referenced data};
+\end{scope}
+
+% -------------------------------------------------------------------
+% Relationships: routed to avoid visual crossings
+% -------------------------------------------------------------------
+\draw[dep,rt] (job.east) -- (run.west);
+
+\draw[compo,rt] ($(run.west)+(0,-0.75)$) -- ++(-2.75,0) |- (snap.east);
+\draw[compo,rt] ($(run.west)+(0,-1.35)$) -- ++(-2.95,0) |- (usage.east);
+
+\draw[compo,rt] ($(run.south)+(-0.85,0)$) -- ++(0,-0.55) -| (stream.north);
+\draw[compo,rt] ($(run.south)+(0.85,0)$) -- ++(0,-0.55) -| (shot.north);
+\draw[compo,rt] (stream.south) -- (provider.north);
+\draw[compo,rt] (shot.south) -- (email.north);
+
+\draw[dep,rt] ($(stream.south)+(0.80,0)$) -- ++(0,-0.38) -| ($(provider.north)+(0.80,0)$);
+\draw[dep,rt] (provider.east) -- (email.west);
+\draw[dep,rt] ($(shot.south)+(0.95,0)$) -- ++(0,-0.38) -| ($(email.north)+(0.95,0)$);
+
+\draw[compo,rt] (run.east) -- (agent.west);
+
+\draw[compo,rt] (agent.east) -- (tool.west);
+\draw[compo,rt] (tool.east) -- (llm.west);
+
+\draw[compo,rt] (agent.south) -- (event.north);
+\draw[compo,rt] ($(agent.south)+(0.85,0)$) -- ++(0,-0.45) -| (prompt.north);
+\draw[compo,rt] ($(agent.south)+(1.35,0)$) -- ++(0,-0.70) -| (hint.north);
+
+\draw[dep,rt] (prompt.east) -- (hint.west);
+\draw[dep,rt] (hint.south) -- (entry.north);
+
+\end{tikzpicture}%
 }
-\caption{Persistence model for run evidence, telemetry, and review outputs.}
-\label{fig:db-class-diagram}
+\caption{Persistence model for pipeline runs, extracted evidence, generated review outputs, agent telemetry, prompt compilation, and memory usage.}\label{fig:db-class-diagram}
+\vspace*{\fill}
 \end{figure}
+\endgroup
+\end{landscape}
+\restoregeometry{}
+\clearpage

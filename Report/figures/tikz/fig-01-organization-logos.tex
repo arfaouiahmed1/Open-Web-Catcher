@@ -1,0 +1,35 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.82\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!35, fill=gray!2, rounded corners=9pt,
+    line width=0.55pt, minimum height=2.25cm, inner sep=0pt},
+  logopanel/.style={panel, minimum width=6.25cm},
+  contextpanel/.style={panel, minimum width=7.10cm},
+  title/.style={font=\scriptsize\bfseries, text=black!72, align=center},
+  subtitle/.style={font=\tiny, text=black!58, align=center},
+  divider/.style={draw=accent!70, line width=0.78pt},
+  label/.style={font=\scriptsize\bfseries, text=black!70, fill=white,
+    inner sep=2pt}
+]
+
+\node[logopanel, fill=accent!92!black, draw=accent!85!black] (softpanel) at (0,0) {};
+\node[contextpanel, fill=white, draw=purple!60!black] (beinpanel) at (7.1,0) {};
+
+\node at (0,0.34) {\includegraphics[height=0.62cm]{logos/softstars-logo.png}};
+\node[title, text=white] at (0,-0.53) {Host organization};
+\node[subtitle, text=white!82] at (0,-0.88) {engineering internship context};
+
+\node at (7.1,0.34) {\includegraphics[height=0.74cm]{logos/bein-sports-logo.png}};
+\node[title, text=purple!70!black] at (7.1,-0.58) {Sports media-rights context};
+\node[subtitle, text=black!58] at (7.1,-0.93) {live-sports protection domain};
+
+\draw[divider] (3.18,-1.06) -- (3.18,1.06);
+\node[label] at (3.55,0.0) {PFE};
+
+\end{tikzpicture}%
+}
+\caption{Visual context for the host organization and the sports media-rights domain of the internship.}\label{fig:organization-logos}
+\end{figure}

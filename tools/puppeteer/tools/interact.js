@@ -6,7 +6,7 @@
 import { connectBrowser, getPage } from '../shared/browser.js';
 import { activatePlayback } from '../shared/media-activation.js';
 import { screenshotViewport } from '../shared/screenshot.js';
-import { resolveElementTarget } from '../shared/tool-runtime.js';
+import { resolveElementTarget, trackNewTabs } from '../shared/tool-runtime.js';
 
 const delay = (min = 80, max = 300) =>
   new Promise(r => setTimeout(r, min + Math.random() * (max - min)));
@@ -56,6 +56,7 @@ export async function interact({
   const browser = await connectBrowser(browserWsEndpoint);
   const page = await getPage(browser);
   const beforeUrl = page.url();
+  const tabs = trackNewTabs(browser, { openerPage: page });
 
   let success = false;
   let executed = false;
@@ -67,11 +68,12 @@ export async function interact({
   let target_after = null;
   let before_state = null;
   let after_state = null;
+  let resultPage = page;
   let frame_info = {
     frame_path,
     frame_url: page.url(),
   };
-  const new_tab_urls = [];
+  const new_tab_urls = tabs.new_tab_urls;
 
   const locator_attempt = {
     locator_strategy,
@@ -83,16 +85,7 @@ export async function interact({
     },
   };
 
-  // Capture new tabs (usually ad popups — record but ignore)
-  const targetCreatedListener = async (target) => {
-    if (target.type() === 'page' && target !== page.target()) {
-      const p = await target.page();
-      new_tab_urls.push(p.url() || 'about:blank');
-      await p.close().catch(() => {});
-    }
-  };
-  browser.on('targetcreated', targetCreatedListener);
-
+  // Explicit interactions may hand control to a new player page.
   let resolvedFrame = page.mainFrame();
   let resolvedFramePath = 'root';
   let elementHandle = null;
@@ -394,6 +387,7 @@ export async function interact({
 
     await delay(50, 140);
     await page.waitForNetworkIdle({ idleTime: 500, timeout: Math.max(wait_ms, 1200) }).catch(() => {});
+    resultPage = await tabs.settle().catch(() => page) || page;
 
     after_state = await _captureState(page, resolvedFrame);
     if (elementHandle) {
@@ -436,17 +430,19 @@ export async function interact({
     verified = false;
     verification_reason = `interaction failed: ${error}`;
   } finally {
-    browser.off('targetcreated', targetCreatedListener);
+    resultPage = await tabs.settle().catch(() => resultPage) || resultPage;
+    tabs.dispose();
     if (elementHandle) {
       await elementHandle.dispose().catch(() => {});
     }
   }
 
-  const finalUrl = page.url();
+  const popupAdopted = resultPage !== page;
+  const finalUrl = resultPage.url();
   const navigated = beforeUrl !== finalUrl;
   let screenshot_url = null;
   try {
-    screenshot_url = await screenshotViewport(page);
+    screenshot_url = await screenshotViewport(resultPage);
   } catch (_) {
     screenshot_url = null;
   }
@@ -460,9 +456,13 @@ export async function interact({
     fallback_used,
     mode,
     navigated,
+    popup_adopted: popupAdopted,
+    opener_url: popupAdopted ? page.url() : '',
     new_tab_urls,
     url: finalUrl,
-    frame: frame_info,
+    frame: popupAdopted
+      ? { frame_path: 'root', frame_url: finalUrl }
+      : frame_info,
     locator: {
       ...locator_attempt,
       used: locator_used,

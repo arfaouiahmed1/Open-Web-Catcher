@@ -142,7 +142,11 @@ export async function openUrl({
   browserProfile = '',
 } = {}) {
   return withBrowserSession(browserWsEndpoint, async ({ browser, context, page }) => {
-    const tabs = trackNewTabs(context);
+    const tabs = trackNewTabs(context, {
+      openerPage: page,
+      adopt: false,
+      closeUnadopted: true,
+    });
     const before = await capturePageSnapshot(page, 'root');
     const redirect_chain = [];
     const navigation_attempts = [];
@@ -233,6 +237,7 @@ export async function openUrl({
       final_error = error.message;
     } finally {
       page.off('response', responseListener);
+      await tabs.settle().catch(() => page);
       tabs.dispose();
     }
 

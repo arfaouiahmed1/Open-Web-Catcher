@@ -1,33 +1,72 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\resizebox{0.9\textwidth}{!}{%
+\resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  core/.style={draw=accent, fill=blue!5, rounded corners=5pt,
-    minimum width=3.4cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  data/.style={draw=purple!60, fill=purple!7, rounded corners=5pt,
-    minimum width=3.4cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80}
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
+    line width=0.55pt, inner sep=10pt},
+  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=3.05cm, minimum height=0.86cm, inner xsep=5pt,
+    inner ysep=4pt, text=black},
+  root/.style={block, draw=orange!80!black, fill=orange!9},
+  context/.style={block, draw=accent!75, fill=blue!6},
+  trace/.style={block, draw=purple!65!black, fill=purple!7},
+  evidence/.style={block, draw=green!55!black, fill=green!8},
+  support/.style={block, draw=gray!62, fill=gray!9, text width=3.25cm},
+  badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
+    inner sep=1.25pt, minimum size=8.5pt},
+  paneltitle/.style={font=\scriptsize\bfseries, text=black!68, fill=white,
+    inner sep=2pt},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!78, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.76pt,
+    gray!62, densely dashed, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
+    text=black!72}
 ]
 
-\node[core] (run) at (0,3.0) {PipelineRun};
-\node[data] (agents) at (-5.0,1.35) {AgentRun\\AgentOutput};
-\node[data] (calls) at (0,1.35) {LLMCall\\ToolCall};
-\node[data] (events) at (5.0,1.35) {RuntimeEvent};
-\node[data] (evidence) at (-5.0,-0.45) {Streams\\Screenshots};
-\node[data] (provider) at (0,-0.45) {ProviderAnalysis\\TakedownEmail};
-\node[data] (usage) at (5.0,-0.45) {ModelUsage\\Pricing};
+% Review path stored around each pipeline run
+\node[root] (run) at (0,2.85) {Pipeline run\\{\normalfont\scriptsize target URL, status, totals}};
+\node[context] (context) at (3.80,2.85) {Run context\\{\normalfont\scriptsize jobs, tasks, datasets}};
+\node[evidence] (evidence) at (7.60,2.85) {Evidence records\\{\normalfont\scriptsize streams + screenshots}};
+\node[evidence] (review) at (11.40,2.85) {Review outputs\\{\normalfont\scriptsize provider analysis + emails}};
 
-\draw[arr] (run) -- (agents);
-\draw[arr] (run) -- (calls);
-\draw[arr] (run) -- (events);
-\draw[arr] (agents) -- (evidence);
-\draw[arr] (agents) -- (provider);
-\draw[arr] (calls) -- (usage);
-\draw[arr] (events) -- (usage);
-\draw[arr] (evidence) -- (provider);
+% Trace records that make the run explainable and reproducible
+\node[trace] (agent) at (0,0.45) {Agent execution\\{\normalfont\scriptsize agent runs + events}};
+\node[trace] (telemetry) at (3.80,0.45) {Call telemetry\\{\normalfont\scriptsize tool calls + LLM calls}};
+\node[context] (memory) at (7.60,0.45) {Prompt + memory\\{\normalfont\scriptsize prompts, hints, entries}};
+\node[support] (usage) at (11.40,0.45) {Usage + pricing\\{\normalfont\scriptsize tokens, cache, price config}};
+
+\coordinate (traceleft) at (-0.35,1.25);
+\coordinate (traceright) at (11.75,1.25);
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(run) (context) (evidence) (review)] (reviewpanel) {};
+  \node[panel, fit=(agent) (telemetry) (memory) (usage) (traceleft) (traceright)] (tracepanel) {};
+\end{scope}
+
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]reviewpanel.north west) {Reviewable evidence bundle};
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]tracepanel.north west) {Execution trace and reproducibility};
+
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]run.north west) {1};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]context.north west) {2};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]evidence.north west) {3};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]review.north west) {4};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]agent.north west) {5};
+
+\draw[arr] (run.east) -- (context.west);
+\draw[arr] (context.east) -- (evidence.west);
+\draw[arr] (evidence.east) -- (review.west);
+
+\draw[soft] (run.south) -- ([xshift=-0.30cm]agent.north);
+\draw[arr] (agent.east) -- (telemetry.west);
+\draw[arr] (telemetry.east) -- (memory.west);
+\draw[arr] (memory.east) -- (usage.west);
+\draw[soft] (telemetry.north) -- (context.south);
+\draw[soft] (usage.north) -- (review.south);
 
 \end{tikzpicture}
 }
-\caption{Simplified database relationship map for run review.}
-\label{fig:postgres-run-map}
+\caption{Summarized PostgreSQL persistence model derived from the detailed database class diagram.}\label{fig:postgres-run-map}
 \end{figure}

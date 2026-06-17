@@ -1,4 +1,4 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.94\textwidth}{!}{%
 \begin{tikzpicture}[
@@ -10,14 +10,14 @@
   lab/.style={font=\tiny, fill=white, inner sep=1.2pt, align=center}
 ]
 
-\foreach \x/\name/\id in {
+\foreach \x/\name/\id in {%
   0/Orchestrator/orch,
   2.7/Embedded\\agent/agent,
   5.4/LangChain\\loop/loop,
   8.1/Embedded\\MCP/mcp,
   10.8/Iframe\\player/player,
   13.5/Evidence/result
-}{
+}{%
   \node[part] (\id) at (\x,0) {\name};
   \draw[life] (\x,-0.42) -- (\x,-9.05);
 }
@@ -37,6 +37,5 @@
 
 \end{tikzpicture}
 }
-\caption{Embedded-agent sequence: stay in the player context and harvest final media evidence.}
-\label{fig:seq-embedded}
+\caption{Embedded-agent sequence: stay in the player context and harvest final media evidence.}\label{fig:seq-embedded}
 \end{figure}

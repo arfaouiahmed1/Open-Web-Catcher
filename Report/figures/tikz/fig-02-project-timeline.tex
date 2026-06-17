@@ -1,42 +1,62 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  marker/.style={circle, fill=accent, draw=accent, minimum size=6pt, inner sep=0pt},
-  labelbox/.style={draw=accent!60, fill=blue!6, rounded corners=4pt,
-                   minimum width=2.75cm, minimum height=1.0cm,
-                   text width=2.45cm, text centered, font=\footnotesize, align=center},
-  conn/.style={accent!55, thick, shorten <=2pt, shorten >=2pt}
+  milestone/.style={circle, fill=accent!86, draw=white, line width=0.8pt,
+                    text=white, minimum size=7mm, inner sep=0pt,
+                    font=\scriptsize\bfseries},
+  card/.style={draw=accent!62, fill=blue!5, rounded corners=6pt,
+               text width=2.62cm, minimum height=1.15cm,
+               align=center, font=\footnotesize, inner sep=6pt},
+  neutral/.style={card, draw=gray!60, fill=gray!8},
+  proto/.style={card, draw=orange!65!black, fill=orange!9},
+  build/.style={card, draw=accent!72, fill=blue!7},
+  eval/.style={card, draw=green!55!black, fill=green!9},
+  synth/.style={card, draw=purple!55!black, fill=purple!8},
+  axis/.style={-{Stealth[length=3mm,width=2.2mm]}, very thick,
+               accent!65, line cap=round},
+  stem/.style={accent!45, thick, shorten <=2pt, shorten >=2pt},
+  phase/.style={font=\scriptsize\bfseries, text=gray!72, align=center}
 ]
-\draw[very thick, accent!60] (0.4,0) -- (15.0,0);
-\node[marker] (p1) at (1.0,0) {};
-\node[marker] (p2) at (3.8,0) {};
-\node[marker] (p3) at (6.6,0) {};
-\node[marker] (p4) at (9.4,0) {};
-\node[marker] (p5) at (12.2,0) {};
-\node[marker] (p6) at (14.6,0) {};
+\draw[axis] (0.25,0) -- (15.35,0);
+\foreach \x in {1.0,3.75,6.5,9.25,12.0,14.75} {
+  \draw[accent!25, line width=0.45pt] (\x,-0.22) -- (\x,0.22);
+}
 
-\node[labelbox, fill=gray!10, draw=gray!60] (start) at (1.0,1.35)
-  {Evidence\\needs\\analysis};
-\node[labelbox, fill=orange!10, draw=orange!60] (proto) at (3.8,-1.35)
-  {n8n\\prototype\\runs};
-\node[labelbox, fill=orange!10, draw=orange!60] (deploy) at (6.6,1.35)
-  {Failure\\analysis\\and fixes};
-\node[labelbox, fill=blue!8, draw=accent!70] (python) at (9.4,-1.35)
-  {OWC\\platform\\architecture};
-\node[labelbox, fill=green!10, draw=green!60] (eval) at (12.2,1.35)
-  {Batch\\evaluation\\and telemetry};
-\node[labelbox, fill=purple!10, draw=purple!60] (future) at (14.6,-1.35)
-  {PFE report\\synthesis};
+\node[milestone] (p1) at (1.0,0) {1};
+\node[milestone] (p2) at (3.75,0) {2};
+\node[milestone] (p3) at (6.5,0) {3};
+\node[milestone] (p4) at (9.25,0) {4};
+\node[milestone] (p5) at (12.0,0) {5};
+\node[milestone] (p6) at (14.75,0) {6};
 
-\draw[conn] (p1.north) -- (start.south);
-\draw[conn] (p2.south) -- (proto.north);
-\draw[conn] (p3.north) -- (deploy.south);
-\draw[conn] (p4.south) -- (python.north);
-\draw[conn] (p5.north) -- (eval.south);
-\draw[conn] (p6.south) -- (future.north);
+\node[neutral] (start) at (1.0,1.55)
+  {\textbf{Evidence needs}\\Static limits and review goals};
+\node[proto] (n8n) at (3.75,-1.55)
+  {\textbf{n8n prototype}\\Landing workflow validation};
+\node[proto] (fixes) at (6.5,1.55)
+  {\textbf{Failure analysis}\\Browser states, iframes, fixes};
+\node[build] (owc) at (9.25,-1.55)
+  {\textbf{OWC platform}\\Architecture and runtime};
+\node[eval] (evaluation) at (12.0,1.55)
+  {\textbf{Batch evaluation}\\Telemetry and evidence review};
+\node[synth] (report) at (14.75,-1.55)
+  {\textbf{PFE synthesis}\\Report and final diagrams};
+
+\node[phase] at (1.0,-0.55) {Scope};
+\node[phase] at (3.75,0.55) {Validate};
+\node[phase] at (6.5,-0.55) {Diagnose};
+\node[phase] at (9.25,0.55) {Design};
+\node[phase] at (12.0,-0.55) {Evaluate};
+\node[phase] at (14.75,0.55) {Communicate};
+
+\draw[stem] (p1.north) -- (start.south);
+\draw[stem] (p2.south) -- (n8n.north);
+\draw[stem] (p3.north) -- (fixes.south);
+\draw[stem] (p4.south) -- (owc.north);
+\draw[stem] (p5.north) -- (evaluation.south);
+\draw[stem] (p6.south) -- (report.north);
 \end{tikzpicture}
 }
-\caption{Internship timeline from evidence needs analysis to evaluated OWC architecture.}
-\label{fig:timeline}
+\caption{Internship timeline from evidence needs analysis to evaluated OWC architecture.}\label{fig:timeline}
 \end{figure}

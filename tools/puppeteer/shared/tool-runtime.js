@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { connectBrowser, getPage } from './browser.js';
 import { screenshotFull, screenshotViewport } from './screenshot.js';
 import { uploadImage } from './upload.js';
+import { isBlankPopupUrl, selectPopupCandidate } from '../../shared/popup-selection.js';
 
 function hashValue(value) {
   return crypto.createHash('sha1').update(String(value)).digest('hex');
@@ -862,22 +863,85 @@ export async function withBrowserSession(browserWsEndpoint, run, pageOptions = {
   }
 }
 
-export function trackNewTabs(browser) {
+export function trackNewTabs(browser, {
+  openerPage = null,
+  adopt = true,
+  closeUnadopted = true,
+} = {}) {
   const newTabUrls = [];
-  const listener = async (target) => {
+  const candidates = [];
+  const pending = new Set();
+  const openerUrl = openerPage?.url?.() || '';
+
+  const recordTarget = async (target) => {
     if (target.type() !== 'page') return;
     try {
       const popup = await target.page();
-      newTabUrls.push(popup.url());
-      await popup.close().catch(() => {});
+      if (!popup || popup === openerPage) return;
+
+      const candidate = {
+        index: candidates.length,
+        page: popup,
+        url: popup.url(),
+      };
+      candidates.push(candidate);
+      newTabUrls.push(candidate.url);
+
+      if (isBlankPopupUrl(candidate.url)) {
+        await popup.waitForNavigation({
+          waitUntil: 'domcontentloaded',
+          timeout: 2500,
+        }).catch(() => {});
+      }
+
+      candidate.url = popup.url();
+      newTabUrls[candidate.index] = candidate.url;
     } catch {
       // ignore
     }
   };
 
+  const listener = (target) => {
+    const task = recordTarget(target);
+    pending.add(task);
+    task.finally(() => pending.delete(task));
+  };
+
   browser.on('targetcreated', listener);
   return {
     new_tab_urls: newTabUrls,
+    async settle({ timeoutMs = 3000 } = {}) {
+      const tasks = [...pending];
+      if (tasks.length > 0) {
+        await Promise.race([
+          Promise.allSettled(tasks),
+          new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+        ]);
+      }
+
+      for (const candidate of candidates) {
+        if (!candidate.page?.isClosed?.()) {
+          candidate.url = candidate.page.url();
+          newTabUrls[candidate.index] = candidate.url;
+        }
+      }
+
+      const selected = adopt
+        ? selectPopupCandidate(candidates, openerUrl)
+        : null;
+
+      if (closeUnadopted) {
+        await Promise.allSettled(
+          candidates
+            .filter((candidate) => candidate !== selected)
+            .map((candidate) => candidate.page?.close?.()),
+        );
+      }
+
+      return selected?.page && !selected.page.isClosed()
+        ? selected.page
+        : openerPage;
+    },
     dispose: () => browser.off('targetcreated', listener),
   };
 }

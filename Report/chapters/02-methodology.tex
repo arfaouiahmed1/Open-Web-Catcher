@@ -1,5 +1,4 @@
-\chapter{Methodology, Requirements Analysis, and Design Constraints}
-\label{chap:methodology}
+\chapter{Methodology, Requirements Analysis, and Design Constraints}\label{chap:methodology}
 
 The internship was organized around Design Science Research Methodology (DSRM). This
 choice is deliberate: the work did not consist of studying a phenomenon from the
@@ -20,11 +19,10 @@ al.~\cite{peffers-dsrm}.
 \section{DSRM as the Methodological Backbone}
 
 DSRM was selected because it gives equal importance to the organizational problem and
-to the engineered artifact. A static crawler already existed in the company context,
-but it was limited when the useful evidence appeared only after browser rendering,
-interaction, iframe traversal, server switching, or media activation. The PFE work
-therefore needed a methodology that could justify a new artifact, not only describe a
-work plan.
+to the engineered artifact. The operational problem was concrete: useful evidence often
+appeared only after browser rendering, interaction, iframe traversal, server switching,
+or media activation. The PFE work therefore needed a methodology that could justify a
+new artifact, not only describe a work plan.
 
 \input{figures/tikz/fig-02-methodology-comparison}
 
@@ -35,8 +33,7 @@ artifact-centered: the final contribution is a platform and workflow design, not
 pure analysis. Second, the artifact is evaluated through use: it is meaningful only if
 it can inspect real pages, produce traces, capture screenshots, and return evidence.
 Third, the organizational relevance is explicit: Soft Stars needed a more adaptable
-way to complement crawler-based monitoring when illegal streaming pages became too
-dynamic for static extraction.
+way to handle illegal streaming pages that became too dynamic for static extraction.
 
 \subsection{DSRM Phases Used in the Report}
 
@@ -52,8 +49,8 @@ The first phase established the practical problem: suspicious streaming pages co
 found, but collecting reviewable evidence was difficult. Some pages exposed only lists
 of matches or channels. Others required a click on a server button before a player
 loaded. Others hid the player in an iframe or generated short-lived manifest URLs only
-after playback. A crawler that reads static HTML can miss these states because it does
-not perform the same sequence of visual and network actions as a browser user.
+after playback. A static HTML fetch can miss these states because it does not perform
+the same sequence of visual and network actions as a browser user.
 
 \subsubsection{Objectives of the solution}
 
@@ -68,7 +65,7 @@ listed later in this chapter.
 
 The third phase produced the artifacts. The n8n workflow was used first because it
 allowed fast operational validation of an AI-assisted landing workflow and could act as
-a backup path beside the existing crawler. OWC then formalized the same ideas in a
+a backup path for dynamic evidence cases. OWC then formalized the same ideas in a
 maintainable platform with FastAPI, Next.js, PostgreSQL, MCP browser tooling,
 Puppeteer/Chrome, profile-scoped sessions, model telemetry, and specialist agents.
 
@@ -87,15 +84,15 @@ The fifth phase evaluated the artifact through trace inspection, tool telemetry,
 screenshots, token and cost records, stream yield, provider enrichment, and dashboard
 snapshots. The aim was not to claim that every illegal streaming page can be solved.
 The aim was to verify whether the artifact made the extraction process more
-observable, repeatable, and reviewable than a one-shot crawler or a manually inspected
-page.
+observable, repeatable, and reviewable than a one-shot static fetch or a manually
+inspected page.
 
 \subsubsection{Communication}
 
-The final phase is the communication of the artifact. This report presents the problem,
-methodology, technical background, architecture, implementation, evaluation, and final
-limitations. The diagrams and tables are included to make the artifact understandable
-as an engineering contribution, not to reproduce internal source files.
+The final phase communicates the artifact. This report presents the problem,
+methodology, technical background, architecture, implementation, evaluation, and
+limitations. The diagrams and tables make the artifact understandable as an
+engineering contribution rather than reproduce internal source files.
 
 \section{DSRM Mapping to the Internship Work}
 
@@ -109,7 +106,7 @@ internship and to the concrete outputs used in the rest of the report.
 \rowcolor{accent!8}
 DSRM phase & Application in this project & Main output \\
 \midrule
-Problem identification and motivation & Analyze crawler limitations, dynamic
+Problem identification and motivation & Analyze static-collection limits, dynamic
 page behavior, stream activation, iframe traversal, channel ambiguity, and the
 need for reviewable evidence. & Problem statement and motivation for OWC \\
 Objectives of the solution & Define the extraction, traceability, screenshot,
@@ -128,15 +125,14 @@ Communication & Produce the PFE report, diagrams, final PDF, and design
 explanation for academic and company review. & Written report and final synthesis \\
 \bottomrule
 \end{tabularx}
-\caption{DSRM phase mapping to project activities and outputs.}
-\label{tab:dsrm-application}
+\caption{DSRM phase mapping to project activities and outputs.}\label{tab:dsrm-application}
 \end{table}
 
 \section{Project Evolution Timeline}
 
 The timeline follows the DSRM logic but remains concrete. The internship started with
-evidence needs and crawler limitations, moved to browser-agent experiments, then to
-the n8n landing-agent backup workflow, and finally to the OWC platform architecture
+evidence needs and static-collection limits, moved to browser-agent experiments, then
+to the n8n landing-agent backup workflow, and finally to the OWC platform architecture
 and evaluation.
 
 \input{figures/tikz/fig-02-project-timeline}
@@ -172,8 +168,7 @@ FR-11 & Operator console views for runs, telemetry, screenshots, tools, settings
 and provider results & High \\
 \bottomrule
 \end{tabularx}
-\caption{Functional requirements derived from the evidence-collection workflow.}
-\label{tab:fr-summary}
+\caption{Functional requirements derived from the evidence-collection workflow.}\label{tab:fr-summary}
 \end{table}
 
 \section{Non-Functional Requirements}
@@ -206,8 +201,7 @@ NFR-7 & Deployment fit & The company deployment keeps n8n as a backup operationa
 orchestrator and runs the landing agent through queue-driven container jobs. \\
 \bottomrule
 \end{tabularx}
-\caption{Non-functional requirements and implementation responses.}
-\label{tab:nfr-summary}
+\caption{Non-functional requirements and implementation responses.}\label{tab:nfr-summary}
 \end{table}
 
 This DSRM framing defines the rest of the report. Chapter~3 introduces the technical

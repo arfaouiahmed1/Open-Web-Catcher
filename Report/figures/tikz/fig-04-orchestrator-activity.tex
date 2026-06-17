@@ -1,0 +1,78 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  start/.style={draw=accent!85!black, fill=accent!10, rounded corners=12pt,
+    minimum width=2.75cm, minimum height=0.78cm, align=center,
+    font=\scriptsize\bfseries},
+  action/.style={draw=accent!78, fill=blue!5, rounded corners=7pt,
+    minimum width=2.95cm, minimum height=0.86cm, align=center,
+    text width=2.72cm, font=\scriptsize\bfseries},
+  queue/.style={action, draw=orange!80!black, fill=orange!10},
+  output/.style={action, draw=green!55!black, fill=green!8},
+  skipbox/.style={action, draw=gray!62, fill=gray!9},
+  decision/.style={diamond, aspect=2.0, draw=accent!80, fill=white,
+    minimum width=2.75cm, minimum height=1.12cm, align=center,
+    text width=2.18cm, font=\scriptsize\bfseries},
+  arr/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.78pt,
+    accent!78, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  hand/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.76pt,
+    orange!82!black, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  soft/.style={-{Latex[length=1.9mm,width=1.4mm]}, line width=0.70pt,
+    gray!62, densely dashed, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.1pt,
+    text=black!70}
+]
+
+\node[start] (start) at (0,5.60) {Start orchestrator};
+\node[action] (state) at (3.45,5.60) {Initialize PipelineState\\{\normalfont\tiny URL, run id, queues}};
+\node[action] (started) at (6.90,5.60) {Emit \texttt{pipeline\_started}};
+\node[action] (memory) at (10.35,5.60) {Read long-term memory\\{\normalfont\tiny soft hints if enabled}};
+\node[queue] (classify) at (13.80,5.60) {Run ClassificationAgent};
+
+\node[decision] (page) at (13.80,3.95) {\texttt{page\_type}};
+\node[queue] (landing) at (7.05,2.30) {Build landing handoff\\run LandingPageAgent};
+\node[queue] (hosting) at (10.40,2.30) {Queue hosting targets\\run HostingPageAgent};
+\node[queue] (embedded) at (13.75,2.30) {Queue embedded targets\\run EmbeddedPageAgent};
+\node[skipbox] (unknown) at (17.10,2.30) {Unknown path\\{\normalfont\tiny preserve reason}};
+
+\node[output] (aggregate) at (13.75,0.60) {Aggregate streams, matches, screenshots\\{\normalfont\tiny dedupe provider-like URLs}};
+\node[decision] (found) at (13.75,-1.10) {Streams found?};
+\node[output] (provider) at (10.40,-2.75) {Run provider analysis};
+\node[output] (emails) at (13.75,-2.75) {Generate takedown drafts};
+\node[skipbox] (skip) at (17.10,-2.75) {Skip provider/email\\emit skipped decision};
+\node[output] (status) at (13.75,-4.25) {Compute final status};
+\node[output] (result) at (13.75,-5.55) {Build \texttt{PipelineResult}};
+\node[start] (return) at (13.75,-6.80) {Return result};
+
+\draw[arr] (start) -- (state);
+\draw[arr] (state) -- (started);
+\draw[arr] (started) -- (memory);
+\draw[arr] (memory) -- (classify);
+\draw[arr] (classify) -- (page);
+
+\draw[hand] (page) -- node[lab, above] {landing} (landing);
+\draw[hand] (page) -- node[lab, left] {hosting} (hosting);
+\draw[hand] (page) -- node[lab, right] {embedded} (embedded);
+\draw[soft] (page) -- node[lab, above] {unknown} (unknown);
+\draw[hand] (landing) -- (hosting);
+\draw[hand] (landing) to[out=0,in=180] (embedded);
+\draw[hand] (hosting) -- (embedded);
+\draw[arr] (hosting) -- (aggregate);
+\draw[arr] (embedded) -- (aggregate);
+\draw[soft] (unknown) -- (aggregate);
+\draw[arr] (aggregate) -- (found);
+\draw[arr] (found) -- node[lab, left] {yes} (provider);
+\draw[arr] (provider) -- (emails);
+\draw[arr] (emails) -- (status);
+\draw[soft] (found) -- node[lab, right] {no} (skip);
+\draw[soft] (skip) -- (status);
+\draw[arr] (status) -- (result);
+\draw[arr] (result) -- (return);
+
+\end{tikzpicture}
+}
+\caption{Orchestrator activity diagram showing initialization, classification routing, specialist queues, aggregation, provider/email decisions, and final \texttt{PipelineResult} construction.}\label{fig:orchestrator-activity}
+\end{figure}

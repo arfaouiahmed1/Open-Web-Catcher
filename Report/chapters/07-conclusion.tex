@@ -1,11 +1,10 @@
-\chapter{General Conclusion}
-\label{chap:conclusion}
+\chapter{General Conclusion}\label{chap:conclusion}
 
 This PFE internship addressed a practical evidence-collection problem in the sports
-rights-protection domain. Soft Stars already had crawler-based monitoring capabilities,
-but the project showed why a crawler alone is not enough for many illegal streaming
-websites. The most useful evidence is often not present in the first HTML response. It
-appears after a rendered page loads scripts, after a channel group is opened, after a
+rights-protection domain. Soft Stars needed a workflow that could preserve reviewable
+evidence from dynamic illegal streaming websites. The most useful evidence is often not
+present in the first HTML response. It appears after a rendered page loads scripts,
+after a channel group is opened, after a
 server button is selected, after a player is activated, or after an embedded iframe
 requests a short-lived media manifest. The central problem was therefore not only to
 find suspicious URLs, but to preserve a reviewable browser trace that explains how the
@@ -13,11 +12,11 @@ evidence was reached.
 
 The work followed Design Science Research Methodology as the sole methodological
 backbone. The organizational problem was first identified through the limitations of
-static crawling and manual review. The solution objectives were then defined around
+static collection and manual review. The solution objectives were then defined around
 classification, browser interaction, screenshots, stream evidence, channel metadata,
 provider enrichment, traceability, and review. The artifact was designed and developed
 in two steps. The n8n workflow validated the idea quickly and gave the company a
-landing-agent backup path beside the crawler. Open Web Catcher (OWC) then organized the
+landing-agent backup path for dynamic targets. Open Web Catcher (OWC) then organized the
 same work into a complete platform made of FastAPI, Next.js, PostgreSQL, MCP browser
 tools, Puppeteer/Chrome runtime, specialist agents, model telemetry, and evidence
 outputs.
@@ -52,18 +51,19 @@ calls, screenshots, streams, provider analyses, email drafts, prompt compilation
 memory hints.
 
 The company deployment decision remained pragmatic. The complete OWC platform defines
-the long-term architecture, but the operational deployment focused on the validated
-landing agent. Target URLs arrive through the \texttt{agent\_tasks} Azure Service Bus
-queue, the container runs n8n, the landing-agent worker, Puppeteer MCP, and Chrome, and
-the extracted matched URLs with metadata are returned through \texttt{agent\_results}.
-This keeps the existing crawler, the n8n backup workflow, and the AI browser agent
-decoupled while still giving the company a path for dynamic pages that require
+the long-term architecture, but the operational deployment focused on the validated n8n
+landing-agent backup. Target URLs arrive through the \texttt{agent\_tasks} Azure
+Service Bus queue, a focused container runs the landing-agent worker, Puppeteer MCP,
+and Chrome, and the extracted matched URLs with metadata are returned through a
+configured results queue. This keeps the primary company workflow and the AI browser
+agent decoupled while still giving the company a path for dynamic pages that require
 rendered-state reasoning.
 
 The project remains a foundation rather than a finished production enforcement
 platform. Some pages will still fail because of anti-bot behavior, unstable player
-code, token expiry, misleading channel labels, popup-heavy navigation, or unavailable
-providers. Human review is still necessary before evidence is used operationally. The
+code, server-switching variance, misleading channel labels, popup-heavy navigation, or
+unavailable providers. Human review is still necessary before evidence is used
+operationally. The
 evaluation also needs to grow over larger controlled batches before strong accuracy or
 cost claims can be made. However, the internship achieved its main objective: it turned
 a fragile investigation problem into a structured artifact with page-role separation,
@@ -80,7 +80,7 @@ from the landing-agent backup toward more queue-driven specialist agents once th
 company decides that the operational risk and cost are justified.
 
 Overall, the internship demonstrated that an AI-assisted browser workflow is a suitable
-complement to crawler-based monitoring when it is constrained, observable, and designed
+complement to static monitoring when it is constrained, observable, and designed
 around evidence rather than around unconstrained automation. The value of OWC is not
 that it permanently solves every illegal streaming website. Its value is that it gives
 Soft Stars a clear engineering foundation for investigating dynamic streaming pages:

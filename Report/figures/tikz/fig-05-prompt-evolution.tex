@@ -1,37 +1,71 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\resizebox{0.94\textwidth}{!}{%
+\resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  box/.style={draw=accent, fill=blue!5, rounded corners=5pt,
-    minimum width=3.8cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  weak/.style={draw=orange!70, fill=orange!10, rounded corners=5pt,
-    minimum width=3.8cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  stop/.style={draw=gray!65, fill=gray!10, rounded corners=5pt,
-    minimum width=3.8cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  ok/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
-    minimum width=3.8cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80, shorten <=3pt, shorten >=3pt},
-  loop/.style={->, >=Stealth, thick, gray!70, dashed, shorten <=3pt, shorten >=3pt},
-  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.2pt, text=gray!70}
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
+    line width=0.55pt, inner sep=12pt},
+  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=3.1cm, minimum height=0.85cm, inner xsep=5pt,
+    inner ysep=4pt, text=black},
+  weak/.style={block, draw=orange!80!black, fill=orange!9},
+  oldstop/.style={block, draw=gray!62, fill=gray!9},
+  start/.style={block, draw=orange!80!black, fill=orange!9},
+  tool/.style={block, draw=purple!65!black, fill=purple!7},
+  browser/.style={block, draw=accent!75, fill=blue!6},
+  result/.style={block, draw=green!55!black, fill=green!8},
+  badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
+    inner sep=1.25pt, minimum size=8.5pt},
+  paneltitle/.style={font=\scriptsize\bfseries, text=black!68, fill=white,
+    inner sep=2pt},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!78, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.76pt,
+    gray!62, densely dashed, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
+    text=black!72}
 ]
-\node[weak] (old1) at (0,3.05) {Intent prompt};
-\node[weak] (old2) at (4.2,3.05) {One-pass tool use};
-\node[stop] (old3) at (8.4,3.05) {Premature answer};
-\draw[arr] (old1)--(old2);
-\draw[arr] (old2)--(old3);
 
-\node[box] (new1) at (0,0.8) {Observe page state};
-\node[box] (new2) at (4.2,0.8) {Reason + choose tool};
-\node[box] (new3) at (8.4,0.8) {Act with MCP tool};
-\node[ok] (new4) at (12.6,0.8) {Validate evidence};
-\node[ok] (new5) at (12.6,-1.25) {Return result\\or clear failure};
-\draw[arr] (new1)--(new2);
-\draw[arr] (new2)--(new3);
-\draw[arr] (new3)--(new4);
-\draw[arr] (new4)--(new5);
-\draw[loop] (new4.north) -- ++(0,0.78) -| node[lab, above]{not enough evidence} (new2.north);
+% Earlier prompt path
+\node[weak] (old1) at (0,3.45) {Intent prompt\\{\normalfont\scriptsize solve the page}};
+\node[weak] (old2) at (4.15,3.45) {One-pass tool use\\{\normalfont\scriptsize sparse checks}};
+\node[oldstop] (old3) at (8.30,3.45) {Premature answer\\{\normalfont\scriptsize missing evidence}};
+
+% Evidence-driven implementation path
+\node[start] (new1) at (0,0.80) {Observe\\{\normalfont\scriptsize current state}};
+\node[tool] (new2) at (3.80,0.80) {Reason\\{\normalfont\scriptsize choose tool}};
+\node[browser] (new3) at (7.60,0.80) {Act\\{\normalfont\scriptsize MCP browser tool}};
+\node[result] (new4) at (11.40,0.80) {Validate\\{\normalfont\scriptsize evidence found?}};
+\node[result] (new5) at (15.20,0.80) {Return result\\{\normalfont\scriptsize or clear failure}};
+
+\coordinate (feedbackleft) at (3.80,2.05);
+\coordinate (feedbackright) at (11.40,2.05);
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(old1) (old2) (old3)] (legacypanel) {};
+  \node[panel, fit=(new1) (new2) (new3) (new4) (new5) (feedbackleft) (feedbackright)] (loopanel) {};
+\end{scope}
+
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]legacypanel.north west) {Earlier one-pass prompt};
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]loopanel.north west) {Implemented evidence loop};
+
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]new1.north west) {1};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]new2.north west) {2};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]new3.north west) {3};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]new4.north west) {4};
+
+\draw[arr] (old1.east) -- (old2.west);
+\draw[soft] (old2.east) -- (old3.west);
+
+\draw[arr] (new1.east) -- (new2.west);
+\draw[arr] (new2.east) -- (new3.west);
+\draw[arr] (new3.east) -- (new4.west);
+\draw[arr] (new4.east) -- (new5.west);
+\draw[soft] (new4.north) -- (feedbackright)
+  -- node[lab, above=1pt, midway] {not enough evidence} (feedbackleft)
+  -- (new2.north);
 \end{tikzpicture}
 }
-\caption{Prompt evolution from one-pass intent prompts to evidence-driven agent loops.}
-\label{fig:prompt-evolution}
+\caption{Prompt evolution from one-pass intent prompts to evidence-driven agent loops.}\label{fig:prompt-evolution}
 \end{figure}

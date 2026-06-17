@@ -3,6 +3,10 @@ import crypto from "node:crypto";
 import { closeEphemeralBrowser, connectBrowser, getPage } from "./browser.js";
 import { screenshotFull, screenshotViewport } from "./screenshot.js";
 import { uploadImage } from "./upload.js";
+import {
+  isBlankPopupUrl,
+  selectPopupCandidate,
+} from "../../shared/popup-selection.js";
 
 function hashValue(value) {
   return crypto.createHash("sha1").update(String(value)).digest("hex");
@@ -1057,20 +1061,81 @@ export async function withBrowserSession(
  * Playwright: track new tabs opened by the context.
  * Context emits 'page' events (not 'targetcreated') and passes the Page directly.
  */
-export function trackNewTabs(context) {
+export function trackNewTabs(
+  context,
+  { openerPage = null, adopt = true, closeUnadopted = true } = {},
+) {
   const newTabUrls = [];
-  const listener = async (page) => {
+  const candidates = [];
+  const pending = new Set();
+  const openerUrl = openerPage?.url?.() || "";
+
+  const recordPage = async (page) => {
     try {
-      newTabUrls.push(page.url());
-      await page.close().catch(() => {});
+      if (!page || page === openerPage) return;
+
+      const candidate = {
+        index: candidates.length,
+        page,
+        url: page.url(),
+      };
+      candidates.push(candidate);
+      newTabUrls.push(candidate.url);
+
+      if (isBlankPopupUrl(candidate.url)) {
+        await page
+          .waitForLoadState("domcontentloaded", { timeout: 2500 })
+          .catch(() => {});
+      }
+
+      candidate.url = page.url();
+      newTabUrls[candidate.index] = candidate.url;
     } catch {
       // ignore
     }
   };
 
+  const listener = (page) => {
+    const task = recordPage(page);
+    pending.add(task);
+    task.finally(() => pending.delete(task));
+  };
+
   context.on("page", listener);
   return {
     new_tab_urls: newTabUrls,
+    async settle({ timeoutMs = 3000 } = {}) {
+      const tasks = [...pending];
+      if (tasks.length > 0) {
+        await Promise.race([
+          Promise.allSettled(tasks),
+          new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+        ]);
+      }
+
+      for (const candidate of candidates) {
+        if (!candidate.page?.isClosed?.()) {
+          candidate.url = candidate.page.url();
+          newTabUrls[candidate.index] = candidate.url;
+        }
+      }
+
+      const selected = adopt
+        ? selectPopupCandidate(candidates, openerUrl)
+        : null;
+
+      if (closeUnadopted) {
+        await Promise.allSettled(
+          candidates
+            .filter((candidate) => candidate !== selected)
+            .map((candidate) => candidate.page?.close?.()),
+        );
+      }
+
+      return selected?.page && !selected.page.isClosed()
+        ? selected.page
+        : openerPage;
+    },
     dispose: () => context.off("page", listener),
   };
 }

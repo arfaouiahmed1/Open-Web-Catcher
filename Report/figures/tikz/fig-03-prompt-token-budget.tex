@@ -1,0 +1,59 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.96\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  source/.style={draw=accent!72, fill=blue!5, rounded corners=6pt,
+    text width=2.85cm, minimum height=0.82cm, align=center,
+    font=\scriptsize\bfseries, inner sep=5pt},
+  cache/.style={source, draw=green!55!black, fill=green!8},
+  fresh/.style={source, draw=orange!78!black, fill=orange!10},
+  model/.style={source, draw=purple!65!black, fill=purple!8,
+    text width=3.05cm, minimum height=1.02cm},
+  output/.style={source, draw=gray!65, fill=gray!9, text width=2.9cm},
+  group/.style={draw=gray!35, fill=gray!3, rounded corners=8pt,
+    line width=0.5pt, inner sep=8pt},
+  arr/.style={-{Latex[length=2.1mm,width=1.6mm]}, thick, accent!78,
+    shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, thick, dashed, gray!62,
+    shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.2pt,
+    text=black!72}
+]
+
+% Reorganized inputs into a vertical stack to eliminate crossing arrow chaos
+\node[cache] (system) at (0,3.3) {System role\\[-1pt]{\normalfont\scriptsize stable rules}};
+\node[cache] (tools) at (0,2.0) {Tool contracts\\[-1pt]{\normalfont\scriptsize schemas + limits}};
+\node[fresh] (memory) at (0,0.3) {Memory hints\\[-1pt]{\normalfont\scriptsize reusable guidance}};
+\node[fresh] (page) at (0,-1.0) {Page evidence\\[-1pt]{\normalfont\scriptsize DOM, screenshot, network}};
+
+\node[model] (prompt) at (5.0,1.15) {Compiled prompt\\[-1pt]{\normalfont\scriptsize cacheable context + fresh observations}};
+\node[model] (llm) at (9.1,1.15) {Model call\\[-1pt]{\normalfont\scriptsize reason within budget}};
+\node[output] (out) at (13.1,1.15) {Output tokens\\[-1pt]{\normalfont\scriptsize answer or tool decision}};
+
+\begin{scope}[on background layer]
+  \node[group, fit=(system) (tools)] (cached) {};
+  \node[group, fit=(memory) (page)] (variable) {};
+\end{scope}
+
+\node[lab, anchor=west] at ([xshift=0.12cm,yshift=-0.12cm]cached.north west) {Often cacheable input};
+\node[lab, anchor=west] at ([xshift=0.12cm,yshift=-0.12cm]variable.north west) {Run-specific input};
+
+% Clear fan-in sweep routing from the vertical stack
+\draw[arr] (system.east) to[out=0,in=180] ([yshift=0.35cm]prompt.west);
+\draw[arr] (tools.east) to[out=0,in=180] ([yshift=0.12cm]prompt.west);
+\draw[arr] (memory.east) to[out=0,in=180] ([yshift=-0.12cm]prompt.west);
+\draw[arr] (page.east) to[out=0,in=180] ([yshift=-0.35cm]prompt.west);
+
+\draw[arr] (prompt) -- node[lab, above=2pt] {input tokens} (llm);
+\draw[arr] (llm) -- node[lab, above=2pt] {generated tokens} (out);
+
+% Smooth returning loop
+\draw[soft] (out.south) to[out=-90,in=-20,looseness=0.85]
+  node[lab, pos=0.50, below=2pt] {summarize before next turn} (page.south east);
+
+\end{tikzpicture}
+}
+\caption{Prompt and token-budget composition for an evidence-driven browser agent.}\label{fig:prompt-token-budget}
+\end{figure}

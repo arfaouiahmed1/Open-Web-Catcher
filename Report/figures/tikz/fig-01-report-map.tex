@@ -1,63 +1,71 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\resizebox{0.96\textwidth}{!}{%
+\resizebox{0.95\textwidth}{!}{%
 \begin{tikzpicture}[
-  chapter/.style={draw=accent!75, fill=blue!5, rounded corners=6pt,
-                  minimum width=3.2cm, minimum height=1.18cm,
-                  text width=2.9cm, align=center,
-                  font=\footnotesize\bfseries, inner sep=5pt},
-  core/.style={draw=orange!75!black, fill=orange!9, rounded corners=6pt,
-               minimum width=3.2cm, minimum height=1.18cm,
-               text width=2.9cm, align=center,
-               font=\footnotesize\bfseries, inner sep=5pt},
-  eval/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
-               minimum width=3.2cm, minimum height=1.18cm,
-               text width=2.9cm, align=center,
-               font=\footnotesize\bfseries, inner sep=5pt},
-  close/.style={draw=purple!60!black, fill=purple!7, rounded corners=6pt,
-                minimum width=3.2cm, minimum height=1.18cm,
-                text width=2.9cm, align=center,
-                font=\footnotesize\bfseries, inner sep=5pt},
-  band/.style={draw=gray!35, fill=gray!3, rounded corners=9pt, inner xsep=11pt, inner ysep=8pt},
-  arrow/.style={->, >=Stealth, thick, accent!72, shorten <=3pt, shorten >=3pt},
-  stage/.style={font=\footnotesize\bfseries, text=gray!75, fill=white, inner sep=2pt},
-  note/.style={font=\scriptsize, text=gray!70, align=center}
+  line cap=round,
+  line join=round,
+  chapter/.style={draw=accent!72, fill=blue!5, rounded corners=7pt,
+                  minimum width=3.5cm, minimum height=1.36cm,
+                  text width=3.15cm, align=center,
+                  font=\footnotesize, inner sep=6pt},
+  core/.style={chapter, draw=orange!72!black, fill=orange!9},
+  eval/.style={chapter, draw=green!55!black, fill=green!8},
+  close/.style={chapter, draw=purple!60!black, fill=purple!7},
+  badge/.style={circle, fill=accent!86, draw=white, line width=0.55pt,
+                text=white, minimum size=5mm, inner sep=0pt,
+                font=\scriptsize\bfseries},
+  band/.style={draw=gray!35, fill=gray!2, rounded corners=10pt,
+               inner xsep=16pt, inner ysep=10pt},
+  arrow/.style={-{Stealth[length=2.5mm,width=1.8mm]}, line width=0.9pt,
+                accent!82, shorten <=4pt, shorten >=4pt},
+  stage/.style={font=\footnotesize\bfseries, text=gray!78!black, inner sep=2pt},
+  note/.style={font=\scriptsize, text=gray!70!black, align=center}
 ]
 
-% Framing row
-\node[chapter] (c1) at (0,3.25) {Ch.1\\Introduction};
-\node[chapter] (c2) at (4.0,3.25) {Ch.2\\Methodology\\and Requirements};
-\node[chapter] (c3) at (8.0,3.25) {Ch.3\\Technical\\Background};
+% === General framing row ===
+\node[chapter] (c1) at (0,4.0)   {\textbf{Introduction}\\Internship context and problem};
+\node[chapter] (c2) at (4.65,4.0) {\textbf{Methodology}\\DSRM and requirements};
+\node[chapter] (c3) at (9.3,4.0) {\textbf{Technical background}\\Concepts and constraints};
 
-% Contribution row, arranged as a reading snake to avoid crossed arrows
-\node[core] (c4) at (8.0,0.85) {Ch.4\\System\\Architecture};
-\node[core] (c5) at (4.0,0.85) {Ch.5\\Implementation};
-\node[eval] (c6) at (0,0.85) {Ch.6\\Evaluation\\and Testing};
+% === Specific contribution row ===
+\node[eval] (c6) at (0,1.25)   {\textbf{Evaluation}\\Testing and metrics};
+\node[core] (c5) at (4.65,1.25) {\textbf{Implementation}\\Backend, UI, agents};
+\node[core] (c4) at (9.3,1.25) {\textbf{Architecture}\\OWC system design};
 
-% Closing chapter
-\node[close] (c7) at (4.0,-1.35) {Ch.7\\General\\Conclusion};
+% === Closing chapter ===
+\node[close] (c7) at (4.65,-1.35) {\textbf{Conclusion}\\Limits and perspectives};
 
+\foreach \nodeName/\number in {c1/1,c2/2,c3/3,c4/4,c5/5,c6/6,c7/7} {
+  \node[badge] at ($({\nodeName}.north west)+(0.03,-0.03)$) {\number};
+}
+
+% Background bands
 \begin{scope}[on background layer]
   \node[band, fit=(c1)(c2)(c3)] (general) {};
   \node[band, fit=(c4)(c5)(c6)] (specific) {};
 \end{scope}
 
-\node[stage, anchor=south west] at ([xshift=0.22cm,yshift=0.10cm]general.north west)
+% Band labels horizontally aligned and positioned outside the bands
+\node[stage, anchor=south west] at ([xshift=0.3cm, yshift=0.15cm]general.north west)
   {General framing: problem, domain, method};
-\node[stage, anchor=south west] at ([xshift=0.22cm,yshift=0.10cm]specific.north west)
+\node[stage, anchor=south west] at ([xshift=0.3cm, yshift=0.15cm]specific.north west)
   {Specific contribution: architecture, implementation, validation};
 
+% Arrows
 \draw[arrow] (c1) -- (c2);
 \draw[arrow] (c2) -- (c3);
 \draw[arrow] (c3.south) -- (c4.north);
 \draw[arrow] (c4) -- (c5);
 \draw[arrow] (c5) -- (c6);
-\draw[arrow] (c6.south) |- (c7.west);
 
-\node[note] at ([yshift=-0.35cm]c7.south)
+% Right-angle path from Evaluation to Conclusion
+\draw[arrow] (c6.south) |- ([xshift=-0.28cm]c7.west) -- (c7.west);
+
+% Bottom note securely distanced from the conclusion box
+\node[note] at ([yshift=-0.6cm]c7.south)
   {The report connects the internship problem, design choices, implementation, evaluation, and final perspectives.};
+
 \end{tikzpicture}%
 }
-\caption{Report reading map connecting the internship context, design, implementation, evaluation, and conclusion.}
-\label{fig:report-map}
+\caption{Report reading map connecting the internship context, design, implementation, evaluation, and conclusion.}\label{fig:report-map}
 \end{figure}

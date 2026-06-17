@@ -1,14 +1,13 @@
-\chapter{Introduction}
-\label{chap:introduction}
+\chapter{Introduction}\label{chap:introduction}
 
 This PFE report presents the work carried out at Soft Stars in the context of
-illegal sports-streaming evidence collection for beIN SPORTS. The project started from
+illegal sports-streaming evidence collection for beIN SPORTS\@. The project started from
 a concrete operational need: suspicious pages could be discovered, but the evidence
 needed for review was often hidden behind browser-rendered interfaces, popups, iframe
 players, server buttons, redirects, and short-lived media manifests. The internship
 therefore focused on designing an evidence workflow that could observe the page like a
 browser user, keep a trace of what happened, and return reviewable evidence instead of
-only a final URL.
+only a final URL\@.
 
 \section{Host Organization and Internship Context}
 
@@ -19,32 +18,44 @@ unauthorized use of protected content, and prepare technical evidence that can b
 reviewed by operational, legal, or business teams.
 
 The internship took place in a sports media-protection context connected to beIN
-SPORTS. In this domain, the practical problem is not only detecting that a suspicious
+SPORTS\@. In this domain, the practical problem is not only detecting that a suspicious
 website exists. A rights-protection workflow also needs enough evidence to understand
 what was visible, which channel or event was exposed, which page led to the player,
 which technical host or provider was involved, and whether a human reviewer can trust
 the result after the browser session has ended.
 
-\section{Existing Crawler and Operational Limitations}
+\input{figures/tikz/fig-01-organization-logos}
 
-Before this PFE work, the company already had crawler-based monitoring capabilities.
-That crawler remained useful for broad discovery, static page collection, and recurring
-checks over known website families. However, illegal streaming websites increasingly
-hide the useful evidence behind runtime behavior. A static crawler may see the landing
-page but miss the hosting page. It may capture the first HTML response but miss the
-server button that appears after JavaScript execution. It may collect links but miss
-the iframe, player state, screenshot evidence, channel hint, or final \texttt{m3u8}
-or \texttt{mpd} request generated only after a play action.
+\section{Existing Solutions and Project Positioning}
+
+Before this PFE work, the company already had an operational workflow for monitoring
+and processing suspicious streaming websites. That existing work remained the primary
+company process. It was useful for broad discovery, recurring checks, and normal cases
+where the page structure was stable enough to process through crawler-style logic.
+However, many streaming sites hide the useful evidence behind browser runtime behavior:
+JavaScript-rendered match cards, server buttons, popups, nested iframes, player
+activation steps, and short-lived \texttt{m3u8} or \texttt{mpd} media requests. In
+this report, the company workflow means the existing Soft Stars operational monitoring
+and crawler-based processing path that remains the primary company work.
 
 \input{figures/tikz/fig-01-crawler-to-owc}
 
-This limitation explains the move toward an AI-assisted browser workflow. The goal was
-not to discard crawling. The goal was to add a second path for cases where crawling
-finds a target but cannot prove the stream path. The n8n landing-agent workflow was
-therefore deployed by the company as a backup plan beside the crawler: when a target
-needed browser reasoning, the workflow could open the page, inspect the rendered state,
-discover match or channel candidates, and return structured URLs and metadata through a
-queue-based operational flow.
+The n8n landing agent was therefore positioned as a backup to the company workflow, not
+as a replacement for it. When the primary flow could not find enough landing-page
+evidence, it could send a task containing the target URL and execution metadata to the
+landing agent. The agent then opened the rendered page, inspected visible match and
+channel cues, followed candidate links when needed, and returned candidate URLs,
+metadata, screenshots, rejected links, and reasoning notes for review or downstream
+processing. In this report, the n8n landing agent means the focused backup browser
+workflow used when the company workflow needs rendered landing-page reasoning.
+
+OWC had a different role. It was the academic and engineering reference platform built
+during the internship to study the n8n limitations and propose a cleaner architecture
+around specialist agents, browser tools, traces, memory, model telemetry, persistence,
+and evaluation. In other words, the deployed company-side decision stayed focused on a
+landing-agent backup, while OWC describes the broader design that could support a more
+complete future platform. In this report, OWC means that academic/reference platform,
+not the deployed company workflow itself.
 
 \section{Problem Statement}
 
@@ -64,34 +75,38 @@ short-lived media URLs. The evidence path often has several roles:
 If those roles are mixed together, the system becomes hard to debug. A failed result
 could mean that the page was classified incorrectly, that a landing candidate was
 missed, that a hosting server was not activated, that an iframe was not inspected, or
-that the final media request expired. The project therefore required an architecture
-that separates page roles, specialist agents, browser tools, screenshots, traces, model
-usage, and final review outputs.
+that the final media request was not connected to provider evidence. The project
+therefore required an architecture that separates page roles, specialist agents, browser
+tools, screenshots, traces, model usage, provider enrichment, and final review outputs.
 
 \section{Internship Mission and Scope}
 
 My mission during the internship was to study, design, and validate an evidence
-collection workflow that complements the existing crawler with browser-based AI
-reasoning. The work produced two related artifacts.
+collection workflow that uses browser-based AI reasoning to support dynamic evidence
+paths when the existing company workflow needs a backup. The work produced two related
+artifacts.
 
-The first artifact was an n8n workflow. It was used to validate the idea quickly in the
-company environment and to provide a deployable landing-agent backup path. This workflow
-helped test whether an agent could inspect rendered pages, follow candidate links,
-handle page-specific obstacles, and return useful match or hosting metadata.
+The first artifact was an n8n landing-agent workflow. It was used to validate the idea
+quickly in the company environment and to provide a deployable backup path for landing
+pages that required rendered-page reasoning. This workflow helped test whether an agent
+could inspect visible page state, follow candidate links, handle page-specific
+obstacles, and return useful match or hosting metadata.
 
 The second artifact was Open Web Catcher (OWC), the complete platform designed during
-the internship. The internal name was chosen because the project catches evidence from
-the open web through browser-visible behavior rather than through a static HTML
-response. In this report, OWC refers to the whole project: the FastAPI backend, Next.js
-operator console, PostgreSQL persistence, MCP browser tooling, Puppeteer/Chrome
-runtime, specialist agents, model telemetry, and evidence review outputs.
+the internship as an academic/reference architecture. The internal name was chosen
+because the project catches evidence from the open web through browser-visible behavior
+rather than through a static HTML response. In this report, OWC refers to the whole
+project: the FastAPI backend, Next.js operator console, PostgreSQL persistence, MCP
+browser tooling, Puppeteer/Chrome runtime, specialist agents, model telemetry, and
+evidence review outputs.
 
 \subsection{Mission Deliverables}
 
 The internship deliverables were:
 
 \begin{itemize}
-  \item a validated n8n landing-agent workflow used as a crawler backup path;
+  \item a validated n8n landing-agent workflow used as a deployable backup to the
+  company workflow for dynamic landing-page targets;
   \item an OWC architecture separating backend, frontend, database, agents, browser
   tools, and evidence outputs;
   \item browser-tool profiles for classification, landing, hosting, and embedded-player
@@ -114,11 +129,11 @@ failures clearly, and support future operational integration.
 The main contributions of the PFE work are:
 
 \begin{itemize}
-  \item a clear analysis of why static crawling is insufficient for many dynamic
+  \item a clear analysis of why static page collection is insufficient for many dynamic
   streaming-evidence paths;
   \item a DSRM-based artifact design centered on Open Web Catcher;
-  \item an n8n landing-agent workflow deployed as an operational backup beside the
-  existing crawler;
+  \item an n8n landing-agent workflow deployed as an operational backup to the company
+  workflow for dynamic evidence cases;
   \item a multi-agent architecture that separates classification, landing discovery,
   hosting interaction, embedded-player inspection, provider enrichment, and review
   output generation;

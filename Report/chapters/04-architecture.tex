@@ -1,5 +1,4 @@
-\chapter{System Architecture}
-\label{chap:architecture}
+\chapter{System Architecture}\label{chap:architecture}
 
 This chapter presents the architecture of Open Web Catcher (OWC), the
 evidence-collection platform developed during the internship. It starts with the user-facing system and
@@ -7,7 +6,9 @@ runtime components, then narrows into the multi-agent pipeline, the handoff
 contract between agents, the responsibilities of each agent, and the browser-tool
 layer that lets agents read and act on rendered pages. It closes with the data that
 makes a run reviewable. Chapter~5 then maps these architectural decisions to the
-implementation.
+implementation. In this chapter, OWC means the academic/reference platform designed
+during the internship: the backend, console, browser tooling, specialist agents,
+runtime telemetry, persistence, and review outputs.
 
 \begin{tcolorbox}[
   enhanced,
@@ -78,8 +79,7 @@ and datasets. & Persist configuration and expose health or preflight feedback
 before runs start. \\
 \bottomrule
 \end{tabularx}
-\caption{Use-case responsibilities across operator and administration workflows.}
-\label{tab:architecture-actors}
+\caption{Use-case responsibilities across operator and administration workflows.}\label{tab:architecture-actors}
 \end{table}
 
 \section{Global Runtime Architecture}
@@ -116,9 +116,15 @@ Cloudinary, IPInfo, RDAP, and local runtime files. & The final answer and the
 failure path can be reviewed after execution. \\
 \bottomrule
 \end{tabularx}
-\caption{Global runtime boundaries used by OWC.}
-\label{tab:global-runtime-boundaries}
+\caption{Global runtime boundaries used by OWC.}\label{tab:global-runtime-boundaries}
 \end{table}
+
+The frontend route map is part of the architecture because the console is the
+operator's entry point into the runtime. The active screens are the dashboard,
+live pipeline, results, run detail, provider lookup, and settings pages; the
+\texttt{/agents} path is kept only as a redirect to \texttt{/live}.
+
+\input{figures/tikz/fig-04-frontend-route-flow}
 
 This separation is practical rather than cosmetic. Browser automation, LLM
 reasoning, dashboard rendering, and persistence fail in different ways. Keeping
@@ -129,11 +135,18 @@ dashboard payload issue are different problems.
 \section{End-to-End Agent Pipeline}
 
 At large scale, the platform behaves as a controlled multi-agent pipeline, not
-as one unrestricted browser agent. The operator gives the system a seed URL.
+as one unrestricted browser agent. The operator gives the system a seed URL\@.
 The API starts a run, creates an active trace, and calls the orchestrator. The
 orchestrator checks memory as soft guidance, calls classification, routes to the
 appropriate specialist path, collects evidence, and only then runs provider
 analysis and email generation.
+
+\input{figures/tikz/fig-04-end-to-end-flowchart}
+
+The flowchart shows the operational path and the blocking decisions. The next
+map expands the same route as an agent architecture, showing the specialist
+stages, shared browser runtime, downstream provider analysis, and final
+pipeline result.
 
 \input{figures/tikz/fig-04-end-to-end-agent-map}
 
@@ -168,8 +181,7 @@ provider skip are different operational states.
 \input{figures/tikz/fig-04-agent-interconnection}
 
 The handoff is the main communication contract between agents. It contains the
-root URL, target URL, page type, classification reasoning, route source, memory
-hints, navigation policy, required evidence, and known pattern context. A
+root URL, target URL, page type, classification reasoning, route source, memory hints, navigation policy, required evidence, and known pattern context. A
 specialist receives this context inside its task brief, performs only its
 bounded job, and returns a schema that the orchestrator can normalize and route.
 
@@ -206,8 +218,7 @@ extractions. & Enrich stream hosts and draft reviewable takedown notices. &
 \bottomrule
 \end{tabularx}
 }
-\caption{Agent and tool responsibility map.}
-\label{tab:agent-responsibilities}
+\caption{Agent and tool responsibility map.}\label{tab:agent-responsibilities}
 \end{table}
 
 In this design, communication is visible at three levels. First, route decisions
@@ -230,6 +241,13 @@ soft context; live browser evidence still decides the route.
 
 \input{figures/tikz/fig-04-prompt-memory-compilation}
 
+The browser-facing specialists then reuse the same inner loop. Each one compiles
+its prompt, opens the correct MCP browser profile, lets the model request tools,
+records every model and tool turn, controls context growth, and normalizes the
+final answer into the stage schema.
+
+\input{figures/tikz/fig-04-shared-agent-loop}
+
 \section{Agent-by-Agent Design}
 
 \subsection{Orchestrator Agent}
@@ -238,13 +256,15 @@ The orchestrator is the control plane for one run. It owns state, queues,
 handoffs, aggregation, provider and email execution, final status, and trace
 emission, but it does not inspect pages directly.
 
+\input{figures/tikz/fig-04-orchestrator-activity}
+
 \input{figures/tikz/fig-04-agent-card-orchestrator}
 
 \input{figures/tikz/fig-04-seq-orchestrator}
 
 \subsection{Classification Agent}
 
-The classification agent answers one question: what type of page is this URL?
+The classification agent answers one question: what type of page is this URL\@?
 It distinguishes landing, hosting, embedded, unknown, and irrelevant pages before
 extraction begins.
 
@@ -335,8 +355,7 @@ final media evidence context. & Treated as the strongest page-level confirmation
 before provider analysis. \\
 \bottomrule
 \end{tabularx}
-\caption{Channel detection responsibilities across the specialist agents.}
-\label{tab:channel-detection-agents}
+\caption{Channel detection responsibilities across the specialist agents.}\label{tab:channel-detection-agents}
 \end{table}
 
 \subsection{Provider Analysis and Email Generation}
@@ -390,7 +409,7 @@ is used to choose where to look, and scoped context is used before acting.
 
 \subsubsection{Navigation and interaction}
 
-Navigation has two different meanings in OWC. When inspection returns a real link or
+Navigation has two different meanings in OWC\@. When inspection returns a real link or
 candidate URL, the agent uses URL navigation: open the link, wait for the document to
 settle, then inspect the new page. When the page requires JavaScript to reveal content,
 the agent stays in the same browser context and uses interaction tools: click a tab or
@@ -461,8 +480,7 @@ frame, or media details before acting. & Inspector output, selectors, frame path
 and observation events. \\
 \bottomrule
 \end{tabularx}
-\caption{Browser runtime controls that support reliable and reviewable evidence collection.}
-\label{tab:browser-runtime-controls}
+\caption{Browser runtime controls that support reliable and reviewable evidence collection.}\label{tab:browser-runtime-controls}
 \end{table}
 
 \section{Data, Trace, and Reviewability View}
@@ -479,6 +497,12 @@ This is the database shape behind the run-detail console. The dashboard can show
 the final answer and the failure path because agent runs, model calls, browser
 tool calls, runtime events, prompt compilations, memory hints, streams,
 screenshots, providers, and email drafts are queryable as separate rows.
+
+\texttt{PipelineResult} is the aggregate runtime object returned by the
+orchestrator, grouping classification, matches, extraction results, streams,
+screenshots, provider analysis, emails, final status, and metrics.
+
+\input{figures/tikz/fig-04-runtime-schema}
 
 \input{figures/tikz/fig-04-db-class-diagram}
 
@@ -503,8 +527,7 @@ screenshots, streams, provider rows, and email drafts. & The data behind
 \texttt{GET /ui/runs/\{run\_id\}}. \\
 \bottomrule
 \end{tabularx}
-\caption{Runtime data boundaries and persisted review outputs.}
-\label{tab:architecture-data-boundaries}
+\caption{Runtime data boundaries and persisted review outputs.}\label{tab:architecture-data-boundaries}
 \end{table}
 
 \section{Chapter Summary}

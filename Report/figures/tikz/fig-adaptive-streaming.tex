@@ -1,52 +1,110 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\resizebox{0.94\textwidth}{!}{%
+\resizebox{0.96\textwidth}{!}{%
 \begin{tikzpicture}[
-  manifest/.style={draw=accent!75, fill=blue!6, rounded corners=7pt,
-    text width=3.45cm, minimum height=0.95cm, align=center, font=\footnotesize\bfseries},
-  variant/.style={draw=orange!75!black, fill=orange!9, rounded corners=7pt,
-    text width=2.95cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
-  segment/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
-    text width=1.55cm, minimum height=0.58cm, align=center, font=\tiny\bfseries},
-  evidence/.style={draw=gray!65, fill=gray!10, rounded corners=7pt,
-    text width=3.2cm, minimum height=0.82cm, align=center, font=\scriptsize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!78, shorten <=4pt, shorten >=4pt},
-  seq/.style={-, thick, accent!58, shorten <=4pt, shorten >=4pt},
-  soft/.style={->, >=Stealth, thick, dashed, gray!65, shorten <=4pt, shorten >=4pt}
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!35, fill=gray!4, rounded corners=10pt,
+    line width=0.70pt, inner sep=8pt},
+  box/.style={rounded corners=7pt, align=center, font=\scriptsize\bfseries,
+    inner xsep=6pt, inner ysep=5pt, minimum height=0.72cm, text=black},
+  manifest/.style={box, draw=accent!75, fill=blue!6,
+    text width=3.25cm, font=\footnotesize\bfseries},
+  variant/.style={box, draw=orange!80!black, fill=orange!10,
+    text width=2.85cm},
+  selected/.style={box, draw=accent!78, fill=blue!7,
+    text width=2.85cm},
+  segment/.style={box, draw=green!55!black, fill=green!8,
+    text width=1.18cm, minimum height=0.52cm, font=\tiny\bfseries},
+  chosenseg/.style={box, draw=accent!78, fill=blue!6,
+    text width=1.18cm, minimum height=0.52cm, font=\tiny\bfseries},
+  chip/.style={draw=gray!38, fill=white, rounded corners=4pt,
+    minimum width=1.08cm, minimum height=0.28cm, align=center,
+    font=\tiny\ttfamily, text=gray!72!black},
+  evidence/.style={box, draw=green!55!black, fill=green!7,
+    text width=4.15cm, minimum height=0.82cm},
+  badge/.style={circle, fill=accent!86, text=white, inner sep=1.45pt,
+    font=\tiny\bfseries},
+  junction/.style={circle, draw=accent!70, fill=white, inner sep=1.65pt},
+  mainarr/.style={-{Latex[length=2.2mm,width=1.7mm]}, line width=0.85pt,
+    accent!82, shorten <=3pt, shorten >=3pt},
+  mediaarr/.style={-{Latex[length=2.2mm,width=1.7mm]}, line width=0.85pt,
+    green!45!black, shorten <=3pt, shorten >=3pt},
+  selectedarr/.style={-{Latex[length=2.4mm,width=1.8mm]}, line width=1.05pt,
+    accent!86, shorten <=3pt, shorten >=3pt},
+  proofarr/.style={-{Latex[length=2.1mm,width=1.6mm]}, line width=0.78pt,
+    orange!85!black, densely dashed, shorten <=3pt, shorten >=3pt},
+  seqarr/.style={-{Latex[length=1.7mm,width=1.25mm]}, line width=0.70pt,
+    accent!55, shorten <=2pt, shorten >=2pt},
+  arrowlabel/.style={font=\tiny\bfseries, fill=white, inner sep=1.2pt,
+    text=black!78},
+  grouplabel/.style={font=\tiny\bfseries, text=black!65, fill=white, inner sep=2pt}
 ]
-\node[manifest] (master) at (0,0) {Master manifest\\\texttt{m3u8} or \texttt{mpd}};
-\node[variant] (low) at (4.35,1.15) {Low bitrate\\variant};
-\node[variant] (mid) at (4.35,0) {Medium bitrate\\variant};
-\node[variant] (high) at (4.35,-1.15) {High bitrate\\variant};
+\node[manifest] (master) at (0,0.80) {Master manifest\\[-1pt]{\normalfont\scriptsize playlist index}};
+\node[chip] at (-0.66,0.02) {m3u8};
+\node[chip] at (0.66,0.02) {mpd};
+\node[chip] at (0,-0.54) {variant refs};
 
-\node[segment] (s1) at (8.15,1.15) {seg 01};
-\node[segment] (s2) at (10.35,1.15) {seg 02};
-\node[segment] (s3) at (12.55,1.15) {seg 03};
-\node[segment] (s4) at (8.15,0) {seg 01};
-\node[segment] (s5) at (10.35,0) {seg 02};
-\node[segment] (s6) at (12.55,0) {seg 03};
-\node[segment] (s7) at (8.15,-1.15) {seg 01};
-\node[segment] (s8) at (10.35,-1.15) {seg 02};
-\node[segment] (s9) at (12.55,-1.15) {seg 03};
+% Adjusted X-coordinates to fix overlapping texts (ladder pushed horizontally right)
+\node[variant] (low) at (6.5,1.80) {Low bitrate\\360p / mobile};
+\node[selected] (mid) at (6.5,0.55) {Medium bitrate\\720p / default};
+\node[variant] (high) at (6.5,-0.70) {High bitrate\\1080p / HD};
 
-\node[evidence] (proof) at (8.95,-2.65) {Evidence focus\\manifest URL + host};
+% Segments further pushed out corresponding with ladder translation
+\node[segment] (s1) at (10.6,1.80) {seg 01};
+\node[segment] (s2) at (12.3,1.80) {seg 02};
+\node[segment] (s3) at (14.0,1.80) {seg 03};
+\node[chosenseg] (s4) at (10.6,0.55) {seg 01};
+\node[chosenseg] (s5) at (12.3,0.55) {seg 02};
+\node[chosenseg] (s6) at (14.0,0.55) {seg 03};
+\node[segment] (s7) at (10.6,-0.70) {seg 01};
+\node[segment] (s8) at (12.3,-0.70) {seg 02};
+\node[segment] (s9) at (14.0,-0.70) {seg 03};
 
-\draw[arr] (master.east) -- (low.west);
-\draw[arr] (master.east) -- (mid.west);
-\draw[arr] (master.east) -- (high.west);
-\draw[arr] (low.east) -- (s1.west);
-\draw[arr] (mid.east) -- (s4.west);
-\draw[arr] (high.east) -- (s7.west);
-\draw[seq] (s1.east) -- (s2.west);
-\draw[seq] (s2.east) -- (s3.west);
-\draw[seq] (s4.east) -- (s5.west);
-\draw[seq] (s5.east) -- (s6.west);
-\draw[seq] (s7.east) -- (s8.west);
-\draw[seq] (s8.east) -- (s9.west);
-\draw[soft] (master.south) to[out=-70,in=180] (proof.west);
-\draw[soft] (mid.south) to[out=-40,in=140] (proof.north);
+% Evidence box re-centered under elements
+\node[evidence] (proof) at (8.5,-2.75) {Evidence bundle\\manifest URL + host + sampled request};
+
+% Adjusted fanout x-coord to let "variant list" breathe perfectly
+\coordinate (fanout) at (3.4,0.55);
+\node[junction] at (fanout) {};
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(master)] (sourcePanel) {};
+  \node[panel, fit=(low) (mid) (high)] (ladderPanel) {};
+  \node[panel, fit=(s1) (s2) (s3) (s7) (s8) (s9)] (segmentPanel) {};
+  \node[grouplabel, anchor=west] at ([xshift=0.12cm,yshift=-0.12cm]sourcePanel.north west) {Manifest source};
+  \node[grouplabel, anchor=west] at ([xshift=0.12cm,yshift=-0.12cm]ladderPanel.north west) {Quality ladder};
+  \node[grouplabel, anchor=west] at ([xshift=0.12cm,yshift=-0.12cm]segmentPanel.north west) {Segment timeline};
+\end{scope}
+
+\node[badge, anchor=north west] at ([xshift=0.10cm,yshift=-0.10cm]master.north west) {1};
+\node[badge, anchor=north west] at ([xshift=0.10cm,yshift=-0.10cm]mid.north west) {2};
+\node[badge, anchor=north west] at ([xshift=0.10cm,yshift=-0.10cm]s4.north west) {3};
+\node[badge, anchor=north west] at ([xshift=0.10cm,yshift=-0.10cm]proof.north west) {4};
+
+\draw[mainarr] (master.east) -- node[arrowlabel, above] {variant list} (fanout);
+\draw[mainarr] (fanout) to[out=25,in=180] (low.west);
+\draw[selectedarr] (fanout) -- node[arrowlabel, above=1pt] {selected variant} (mid.west);
+\draw[mainarr] (fanout) to[out=-25,in=180] (high.west);
+
+\draw[mediaarr] (low.east) -- node[arrowlabel, above=1pt] {chunks} (s1.west);
+\draw[selectedarr] (mid.east) -- node[arrowlabel, above=1pt] {media path} (s4.west);
+\draw[mediaarr] (high.east) -- node[arrowlabel, below=1pt] {chunks} (s7.west);
+
+\draw[seqarr] (s1.east) -- (s2.west);
+\draw[seqarr] (s2.east) -- (s3.west);
+\draw[selectedarr] (s4.east) -- (s5.west);
+\draw[selectedarr] (s5.east) -- (s6.west);
+\draw[seqarr] (s7.east) -- (s8.west);
+\draw[seqarr] (s8.east) -- (s9.west);
+
+\draw[proofarr] (master.south) to[out=-80,in=180]
+  node[arrowlabel, pos=0.52, below=1pt] {store manifest} (proof.west);
+\draw[proofarr] (mid.south east) to[out=-45,in=135]
+  node[arrowlabel, pos=0.68, right=1pt] {record choice} (proof.north);
+\draw[proofarr] (s5.south) to[out=-88,in=90]
+  node[arrowlabel, pos=0.52, right=1pt] {sample request} (proof.north east);
 \end{tikzpicture}
 }
-\caption{Simplified adaptive streaming hierarchy used by HLS and MPEG-DASH.}
-\label{fig:adaptive-streaming}
+\caption{Simplified adaptive streaming hierarchy used by HLS and MPEG-DASH.}\label{fig:adaptive-streaming}
 \end{figure}

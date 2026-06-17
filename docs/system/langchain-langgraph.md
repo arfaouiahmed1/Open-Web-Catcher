@@ -388,7 +388,7 @@ Example short-memory working state:
 
 ## Long Memory
 
-Long memory is cross-run site memory. `LongTermMemory` writes compact entries into `data/site_memory.db` and maintains profile-style summaries in `data/site_memory_profiles.json`. The normalized Postgres `memory_entries` and `memory_hints_used` tables mirror useful run memory for dashboard/database views, but the agent-facing prompt lookup comes from the long-memory helper.
+Long memory is cross-run site memory. `LongTermMemory` writes compact entries into a dedicated `data/site_memory.db` SQLite database and maintains profile-style summaries in `data/site_memory_profiles.json` for fast agent retrieval. The main relational database (PostgreSQL/SQLite) mirrors these outputs into the `memory_entries` and `memory_hints_used` tables for dashboard observability and database views. The agent-facing prompt lookup strictly reads from the dedicated `LongTermMemory` helper.
 
 Long memory is deliberately summarized. `build_site_memory_entry` compiles trace events, output payloads, and exported short memory into bounded arrays: tool sequence, tool steps, navigation targets, selectors, URL patterns, pagination patterns, critical links, server labels, stream hosts, hosting candidate URLs, server records, server screenshots, server stream URLs, activated servers, rejected patterns, failure cues, pagination rules, landing match URLs, continuation notes, and a short-memory summary. `LongTermMemory.build_prompt_context` then turns recent entries and profile data into a concise `SITE MEMORY PLAYBOOK`.
 

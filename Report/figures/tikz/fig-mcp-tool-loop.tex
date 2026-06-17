@@ -1,36 +1,68 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\resizebox{0.88\textwidth}{!}{%
+\resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  agent/.style={draw=orange!80!black, fill=orange!9, rounded corners=5pt,
-    minimum width=3.0cm, minimum height=0.82cm, align=center, font=\footnotesize\bfseries},
-  tool/.style={draw=purple!65!black, fill=purple!7, rounded corners=5pt,
-    minimum width=3.1cm, minimum height=0.82cm, align=center, font=\footnotesize\bfseries},
-  browser/.style={draw=gray!65, fill=gray!10, rounded corners=5pt,
-    minimum width=3.1cm, minimum height=0.82cm, align=center, font=\footnotesize\bfseries},
-  result/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
-    minimum width=3.2cm, minimum height=0.82cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80, shorten <=3pt, shorten >=3pt},
-  ret/.style={->, >=Stealth, thick, gray!65, dashed, shorten <=3pt, shorten >=3pt},
-  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.2pt, text=gray!75!black}
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
+    line width=0.55pt, inner sep=12pt},
+  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=3.1cm, minimum height=0.85cm, inner xsep=5pt,
+    inner ysep=4pt, text=black},
+  start/.style={block, draw=orange!80!black, fill=orange!9},
+  tool/.style={block, draw=purple!65!black, fill=purple!7},
+  browser/.style={block, draw=accent!75, fill=blue!6},
+  result/.style={block, draw=green!55!black, fill=green!8},
+  trace/.style={block, draw=gray!62, fill=gray!9, text width=3.25cm},
+  badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
+    inner sep=1.25pt, minimum size=8.5pt},
+  paneltitle/.style={font=\scriptsize\bfseries, text=black!68, fill=white,
+    inner sep=2pt},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!78, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.76pt,
+    gray!62, densely dashed, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
+    text=black!72}
 ]
 
-\node[agent] (agent) at (0,2.1) {Specialist agent\\requests action};
-\node[tool] (mcp) at (4.1,2.1) {MCP profile\\endpoint};
-\node[browser] (chrome) at (8.2,2.1) {Puppeteer\\Chrome profile};
-\node[result] (result) at (8.2,0.15) {Structured result\\state + evidence};
-\node[result] (trace) at (4.1,0.15) {Trace update\\tool + memory};
-\node[agent] (next) at (0,0.15) {Next agent turn\\verify or stop};
+% Command path
+\node[start] (agent) at (0,3.00) {Specialist agent\\{\normalfont\scriptsize requests action}};
+\node[tool] (mcp) at (3.90,3.00) {MCP profile\\{\normalfont\scriptsize scoped endpoint}};
+\node[browser] (puppeteer) at (7.80,3.00) {Puppeteer\\{\normalfont\scriptsize browser command}};
+\node[browser] (chrome) at (11.70,3.00) {Chrome profile\\{\normalfont\scriptsize live page state}};
 
-\draw[arr] (agent) -- node[lab, above]{tool call} (mcp);
-\draw[arr] (mcp) -- node[lab, above]{browser command} (chrome);
-\draw[ret] (chrome.south) -- node[lab, right]{observation} (result.north);
-\draw[ret] (result) -- (trace);
-\draw[ret] (trace) -- (next);
-\draw[ret] (next.north) -- ++(0,0.65) -- (agent.south);
+% Observation path
+\node[result] (result) at (11.70,0.45) {Structured result\\{\normalfont\scriptsize state + evidence}};
+\node[trace] (trace) at (7.80,0.45) {Trace update\\{\normalfont\scriptsize tool + memory}};
+\node[trace] (next) at (3.90,0.45) {Next agent turn\\{\normalfont\scriptsize verify or stop}};
+
+\coordinate (looptop) at (0,4.55);
+\coordinate (loopbottom) at (2.00,1.45);
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(agent) (mcp) (puppeteer) (chrome)] (commandpanel) {};
+  \node[panel, fit=(next) (trace) (result) (loopbottom)] (resultpanel) {};
+\end{scope}
+
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]commandpanel.north west) {Profile-scoped command path};
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]resultpanel.north west) {Observation and trace path};
+
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]agent.north west) {1};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]mcp.north west) {2};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]chrome.north west) {3};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]result.north west) {4};
+
+\draw[arr] (agent.east) -- node[lab, above] {tool call} (mcp.west);
+\draw[arr] (mcp.east) -- node[lab, above] {execute} (puppeteer.west);
+\draw[arr] (puppeteer.east) -- node[lab, above] {drive} (chrome.west);
+\draw[soft] (chrome.south) -- node[lab, right=2pt] {observe} (result.north);
+\draw[soft] (result.west) -- (trace.east);
+\draw[soft] (trace.west) -- (next.east);
+\draw[soft] (next.north) to[out=105,in=-120]
+  node[lab, pos=0.58, left=2pt] {next step} (agent.south);
 
 \end{tikzpicture}
 }
-\caption{Browser tool execution loop through MCP and Puppeteer.}
-\label{fig:mcp-tool-loop}
+\caption{Browser tool execution loop through MCP and Puppeteer.}\label{fig:mcp-tool-loop}
 \end{figure}

@@ -1,0 +1,83 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  start/.style={draw=accent!85!black, fill=accent!10, rounded corners=12pt,
+    minimum width=2.75cm, minimum height=0.82cm, align=center,
+    font=\scriptsize\bfseries},
+  stepbox/.style={draw=accent!78, fill=blue!5, rounded corners=7pt,
+    minimum width=2.75cm, minimum height=0.86cm, align=center,
+    text width=2.55cm, font=\scriptsize\bfseries},
+  agent/.style={stepbox, draw=orange!80!black, fill=orange!10},
+  output/.style={stepbox, draw=green!55!black, fill=green!8},
+  blocked/.style={stepbox, draw=gray!62, fill=gray!9},
+  decision/.style={diamond, aspect=2.0, draw=accent!80, fill=white,
+    minimum width=2.65cm, minimum height=1.15cm, align=center,
+    text width=2.20cm, font=\scriptsize\bfseries},
+  arr/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.78pt,
+    accent!78, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  branch/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.76pt,
+    orange!82!black, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  skip/.style={-{Latex[length=1.9mm,width=1.4mm]}, line width=0.70pt,
+    gray!62, densely dashed, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.1pt,
+    text=black!70}
+]
+
+\node[start] (start) at (0,6.10) {Operator submits target URL};
+\node[stepbox] (ui) at (3.20,6.10) {Next.js console\\{\normalfont\tiny \texttt{/live} workflow form}};
+\node[stepbox] (postrun) at (6.40,6.10) {\texttt{POST /ui/workflows/run}};
+\node[decision] (preflight) at (9.65,6.10) {Runtime ready?};
+\node[blocked] (blocked) at (13.15,6.10) {Return blocking reasons\\{\normalfont\tiny tools, browser, API}};
+
+\node[stepbox] (queue) at (9.65,4.55) {Create background job\\{\normalfont\tiny \texttt{job\_type=workflow}}};
+\node[stepbox] (trace) at (9.65,3.30) {Create RunObserver\\{\normalfont\tiny root actor orchestrator}};
+\node[agent] (graph) at (9.65,2.05) {Run OrchestratorAgent};
+\node[agent] (classify) at (9.65,0.80) {ClassificationAgent};
+\node[decision] (route) at (9.65,-0.65) {Classified page type};
+
+\node[agent] (landing) at (3.35,-2.20) {LandingPageAgent\\{\normalfont\tiny find watch candidates}};
+\node[agent] (hosting) at (6.50,-2.20) {HostingPageAgent\\{\normalfont\tiny operate servers}};
+\node[agent] (embedded) at (9.65,-2.20) {Embedded\\PageAgent\\{\normalfont\tiny inspect player context}};
+\node[blocked] (unknown) at (12.80,-2.20) {Unknown / irrelevant\\{\normalfont\tiny no route evidence}};
+
+\node[decision] (streams) at (9.65,-3.95) {Concrete streams found?};
+\node[output] (provider) at (6.50,-5.45) {Provider analysis\\{\normalfont\tiny IPInfo/RDAP contact}};
+\node[output] (email) at (9.65,-5.45) {Email generator\\{\normalfont\tiny reviewable drafts}};
+\node[blocked] (noevidence) at (12.80,-5.45) {Skip provider/email\\{\normalfont\tiny record no-stream reason}};
+\node[output] (persist) at (9.65,-6.90) {Persist result, events, calls, evidence};
+\node[start] (detail) at (9.65,-8.10) {Run detail dashboard\\{\normalfont\tiny \texttt{GET /ui/runs/\{run\_id\}}}};
+
+\draw[arr] (start) -- (ui);
+\draw[arr] (ui) -- (postrun);
+\draw[arr] (postrun) -- (preflight);
+\draw[skip] (preflight) -- node[lab, above] {no} (blocked);
+\draw[arr] (preflight) -- node[lab, right] {yes} (queue);
+\draw[arr] (queue) -- (trace);
+\draw[arr] (trace) -- (graph);
+\draw[arr] (graph) -- (classify);
+\draw[arr] (classify) -- (route);
+
+\draw[branch] (route) -- node[lab, above] {landing} (landing);
+\draw[branch] (route) -- node[lab, above] {hosting} (hosting);
+\draw[branch] (route) -- node[lab, right] {embedded} (embedded);
+\draw[skip] (route) -- node[lab, above] {unknown} (unknown);
+\draw[branch] (landing) -- (hosting);
+\draw[branch] (landing) to[out=0,in=180] (embedded);
+\draw[branch] (hosting) -- (embedded);
+\draw[arr] (hosting) -- (streams);
+\draw[arr] (embedded) -- (streams);
+\draw[skip] (unknown) -- (streams);
+\draw[arr] (streams) -- node[lab, left] {yes} (provider);
+\draw[arr] (provider) -- (email);
+\draw[arr] (email) -- (persist);
+\draw[skip] (streams) -- node[lab, right] {no} (noevidence);
+\draw[skip] (noevidence) -- (persist);
+\draw[arr] (persist) -- (detail);
+
+\end{tikzpicture}
+}
+\caption{End-to-end flowchart from workflow launch to persisted run-detail evidence, including runtime preflight, routing, conditional provider analysis, and no-stream handling.}\label{fig:end-to-end-flowchart}
+\end{figure}

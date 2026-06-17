@@ -1,41 +1,93 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  start/.style={draw=orange!80!black, fill=orange!9, rounded corners=6pt,
-    text width=2.7cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
-  tool/.style={draw=purple!65!black, fill=purple!7, rounded corners=6pt,
-    text width=2.75cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
-  runtime/.style={draw=accent!75, fill=blue!6, rounded corners=6pt,
-    text width=2.75cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
-  result/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
-    text width=2.8cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
-  warn/.style={draw=gray!65, fill=gray!10, rounded corners=6pt,
-    text width=2.8cm, minimum height=0.8cm, align=center, font=\scriptsize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!75, shorten <=3pt, shorten >=3pt},
-  soft/.style={->, >=Stealth, thick, dashed, gray!65, shorten <=3pt, shorten >=3pt}
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
+    line width=0.55pt, inner sep=12pt},
+  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=3.1cm, minimum height=0.85cm, inner xsep=5pt,
+    inner ysep=4pt, text=black},
+  start/.style={block, draw=orange!80!black, fill=orange!9},
+  tool/.style={block, draw=purple!65!black, fill=purple!7},
+  runtime/.style={block, draw=accent!75, fill=blue!6},
+  result/.style={block, draw=green!55!black, fill=green!8},
+  warn/.style={block, draw=gray!62, fill=gray!9},
+  badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
+    inner sep=1.25pt, minimum size=8.5pt},
+  paneltitle/.style={font=\scriptsize\bfseries, text=black!68, fill=white,
+    inner sep=2pt},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!78, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.76pt,
+    gray!62, densely dashed, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
+    text=black!72}
 ]
-\node[start] (key) at (0,1.75) {Site + run key\\profile context};
-\node[tool] (read) at (3.1,1.75) {Read memory\\site hints};
-\node[runtime] (brief) at (6.2,1.75) {Soft hint in\\agent task};
-\node[tool] (validate) at (9.3,1.75) {Live validation\\inspect + act};
-\node[result] (use) at (12.4,1.75) {Use, revise,\\or ignore hint};
-\node[result] (update) at (15.5,1.75) {Update memory\\short summary};
 
-\node[warn] (rule) at (6.2,0.05) {Not evidence\\until validated};
-\node[warn] (trace) at (12.4,0.05) {Stored trace\\hint + outcome};
+% Nodes: Main Flow
+\node[start] (key) at (0,2.85) {Site + run key\\{\normalfont\scriptsize profile context}};
+\node[tool] (read) at (3.75,2.85) {Read memory\\{\normalfont\scriptsize site hints}};
+\node[runtime] (brief) at (7.50,2.85) {Soft hint in\\{\normalfont\scriptsize agent task}};
+\node[tool] (validate) at (11.25,2.85) {Live validation\\{\normalfont\scriptsize inspect + act}};
+\node[result] (use) at (15.00,2.85) {Use, revise,\\{\normalfont\scriptsize or ignore hint}};
+\node[result] (update) at (18.75,2.85) {Update memory\\{\normalfont\scriptsize short summary}};
 
-\draw[arr] (key) -- (read);
-\draw[arr] (read) -- (brief);
-\draw[arr] (brief) -- (validate);
-\draw[arr] (validate) -- (use);
-\draw[arr] (use) -- (update);
-\draw[soft] (brief.south) -- (rule.north);
-\draw[soft] (rule.east) to[out=0,in=-90] (validate.south);
-\draw[soft] (use.south) -- (trace.north);
-\draw[soft] (trace.east) to[out=0,in=-90] (update.south);
+% Nodes: Validation Guardrails (Bottom)
+\node[warn] (rule) at (7.50,0.40) {Not evidence\\{\normalfont\scriptsize until validated}};
+\node[warn] (trace) at (15.00,0.40) {Stored trace\\{\normalfont\scriptsize hint + outcome}};
+
+% Background Panels
+\begin{scope}[on background layer]
+  % Explicit top coordinates keep the learning loop inside the main panel.
+  \coordinate (feedbackleft) at (3.75, 4.95);
+  \coordinate (feedbackright) at (18.75, 4.95);
+
+  \node[panel, fit=(key) (read) (brief) (validate) (use) (update) (feedbackleft) (feedbackright)] (flowpanel) {};
+
+  % Dummy coordinate stretches the guardrail panel to align with the upper flow.
+  \coordinate (supportleft) at (3.75,0.40);
+  \coordinate (supportright) at (18.75,0.40);
+  \node[panel, fit=(supportleft) (rule) (trace) (supportright)] (supportpanel) {};
+\end{scope}
+
+% Panel Titles
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]flowpanel.north west) {Memory validation loop};
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]supportpanel.north west) {Validation guardrails};
+
+% Number Badges
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]key.north west) {1};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]read.north west) {2};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]validate.north west) {3};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]update.north west) {4};
+
+
+% -------------------------------------------------------------
+% Arrow Routings
+% -------------------------------------------------------------
+
+% 1. Main memory path
+\draw[arr] (key.east) -- (read.west);
+\draw[arr] (read.east) -- (brief.west);
+\draw[arr] (brief.east) -- (validate.west);
+\draw[arr] (validate.east) -- (use.west);
+\draw[arr] (use.east) -- (update.west);
+
+% 2. Guardrail signals
+\draw[soft] (brief.south) -- node[lab, left=1pt] {guidance} (rule.north);
+\draw[soft] (rule.east) to[out=0,in=-90]
+  node[lab, pos=0.58, below=1pt] {validate first} ([xshift=-0.25cm]validate.south);
+\draw[soft] (use.south) -- node[lab, right=1pt] {outcome} (trace.north);
+\draw[soft] (trace.east) to[out=0,in=-90]
+  node[lab, pos=0.58, right=2pt] {store} ([xshift=0.25cm]update.south);
+
+% 3. Future-run feedback loop
+\draw[soft] ([xshift=-0.35cm]update.north)
+  -- ([xshift=-0.35cm]feedbackright)
+  -- node[lab, above=1pt, midway] {future runs} (feedbackleft)
+  -- (read.north);
 \end{tikzpicture}
 }
-\caption{Memory-tool flow showing hints as guidance that must be validated live.}
-\label{fig:tool-memory-flow}
+\caption{Memory-tool flow showing hints as guidance that must be validated live.}\label{fig:tool-memory-flow}
 \end{figure}

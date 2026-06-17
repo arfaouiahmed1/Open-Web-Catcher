@@ -1,271 +1,200 @@
 \chapter{Evaluation and Testing}
 
-This chapter evaluates the system as a browser-based evidence collection workflow. The
-goal is not only to classify a page correctly. A website is considered working only when
-the run reaches usable evidence: the page is classified, match or host candidates are
-extracted when the page is a landing page, the agent reaches a playable page, at least one
-networking or embedded media link is returned, and a screenshot shows the player state.
+This chapter evaluates Open Web Catcher (OWC) as an evidence-production system for
+rights-protection review. The goal is not to claim production-grade piracy detection or
+universal illegal-streaming coverage. The goal is to check whether the platform can take
+a suspected streaming page and produce a traceable evidence package: route decision,
+agent activity, screenshots, stream evidence, provider intelligence, email readiness,
+and operating-cost telemetry.
 
-The evaluation is organized around three main points. First, agent evaluation measures
-whether the specialist agents can keep old websites working while new websites are added.
-Second, model evaluation compares model behavior, KPI stability, cache usage, and cost.
-Third, tool evaluation checks whether the browser tools extract the evidence they are
-supposed to extract. All three use the same regression idea: a change is accepted only if
-it improves new cases without breaking websites that previously worked.
+The evaluation is organized in the same order as the real review workflow. First, the
+chapter defines the business question. Then it explains the batch-test design and the
+status taxonomy used to interpret results. After that, it evaluates each specialist
+agent, studies one concrete run in detail, and reviews the dashboard telemetry and cost
+metrics. This structure is important because the final run status alone is too weak for
+this project: a website can fail because an agent behaved badly, but it can also fail
+because the site is dead, a hosting page is inaccessible, a stream server is down, or an
+embedded player does not expose media during the capture window.
 
-\section{Agent Evaluation and Website Regression}
+\section{Evaluation Objective and Business Context}
 
-The main evaluation set is a batch dataset of more than 200 streaming websites. The
-dataset intentionally mixes languages, layouts, player types, redirect styles, and similar
-website families. This prevents the agents from being tuned only for one English layout or
-one player implementation. The same websites are rerun across prompt variations, model
-settings, and tool changes. Tests were run multiple times to reduce the risk of accepting
-a result caused by a lucky model response or temporary website state.
+\subsection{Business Issue}
 
-\subsection{Test Protocol}
+The practical business issue is manual uncertainty. A suspected live-sports streaming
+website rarely exposes all useful evidence on the first page. A landing page may only
+list matches. A hosting page may hide the player behind server buttons, popups, or
+delayed activation. An embedded page may be reachable only through an iframe or after a
+specific hosting server is selected. Even when a playlist URL is found, it still needs to
+be connected to screenshots, provider metadata, and a notice draft before a reviewer can
+use it.
 
-The batch test follows the same sequence for each prompt, model, or tool change. First,
-the website list is loaded from the dataset. Each row contains a target URL and optional
-notes about language, layout, or expected page family. Second, the pipeline starts with
-classification and routes the URL to the proper specialist agent. Third, the specialist
-agents try to collect evidence: landing agents extract matches and host candidates,
-hosting agents activate players and switch servers, and embedded agents inspect iframes
-and harvest network media evidence. Fourth, the run output is checked against the
-acceptance rule. Finally, results are compared with previous runs for the same website.
+In a beIN-context rights-protection workflow, the analyst therefore needs an evidence
+bundle, not only a classification label. Soft Stars provides the internship engineering
+context, while beIN MEDIA GROUP provides the media-rights context in which live-sports
+piracy is treated as an operational protection problem.
+
+\subsection{Evaluation Question}
+
+The central evaluation question is:
+
+\begin{quote}
+Does OWC reduce manual uncertainty by producing a traceable, screenshot-supported, and
+provider-enriched evidence package that a human reviewer can inspect?
+\end{quote}
+
+This question is more suitable than a generic accuracy score because OWC is an agentic
+browser system. The reviewer needs to know what the agents did, which page state was
+observed, which server path was attempted, what evidence was captured, and what remained
+uncertain.
+
+\subsection{Reviewable Evidence Bundle}
+
+For this report, a run is considered reviewable when it can provide a meaningful subset
+of the following evidence:
+
+\begin{itemize}
+  \item seed URL and persisted run identifier;
+  \item page-route decision and specialist-agent handoff;
+  \item landing, hosting, or embedded-player navigation evidence;
+  \item player activation, server switching, iframe inspection, or documented blocker
+  evidence;
+  \item stream evidence such as manifest, embedded, media, or playlist URLs;
+  \item screenshots that validate the page, player state, server path, or failure
+  condition;
+  \item provider enrichment for the stream or playlist host;
+  \item abuse-contact and takedown-email draft fields when available;
+  \item trace, tool-call, token, cache, latency, and cost telemetry.
+\end{itemize}
+
+\subsection{Evidence-First Evaluation}
+
+The chapter treats metrics as support for evidence review, not as a replacement for it.
+A strict success rate shows how many runs reached the strongest terminal status, but it
+does not explain partial evidence, website availability, server availability, or
+agent-level behavior. For this reason, the evaluation separates strict success,
+productive evidence, external blockers, agent/runtime failures, repeatability, and cost.
+
+\section{Evaluation Protocol and KPI Definitions}
+
+\subsection{Batch Test Design}
+
+\subsubsection{Input Set and Repeated Runs}
+
+The batch evaluation is organized around websites. A batch contains suspected streaming
+URLs with different page structures: landing pages, hosting pages, embedded players,
+redirecting pages, inactive pages, and pages whose server buttons change over time. Each
+URL is launched through the same pipeline: classification, specialist routing,
+evidence extraction, provider enrichment, and review-output generation.
+
+The repeated-run idea is important for this domain. A website that works once may stop
+working later because a player server goes offline, a page redirects, the site changes
+its anti-bot behavior, or the stream is available only during a live event. Repeated
+runs therefore test not only initial success, but also whether evidence-producing sites
+remain evidence-producing after prompt, tool, browser, or website changes.
+
+\input{figures/tikz/fig-06-evaluation-protocol}
+
+\subsubsection{Manual Review After Automated Status}
+
+After each batch run, the automated status is reviewed together with the trace,
+screenshots, stream records, provider rows, and email records. This manual review step
+is necessary because the same terminal status can hide different causes. For example,
+a no-stream result may happen because the agent failed to activate the player, but it
+may also happen because all available servers were down during the run.
+
+\subsubsection{Website-Level Acceptance Rule}
+
+A website is accepted only when the run produces evidence that can be inspected. This is
+stricter than simply reaching a terminal state.
 
 \begin{table}[!htbp]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.2cm}
-                              >{\raggedright\arraybackslash}X
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.8cm}
                               >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
-Test type & What is executed & What is recorded \\
+Checkpoint & Website is accepted when \\
 \midrule
-Agent batch test & Run the complete pipeline on the 200+ website dataset. & Per-website
-pass/fail, page type, extracted matches, stream or embedded links, screenshot evidence,
-and failure reason. \\
-Prompt regression test & Rerun the same dataset after changing agent instructions. &
-Websites newly fixed, websites still working, and websites that regressed. \\
-Model comparison test & Rerun representative batches with the same prompt/tool setup but
-different model choices. & Website success rate, consistency across repeated runs,
-tokens, cache hit ratio, cost, and rate-limit behavior. \\
-Tool regression test & Rerun the batch after changing browser tools or tool descriptions.
-& Whether inspect, navigate, interact, screenshot, harvest, and provider tools extract
-their intended evidence. \\
-Manual evidence review & Inspect final traces, screenshots, stream URLs, and provider
-results for selected pass/fail cases. & Whether the automated pass/fail label is
-defensible and whether the failure belongs to prompt, model, tool, or website behavior. \\
-\bottomrule
-\end{tabularx}
-\caption{Evaluation test matrix executed over the website regression batch.}
-\label{tab:evaluation-test-protocol}
-\end{table}
-
-This means the percentages in this chapter are not abstract model scores. They are
-website-batch scores. If a website is classified but no match, media link, or useful
-screenshot is returned, it does not count as a working website. Repetition is important
-because LLM decisions and streaming websites are both variable: a prompt or model change is
-trusted only when it survives repeated runs without losing previously working websites.
-
-\subsection{Batch Acceptance Rule}
-
-A website batch row is counted as successful only when the investigation returns enough
-evidence to be useful. The acceptance rule is stricter than a simple ``run completed''
-status.
-
-\begin{table}[!htbp]
-\centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{4.0cm}
-                              >{\raggedright\arraybackslash}X}
-\toprule
-\rowcolor{accent!8}
-Checkpoint & Website is counted as working when \\
-\midrule
-Page classification & The page type is correctly routed to landing, hosting, embedded,
-or other. \\
-Match extraction & For landing pages, visible matches or event cards are extracted with
-usable links or host candidates. \\
+Page classification & The page is routed to landing, hosting, embedded, or terminal
+handling according to observable browser behavior. \\
+Landing discovery & Landing pages return relevant match-detail or hosting candidates, or
+the absence of candidates is explained. \\
 Navigation & The agent reaches the next useful page instead of stopping at the first
-listing or ad page. \\
-Player activation & The agent interacts with the player or server controls until a
-visible playback state, media state, or stream attempt is observed. \\
-Network evidence & The run returns at least one useful network, embedded, manifest, or
-media URL candidate. \\
-Screenshot evidence & A screenshot supports the final claim, preferably showing the
-player or the failure state that blocked playback. \\
+listing, redirect, advertisement state, or unsupported page state. \\
+Player activation & Hosting or embedded agents interact with play controls, iframe
+contexts, or server buttons until a player state, media state, or blocker is observed. \\
+Server switching & When server controls exist, the agent tests server paths in a
+reasonable order and records which path produced evidence or failed. \\
+Network evidence & The run returns at least one useful manifest, embedded URL, media URL,
+or stream candidate when playback evidence exists. \\
+Screenshot evidence & Screenshots support the final claim by showing the player,
+activation state, source page, server path, or failure condition. \\
+Provider/email evidence & Stream or playlist evidence is enriched with provider metadata
+and, when available, abuse-contact or notice-draft fields. \\
 \bottomrule
 \end{tabularx}
-\caption{Website-level acceptance criteria for regression success.}
+\caption{Website-level acceptance criteria used during batch evaluation.}
 \label{tab:website-acceptance-rule}
 \end{table}
 
-The batch score is therefore calculated per website, not per tool call:
+\subsection{Failure Taxonomy}
 
-\[
-WebsiteSuccessRate = \frac{working\_websites}{evaluated\_websites}
-\]
+\subsubsection{Why Failure Categories Matter}
 
-\[
-RegressionRetention = \frac{previously\_working\_websites\_still\_working}
-{previously\_working\_websites}
-\]
-
-The practical objective is to raise support for new websites while keeping
-\textit{RegressionRetention} high. A prompt or tool change that supports a new player but
-breaks older working websites is treated as a regression.
-
-\subsection{Agent Use Cases}
-
-Each specialist agent is evaluated on the part of the investigation it owns. This makes
-failures easier to diagnose: a run can fail because the classifier routed incorrectly, the
-landing agent missed host candidates, the hosting agent failed to activate a server, or
-the embedded agent harvested too early.
+The dashboard strict success rate is useful, but it must be interpreted carefully. A
+low strict success rate may indicate weak agent behavior, but it may also reflect a
+difficult batch containing dead sites, inaccessible hosting pages, inactive streaming
+servers, and embedded pages that no longer load. These are still important operational
+results, but they are not the same as a bad classification or an incorrect browser-tool
+sequence.
 
 \begin{table}[!htbp]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.2cm}
-                              >{\raggedright\arraybackslash}X
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.1cm}
+                              >{\raggedright\arraybackslash}p{3.6cm}
+                              >{\raggedright\arraybackslash}p{2.4cm}
                               >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
-Agent & Evaluated use cases & Success signal in the batch \\
+Bucket & Status values & Count in snapshot & Interpretation \\
 \midrule
-Classification & Landing, hosting, embedded, unknown/other pages, redirects, blocked
-pages. & Correct route is selected and the next specialist receives the right task. \\
-Landing page & Match cards, schedule lists, language-specific labels, tabs, pagination,
-and duplicate links. & Matches and host candidates are extracted without unrelated
-navigation noise. \\
-Hosting page & Server buttons, play overlays, popups, ad tabs, redirects, and embedded
-handoff. & A server/player path is activated and a stream candidate or embedded player
-handoff is returned. \\
-Embedded page & Iframes, player-only URLs, delayed manifests, tokenized stream URLs, and
-video state checks. & Network/media evidence is extracted and supported by a screenshot
-or clear failure reason. \\
-Provider analysis & IPInfo, RDAP, WHOIS, Cloudflare-like providers, and abuse-contact
-metadata. & Extracted stream or host evidence can be enriched when provider data is
-available. \\
+Productive evidence & \texttt{success}, \texttt{partial} & 33 terminal runs & Full or
+partial evidence was produced. Partials should be reviewed separately instead of being
+hidden inside failure. \\
+External or expected blocker & \texttt{page\_inaccessible}, \texttt{site\_dead},
+\texttt{no\_hosting\_pages}, \texttt{no\_streams} & 22 terminal runs & The page,
+hosting route, embedded route, player, or stream server did not provide a usable path
+during the run. \\
+Agent or runtime failure & \texttt{failed}, \texttt{timeout}, \texttt{redirect} & 80
+terminal runs & The run may have failed because of route choice, tool order, timeout,
+browser drift, model behavior, or runtime instability. \\
+Excluded from quality score & \texttt{cancelled} & 10 terminal runs & The run was
+stopped, so it should not be used to judge agent quality. \\
+Active & \texttt{queued}, \texttt{running} & 4 non-terminal runs & The run is still in
+progress and is excluded from terminal metrics. \\
 \bottomrule
 \end{tabularx}
-\caption{Agent use cases and website-level success signals.}
-\label{tab:agent-usecase-evaluation}
+\caption{Failure taxonomy used to separate productive evidence, external blockers,
+agent/runtime failures, cancelled runs, and active runs.}
+\label{tab:failure-taxonomy}
 \end{table}
 
-\subsection{Prompt Regression Results}
+\subsubsection{External Blockers Are Not Automatically Agent Faults}
 
-Prompt evaluation uses the same website batch for every prompt generation. The value in
-the final column is the percentage of websites in the batch that still met the acceptance
-rule after that prompt change. It is not an average number of tool calls.
+This distinction is especially important for live-streaming pages. A site can be down.
+A match page can exist while all hosting pages have been removed. A hosting page can be
+reachable while the selected server is down. An embedded player can load visually but
+produce no manifest request. These cases still reduce operational yield, but the agent
+evaluation should record them as availability or evidence-path blockers unless the trace
+shows that the agent skipped an available action.
 
-\begin{table}[!htbp]
-\centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{1.6cm}
-                              >{\raggedright\arraybackslash}X
-                              >{\raggedright\arraybackslash}X
-                              >{\centering\arraybackslash}p{2.5cm}}
-\toprule
-\rowcolor{accent!8}
-Version & Change tested & Regression focus & Batch websites working \\
-\midrule
-v1 & Intent-based prompt & Early stop, weak tab navigation, premature harvest. & 38\% \\
-v2 & ReAct loop and tab-check instruction & Navigation recall and
-screenshot-grounded decisions. & 68\% \\
-v3 & Popup handler and JavaScript click fallback & Popup handling and server activation
-after ad traps. & 74\% \\
-v4 & Mandatory media-state check before harvest & Player activation and premature
-harvest prevention. & 81\% \\
-v5 & Tool budget cap and early success exit & Cost reduction without losing previously
-working websites. & 83\% \\
-\bottomrule
-\end{tabularx}
-\caption{Prompt regression history and batch-level behavioral focus.}
-\label{tab:prompt-regression}
-\end{table}
+\subsection{KPI Definitions}
 
-The important trend is that v1 was not truly efficient; it simply stopped too early. The
-ReAct prompt improved behavior because it forced the agent to observe, act, and verify
-instead of guessing from the first page. Later versions improved the hard cases: popups,
-server switching, media-state checks, tokenized streams, and early exit after sufficient
-evidence was collected.
+\subsubsection{Rates Used in This Chapter}
 
-\begin{table}[!htbp]
-\centering
-\begin{tabular}{>{\raggedright\arraybackslash\bfseries}p{4.2cm}
-                >{\centering\arraybackslash}p{2.2cm}
-                >{\centering\arraybackslash}p{2.2cm}
-                >{\centering\arraybackslash}p{2.2cm}}
-\toprule
-\rowcolor{accent!8}
-Metric & Intent v1 & ReAct v2 & Current v3/v5 \\
-\midrule
-Page-type routing accuracy & 91\% & 93\% & 95\% \\
-Host-candidate recall & 40\% & 85\% & 89\% \\
-Player activation success & 0\% & 70\% & 90\% \\
-Popup-interference recovery & 20\% & 55\% & 78\% \\
-Tokenized-stream recovery & 25\% & 40\% & 85\% \\
-Manifest recovery on AlbaPlayer case & 0\% & 70\% & 90\% \\
-Manifest recovery on tokenized Clappr case & -- & 40\% & 85\% \\
-\bottomrule
-\end{tabular}
-\caption{Use-case KPI results measured on the website regression batch.}
-\label{tab:manual-reference-results}
-\end{table}
-
-\input{figures/tikz/fig-manual-kpi-bars}
-
-\subsection{Dashboard Snapshot}
-
-The dashboard is used to inspect what the batch execution produced. It is not only a
-visual summary; it is the place where run, token, cost, provider, tool, and agent telemetry
-are checked after experiments. The screenshots used for this report show a larger
-dashboard snapshot than the earlier local test database: model costs, tokens, provider
-lookups, and tool health are all visible.
-
-\begin{table}[!htbp]
-\centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{4.1cm}
-                              >{\raggedright\arraybackslash}X
-                              >{\raggedright\arraybackslash}p{2.8cm}}
-\toprule
-\rowcolor{accent!8}
-Dashboard area & What it validates & Observed value \\
-\midrule
-Cost telemetry & Model-spend aggregation and average cost per run. & Total cost:
-\$4.505017; average cost/run: \$0.047926. \\
-LLM calls & Whether the batch persisted model invocations. & 883 calls; 8 calls/run. \\
-Token telemetry & Whether input, cached input, and output tokens are separated. & Total:
-40,220,868; output: 454,914. \\
-Cache behavior & Whether repeated prompt/tool context is being reused. & Cached input:
-28,928,333; cache hit rate: 40.0\%. \\
-Provider intelligence & Whether extracted stream URLs can be resolved to infrastructure
-metadata. & 694 checked URLs, 661 resolved IPs, 637 provider matches. \\
-Tool health & Whether browser tool execution is stable during runs. & 1,410 calls,
-96.7\% success, 46 failed calls. \\
-\bottomrule
-\end{tabularx}
-\caption{Dashboard telemetry values used as operational evidence.}
-\label{tab:dashboard-operational-values}
-\end{table}
-
-These values complement the website-batch scores. The batch score says whether a website
-worked. The dashboard explains why a run was expensive, whether caching helped, which
-models were used, which tools failed, and whether extracted stream URLs could be enriched
-with provider information.
-
-\section{Model Evaluation, KPI Selection, and Cache}
-
-Model evaluation uses the same 200+ website batch and the same prompt/tool configuration
-for each model candidate. This keeps the comparison fair: the metric should reflect model
-behavior, not a different browser policy or a different prompt. Each model is evaluated on
-quality, consistency, cost, cache behavior, and rate-limit practicality.
-
-\subsection{KPI Formulas}
-
-The evaluation uses website-level KPI formulas. Let $N$ be the number of evaluated
-websites in the batch, $W$ the number of websites that satisfy the acceptance rule, $C$ the
-number correctly classified, $H$ the number where valid host candidates are found, $P$ the
-number where the player is activated, and $E$ the number where media/network evidence is
-returned.
+The evaluation keeps several rates side by side. This is more transparent than forcing
+all outcomes into one success metric.
 
 \begin{table}[!htbp]
 \centering
@@ -273,392 +202,493 @@ returned.
                               >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
-KPI & Formula and meaning \\
+KPI & Formula and interpretation \\
 \midrule
-Website success rate & $W / N$. Main regression metric: the percentage of sites that
-still work end-to-end. \\
-Classification accuracy & $C / N$. Measures whether the correct specialist route is
-selected. \\
-Host-candidate recall & valid host candidates found divided by manually expected host
-candidates for landing pages. \\
-Player activation rate & $P /$ activation attempts. A success requires playback state,
-media state, or screenshot-supported stream attempt. \\
-Evidence extraction rate & $E / N$. Measures websites returning at least one network,
-manifest, embedded, or media URL candidate. \\
-Regression retention & previously working websites still working divided by previously
-working websites. \\
-Consistency rate & websites with the same pass/fail result across repeated runs divided
-by repeated websites. \\
-Cache hit ratio & $cached\_input\_tokens /
-(cached\_input\_tokens + new\_input\_tokens)$. \\
-Cost per working website & total estimated model cost divided by websites that satisfy
-the acceptance rule. \\
+Strict success rate & $success\_runs / terminal\_runs$. This is the dashboard's strict
+success view. \\
+Partial rate & $partial\_runs / terminal\_runs$. This reports useful but incomplete
+evidence separately. \\
+Productive evidence rate & $(success\_runs + partial\_runs) / terminal\_runs$. This is
+the rate of runs that produced full or partial reviewable evidence. \\
+External blocker rate & $external\_blocker\_runs / terminal\_runs$. This identifies
+rows where website, hosting, embedded, player, or stream availability limited the
+result. \\
+Agent-adjusted non-failure rate & $(success\_runs + partial\_runs +
+external\_blocker\_runs) / terminal\_non\_cancelled\_runs$. This is not a success rate;
+it indicates how many non-cancelled runs did not end as agent/runtime failures. \\
+Evidence extraction rate & $runs\_with\_streams / terminal\_runs$. This measures
+technical stream evidence production. \\
+Email yield rate & $runs\_with\_emails / terminal\_runs$. This measures whether provider
+and notice fields reached email-draft readiness. \\
+Tool success rate & $successful\_tool\_calls / observed\_tool\_calls$. This monitors
+browser-tool reliability separately from agent judgment. \\
+Regression retention & $previously\_accepted\_still\_accepted /
+previously\_accepted$. This checks that prompt or tool changes do not break earlier
+working sites. \\
 \bottomrule
 \end{tabularx}
-\caption{KPI formulas for model, agent, and website-batch evaluation.}
+\caption{KPI definitions used to interpret batch results without hiding partials or
+external blockers.}
 \label{tab:kpi-formulas}
 \end{table}
 
-\subsection{Model Selection Criteria}
+\subsubsection{Current Batch Snapshot}
 
-A stronger model is not selected only because it produces longer reasoning. It must
-improve the website-level score while staying operationally usable.
+The current dashboard/API snapshot contains 149 total runs, 145 terminal runs, and 4
+running runs. The terminal status breakdown is 25 successful runs, 8 partial runs, 80
+failed runs, 10 cancelled runs, 14 no-hosting-page runs, 6 no-stream runs, and 2
+page-inaccessible runs.
+
+The strict success rate is 17.24\%. The partial rate is 5.52\%. Combining both gives a
+productive evidence rate of 22.76\%. The external blocker count is 22 terminal runs,
+or 15.17\% of terminal runs. If cancelled runs are removed from the quality denominator,
+the agent-adjusted non-failure rate is \(55/135 = 40.74\%\). This last value is not an
+evidence success rate; it is a diagnostic rate showing that part of the raw failure
+picture comes from site and server availability rather than only from agent/runtime
+failure.
 
 \begin{table}[!htbp]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.6cm}
-                              >{\raggedright\arraybackslash}X
-                              >{\raggedright\arraybackslash}X}
-\toprule
-\rowcolor{accent!8}
-Dimension & What is measured & Why it affects selection \\
-\midrule
-Accuracy & Website success rate, classification accuracy, evidence extraction rate. &
-The selected model must increase successful sites, not just produce confident text. \\
-Consistency & Same website and prompt run multiple times. & Streaming sites are noisy;
-the model should not randomly lose working websites. \\
-Tool discipline & Correct use of inspect, interact, navigate, screenshot, and harvest
-tools. & Bad tool order can break playback even when reasoning looks correct. \\
-Context handling & Ability to preserve page state, server attempts, iframe context, and
-failure reasons. & Long browser traces require stable state tracking. \\
-Cache efficiency & Cache hit ratio and cached-token cost reduction. & Repeated prompts
-and tool descriptions should be reused instead of billed as new input every run. \\
-Rate limits & Requests per minute, tokens per minute, and requests per day. & A model
-that works once may still be unusable for large batch evaluation. \\
-\bottomrule
-\end{tabularx}
-\caption{Model selection criteria for the regression batch.}
-\label{tab:model-selection}
-\end{table}
-
-\subsection{LLM Model Comparison}
-
-Several model families were tested before selecting the final runtime model. The final
-choice was \texttt{google\_genai::gemini-3.1-flash-lite}. The decision was not based on
-one benchmark number. It came from batch behavior: the model had to keep enough context
-for long browser traces, use tools reliably, respond quickly, stay cheap during repeated
-website tests, and support caching well enough for large prompt/tool context.
-
-Gemini 2.5 Flash-Lite was inexpensive but weak for this workflow: it often stopped early,
-missed page state, or failed to reason through chained navigation. Gemini 2.5 Flash was
-stronger and reasoned better, but it was more expensive for repeated batch evaluation.
-OpenRouter free models were useful for exploration, but most were not reliable enough for
-the main pipeline. GLM 4.5 Air, Devstral 2512, NVIDIA Nemotron 3 Super, GPT-OSS 120B,
-DeepSeek V3.2, and MiniMax M2.5 were tested, but the free endpoints were often slower,
-less consistent, or constrained by smaller effective context windows and routing limits.
-For this project, a model that is occasionally strong is less useful than a model that is
-fast, cheap, repeatable, and can handle long context every run.
-
-\begingroup
 \footnotesize
-\begin{longtable}{>{\raggedright\arraybackslash\bfseries}p{3.3cm}
-                  >{\centering\arraybackslash}p{1.2cm}
-                  >{\centering\arraybackslash}p{1.25cm}
-                  >{\centering\arraybackslash}p{1.45cm}
-                  >{\centering\arraybackslash}p{1.35cm}
-                  >{\raggedright\arraybackslash}p{4.7cm}}
-\caption{LLM model comparison.}
-\label{tab:llm-model-comparison}\\
-\toprule
-\rowcolor{accent!8}
-Model tested & Ctx. & In / 1M & Cache in / 1M & Out / 1M &
-Evaluation note \\
-\midrule
-\endfirsthead
-\toprule
-\rowcolor{accent!8}
-Model tested & Ctx. & In / 1M & Cache in / 1M & Out / 1M &
-Evaluation note \\
-\midrule
-\endhead
-\bottomrule
-\endfoot
-Gemini 3.1 Flash-Lite & 1,048k & \$0.25 & \$0.025 & \$1.50 & Final choice:
-1M context, fast inference, cheap operation,
-good cache efficiency, and generous operating limits. \\
-Gemini 2.5 Flash-Lite & 1,048k & \$0.10 & \$0.010 & \$0.40 & Cheap, but
-performed poorly on multi-step navigation and
-tool-grounded reasoning. \\
-Gemini 2.5 Flash & 1,048k & \$0.30 & \$0.030 & \$2.50 & Good reasoning and
-stronger agent behavior, but higher cost for
-large repeated batches. \\
-GLM 4.5 Air free & 131k & \$0.00 & -- & \$0.00 &
-Useful for trials, but constrained by smaller context and free-tier routing. \\
-GLM 4.5 Air paid & 131k & \$0.13 & \$0.025 & \$0.85 &
-Reasonable price, but not selected because context was smaller than Gemini. \\
-Devstral 2512 & 262k & \$0.40 & \$0.040 & \$2.00 &
-Tested for coding-style reasoning, but not stable enough for the browser
-pipeline. \\
-NVIDIA Nemotron 3 Super free & 1,000k & \$0.00 & -- & \$0.00 & Attractive
-context, but free route behavior was
-less predictable for repeated runs. \\
-NVIDIA Nemotron 3 Super paid & 1,000k & \$0.09 & -- & \$0.45 & Cheap
-long-context option, but final pipeline used
-Gemini because of speed and integration behavior. \\
-GPT-OSS 120B free & 131k & \$0.00 & -- & \$0.00 & Free, but small context for
-this workload and less reliable in
-browser-agent traces. \\
-GPT-OSS 120B paid & 131k & \$0.039 & -- & \$0.18 &
-Very cheap, but context and behavior were not the best fit. \\
-DeepSeek V3.2 & 131k & \$0.252 & \$0.0252 & \$0.378 &
-Tested, but not selected because long browser traces need larger context. \\
-MiniMax M2.5 free & 205k & \$0.00 & -- & \$0.00 & Painfully slow inference
-and weak fit for fast browser loops. \\
-MiniMax M2.5 paid & 205k & \$0.15 & -- & \$1.15 &
-Paid endpoint did not justify switching from Gemini for this workflow. \\
-\end{longtable}
-\endgroup
-
-Prices and context windows in Table~\ref{tab:llm-model-comparison} are from
-OpenRouter's Models API, where pricing is reported per token and converted here to USD
-per million tokens \cite{openrouter-models}. The cache column uses OpenRouter's
-\texttt{input\_cache\_read} field when available; \texttt{--} means that no cache-read
-price was exposed for that model.
-
-Google's Gemini pricing and caching references separate normal input, cached input,
-and output pricing, while the rate-limit reference describes RPM, TPM, and RPD as
-operational limits that vary by model and usage tier~\cite{gemini-pricing,gemini-caching,gemini-rate-limits}.
-Those properties match the project constraints: the agents need a large context window
-for page state and traces, low latency for browser loops, low cost for repeated 200+
-website regression batches, and enough rate-limit headroom for repeated experiments. That
-is why \texttt{google\_genai::gemini-3.1-flash-lite} became the default model.
-
-\subsection{Cost Estimation}
-
-Cost is estimated from token usage and model pricing. Cached tokens are separated from
-new input tokens because provider-side caching changes the real price of repeated prompt
-and tool context.
-
-\[
-\begin{array}{rl}
-Cost = & \frac{new\_input\_tokens}{1{,}000{,}000} \times input\_price \\[0.4em]
-& + \frac{cached\_input\_tokens}{1{,}000{,}000} \times cached\_input\_price \\[0.4em]
-& + \frac{cache\_write\_tokens}{1{,}000{,}000} \times cache\_write\_price \\[0.4em]
-& + \frac{output\_tokens}{1{,}000{,}000} \times output\_price
-\end{array}
-\]
-
-\[
-CostPerWorkingWebsite = \frac{total\_estimated\_cost}{working\_websites}
-\]
-
-The dashboard exposes input cost, cached-input cost, cache-write cost, output cost, and
-total cost. In the dashboard snapshot, the model-spend view reports \$4.505017 total
-recorded spend, \$0.047926 average cost per run, 883 LLM calls, four provider names, and a
-blended cost of \$0.000112 per 1k tokens.
-
-\begin{table}[!htbp]
-\centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{4.0cm}
-                              >{\raggedright\arraybackslash}X
-                              >{\raggedright\arraybackslash}p{3.0cm}}
-\toprule
-\rowcolor{accent!8}
-Cost / token metric & Interpretation & Dashboard value \\
-\midrule
-Total model spend & Sum of recorded or computed spend across model usage rows. &
-\$4.505017 \\
-Average cost per run & Total spend divided by persisted runs with usage. & \$0.047926 \\
-LLM calls & Number of model invocations recorded during the experiment period. & 883 \\
-Average LLM calls per run & Approximate model invocations needed by a run. & 8 \\
-Blended cost per 1k tokens & Total spend normalized by token volume. & \$0.000112 \\
-Total displayed tokens & Dashboard token total for input and output usage. & 40,220,868 \\
-New input tokens & Non-cached prompt/context tokens. & 43,384,638 \\
-Cached input tokens & Input tokens served through prompt cache. & 28,928,333 \\
-Output tokens & Generated model tokens. & 454,914 \\
-Cache hit rate & Cached input divided by total input considered by the cache view. &
-40.0\% \\
-Average tokens per run & Token volume normalized by persisted run count. & 386,739 \\
-\bottomrule
-\end{tabularx}
-\caption{Observed cost, token, and cache metrics from the dashboard.}
-\label{tab:dashboard-cost-token-values}
-\end{table}
-
-The important point is that cache is evaluated as part of model selection. A model that is
-accurate but repeatedly consumes full prompt and tool context can become too expensive for
-large batch testing. A useful configuration keeps the website success rate stable while
-raising the cache hit rate and lowering cost per working website.
-
-\subsection{Provider Intelligence Test}
-
-Provider analysis is evaluated after stream or embedded URLs are collected. The test takes
-the extracted URLs, resolves their hostnames, checks whether a routable IP is found, and
-then enriches the result with provider and country information using IP and registration
-data sources such as IPinfo and RDAP/WHOIS lookups~\cite{ipinfo-api,icann-rdap}. This matters because a
-stream URL is stronger evidence when it can be connected to a hosting provider, CDN, or
-network operator.
-
-\begin{table}[!htbp]
-\centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.8cm}
-                              >{\raggedright\arraybackslash}X
-                              >{\raggedright\arraybackslash}p{3.0cm}}
-\toprule
-\rowcolor{accent!8}
-Provider metric & Meaning & Dashboard value \\
-\midrule
-Checked URLs & Stream or media URLs inspected by the provider lookup flow. & 694 \\
-Resolved IPs & URLs that resolved to a routable IP address. & 661 \\
-Provider matches & URLs mapped to an organization or hosting provider. & 637 \\
-Abuse contacts & Abuse email contacts found through the lookup path. & 0 \\
-Provider coverage & Provider matches divided by checked URLs. & 637 / 694 =
-91.8\% \\
-IP resolution coverage & Resolved IPs divided by checked URLs. & 661 / 694 =
-95.2\% \\
-\bottomrule
-\end{tabularx}
-\caption{Provider-intelligence telemetry used to validate stream URL enrichment.}
-\label{tab:provider-intelligence-values}
-\end{table}
-
-The dashboard also shows the distribution of infrastructure behind the extracted URLs.
-The largest providers in the observed snapshot were DDOS-GUARD LTD, StormWall s.r.o.,
-Fastly, Cloudflare, SpectraIP B.V., Akamai, Private Layer INC, and Amazon. Country
-distribution was also recorded, with the largest groups in Russia, the United States, and
-the Netherlands. These values do not decide whether a website works, but they validate the
-post-extraction enrichment layer.
-
-\section{Tool Evaluation}
-
-Tool evaluation also uses the website batch. The question is whether a tool extracts what
-it was designed to extract on real website layouts. A tool is useful only if it helps the
-agent satisfy the website acceptance rule: classify, navigate, activate playback, return
-network evidence, and capture a screenshot-supported result.
-
-\subsection{Tool Success Criteria}
-
-\begin{table}[!htbp]
-\centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.4cm}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.6cm}
                               >{\raggedright\arraybackslash}X
                               >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
-Tool family & Expected extraction & Batch success signal \\
+Metric group & Current value & Interpretation \\
 \midrule
-Inspect tools & Compact DOM structure, visible buttons, links, match cards, iframes,
-player controls, and page hints. & Agent receives enough context to choose the next
-correct action without overloading the model. \\
-Navigation tools & Open target URLs, follow host candidates, keep same-page tab state
-when needed. & Agent reaches the correct landing, hosting, or embedded page. \\
-Interaction tools & Click play, close popups, switch servers, activate tabs, restore
-focus after ad windows. & Player state changes or a meaningful blocker is documented. \\
-Screenshot tools & Capture visual state at classification, player activation, and final
-evidence moments. & Screenshot supports why the website passed or failed. \\
-Harvest tools & Collect network entries, media URLs, iframe URLs, manifests, and
-performance evidence. & At least one useful network, embedded, or media candidate is
-returned when playback is available. \\
-Provider tools & Enrich host and stream evidence with IPInfo, RDAP, WHOIS, or provider
-metadata. & Evidence can be linked to provider or abuse-contact context when available. \\
+Run volume & 149 total runs, 145 terminal runs, 4 running runs. & Active runs are kept
+outside terminal-quality interpretation. \\
+Strict success & 25 successful runs, 17.24\% strict success. & This is the strongest
+terminal-success view, but it excludes partial evidence. \\
+Productive evidence & 25 success and 8 partial runs, 22.76\% productive evidence. &
+Partials are incomplete but still useful for review and debugging. \\
+External blockers & 2 page-inaccessible, 14 no-hosting-pages, and 6 no-streams. & These
+rows can come from source-site, hosting-page, embedded-page, player, or stream-server
+availability. \\
+Agent/runtime failures & 80 failed runs. & These rows need trace-level diagnosis because
+they may indicate route, tool-order, timeout, model, or runtime problems. \\
+Cancelled runs & 10 cancelled runs. & Cancelled runs are excluded from agent-quality
+judgment. \\
+Latency & 763.632 seconds average latency. & Browser-agent runs are expensive in time
+because they navigate, interact, wait, and verify unstable pages. \\
 \bottomrule
 \end{tabularx}
-\caption{Tool-family evaluation criteria for batch-level testing.}
-\label{tab:tool-success-criteria}
+\caption{Current batch outcome snapshot used for Chapter 6 interpretation.}
+\label{tab:overview-outcome-metrics}
 \end{table}
 
-The tool dashboard is used to verify that this layer is not silently failing while the
-agent is reasoning. In the observed dashboard, the browser/tool layer recorded 1,410 tool
-calls with a 96.7\% success rate. There were 46 failed calls, eight distinct tools, an
-average duration of 6.51 seconds per call, and 14 tool calls per pipeline run.
+\section{Agent-by-Agent Behavior Evaluation}
+
+\subsection{Agent Test Matrix}
+
+\subsubsection{Why Agent-Level Evaluation Is Required}
+
+The agent pipeline is made of specialist responsibilities. Because of that, a whole-run
+label is not detailed enough. The selected run used in this chapter demonstrates the
+point: the embedded-page agent failed, but hosting-page agents still produced valid
+stream, screenshot, provider, and email evidence. The evaluation therefore checks the
+behavior owned by each agent instead of treating the whole workflow as one black box.
+
+\begin{table}[!htbp]
+\centering
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{2.8cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Agent & Tests performed & Passing evidence \\
+\midrule
+Classification & Route correctness, confidence, redirect/blocker recognition, and
+handoff to the right specialist. & The chosen route matches visible page behavior and
+the next agent receives the correct task. \\
+Landing & Match-card discovery, schedule/list extraction, duplicate-link filtering,
+host-candidate discovery, and no-hosting-page handling. & Relevant hosting or match
+links are returned, or the absence of a hosting route is clearly recorded. \\
+Hosting & Player activation, popup survival, server detection, server switching order,
+screenshot timing, iframe handoff, and stream capture. & A player path, screenshot,
+stream candidate, iframe target, or clear server/player blocker is returned. \\
+Embedded & Iframe access, direct player inspection, delayed media harvest,
+embedded-page inaccessible handling, and no-stream outcomes. & Media evidence is
+harvested, or the embedded blocker is explained without hiding it as a generic failure. \\
+Provider and email & Playlist-host attribution, IP/provider lookup, country and
+organization enrichment, abuse-contact lookup, and notice-draft readiness. & A provider
+row and reviewable email fields are attached to concrete stream evidence. \\
+\bottomrule
+\end{tabularx}
+\caption{Agent-specific tests used during manual and batch evaluation.}
+\label{tab:agent-usecase-evaluation}
+\end{table}
+
+\subsection{Classification and Landing Tests}
+
+\subsubsection{Classification Tests}
+
+Classification is tested first because it decides the rest of the workflow. A correct
+classification result should identify whether the seed page behaves like a landing page,
+hosting page, embedded page, redirect, inaccessible page, or unsupported state. The
+review checks the route, the confidence, the visible evidence used for the decision, and
+whether the next agent receives the correct handoff.
+
+\subsubsection{Landing Tests}
+
+Landing-page tests check whether the agent can move beyond a listing page. The reviewer
+looks for match cards, event links, watch buttons, schedule sections, pagination, and
+host candidates. A landing page is not considered a failure just because it does not
+contain a stream. It only becomes an agent problem if useful hosting candidates were
+visible and the agent missed them. If the page genuinely exposes no usable downstream
+route, \texttt{no\_hosting\_pages} is the more accurate status.
+
+\subsection{Hosting Tests}
+
+\subsubsection{Player Activation}
+
+Hosting-page tests focus on interaction. The reviewer checks whether the agent clicks
+the correct player controls, survives popups, returns to the player when focus is stolen,
+and waits long enough for the page to generate media activity. The screenshot must be
+taken after a meaningful state change, not before the player has been activated.
+
+\subsubsection{Server Detection and Switching}
+
+Many streaming pages expose several server choices. The hosting agent is expected to
+detect server controls, try them in a reasonable order, and record which server path was
+used. If server 1 is down but server 2 works, the agent should continue instead of
+stopping too early. If all servers are down, the result is a server/player availability
+blocker rather than automatically an agent failure.
+
+\subsubsection{Stream Capture Order}
+
+Stream capture is evaluated after activation and server switching. This order matters:
+harvesting network traffic too early can produce empty results even when the page would
+generate a playlist after a play action. A passing hosting result therefore connects the
+browser action, player state, screenshot, and stream evidence in the trace.
+
+\subsection{Embedded Tests}
+
+\subsubsection{Iframe and Player Inspection}
+
+Embedded-page tests check whether the agent can inspect iframe/player contexts without
+mixing them with landing-page exploration. The agent should identify the embedded URL,
+inspect the frame or player state, attempt playback where appropriate, and harvest media
+requests after the page has had time to load.
+
+\subsubsection{Embedded-Page Inaccessible Cases}
+
+An embedded page can be inaccessible even when the hosting page is reachable. It can also
+load visually but never expose a playlist during the capture window. The evaluation
+records these as embedded availability or no-stream outcomes unless the trace shows that
+the agent skipped an obvious available action.
+
+\subsection{Provider and Email Tests}
+
+\subsubsection{Provider Intelligence Criteria}
+
+Provider analysis starts from concrete stream evidence. Playlist URLs are useful because
+their host identifies the infrastructure that can be used for provider lookup and abuse
+contact discovery. The provider test checks host extraction, DNS/IP resolution when
+available, autonomous-system or organization enrichment, country fields, and whether the
+result is attached to the correct run and stream record.
+
+\subsubsection{Email Readiness Criteria}
+
+The generated email is not treated as an automatic enforcement action. It is evaluated
+as a draft. A draft is review-ready when it contains the provider/contact, infringing
+page, playlist host, stream evidence, screenshot references, and a clear need for human
+verification before sending.
+
+\subsection{Agent Dashboard Evidence}
+
+\input{figures/tikz/fig-06-dashboard-agents}
+
+The agents dashboard supports behavior-level evaluation by separating agent runs, tool
+calls, LLM calls, context tracking, and status by agent type. It helps locate where a
+batch is struggling: classification, landing discovery, hosting activation, embedded
+inspection, or provider/email enrichment. It does not replace manual review, but it
+turns manual review into a more targeted process.
+
+\section{Run-Based Evidence Case Study}
+
+\subsection{Selected Run Summary}
+
+The main case study uses run \texttt{9566a9be-12ba-434a-afa0-f05f529d2403}. It was
+available from the local backend and operator console during evidence capture, so no
+fallback run was used.
+
+\begin{table}[!htbp]
+\centering
+\footnotesize
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{4.0cm}
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Field & Observed value \\
+\midrule
+Seed URL & \texttt{go4kora.life} \\
+Run date & May 23, 2026 \\
+Duration & 302.91 seconds, approximately 5 minutes and 3 seconds \\
+Final status & \texttt{success} \\
+Top-level page type & \texttt{landing\_page} \\
+Agent runs & 6 agent runs: orchestrator, classification, landing, two hosting attempts,
+and embedded \\
+LLM and tool footprint & 15 LLM calls and 25 tool calls \\
+Evidence produced & 2 HLS playlist URLs, 2 screenshots, 2 provider-analysis rows, and 1
+email draft \\
+Token footprint & 503,127 input tokens, including 430,132 new input and 72,995 cached
+input, plus 9,636 output tokens \\
+Estimated cost & \(\$0.12381188\) \\
+\bottomrule
+\end{tabularx}
+\caption{Selected-run metadata used as the main Chapter 6 evidence case study.}
+\label{tab:run-case-study-summary}
+\end{table}
+
+\input{figures/tikz/fig-06-run-lifecycle}
+
+The run summary screenshot validates that the selected case is a concrete persisted run,
+not only a manually written example. It shows the final status, run identity, timing,
+model/tool profile, and evidence counters in the operator console.
+
+\subsection{Trace and Agent Activity}
+
+\input{figures/tikz/fig-06-run-trace-rows}
+
+The trace view is used to reconstruct the path from seed URL to final evidence. In this
+case, the trace shows the landing-page route, downstream discovery, hosting attempts,
+and persisted specialist-agent activity. This is also where the embedded-agent nuance is
+visible: the embedded path did not succeed, but the hosting path still produced enough
+evidence for the run to be useful.
+
+\subsection{Landing Evidence}
+
+\input{figures/tikz/fig-06-run-landing-evidence}
+
+The landing screenshot shows why specialist routing was needed. The first page is a
+match/listing context, so the relevant test is whether the landing agent can discover a
+useful hosting or player path instead of stopping at a surface-level page label.
+
+\subsection{Hosting and Player Evidence}
+
+\input{figures/tikz/fig-06-run-hosting-evidence}
+
+The first hosting screenshot validates player activation. It shows that the workflow
+reached a sports video/player state on the discovered path. This supports the hosting
+checks for navigation, activation, screenshot timing, and media-harvest context.
+
+\input{figures/tikz/fig-06-run-hosting-evidence-2}
+
+The second hosting screenshot records another captured player state from the same
+evidence path. This matters because server behavior can vary during a run. Keeping
+multiple screenshots makes it easier to review whether a server was active, stalled,
+blocked, or unstable.
+
+\subsection{Stream, Provider, and Email Evidence}
+
+\input{figures/tikz/fig-06-run-provider-rows}
+
+The streams/provider view confirms that stream evidence was persisted together with
+source labels and screenshot support. This connection is important: the playlist URL is
+not an expiring token claim in this report; it is persistent review evidence because the
+playlist host can be used for provider attribution and email preparation.
+
+\input{figures/tikz/fig-06-run-provider-intel}
+
+The provider-intelligence view shows the enrichment step. In this run, the playlist host
+\texttt{hy2.365kooora.blog} was resolved to BestDC Limited, organization
+\texttt{AS216014 BestDC Limited}, country \texttt{NL}, with an abuse-contact field. This
+turns stream discovery into provider-intelligence evidence.
+
+\begin{tcolorbox}[
+  enhanced,
+  breakable,
+  colback=gray!3,
+  colframe=accent!65,
+  title={Generated email example from run \texttt{9566a9be-12ba-434a-afa0-f05f529d2403}},
+  fonttitle=\bfseries,
+  boxrule=0.45pt,
+  arc=2pt
+]
+\footnotesize
+\textbf{Subject:} DMCA Notice: unauthorized streaming hosted by BestDC Limited\\
+\textbf{Provider/contact:} BestDC Limited, \texttt{abusedcmail@atomicmail.io}\\
+\textbf{Infringing page:} \url{https://go4kora.life/}\\
+\textbf{Playlist host:} \texttt{hy2.365kooora.blog}\\
+\textbf{Evidence fields:}
+\begin{itemize}
+  \item two \texttt{m3u8} playlist URLs under \url{https://hy2.365kooora.blog/.../MULTI-10.m3u8};
+  \item protocol recorded as \texttt{m3u8};
+  \item server/source recorded as \texttt{default};
+  \item two screenshot evidence links attached to the stream records.
+\end{itemize}
+\textbf{Review note:} the email is an automatically prepared draft. A human reviewer must
+verify rights ownership, jurisdiction, contact accuracy, and wording before sending.
+\end{tcolorbox}
+
+\section{Dashboard Telemetry and Cost Review}
+
+\subsection{Overview Metrics}
+
+\input{figures/tikz/fig-06-dashboard-overview}
+
+The overview dashboard gives the operational context for the batch. It shows that OWC is
+measurable: runs, success rate, cost, token volume, latency, active runs, and tool
+success are visible from the same console. These values should be read through the
+failure taxonomy, not as one generic model-accuracy claim.
+
+\begin{table}[!htbp]
+\centering
+\footnotesize
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.8cm}
+                              >{\raggedright\arraybackslash}X
+                              >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Metric group & Current value & Interpretation \\
+\midrule
+Evidence yield & 25 runs with streams, 25 runs with emails, 136 total streams, 67 total
+emails. & Successful evidence production is tied to stream and email readiness, not only
+run completion. \\
+Average yield & 0.938 streams/run and 0.462 emails/run across terminal attempts. &
+Useful for batch-cost planning and expected review output. \\
+Provider telemetry & 136 provider analyses, 12 unique providers, 8.82\% provider
+coverage. & Provider enrichment exists but remains incomplete across all attempts. \\
+Tool reliability & 3,113 observed tool calls, 3,066 successful, 47 failed, 98.49\%
+success. & Browser-tool execution is mostly reliable; failures are often behavioral,
+site-specific, or availability-related. \\
+Tool volume & 3,209 total tool calls and 7.636 seconds average tool duration. & Agent
+work is interaction-heavy, especially for hosting pages. \\
+Cost & \(\$15.950543\) total model spend and \(\$0.110004\) average cost per terminal
+run. & Cost is low enough for experiments but must be monitored for larger batches. \\
+Tokens & 83,523,896 total tokens, 54,252,590 cached input tokens, 110,760,668 new input
+tokens, and 1,017,267 output tokens. & These are dashboard telemetry cards used for cost
+review; the report does not recompute them into one billing formula. \\
+Cache & 32.9\% cache hit ratio from cached and new input counters. & Repeated prompt and
+tool context reuse is visible but not dominant. \\
+\bottomrule
+\end{tabularx}
+\caption{Current evidence, provider, tool, cost, and token telemetry from the overview
+dashboard/API snapshot.}
+\label{tab:overview-operational-metrics}
+\end{table}
+
+\clearpage
+
+\subsection{Token and Runtime Cost}
+
+\input{figures/tikz/fig-06-dashboard-tokens}
+
+Token telemetry is included because the project is also a data-science system
+evaluation. The cost of a browser agent depends on context size, cache reuse, output
+length, tool loops, and repeated attempts. Separating new input, cached input, and
+output tokens makes it possible to evaluate whether future prompt or tool changes are
+improving behavior without silently increasing cost.
+
+\subsection{Model and Runtime Selection Rationale}
+
+The model evaluation is not presented as a universal model ranking. The relevant
+question is which runtime is practical for browser-agent evidence collection. The chosen
+runtime must support long browser context, disciplined tool use, visible pricing and
+cache counters, and usable rate-limit behavior. Gemini pricing documentation is cited as
+operating context for cost interpretation rather than as a model-quality proof
+~\cite{gemini-pricing}.
 
 \begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.6cm}
                               >{\raggedright\arraybackslash}X
-                              >{\raggedright\arraybackslash}p{3.0cm}}
+                              >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
-Tool metric & What it means & Dashboard value \\
+Dimension & Why it matters for OWC & Evidence used here \\
 \midrule
-Total calls & Total observed browser/tool invocations. & 1,410 \\
-Successful calls & Tool calls that returned a successful outcome. & 1,364 \\
-Failed calls & Tool calls that returned an error or failed outcome. & 46 \\
-Tool success rate & Successful calls divided by total calls. & 96.7\% \\
-Unique tools & Distinct tool names observed in the dashboard. & 8 \\
-Average duration & Mean observed duration per tool call. & 6.51 s \\
-Calls per run & Average tool calls per pipeline run. & 14 \\
+Context handling & Browser runs contain page state, iframe paths, tool outputs, and
+trace history. & Selected run used 503,127 input tokens across 15 LLM calls. \\
+Tool discipline & The model must inspect, navigate, activate, harvest, and verify in the
+right order. & Selected run recorded 25 tool calls and reached stream/provider evidence. \\
+Latency and cost & Large regression batches become impractical if each run is too slow
+or expensive. & Selected run finished in about 5 minutes at \(\$0.12381188\). \\
+Cache visibility & Repeated prompts and tool descriptions should be observable as cached
+or new input. & Selected run recorded 72,995 cached input tokens. \\
+Rate-limit practicality & Batch testing depends on token and request limits, not only
+one successful run. & Dashboard telemetry tracks call, token, and cost volume. \\
+Failure interpretation & Useful models leave enough trace evidence to explain partial
+success or uncertainty. & The selected run kept trace, provider, screenshot, and email
+records. \\
 \bottomrule
 \end{tabularx}
-\caption{Observed tool-health telemetry from the dashboard.}
-\label{tab:dashboard-tool-health}
+\caption{Model/runtime selection rationale used instead of unsupported model-ranking
+metrics.}
+\label{tab:model-runtime-selection-rationale}
 \end{table}
 
-Tool success rate alone is not enough, because a tool can technically succeed while
-extracting the wrong evidence. For example, a successful screenshot call does not mean the
-player was activated. Therefore tool evaluation combines dashboard health with website
-acceptance: the tool must return the expected kind of evidence and the website must still
-pass the batch rule.
+\section{Limitations and Interpretation}
 
-\subsection{Tool Regression Findings}
-
-The main tool failures were behavioral. The tools often worked technically, but the agent
-used them at the wrong time or for the wrong page type. Regression testing catches these
-cases because a website that previously returned evidence stops passing the batch.
+\subsection{Operational Limitations}
 
 \begin{table}[!htbp]
 \centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.8cm}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.5cm}
                               >{\raggedright\arraybackslash}X
                               >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
-Observed issue & Regression caused & Fix applied \\
+Limitation & Effect on evaluation & Review action \\
 \midrule
-\texttt{harvest()} before play click & Website fails because no runtime stream has been
-generated yet. & Added activation guard and mandatory media-state check. \\
-Generic inspect on hosting pages & Server controls, tabs, and player-specific elements
-are missed. & Added page-profiled inspect behavior and clearer tool descriptions. \\
-Repeated screenshots as waiting & Higher cost without new evidence and no playback
-progress. & Added explicit wait/checkpoint logic and reduced screenshot loops. \\
-\texttt{navigate()} for same-page tabs & Page reloads or loses state instead of opening
-dynamic server content. & Clarified \texttt{interact} versus \texttt{navigate}. \\
-Ignoring popup or new-tab focus & Agent reasons over the advertisement page instead of
-the original player page. & Added popup close, focus restore, and JavaScript-click
-fallback. \\
+Source site down & The seed URL can be inaccessible or dead before the agent can inspect
+it. & Record as a site blocker and rerun before drawing agent-quality conclusions. \\
+Hosting page inaccessible & A landing page can list matches while the downstream hosting
+page is removed, blocked, or unreachable. & Treat \texttt{no\_hosting\_pages} separately
+from agent failures. \\
+Embedded page inaccessible & A hosting page can expose an iframe URL that no longer
+loads or redirects away from the player. & Diagnose embedded availability separately from
+hosting behavior. \\
+Server/player unavailable & Server buttons can point to inactive players or media paths
+with no stream. & Record server-switching order and screenshots before marking the case
+as no-stream. \\
+Anti-bot drift & A website can change challenges, redirects, popups, or browser
+fingerprinting behavior after a successful run. & Treat traces and screenshots as
+time-bound evidence. \\
+CDN/provider lookup gaps & Provider data can be missing, indirect, or routed through CDN
+and hosting intermediaries. & Use provider enrichment as triage and verify contacts
+before sending notices. \\
+Partial-run telemetry & Strict success excludes partials, and some useful evidence can
+sit outside the headline status. & Report strict success, partial rate, and productive
+evidence separately. \\
+Human/legal review & Screenshots, streams, and email drafts are evidence candidates, not
+legal determinations. & A trained reviewer must check rights context, jurisdiction, and
+notice wording. \\
 \bottomrule
 \end{tabularx}
-\caption{Tool-level regressions found through website-batch testing.}
-\label{tab:tool-regressions}
+\caption{Limitations that remain after evidence-first evaluation.}
+\label{tab:evaluation-limitations}
 \end{table}
 
-\begin{table}[!htbp]
-\centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{4.2cm}
-                              >{\centering\arraybackslash}p{2.2cm}
-                              >{\centering\arraybackslash}p{2.2cm}
-                              >{\raggedright\arraybackslash}X}
-\toprule
-\rowcolor{accent!8}
-Tool change & Before & After & Meaning \\
-\midrule
-Activation guard on \texttt{harvest} & 65\% misuse & 12\% misuse & Fewer websites
-failed because harvesting happened before playback. \\
-Specialized hosting inspection & 40\% missed controls & 8\% missed controls & Server
-buttons and player controls were found more reliably. \\
-Clarified \texttt{navigate} versus \texttt{interact} & 30\% misuse & 5\% misuse &
-Same-page tabs and dynamic controls were handled without unnecessary reloads. \\
-\bottomrule
-\end{tabularx}
-\caption{Tool-description improvements measured against the website batch.}
-\label{tab:tool-description-effect}
-\end{table}
+\subsection{Interpretation of the Current Results}
+
+The current strict success rate is low, and that is a real limitation of the current
+system. However, the raw failure rate should not be interpreted as one number meaning
+``the agents failed''. The batch contains productive partials, external blockers,
+cancelled runs, and true agent/runtime failures. A data-science interpretation must keep
+those categories separate before comparing prompt versions, browser settings, or model
+runtimes.
+
+The most useful conclusion is therefore not that OWC has solved illegal-streaming
+evidence collection. It has not. The useful conclusion is that OWC now exposes the right
+evaluation objects: agent route, navigation path, server switching, screenshot timing,
+stream capture, provider enrichment, email readiness, repeatability, and cost.
 
 \section{Chapter Conclusion}
 
-The evaluation shows that the system must be judged by website-level evidence collection,
-not by isolated tool counts or a single classifier score. A website works only when the
-agents classify it, navigate through its layout, activate or inspect the player, recover
-from popups or redirects, extract media/network evidence, and return screenshot-supported
-results.
+This evaluation judges OWC by agent behavior and evidence quality. The selected run is
+successful because it provides a reconstructable path from a seed URL to route
+classification, landing navigation, hosting/player evidence, screenshots, HLS playlist
+evidence, provider enrichment, cost telemetry, and a generated email draft for human
+review. The broader batch snapshot shows that the system is measurable, but also that
+strict success remains low and many terminal rows require failure-category
+interpretation.
 
-The 200+ website batch is the central evaluation mechanism. It supports regression testing
-because every prompt, model, and tool change is checked against old and new websites. This
-matches the real engineering goal: add support for more layouts without losing sites that
-already worked.
-
-Model evaluation adds another layer by comparing accuracy, consistency, cache hit ratio,
-rate limits, and cost per working website. Tool evaluation checks whether each browser
-tool extracts the evidence it is responsible for on real pages. Together, these three
-evaluation points provide a practical way to improve the system without relying on
-one-off successful demos.
+For a final-year data-science project, the main evaluation contribution is the
+measurement framework itself. Instead of hiding everything inside a generic accuracy
+score, the report evaluates OWC through strict success, partial evidence, external
+blockers, agent/runtime failures, repeatability, tool reliability, provider enrichment,
+email readiness, and operating cost.

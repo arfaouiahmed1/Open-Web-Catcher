@@ -1,88 +1,153 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\resizebox{\textwidth}{!}{%
+\resizebox{1.0\textwidth}{!}{%
 \begin{tikzpicture}[
-  lane/.style={draw=gray!30, fill=gray!3, rounded corners=7pt, inner sep=8pt},
-  control/.style={draw=accent!82, fill=blue!5, rounded corners=5pt,
-    minimum width=2.35cm, minimum height=0.78cm, align=center, font=\scriptsize\bfseries},
-  orch/.style={draw=accent!95!black, fill=blue!12, rounded corners=5pt,
-    minimum width=2.55cm, minimum height=0.84cm, align=center, font=\scriptsize\bfseries},
-  agent/.style={draw=orange!80!black, fill=orange!9, rounded corners=5pt,
-    minimum width=2.15cm, minimum height=0.76cm, align=center, font=\scriptsize\bfseries},
-  tool/.style={draw=purple!65!black, fill=purple!7, rounded corners=5pt,
-    minimum width=2.35cm, minimum height=0.74cm, align=center, font=\scriptsize\bfseries},
-  data/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
-    minimum width=2.35cm, minimum height=0.74cm, align=center, font=\scriptsize\bfseries},
-  external/.style={draw=gray!60, fill=gray!10, rounded corners=5pt,
-    minimum width=2.25cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80, shorten <=3pt, shorten >=3pt},
-  hand/.style={->, >=Stealth, thick, orange!80!black, dashed, shorten <=3pt, shorten >=3pt},
-  soft/.style={->, >=Stealth, thick, gray!65, shorten <=3pt, shorten >=3pt},
-  skip/.style={->, >=Stealth, thick, gray!62, dashed, shorten <=3pt, shorten >=3pt},
-  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.3pt, text=gray!75!black}
+  line cap=round,
+  line join=round,
+  lane/.style={draw=gray!32, fill=gray!3, rounded corners=9pt,
+    line width=0.55pt, inner sep=9pt},
+  nodebase/.style={rounded corners=6pt, align=center,
+    font=\scriptsize\bfseries, inner xsep=6pt, inner ysep=4pt,
+    minimum height=0.82cm, text=black},
+  control/.style={nodebase, draw=accent!80, fill=blue!6,
+    text width=2.15cm},
+  orch/.style={nodebase, draw=accent!95!black, fill=blue!12,
+    text width=2.45cm, minimum height=0.9cm},
+  agent/.style={nodebase, draw=orange!80!black, fill=orange!10,
+    text width=2.38cm},
+  tool/.style={nodebase, draw=purple!65!black, fill=purple!7,
+    text width=2.48cm},
+  data/.style={nodebase, draw=green!55!black, fill=green!8,
+    text width=2.48cm},
+  external/.style={nodebase, draw=gray!62, fill=gray!9,
+    text width=2.38cm},
+  terminal/.style={external, draw=gray!70, fill=gray!13,
+    text width=2.55cm},
+  badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
+    inner sep=1.25pt, minimum size=8.5pt},
+  lanelabel/.style={font=\scriptsize\bfseries, text=black!68,
+    fill=white, inner sep=2pt},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!82, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  hand/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.84pt,
+    orange!82!black, densely dashed, shorten <=0pt, shorten >=3pt, rounded corners=6pt},
+  busline/.style={line width=0.76pt, gray!60, densely dashed,
+    rounded corners=6pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.72pt,
+    gray!62, densely dashed, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  toolarr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.82pt,
+    purple!68!black, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  skip/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.72pt,
+    gray!62, densely dashed, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.2pt,
+    text=black!72}
 ]
 
-\node[control] (operator) at (0,5.0) {Operator\\console};
-\node[control] (api) at (2.55,5.0) {FastAPI\\run API};
-\node[orch] (orch) at (5.2,5.0) {Orchestrator\\route + state};
-\node[data] (store) at (16.35,5.0) {Postgres\\run detail};
+% Top Layer (Y=6.0)
+\node[control] (operator) at (0,6.0) {Operator\\{\normalfont\scriptsize console}};
+\node[control] (api) at (3.5,6.0) {FastAPI\\{\normalfont\scriptsize run API}};
+\node[orch] (orch) at (7.0,6.0) {Orchestrator\\{\normalfont\scriptsize route + state}};
+\node[data] (store) at (17.5,6.0) {Postgres\\{\normalfont\scriptsize run detail}};
 
-\node[agent] (cls) at (4.0,3.2) {Classification\\agent};
-\node[agent] (land) at (6.45,3.2) {Landing-page\\agent};
-\node[agent] (host) at (8.9,3.2) {Hosting-page\\agent(s)};
-\node[agent] (emb) at (11.35,3.2) {Embedded-page\\agent(s)};
-\node[data] (evidence) at (13.8,3.2) {Evidence bundle\\streams + shots};
-\node[data] (result) at (16.35,3.2) {PipelineResult\\status + payload};
+% Middle Layer (Y=4.0)
+\node[agent] (cls) at (0,4.0) {Classification\\{\normalfont\scriptsize page role}};
+\node[agent] (land) at (3.5,4.0) {Landing page\\{\normalfont\scriptsize candidates}};
+\node[agent] (host) at (7.0,4.0) {Hosting page\\{\normalfont\scriptsize server + iframe}};
+\node[agent] (emb) at (10.5,4.0) {Embedded page\\{\normalfont\scriptsize player runtime}};
+\node[data] (evidence) at (14.0,4.0) {Evidence bundle\\{\normalfont\scriptsize streams + shots}};
+\node[data] (result) at (17.5,4.0) {PipelineResult\\{\normalfont\scriptsize status + payload}};
 
-\node[tool] (mcp) at (6.45,1.15) {MCP browser\\profile tools};
-\node[external] (model) at (9.05,1.15) {LLM calls\\model usage};
-\node[external] (sites) at (11.65,1.15) {Target sites\\players};
-\node[tool] (provider) at (14.25,1.15) {Provider analysis\\and email drafts};
-\node[external] (terminal) at (16.35,0.0) {Skipped downstream\\or terminal status};
+% Bottom Layer (Y=1.5)
+\coordinate (runtimeanchor) at (0,1.5);
+\node[tool] (mcp) at (3.5,1.5) {MCP browser\\{\normalfont\scriptsize profile tools}};
+\node[external] (model) at (7.0,1.5) {LLM calls\\{\normalfont\scriptsize model usage}};
+\node[external] (sites) at (10.5,1.5) {Target sites\\{\normalfont\scriptsize pages + players}};
+\node[tool] (provider) at (14.0,1.5) {Provider analysis\\{\normalfont\scriptsize enrichment + email}};
+\node[terminal] (terminal) at (17.5,1.5) {Terminal state\\{\normalfont\scriptsize skipped or failed}};
 
+% Routing anchors included in lane fits for consistent spacing
+\coordinate (traceleft) at (7.0,6.88);
+\coordinate (traceright) at (17.5,6.88);
+\coordinate (skipstart) at (0,0.42);
+\coordinate (skipend) at (17.5,0.42);
+
+% Background Groupings
 \begin{scope}[on background layer]
-  \node[lane, fit=(operator)(api)(orch)(store)] {};
-  \node[lane, fit=(cls)(land)(host)(emb)(evidence)(result)] {};
-  \node[lane, fit=(mcp)(model)(sites)(provider)(terminal)] {};
+  \node[lane, fit=(operator) (api) (orch) (store) (traceleft) (traceright)] (controllane) {};
+  \node[lane, fit=(cls) (land) (host) (emb) (evidence) (result)] (agentlane) {};
+  \node[lane, fit=(runtimeanchor) (mcp) (model) (sites) (provider) (terminal) (skipstart) (skipend)] (runtimelane) {};
 \end{scope}
 
+\node[lanelabel, anchor=south west] at ([xshift=0.15cm,yshift=0.06cm]controllane.north west) {Control and persistence};
+\node[lanelabel, anchor=south west] at ([xshift=0.15cm,yshift=0.06cm]agentlane.north west) {Specialist-agent route};
+\node[lanelabel, anchor=south west] at ([xshift=0.15cm,yshift=0.06cm]runtimelane.north west) {Shared runtime and downstream services};
+
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]operator.north west) {1};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]orch.north west) {2};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]cls.north west) {3};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]evidence.north west) {4};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]result.north west) {5};
+
+% Control Line Sequence
 \draw[arr] (operator) -- (api);
 \draw[arr] (api) -- (orch);
-\draw[soft] (orch.north) -- ++(0,0.43) -| node[lab, above, pos=0.24]{trace events} (store.north);
+\draw[soft] (orch.north) -- (traceleft) -- node[lab, above=1pt] {trace events} (traceright) -- (store.north);
 
-% Handoff fan-out owned by the orchestrator.
-\coordinate (busleft) at (4.0,4.18);
-\coordinate (busright) at (11.35,4.18);
-\draw[hand] (orch.south) -- node[lab, right]{handoff} ++(0,-0.45);
-\draw[hand, -] (busleft) -- node[lab, above, pos=0.48]{specialist routing} (busright);
-\draw[hand] (4.0,4.18) -- (cls.north);
-\draw[hand] (6.45,4.18) -- (land.north);
-\draw[hand] (8.9,4.18) -- (host.north);
-\draw[hand] (11.35,4.18) -- (emb.north);
+% Channel 1: Separate orchestrated routing arrows
+\draw[hand] (orch.south) to[out=270, in=90] (cls.north);
+\draw[hand] (orch.south) to[out=270, in=90] (land.north);
+\draw[hand] (orch.south) -- node[lab, right=1pt, pos=0.45] {handoff} (host.north);
+\draw[hand] (orch.south) to[out=270, in=90] (emb.north);
 
-% Normal route and evidence collection.
+% Agent Sequence Route
 \draw[arr] (cls) -- (land);
 \draw[arr] (land) -- (host);
 \draw[arr] (host) -- (emb);
 \draw[arr] (emb) -- (evidence);
 \draw[arr] (evidence) -- (result);
-\draw[arr] (result.north) -- (store.south);
+\draw[arr] (result.north) -- node[lab, right=1pt] {persist} (store.south);
 
-% Shared runtime lane.
-\coordinate (runtimeTap) at (8.9,2.42);
-\draw[soft] (host.south) -- (runtimeTap) -- node[lab, left, pos=0.58]{shared runtime} (mcp.north);
-\draw[soft] (mcp) -- (model);
-\draw[arr] (model) -- (sites);
-\draw[arr] (sites.north) -- ++(0,0.55) -| (emb.south);
-\draw[arr] (evidence.south) -- ++(0,-0.45) -| (provider.north);
-\draw[arr] (provider.east) -- ++(0.55,0) |- (result.south);
+% Channel 2: Shared Runtime Data Bus
+\coordinate (runtimebusleft) at (0, 2.75);
+\coordinate (runtimebusright) at (10.5, 2.75);
 
-% Skipped downstream path stays below the main diagram.
-\draw[skip] (land.south) -- ++(0,-0.28) -- (5.15,2.48) -- (5.15,0.0) -- (terminal.west);
-\draw[skip] (terminal.north) -- (result.south);
+\draw[busline] (runtimebusleft) -- node[lab, above=1pt] {shared runtime context} (runtimebusright);
+
+% Agents dropping into shared bus
+\draw[soft] (cls.south) -- (cls.south |- runtimebusleft);
+\draw[soft] (land.south) -- (land.south |- runtimebusleft);
+\draw[soft] (host.south) -- (host.south |- runtimebusleft);
+\draw[soft] ([xshift=-15pt]emb.south) -- ([xshift=-15pt]emb.south |- runtimebusleft);
+
+% Shared bus dropping into tools
+\draw[soft] (mcp.north |- runtimebusleft) -- (mcp.north);
+\draw[soft] (model.north |- runtimebusleft) -- (model.north);
+\draw[soft] ([xshift=-15pt]sites.north |- runtimebusleft) -- ([xshift=-15pt]sites.north);
+
+% Channel 3: Horizontal Skip/Fail Route
+\draw[skip] ([xshift=-15pt]cls.south) -- ([xshift=-15pt]skipstart) -- node[lab, above=1pt, pos=0.82] {skip/fail} (skipend) -- (terminal.south);
+
+% Horizontal dependencies in runtime lane
+\draw[toolarr] (mcp) -- (model);
+\draw[toolarr] (model) -- (sites);
+
+% Un-crossed Page-State Dual Line between Embedded and Sites
+\draw[soft] ([xshift=0pt]emb.south) -- node[lab, left=1pt, pos=0.75] {page state} ([xshift=0pt]sites.north);
+\draw[arr] ([xshift=15pt]sites.north) -- ([xshift=15pt]emb.south);
+
+% Enrichment & Output Processing
+\draw[arr] (evidence.south) -- node[lab, right=1pt] {enrich} (provider.north);
+
+% Drafts route: separate riser before entering PipelineResult
+\coordinate (draftentry) at ([yshift=-8pt]result.west);
+\coordinate (draftturn) at (15.72,1.5);
+\coordinate (drafttop) at (draftturn |- draftentry);
+\draw[arr] (provider.east) -- node[lab, above=1pt, pos=0.42] {drafts}
+  (draftturn) -- (drafttop) -- (draftentry);
+
+\draw[skip] (terminal.north) -- node[lab, right=1pt] {terminal status} (result.south);
 
 \end{tikzpicture}
 }
-\caption{End-to-end agent architecture at workflow scale.}
-\label{fig:end-to-end-agent-map}
+\caption{End-to-end agent architecture at workflow scale.}\label{fig:end-to-end-agent-map}
 \end{figure}

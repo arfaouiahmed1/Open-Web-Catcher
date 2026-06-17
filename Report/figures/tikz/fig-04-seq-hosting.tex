@@ -1,4 +1,4 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.94\textwidth}{!}{%
 \begin{tikzpicture}[
@@ -10,14 +10,14 @@
   lab/.style={font=\tiny, fill=white, inner sep=1.2pt, align=center}
 ]
 
-\foreach \x/\name/\id in {
+\foreach \x/\name/\id in {%
   0/Orchestrator/orch,
   2.7/Hosting\\agent/agent,
   5.4/LangChain\\loop/loop,
   8.1/Hosting\\MCP/mcp,
   10.8/Player\\page/site,
   13.5/Evidence/result
-}{
+}{%
   \node[part] (\id) at (\x,0) {\name};
   \draw[life] (\x,-0.42) -- (\x,-8.35);
 }
@@ -36,6 +36,5 @@
 
 \end{tikzpicture}
 }
-\caption{Hosting-agent sequence: activate watch pages and return stream or iframe evidence.}
-\label{fig:seq-hosting}
+\caption{Hosting-agent sequence: activate watch pages and return stream or iframe evidence.}\label{fig:seq-hosting}
 \end{figure}

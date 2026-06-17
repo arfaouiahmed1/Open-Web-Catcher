@@ -25,7 +25,7 @@ async function performAction(browserWsEndpoint, {
 }) {
   return withBrowserSession(browserWsEndpoint, async ({ browser, page }) => {
     const before = await capturePageSnapshot(page, frame_path);
-    const tabs = trackNewTabs(browser);
+    const tabs = trackNewTabs(browser, { openerPage: page });
     const resolved = await resolveElementTarget(page, { frame_path, element_ref, selector, xpath, text });
 
     if (!resolved.ok) {
@@ -44,6 +44,7 @@ async function performAction(browserWsEndpoint, {
     }
 
     let finalError = null;
+    let resultPage = page;
     try {
       await execute({ page, frame: resolved.frame, handle: resolved.handle });
       if (wait_ms > 0) {
@@ -53,18 +54,23 @@ async function performAction(browserWsEndpoint, {
     } catch (error) {
       finalError = error.message;
     } finally {
+      resultPage = await tabs.settle().catch(() => page) || page;
       tabs.dispose();
     }
 
-    const after = await capturePageSnapshot(page, resolved.frame_path);
-    const result = await buildEnvelope(page, {
-      frame_path: resolved.frame_path,
+    const popupAdopted = resultPage !== page;
+    const resultFramePath = popupAdopted ? 'root' : resolved.frame_path;
+    const after = await capturePageSnapshot(resultPage, resultFramePath);
+    const result = await buildEnvelope(resultPage, {
+      frame_path: resultFramePath,
       ok: !finalError,
       error: finalError,
       observed_change: makeObservedChange(before, after, tabs.new_tab_urls),
-      screenshotHandle: screenshot_target ? resolved.handle : null,
+      screenshotHandle: screenshot_target && !popupAdopted ? resolved.handle : null,
       data: {
         locator_used: resolved.locator_used,
+        popup_adopted: popupAdopted,
+        opener_url: popupAdopted ? page.url() : '',
         stale_ref_detected: Boolean(resolved.stale_ref_detected),
         frame_fallback_applied: Boolean(resolved.frame_fallback_applied),
         frame_relocated: Boolean(resolved.frame_relocated),
@@ -516,7 +522,7 @@ export async function playMedia({
 
   return withBrowserSession(browserWsEndpoint, async ({ browser, page }) => {
     const before = await capturePageSnapshot(page, frame_path);
-    const tabs = trackNewTabs(browser);
+    const tabs = trackNewTabs(browser, { openerPage: page });
     const hasLocator = Boolean(element_ref || selector || xpath || text);
     let resolved = hasLocator
       ? await resolveElementTarget(page, { frame_path, element_ref, selector, xpath, text })
@@ -577,6 +583,7 @@ export async function playMedia({
     }
 
     let activation = null;
+    let resultPage = page;
 
     try {
       activation = await activatePlayback({
@@ -606,19 +613,24 @@ export async function playMedia({
         final_error: error?.message || String(error),
       };
     } finally {
+      resultPage = await tabs.settle().catch(() => page) || page;
       tabs.dispose();
     }
 
-    const after = await capturePageSnapshot(page, activeFramePath);
-    const network_diagnostics = getPageNetworkDiagnostics(page, { limit: 12 });
-    const result = await buildEnvelope(page, {
-      frame_path: activeFramePath,
+    const popupAdopted = resultPage !== page;
+    const resultFramePath = popupAdopted ? 'root' : activeFramePath;
+    const after = await capturePageSnapshot(resultPage, resultFramePath);
+    const network_diagnostics = getPageNetworkDiagnostics(resultPage, { limit: 12 });
+    const result = await buildEnvelope(resultPage, {
+      frame_path: resultFramePath,
       ok: Boolean(activation?.playback_started),
       error: activation?.playback_started ? null : activation?.final_error,
       observed_change: makeObservedChange(before, after, tabs.new_tab_urls),
-      screenshotHandle: preferredHandle,
+      screenshotHandle: popupAdopted ? null : preferredHandle,
       data: {
         locator_used: resolutionPayload.locator_used,
+        popup_adopted: popupAdopted,
+        opener_url: popupAdopted ? page.url() : '',
         stale_ref_detected: resolutionPayload.stale_ref_detected,
         frame_fallback_applied: resolutionPayload.frame_fallback_applied,
         frame_relocated: Boolean(resolutionPayload.frame_relocated || activation?.frame_relocated),
@@ -693,8 +705,9 @@ export async function clickCoordinates({
 } = {}) {
   return withBrowserSession(browserWsEndpoint, async ({ browser, page }) => {
     const before = await capturePageSnapshot(page, frame_path);
-    const tabs = trackNewTabs(browser);
+    const tabs = trackNewTabs(browser, { openerPage: page });
     let finalError = null;
+    let resultPage = page;
     try {
       await page.mouse.move(x, y, { steps: 8 });
       await page.mouse.click(x, y);
@@ -703,16 +716,21 @@ export async function clickCoordinates({
     } catch (error) {
       finalError = error.message;
     } finally {
+      resultPage = await tabs.settle().catch(() => page) || page;
       tabs.dispose();
     }
-    const after = await capturePageSnapshot(page, frame_path);
-    return buildEnvelope(page, {
-      frame_path,
+    const popupAdopted = resultPage !== page;
+    const resultFramePath = popupAdopted ? 'root' : frame_path;
+    const after = await capturePageSnapshot(resultPage, resultFramePath);
+    return buildEnvelope(resultPage, {
+      frame_path: resultFramePath,
       ok: !finalError,
       error: finalError,
       observed_change: makeObservedChange(before, after, tabs.new_tab_urls),
       data: {
         coordinates: { x, y },
+        popup_adopted: popupAdopted,
+        opener_url: popupAdopted ? page.url() : '',
       },
     });
   });

@@ -1,41 +1,62 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\resizebox{0.96\textwidth}{!}{%
+\resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  box/.style={draw=accent!70, fill=blue!6, rounded corners=6pt,
-    minimum width=3.65cm, minimum height=0.95cm, align=center,
-    font=\footnotesize\bfseries},
-  weak/.style={draw=gray!60, fill=gray!9, rounded corners=6pt,
-    minimum width=3.65cm, minimum height=0.95cm, align=center,
-    font=\footnotesize\bfseries},
-  ai/.style={draw=orange!80!black, fill=orange!10, rounded corners=6pt,
-    minimum width=3.65cm, minimum height=0.95cm, align=center,
-    font=\footnotesize\bfseries},
-  evidence/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
-    minimum width=3.65cm, minimum height=0.95cm, align=center,
-    font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80, shorten <=3pt, shorten >=3pt},
-  dashedarr/.style={->, >=Stealth, thick, dashed, gray!65, shorten <=3pt, shorten >=3pt},
-  lab/.style={font=\scriptsize, fill=white, inner sep=1pt}
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!30, fill=gray!2, rounded corners=12pt,
+    line width=0.55pt, inner sep=0pt},
+  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=3.10cm, minimum height=0.90cm, inner xsep=5pt,
+    inner ysep=4pt, text=black},
+  primary/.style={block, draw=accent!75, fill=blue!6},
+  gap/.style={block, draw=orange!80!black, fill=orange!9},
+  backup/.style={block, draw=green!55!black, fill=green!8},
+  owc/.style={block, draw=purple!65!black, fill=purple!7},
+  result/.style={block, draw=gray!62, fill=gray!9},
+  badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
+    inner sep=1.25pt, minimum size=8.5pt},
+  paneltitle/.style={font=\scriptsize\bfseries, text=black!68, fill=white,
+    inner sep=2pt},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!78, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.76pt,
+    gray!62, densely dashed, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
+    text=black!72}
 ]
-\node[box] (crawler) at (0,2.0) {Existing crawler\\broad discovery};
-\node[weak] (html) at (4.3,2.0) {Static response\\HTML + links};
-\node[weak] (gap) at (8.6,2.0) {Evidence gap\\JS, iframe, play action};
-\node[ai] (n8n) at (0,-0.2) {n8n landing agent\\backup path};
-\node[ai] (owc) at (4.3,-0.2) {OWC browser workflow\\agents + tools};
-\node[evidence] (bundle) at (8.6,-0.2) {Reviewable evidence\\screenshots + streams + trace};
+\node[primary] (company) at (0,1.95) {Company workflow\\{\normalfont\scriptsize monitoring + crawler}};
+\node[gap] (gap) at (4.05,1.95) {Evidence gap\\{\normalfont\scriptsize rendered landing state}};
+\node[backup] (n8n) at (8.10,1.95) {n8n landing agent\\{\normalfont\scriptsize backup browser path}};
+\node[result] (results) at (12.15,1.95) {Returned candidates\\{\normalfont\scriptsize URLs + metadata}};
 
-\draw[arr] (crawler) -- node[lab, above]{find targets} (html);
-\draw[arr] (html) -- node[lab, above]{static limit} (gap);
-\draw[dashedarr] (gap.south) -- node[lab, right]{send dynamic cases} (owc.north);
-\draw[arr] (n8n) -- node[lab, above]{queue URL + metadata} (owc);
-\draw[arr] (owc) -- node[lab, above]{return evidence} (bundle);
+\node[owc] (owc) at (6.10,-0.35) {OWC academic platform\\{\normalfont\scriptsize broader reference design}};
+\node[result] (lessons) at (10.15,-0.35) {Design lessons\\{\normalfont\scriptsize traces + tools + memory}};
 
-\node[draw=gray!55, fill=gray!6, rounded corners=5pt, text width=11.5cm,
-      align=center, font=\footnotesize] at (4.3,-1.65)
-{The crawler remains useful for discovery; the AI browser workflow is used when evidence depends on rendered state, interaction, frames, or media activation.};
+\coordinate (primarynw) at (-1.70,2.78);
+\coordinate (primaryse) at (13.85,1.10);
+\coordinate (researchnw) at (4.35,0.48);
+\coordinate (researchse) at (11.90,-1.18);
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(primarynw) (primaryse)] (primarypanel) {};
+  \node[panel, draw=purple!28, fill=purple!2, fit=(researchnw) (researchse)] (researchpanel) {};
+\end{scope}
+
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]primarypanel.north west) {Operational flow};
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]researchpanel.north west) {PFE reference work};
+
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]company.north west) {1};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]gap.north west) {2};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]n8n.north west) {3};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]results.north west) {4};
+
+\draw[arr] (company) -- node[lab, above] {static path} (gap);
+\draw[arr] (gap) -- node[lab, above] {fallback task} (n8n);
+\draw[arr] (n8n) -- node[lab, above] {reply} (results);
+\draw[soft] (n8n.south) -- node[lab, right=2pt] {limitations studied} (owc.north);
+\draw[soft] (owc) -- node[lab, above] {formalized} (lessons);
 \end{tikzpicture}
 }
-\caption{How the AI browser workflow complements the existing crawler when static collection misses dynamic evidence.}
-\label{fig:crawler-to-owc}
+\caption{Position of the n8n landing agent as a backup to the company workflow, with OWC kept as the broader academic reference architecture.}\label{fig:crawler-to-owc}
 \end{figure}

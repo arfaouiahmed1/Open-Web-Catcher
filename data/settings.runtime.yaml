@@ -96,7 +96,7 @@ browser_runtime:
     - 2000
     - 4000
     media_retry_count: 3
-    popup_blocking_enabled: true
+    popup_blocking_enabled: false
     proxy_cache_ttl_ms: 600000
     proxy_custom_list: []
     proxy_enabled: false
@@ -146,7 +146,7 @@ browser_runtime:
     - 2000
     - 4000
     media_retry_count: 3
-    popup_blocking_enabled: true
+    popup_blocking_enabled: false
     proxy_cache_ttl_ms: 600000
     proxy_custom_list: []
     proxy_enabled: false
@@ -241,7 +241,7 @@ orchestrator_model: gemini-3.1-flash-lite
 provider_cache_enabled: true
 provider_model_catalog_cache:
   google:
-    cached_at: '2026-05-23T18:06:18.636020+00:00'
+    cached_at: '2026-06-14T18:44:50.602342+00:00'
     models:
     - capabilities:
         allowed_tuning_keys: &id001
@@ -1280,6 +1280,52 @@ provider_model_catalog_cache:
         supports_batch: true
         supports_explicit_cache: false
         supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id023
+        explicit_cache: unsupported
+        thinking_controls: supported
+      context_window: 131072
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 32768
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 3 Pro Image
+      id: gemini-3-pro-image
+      label: Nano Banana Pro
+      output_limit: 32768
+      release_channel: stable
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id024
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: true
+        supports_explicit_cache: false
+        supports_generate_content: true
         supports_thinking_controls: false
         supports_token_count: true
         thinking_status: unsupported
@@ -1292,7 +1338,7 @@ provider_model_catalog_cache:
         supports_token_count: Live from Google
       catalog_source: provider_api
       compatibility:
-        allowed_tuning_keys: *id023
+        allowed_tuning_keys: *id024
         explicit_cache: unsupported
         thinking_controls: unsupported
       context_window: 131072
@@ -1317,7 +1363,7 @@ provider_model_catalog_cache:
       - countTokens
       - generateContent
     - capabilities:
-        allowed_tuning_keys: &id024
+        allowed_tuning_keys: &id025
         - temperature
         - top_p
         - top_k
@@ -1338,7 +1384,7 @@ provider_model_catalog_cache:
         supports_token_count: Live from Google
       catalog_source: provider_api
       compatibility:
-        allowed_tuning_keys: *id024
+        allowed_tuning_keys: *id025
         explicit_cache: unsupported
         thinking_controls: supported
       context_window: 65536
@@ -1363,7 +1409,53 @@ provider_model_catalog_cache:
       - countTokens
       - generateContent
     - capabilities:
-        allowed_tuning_keys: &id025
+        allowed_tuning_keys: &id026
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: true
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id026
+        explicit_cache: unsupported
+        thinking_controls: supported
+      context_window: 65536
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 3.1 Flash Image.
+      id: gemini-3.1-flash-image
+      label: Nano Banana 2
+      output_limit: 65536
+      release_channel: stable
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id027
         - temperature
         - top_p
         - top_k
@@ -1384,7 +1476,7 @@ provider_model_catalog_cache:
         supports_token_count: Live from Google
       catalog_source: provider_api
       compatibility:
-        allowed_tuning_keys: *id025
+        allowed_tuning_keys: *id027
         explicit_cache: supported
         thinking_controls: supported
       context_window: 1048576
@@ -1410,7 +1502,7 @@ provider_model_catalog_cache:
       - createCachedContent
       - generateContent
     - capabilities:
-        allowed_tuning_keys: &id026
+        allowed_tuning_keys: &id028
         - temperature
         - top_p
         - top_k
@@ -1431,7 +1523,7 @@ provider_model_catalog_cache:
         supports_token_count: Live from Google
       catalog_source: provider_api
       compatibility:
-        allowed_tuning_keys: *id026
+        allowed_tuning_keys: *id028
         explicit_cache: unsupported
         thinking_controls: unsupported
       context_window: 1048576
@@ -1452,97 +1544,6 @@ provider_model_catalog_cache:
       output_limit: 65536
       release_channel: preview
       supported_generation_methods:
-      - countTokens
-      - generateContent
-    - capabilities:
-        allowed_tuning_keys: &id027
-        - temperature
-        - top_p
-        - top_k
-        - max_output_tokens
-        explicit_cache_status: unsupported
-        supports_batch: false
-        supports_explicit_cache: false
-        supports_generate_content: true
-        supports_thinking_controls: false
-        supports_token_count: true
-        thinking_status: unsupported
-      capability_provenance:
-        allowed_tuning_keys: Live from Google
-        supports_batch: Live from Google
-        supports_explicit_cache: Live from Google
-        supports_generate_content: Live from Google
-        supports_thinking_controls: Heuristic
-        supports_token_count: Live from Google
-      catalog_source: provider_api
-      compatibility:
-        allowed_tuning_keys: *id027
-        explicit_cache: unsupported
-        thinking_controls: unsupported
-      context_window: 1048576
-      default_parameter_provenance:
-        max_output_tokens: Live from Google
-        temperature: Live from Google
-        top_k: Live from Google
-        top_p: Live from Google
-      default_parameters:
-        max_output_tokens: 65536
-        temperature: 1
-        top_k: 64
-        top_p: 0.95
-      defaults_source: provider_api
-      description: Lyria 3 Pro Preview
-      id: lyria-3-pro-preview
-      label: Lyria 3 Pro Preview
-      output_limit: 65536
-      release_channel: preview
-      supported_generation_methods:
-      - countTokens
-      - generateContent
-    - capabilities:
-        allowed_tuning_keys: &id028
-        - temperature
-        - top_p
-        - top_k
-        - max_output_tokens
-        explicit_cache_status: unsupported
-        supports_batch: true
-        supports_explicit_cache: false
-        supports_generate_content: true
-        supports_thinking_controls: true
-        supports_token_count: true
-        thinking_status: supported
-      capability_provenance:
-        allowed_tuning_keys: Live from Google
-        supports_batch: Live from Google
-        supports_explicit_cache: Live from Google
-        supports_generate_content: Live from Google
-        supports_thinking_controls: Heuristic
-        supports_token_count: Live from Google
-      catalog_source: provider_api
-      compatibility:
-        allowed_tuning_keys: *id028
-        explicit_cache: unsupported
-        thinking_controls: supported
-      context_window: 8192
-      default_parameter_provenance:
-        max_output_tokens: Live from Google
-        temperature: Live from Google
-        top_k: Live from Google
-        top_p: Live from Google
-      default_parameters:
-        max_output_tokens: 16384
-        temperature: 1
-        top_k: 64
-        top_p: 0.95
-      defaults_source: provider_api
-      description: Gemini 3.1 Flash TTS Preview
-      id: gemini-3.1-flash-tts-preview
-      label: Gemini 3.1 Flash TTS Preview
-      output_limit: 16384
-      release_channel: preview
-      supported_generation_methods:
-      - batchGenerateContent
       - countTokens
       - generateContent
     - capabilities:
@@ -1582,6 +1583,97 @@ provider_model_catalog_cache:
         top_k: 64
         top_p: 0.95
       defaults_source: provider_api
+      description: Lyria 3 Pro Preview
+      id: lyria-3-pro-preview
+      label: Lyria 3 Pro Preview
+      output_limit: 65536
+      release_channel: preview
+      supported_generation_methods:
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id030
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: true
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: true
+        supports_token_count: true
+        thinking_status: supported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id030
+        explicit_cache: unsupported
+        thinking_controls: supported
+      context_window: 8192
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 16384
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Gemini 3.1 Flash TTS Preview
+      id: gemini-3.1-flash-tts-preview
+      label: Gemini 3.1 Flash TTS Preview
+      output_limit: 16384
+      release_channel: preview
+      supported_generation_methods:
+      - batchGenerateContent
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id031
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: false
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: false
+        supports_token_count: true
+        thinking_status: unsupported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id031
+        explicit_cache: unsupported
+        thinking_controls: unsupported
+      context_window: 1048576
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
       description: Gemini Robotics-ER 1.5 Preview
       id: gemini-robotics-er-1.5-preview
       label: Gemini Robotics-ER 1.5 Preview
@@ -1591,7 +1683,7 @@ provider_model_catalog_cache:
       - countTokens
       - generateContent
     - capabilities:
-        allowed_tuning_keys: &id030
+        allowed_tuning_keys: &id032
         - temperature
         - top_p
         - top_k
@@ -1612,7 +1704,7 @@ provider_model_catalog_cache:
         supports_token_count: Live from Google
       catalog_source: provider_api
       compatibility:
-        allowed_tuning_keys: *id030
+        allowed_tuning_keys: *id032
         explicit_cache: supported
         thinking_controls: unsupported
       context_window: 131072
@@ -1638,7 +1730,7 @@ provider_model_catalog_cache:
       - createCachedContent
       - generateContent
     - capabilities:
-        allowed_tuning_keys: &id031
+        allowed_tuning_keys: &id033
         - temperature
         - top_p
         - top_k
@@ -1659,7 +1751,7 @@ provider_model_catalog_cache:
         supports_token_count: Live from Google
       catalog_source: provider_api
       compatibility:
-        allowed_tuning_keys: *id031
+        allowed_tuning_keys: *id033
         explicit_cache: unsupported
         thinking_controls: supported
       context_window: 131072
@@ -1683,91 +1775,7 @@ provider_model_catalog_cache:
       - countTokens
       - generateContent
     - capabilities:
-        allowed_tuning_keys: &id032
-        - max_output_tokens
-        explicit_cache_status: unsupported
-        supports_batch: false
-        supports_explicit_cache: false
-        supports_generate_content: true
-        supports_thinking_controls: false
-        supports_token_count: true
-        thinking_status: unsupported
-      capability_provenance:
-        allowed_tuning_keys: Live from Google
-        supports_batch: Live from Google
-        supports_explicit_cache: Live from Google
-        supports_generate_content: Live from Google
-        supports_thinking_controls: Heuristic
-        supports_token_count: Live from Google
-      catalog_source: provider_api
-      compatibility:
-        allowed_tuning_keys: *id032
-        explicit_cache: unsupported
-        thinking_controls: unsupported
-      context_window: 131072
-      default_parameter_provenance:
-        max_output_tokens: Live from Google
-      default_parameters:
-        max_output_tokens: 65536
-      defaults_source: provider_api
-      description: Preview release of Antigravity Agent (05-2026)
-      id: antigravity-preview-05-2026
-      label: Antigravity Agent Preview
-      output_limit: 65536
-      release_channel: preview
-      supported_generation_methods:
-      - countTokens
-      - generateContent
-    - capabilities:
-        allowed_tuning_keys: &id033
-        - temperature
-        - top_p
-        - top_k
-        - max_output_tokens
-        explicit_cache_status: unsupported
-        supports_batch: false
-        supports_explicit_cache: false
-        supports_generate_content: true
-        supports_thinking_controls: false
-        supports_token_count: true
-        thinking_status: unsupported
-      capability_provenance:
-        allowed_tuning_keys: Live from Google
-        supports_batch: Live from Google
-        supports_explicit_cache: Live from Google
-        supports_generate_content: Live from Google
-        supports_thinking_controls: Heuristic
-        supports_token_count: Live from Google
-      catalog_source: provider_api
-      compatibility:
-        allowed_tuning_keys: *id033
-        explicit_cache: unsupported
-        thinking_controls: unsupported
-      context_window: 131072
-      default_parameter_provenance:
-        max_output_tokens: Live from Google
-        temperature: Live from Google
-        top_k: Live from Google
-        top_p: Live from Google
-      default_parameters:
-        max_output_tokens: 65536
-        temperature: 1
-        top_k: 64
-        top_p: 0.95
-      defaults_source: provider_api
-      description: Preview release (April 21st, 2026) of Deep Research Max
-      id: deep-research-max-preview-04-2026
-      label: Deep Research Max Preview (Apr-21-2026)
-      output_limit: 65536
-      release_channel: preview
-      supported_generation_methods:
-      - countTokens
-      - generateContent
-    - capabilities:
         allowed_tuning_keys: &id034
-        - temperature
-        - top_p
-        - top_k
         - max_output_tokens
         explicit_cache_status: unsupported
         supports_batch: false
@@ -1791,18 +1799,12 @@ provider_model_catalog_cache:
       context_window: 131072
       default_parameter_provenance:
         max_output_tokens: Live from Google
-        temperature: Live from Google
-        top_k: Live from Google
-        top_p: Live from Google
       default_parameters:
         max_output_tokens: 65536
-        temperature: 1
-        top_k: 64
-        top_p: 0.95
       defaults_source: provider_api
-      description: Preview release (April 21th, 2026) of Deep Research
-      id: deep-research-preview-04-2026
-      label: Deep Research Preview (Apr-21-2026)
+      description: Preview release of Antigravity Agent (05-2026)
+      id: antigravity-preview-05-2026
+      label: Antigravity Agent Preview
       output_limit: 65536
       release_channel: preview
       supported_generation_methods:
@@ -1831,6 +1833,96 @@ provider_model_catalog_cache:
       catalog_source: provider_api
       compatibility:
         allowed_tuning_keys: *id035
+        explicit_cache: unsupported
+        thinking_controls: unsupported
+      context_window: 131072
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Preview release (April 21st, 2026) of Deep Research Max
+      id: deep-research-max-preview-04-2026
+      label: Deep Research Max Preview (Apr-21-2026)
+      output_limit: 65536
+      release_channel: preview
+      supported_generation_methods:
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id036
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: false
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: false
+        supports_token_count: true
+        thinking_status: unsupported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id036
+        explicit_cache: unsupported
+        thinking_controls: unsupported
+      context_window: 131072
+      default_parameter_provenance:
+        max_output_tokens: Live from Google
+        temperature: Live from Google
+        top_k: Live from Google
+        top_p: Live from Google
+      default_parameters:
+        max_output_tokens: 65536
+        temperature: 1
+        top_k: 64
+        top_p: 0.95
+      defaults_source: provider_api
+      description: Preview release (April 21th, 2026) of Deep Research
+      id: deep-research-preview-04-2026
+      label: Deep Research Preview (Apr-21-2026)
+      output_limit: 65536
+      release_channel: preview
+      supported_generation_methods:
+      - countTokens
+      - generateContent
+    - capabilities:
+        allowed_tuning_keys: &id037
+        - temperature
+        - top_p
+        - top_k
+        - max_output_tokens
+        explicit_cache_status: unsupported
+        supports_batch: false
+        supports_explicit_cache: false
+        supports_generate_content: true
+        supports_thinking_controls: false
+        supports_token_count: true
+        thinking_status: unsupported
+      capability_provenance:
+        allowed_tuning_keys: Live from Google
+        supports_batch: Live from Google
+        supports_explicit_cache: Live from Google
+        supports_generate_content: Live from Google
+        supports_thinking_controls: Heuristic
+        supports_token_count: Live from Google
+      catalog_source: provider_api
+      compatibility:
+        allowed_tuning_keys: *id037
         explicit_cache: unsupported
         thinking_controls: unsupported
       context_window: 131072

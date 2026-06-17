@@ -1,60 +1,81 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  profile/.style={draw=orange!80!black, fill=orange!9, rounded corners=6pt,
-    minimum width=3.0cm, minimum height=0.8cm, align=center, font=\scriptsize\bfseries},
-  tool/.style={draw=purple!65!black, fill=purple!7, rounded corners=6pt,
-    minimum width=3.25cm, minimum height=0.78cm, align=center, font=\scriptsize\bfseries},
-  runtime/.style={draw=accent!75, fill=blue!6, rounded corners=6pt,
-    minimum width=3.25cm, minimum height=0.78cm, align=center, font=\scriptsize\bfseries},
-  evidence/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
-    minimum width=3.25cm, minimum height=0.78cm, align=center, font=\scriptsize\bfseries},
-  ext/.style={draw=gray!60, fill=gray!10, rounded corners=6pt,
-    minimum width=3.25cm, minimum height=0.78cm, align=center, font=\scriptsize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!75, shorten <=3pt, shorten >=3pt},
-  soft/.style={->, >=Stealth, thick, dashed, gray!65, shorten <=3pt, shorten >=3pt},
-  group/.style={draw=gray!45, fill=gray!3, rounded corners=7pt, inner sep=8pt}
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
+    line width=0.55pt, inner sep=8pt},
+  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=3.05cm, minimum height=0.82cm, inner xsep=5pt,
+    inner ysep=4pt, text=black},
+  profile/.style={block, draw=orange!80!black, fill=orange!9},
+  runtime/.style={block, draw=accent!75, fill=blue!6},
+  tool/.style={block, draw=purple!65!black, fill=purple!7},
+  evidence/.style={block, draw=green!55!black, fill=green!8},
+  external/.style={block, draw=gray!62, fill=gray!9},
+  badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
+    inner sep=1.25pt, minimum size=8.5pt},
+  paneltitle/.style={font=\scriptsize\bfseries, text=black!68, fill=white,
+    inner sep=2pt},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.84pt,
+    accent!78, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.72pt,
+    gray!62, densely dashed, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
+    text=black!72}
 ]
-\node[profile] (class) at (0,4.1) {Classification\\profile};
-\node[profile] (landing) at (0,3.0) {Landing\\profile};
-\node[profile] (hosting) at (0,1.9) {Hosting\\profile};
-\node[profile] (embedded) at (0,0.8) {Embedded\\profile};
 
-\node[runtime] (mcp) at (4.2,3.55) {MCP client\\tool filtering};
-\node[runtime] (session) at (4.2,2.15) {Profile-scoped\\browser session};
-\node[runtime] (policy) at (4.2,0.75) {Runtime policy\\fingerprint + proxy};
+\node[profile] (class) at (0,4.25) {Classification\\{\normalfont\scriptsize profile}};
+\node[profile] (landing) at (0,3.10) {Landing\\{\normalfont\scriptsize profile}};
+\node[profile] (hosting) at (0,1.95) {Hosting\\{\normalfont\scriptsize profile}};
+\node[profile] (embedded) at (0,0.80) {Embedded\\{\normalfont\scriptsize profile}};
 
-\node[tool] (inspect) at (8.4,4.2) {Inspect + context\\page, frames, candidates};
-\node[tool] (actions) at (8.4,3.05) {Navigation + actions\\open, click, play, scroll};
-\node[tool] (media) at (8.4,1.9) {Media extraction\\state, harvest, capture};
-\node[tool] (memory) at (8.4,0.75) {Memory hints\\lookup + update};
+\node[runtime] (mcp) at (4.15,3.90) {MCP client\\{\normalfont\scriptsize tool filtering}};
+\node[runtime] (session) at (4.15,2.50) {Profile-scoped\\{\normalfont\scriptsize browser session}};
+\node[runtime] (policy) at (4.15,1.10) {Runtime policy\\{\normalfont\scriptsize fingerprint + proxy}};
 
-\node[ext] (browser) at (12.8,3.2) {Chrome / Puppeteer\\rendered target page};
-\node[evidence] (output) at (12.8,1.55) {Evidence outputs\\screenshots, streams, trace};
+\node[tool] (inspect) at (8.45,4.25) {Inspect + context\\{\normalfont\scriptsize page, frames, candidates}};
+\node[tool] (actions) at (8.45,3.10) {Navigation + actions\\{\normalfont\scriptsize open, click, play, scroll}};
+\node[tool] (media) at (8.45,1.95) {Media extraction\\{\normalfont\scriptsize state, harvest, capture}};
+\node[tool] (memory) at (8.45,0.80) {Memory hints\\{\normalfont\scriptsize lookup + update}};
+
+\node[external] (browser) at (12.85,3.45) {Chrome / Puppeteer\\{\normalfont\scriptsize rendered target page}};
+\node[evidence] (output) at (12.85,1.55) {Evidence outputs\\{\normalfont\scriptsize screenshots, streams, trace}};
 
 \begin{scope}[on background layer]
-\node[group, fit=(class)(landing)(hosting)(embedded), label={[font=\scriptsize\bfseries]above:Agent Profiles}] {};
-\node[group, fit=(mcp)(session)(policy), label={[font=\scriptsize\bfseries]above:Runtime Control}] {};
-\node[group, fit=(inspect)(actions)(media)(memory), label={[font=\scriptsize\bfseries]above:Tool Families}] {};
-\node[group, fit=(browser)(output), label={[font=\scriptsize\bfseries]above:Browser Evidence}] {};
+  \node[panel, fit=(class) (landing) (hosting) (embedded)] (profilepanel) {};
+  \node[panel, fit=(mcp) (session) (policy)] (runtimepanel) {};
+  \node[panel, fit=(inspect) (actions) (media) (memory)] (toolpanel) {};
+  \node[panel, fit=(browser) (output)] (evidencepanel) {};
 \end{scope}
 
-\draw[arr] (class.east) -- (mcp.west);
-\draw[arr] (landing.east) -- (mcp.west);
-\draw[arr] (hosting.east) -- (session.west);
-\draw[arr] (embedded.east) -- (session.west);
-\draw[arr] (mcp) -- (inspect);
-\draw[arr] (session) -- (actions);
-\draw[arr] (session) -- (media);
-\draw[arr] (policy) -- (memory);
-\draw[arr] (inspect) -- (browser);
-\draw[arr] (actions) -- (browser);
-\draw[arr] (media) -- (output);
-\draw[soft] (browser) -- (output);
-\draw[soft] (policy.south) -- ++(0,-0.38) -| ([xshift=-0.45cm]browser.west) -- (browser.west);
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]profilepanel.north west) {Agent profiles};
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]runtimepanel.north west) {Runtime control};
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]toolpanel.north west) {Tool families};
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]evidencepanel.north west) {Browser evidence};
+
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]class.north west) {1};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]mcp.north west) {2};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]inspect.north west) {3};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]browser.north west) {4};
+
+\draw[arr] (class.east) to[out=0,in=180] (mcp.west);
+\draw[arr] (landing.east) to[out=0,in=180] (mcp.west);
+\draw[arr] (hosting.east) to[out=0,in=180] (session.west);
+\draw[arr] (embedded.east) to[out=0,in=180] (session.west);
+\draw[arr] (mcp.east) to[out=0,in=180] node[lab, above=1pt] {allowed tools} (inspect.west);
+\draw[arr] (session.east) to[out=0,in=180] (actions.west);
+\draw[arr] (session.east) to[out=0,in=180] (media.west);
+\draw[arr] (policy.east) to[out=0,in=180] (memory.west);
+\draw[arr] (inspect.east) to[out=0,in=180] (browser.west);
+\draw[arr] (actions.east) to[out=0,in=180] (browser.west);
+\draw[arr] (media.east) to[out=0,in=180] (output.west);
+\draw[soft] (browser.south) to[out=-90,in=90] node[lab, right=1pt] {captured state} (output.north);
+\draw[soft] (policy.south) to[out=-90,in=-145]
+  node[lab, pos=0.52, below=1pt] {session guardrails} (browser.south west);
+
 \end{tikzpicture}
 }
-\caption{Profile-scoped MCP browser tooling and runtime controls used by OWC agents.}
-\label{fig:browser-tooling-layer}
+\caption{Profile-scoped MCP browser tooling and runtime controls used by OWC agents.}\label{fig:browser-tooling-layer}
 \end{figure}

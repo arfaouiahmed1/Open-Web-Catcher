@@ -1,18 +1,16 @@
 \chapter*{List of Acronyms}
 \addcontentsline{toc}{chapter}{List of Acronyms}
 
-\begin{longtable}{>{\raggedright\arraybackslash\bfseries}p{3.0cm}
-                  >{\raggedright\arraybackslash}p{10.8cm}}
+\begingroup
+\small
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.16}
+\noindent\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.0cm}
+                  >{\raggedright\arraybackslash}X}
 \toprule
 \rowcolor{accent!8}
 Acronym & Meaning \\
 \midrule
-\endfirsthead
-\toprule
-\rowcolor{accent!8}
-Acronym & Meaning \\
-\midrule
-\endhead
 AI & Artificial Intelligence \\
 API & Application Programming Interface \\
 ASB & Azure Service Bus \\
@@ -32,6 +30,17 @@ JSON & JavaScript Object Notation \\
 KPI & Key Performance Indicator \\
 LLM & Large Language Model \\
 M3U8 & UTF-8 M3U playlist format \\
+\bottomrule
+\end{tabularx}
+
+\clearpage
+
+\noindent\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.0cm}
+                  >{\raggedright\arraybackslash}X}
+\toprule
+\rowcolor{accent!8}
+Acronym & Meaning \\
+\midrule
 MCP & Model Context Protocol \\
 MPEG-DASH & MPEG Dynamic Adaptive Streaming over HTTP \\
 MPD & Media Presentation Description \\
@@ -51,5 +60,6 @@ UUID & Universally Unique Identifier \\
 UX & User Experience \\
 WHOIS & Domain registration lookup protocol or service \\
 \bottomrule
-\end{longtable}
+\end{tabularx}
+\endgroup
 \clearpage

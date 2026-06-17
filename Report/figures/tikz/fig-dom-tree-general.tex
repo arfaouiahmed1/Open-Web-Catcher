@@ -1,41 +1,67 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\resizebox{0.95\textwidth}{!}{%
+\resizebox{0.96\textwidth}{!}{%
 \begin{tikzpicture}[
-  root/.style={draw=accent!75, fill=blue!6, rounded corners=6pt,
-    text width=2.9cm, minimum height=0.72cm, align=center, font=\footnotesize\bfseries},
-  nodebox/.style={draw=gray!65, fill=gray!9, rounded corners=5pt,
-    text width=2.6cm, minimum height=0.64cm, align=center, font=\scriptsize\bfseries},
-  signal/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
-    text width=2.65cm, minimum height=0.64cm, align=center, font=\scriptsize\bfseries},
-  tool/.style={draw=orange!75!black, fill=orange!9, rounded corners=5pt,
-    text width=2.7cm, minimum height=0.66cm, align=center, font=\scriptsize\bfseries},
-  link/.style={-, thick, gray!65},
-  arr/.style={->, >=Stealth, thick, accent!75, shorten <=3pt, shorten >=3pt}
+  box/.style={rounded corners=7pt, align=center, font=\scriptsize\bfseries,
+    inner xsep=6pt, inner ysep=5pt, minimum height=0.76cm, text=black},
+  root/.style={box, draw=accent!75, fill=blue!6,
+    text width=3.35cm, font=\footnotesize\bfseries},
+  domnode/.style={box, draw=gray!65, fill=gray!9,
+    text width=2.8cm},
+  signal/.style={box, draw=green!55!black, fill=green!8,
+    text width=2.85cm},
+  tool/.style={box, draw=orange!75!black, fill=orange!9,
+    text width=2.9cm},
+  panel/.style={draw=gray!35, fill=gray!4, rounded corners=9pt, inner sep=8pt},
+  junction/.style={circle, draw=accent!70, fill=white, inner sep=1.7pt},
+  tree/.style={-{Latex[length=2.2mm,width=1.7mm]}, line width=0.85pt,
+    accent!78, shorten <=3pt, shorten >=3pt, line cap=round},
+  softtree/.style={-{Latex[length=2.2mm,width=1.7mm]}, line width=0.85pt,
+    gray!70, densely dashed, shorten <=3pt, shorten >=3pt, line cap=round},
+  extract/.style={-{Latex[length=2.2mm,width=1.7mm]}, line width=0.85pt,
+    green!45!black, shorten <=3pt, shorten >=3pt, line cap=round},
+  arrowlabel/.style={font=\tiny\bfseries, fill=white, inner sep=1.2pt, text=black!78},
+  grouplabel/.style={font=\tiny\bfseries, text=black!65, fill=white, inner sep=2pt}
 ]
-\node[root] (doc) at (0,2.7) {Browser document};
-\node[nodebox] (html) at (0,1.55) {\texttt{<html>} root};
-\node[nodebox] (head) at (-3.5,0.35) {\texttt{<head>} metadata};
-\node[nodebox] (body) at (3.5,0.35) {\texttt{<body>} visible page};
+\node[root] (doc) at (0,3.15) {Browser document};
+\node[domnode] (html) at (0,1.92) {\texttt{<html>} root};
+\node[domnode] (head) at (-3.75,0.58) {\texttt{<head>}\\metadata};
+\node[domnode] (body) at (0,0.58) {\texttt{<body>}\\visible page};
 
-\node[signal] (cards) at (0,-1.0) {Repeated cards\\match rows};
-\node[signal] (buttons) at (3.5,-1.0) {Controls\\buttons, tabs};
-\node[signal] (frames) at (7.0,-1.0) {Frames\\iframe player};
-\node[tool] (attrs) at (0,-2.35) {Attributes\\href, data-*};
-\node[tool] (text) at (3.5,-2.35) {Visible text\\teams, channel};
-\node[tool] (events) at (7.0,-2.35) {Runtime hooks\\scripts, player};
+\node[signal] (cards) at (-3.75,-1.32) {Repeated cards\\match rows};
+\node[signal] (buttons) at (0,-1.32) {Controls\\buttons, tabs};
+\node[signal] (frames) at (3.75,-1.32) {Frames\\iframe player};
 
-\draw[link] (doc) -- (html);
-\draw[link] (html) -- (head);
-\draw[link] (html) -- (body);
-\draw[link] (body) -- (cards);
-\draw[link] (body) -- (buttons);
-\draw[link] (body) -- (frames);
-\draw[arr] (cards) -- (attrs);
-\draw[arr] (buttons) -- (text);
-\draw[arr] (frames) -- (events);
+\node[tool] (attrs) at (-3.75,-2.9) {Attributes\\href, data-*};
+\node[tool] (text) at (0,-2.9) {Visible text\\teams, channel};
+\node[tool] (events) at (3.75,-2.9) {Runtime hooks\\scripts, player};
+
+\coordinate (domsplit) at (0,1.22);
+\coordinate (bodysplit) at (0,-0.42);
+\node[junction] at (domsplit) {};
+\node[junction] at (bodysplit) {};
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(doc) (html) (head) (body)] (structure) {};
+  \node[panel, fit=(cards) (buttons) (frames) (attrs) (text) (events)] (signals) {};
+  \node[grouplabel, anchor=west] at ([xshift=0.12cm,yshift=-0.12cm]structure.north west) {DOM structure};
+  \node[grouplabel, anchor=west] at ([xshift=0.12cm,yshift=-0.12cm]signals.north west) {Extraction signals};
+\end{scope}
+
+\draw[tree] (doc.south) -- node[arrowlabel, right=2pt] {parse} (html.north);
+\draw[tree] (html.south) -- (domsplit);
+\draw[softtree] (domsplit) to[out=205,in=90] node[arrowlabel, above left=1pt and -1pt] {metadata} (head.north);
+\draw[tree] (domsplit) -- node[arrowlabel, right=2pt] {content} (body.north);
+
+\draw[tree] (body.south) -- (bodysplit);
+\draw[extract] (bodysplit) to[out=215,in=90] node[arrowlabel, above left=1pt and -1pt] {list} (cards.north);
+\draw[extract] (bodysplit) -- node[arrowlabel, right=2pt] {actions} (buttons.north);
+\draw[extract] (bodysplit) to[out=-35,in=90] node[arrowlabel, above right=1pt and -1pt] {embed} (frames.north);
+
+\draw[extract] (cards.south) -- node[arrowlabel, right=2pt] {read} (attrs.north);
+\draw[extract] (buttons.south) -- node[arrowlabel, right=2pt] {label} (text.north);
+\draw[extract] (frames.south) -- node[arrowlabel, right=2pt] {trace} (events.north);
 \end{tikzpicture}
 }
-\caption{Simplified DOM tree showing how a browser represents an HTML document.}
-\label{fig:dom-tree-general}
+\caption{Simplified DOM tree showing how a browser represents an HTML document.}\label{fig:dom-tree-general}
 \end{figure}

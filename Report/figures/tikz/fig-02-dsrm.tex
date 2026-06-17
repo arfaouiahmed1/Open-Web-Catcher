@@ -1,26 +1,35 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.94\textwidth}{!}{%
 \begin{tikzpicture}[
-  phase/.style={draw=accent!75, fill=blue!6, rounded corners=7pt,
-                minimum width=4.25cm, minimum height=1.05cm,
-                text centered, font=\small\bfseries, align=center},
-  phaseg/.style={draw=green!55!black, fill=green!8, rounded corners=7pt,
-                minimum width=4.25cm, minimum height=1.05cm,
-                text centered, font=\small\bfseries, align=center},
-  center/.style={draw=orange!70!black, fill=orange!9, rounded corners=7pt,
-                minimum width=3.8cm, minimum height=1.05cm,
-                text centered, font=\small\bfseries, align=center},
-  arr/.style={->, >=Stealth, thick, accent!70, shorten <=3pt, shorten >=3pt},
-  fb/.style={->, >=Stealth, dashed, thick, gray!60, shorten <=3pt, shorten >=3pt}
+  phase/.style={draw=accent!68, fill=blue!5, rounded corners=7pt,
+                minimum width=4.2cm, minimum height=1.18cm,
+                text width=3.76cm, align=center,
+                font=\footnotesize, inner sep=6pt},
+  buildphase/.style={phase, draw=green!55!black, fill=green!8},
+  center/.style={draw=orange!70!black, fill=orange!10, rounded corners=8pt,
+                minimum width=4.05cm, minimum height=1.25cm,
+                text width=3.55cm, align=center,
+                font=\footnotesize\bfseries, inner sep=7pt},
+  badge/.style={circle, fill=accent!86, draw=white, line width=0.5pt,
+                text=white, inner sep=0pt, minimum size=4.4mm,
+                font=\scriptsize\bfseries},
+  arr/.style={-{Stealth[length=3mm,width=2.1mm]}, thick, accent!75,
+              line cap=round, shorten <=5pt, shorten >=5pt},
+  fb/.style={-{Stealth[length=2.4mm,width=1.7mm]}, dashed, thick, gray!58,
+             line cap=round, shorten <=4pt, shorten >=4pt}
 ]
-\node[phase] (problem) at (0,4.25) {1. Problem\\Identification};
-\node[phase] (objectives) at (5.35,2.35) {2. Objectives\\of the Solution};
-\node[phaseg] (design) at (5.35,-1.0) {3. Design and\\Development};
-\node[phaseg] (demo) at (0,-2.95) {4. Demonstration};
-\node[phase] (eval) at (-5.35,-1.0) {5. Evaluation};
-\node[phase] (comm) at (-5.35,2.35) {6. Communication};
-\node[center] (artifact) at (0,0.65) {OWC Artifact\\and Evidence Workflow};
+\node[phase] (problem) at (0,4.35) {\textbf{Problem identification}\\Dynamic evidence gaps};
+\node[phase] (objectives) at (5.45,2.45) {\textbf{Solution objectives}\\Classify, capture, trace};
+\node[buildphase] (design) at (5.45,-1.0) {\textbf{Design and development}\\n8n validation and OWC build};
+\node[buildphase] (demo) at (0,-3.05) {\textbf{Demonstration}\\Representative page scenarios};
+\node[phase] (eval) at (-5.45,-1.0) {\textbf{Evaluation}\\Evidence review and telemetry};
+\node[phase] (comm) at (-5.45,2.45) {\textbf{Communication}\\PFE report and diagrams};
+\node[center] (artifact) at (0,0.62) {OWC artifact\\and evidence workflow};
+
+\foreach \nodeName/\number in {problem/1,objectives/2,design/3,demo/4,eval/5,comm/6} {
+  \node[badge] at ($({\nodeName}.north west)+(0.02,-0.02)$) {\number};
+}
 
 \draw[arr] (problem.east) to[bend left=8] (objectives.north west);
 \draw[arr] (objectives.south) -- (design.north);
@@ -37,6 +46,5 @@
 \draw[fb] (artifact.west) -- (comm.east);
 \end{tikzpicture}
 }
-\caption{DSRM backbone used to structure the OWC problem, artifact, demonstration, evaluation, and communication.}
-\label{fig:dsrm}
+\caption{DSRM backbone used to structure the OWC problem, artifact, demonstration, evaluation, and communication.}\label{fig:dsrm}
 \end{figure}

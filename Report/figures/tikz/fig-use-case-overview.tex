@@ -1,62 +1,60 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\resizebox{0.94\textwidth}{!}{%
+\resizebox{0.96\textwidth}{!}{%
 \begin{tikzpicture}[
-  actor/.style={draw=gray!70, fill=gray!7, rounded corners=3pt,
-    minimum width=2.8cm, minimum height=0.8cm, align=center, font=\small\bfseries},
-  uc/.style={draw=accent, fill=blue!5, ellipse,
-    minimum width=4.5cm, minimum height=1.0cm, align=center, font=\footnotesize\bfseries},
-  subuc/.style={draw=accent!65, fill=blue!2, ellipse,
-    minimum width=3.7cm, minimum height=0.75cm, align=center, font=\scriptsize},
-  ext/.style={draw=purple!65, fill=purple!7, rounded corners=4pt,
-    minimum width=2.9cm, minimum height=0.85cm, align=center, font=\small\bfseries},
-  boundary/.style={draw=gray!55, rounded corners=8pt, inner sep=11pt},
-  assoc/.style={-, thick, gray!72, shorten <=2pt, shorten >=2pt},
-  inc/.style={->, >=Stealth, dashed, gray!70, thick, shorten <=2pt, shorten >=2pt},
-  note/.style={font=\tiny, text=gray!70, fill=white, inner sep=1pt}
+  line cap=round,
+  line join=round,
+  actor/.style={draw=gray!70, fill=gray!7, rounded corners=4pt,
+    minimum width=2.7cm, minimum height=0.82cm, align=center, font=\small\bfseries},
+  uc/.style={draw=accent!78, fill=blue!5, rounded corners=9pt,
+    minimum width=4.05cm, minimum height=0.82cm, align=center,
+    font=\scriptsize\bfseries, text width=3.78cm},
+  review/.style={uc, draw=green!55!black, fill=green!8},
+  config/.style={uc, draw=purple!65!black, fill=purple!7},
+  launch/.style={uc, draw=orange!80!black, fill=orange!10},
+  boundary/.style={draw=gray!45, fill=gray!2, rounded corners=10pt,
+    inner sep=12pt, line width=0.55pt},
+  assoc/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.78pt,
+    gray!72, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  flow/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.82pt,
+    accent!78, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  note/.style={font=\tiny\bfseries, text=black!62, fill=white, inner sep=1.1pt}
 ]
 
-\node[actor] (operator) at (-6.8,1.7) {Operator};
-\node[actor] (engineer) at (-6.8,-3.2) {Engineer /\\Administrator};
-\node[ext] (services) at (7.0,-1.15) {External\\Services};
+\node[actor] (operator) at (-5.55,0.15) {Operator};
 
-\node[uc] (launch) at (-2.0,3.2) {Launch investigation};
-\node[subuc] (seed) at (2.2,3.9) {Submit seed URL};
-\node[subuc] (batch) at (2.2,2.8) {Run dataset batch};
+\node[uc] (dashboard) at (-1.45,3.25) {View operational dashboard\\{\normalfont\tiny costs, tokens, providers, recent events}};
+\node[launch] (workflow) at (-1.45,2.02) {Launch full workflow run\\{\normalfont\tiny seed URL through the orchestrator}};
+\node[launch] (testagent) at (-1.45,0.79) {Test one specialist agent\\{\normalfont\tiny classification, landing, hosting, embedded}};
+\node[uc] (datasets) at (-1.45,-0.44) {Manage dataset sites and batches\\{\normalfont\tiny websites, batches, run history}};
 
-\node[uc] (monitor) at (-2.0,1.2) {Monitor execution};
-\node[subuc] (events) at (2.2,1.7) {View events and tool calls};
-\node[subuc] (screens) at (2.2,0.7) {Inspect screenshots};
+\node[review] (inspect) at (3.35,2.62) {Inspect run detail and traces\\{\normalfont\tiny events, tool calls, screenshots}};
+\node[review] (evidence) at (3.35,1.22) {Review evidence bundle\\{\normalfont\tiny streams, screenshots, providers, emails}};
+\node[review] (lookup) at (3.35,-0.18) {Run manual provider lookup\\{\normalfont\tiny provider history and enrichment}};
+\node[config] (settings) at (3.35,-1.58) {Manage settings\\{\normalfont\tiny models, browser, pricing, keys, MCP tools}};
 
-\node[uc] (review) at (-2.0,-0.9) {Review evidence};
-\node[subuc] (streams) at (2.2,-0.2) {Validate stream URLs};
-\node[subuc] (provider) at (2.2,-1.2) {Analyze providers};
-\node[subuc] (emails) at (2.2,-2.2) {Draft takedown emails};
+\begin{scope}[on background layer]
+  \node[boundary, fit=(dashboard) (workflow) (testagent) (datasets) (inspect) (evidence) (lookup) (settings)] (system) {};
+\end{scope}
 
-\node[uc] (config) at (-2.0,-3.2) {Configure\\system};
-\node[subuc, minimum width=4.2cm] (runtime) at (2.2,-3.2) {Models, prompts, MCP, runtime};
+\node[anchor=south, font=\small\bfseries, text=accent] at ([yshift=0.12cm]system.north)
+  {Open Web Catcher Console};
 
-\node[boundary, fit=(launch)(seed)(batch)(monitor)(events)(screens)(review)(streams)(provider)(emails)(config)(runtime)] (system) {};
-\node[anchor=south, font=\small\bfseries, text=accent] at ([yshift=0.15cm]system.north)
-  {Evidence Collection Platform};
+\draw[assoc] (operator) -- (dashboard);
+\draw[assoc] (operator) -- (workflow);
+\draw[assoc] (operator) -- (testagent);
+\draw[assoc] (operator) -- (datasets);
+\draw[assoc] (operator) -- (lookup);
+\draw[assoc] (operator) -- (settings);
 
-\draw[assoc] (operator) -- (launch);
-\draw[assoc] (operator) -- (monitor);
-\draw[assoc] (operator) -- (review);
-\draw[assoc] (engineer) -- (config);
-\draw[assoc] (services.west) -- (provider.east);
-
-\draw[inc] (launch) -- node[note, above]{include} (seed);
-\draw[inc] (launch) -- node[note, below]{include} (batch);
-\draw[inc] (monitor) -- node[note, above]{include} (events);
-\draw[inc] (monitor) -- node[note, below]{include} (screens);
-\draw[inc] (review) -- node[note, above]{include} (streams);
-\draw[inc] (review) -- node[note, above]{include} (provider);
-\draw[inc] (review) -- node[note, below]{extend} (emails);
-\draw[inc] (config) -- (runtime);
+\draw[flow] (workflow) -- node[note, above] {creates run} (inspect);
+\draw[flow] (testagent) -- node[note, above] {creates run} (inspect);
+\draw[flow] (datasets) -- node[note, left] {batch launch} (workflow);
+\draw[flow] (inspect) -- node[note, right] {opens outputs} (evidence);
+\draw[flow] (evidence) -- node[note, right] {enriches host} (lookup);
+\draw[flow] (settings) -- node[note, below] {preflight state} (workflow);
 
 \end{tikzpicture}
 }
-\caption{Use-case overview of the evidence-collection platform.}
-\label{fig:use-case-overview}
+\caption{Use-case diagram for the active OWC console actions: launch, test, dataset management, trace inspection, evidence review, provider lookup, and configuration.}\label{fig:use-case-overview}
 \end{figure}

@@ -1,42 +1,102 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  agent/.style={draw=orange!80!black, fill=orange!9, rounded corners=6pt,
-    text width=2.75cm, minimum height=0.9cm, align=center, font=\scriptsize\bfseries},
-  inspect/.style={draw=purple!65!black, fill=purple!7, rounded corners=6pt,
-    text width=2.9cm, minimum height=0.9cm, align=center, font=\scriptsize\bfseries},
-  action/.style={draw=accent!75, fill=blue!6, rounded corners=6pt,
-    text width=2.9cm, minimum height=0.9cm, align=center, font=\scriptsize\bfseries},
-  evidence/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
-    text width=2.95cm, minimum height=0.9cm, align=center, font=\scriptsize\bfseries},
-  memory/.style={draw=gray!65, fill=gray!10, rounded corners=6pt,
-    text width=2.95cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!75, shorten <=3pt, shorten >=3pt},
-  soft/.style={->, >=Stealth, thick, dashed, gray!65, shorten <=3pt, shorten >=3pt}
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
+    line width=0.55pt, inner sep=12pt},
+  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=3.1cm, minimum height=0.85cm, inner xsep=5pt,
+    inner ysep=4pt, text=black},
+  agent/.style={block, draw=orange!80!black, fill=orange!9},
+  inspect/.style={block, draw=purple!65!black, fill=purple!7},
+  action/.style={block, draw=accent!75, fill=blue!6},
+  evidence/.style={block, draw=green!55!black, fill=green!8},
+  memory/.style={block, draw=gray!62, fill=gray!9},
+  badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
+    inner sep=1.25pt, minimum size=8.5pt},
+  paneltitle/.style={font=\scriptsize\bfseries, text=black!68, fill=white,
+    inner sep=2pt},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!78, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.76pt,
+    gray!62, densely dashed, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
+    text=black!72}
 ]
-\node[agent] (agent) at (0,2.35) {Specialist agent\\current objective};
-\node[inspect] (inspect) at (3.4,2.35) {Inspect + context\\DOM, frames, candidates};
-\node[action] (nav) at (6.8,3.15) {URL navigation\\open discovered link};
-\node[action] (js) at (6.8,1.55) {JavaScript action\\click, scroll, play};
-\node[evidence] (evidence) at (10.2,2.35) {Evidence tools\\screenshots + media};
-\node[agent] (decision) at (13.6,2.35) {Agent decision\\handoff or retry};
 
-\node[memory] (memory) at (3.4,0.25) {Memory hints\\soft guidance};
-\node[memory] (trace) at (10.2,0.25) {Trace output\\tool calls + result};
+% Nodes: Main Flow
+\node[agent] (agent) at (0,2.85) {Specialist agent\\{\normalfont\scriptsize current objective}};
+\node[inspect] (inspect) at (4.25,2.85) {Inspect + context\\{\normalfont\scriptsize DOM, frames, candidates}};
+\node[action] (nav) at (8.75,3.85) {URL navigation\\{\normalfont\scriptsize open discovered link}};
+\node[action] (js) at (8.75,1.85) {JavaScript action\\{\normalfont\scriptsize click, scroll, play}};
+\node[evidence] (evidence) at (13.25,2.85) {Evidence tools\\{\normalfont\scriptsize screenshots + media}};
+\node[agent] (decision) at (17.50,2.85) {Agent decision\\{\normalfont\scriptsize handoff or retry}};
 
-\draw[arr] (agent) -- (inspect);
-\draw[arr] (inspect.east) -- ++(0.45,0) |- (nav.west);
-\draw[arr] (inspect.east) -- ++(0.45,0) |- (js.west);
-\draw[arr] (nav.east) -- ++(0.45,0) |- (evidence.west);
-\draw[arr] (js.east) -- ++(0.45,0) |- (evidence.west);
-\draw[arr] (evidence) -- (decision);
-\draw[soft] (memory.north) -- (inspect.south);
-\draw[soft] (evidence.south) -- (trace.north);
-\draw[soft] (trace.east) to[out=0,in=-90] (decision.south);
-\draw[soft] (decision.north) to[out=90,in=90,looseness=0.8] (inspect.north);
+% Nodes: Reusable Signals (Bottom)
+\node[memory] (memory) at (4.25,0.40) {Memory hints\\{\normalfont\scriptsize soft guidance}};
+\node[memory] (trace) at (13.25,0.40) {Trace output\\{\normalfont\scriptsize tool calls + result}};
+
+% Background Panels
+\begin{scope}[on background layer]
+  % Create explicit coordinates for the feedback loop to ensure the flow panel encompasses them
+  \coordinate (feedbackleft) at (4.25, 4.95);
+  \coordinate (feedbackright) at (17.50, 4.95);
+  
+  \node[panel, fit=(agent) (inspect) (nav) (js) (evidence) (decision) (feedbackleft) (feedbackright)] (flowpanel) {};
+  
+  % A dummy coordinate helps span the support panel nicely underneath
+  \coordinate (supportright) at (17.50, 0.40);
+  \node[panel, fit=(memory) (trace) (supportright)] (supportpanel) {};
+\end{scope}
+
+% Panel Titles
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]flowpanel.north west) {Browser-tool decision loop};
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]supportpanel.north west) {Reusable signals};
+
+% Number Badges
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]agent.north west) {1};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]inspect.north west) {2};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]nav.north west) {3};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]evidence.north west) {4};
+
+
+% -------------------------------------------------------------
+% Arrow Routings
+% -------------------------------------------------------------
+
+% 1. Initial State
+\draw[arr] (agent.east) -- (inspect.west);
+
+% 2. Diverging multiple arrows (S-curves replacing blocky orthogonal lines)
+\draw[arr] ([yshift=0.18cm]inspect.east) to[out=0,in=180] (nav.west);
+\draw[arr] ([yshift=-0.18cm]inspect.east) to[out=0,in=180] (js.west);
+
+% 3. Converging arrows moving out to the Evidence array
+\draw[arr] (nav.east) to[out=0,in=180]
+  node[lab, above=2pt, pos=0.50] {new page} ([yshift=0.18cm]evidence.west);
+\draw[arr] (js.east) to[out=0,in=180]
+  node[lab, below=2pt, pos=0.50] {state change} ([yshift=-0.18cm]evidence.west);
+
+% 4. Final step in loop
+\draw[arr] (evidence.east) -- node[lab, above=1pt] {validate} (decision.west);
+
+% 5. Bottom Signals
+\draw[soft] (memory.north) -- node[lab, left=1pt] {hints} (inspect.south);
+\draw[soft] (evidence.south) -- node[lab, right=1pt] {record} (trace.north);
+
+% 6. Decision Tracing
+\draw[soft] (trace.east) to[out=0,in=-90]
+  node[lab, pos=0.55, right=2pt] {trace} ([xshift=0.35cm]decision.south);
+
+% 7. Global Top Feedback Loop (Clear squared-off U-shape)
+\draw[soft] ([xshift=-0.35cm]decision.north) 
+  -- ([xshift=-0.35cm]feedbackright) 
+  -- node[lab, above=1pt, midway] {retry or handoff} (feedbackleft) 
+  -- (inspect.north);
+
 \end{tikzpicture}
 }
-\caption{Global browser-tool flow: inspect first, choose URL navigation or JavaScript action, then validate evidence.}
-\label{fig:tool-family-overview}
+\caption{Global browser-tool flow. The agent inspects page context, selects either URL navigation or JavaScript interaction, validates the resulting evidence, and records reusable trace and memory signals.}\label{fig:tool-family-overview}
 \end{figure}

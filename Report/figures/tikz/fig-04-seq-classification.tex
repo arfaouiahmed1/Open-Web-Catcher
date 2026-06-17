@@ -1,4 +1,4 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.94\textwidth}{!}{%
 \begin{tikzpicture}[
@@ -10,14 +10,14 @@
   lab/.style={font=\tiny, fill=white, inner sep=1.2pt, align=center}
 ]
 
-\foreach \x/\name/\id in {
+\foreach \x/\name/\id in {%
   0/Orchestrator/orch,
   2.8/Classification/agent,
   5.6/LangChain\\loop/loop,
   8.4/MCP\\profile/mcp,
   11.2/Gemini/model,
   14.0/Route\\state/rstate
-}{
+}{%
   \node[part] (\id) at (\x,0) {\name};
   \draw[life] (\x,-0.42) -- (\x,-6.95);
 }
@@ -34,6 +34,5 @@
 
 \end{tikzpicture}
 }
-\caption{Classification-agent sequence: inspect page state and return a routing decision.}
-\label{fig:seq-classification}
+\caption{Classification-agent sequence: inspect page state and return a routing decision.}\label{fig:seq-classification}
 \end{figure}

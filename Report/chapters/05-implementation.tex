@@ -1,22 +1,21 @@
-\chapter{Implementation}
-\label{chap:implementation}
+\chapter{Implementation}\label{chap:implementation}
 
 The implementation progressed in three major parts. The first part was an n8n
-workflow used as a fast exploration, validation, and crawler-backup environment.
-The second part was Open Web Catcher (OWC), the platform built around FastAPI,
-Next.js, MCP browser-tool containers, specialist agents, model/runtime management,
-and PostgreSQL observability. The third part was the deployment direction: the
-company preferred to keep n8n as the operational backup workflow while deploying
-the landing agent as a focused cloud job.
+landing-agent workflow used for fast exploration, validation, and backup execution when
+the company workflow needed rendered-page reasoning. The second part was Open Web
+Catcher (OWC), the academic/reference platform built around FastAPI, Next.js, MCP
+browser-tool containers, specialist agents, model/runtime management, and PostgreSQL
+observability. The third part was the deployment direction: the company kept its
+existing operational workflow and deployed only the landing agent as a focused backup
+cloud job.
 
 This split matters because the two systems did not have the same purpose. The
 n8n workflow was useful for testing whether agentic browsing could handle the
-domain at all and whether it could complement the existing crawler when static
-collection missed dynamic evidence. OWC was built after those lessons, with cleaner
+domain at all and whether it could recover dynamic landing-page evidence when the
+primary workflow missed it. OWC was built after those lessons, with cleaner
 engineering boundaries, persistent traces, configurable runtime settings, and a
 better foundation for evaluation. The deployment work then narrowed the cloud target
 to the part that the company actually wanted to operationalize during the internship.
-
 \section{Part 1: n8n Workflow Prototype}
 
 \subsection{Purpose of the n8n phase}
@@ -40,15 +39,27 @@ runtime length, and evidence validation.
 The n8n workflow used agent-like nodes to test the same page-type responsibilities
 that later became specialist agents. Figure~\ref{fig:n8n-agent-screenshots} shows the
 full sequential workflow used during the prototype phase. The following figures give
-the specialist-agent screenshots more space so they remain readable when printed.
+the specialist-agent screenshots in normal stacked layouts.
 
 \input{figures/tikz/fig-n8n-agent-screenshots}
+
+The full workflow view gives the overall sequence, but it is too dense to explain each
+agent responsibility on its own. The next figure separates the first two prototype
+responsibilities: classification and landing-page exploration.
+
 \input{figures/tikz/fig-n8n-classification-landing}
+
+After classification and landing discovery, the prototype moved into the more difficult
+browser-interaction tasks. The hosting and embedded screenshots show the parts of the
+workflow that tested player activation, server handling, iframe inspection, and stream
+harvesting.
+
 \input{figures/tikz/fig-n8n-hosting-embedded}
 
+\clearpage
+
 \begin{table}[!htbp]
-\centering
-\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.2cm}
+\centering\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.2cm}
                               >{\raggedright\arraybackslash}X
                               >{\raggedright\arraybackslash}X}
 \toprule
@@ -69,8 +80,7 @@ Nested frames require a dedicated extraction path and should not be mixed with
 landing-page exploration. \\
 \bottomrule
 \end{tabularx}
-\caption{n8n prototype agent roles and implementation lessons.}
-\label{tab:n8n-agent-lessons}
+\caption{n8n prototype agent roles and implementation lessons.}\label{tab:n8n-agent-lessons}
 \end{table}
 
 \subsection{Limitations of the n8n implementation}
@@ -115,8 +125,7 @@ LLM calls, tool calls, screenshots, and costs. & Post-mortem review required
 manual reconstruction. \\
 \bottomrule
 \end{tabularx}
-\caption{n8n prototype limitations and engineering consequences.}
-\label{tab:n8n-limitations}
+\caption{n8n prototype limitations and engineering consequences.}\label{tab:n8n-limitations}
 \end{table}
 
 \input{figures/tikz/fig-n8n-to-reference}
@@ -126,7 +135,7 @@ manual reconstruction. \\
 OWC keeps the useful extraction logic from the n8n phase but
 moves it into explicit software components. It is organized into five main
 implementation areas: FastAPI, Next.js, MCP browser containers, agents and model
-runtime, and PostgreSQL.
+runtime, and PostgreSQL\@.
 
 \input{figures/tikz/fig-implementation-five-areas}
 
@@ -159,22 +168,18 @@ Evaluation routes & Run or review batches and reliability checks. & Provides the
 foundation that the n8n prototype lacked. \\
 \bottomrule
 \end{tabularx}
-\caption{Backend API responsibilities in OWC.}
-\label{tab:fastapi-responsibilities}
+\caption{Backend API responsibilities in OWC.}\label{tab:fastapi-responsibilities}
 \end{table}
 
-The backend also uses lightweight caching for frequently polled read endpoints.
-This reduces repeated database work when the frontend refreshes dashboards or
+The backend also uses lightweight caching for frequently polled read endpoints.This reduces repeated database work when the frontend refreshes dashboards or
 run summaries.
 
 \subsection{Next.js Operator Console}
 
-The Next.js frontend is not just a dashboard~\cite{nextjs}. It is the operator console for
-OWC: launching runs, following execution, reviewing
+The Next.js frontend is not just a dashboard~\cite{nextjs}. It is the OWC operator console for launching runs, following execution, reviewing
 evidence, and changing runtime configuration.
 
-\begin{table}[!htbp]
-\centering
+\begin{table}[!htbp]\centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.4cm}
                               >{\raggedright\arraybackslash}X
                               >{\raggedright\arraybackslash}X}
@@ -196,18 +201,28 @@ display preferences, API key status, notifications, and MCP tool enablement. &
 Configuration endpoints and runtime settings persistence. \\
 \bottomrule
 \end{tabularx}
-\caption{Current Next.js operator-console surfaces and backend dependencies.}
-\label{tab:nextjs-surfaces}
+\caption{Current Next.js operator-console surfaces and backend dependencies.}\label{tab:nextjs-surfaces}
 \end{table}
 
 The design goal was operational clarity. A failed launch should show why it
 failed. A completed run should show what the agent actually did, which tools it
 called, what evidence it found, and where the model or browser runtime failed.
 
-\input{figures/tikz/fig-frontend-console-screenshots}
-\input{figures/tikz/fig-frontend-review-settings}
-\input{figures/tikz/fig-frontend-tools-settings}
+\clearpage
 
+\input{figures/tikz/fig-frontend-console-screenshots}
+
+The run detail and dashboard views make completed executions inspectable. The next
+console views focus on review and configuration screens, which are needed after a run
+has produced evidence.
+
+\input{figures/tikz/fig-frontend-review-settings}
+
+The review and settings views expose the user-facing controls. The final console
+screenshot group focuses on browser-tool diagnostics, which are useful when a run fails
+because of tool availability or profile configuration.
+
+\input{figures/tikz/fig-frontend-tools-settings}
 \subsection{MCP Browser Containers and Puppeteer Tools}
 
 The browser tooling was extracted from the n8n code-node style into dedicated
@@ -234,8 +249,7 @@ existing tool registry, stable enough for the profiled MCP tool server. & Chosen
 as the main browser engine for the implemented agent prompts and tool runtime. \\
 \bottomrule
 \end{tabularx}
-\caption{Browser automation engine comparison for the MCP tool layer.}
-\label{tab:playwright-puppeteer}
+\caption{Browser automation engine comparison for the MCP tool layer.}\label{tab:playwright-puppeteer}
 \end{table}
 
 \begin{table}[!htbp]
@@ -257,19 +271,17 @@ signals, and harvested \texttt{m3u8}/\texttt{mpd}/\texttt{mp4} candidates. \\
 Memory tools & Read or update reusable site hints from the memory layer. \\
 \bottomrule
 \end{tabularx}
-\caption{Puppeteer MCP tool groups and responsibilities.}
-\label{tab:puppeteer-tool-groups}
+\caption{Puppeteer MCP tool groups and responsibilities.}\label{tab:puppeteer-tool-groups}
 \end{table}
 
 \subsubsection{Tool registry and profile filtering}
-
 The MCP server exposes a larger internal tool registry than any one agent should use.
 During a run, OWC binds only the profile-specific subset required by the current
 stage. Classification receives broad page inspection and screenshot access. Landing
 receives tools for listing-page context, candidate extraction, reveal actions,
 scrolling, and element details. Hosting receives tools for server controls, playback
 activation, popup recovery, media state, and stream harvesting. Embedded receives
-frame-focused tools that keep the run inside the assigned iframe or player URL. This
+frame-focused tools that keep the run inside the assigned iframe or player URL\@. This
 filtering prevents a landing task from drifting into provider analysis or a hosting
 task from rewriting the whole route.
 
@@ -325,12 +337,10 @@ Embedded & Work only on embedded/player URLs and harvest final stream evidence.
 iframe-local text checks. \\
 \bottomrule
 \end{tabularx}
-\caption{Specialist agent objectives and assigned tool surfaces.}
-\label{tab:agent-objectives-tools}
+\caption{Specialist agent objectives and assigned tool surfaces.}\label{tab:agent-objectives-tools}
 \end{table}
 
 \subsubsection{Design constraints implemented in the agent runtime}
-
 The agent runtime was shaped by constraints that became clear during prototyping. These
 constraints are implementation concerns, not only methodology notes, because each one
 changed how the agents, prompts, tools, memory, and stopping rules were built.
@@ -364,8 +374,7 @@ Evidence isolation & The reference system must not depend on company production 
 structured outputs. \\
 \bottomrule
 \end{tabularx}
-\caption{Runtime constraints and their implementation responses.}
-\label{tab:agent-runtime-constraints}
+\caption{Runtime constraints and their implementation responses.}\label{tab:agent-runtime-constraints}
 \end{table}
 
 \subsubsection{Prompt evolution in the implementation}
@@ -409,14 +418,13 @@ tool traces, and failed retries can grow the context quickly. The implementation
 therefore tracks context windows, input tokens, output tokens, cached tokens,
 cache writes, and estimated cost.
 
-Gemini rate limits are evaluated across RPM, TPM, and RPD. Google's current
+Gemini rate limits are evaluated across RPM, TPM, and RPD\@. Google's current
 provider reference defines these as requests per minute, input tokens per minute, and
 requests per day, and states that limits depend on model and usage tier and can
-change in AI Studio \cite{gemini-rate-limits}. The implementation therefore treats rate
+change in AI~Studio~\cite{gemini-rate-limits}. The implementation therefore treats rate
 limits as configuration and observability concerns rather than hard-coded constants.
 
-\begin{table}[!htbp]
-\centering
+\begin{table}[!htbp]\centering
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.1cm}
                               >{\raggedright\arraybackslash}X
                               >{\raggedright\arraybackslash}X}
@@ -428,7 +436,7 @@ Context window & Store and display model context-window metadata where available
 & Prevents long runs from silently approaching context exhaustion. \\
 Token usage & Track input, output, cached input, and cache-write tokens. & Makes
 cost and prompt growth visible per run. \\
-Tool calling & Bind only profile-specific tools through LangChain and MCP. &
+Tool calling & Bind only profile-specific tools through LangChain and MCP\@. &
 Reduces incorrect tool choice and keeps browser actions controlled. \\
 Rate limits & Treat RPM, TPM, and RPD as provider limits to monitor and respect.
 & Avoids confusing quota failures with browser or prompt failures. \\
@@ -438,8 +446,7 @@ Caching & Use prompt/provider cache and tool-result cache where safe. & Reduces
 repeated tokens and repeated browser observations. \\
 \bottomrule
 \end{tabularx}
-\caption{Model-runtime concerns handled by the agent platform.}
-\label{tab:model-runtime-concerns}
+\caption{Model-runtime concerns handled by the agent platform.}\label{tab:model-runtime-concerns}
 \end{table}
 
 \subsubsection{Prompt engineering and stopping behavior}
@@ -470,8 +477,7 @@ Memory hints as soft guidance & Prior site knowledge helps, but does not replace
 current evidence. \\
 \bottomrule
 \end{tabularx}
-\caption{Prompt engineering rules enforced by the specialist agents.}
-\label{tab:prompt-engineering-rules}
+\caption{Prompt engineering rules enforced by the specialist agents.}\label{tab:prompt-engineering-rules}
 \end{table}
 
 \subsection{PostgreSQL Database and Observability}
@@ -505,34 +511,38 @@ Support/diagnostic records; some remain secondary rather than core report
 outputs. \\
 \bottomrule
 \end{tabularx}
-\caption{PostgreSQL observability records and their implementation role.}
-\label{tab:postgres-record-groups}
+\caption{PostgreSQL observability records and their implementation role.}\label{tab:postgres-record-groups}
 \end{table}
 
 \input{figures/tikz/fig-postgres-run-map}
 
 \section{Part 3: Deployment}
 
-The company preferred to keep n8n as the operational backup workflow around the
-existing crawler. For that reason, the cloud deployment did not attempt to replace the
-whole workflow with the complete OWC platform. Instead, the deployment focused on one
-validated unit: the landing-page agent. The deployment shape follows the practical
-company decision: target URLs, which are usually landing pages, arrive through an Azure
-Service Bus queue named \texttt{agent\_tasks}; one Azure Container Apps Job container
-owns n8n, the landing-agent worker, the Puppeteer MCP server, and Chrome instances; and
-the extracted matched URLs plus metadata are returned through a second Azure Service
-Bus queue named \texttt{agent\_results}~\cite{azure-jobs,azure-servicebus}.
+The company deployment decision was intentionally focused. The existing company
+workflow remained the primary operational system, and the deployment did not attempt to
+replace it with the complete OWC platform. Instead, the deployed unit was the validated
+n8n landing-agent backup: a browser-capable agent used when the primary flow cannot
+extract enough evidence from a dynamic landing page.
 
-This flow keeps the crawler, n8n, and the AI browser agent loosely coupled. The crawler
-can continue broad discovery. n8n can decide when a page needs the backup landing
-agent. The container can perform the expensive rendered-page work outside a synchronous
-web request. The result queue can then return candidate hosting URLs, channel hints,
-screenshots, trace metadata, and failure reasons to the operational workflow.
+The deployment shape follows that practical boundary. A task message containing the
+target URL and identifiers such as a job or execution ID enters the
+\texttt{agent\_tasks} Azure Service Bus queue. A focused Azure Container Apps Job then
+runs the landing-agent worker with its Puppeteer MCP endpoint and Chrome browser
+runtime. The agent opens the rendered landing page, uses model reasoning to inspect
+visible match, channel, pagination, and candidate-link signals, and returns the result
+through a configured results queue~\cite{azure-jobs,azure-servicebus}.
 
-This deployment choice matches the internship scope. OWC shows how the full platform
-can be structured, but the company-side deployment remained focused: n8n stayed in
-place as the backup orchestrator, while the landing-page agent was isolated as a
-cloud-executable single-container unit.
+The returned payload is meant for operational review and integration rather than for
+automatic enforcement. It can include matched URLs, match or channel metadata,
+screenshots, rejected URLs with reasons, extraction summary values, a reasoning log,
+raw JSON for debugging, and failure information when no useful candidates are found.
+This keeps the company workflow, queue interface, and browser-agent backup loosely
+coupled: the primary process can continue normal discovery, while the landing agent
+handles the expensive rendered-page work only for cases that need it.
+
+This deployment choice matches the internship scope. OWC shows how a complete platform
+could be structured, but the company-side deployment remained focused on the backup
+landing agent as a cloud-executable single-container unit.
 
 \input{figures/tikz/fig-05-deployment-physical}
 
@@ -543,25 +553,23 @@ cloud-executable single-container unit.
 \rowcolor{accent!8}
 Deployment element & Role & Scope during internship \\
 \midrule
-n8n workflow & Keeps the company-preferred orchestration layer. & Main operational
-workflow remained in n8n. \\
-Azure Service Bus & Decouples job submission from execution. & Used to pass landing-page
-jobs to the container worker. \\
+n8n landing-agent backup & Handles dynamic landing pages when the primary company
+workflow needs browser reasoning. & Deployed as the focused operational backup. \\
+Azure Service Bus & Decouples fallback submission from browser execution. & Used to
+pass landing-page jobs to the container worker and return results. \\
 Container Apps Job & Runs one containerized agent unit when a message arrives. &
-Single image for n8n, the landing-agent worker, Puppeteer MCP, and Chrome. \\
+Single image for the landing-agent worker, Puppeteer MCP, and Chrome. \\
 Puppeteer runtime & Opens the page and extracts match/host candidates through the
 local MCP endpoint. & Runs inside the same job container as the landing agent. \\
-Output queue & Publishes matched URLs, metadata, screenshots, logs, and failure
-reasons to \texttt{agent\_results}. & Used for review and integration back into the
-workflow. \\
+Output queue & Publishes matched URLs, metadata, screenshots, rejected URLs, logs, and
+failure reasons to the configured results queue. & Used for review and integration
+back into the workflow. \\
 \bottomrule
 \end{tabularx}
-\caption{Landing-agent deployment scope and responsibilities.}
-\label{tab:deployment-scope}
+\caption{Landing-agent deployment scope and responsibilities.}\label{tab:deployment-scope}
 \end{table}
 
 \section{Implementation Summary}
-
 The implementation moved from a useful but limited n8n prototype to the structured OWC
 platform. The n8n phase validated the feasibility of agentic browser extraction and
 exposed the main runtime problems. OWC addressed those problems with explicit backend

@@ -1,33 +1,55 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\resizebox{0.88\textwidth}{!}{%
+\resizebox{0.96\textwidth}{!}{%
 \begin{tikzpicture}[
-  prob/.style={draw=gray!60, fill=gray!8, rounded corners=5pt,
-    minimum width=3.75cm, minimum height=0.82cm, align=center, font=\footnotesize\bfseries},
-  sol/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
-    minimum width=3.75cm, minimum height=0.82cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80, shorten <=3pt, shorten >=3pt},
-  heading/.style={font=\scriptsize\bfseries, text=gray!70}
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
+    line width=0.55pt, inner sep=10pt},
+  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=4.15cm, minimum height=0.86cm, inner xsep=5pt,
+    inner ysep=4pt, text=black},
+  prob/.style={block, draw=gray!62, fill=gray!9},
+  sol/.style={block, draw=green!55!black, fill=green!8},
+  badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
+    inner sep=1.25pt, minimum size=8.5pt},
+  paneltitle/.style={font=\scriptsize\bfseries, text=black!68, fill=white,
+    inner sep=2pt},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!78, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
+    text=black!72}
 ]
 
-\node[heading] at (0,3.88) {Prototype limitation};
-\node[heading] at (6.4,3.88) {OWC design response};
+\node[prob] (p1) at (0,3.0) {Sequential workflow\\{\normalfont\scriptsize fixed execution order}};
+\node[prob] (p2) at (0,1.75) {No durable memory\\{\normalfont\scriptsize lessons lost between runs}};
+\node[prob] (p3) at (0,0.50) {Fragile browser state\\{\normalfont\scriptsize profile + focus drift}};
+\node[prob] (p4) at (0,-0.75) {Manual evaluation\\{\normalfont\scriptsize weak review trail}};
 
-\node[prob] (p1) at (0,3.0) {Sequential workflow};
-\node[prob] (p2) at (0,1.8) {No durable memory};
-\node[prob] (p3) at (0,0.6) {Fragile browser state};
-\node[prob] (p4) at (0,-0.6) {Manual evaluation};
+\node[sol] (s1) at (7.6,3.0) {Orchestrated specialists\\{\normalfont\scriptsize routed agent handoffs}};
+\node[sol] (s2) at (7.6,1.75) {Reusable memory hints\\{\normalfont\scriptsize validated soft guidance}};
+\node[sol] (s3) at (7.6,0.50) {Profile-scoped MCP sessions\\{\normalfont\scriptsize controlled browser runtime}};
+\node[sol] (s4) at (7.6,-0.75) {Stored traces + regression routes\\{\normalfont\scriptsize auditable run review}};
 
-\node[sol] (s1) at (6.4,3.0) {Orchestrated specialists};
-\node[sol] (s2) at (6.4,1.8) {Reusable memory hints};
-\node[sol] (s3) at (6.4,0.6) {Profile-scoped MCP sessions};
-\node[sol] (s4) at (6.4,-0.6) {Stored traces + regression routes};
+\begin{scope}[on background layer]
+  \node[panel, fit=(p1) (p2) (p3) (p4)] (limitpanel) {};
+  \node[panel, fit=(s1) (s2) (s3) (s4)] (responsepanel) {};
+\end{scope}
 
-\foreach \i in {1,2,3,4}
-  \draw[arr] (p\i) -- (s\i);
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]limitpanel.north west) {Prototype limitation};
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]responsepanel.north west) {OWC design response};
+
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]p1.north west) {1};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]p2.north west) {2};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]p3.north west) {3};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]p4.north west) {4};
+
+\draw[arr] (p1.east) -- node[lab, above=1pt] {formalize} (s1.west);
+\draw[arr] (p2.east) -- node[lab, above=1pt] {retain} (s2.west);
+\draw[arr] (p3.east) -- node[lab, above=1pt] {isolate} (s3.west);
+\draw[arr] (p4.east) -- node[lab, above=1pt] {audit} (s4.west);
 
 \end{tikzpicture}
 }
-\caption{How n8n limitations shaped the Open Web Catcher implementation.}
-\label{fig:n8n-to-reference}
+\caption{How n8n limitations shaped the Open Web Catcher implementation.}\label{fig:n8n-to-reference}
 \end{figure}

@@ -25,6 +25,7 @@ import {
   extractChromeNetErrorCode,
 } from '../../shared/error-codes.js';
 import { computeBrowserPolicy } from '../../shared/browser-policy.js';
+import { selectPersistentFingerprintHeaders } from '../../shared/fingerprint-headers.js';
 import { disableBlocking, enableBlocking } from './adblocker.js';
 import { getBrowserRuntimeSettings, getEffectiveRuntimeMetadata } from './runtime-config.js';
 
@@ -42,7 +43,7 @@ const EXECUTABLE_PATH =
 const CHROME_VERSION_API_URL =
   process.env.OWC_CHROME_VERSION_API_URL ||
   'https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json';
-const CHROME_VERSION_FALLBACK = String(process.env.OWC_CHROME_VERSION_FALLBACK || '148.0.7778.167').trim();
+const CHROME_VERSION_FALLBACK = String(process.env.OWC_CHROME_VERSION_FALLBACK || '149.0.7827.115').trim();
 const CHROME_VERSION_TIMEOUT_MS = Number.parseInt(
   String(process.env.OWC_CHROME_VERSION_FETCH_TIMEOUT_MS || '6000'),
   10,
@@ -326,7 +327,7 @@ function getIframeRecoveryTimeoutMs() {
 function getPopupBlockingEnabled() {
   return parseBoolean(
     runtimeSetting('popup_blocking_enabled') ?? process.env.OWC_POPUP_BLOCKING_ENABLED,
-    true,
+    false,
   );
 }
 
@@ -1143,22 +1144,20 @@ function buildProfileFromFingerprint(synchronizedBundle, chromeVersion, chromeMa
     : brands.map((entry) => ({ ...entry, version: chromeVersion }));
 
   const secChUa = buildSecChUa(brands);
-  const headers = {
+  const headers = selectPersistentFingerprintHeaders({
     ...toHeaderRecord(synchronizedBundle.headers),
     'User-Agent': navigator.userAgent,
     'Accept-Language': FORCED_LANGUAGE,
-    'Cache-Control': 'max-age=0',
-    Pragma: 'no-cache',
-    'Upgrade-Insecure-Requests': '1',
     'Sec-CH-UA': secChUa,
     'Sec-CH-UA-Mobile': '?0',
     'Sec-CH-UA-Platform': '"Windows"',
     'Sec-CH-UA-Platform-Version': `"${FORCED_WINDOWS_PLATFORM_VERSION}"`,
     'Sec-CH-UA-Full-Version': `"${chromeVersion}"`,
-  };
+  });
 
   return {
     userAgent: navigator.userAgent,
+    locale: 'en-US',
     language: FORCED_LANGUAGE,
     secChUa,
     chromeVersion,
@@ -1454,22 +1453,20 @@ function buildFallbackFingerprintProfile(chromeVersion, chromeMajorVersion) {
 
   return {
     userAgent,
+    locale: 'en-US',
     language: FORCED_LANGUAGE,
     secChUa,
     chromeVersion,
     chromeMajorVersion,
-    headers: {
+    headers: selectPersistentFingerprintHeaders({
       'User-Agent': userAgent,
       'Accept-Language': FORCED_LANGUAGE,
-      'Cache-Control': 'max-age=0',
-      Pragma: 'no-cache',
-      'Upgrade-Insecure-Requests': '1',
       'Sec-CH-UA': secChUa,
       'Sec-CH-UA-Mobile': '?0',
       'Sec-CH-UA-Platform': '"Windows"',
       'Sec-CH-UA-Platform-Version': `"${FORCED_WINDOWS_PLATFORM_VERSION}"`,
       'Sec-CH-UA-Full-Version': `"${chromeVersion}"`,
-    },
+    }),
     userAgentMetadata: {
       brands,
       fullVersion: chromeVersion,
@@ -2057,7 +2054,12 @@ export async function getPage(browser, {
   // Blank pages are opened by Puppeteer at launch and by previous tool calls,
   // but after navigate() the browser holds the real destination — use it.
   const navigated = pages.filter((p) => p.url() !== 'about:blank' && p.url() !== 'about:newtab');
-  const page = navigated[navigated.length - 1]
+  const popupPages = navigated.filter((candidate) => {
+    const target = candidate.target?.();
+    return Boolean(target && typeof target.opener === 'function' && target.opener());
+  });
+  const page = popupPages[popupPages.length - 1]
+    ?? navigated[navigated.length - 1]
     ?? pages.find((p) => p.url() === 'about:blank')
     ?? await browser.newPage();
 
@@ -2066,37 +2068,5 @@ export async function getPage(browser, {
     forceRotateFingerprint,
     browserProfile,
   });
-  return page;
-
-  // applyFingerprint internally enforces FORCED_VIEWPORT after injector runs.
-  // We set it once more here as the single authoritative enforcement point so
-  // every tool that calls getPage() is guaranteed 1920×1080 regardless of
-  // whether the fingerprint step was skipped (already applied) or threw.
-  await applyFingerprint(page, { targetUrl, forceRotate: forceRotateFingerprint });
-  await enforceWindowBounds(browser, page);
-  await page.setViewport(FORCED_VIEWPORT_OPTIONS);
-  attachNetworkDiagnostics(page);
-  const browserMetadata = browserProxyMetadata.get(browser) || {};
-  const effectivePolicy = buildEffectivePolicy({
-    browserProfile: browserProfile || browserMetadata.browserProfile || '',
-    targetUrl,
-    currentUrl: page.url(),
-    sharedConnection: browserMetadata.sharedConnection !== false,
-  });
-  setPageEffectivePolicy(page, effectivePolicy);
-
-  await page.setCacheEnabled(true);
-  if (effectivePolicy.cosmetic_filtering_enabled) {
-    try {
-      await enableBlocking(page, { targetUrl });
-    } catch (error) {
-      const debugAdblock = String(process.env.OWC_DEBUG_ADBLOCK || '').trim().toLowerCase();
-      if (debugAdblock === '1' || debugAdblock === 'true' || debugAdblock === 'yes') {
-        console.warn('[owc] adblocker attach skipped:', error?.message || error);
-      }
-    }
-  } else {
-    await disableBlocking(page).catch(() => {});
-  }
   return page;
 }

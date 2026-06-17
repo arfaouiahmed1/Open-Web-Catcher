@@ -1,71 +1,107 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\resizebox{\textwidth}{!}{%
+\resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  core/.style={draw=accent!90!black, fill=blue!10, rounded corners=5pt,
-    minimum width=3.05cm, minimum height=0.86cm, align=center,
-    font=\scriptsize\bfseries},
-  memory/.style={draw=teal!70!black, fill=teal!8, rounded corners=5pt,
-    minimum width=3.05cm, minimum height=0.86cm, align=center,
-    font=\scriptsize\bfseries},
-  agent/.style={draw=orange!75!black, fill=orange!9, rounded corners=5pt,
-    minimum width=3.15cm, minimum height=0.86cm, align=center,
-    font=\scriptsize\bfseries},
-  tool/.style={draw=purple!70!black, fill=purple!8, rounded corners=5pt,
-    minimum width=3.05cm, minimum height=0.86cm, align=center,
-    font=\scriptsize\bfseries},
-  skip/.style={draw=gray!65, fill=gray!9, rounded corners=5pt,
-    minimum width=3.45cm, minimum height=0.86cm, align=center,
-    font=\scriptsize\bfseries},
-  result/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
-    minimum width=3.05cm, minimum height=0.86cm, align=center,
-    font=\scriptsize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!82, shorten <=3pt, shorten >=3pt},
-  soft/.style={->, >=Stealth, thick, teal!70!black, shorten <=3pt, shorten >=3pt},
-  route/.style={->, >=Stealth, thick, orange!75!black, shorten <=3pt, shorten >=3pt},
-  stream/.style={->, >=Stealth, thick, green!55!black, shorten <=3pt, shorten >=3pt},
-  skipped/.style={->, >=Stealth, thick, gray!65, dashed, shorten <=3pt, shorten >=3pt},
-  lbl/.style={font=\tiny\bfseries, fill=white, inner sep=1.3pt, text=black}
+  line cap=round,
+  line join=round,
+  nodebase/.style={rounded corners=6pt, align=center,
+    font=\scriptsize\bfseries, inner xsep=6pt, inner ysep=4pt,
+    minimum height=0.86cm, text=black},
+  core/.style={nodebase, draw=accent!90!black, fill=blue!10,
+    text width=2.75cm},
+  routehub/.style={nodebase, draw=accent!78, fill=blue!6,
+    text width=1.55cm, minimum height=0.72cm, font=\tiny\bfseries},
+  memory/.style={nodebase, draw=teal!70!black, fill=teal!8,
+    text width=2.85cm},
+  agent/.style={nodebase, draw=orange!80!black, fill=orange!9,
+    text width=3.00cm},
+  tool/.style={nodebase, draw=purple!70!black, fill=purple!8,
+    text width=2.85cm},
+  skipnode/.style={nodebase, draw=gray!65, fill=gray!9,
+    text width=3.05cm},
+  streamset/.style={nodebase, draw=green!55!black, fill=green!7,
+    text width=1.95cm, minimum height=0.76cm, font=\tiny\bfseries},
+  result/.style={nodebase, draw=green!55!black, fill=green!8,
+    text width=2.85cm},
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=9pt,
+    line width=0.55pt, inner sep=10pt},
+  panellabel/.style={font=\scriptsize\bfseries, text=black!68,
+    fill=white, inner sep=2pt},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!82, shorten <=3pt, shorten >=3pt, rounded corners=6pt,
+    preaction={draw=white, line width=2.2pt}},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.78pt,
+    teal!70!black, densely dashed, shorten <=3pt, shorten >=3pt,
+    rounded corners=6pt, preaction={draw=white, line width=2.0pt}},
+  route/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.84pt,
+    orange!80!black, shorten <=3pt, shorten >=3pt, rounded corners=8pt,
+    preaction={draw=white, line width=2.2pt}},
+  stream/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.84pt,
+    green!55!black, shorten <=3pt, shorten >=3pt, rounded corners=8pt,
+    preaction={draw=white, line width=2.2pt}},
+  skipped/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.82pt,
+    gray!70, densely dashed, shorten <=3pt, shorten >=3pt,
+    rounded corners=10pt, preaction={draw=white, line width=2.1pt}},
+  lbl/.style={font=\tiny\bfseries, fill=white, inner sep=1.25pt,
+    text=black!75}
 ]
 
-\node[core] (orchestrator) at (0,1.6) {OrchestratorAgent};
-\node[memory] (memory) at (3.2,3.65) {LongTermMemory\\soft hints};
-\node[agent] (classifier) at (3.2,1.6) {ClassificationAgent};
+\node[core] (orchestrator) at (0,1.60) {OrchestratorAgent};
+\node[memory] (memory) at (3.45,3.55) {LongTermMemory\\{\normalfont\scriptsize soft hints}};
+\node[agent] (classifier) at (3.45,1.60) {ClassificationAgent};
 
-\node[agent] (landing) at (7.0,3.3) {LandingPageAgent};
-\node[agent] (hosting) at (7.0,1.65) {HostingPageAgent\\parallel targets};
-\node[agent] (embedded) at (7.0,0.0) {EmbeddedPageAgent\\iframe/player targets};
-\node[skip] (nostreams) at (7.0,-2.0) {analyze\_providers node\\skips because no streams};
+\node[agent] (landing) at (7.80,3.45) {LandingPageAgent};
+\node[agent] (hosting) at (7.80,1.60) {HostingPageAgent\\{\normalfont\scriptsize parallel targets}};
+\node[agent] (embedded) at (7.80,-0.25) {EmbeddedPageAgent\\{\normalfont\scriptsize iframe/player targets}};
+\node[skipnode] (nostreams) at (7.80,-2.10) {\texttt{analyze\_providers} node\\{\normalfont\scriptsize skips when no streams exist}};
 
-\node[tool] (providers) at (12.05,1.0) {IPInfoTool\\provider analysis};
-\node[tool] (emails) at (15.75,2.65) {EmailTool\\takedown drafts};
-\node[result] (result) at (15.75,-0.85) {PipelineResult};
+\node[tool] (providers) at (12.45,0.70) {IPInfoTool\\{\normalfont\scriptsize provider analysis}};
+\node[tool] (emails) at (16.10,2.55) {EmailTool\\{\normalfont\scriptsize takedown drafts}};
+\node[result] (result) at (16.10,-1.10) {PipelineResult};
 
-\draw[soft] (orchestrator) -- (memory);
-\draw[arr] (orchestrator) -- (classifier);
+\begin{scope}[on background layer]
+  \node[panel, fit=(orchestrator) (memory) (classifier)] (controlpanel) {};
+  \node[panel, fit=(landing) (hosting) (embedded) (nostreams)] (agentpanel) {};
+  \node[panel, fit=(providers) (emails) (result)] (downstreampanel) {};
+\end{scope}
 
-\draw[route] (classifier.north east) to[out=28,in=180] (landing.west);
-\draw[route] (classifier.east) -- (hosting.west);
-\draw[route] (classifier.south east) to[out=-28,in=180] (embedded.west);
-\draw[skipped] (classifier.south) -- ++(0,-0.6) -|
-  node[lbl, pos=0.27, below]{unknown/other} (nostreams.west);
+\node[panellabel, anchor=south west] at ([xshift=0.15cm,yshift=0.06cm]controlpanel.north west)
+  {Route owner and run memory};
+\node[panellabel, anchor=south west] at ([xshift=0.15cm,yshift=0.06cm]agentpanel.north west)
+  {Browser-facing specialists};
+\node[panellabel, anchor=south west] at ([xshift=0.15cm,yshift=0.06cm]downstreampanel.north west)
+  {Downstream review outputs};
 
-\draw[route] (landing.south) -- node[lbl, right]{hosting\_pages} (hosting.north);
-\draw[route] (hosting.south) -- node[lbl, right]{embedded\_url / player\_frame} (embedded.north);
-\draw[route] (landing.east) to[out=0,in=0,looseness=1.08]
-  node[lbl, pos=0.44, right]{direct embedded URLs} (embedded.east);
+\draw[soft] (orchestrator.north east) to[out=35,in=180]
+  node[lbl, above=1pt, pos=0.48] {lookup} (memory.west);
+\draw[arr] (memory.south west) to[out=210,in=55]
+  node[lbl, below=1pt, pos=0.55] {soft hints} (orchestrator.north east);
+\draw[arr] (orchestrator) -- node[lbl, above=1pt] {classify} (classifier);
 
-\draw[stream] (hosting.east) --
-  node[lbl, pos=0.47, above]{streams} (providers.west);
-\draw[stream] (embedded.east) to[out=0,in=215]
-  node[lbl, pos=0.52, below, sloped]{streams} (providers.south west);
-\draw[arr] (providers.north east) -- (emails.south west);
-\draw[arr] (providers.south east) -- (result.north west);
-\draw[arr] (emails.south) -- (result.north);
-\draw[skipped] (nostreams.east) -- (result.west);
+\draw[route] (classifier.north east) to[out=28,in=180]
+  node[lbl, above=1pt, pos=0.42] {landing} (landing.west);
+\draw[route] (classifier.east) -- node[lbl, above=1pt] {hosting} (hosting.west);
+\draw[route] (classifier.south east) to[out=-28,in=180]
+  node[lbl, below=1pt, pos=0.43] {embedded} (embedded.west);
+\draw[skipped] (classifier.south) to[out=-90,in=180,looseness=1.26]
+  node[lbl, pos=0.70, below=2pt] {unknown/other} (nostreams.west);
+
+\draw[route] (landing.south) -- node[lbl, right=1pt] {hosting\_pages} (hosting.north);
+\draw[route] (hosting.south) -- node[lbl, right=1pt] {embedded\_url / player\_frame} (embedded.north);
+\draw[route] (landing.east) to[out=0,in=0,looseness=0.86]
+  node[lbl, pos=0.44, right=1pt] {direct embedded URLs} (embedded.east);
+
+\draw[stream] (hosting.east) to[out=0,in=180]
+  node[lbl, pos=0.42, above=1pt] {streams} ([yshift=0.22cm]providers.west);
+\draw[stream] (embedded.east) to[out=0,in=190]
+  node[lbl, pos=0.60, below=1pt, sloped] {streams} ([yshift=-0.26cm]providers.west);
+\draw[arr] (providers.north east) -- node[lbl, above=1pt, pos=0.48] {provider rows} (emails.south west);
+\draw[arr] (providers.south east) -- node[lbl, below=1pt, pos=0.45] {enrichment} (result.north west);
+\draw[arr] (emails.south) -- node[lbl, right=1pt] {drafts} (result.north);
+\draw[skipped] (nostreams.east) to[out=0,in=180]
+  node[lbl, above=1pt, pos=0.56] {terminal skip} (result.west);
 
 \end{tikzpicture}
 }
-\caption{Agent interconnection graph showing orchestrator-owned routing and specialist responsibilities.}
-\label{fig:agent-interconnection}
+\caption{Agent interconnection graph showing orchestrator-owned routing and specialist responsibilities.}\label{fig:agent-interconnection}
 \end{figure}

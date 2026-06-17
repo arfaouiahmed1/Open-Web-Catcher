@@ -1,34 +1,71 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\resizebox{0.92\textwidth}{!}{%
+\resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  layer/.style={draw=accent, fill=blue!5, rounded corners=5pt,
-    minimum width=3.4cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  support/.style={draw=purple!60, fill=purple!7, rounded corners=5pt,
-    minimum width=3.4cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80}
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
+    line width=0.55pt, inner sep=12pt},
+  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=3.05cm, minimum height=0.88cm, inner xsep=5pt,
+    inner ysep=4pt, text=black},
+  start/.style={block, draw=orange!80!black, fill=orange!9},
+  layer/.style={block, draw=accent!75, fill=blue!6},
+  agent/.style={block, draw=purple!65!black, fill=purple!7},
+  support/.style={block, draw=gray!62, fill=gray!9, text width=3.25cm},
+  result/.style={block, draw=green!55!black, fill=green!8},
+  badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
+    inner sep=1.25pt, minimum size=8.5pt},
+  paneltitle/.style={font=\scriptsize\bfseries, text=black!68, fill=white,
+    inner sep=2pt},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!78, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.76pt,
+    gray!62, densely dashed, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
+    text=black!72}
 ]
 
-\node[layer] (next) at (0,2.2) {Next.js\\operator console};
-\node[layer] (api) at (4.0,2.2) {FastAPI\\control plane};
-\node[layer] (agents) at (8.0,2.2) {Agents\\LangChain runtime};
-\node[layer] (mcp) at (12.0,2.2) {MCP browser\\containers};
-\node[layer] (browser) at (16.0,2.2) {Puppeteer\\Chromium};
+% Runtime path
+\node[start] (next) at (0,2.90) {Next.js\\{\normalfont\scriptsize operator console}};
+\node[layer] (api) at (3.80,2.90) {FastAPI\\{\normalfont\scriptsize control plane}};
+\node[agent] (agents) at (7.60,2.90) {Agents\\{\normalfont\scriptsize LangChain runtime}};
+\node[layer] (mcp) at (11.40,2.90) {MCP browser\\{\normalfont\scriptsize containers}};
+\node[result] (browser) at (15.20,2.90) {Puppeteer\\{\normalfont\scriptsize Chromium profiles}};
 
-\node[support] (db) at (4.0,0.2) {PostgreSQL\\observability};
-\node[support] (cache) at (8.0,0.2) {Memory + cache};
-\node[support] (external) at (12.0,0.2) {LLM, Cloudinary,\\IPInfo / WHOIS};
+% Support services
+\node[support] (db) at (3.80,0.35) {PostgreSQL\\{\normalfont\scriptsize observability records}};
+\node[support] (cache) at (7.60,0.35) {Memory + cache\\{\normalfont\scriptsize hints and run state}};
+\node[support] (external) at (11.40,0.35) {External services\\{\normalfont\scriptsize LLM, storage, IP data}};
 
-\draw[arr] (next) -- (api);
-\draw[arr] (api) -- (agents);
-\draw[arr] (agents) -- (mcp);
-\draw[arr] (mcp) -- (browser);
-\draw[arr] (api) -- (db);
-\draw[arr] (agents) -- (cache);
-\draw[arr] (agents) -- (external);
+\coordinate (supportleft) at (2.00,1.25);
+\coordinate (supportright) at (13.20,1.25);
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(next) (api) (agents) (mcp) (browser)] (runtimepanel) {};
+  \node[panel, fit=(db) (cache) (external) (supportleft) (supportright)] (supportpanel) {};
+\end{scope}
+
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]runtimepanel.north west) {Runtime execution path};
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]supportpanel.north west) {Persistent and external support};
+
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]next.north west) {1};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]api.north west) {2};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]agents.north west) {3};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]mcp.north west) {4};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]browser.north west) {5};
+
+\draw[arr] (next.east) -- (api.west);
+\draw[arr] (api.east) -- (agents.west);
+\draw[arr] (agents.east) -- (mcp.west);
+\draw[arr] (mcp.east) -- (browser.west);
+
+\draw[soft] (api.south) -- node[lab, right=2pt] {record} (db.north);
+\draw[soft] (agents.south) -- node[lab, right=2pt] {recall} (cache.north);
+\draw[soft] ([xshift=0.35cm]agents.south) to[out=-55,in=125]
+  node[lab, pos=0.48, right=2pt] {enrich} (external.north);
 
 \end{tikzpicture}
 }
-\caption{Five implementation areas of the Open Web Catcher platform.}
-\label{fig:implementation-five-areas}
+\caption{Five implementation areas of the Open Web Catcher platform.}\label{fig:implementation-five-areas}
 \end{figure}

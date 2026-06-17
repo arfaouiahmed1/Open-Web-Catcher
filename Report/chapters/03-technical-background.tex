@@ -30,6 +30,11 @@ an iframe loaded from another domain.
 
 \input{figures/tikz/fig-page-flow-general}
 
+Figure~\ref{fig:page-flow-general} shows the navigation sequence as an abstract route.
+The next figure uses the same sequence from the browser's point of view: it highlights
+what each page role exposes to the automation pipeline and what output is expected from
+that role before the pipeline moves on.
+
 \input{figures/tikz/fig-page-type-visuals}
 
 This flow is not always clean. Some sites skip the hosting page and link directly to an
@@ -53,7 +58,7 @@ Common landing-page layouts include:
     tabs loaded through JavaScript;
   \item \textbf{lazy-loaded sections}: match cards that appear only after scrolling or
     after an XHR request;
-  \item \textbf{embedded JSON}: page data stored in \texttt{<script type="application/json">}
+  \item \textbf{embedded JSON}: page data stored in \texttt{<script type=application/json>}
     blocks or \texttt{data-*} attributes.
 \end{itemize}
 
@@ -114,8 +119,7 @@ requests, player diagnostics \\
 skip or blocked state \\
 \bottomrule
 \end{tabularx}
-\caption{Streaming-site page taxonomy and evidence role.}
-\label{tab:general-page-taxonomy}
+\caption{Streaming-site page taxonomy and evidence role.}\label{tab:general-page-taxonomy}
 \end{table}
 
 The page taxonomy turns a messy website into a sequence of smaller questions: Where are
@@ -158,18 +162,17 @@ root.
 \rowcolor{accent!8}
 DOM signal & Where it appears & Why it matters \\ \midrule
 Repeated cards or rows & landing pages & indicates match listings and candidate links \\
-\texttt{<a href="...">} & landing and hosting pages & provides navigation targets \\
+\texttt{<a href=\ldots>} & landing and hosting pages & provides navigation targets \\
 \texttt{data-*} attributes & landing and dynamic pages & may store event IDs, team
 names, or hidden URLs \\
-\texttt{<iframe src="...">} & hosting pages & points to embedded player context \\
+\texttt{<iframe src=\ldots>} & hosting pages & points to embedded player context \\
 \texttt{<video>} or \texttt{<source>} & hosting or embedded pages & may expose direct
 media source references \\
 script text and JSON blocks & all page types & may contain player configuration or
 lazy-loaded data \\
 \bottomrule
 \end{tabularx}
-\caption{DOM signals used to understand streaming-site pages.}
-\label{tab:dom-signals}
+\caption{DOM signals used to understand streaming-site pages.}\label{tab:dom-signals}
 \end{table}
 
 The conclusion is that DOM analysis is a starting point, not a complete solution. It
@@ -193,7 +196,7 @@ JavaScript player library that inserts the video source after page load.
 \input{figures/tikz/fig-embedding-paths}
 
 This distinction matters because each embedding type requires a different observation
-strategy. Direct video tags can be read from the DOM. Iframes require frame traversal.
+strategy. Direct video tags can be read from the DOM\@. Iframes require frame traversal.
 JavaScript players often require runtime execution and network monitoring.
 
 \subsection{HLS and MPEG-DASH}
@@ -213,7 +216,7 @@ often contains CDN, token, and path information.
 \subsection{Tokens, cookies, referers, and provider checks}
 
 Streaming manifests are frequently protected by short-lived tokens, cookies, referer
-checks, or provider-side gates. A URL such as \texttt{playlist.m3u8?token=...} may work
+checks, or provider-side gates. A URL such as \texttt{playlist.m3u8?token=\ldots} may work
 only for a few minutes and only from the browser session that generated it. CDNs and
 fronting providers such as Cloudflare can also enforce challenge pages, bot checks,
 cache rules, and origin protection~\cite{cloudflare-challenges}.
@@ -231,15 +234,15 @@ runtime media requests. Browser automation tools such as Puppeteer and Playwrigh
 pages in real browsers and expose APIs for clicking, reading the DOM, taking screenshots,
 and listening to network activity~\cite{puppeteer,playwright,cdp}.
 
-\subsection{Static crawler versus rendered browser state}
+\subsection{Static collection versus rendered browser state}
 
-A crawler is efficient when the target evidence is present in the fetched HTML or in
-simple linked pages. Its limitation appears when the evidence is created only after a
-runtime sequence: opening a collapsed channel group, clicking a server tab, activating
-the player, waiting for an iframe, and then observing the network. In those cases, the
-browser state is the evidence surface, not only the page source. This distinction is
-the technical reason why OWC adds browser agents beside the existing crawler instead of
-treating the crawler as sufficient.
+Static collection is efficient when the target evidence is present in the fetched HTML
+or in simple linked pages. Its limitation appears when the evidence is created only
+after a runtime sequence: opening a collapsed channel group, clicking a server tab,
+activating the player, waiting for an iframe, and then observing the network. In those
+cases, the browser state is the evidence surface, not only the page source. This
+distinction is the technical reason why OWC adds browser agents to static monitoring
+instead of treating the first page source as sufficient.
 
 \subsubsection{Rendered state as evidence}
 
@@ -260,7 +263,7 @@ important concept is not only ``click a button'' but full runtime observation:
   \item traverse frames and iframes;
   \item capture screenshots for human review;
   \item observe network requests through the Chrome DevTools Protocol;
-  \item read browser-side state with \texttt{page.evaluate(...)}.
+  \item read browser-side state through page-evaluation calls.
 \end{itemize}
 
 Puppeteer is therefore the bridge between a high-level extraction objective and the
@@ -294,8 +297,7 @@ Cloudflare-like challenges & browser sees an interstitial instead of the page & 
 retry with normal pacing, or preserve a blocked-state result \\
 \bottomrule
 \end{tabularx}
-\caption{Browser-level obstacles and handling strategies.}
-\label{tab:browser-obstacles}
+\caption{Browser-level obstacles and handling strategies.}\label{tab:browser-obstacles}
 \end{table}
 
 Ad blocking tools such as uBlock Origin can reduce noise by blocking known ad and
@@ -326,7 +328,9 @@ scraper because the next action depends on the current browser state.
 
 Agentic systems commonly use a loop that combines reasoning and tool use. In a
 ReAct-style pattern, the agent observes the state, reasons about what to do, acts through
-a tool, and verifies the result before continuing~\cite{react,agent-survey}.
+a tool, and verifies the result before continuing. In the implementation style used by
+OWC, this loop is represented through model messages, tool calls, observations, and
+structured outputs exposed by the agent framework~\cite{langchain-docs}.
 
 \input{figures/tikz/fig-react-loop-general}
 
@@ -347,6 +351,8 @@ increase cost and latency. Token management is part of the technical background 
 browser agents can easily spend too much context on noisy HTML, ads, or repeated page
 states.
 
+\input{figures/tikz/fig-03-prompt-token-budget}
+
 Practical token-control ideas include:
 
 \begin{itemize}
@@ -358,7 +364,7 @@ Practical token-control ideas include:
 \end{itemize}
 
 LLM providers such as Gemini expose model features that affect cost, context length,
-streaming behavior, pricing, and caching~\cite{gemini,gemini-pricing,gemini-caching}.
+streaming behavior, pricing, caching, and rate limits~\cite{gemini-pricing,gemini-caching,gemini-rate-limits}.
 Provider caching is especially relevant when the same system instructions, tool
 descriptions, or long context blocks are reused across many runs.
 

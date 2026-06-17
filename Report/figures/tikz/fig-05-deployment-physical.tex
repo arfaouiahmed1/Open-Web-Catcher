@@ -1,53 +1,83 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  source/.style={draw=gray!65, fill=gray!10, rounded corners=6pt,
-    text width=2.85cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  queue/.style={draw=accent!75, fill=blue!6, rounded corners=6pt,
-    text width=2.85cm, minimum height=0.9cm, align=center, font=\footnotesize\bfseries},
-  comp/.style={draw=green!55!black, fill=green!7, rounded corners=6pt,
-    text width=3.05cm, minimum height=0.78cm, align=center, font=\scriptsize\bfseries},
-  service/.style={draw=purple!65!black, fill=purple!7, rounded corners=6pt,
-    text width=2.8cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  result/.style={draw=orange!80!black, fill=orange!10, rounded corners=6pt,
-    text width=3.05cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80, shorten <=4pt, shorten >=4pt},
-  soft/.style={->, >=Stealth, thick, dashed, gray!65, shorten <=4pt, shorten >=4pt},
-  group/.style={draw=gray!50, dashed, rounded corners=9pt, inner sep=11pt}
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!30, fill=gray!2, rounded corners=12pt,
+    line width=0.55pt, inner sep=0pt},
+  queuepanel/.style={panel, draw=accent!26, fill=blue!2},
+  jobpanel/.style={draw=green!35!black, fill=green!2, rounded corners=12pt,
+    line width=0.55pt, inner sep=0pt},
+  extpanel/.style={panel, draw=purple!28, fill=purple!2},
+  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=2.95cm, minimum height=0.86cm, inner xsep=5pt,
+    inner ysep=4pt, text=black},
+  source/.style={block, draw=gray!62, fill=gray!9},
+  queue/.style={block, draw=accent!75, fill=blue!6},
+  comp/.style={block, draw=green!55!black, fill=green!8},
+  service/.style={block, draw=purple!65!black, fill=purple!7},
+  result/.style={block, draw=orange!80!black, fill=orange!9},
+  badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
+    inner sep=1.25pt, minimum size=8.5pt},
+  paneltitle/.style={font=\scriptsize\bfseries, text=black!68, fill=white,
+    inner sep=2pt},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!78, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.76pt,
+    gray!62, densely dashed, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
+    text=black!72}
 ]
-\node[source] (crawler) at (0,2.9) {Existing crawler\\and n8n flow};
-\node[queue] (tasks) at (4.0,2.9) {Azure Service Bus\\\texttt{agent\_tasks}};
+\node[source] (tasksource) at (0,2.95) {Company workflow\\{\normalfont\scriptsize primary process}};
+\node[queue] (tasks) at (3.55,2.95) {Service Bus\\{\normalfont\scriptsize \texttt{agent\_tasks}}};
+\node[queue] (results) at (3.55,-1.35) {Service Bus\\{\normalfont\scriptsize results queue}};
 
-\node[comp] (n8n) at (8.2,4.0) {n8n backup\\orchestration};
-\node[comp] (worker) at (8.2,2.95) {Landing-agent\\worker};
-\node[comp] (mcp) at (8.2,1.9) {Puppeteer MCP\\local endpoint};
-\node[comp] (chrome) at (8.2,0.85) {Chrome instances\\browser profiles};
-\node[group, fit=(n8n)(worker)(mcp)(chrome)] (container) {};
-\node[anchor=south, font=\footnotesize\bfseries, text=green!45!black, fill=white, inner sep=1.2pt] at ([yshift=0.08cm]container.north)
-  {single Azure Container Apps Job container};
+\node[comp] (worker) at (7.45,3.35) {n8n landing agent\\{\normalfont\scriptsize backup worker}};
+\node[comp] (mcp) at (7.45,2.05) {Puppeteer MCP\\{\normalfont\scriptsize local endpoint}};
+\node[comp] (chrome) at (7.45,0.75) {Chrome profiles\\{\normalfont\scriptsize rendered pages}};
+\node[result] (payload) at (7.45,-1.35) {Agent reply\\{\normalfont\scriptsize candidates + metadata}};
 
-\node[service] (llm) at (12.6,2.95) {Gemini model\\LLM calls};
-\node[source] (sites) at (12.6,0.85) {Target streaming\\landing pages};
-\node[result] (payload) at (8.2,-1.0) {Matched URLs\\metadata + evidence};
-\node[queue] (results) at (4.0,-1.0) {Azure Service Bus\\\texttt{agent\_results}};
+\node[service] (llm) at (11.75,2.95) {Model endpoint\\{\normalfont\scriptsize LLM reasoning}};
+\node[source] (sites) at (11.75,0.55) {Target landing pages\\{\normalfont\scriptsize rendered websites}};
 
-\draw[arr] (crawler) -- (tasks);
-\draw[arr] (tasks) -- (container.west);
-\draw[arr] (n8n) -- (worker);
-\draw[arr] (worker) -- (mcp);
-\draw[arr] (mcp) -- (chrome);
-\draw[soft] (worker.east) -- (llm.west);
-\draw[arr] (chrome.east) -- (sites.west);
-\draw[arr] (container.south) -- (payload.north);
-\draw[arr] (payload) -- (results);
-\draw[soft] (results.west) to[out=180,in=-90,looseness=0.9] (crawler.south);
+\coordinate (sourcenw) at (-1.65,3.75);
+\coordinate (sourcese) at (1.65,2.10);
+\coordinate (queuenw) at (1.95,3.75);
+\coordinate (queuese) at (5.15,-2.05);
+\coordinate (jobnw) at (5.55,4.90);
+\coordinate (jobse) at (9.35,-2.05);
+\coordinate (extnw) at (10.05,3.75);
+\coordinate (extse) at (13.45,-0.20);
 
-\node[group, fit=(tasks)(container)(results)(payload)(llm), inner sep=14pt] (boundary) {};
-\node[anchor=south, font=\small\bfseries, text=accent, fill=white, inner sep=1.2pt] at ([yshift=0.08cm]boundary.north)
-  {Company deployment boundary};
+\begin{scope}[on background layer]
+  \node[panel, fit=(sourcenw) (sourcese)] (sourcepanel) {};
+  \node[queuepanel, fit=(queuenw) (queuese)] (queuepanel) {};
+  \node[jobpanel, fit=(jobnw) (jobse)] (jobcontainer) {};
+  \node[extpanel, fit=(extnw) (extse)] (externalpanel) {};
+\end{scope}
+
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]sourcepanel.north west) {Primary company flow};
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]queuepanel.north west) {Queue interface};
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]jobcontainer.north west) {Focused Azure Container Apps Job};
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]externalpanel.north west) {External dependencies};
+
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]tasksource.north west) {1};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]tasks.north west) {2};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]worker.north west) {3};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]payload.north west) {4};
+
+\draw[arr] (tasksource) -- (tasks);
+\draw[arr] (tasks.east) -- node[lab, above] {fallback task} (worker.west);
+\draw[arr] (worker.south) -- (mcp.north);
+\draw[arr] (mcp.south) -- (chrome.north);
+\draw[soft] (worker.east) -- node[lab, above] {prompt} (llm.west);
+\draw[arr] (chrome.east) -- node[lab, above] {browse} (sites.west);
+\draw[arr] (chrome.south) -- node[lab, right=2pt] {extract} (payload.north);
+\draw[arr] (payload.west) -- (results.east);
+\draw[soft] (results.west) to[out=180,in=-90,looseness=0.9]
+  node[lab, pos=0.55, left=2pt] {return} (tasksource.south);
 \end{tikzpicture}
 }
-\caption{Company deployment flow using \texttt{agent\_tasks}, a single n8n/Puppeteer landing-agent container, and \texttt{agent\_results}.}
-\label{fig:physical-architecture}
+\caption[Company deployment flow for the landing-agent backup.]{Company deployment flow using \texttt{agent\_tasks}, a focused browser-agent container, and a configured results queue.}\label{fig:physical-architecture}
 \end{figure}

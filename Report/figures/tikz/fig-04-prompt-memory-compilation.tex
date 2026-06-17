@@ -1,50 +1,98 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\resizebox{0.94\textwidth}{!}{%
+\resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  source/.style={draw=accent!75, fill=blue!6, rounded corners=5pt,
-    minimum width=3.2cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
-  memory/.style={draw=teal!70!black, fill=teal!8, rounded corners=5pt,
-    minimum width=3.2cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
-  compiled/.style={draw=orange!80!black, fill=orange!10, rounded corners=6pt,
-    minimum width=3.4cm, minimum height=1.0cm, align=center, font=\scriptsize\bfseries},
-  event/.style={draw=purple!65!black, fill=purple!7, rounded corners=5pt,
-    minimum width=3.2cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
-  data/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
-    minimum width=3.2cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!78, shorten <=2pt, shorten >=2pt},
-  memarr/.style={->, >=Stealth, thick, teal!70!black, shorten <=2pt, shorten >=2pt},
-  obsarr/.style={->, >=Stealth, thick, purple!70!black, shorten <=2pt, shorten >=2pt}
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=9pt,
+    line width=0.55pt, inner sep=9pt},
+  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=2.95cm, minimum height=0.78cm, inner xsep=5pt, inner ysep=4pt,
+    text=black},
+  source/.style={block, draw=accent!75, fill=blue!6},
+  memory/.style={block, draw=teal!70!black, fill=teal!8},
+  compiled/.style={block, draw=orange!80!black, fill=orange!10,
+    text width=3.45cm, minimum height=1.04cm},
+  event/.style={block, draw=purple!65!black, fill=purple!7},
+  data/.style={block, draw=green!55!black, fill=green!8},
+  badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
+    inner sep=1.25pt, minimum size=8.5pt},
+  paneltitle/.style={font=\scriptsize\bfseries, text=black!68, inner sep=2pt},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!78, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  memarr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.84pt,
+    teal!70!black, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  obsarr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.82pt,
+    purple!70!black, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  feedback/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.72pt,
+    gray!62, densely dashed, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
+    text=black!72}
 ]
 
-\node[source] (base) at (-5.3,2.7) {base prompt file\\configs/prompts/*};
-\node[source] (contract) at (-5.3,1.45) {agent contract\\stage duties};
-\node[source] (task) at (-5.3,0.2) {task brief\\URL + run goal};
-\node[memory] (long) at (-5.3,-1.05) {long memory\\SITE MEMORY PLAYBOOK};
-\node[memory] (short) at (-5.3,-2.3) {short memory\\working state};
+% Nodes: Static prompt sources
+\node[source] (base) at (0,3.80) {Base prompt\\[-1pt]{\normalfont\scriptsize \texttt{configs/prompts/*}}};
+\node[source] (contract) at (0,2.70) {Agent contract\\[-1pt]{\normalfont\scriptsize stage duties + tools}};
+\node[source] (task) at (0,1.60) {Task brief\\[-1pt]{\normalfont\scriptsize URL + run goal}};
 
-\node[source] (runtime) at (0,2.7) {runtime context\\profile + budget};
-\node[compiled] (compiled) at (0,0.2) {Compiled prompt\\text + metadata};
-\node[event] (loop) at (0,-2.3) {agent loop\\next model turn};
+% Nodes: Memory
+\node[memory] (long) at (0,0.20) {Site playbook\\[-1pt]{\normalfont\scriptsize durable layout hints}};
+\node[memory] (short) at (0,-0.90) {Working memory\\[-1pt]{\normalfont\scriptsize latest run state}};
 
-\node[event] (event) at (5.3,1.45) {prompt\_compiled\\observer event};
-\node[data] (versions) at (5.3,0.2) {prompt versions\\hash + sections};
-\node[data] (records) at (5.3,-1.05) {prompt compilations\\memory injected};
+% Nodes: Compiler
+\node[source, text width=3.20cm] (runtime) at (5.5,4.05) {Runtime envelope\\[-1pt]{\normalfont\scriptsize profile, budget, model}};
+\node[compiled] (compiled) at (5.5,1.45) {Compiled prompt\\[-1pt]{\normalfont\scriptsize instructions, context, evidence rules}};
+\node[event, text width=3.20cm] (loop) at (5.5,-0.90) {Agent loop\\[-1pt]{\normalfont\scriptsize next model turn}};
 
-\draw[arr] (base.east) -- (compiled.west);
-\draw[arr] (contract.east) -- (compiled.west);
-\draw[arr] (task.east) -- (compiled.west);
-\draw[memarr] (long.east) -- (compiled.west);
-\draw[memarr] (short.east) -- (compiled.west);
-\draw[arr] (runtime.south) -- (compiled.north);
+% Nodes: Trace and audit output
+\node[event] (event) at (11.00,2.70) {Observer event\\[-1pt]{\normalfont\scriptsize \texttt{prompt\_compiled}}};
+\node[data] (versions) at (11.00,1.45) {Prompt version\\[-1pt]{\normalfont\scriptsize hash + section map}};
+\node[data] (records) at (11.00,0.20) {Compilation record\\[-1pt]{\normalfont\scriptsize memory injected}};
 
-\draw[obsarr] (compiled.east) -- (event.west);
-\draw[obsarr] (compiled.east) -- (versions.west);
-\draw[obsarr] (compiled.east) -- (records.west);
-\draw[arr] (compiled.south) -- (loop.north);
+% Panels (Draw backgrounds correctly)
+\begin{scope}[on background layer]
+  \node[panel, fit=(base) (contract) (task)] (sourcepanel) {};
+  \node[panel, fit=(long) (short)] (memorypanel) {};
+  \node[panel, fit=(runtime) (compiled) (loop)] (compilerpanel) {};
+  \node[panel, fit=(event) (versions) (records)] (auditpanel) {};
+\end{scope}
+
+% Titles
+\node[paneltitle, anchor=south west] at ([xshift=0.15cm,yshift=0.08cm]sourcepanel.north west) {Static prompt sources};
+\node[paneltitle, anchor=south west] at ([xshift=0.15cm,yshift=0.08cm]memorypanel.north west) {Memory inputs};
+\node[paneltitle, anchor=south west] at ([xshift=0.15cm,yshift=0.08cm]compilerpanel.north west) {Prompt compiler};
+\node[paneltitle, anchor=south west] at ([xshift=0.15cm,yshift=0.08cm]auditpanel.north west) {Trace and audit output};
+
+% Badges
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]base.north west) {1};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]long.north west) {2};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]compiled.north west) {3};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]event.north west) {4};
+
+
+% -------------- Input Routing (Clean S-Curve split paths) ----------------
+\draw[arr] (base.east) to[out=0,in=180] ([yshift=0.35cm]compiled.west);
+\draw[arr] (contract.east) to[out=0,in=180] ([yshift=0.17cm]compiled.west);
+\draw[arr] (task.east) to[out=0,in=180] (compiled.west);
+
+\draw[memarr] (long.east) to[out=0,in=180] ([yshift=-0.17cm]compiled.west);
+% Slightly elevate the Working memory forward arrow so it doesn't overlap the feedback trace
+\draw[memarr] ([yshift=0.15cm]short.east) to[out=0,in=180] ([yshift=-0.35cm]compiled.west);
+
+\draw[arr] (runtime.south) -- node[lab, right=1pt] {limits} (compiled.north);
+
+% -------------- Output Routing (Clean diverging S-Curves) ----------------
+\draw[obsarr] ([yshift=0.25cm]compiled.east) to[out=0,in=180] (event.west);
+\draw[obsarr] (compiled.east) to[out=0,in=180] (versions.west);
+\draw[obsarr] ([yshift=-0.25cm]compiled.east) to[out=0,in=180] (records.west);
+
+\draw[arr] (compiled.south) -- node[lab, right=1pt] {prompt text} (loop.north);
+
+% Feedback Loop (Horizontally shifted slightly downwards to create a clear return lane)
+\draw[feedback] ([yshift=-0.15cm]loop.west) -- 
+  node[lab, above=-1pt] {new observation} ([yshift=-0.15cm]short.east);
 
 \end{tikzpicture}
 }
-\caption{Prompt compilation and memory inputs for each browser-facing specialist.}
-\label{fig:prompt-memory-compilation}
+\caption{Prompt compilation and memory inputs for each browser-facing specialist.}\label{fig:prompt-memory-compilation}
 \end{figure}

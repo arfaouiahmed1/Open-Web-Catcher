@@ -32,6 +32,7 @@ import {
   extractChromeNetErrorCode,
 } from "../../shared/error-codes.js";
 import { computeBrowserPolicy } from "../../shared/browser-policy.js";
+import { selectPersistentFingerprintHeaders } from "../../shared/fingerprint-headers.js";
 import { disableBlocking, enableBlocking } from "./adblocker.js";
 import {
   getBrowserRuntimeSettings,
@@ -54,7 +55,7 @@ const CHROME_VERSION_API_URL =
   process.env.OWC_CHROME_VERSION_API_URL ||
   "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json";
 const CHROME_VERSION_FALLBACK = String(
-  process.env.OWC_CHROME_VERSION_FALLBACK || "148.0.7778.167",
+  process.env.OWC_CHROME_VERSION_FALLBACK || "149.0.7827.115",
 ).trim();
 const CHROME_VERSION_TIMEOUT_MS = Number.parseInt(
   String(process.env.OWC_CHROME_VERSION_FETCH_TIMEOUT_MS || "6000"),
@@ -337,7 +338,7 @@ function getPopupBlockingEnabled() {
   return parseBoolean(
     runtimeSetting("popup_blocking_enabled") ??
       process.env.OWC_POPUP_BLOCKING_ENABLED,
-    true,
+    false,
   );
 }
 
@@ -1138,21 +1139,19 @@ function buildProfileFromFingerprint(
     ? userAgentMetadata.fullVersionList
     : brands.map((e) => ({ ...e, version: chromeVersion }));
   const secChUa = buildSecChUa(brands);
-  const headers = {
+  const headers = selectPersistentFingerprintHeaders({
     ...toHeaderRecord(synchronizedBundle.headers),
     "User-Agent": navigator.userAgent,
     "Accept-Language": FORCED_LANGUAGE,
-    "Cache-Control": "max-age=0",
-    Pragma: "no-cache",
-    "Upgrade-Insecure-Requests": "1",
     "Sec-CH-UA": secChUa,
     "Sec-CH-UA-Mobile": "?0",
     "Sec-CH-UA-Platform": '"Windows"',
     "Sec-CH-UA-Platform-Version": `"${FORCED_WINDOWS_PLATFORM_VERSION}"`,
     "Sec-CH-UA-Full-Version": `"${chromeVersion}"`,
-  };
+  });
   return {
     userAgent: navigator.userAgent,
+    locale: "en-US",
     language: FORCED_LANGUAGE,
     secChUa,
     chromeVersion,
@@ -1247,22 +1246,20 @@ function buildFallbackFingerprintProfile(chromeVersion, chromeMajorVersion) {
 
   return {
     userAgent,
+    locale: "en-US",
     language: FORCED_LANGUAGE,
     secChUa,
     chromeVersion,
     chromeMajorVersion,
-    headers: {
+    headers: selectPersistentFingerprintHeaders({
       "User-Agent": userAgent,
       "Accept-Language": FORCED_LANGUAGE,
-      "Cache-Control": "max-age=0",
-      Pragma: "no-cache",
-      "Upgrade-Insecure-Requests": "1",
       "Sec-CH-UA": secChUa,
       "Sec-CH-UA-Mobile": "?0",
       "Sec-CH-UA-Platform": '"Windows"',
       "Sec-CH-UA-Platform-Version": `"${FORCED_WINDOWS_PLATFORM_VERSION}"`,
       "Sec-CH-UA-Full-Version": `"${chromeVersion}"`,
-    },
+    }),
     userAgentMetadata: {
       brands,
       fullVersion: chromeVersion,
@@ -1528,7 +1525,7 @@ async function createFingerprintedContext(
     viewport: FORCED_VIEWPORT,
     deviceScaleFactor: 2,
     userAgent: profile.userAgent,
-    locale: profile.language || "en-US",
+    locale: profile.locale || "en-US",
     extraHTTPHeaders: profile.headers,
   });
 
@@ -2003,7 +2000,14 @@ export async function getPage(
   const navigated = pages.filter(
     (p) => p.url() !== "about:blank" && p.url() !== "about:newtab",
   );
+  const popupPages = [];
+  for (const candidate of navigated) {
+    if (await candidate.opener().catch(() => null)) {
+      popupPages.push(candidate);
+    }
+  }
   const page =
+    popupPages[popupPages.length - 1] ??
     navigated[navigated.length - 1] ??
     pages.find((p) => p.url() === "about:blank") ??
     (await context.newPage());

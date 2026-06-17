@@ -1,79 +1,91 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\resizebox{0.98\textwidth}{!}{%
+\resizebox{1.0\textwidth}{!}{%
 \begin{tikzpicture}[
-  cluster/.style={draw=gray!30, fill=gray!3, rounded corners=7pt, inner sep=8pt},
-  ui/.style={draw=accent!80, fill=blue!6, rounded corners=5pt,
-    minimum width=3.15cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
-  backend/.style={draw=accent!85!black, fill=blue!8, rounded corners=5pt,
-    minimum width=3.15cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
-  agent/.style={draw=orange!80!black, fill=orange!9, rounded corners=5pt,
-    minimum width=3.0cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
-  tool/.style={draw=purple!65!black, fill=purple!7, rounded corners=5pt,
-    minimum width=3.15cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
-  data/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
-    minimum width=2.65cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
-  ext/.style={draw=gray!60, fill=gray!10, rounded corners=5pt,
-    minimum width=2.65cm, minimum height=0.72cm, align=center, font=\scriptsize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!82, shorten <=3pt, shorten >=3pt},
-  route/.style={->, >=Stealth, thick, orange!80!black, shorten <=3pt, shorten >=3pt},
-  soft/.style={->, >=Stealth, thick, gray!65, shorten <=3pt, shorten >=3pt}
+  line cap=round,
+  line join=round,
+  cluster/.style={draw=gray!32, fill=gray!3, rounded corners=9pt,
+    line width=0.55pt, inner sep=9pt},
+  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    inner xsep=6pt, inner ysep=4pt, minimum height=0.78cm, text=black},
+  actor/.style={block, draw=gray!65, fill=gray!8, text width=2.10cm},
+  frontend/.style={block, draw=accent!78, fill=blue!6, text width=3.30cm},
+  backend/.style={block, draw=accent!88!black, fill=blue!9, text width=3.10cm},
+  agent/.style={block, draw=orange!78!black, fill=orange!10, text width=3.08cm},
+  tool/.style={block, draw=purple!65!black, fill=purple!7, text width=3.05cm},
+  data/.style={block, draw=green!55!black, fill=green!8, text width=3.05cm},
+  ext/.style={block, draw=gray!62, fill=gray!9, text width=3.05cm},
+  grouplabel/.style={font=\scriptsize\bfseries, text=black!68, inner sep=2pt},
+  arr/.style={-{Latex[length=2.2mm,width=1.7mm]}, line width=0.86pt,
+    accent!82, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  route/.style={-{Latex[length=2.2mm,width=1.7mm]}, line width=0.84pt,
+    orange!82!black, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  toolarr/.style={-{Latex[length=2.2mm,width=1.7mm]}, line width=0.84pt,
+    purple!68!black, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.75pt,
+    gray!62, densely dashed, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
+    text=black!70}
 ]
 
-\node[ui] (next) at (0,5.1) {Next.js app\\operator routes};
-\node[ui] (detail) at (0,4.0) {Run detail\\live trace view};
-\node[ui] (settings) at (0,2.9) {Settings UI\\models + tools};
+\node[actor] (operator) at (0,4.85) {Operator};
 
-\node[backend] (app) at (4.25,5.1) {FastAPI routes\\run control};
-\node[backend] (jobs) at (4.25,4.0) {Background jobs\\workflow + agent runs};
-\node[backend] (registry) at (4.25,2.9) {Run registry\\active traces};
-\node[backend] (providerconfig) at (4.25,1.8) {Provider config\\runtime settings};
+\node[frontend] (console) at (3.75,5.70) {Next.js console\\{\normalfont\tiny active routes: \texttt{/}, \texttt{/live}, \texttt{/runs}, \texttt{/runs/[runId]}, \texttt{/providers}, \texttt{/settings}}};
+\node[frontend] (apiclient) at (3.75,4.35) {\texttt{web/lib/api.js}\\{\normalfont\tiny API URL builder + fetch helper}};
+\node[frontend] (rundetail) at (3.75,3.00) {Run detail UI\\{\normalfont\tiny agent desk, evidence tabs, browser frames}};
 
-\node[agent] (orch) at (8.9,5.1) {OrchestratorAgent\\LangGraph route};
-\node[agent] (browseragents) at (8.9,3.8) {Browser specialists\\classification, landing, hosting, embedded};
-\node[agent] (downstream) at (8.9,2.5) {Downstream tools\\provider analysis, email drafts};
+\node[backend] (fastapi) at (8.10,5.70) {\texttt{src/api/app.py}\\{\normalfont\tiny UI routes + background jobs}};
+\node[backend] (dataset) at (8.10,4.35) {Dataset API\\{\normalfont\tiny sites, batches, streaming}};
+\node[backend] (providerconfig) at (8.10,3.00) {Provider config\\{\normalfont\tiny models, keys, runtime settings}};
+\node[backend] (registry) at (8.10,1.65) {Run registry\\{\normalfont\tiny active in-memory traces}};
 
-\node[tool] (mcpclient) at (13.6,5.1) {MCP client\\profile sessions};
-\node[tool] (browsers) at (13.6,4.0) {Puppeteer + Playwright\\Chrome profiles};
-\node[tool] (policy) at (13.6,2.9) {shared browser policy\\proxy, runtime, errors};
-\node[ext] (targets) at (17.5,4.0) {Target sites\\pages + players};
+\node[agent] (orch) at (12.60,5.70) {OrchestratorAgent\\{\normalfont\tiny deterministic routing + aggregation}};
+\node[agent] (specialists) at (12.60,4.35) {Browser specialists\\{\normalfont\tiny classification, landing, hosting, embedded}};
+\node[agent] (downstream) at (12.60,3.00) {Provider + email tools\\{\normalfont\tiny IPInfo/RDAP + review drafts}};
 
-\node[data] (db) at (2.1,0.05) {Postgres\\runs + telemetry};
-\node[data] (datafiles) at (5.2,0.05) {data/\\memory + runtime};
-\node[ext] (gemini) at (8.3,0.05) {Gemini\\LLM calls};
-\node[ext] (ipinfo) at (11.4,0.05) {IPInfo + RDAP\\ownership};
-\node[ext] (cloudinary) at (14.5,0.05) {Cloudinary\\screenshots};
+\node[tool] (mcp) at (17.00,5.70) {\texttt{mcp\_client.py}\\{\normalfont\tiny profile-scoped sessions}};
+\node[tool] (browser) at (17.00,4.35) {Puppeteer / Playwright\\{\normalfont\tiny Chrome browser profiles}};
+\node[tool] (policy) at (17.00,3.00) {Shared browser policy\\{\normalfont\tiny proxy, runtime, error codes}};
+
+\node[data] (db) at (3.75,0.00) {Postgres\\{\normalfont\tiny runs, telemetry, evidence}};
+\node[data] (files) at (8.10,0.00) {\texttt{data/} runtime files\\{\normalfont\tiny memory + browser state}};
+\node[ext] (gemini) at (12.60,0.00) {Google GenAI / Gemini\\{\normalfont\tiny model calls}};
+\node[ext] (external) at (17.00,0.00) {External services\\{\normalfont\tiny Cloudinary, IPInfo, RDAP, target sites}};
 
 \begin{scope}[on background layer]
-\node[cluster, fit=(next)(detail)(settings), label={[font=\scriptsize\bfseries]above:Operator Console}] (uibox) {};
-\node[cluster, fit=(app)(jobs)(registry)(providerconfig), label={[font=\scriptsize\bfseries]above:FastAPI Backend}] (backendbox) {};
-\node[cluster, fit=(orch)(browseragents)(downstream), label={[font=\scriptsize\bfseries]above:LangGraph / LangChain Runtime}] (runtimebox) {};
-\node[cluster, fit=(mcpclient)(browsers)(policy), label={[font=\scriptsize\bfseries]above:MCP Browser Tooling}] (toolbox) {};
-\node[cluster, fit=(db)(datafiles)(gemini)(ipinfo)(cloudinary), label={[font=\scriptsize\bfseries]below:Persistence And External Services}] (databox) {};
+  \node[cluster, fit=(console) (apiclient) (rundetail)] (frontbox) {};
+  \node[cluster, fit=(fastapi) (dataset) (providerconfig) (registry)] (backbox) {};
+  \node[cluster, fit=(orch) (specialists) (downstream)] (runtimebox) {};
+  \node[cluster, fit=(mcp) (browser) (policy)] (toolbox) {};
+  \node[cluster, fit=(db) (files) (gemini) (external)] (databox) {};
 \end{scope}
 
-\draw[arr] (uibox.east) -- (backendbox.west);
-\draw[arr] (backendbox.east) -- (runtimebox.west);
-\draw[arr] (runtimebox.east) -- (toolbox.west);
-\draw[arr] (toolbox.east) -- (targets.west);
+\node[grouplabel, anchor=south west] at ([xshift=0.15cm,yshift=0.08cm]frontbox.north west) {Next.js Operator Console};
+\node[grouplabel, anchor=south west] at ([xshift=0.15cm,yshift=0.08cm]backbox.north west) {FastAPI Backend};
+\node[grouplabel, anchor=south west] at ([xshift=0.15cm,yshift=0.08cm]runtimebox.north west) {LangGraph / LangChain Runtime};
+\node[grouplabel, anchor=south west] at ([xshift=0.15cm,yshift=0.08cm]toolbox.north west) {MCP Browser Tools};
+\node[grouplabel, anchor=south west] at ([xshift=0.15cm,yshift=0.08cm]databox.north west) {Persistence and External Services};
 
-\draw[arr] (app.south) -- (jobs.north);
-\draw[arr] (jobs.south) -- (registry.north);
-\draw[route] (orch.south) -- (browseragents.north);
-\draw[route] (browseragents.south) -- (downstream.north);
-\draw[arr] (mcpclient.south) -- (browsers.north);
-\draw[arr] (browsers.south) -- (policy.north);
-
-\coordinate (servicebus) at (8.3,1.05);
-\draw[soft] (backendbox.south) -- ++(0,-0.25) -| (db.north);
-\draw[soft] (backendbox.south) -- ++(0,-0.25) -| (datafiles.north);
-\draw[soft] (runtimebox.south) -- (servicebus);
-\draw[soft] (servicebus) -| (gemini.north);
-\draw[soft] (servicebus) -| (ipinfo.north);
-\draw[soft] (toolbox.south) -- ++(0,-0.25) -| (cloudinary.north);
+\draw[arr] (operator) -- node[lab, above] {uses} (frontbox.west |- apiclient);
+\draw[arr] (console) -- (apiclient);
+\draw[arr] (rundetail) -- (apiclient);
+\draw[arr] (apiclient) -- node[lab, above] {HTTP API} (fastapi);
+\draw[arr] (fastapi) -- (dataset);
+\draw[arr] (fastapi) -- (providerconfig);
+\draw[arr] (fastapi) -- (registry);
+\draw[route] (fastapi) -- node[lab, above] {job task} (orch);
+\draw[route] (orch) -- (specialists);
+\draw[route] (orch) -- (downstream);
+\draw[toolarr] (specialists) -- node[lab, above] {tool calls} (mcp);
+\draw[toolarr] (mcp) -- (browser);
+\draw[toolarr] (browser) -- (policy);
+\draw[soft] (fastapi.south) |- (db.west);
+\draw[soft] (registry.south) -- (files.north);
+\draw[soft] (specialists.south) -- (gemini.north);
+\draw[soft] (downstream.south) |- (external.north);
+\draw[soft] (browser.south) -- (external.north);
 
 \end{tikzpicture}
 }
-\caption{Component architecture linking the operator console, backend, agent runtime, MCP tooling, persistence, and external services.}
-\label{fig:component}
+\caption{System component diagram grounded in the active console routes, FastAPI modules, agent runtime, browser tools, persistence, and external services.}\label{fig:component}
 \end{figure}

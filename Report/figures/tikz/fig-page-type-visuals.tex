@@ -1,54 +1,145 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  shell/.style={draw=gray!40, fill=white, rounded corners=8pt,
-    minimum width=4.35cm, minimum height=5.15cm},
-  header/.style={draw=gray!35, fill=gray!10, rounded corners=4pt,
-    minimum width=3.65cm, minimum height=0.36cm, align=center, font=\tiny\ttfamily},
-  title/.style={font=\small\bfseries, text=accent},
-  tile/.style={draw=accent!45, fill=blue!5, rounded corners=5pt,
-    minimum width=3.35cm, minimum height=0.58cm, align=center, font=\tiny\bfseries},
-  orangeTile/.style={draw=orange!75!black, fill=orange!9, rounded corners=5pt,
-    minimum width=1.0cm, minimum height=0.46cm, align=center, font=\tiny\bfseries},
-  player/.style={draw=gray!60, fill=gray!10, rounded corners=6pt,
-    minimum width=3.2cm, minimum height=1.2cm, align=center, font=\tiny\bfseries},
-  evidence/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
-    minimum width=3.15cm, minimum height=0.54cm, align=center, font=\tiny\ttfamily},
-  goal/.style={font=\tiny, align=center, text=gray!70},
-  arr/.style={->, >=Stealth, thick, accent!75, shorten <=5pt, shorten >=5pt},
-  soft/.style={->, >=Stealth, thick, dashed, orange!80!black, shorten <=5pt, shorten >=5pt},
-  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1pt, text=gray!70!black}
+  line cap=round,
+  line join=round,
+  shell/.style={draw=gray!35, fill=gray!4, rounded corners=10pt,
+    line width=0.70pt, minimum width=4.28cm, minimum height=5.50cm},
+  topbar/.style={draw=accent!24, fill=accent!5, rounded corners=6pt,
+    minimum width=3.78cm, minimum height=0.50cm},
+  chrome/.style={draw=gray!34, fill=white, rounded corners=4pt,
+    minimum width=3.66cm, minimum height=0.38cm},
+  title/.style={font=\small\bfseries, text=accent, align=center},
+  role/.style={font=\tiny\bfseries, text=white, fill=accent!85,
+    rounded corners=3pt, inner xsep=4pt, inner ysep=1.4pt},
+  badge/.style={circle, fill=accent!86, text=white, inner sep=1.55pt,
+    font=\tiny\bfseries},
+  lane/.style={draw=accent!52, fill=blue!5, rounded corners=5pt,
+    text width=3.08cm, minimum height=0.43cm, align=center,
+    inner xsep=4pt, font=\tiny\bfseries},
+  action/.style={draw=orange!82!black, fill=orange!12, rounded corners=5pt,
+    minimum width=0.82cm, minimum height=0.32cm, align=center,
+    font=\tiny\bfseries, text=orange!55!black},
+  screen/.style={draw=purple!58!black, fill=purple!6, rounded corners=6pt,
+    minimum width=3.28cm, minimum height=1.18cm, align=center},
+  server/.style={draw=orange!82!black, fill=orange!10, rounded corners=5pt,
+    minimum width=0.88cm, minimum height=0.38cm, align=center,
+    font=\tiny\bfseries, text=orange!55!black},
+  proof/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
+    minimum width=3.18cm, minimum height=0.45cm, align=center,
+    font=\tiny\ttfamily, text=green!38!black},
+  chip/.style={draw=gray!36, fill=white, rounded corners=4pt,
+    minimum width=1.18cm, minimum height=0.29cm, align=center,
+    font=\tiny, text=gray!72!black},
+  output/.style={draw=green!42!black, fill=green!6, rounded corners=5pt,
+    text width=3.10cm, minimum height=0.50cm, align=center,
+    font=\tiny\bfseries, text=green!35!black},
+  detourlabel/.style={font=\tiny\bfseries, text=gray!70!black,
+    fill=white, inner sep=1.5pt},
+  junction/.style={circle, draw=accent!70, fill=white, inner sep=1.65pt},
+  mainarr/.style={-{Latex[length=2.2mm,width=1.7mm]}, line width=0.85pt,
+    accent!82, shorten <=3pt, shorten >=3pt},
+  fallbackarr/.style={-{Latex[length=2.2mm,width=1.7mm]}, line width=0.85pt,
+    orange!85!black, densely dashed, shorten <=3pt, shorten >=3pt},
+  softarr/.style={-{Latex[length=2.2mm,width=1.7mm]}, line width=0.75pt,
+    gray!65, densely dashed, shorten <=3pt, shorten >=3pt},
+  arrowlabel/.style={font=\tiny\bfseries, fill=white, inner sep=1.5pt,
+    text=black!78},
+  grouplabel/.style={font=\tiny\bfseries, text=black!65, fill=white, inner sep=2pt}
 ]
-\node[shell] (landingBox) at (0,0) {};
-\node[shell] (hostingBox) at (5.25,0) {};
-\node[shell] (embedBox) at (10.5,0) {};
+\begin{scope}[shift={(0,0)}]
+  \node[shell] (landingBox) at (0,0) {};
+  \node[grouplabel, anchor=west] at ([xshift=0.14cm,yshift=-0.14cm]landingBox.north west) {Discovery page};
+  \node[topbar] at (0,2.32) {};
+  \node[badge] at (-1.70,2.32) {1};
+  \node[title] at (-0.32,2.32) {Landing};
+  \node[role] at (1.20,2.32) {DISCOVER};
 
-\node[title] at (0,2.18) {Landing};
-\node[header] at (0,1.74) {schedule / live events};
-\node[tile] at (0,0.95) {Repeated match cards};
-\node[tile] at (0,0.25) {League, time, channel text};
-\node[tile] at (0,-0.45) {Candidate watch links};
-\node[goal] at (0,-1.55) {Question:\\where should the run go next?};
+  \node[chrome] at (0,1.77) {};
+  \foreach \xx/\col in {-1.63/red!55!black,-1.50/orange!75!black,-1.37/green!50!black}
+    \fill[\col] (\xx,1.77) circle (0.035);
+  \node[font=\tiny\ttfamily, text=gray!72!black] at (0.18,1.77) {schedule / live events};
 
-\node[title] at (5.25,2.18) {Hosting};
-\node[header] at (5.25,1.74) {match / channel page};
-\node[player] at (5.25,0.82) {Player shell\\overlay + server list};
-\node[orangeTile] at (4.1,-0.36) {S1};
-\node[orangeTile] at (5.25,-0.36) {S2};
-\node[orangeTile] at (6.4,-0.36) {HD};
-\node[goal] at (5.25,-1.55) {Question:\\can a player be activated?};
+  \node[lane] (matchA) at (0,1.08) {Team A vs Team B \textcolor{orange!70!black}{LIVE}};
+  \node[lane] (matchB) at (0,0.57) {League, time, channel text};
+  \node[lane] (matchC) at (0,0.06) {Repeated match cards};
+  
+  % Rebalanced chip gap spacing
+  \node[chip] at (-0.95,-0.58) {DOM rows};
+  \node[chip] at (0.32,-0.58) {links};
+  \node[action] (watch) at (1.40,-0.58) {watch};
+  
+  \node[output] (landingOut) at (0,-1.86) {Output\\ranked next URLs};
+\end{scope}
 
-\node[title] at (10.5,2.18) {Embedded};
-\node[header] at (10.5,1.74) {iframe / player URL};
-\node[player] at (10.5,0.82) {Focused player\\video + frame runtime};
-\node[evidence] at (10.5,-0.38) {m3u8 / mpd / mp4};
-\node[goal] at (10.5,-1.55) {Question:\\which media request proves playback?};
+\begin{scope}[shift={(5.45,0)}]
+  \node[shell] (hostingBox) at (0,0) {};
+  \node[grouplabel, anchor=west] at ([xshift=0.14cm,yshift=-0.14cm]hostingBox.north west) {Activation page};
+  \node[topbar] at (0,2.32) {};
+  \node[badge] at (-1.70,2.32) {2};
+  \node[title] at (-0.28,2.32) {Hosting};
+  \node[role] at (1.20,2.32) {ACTIVATE};
 
-\draw[arr] (landingBox.east) -- node[lab, above] {candidate} (hostingBox.west);
-\draw[soft] (hostingBox.east) -- node[lab, above] {iframe fallback} (embedBox.west);
+  \node[chrome] at (0,1.77) {};
+  \foreach \xx/\col in {-1.63/red!55!black,-1.50/orange!75!black,-1.37/green!50!black}
+    \fill[\col] (\xx,1.77) circle (0.035);
+  \node[font=\tiny\ttfamily, text=gray!72!black] at (0.18,1.77) {match / channel page};
+
+  \node[screen] (hostPlayer) at (0,0.86) {};
+  % Polished the visual play button for cleaner rendering
+  \filldraw[draw=accent!65, fill=accent!12, line width=0.45pt, rounded corners=0.5pt, line join=round]
+    (-0.84,0.64) -- (-0.84,1.08) -- (-0.42,0.86) -- cycle;
+  \node[font=\tiny\bfseries, text=gray!83!black] at (0.30,1.07) {Player shell};
+  \node[font=\tiny, text=gray!70!black] at (0.30,0.70) {overlay + click target};
+  
+  \node[server] at (-1.15,-0.16) {S1};
+  \node[server] at (0,-0.16) {S2};
+  \node[server] at (1.15,-0.16) {HD};
+  \node[chip] at (-0.85,-0.82) {iframe URL};
+  \node[chip] at (0.85,-0.82) {server state};
+  \node[output] (hostingOut) at (0,-1.86) {Output\\activated player context};
+\end{scope}
+
+\begin{scope}[shift={(10.9,0)}]
+  \node[shell] (embedBox) at (0,0) {};
+  \node[grouplabel, anchor=west] at ([xshift=0.14cm,yshift=-0.14cm]embedBox.north west) {Evidence page};
+  \node[topbar] at (0,2.32) {};
+  \node[badge] at (-1.70,2.32) {3};
+  \node[title] at (-0.35,2.32) {Embedded};
+  \node[role] at (1.20,2.32) {PROVE};
+
+  \node[chrome] at (0,1.77) {};
+  \foreach \xx/\col in {-1.63/red!55!black,-1.50/orange!75!black,-1.37/green!50!black}
+    \fill[\col] (\xx,1.77) circle (0.035);
+  \node[font=\tiny\ttfamily, text=gray!72!black] at (0.18,1.77) {iframe / player URL};
+
+  \node[screen, fill=purple!8] (embedPlayer) at (0,0.86) {};
+  \draw[accent!36, line width=0.55pt] (-1.30,0.48) -- (1.30,1.24);
+  \draw[accent!20, line width=0.55pt] (-1.30,1.24) -- (1.30,0.48);
+  \node[font=\tiny\bfseries, fill=white, inner sep=1pt, text=gray!83!black] at (0,1.06) {Focused frame};
+  \node[font=\tiny, fill=white, inner sep=1pt, text=gray!70!black] at (0,0.68) {runtime events};
+  
+  \node[proof] (media) at (0,-0.18) {m3u8 / mpd / mp4};
+  \node[chip] at (-0.82,-0.82) {network};
+  \node[chip] at (0.82,-0.82) {screenshot};
+  \node[output] (embedOut) at (0,-1.86) {Output\\media proof request};
+\end{scope}
+
+\node[detourlabel] (detourText) at (8.18,3.25) {optional ad detour};
+
+\draw[mainarr] (landingBox.east) -- node[arrowlabel, above=1pt] {candidate link} (hostingBox.west);
+\draw[mainarr] (hostPlayer.east) -- node[arrowlabel, above=1pt] {iframe / server} (embedPlayer.west);
+
+% Fixed the arrow routing to explicitly wrap under the Outputs panel, avoiding crossing collisions
+\draw[fallbackarr] (watch.south) .. controls ([yshift=-2.15cm]watch.south) and ([yshift=-1.9cm]media.south) ..
+  node[arrowlabel, pos=0.50, below=1pt] {direct player shortcut} (media.south);
+
+% Improved soft arrow pathing and arc angles
+\draw[softarr] ([xshift=-0.25cm]hostingBox.north east) to[out=45,in=180] (detourText.west);
+\draw[softarr] (detourText.east) to[out=0,in=135] ([xshift=0.25cm]embedBox.north west);
+
 \end{tikzpicture}
 }
-\caption{Comparison of the three page roles used by the extraction workflow.}
-\label{fig:page-type-visuals}
+\caption{Browser-state view of the three page roles: landing pages discover candidate links, hosting pages activate a player context, and embedded pages provide the media request that proves playback.}\label{fig:page-type-visuals}
 \end{figure}

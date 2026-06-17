@@ -1,33 +1,69 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\resizebox{0.88\textwidth}{!}{%
+\resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-  stepbox/.style={draw=accent, fill=blue!5, rounded corners=5pt,
-    minimum width=3.2cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  mem/.style={draw=purple!60, fill=purple!7, rounded corners=5pt,
-    minimum width=3.2cm, minimum height=0.85cm, align=center, font=\footnotesize\bfseries},
-  arr/.style={->, >=Stealth, thick, accent!80},
-  loop/.style={->, >=Stealth, thick, gray!70, dashed}
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
+    line width=0.55pt, inner sep=12pt},
+  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=3.1cm, minimum height=0.85cm, inner xsep=5pt,
+    inner ysep=4pt, text=black},
+  start/.style={block, draw=orange!80!black, fill=orange!9},
+  memory/.style={block, draw=purple!65!black, fill=purple!7},
+  tool/.style={block, draw=accent!75, fill=blue!6},
+  result/.style={block, draw=green!55!black, fill=green!8},
+  trace/.style={block, draw=gray!62, fill=gray!9},
+  badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
+    inner sep=1.25pt, minimum size=8.5pt},
+  paneltitle/.style={font=\scriptsize\bfseries, text=black!68, fill=white,
+    inner sep=2pt},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!78, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.76pt,
+    gray!62, densely dashed, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
+    text=black!72}
 ]
 
-\node[mem] (long) at (0,2.7) {Long-term hints};
-\node[stepbox] (prompt) at (3.8,2.7) {Compiled prompt};
-\node[stepbox] (llm) at (7.6,2.7) {LLM tool decision};
-\node[stepbox] (tool) at (11.4,2.7) {MCP tool call};
-\node[stepbox] (obs) at (11.4,0.7) {Observation};
-\node[stepbox] (valid) at (7.6,0.7) {Validate progress};
-\node[mem] (short) at (3.8,0.7) {Short-term memory};
+% Prompt assembly and action
+\node[memory] (long) at (0,3.00) {Long-term hints\\{\normalfont\scriptsize domain + page type}};
+\node[start] (prompt) at (3.80,3.00) {Compiled prompt\\{\normalfont\scriptsize role, task, constraints}};
+\node[tool] (llm) at (7.60,3.00) {LLM decision\\{\normalfont\scriptsize choose next tool}};
+\node[tool] (mcp) at (11.40,3.00) {MCP tool call\\{\normalfont\scriptsize browser action}};
 
-\draw[arr] (long) -- (prompt);
-\draw[arr] (prompt) -- (llm);
-\draw[arr] (llm) -- (tool);
-\draw[arr] (tool) -- (obs);
-\draw[arr] (obs) -- (valid);
-\draw[arr] (valid) -- (short);
-\draw[loop] (short.south east) -- ++(0,-0.45) -| (llm.south west);
+% Feedback and memory update
+\node[result] (obs) at (11.40,0.45) {Observation\\{\normalfont\scriptsize state + evidence}};
+\node[result] (valid) at (7.60,0.45) {Validate progress\\{\normalfont\scriptsize continue or stop}};
+\node[memory] (short) at (3.80,0.45) {Short-term memory\\{\normalfont\scriptsize latest clues}};
+\node[trace] (trace) at (0,0.45) {Stored trace\\{\normalfont\scriptsize calls, tokens, reasons}};
+
+\coordinate (feedbackleft) at (3.80,1.62);
+\coordinate (feedbackright) at (7.60,1.62);
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(long) (prompt) (llm) (mcp)] (promptpanel) {};
+  \node[panel, fit=(trace) (short) (valid) (obs) (feedbackleft) (feedbackright)] (feedbackpanel) {};
+\end{scope}
+
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]promptpanel.north west) {Prompt assembly and action};
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]feedbackpanel.north west) {Observation feedback};
+
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]long.north west) {1};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]prompt.north west) {2};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]llm.north west) {3};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]valid.north west) {4};
+
+\draw[arr] (long.east) -- (prompt.west);
+\draw[arr] (prompt.east) -- (llm.west);
+\draw[arr] (llm.east) -- (mcp.west);
+\draw[soft] (mcp.south) -- node[lab, right=2pt] {observe} (obs.north);
+\draw[arr] (obs.west) -- (valid.east);
+\draw[arr] (valid.west) -- (short.east);
+\draw[soft] (short.west) -- (trace.east);
+\draw[soft] (short.north) -- (feedbackleft) -- node[lab, above=1pt, midway] {next turn} (feedbackright) -- (llm.south);
 
 \end{tikzpicture}
 }
-\caption{Agent reasoning loop with memory and tool feedback.}
-\label{fig:agent-memory-loop}
+\caption{Agent reasoning loop with memory and tool feedback.}\label{fig:agent-memory-loop}
 \end{figure}
