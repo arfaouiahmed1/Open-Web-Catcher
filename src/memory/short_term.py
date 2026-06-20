@@ -108,6 +108,14 @@ def _extract_nested_strings(payload: Any, keys: set[str], *, limit: int = 150) -
                     found.append(value)
                 elif lowered.endswith("_url") and isinstance(value, str):
                     found.append(value)
+                elif (lowered in keys or lowered.endswith("_urls")) and isinstance(value, list):
+                    for item in value:
+                        if isinstance(item, str):
+                            found.append(item)
+                            if len(found) >= limit:
+                                break
+                        elif isinstance(item, (dict, list, tuple)):
+                            _walk(item)
                 elif isinstance(value, (dict, list, tuple)):
                     _walk(value)
         elif isinstance(node, (list, tuple)):
@@ -694,7 +702,7 @@ class ShortTermMemory:
                 else:
                     continue
                 resolved = _resolve_url_candidate(candidate, base_url=base_url)
-                if resolved:
+                if resolved and not _looks_like_pagination_url(resolved):
                     discovered.append(resolved)
                     if isinstance(entry, dict):
                         patterns = entry.get("patterns") if isinstance(entry.get("patterns"), dict) else {}

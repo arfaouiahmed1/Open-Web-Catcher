@@ -2,10 +2,15 @@ from pathlib import Path
 
 
 PROMPT_DIR = Path(__file__).resolve().parents[1] / "configs" / "prompts"
+AGENT_DIR = Path(__file__).resolve().parents[1] / "src" / "agents"
 
 
 def _prompt(name: str) -> str:
     return (PROMPT_DIR / name).read_text(encoding="utf-8")
+
+
+def _agent(name: str) -> str:
+    return (AGENT_DIR / name).read_text(encoding="utf-8")
 
 
 def test_browser_agent_prompts_keep_react_and_blocker_guardrails() -> None:
@@ -225,6 +230,86 @@ def test_hosting_and_embedded_prompts_are_agentic_not_hardcoded() -> None:
             assert hardcoded_phrase not in text, name
 
 
+def test_browser_prompts_cover_popup_windows_ublock_and_llm_activation() -> None:
+    classification = _prompt("classification_v1.md")
+    landing = _prompt("landing_page_v1.md")
+    hosting = _prompt("hosting_page_v1.md")
+    embedded = _prompt("embedded_page_v1.md")
+    orchestrator = _prompt("orchestrator_v1.md")
+
+    for name, text in (
+        ("classification", classification),
+        ("landing", landing),
+        ("hosting", hosting),
+        ("embedded", embedded),
+        ("orchestrator", orchestrator),
+    ):
+        for phrase in (
+            "opened_targets",
+            "blocked_popup_attempts",
+            "target_decision",
+            "blocked_by_client",
+            "Do not trust same hostname alone",
+        ):
+            assert phrase in text, name
+
+    for name, text in (("hosting", hosting), ("embedded", embedded)):
+        for phrase in (
+            "activation_candidates",
+            "blocker_candidates",
+            "needs_agent_choice",
+            "popup_window_diagnostics",
+            "Choose the activation target yourself",
+            "Do not rely on hardcoded play/control guessing",
+            "A bare `play_media` call returns `needs_agent_choice`",
+        ):
+            assert phrase in text, name
+
+    for phrase in (
+        "popup/window/uBlock evidence",
+        "Browser-blocked popups and uBlock",
+        "Same-content adoption requires",
+        "LLM-chosen activation",
+        "popup_window_diagnostics",
+    ):
+        assert phrase in orchestrator
+
+
+def test_agent_contracts_cover_popup_windows_ublock_and_llm_activation() -> None:
+    classification = _agent("classification.py")
+    landing = _agent("landing_page.py")
+    hosting = _agent("hosting_page.py")
+    embedded = _agent("embedded_page.py")
+    orchestrator = _agent("orchestrator.py")
+
+    for name, text in (
+        ("classification", classification),
+        ("landing", landing),
+        ("hosting", hosting),
+        ("embedded", embedded),
+        ("orchestrator", orchestrator),
+    ):
+        for phrase in (
+            "opened_targets",
+            "blocked_popup_attempts",
+            "target_decision",
+            "blocked_by_client",
+            "popup/window",
+        ):
+            assert phrase in text, name
+
+    for name, text in (("hosting", hosting), ("embedded", embedded)):
+        for phrase in (
+            "activation_candidates",
+            "bare play_media is only candidate discovery",
+            "popup_window_diagnostics",
+            "same hostname alone",
+        ):
+            assert phrase in text, name
+
+    assert "popup_window_diagnostics" in orchestrator
+
+
 def test_prompts_handle_multilingual_channel_grids_and_bad_redirects() -> None:
     classification = _prompt("classification_v1.md")
     landing = _prompt("landing_page_v1.md")
@@ -429,14 +514,40 @@ def test_embedded_prompt_keeps_server_source_loop_open() -> None:
 
 def test_landing_prompt_prioritizes_body_and_stays_on_main_domain() -> None:
     landing = _prompt("landing_page_v1.md")
+    landing_agent = _agent("landing_page.py")
 
     for phrase in (
         "Region priority is body first",
         "Main body live/watch/channel tiles",
         "Header/footer candidates must not outrank body candidates",
+        "Header/footer navigation is a last-resort route",
+        "Do not spend tool calls on header/footer links while any body live/watch/channel row",
         "Domain discipline",
         "stay anchored to `mainUrl`'s normalized domain/site",
         "External URLs require explicit same-content watch/player evidence",
         "off-target provider page",
     ):
         assert phrase in landing
+
+    assert "header/footer navigation is a last-resort path" in landing_agent
+
+
+def test_hosting_prompt_requires_iframe_local_activation_before_handoff() -> None:
+    hosting = _prompt("hosting_page_v1.md")
+    hosting_agent = _agent("hosting_page.py")
+
+    for phrase in (
+        "iframe-local `sample_buttons`, `sample_links`, `sample_videos`",
+        "Do not hand off to embedded just because the player is in an iframe",
+        "choose an exact iframe `frame_path` target",
+        "When a visible player iframe contains a video element or Play/Watch/Start control",
+        "iframe existence alone is not enough for handoff",
+    ):
+        assert phrase in hosting
+
+    for phrase in (
+        "iframe-local sample_buttons, sample_links, or sample_videos",
+        "try play_media or interact before embedded handoff",
+        "iframe-local activation was tried or inaccessible",
+    ):
+        assert phrase in hosting_agent

@@ -40,6 +40,38 @@ function normalizeTarget(entry, framePath = 'root') {
   };
 }
 
+function activationReason(entry) {
+  const haystack = `${entry.kind || ''} ${entry.text || ''} ${entry.selector || ''} ${entry.xpath || ''}`.toLowerCase();
+  if (entry.kind === 'video') return 'visible video element';
+  if (/play|watch|start|resume|unmute|go live/.test(haystack)) return 'explicit play-like control';
+  if (/player|poster|overlay|control|video-js|jwplayer|plyr/.test(haystack)) return 'player surface or overlay';
+  if (entry.href) return 'player-like link target';
+  return 'candidate from player/media region';
+}
+
+function buildActivationCandidates(targets, limit = 16) {
+  return (targets || []).slice(0, limit).map((entry) => ({
+    ...entry,
+    activation_reason: activationReason(entry),
+    requires_agent_choice: true,
+  }));
+}
+
+function buildBlockerCandidates(popups, limit = 10) {
+  return (popups || []).slice(0, limit).map((popup, index) => ({
+    kind: 'popup_or_overlay',
+    text: clean(popup.text, 120),
+    selector: popup.selector || '',
+    xpath: popup.xpath || '',
+    close_selector: popup.close_selector || '',
+    close_xpath: popup.close_xpath || '',
+    frame_path: 'root',
+    blocker_reason: 'visible popup/modal/overlay candidate',
+    requires_agent_choice: true,
+    index,
+  }));
+}
+
 function frameFocusScore(frame) {
   let score = 0;
   score += (frame.video_count || 0) * 7;
@@ -78,7 +110,38 @@ function toFrameFocus(frame) {
       x: Math.round(entry.x || 0),
       y: Math.round(entry.y || 0),
     })).slice(0, 6),
+    sample_videos: (frame.sample_videos || []).map((video) => ({
+      kind: 'video',
+      text: clean(video.src || 'video', 120),
+      selector: video.selector || '',
+      xpath: video.xpath || '',
+      x: Math.round(video.x || 0),
+      y: Math.round(video.y || 0),
+      width: Math.round(video.width || 0),
+      height: Math.round(video.height || 0),
+      frame_path: frame.frame_path,
+      ready_state: Number(video.readyState ?? video.ready_state ?? 0),
+      paused: Boolean(video.paused),
+    })).slice(0, 6),
   };
+}
+
+function frameVideoTargets(data) {
+  return (data.frame_tree || []).flatMap((frame) =>
+    (frame.sample_videos || []).map((video) => ({
+      kind: 'video',
+      text: clean(video.src || 'video', 120),
+      selector: video.selector || '',
+      xpath: video.xpath || '',
+      x: Math.round(video.x || 0),
+      y: Math.round(video.y || 0),
+      width: Math.round(video.width || 0),
+      height: Math.round(video.height || 0),
+      frame_path: frame.frame_path || 'root',
+      ready_state: Number(video.readyState ?? video.ready_state ?? 0),
+      paused: Boolean(video.paused),
+    })),
+  );
 }
 
 export async function inspectEmbedded(params = {}) {
@@ -129,6 +192,7 @@ export async function inspectEmbedded(params = {}) {
         ready_state: video.readyState,
         paused: video.paused,
       })),
+      ...frameVideoTargets(data),
       ...allTargets.filter((entry) => PLAY_PATTERN.test(`${entry.text} ${entry.selector} ${entry.xpath}`)),
     ],
     (entry) => `${entry.frame_path}|${entry.selector}|${entry.xpath}|${entry.text}`,
@@ -150,6 +214,8 @@ export async function inspectEmbedded(params = {}) {
     popups: (data.popups || []).slice(0, 8),
     source_controls,
     player_targets,
+    activation_candidates: buildActivationCandidates(player_targets),
+    blocker_candidates: buildBlockerCandidates(data.popups),
     player_handoff_candidates: buildPlayerHandoffCandidates(data),
     frame_focus_order,
     iframe_context: {
@@ -162,6 +228,8 @@ export async function inspectEmbedded(params = {}) {
       ...(data.stats || {}),
       source_controls: source_controls.length,
       player_targets: player_targets.length,
+      activation_candidates: Math.min(player_targets.length, 16),
+      blocker_candidates: Math.min((data.popups || []).length, 10),
       frame_focus_candidates: frame_focus_order.length,
     },
   };

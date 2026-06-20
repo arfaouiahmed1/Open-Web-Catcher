@@ -32,6 +32,59 @@ function compactElements(elements, limit = 8) {
   }));
 }
 
+function activationReason(element) {
+  const haystack = `${element.kind || ""} ${element.text || ""} ${element.href || ""} ${element.selector || ""} ${element.xpath || ""} ${element.nearby_text || ""}`.toLowerCase();
+  if (element.kind === "video") return "visible video element";
+  if (element.kind === "iframe" && /(player|embed|stream|video|watch|live)/.test(haystack)) return "player-like iframe";
+  if (/(play|watch|start|resume|unmute|go live)/.test(haystack)) return "explicit play-like control";
+  if (/(player|poster|overlay|control|video-js|jwplayer|plyr)/.test(haystack)) return "player surface or overlay";
+  return "candidate from player/media context";
+}
+
+function buildActivationCandidates(elements, limit = 16) {
+  const candidates = elements
+    .filter((element) => element.visible !== false)
+    .filter((element) => {
+      const haystack = `${element.kind || ""} ${element.text || ""} ${element.href || ""} ${element.selector || ""} ${element.xpath || ""} ${element.nearby_text || ""}`.toLowerCase();
+      return element.kind === "video"
+        || (element.kind === "iframe" && /(player|embed|stream|video|watch|live)/.test(haystack))
+        || (["button", "tab", "link", "overlay"].includes(element.kind)
+          && /(play|watch|start|resume|unmute|go live|player|poster|overlay|control|video-js|jwplayer|plyr)/.test(haystack));
+    });
+  return compactElements(candidates, limit).map((entry) => ({
+    ...entry,
+    activation_reason: activationReason(entry),
+    requires_agent_choice: true,
+  }));
+}
+
+function buildBlockerCandidates(overlays, limit = 10) {
+  return compactElements(overlays, limit).map((entry, index) => ({
+    ...entry,
+    blocker_reason: "visible overlay/modal/popup candidate",
+    requires_agent_choice: true,
+    index,
+  }));
+}
+
+function buildFrameActivationCandidates(frameTree, limit = 16) {
+  return (frameTree || [])
+    .filter((frame) =>
+      frame.candidate_purpose === "player"
+      || Number(frame.signals?.videos || 0) > 0
+      || /(player|embed|stream|video|watch|live)/i.test(`${frame.url || ""} ${frame.name || ""} ${frame.title || ""}`))
+    .slice(0, limit)
+    .map((frame) => ({
+      kind: "frame",
+      frame_path: frame.frame_path,
+      url: frame.url,
+      title: frame.title || "",
+      dimensions: frame.dimensions || null,
+      activation_reason: frame.candidate_purpose === "player" ? "player-like frame" : "frame media/player signal",
+      requires_agent_choice: true,
+    }));
+}
+
 function summarizeDedupedLinks(elements, limit = 60) {
   const buckets = new Map();
   for (const element of elements) {
@@ -302,6 +355,8 @@ export async function getPageContext({
         deduped_links: summarizeDedupedLinks(elements, 80),
         reveal_actions: suggestRevealActions(elements),
         top_overlays: compactElements(overlays, 5),
+        activation_candidates: buildActivationCandidates(elements),
+        blocker_candidates: buildBlockerCandidates(overlays),
         top_candidates: compactElements(
           elements.filter((element) => ['link', 'button', 'tab', 'video', 'overlay', 'iframe'].includes(element.kind)),
           30,
@@ -550,11 +605,14 @@ export async function getMediaState({
 export async function getFrameTree({
   browserWsEndpoint,
 } = {}) {
-  return withBrowserSession(browserWsEndpoint, async ({ page }) =>
-    buildEnvelope(page, {
+  return withBrowserSession(browserWsEndpoint, async ({ page }) => {
+    const frameTree = await buildFrameTree(page);
+    return buildEnvelope(page, {
       frame_path: 'root',
       data: {
-        frame_tree: await buildFrameTree(page),
+        frame_tree: frameTree,
+        activation_candidates: buildFrameActivationCandidates(frameTree),
       },
-    }));
+    });
+  });
 }

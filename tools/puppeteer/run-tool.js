@@ -14,7 +14,7 @@ async function main() {
     throw new Error(`Invalid JSON payload: ${error.message}`);
   }
 
-  const browserWsEndpoint = payload.browserWSEndpoint || payload.browserWsEndpoint || '';
+  const browserWsEndpoint = payload.browserWSEndpoint || payload.browserWsEndpoint || undefined;
   const args = { ...payload };
   delete args.browserWSEndpoint;
   delete args.browserWsEndpoint;

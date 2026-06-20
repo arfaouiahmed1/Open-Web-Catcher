@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  classifyPopupCandidate,
   isBlankPopupUrl,
   scorePopupCandidate,
   selectPopupCandidate,
@@ -47,4 +48,53 @@ test('an advertising-only popup is rejected', () => {
     ),
     null,
   );
+});
+
+test('same-host ad or promo target is not adopted from hostname alone', () => {
+  const candidate = { url: 'https://sports.example.com/promo/download?ad=1' };
+  const classification = classifyPopupCandidate(candidate, 'https://sports.example.com/watch/game-1');
+
+  assert.equal(classification.same_origin, true);
+  assert.equal(classification.adoptable, false);
+  assert.equal(classification.classification, 'ad_or_drift');
+  assert.equal(selectPopupCandidate([candidate], 'https://sports.example.com/watch/game-1'), null);
+});
+
+test('same-content player can be adopted across hostnames', () => {
+  const candidate = {
+    initial_url: 'about:blank',
+    final_url: 'https://cdn-player.example.net/embed/player/game-1',
+    title: 'Player',
+  };
+  const classification = classifyPopupCandidate(candidate, 'https://sports.example.com/watch/game-1');
+
+  assert.equal(classification.same_origin, false);
+  assert.equal(classification.adoptable, true);
+  assert.equal(classification.target_decision, 'adopt_same_content_player');
+  assert.equal(selectPopupCandidate([candidate], 'https://sports.example.com/watch/game-1'), candidate);
+});
+
+test('multiple tabs adopt only the best player target', () => {
+  const candidates = [
+    { url: 'https://sports.example.com/promo' },
+    { url: 'https://ads.example.net/popunder?id=12' },
+    { url: 'https://cdn.example.net/embed/player/42' },
+  ];
+
+  assert.equal(
+    selectPopupCandidate(candidates, 'https://sports.example.com/event/42'),
+    candidates[2],
+  );
+});
+
+test('blocked window.open attempts can be represented as non-adoptable evidence', () => {
+  const blocked = {
+    blocked: true,
+    url: 'https://ads.example.net/popunder?id=12',
+    reason: 'window_open_blocked',
+  };
+  const classification = classifyPopupCandidate(blocked, 'https://sports.example.com/watch/game-1');
+
+  assert.equal(classification.adoptable, false);
+  assert.equal(classification.target_decision, 'close_unadopted');
 });

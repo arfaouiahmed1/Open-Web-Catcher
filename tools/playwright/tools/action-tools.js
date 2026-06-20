@@ -2,6 +2,7 @@ import {
   buildEnvelope,
   capturePageSnapshot,
   makeObservedChange,
+  resolveFrame,
   resolveElementTarget,
   trackNewTabs,
   withBrowserSession,
@@ -63,12 +64,17 @@ async function performAction(browserWsEndpoint, {
       frame_path: resultFramePath,
       ok: !finalError,
       error: finalError,
-      observed_change: makeObservedChange(before, after, tabs.new_tab_urls),
+      observed_change: makeObservedChange(before, after, tabs.new_tab_urls, tabs),
       screenshotHandle: screenshot_target && !popupAdopted ? resolved.handle : null,
       data: {
         locator_used: resolved.locator_used,
         popup_adopted: popupAdopted,
-        opener_url: popupAdopted ? page.url() : '',
+        opener_url: tabs.opener_url,
+        opened_targets: tabs.opened_targets,
+        blocked_popup_attempts: tabs.blocked_popup_attempts,
+        selected_target: tabs.selected_target,
+        target_decision: tabs.target_decision,
+        active_page_url: tabs.active_page_url,
         stale_ref_detected: Boolean(resolved.stale_ref_detected),
         frame_fallback_applied: Boolean(resolved.frame_fallback_applied),
         frame_relocated: Boolean(resolved.frame_relocated),
@@ -393,6 +399,82 @@ async function waitForPlayback(frame, timeoutMs) {
   return { started: mediaProbeShowsPlayback(probe), probe };
 }
 
+async function inspectActivationCandidates(frame, framePath = 'root', limit = 8) {
+  return frame.evaluate(({ framePathValue, candidateLimit }) => {
+    const normalize = (value, max = 140) =>
+      String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+    const visible = (node) => {
+      if (!(node instanceof Element)) return false;
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0
+        && rect.height > 0
+        && style.display !== 'none'
+        && style.visibility !== 'hidden'
+        && style.opacity !== '0';
+    };
+    const reasonFor = (entry) => {
+      const haystack = `${entry.kind || ''} ${entry.text || ''} ${entry.selector || ''}`.toLowerCase();
+      if (entry.kind === 'video') return 'visible video element';
+      if (/(play|watch|start|resume|unmute|go live)/.test(haystack)) return 'explicit play-like control';
+      if (/(player|poster|overlay|control|video-js|jwplayer|plyr)/.test(haystack)) return 'player surface or overlay';
+      return 'candidate from player/media region';
+    };
+    const selectorFor = (node) => {
+      if (node.id) return `#${CSS.escape(node.id)}`;
+      if (node.getAttribute('name')) return `[name="${CSS.escape(node.getAttribute('name'))}"]`;
+      const className = String(node.className || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).join('.');
+      return className ? `${node.tagName.toLowerCase()}.${className}` : node.tagName.toLowerCase();
+    };
+    const rows = Array.from(document.querySelectorAll(
+      "video,button,a,[role='button'],[onclick],.vjs-big-play-button,.jw-icon-playback,.plyr__control,[class*='play'],[class*='player'],[class*='overlay'],[class*='poster'],iframe",
+    ))
+      .filter(visible)
+      .map((node, index) => {
+        const rect = node.getBoundingClientRect();
+        const tag = node.tagName.toLowerCase();
+        const text = normalize(node.innerText || node.textContent || node.getAttribute('aria-label') || node.getAttribute('title') || node.getAttribute('src') || '');
+        const row = {
+          index,
+          kind: tag === 'video' ? 'video' : tag === 'iframe' ? 'iframe' : 'control',
+          tag,
+          text,
+          selector: selectorFor(node),
+          xpath: '',
+          frame_path: framePathValue,
+          geometry: {
+            x: Math.round(rect.x),
+            y: Math.round(rect.y),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            center_x: Math.round(rect.x + rect.width / 2),
+            center_y: Math.round(rect.y + rect.height / 2),
+          },
+          requires_agent_choice: true,
+        };
+        row.activation_reason = reasonFor(row);
+        return row;
+      })
+      .slice(0, candidateLimit);
+    return {
+      frame_path: framePathValue,
+      frame_url: location.href,
+      needs_agent_choice: true,
+      activation_candidates: rows,
+      candidate_summary: {
+        video_count: rows.filter((row) => row.kind === 'video').length,
+        top_candidates: rows,
+      },
+    };
+  }, { framePathValue: framePath, candidateLimit: limit }).catch(() => ({
+    frame_path: framePath,
+    frame_url: frame.url(),
+    needs_agent_choice: true,
+    activation_candidates: [],
+    candidate_summary: { video_count: 0, top_candidates: [] },
+  }));
+}
+
 async function invokeMediaPlayback(frame, handle, { mute = false } = {}) {
   let clickSuccessful = false;
   let clickError = null;
@@ -444,8 +526,8 @@ async function invokeMediaPlayback(frame, handle, { mute = false } = {}) {
   };
 }
 
-async function runPlaybackPreflight(frame) {
-  return frame.evaluate(() => {
+async function runPlaybackPreflight(frame, { clickBlockers = true } = {}) {
+  return frame.evaluate(({ shouldClick }) => {
     const overlaySelectors = [
       '[class*="cookie"]',
       '[class*="consent"]',
@@ -486,7 +568,7 @@ async function runPlaybackPreflight(frame) {
       });
     const actions = [];
 
-    for (const node of candidates) {
+    for (const node of (shouldClick ? candidates : [])) {
       if (!visible(node)) continue;
       const label = `${node.innerText || node.textContent || node.getAttribute('aria-label') || node.value || ''}`.replace(/\s+/g, ' ').trim();
       const normalized = label.toLowerCase();
@@ -510,7 +592,7 @@ async function runPlaybackPreflight(frame) {
       actions,
       clicked: actions.length > 0,
     };
-  }).catch(() => ({
+  }, { shouldClick: Boolean(clickBlockers) }).catch(() => ({
     overlays_detected: 0,
     overlays: [],
     actions: [],
@@ -524,6 +606,8 @@ export async function playMedia({
   selector = '',
   xpath = '',
   text = '',
+  x,
+  y,
   wait_ms = 1500,
   browserWsEndpoint,
   browserProfile = '',
@@ -533,7 +617,66 @@ export async function playMedia({
   return withBrowserSession(browserWsEndpoint, async ({ context, page }) => {
     const before = await capturePageSnapshot(page, frame_path);
     const tabs = trackNewTabs(context, { openerPage: page });
-    let resolved = await resolveElementTarget(page, { frame_path, element_ref, selector, xpath, text });
+    const hasLocator = Boolean(element_ref || selector || xpath || text);
+    const hasCoordinates = Number.isFinite(Number(x)) && Number.isFinite(Number(y));
+    let resolved = hasLocator
+      ? await resolveElementTarget(page, { frame_path, element_ref, selector, xpath, text })
+      : { ok: false, frame_path, error: 'no_locator', code: 'no_locator' };
+
+    if (!hasLocator && !hasCoordinates) {
+      const frameState = await capturePageSnapshot(page, frame_path);
+      const frameResolution = await resolveFrame(page, frame_path);
+      const frame = frameResolution.ok ? frameResolution.frame : page.mainFrame();
+      const candidateFramePath = frameResolution.ok ? frameResolution.frame_path : 'root';
+      const candidateInspection = await inspectActivationCandidates(frame, candidateFramePath, mediaRuntime.candidate_limit || 8);
+      await tabs.settle().catch(() => page);
+      tabs.dispose();
+      return buildEnvelope(page, {
+        frame_path: candidateFramePath,
+        ok: true,
+        error: null,
+        observed_change: makeObservedChange(before, frameState, tabs.new_tab_urls, tabs),
+        data: {
+          locator_used: {},
+          popup_adopted: false,
+          opener_url: tabs.opener_url,
+          opened_targets: tabs.opened_targets,
+          blocked_popup_attempts: tabs.blocked_popup_attempts,
+          selected_target: tabs.selected_target,
+          target_decision: tabs.target_decision,
+          active_page_url: tabs.active_page_url,
+          stale_ref_detected: false,
+          frame_fallback_applied: false,
+          frame_relocated: candidateFramePath !== frame_path,
+          resolution_attempts: [],
+          needs_agent_choice: true,
+          playback_started: false,
+          playback_ready: false,
+          playback_current_time: 0,
+          playback_events: [],
+          attempts: [],
+          media_error_code: null,
+          final_error: null,
+          activation_candidates: candidateInspection.activation_candidates,
+          candidate_summary: candidateInspection.candidate_summary,
+          frame_url: candidateInspection.frame_url,
+        },
+      });
+    }
+
+    if (!resolved.ok && hasCoordinates) {
+      resolved = {
+        ok: true,
+        frame: page.mainFrame(),
+        handle: null,
+        frame_path,
+        locator_used: { kind: 'coordinates', x: Number(x), y: Number(y) },
+        stale_ref_detected: false,
+        frame_fallback_applied: false,
+        frame_relocated: false,
+        resolution_attempts: [],
+      };
+    }
 
     if (!resolved.ok) {
       tabs.dispose();
@@ -550,7 +693,7 @@ export async function playMedia({
       });
     }
 
-    const preflight = await runPlaybackPreflight(resolved.frame);
+    const preflight = await runPlaybackPreflight(resolved.frame, { clickBlockers: false });
     if (preflight.clicked) {
       await wait(350);
       const refreshed = await resolveElementTarget(page, { frame_path, element_ref, selector, xpath, text });
@@ -574,6 +717,9 @@ export async function playMedia({
         const baselineEventCount = (probeBefore.events || []).length;
 
         const execution = await invokeMediaPlayback(resolved.frame, resolved.handle, { mute: muteForAttempt });
+        if (hasCoordinates && !execution.click_successful) {
+          await page.mouse.click(Number(x), Number(y)).catch(() => {});
+        }
         let verification = { started: false, probe: await readMediaProbe(resolved.frame) };
         if (mediaRuntime.verify_playback) {
           verification = await waitForPlayback(resolved.frame, mediaRuntime.verification_timeout_ms);
@@ -632,12 +778,17 @@ export async function playMedia({
       frame_path: resultFramePath,
       ok: playbackStarted || (!mediaRuntime.verify_playback && !finalError),
       error: playbackStarted ? null : finalError,
-      observed_change: makeObservedChange(before, after, tabs.new_tab_urls),
+      observed_change: makeObservedChange(before, after, tabs.new_tab_urls, tabs),
       screenshotHandle: popupAdopted ? null : resolved.handle,
       data: {
         locator_used: resolved.locator_used,
         popup_adopted: popupAdopted,
-        opener_url: popupAdopted ? page.url() : '',
+        opener_url: tabs.opener_url,
+        opened_targets: tabs.opened_targets,
+        blocked_popup_attempts: tabs.blocked_popup_attempts,
+        selected_target: tabs.selected_target,
+        target_decision: tabs.target_decision,
+        active_page_url: tabs.active_page_url,
         stale_ref_detected: Boolean(resolved.stale_ref_detected),
         frame_fallback_applied: Boolean(resolved.frame_fallback_applied),
         frame_relocated: Boolean(resolved.frame_relocated),
@@ -728,11 +879,16 @@ export async function clickCoordinates({
       frame_path: resultFramePath,
       ok: !finalError,
       error: finalError,
-      observed_change: makeObservedChange(before, after, tabs.new_tab_urls),
+      observed_change: makeObservedChange(before, after, tabs.new_tab_urls, tabs),
       data: {
         coordinates: { x, y },
         popup_adopted: popupAdopted,
-        opener_url: popupAdopted ? page.url() : '',
+        opener_url: tabs.opener_url,
+        opened_targets: tabs.opened_targets,
+        blocked_popup_attempts: tabs.blocked_popup_attempts,
+        selected_target: tabs.selected_target,
+        target_decision: tabs.target_decision,
+        active_page_url: tabs.active_page_url,
       },
     });
   });

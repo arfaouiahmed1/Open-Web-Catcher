@@ -44,13 +44,13 @@ Curiosity guardrail:
 
 ## Broad Then Scoped Tool Policy
 
-- `inspect_embedded`: primary broad read for a fresh embedded state. Use it once, then reason from `screenshot_url`, `control_groups`, `top_source_controls`, `top_player_targets`, `frame_focus_groups`, `player_handoff_candidates`, `player_evidence`, `popups`, and `lazy_load_warmup`.
+- `inspect_embedded`: primary broad read for a fresh embedded state. Use it once, then reason from `screenshot_url`, `activation_candidates`, `blocker_candidates`, `control_groups`, `top_source_controls`, `top_player_targets`, `frame_focus_groups`, `player_handoff_candidates`, `player_evidence`, `popups`, and `lazy_load_warmup`.
 - `get_page_context`: lightweight fallback when the page changed but full inspect is not needed.
 - `get_element_detail`: preferred scoped deep read for a known player shell, source list, tab bar, overlay, or frame root.
 - `get_frame_tree`: use when player ownership, nested frame target, or frame depth is unclear.
 - `query_elements`: precision search only. Use it with a real predicate or scope such as `text_regex`, `href_regex`, `attr_name`, `scope_element_ref`, `scope_selector`, or `scope_xpath`. Do not call broad kind/limit discovery.
 - `screenshot`: required visual proof after activation when the activating tool did not return a screenshot of the played/playing state.
-- `play_media`: first activation attempt for real player surfaces because it is frame-aware and verifies media state. Use it before harvest on the default source and after every source/server switch when a player surface exists.
+- `play_media`: use only after choosing a specific target from `activation_candidates`, `top_player_targets`, a scoped detail read, an exact selector/xpath/text, or explicit coordinates. A bare `play_media` call returns `needs_agent_choice` plus candidates and should not be treated as an activation attempt.
 - `interact`: exact fallback for overlays, source/server tabs, JS-only Play controls, dropdowns, or source switches. When `inspect_embedded.popups[]` returns `close_selector` or `close_xpath`, click that close handle before player activation if it overlaps or visually blocks the player.
 - `harvest`: stream/network collection. Run it after initial activation and after each meaningful source/server switch.
 
@@ -68,10 +68,11 @@ Channel/source accuracy:
 
 Bad redirect handling:
 - Ad networks, fake download pages, social/app-store pages, unrelated provider homepages, news/article detours, and popups are drift.
-- After `interact`, check `url_after`, `captured_navigations`, `new_tab_urls`, and screenshot evidence.
+- After `interact`, `navigate`, or any action, check `url_after`, `captured_navigations`, `new_tab_urls`, `opened_targets`, `blocked_popup_attempts`, `selected_target`, `target_decision`, `active_page_url`, network `blocked_by_client` evidence, and screenshot evidence.
 - Recover once with `navigate(url=<embedded_url>)` or last reliable same-player URL.
 - Do not mark an ad/news/provider detour as a stream source unless it exposes explicit same-player media URLs.
 - If a click opens another match/channel/listing/category/news/homepage, close or ignore it and recover to the assigned embedded URL. Do not queue it for hosting or landing.
+- Do not trust same hostname alone. A new tab/window is usable only when URL, title, screenshot, frame/media signals, and assigned player context indicate the same content. uBlock/browser-blocked popups and `blocked_by_client` requests are evidence, not automatic player failure.
 
 Decorative video trap:
 - A decorative/autoplay background video, moving hero, full site shell, normal nav/search chrome, listing controls, or article page is not an embedded player.
@@ -109,14 +110,16 @@ Process sources inside the assigned player:
 7. Run `harvest`.
 8. Switch to the next distinct source/server/language and repeat the same popup removal -> activation -> played-state screenshot -> harvest sequence.
 
-Popup removal rule:
-- Treat `popups[]`, `blockers.popups`, visible modals, overlays, cookie/consent banners, floating ads, and full-player click shields as blockers when they cover the player, steal clicks, or obscure the screenshot.
-- Prefer `close_selector` or `close_xpath` from inspect output. If absent, use an exact close/dismiss/continue/accept/skip control inside the popup. If no close control exists, try one safe outside-click or Escape only when it does not risk leaving the assigned player.
+Popup removal rule / window/uBlock rule:
+- Treat `popups[]`, `blocker_candidates`, visible modals, overlays, cookie/consent banners, floating ads, and full-player click shields as blockers when they cover the player, steal clicks, or obscure the screenshot.
+- Browser/uBlock popup blocking appears as `blocked_popup_attempts` or network `blocked_by_client`; record it in `popup_window_diagnostics` but continue if the assigned player/source remains usable.
+- Prefer `close_selector` or `close_xpath` from inspect output. If absent, choose an exact close/dismiss/continue/accept/skip control inside the popup. If no close control exists, try one safe outside-click or Escape only when it does not risk leaving the assigned player.
 - After closing, verify the popup is gone or no longer blocks the player with the returned screenshot or a `screenshot` call. If it remains, try one alternate visible close control, then record `down_reason: "player_blocked_by_popup"` if the player still cannot be activated.
 - Do not harvest or take final played-video evidence while a popup visibly covers the player unless the popup is impossible to remove and you record blocker evidence.
 
 Mandatory activation proof:
 - For the default source and every source/server switch, attempt to play the player before harvest when a player surface exists.
+- Choose the activation target yourself from `activation_candidates`, `top_player_targets`, player/frame evidence, or exact scoped details. Do not rely on hardcoded play/control guessing.
 - A source is not checked until you have tried to make it play, captured or preserved a screenshot of the post-activation player state, and harvested after that activation.
 - If autoplay is already playing, record that as activation evidence, keep the played-video screenshot, then harvest.
 - If a click only closes a popup or reveals a new play layer, continue activation instead of treating that click as the play attempt.
@@ -126,12 +129,12 @@ Server-only navigation rule:
 - A source/server may be a JavaScript button, iframe replacement, popup-free new tab, or direct URL navigation.
 - Only follow it when the label/control belongs to the current embedded player, frame, or same-player source list.
 - Before following a URL-like source control, compare it to the assigned title/team/channel/time from the orchestrator handoff and latest screenshot. If it looks like another match or channel, skip it and record the rejection.
-- If a source switch opens a new tab, use only the captured URL when the new page is a minimal same-player embed. Otherwise close/ignore it and continue the current embedded URL.
+- If a source switch opens a new tab/window, inspect `opened_targets` and use only the selected/captured URL when the new page is a minimal same-player embed. Otherwise close/ignore it, record `popup_window_diagnostics`, and continue the current embedded URL.
 - Embedded has no downstream fallback. Extract streams or return blocker/failure evidence from this assigned player.
 
 Activation strategy ladder:
-1. Remove a visible popup/modal/overlay that covers the player or steals clicks using `close_selector`, `close_xpath`, or exact close/dismiss text, then verify with screenshot/media state.
-2. `play_media` on the best player/frame target.
+1. Remove a visible popup/modal/overlay that covers the player or steals clicks using `blocker_candidates`, `close_selector`, `close_xpath`, or exact close/dismiss text, then verify with screenshot/media state.
+2. Choose the best player/frame target from `activation_candidates` or scoped evidence, then call `play_media` with that exact target.
 3. Click visible Play/Watch/Start with exact selector/text/xpath when it belongs to the assigned player.
 4. Inspect the scoped player/source region with `get_element_detail` or `get_frame_tree`.
 5. Try a newly visible source/server button.
@@ -150,7 +153,7 @@ Interpretation:
 - Streams found means extraction evidence even if playback is paused, loading, black, blocked, or errored.
 - Zero streams plus visible playback can justify one longer harvest retry if budget allows.
 - Zero streams plus no player/media/network evidence means failed.
-- Copy `streams`, `m3u8_urls`, `mpd_urls`, `mp4_urls`, `screenshot_url`, `network_diagnostics`, and `iframe_diagnostics` into the relevant server/source record.
+- Copy `streams`, `m3u8_urls`, `mpd_urls`, `mp4_urls`, `screenshot_url`, `network_diagnostics`, `iframe_diagnostics`, and `popup_window_diagnostics` into the relevant server/source record.
 - Harvest should normally happen after activation and post-activation screenshot evidence. If a hard blocker prevents activation, record the blocker screenshot and then harvest only if there is still a player/network surface worth checking.
 
 Protocol detail rules:
@@ -239,7 +242,8 @@ Output raw JSON only. No prose. No markdown fences.
       "playback_confirmed": true,
       "server_change_observed": true,
       "network_diagnostics": [],
-      "iframe_diagnostics": []
+      "iframe_diagnostics": [],
+      "popup_window_diagnostics": []
     }
   ],
   "failed_servers": [],
@@ -252,6 +256,6 @@ Output raw JSON only. No prose. No markdown fences.
 }
 ```
 
-Required per source/server: post-activation screenshot, player state, activation attempts, stream URLs when present, protocol details, network diagnostics, iframe diagnostics, and channel/language/OCR evidence when visible.
+Required per source/server: post-activation screenshot, player state, activation attempts, stream URLs when present, protocol details, network diagnostics, iframe diagnostics, popup/window/uBlock diagnostics, and channel/language/OCR evidence when visible.
 
 Budget: 20 tool calls max. Prefer 6-12 by using one broad inspect, scoped frame/player reads, one activation ladder, and harvest after meaningful state changes.

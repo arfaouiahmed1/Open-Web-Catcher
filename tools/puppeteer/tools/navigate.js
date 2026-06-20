@@ -16,7 +16,7 @@ import {
   summarizeRetryAttempts,
 } from '../../shared/error-codes.js';
 import { screenshotFull } from '../shared/screenshot.js';
-import { detectAccessStateFromSignals } from '../shared/tool-runtime.js';
+import { detectAccessStateFromSignals, trackNewTabs } from '../shared/tool-runtime.js';
 
 function normalizePptrWaitUntil(value) {
   if (value === 'networkidle') return 'networkidle2';
@@ -155,6 +155,11 @@ export async function navigate({
   const browser = await connectBrowser(browserWsEndpoint);
   try {
     const page = await getPage(browser, { targetUrl: url, browserProfile });
+    const tabs = trackNewTabs(browser, {
+      openerPage: page,
+      adopt: false,
+      closeUnadopted: true,
+    });
     const beforeUrl = page.url();
 
     const redirectChain = [];
@@ -205,6 +210,9 @@ export async function navigate({
       success = true;
       error = null;
     }
+
+    await tabs.settle().catch(() => page);
+    tabs.dispose();
 
     const finalUrl = page.url();
     const navigated = beforeUrl !== finalUrl;
@@ -271,6 +279,12 @@ export async function navigate({
       retry_statistics,
       navigation_attempt_summary,
       access_state,
+      opened_targets: tabs.opened_targets,
+      blocked_popup_attempts: tabs.blocked_popup_attempts,
+      selected_target: tabs.selected_target,
+      target_decision: tabs.target_decision,
+      active_page_url: tabs.active_page_url,
+      opener_url: tabs.opener_url,
       effective_policy: network_diagnostics.effective_policy,
       effective_runtime: network_diagnostics.effective_runtime,
       critical_resource_failures: network_diagnostics.critical_resource_failures,

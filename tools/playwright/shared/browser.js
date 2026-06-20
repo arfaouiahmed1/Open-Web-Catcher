@@ -110,6 +110,7 @@ const recentlyUsedFingerprintSignatures = [];
 let chromeVersionPromise = null;
 const fingerprintSuiteCache = new Map();
 const preparedContexts = new WeakSet();
+const activePageByContext = new WeakMap();
 
 function runtimeSetting(key) {
   return getBrowserRuntimeSettings("playwright")?.[key];
@@ -1377,7 +1378,28 @@ const popupBlockerInitScript = () => {
     value: true,
     writable: false,
   });
-  const noopOpen = () => null;
+  const attemptsKey = "__owc_popup_blocker_attempts__";
+  globalThis[attemptsKey] = Array.isArray(globalThis[attemptsKey])
+    ? globalThis[attemptsKey]
+    : [];
+  const recordOpenAttempt = (url = "", target = "", features = "") => {
+    const attempts = Array.isArray(globalThis[attemptsKey])
+      ? globalThis[attemptsKey]
+      : [];
+    attempts.push({
+      url: String(url || ""),
+      target: String(target || ""),
+      features: String(features || ""),
+      timestamp: Date.now(),
+      blocked: true,
+      reason: "window_open_blocked",
+    });
+    globalThis[attemptsKey] = attempts.slice(-30);
+  };
+  const noopOpen = (url = "", target = "", features = "") => {
+    recordOpenAttempt(url, target, features);
+    return null;
+  };
   try {
     Object.defineProperty(window, "open", {
       configurable: true,
@@ -1571,11 +1593,6 @@ async function createFingerprintedContext(
     await context.addInitScript(popupBlockerInitScript);
     context.on("page", async (page) => {
       try {
-        const opener = await page.opener().catch(() => null);
-        if (opener) {
-          await page.close().catch(() => {});
-          return;
-        }
         await installPopupGuards(page);
       } catch {
         // ignore
@@ -1609,11 +1626,6 @@ async function prepareSharedContext(context) {
     await context.addInitScript(popupBlockerInitScript);
     context.on("page", async (page) => {
       try {
-        const opener = await page.opener().catch(() => null);
-        if (opener) {
-          await page.close().catch(() => {});
-          return;
-        }
         await installPopupGuards(page);
       } catch {
         // ignore
@@ -1997,20 +2009,25 @@ export async function getPage(
     browserProfile || session?.browserProfile || "";
 
   const pages = context.pages();
-  const navigated = pages.filter(
-    (p) => p.url() !== "about:blank" && p.url() !== "about:newtab",
-  );
-  const popupPages = [];
-  for (const candidate of navigated) {
-    if (await candidate.opener().catch(() => null)) {
-      popupPages.push(candidate);
+  const activePage = activePageByContext.get(context);
+  let page = activePage && !activePage.isClosed?.() ? activePage : null;
+
+  if (!page) {
+    const navigated = pages.filter(
+      (p) => p.url() !== "about:blank" && p.url() !== "about:newtab",
+    );
+    const nonPopupPages = [];
+    for (const candidate of navigated) {
+      if (!(await candidate.opener().catch(() => null))) {
+        nonPopupPages.push(candidate);
+      }
     }
+    page =
+      nonPopupPages[nonPopupPages.length - 1] ??
+      navigated[navigated.length - 1] ??
+      pages.find((p) => p.url() === "about:blank") ??
+      (await context.newPage());
   }
-  const page =
-    popupPages[popupPages.length - 1] ??
-    navigated[navigated.length - 1] ??
-    pages.find((p) => p.url() === "about:blank") ??
-    (await context.newPage());
 
   // Enforce viewport (context setting may be overridden by some sites)
   await page.setViewportSize(FORCED_VIEWPORT);
@@ -2033,5 +2050,12 @@ export async function getPage(
     await enableBlocking(page, { targetUrl }).catch(() => {});
   }
 
+  setActivePage(context, page);
   return page;
+}
+
+export function setActivePage(sessionOrContext, page) {
+  const context = sessionOrContext?.context ?? sessionOrContext;
+  if (!context || !page || page.isClosed?.()) return;
+  activePageByContext.set(context, page);
 }

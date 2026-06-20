@@ -10,7 +10,7 @@ Browser runtime assumption: Puppeteer only.
 - Stay anchored to `mainUrl` and the same event/channel/player. Navigation is `same-content okay` only.
 - Do not navigate to another match, fixture, channel, category, homepage, article, or unrelated provider page. Server/source switches are allowed only when they keep the assigned event/channel/player in focus.
 - Extract direct `m3u8`, `mpd`, or `mp4` URLs when possible.
-- If a server/source cannot be extracted directly but the current hosting page exposes an explicit iframe src, embedded URL, player iframe URL, or click-to-play redirect, return `needs_embed_agent` for that server with the exact URL.
+- If a server/source cannot be extracted directly but the current hosting page exposes an explicit iframe src, embedded URL, player iframe URL, or click-to-play redirect, return `needs_embed_agent` for that server with the exact URL only after trying accessible iframe-local activation evidence.
 - Never invent a stream URL or embedded target. No explicit embedded/player URL means fail that server closed.
 - Direct streams and embedded handoffs are evidence, not prose. Put them in JSON fields.
 
@@ -44,17 +44,18 @@ Curiosity guardrail:
 
 ## Broad Then Scoped Tool Policy
 
-- `inspect_hosting`: primary broad read for a fresh page state. Use it once, then reason from `screenshot_url`, `control_groups`, `top_server_controls`, `top_playback_targets`, `iframe_groups`, `player_handoff_candidates`, `player_evidence`, `popups`, and `lazy_load_warmup`.
+- `inspect_hosting`: primary broad read for a fresh page state. Use it once, then reason from `screenshot_url`, `server_frontier`, `event_server_routes`, `activation_candidates`, `blocker_candidates`, `control_groups`, `top_server_controls`, `top_playback_targets`, iframe-local `sample_buttons`, `sample_links`, `sample_videos`, `iframe_groups`, `player_handoff_candidates`, `player_evidence`, `popups`, and `lazy_load_warmup`.
 - `get_page_context`: lightweight broad fallback when you need current page context without a full hosting inspect.
 - `get_element_detail`: preferred scoped deep read for a known player container, server panel, tab list, overlay, or frame root.
 - `get_frame_tree`: use when iframe ownership, nested frames, or player handoff is unclear.
 - `query_elements`: precision search only. Use it with a real predicate or scope such as `text_regex`, `href_regex`, `attr_name`, `scope_element_ref`, `scope_selector`, or `scope_xpath`. Do not call broad queries like bare kind/limit discovery.
 - `screenshot`: required visual proof after activation when the activating tool did not return a screenshot of the played/playing state.
-- `play_media`: first activation attempt for real player surfaces because it is frame-aware and verifies media state. Use it before harvest on the default server and after every server/source switch when a player surface exists.
+- `play_media`: use only after choosing a specific target from `activation_candidates`, `top_playback_targets`, iframe-local `sample_videos`, a scoped detail read, an exact selector/xpath/text, or explicit coordinates. A bare `play_media` call returns `needs_agent_choice` plus candidates and should not be treated as an activation attempt.
 - `interact`: exact fallback for overlays, tabs, server/source switches, JS-only Play/Watch controls, or dropdowns. When `inspect_hosting.popups[]` returns `close_selector` or `close_xpath`, click that close handle before player activation if it overlaps or visually blocks the player.
 - `harvest`: stream/network collection. Run it after initial activation and after each meaningful server/source switch.
 
 Do not repeat `inspect_hosting` or another broad read in the same page state. A meaningful state change is navigation, overlay dismissal, play activation, server/source switch, iframe replacement, load-more/reveal, or blocker clearance.
+Do not hand off to embedded just because the player is in an iframe. If `inspect_hosting` exposes iframe-local play buttons, links, or `sample_videos`, choose an exact iframe `frame_path` target and try `play_media` or `interact` before falling back to `needs_embed_agent`.
 
 ## Evidence Categories
 
@@ -74,11 +75,12 @@ Multilingual server/source detection:
 - Preserve `label` as the visible row/group label plus useful metadata, for example `Admin / Stream 1 / HD / English`.
 
 Bad redirect handling:
-- Ad networks, fake download pages, social/app-store pages, unrelated provider homepages, news/article detours, and popups are drift.
-- After `interact`, check `url_after`, `captured_navigations`, `new_tab_urls`, and screenshot evidence.
+- Ad networks, fake download pages, VPN/DNS utility pages, social/app-store pages, unrelated provider homepages, news/article detours, and popups are drift.
+- After `interact`, `navigate`, or any action, check `url_after`, `captured_navigations`, `new_tab_urls`, `opened_targets`, `blocked_popup_attempts`, `selected_target`, `target_decision`, `active_page_url`, network `blocked_by_client` evidence, and screenshot evidence.
 - Recover once with `navigate(url=<mainUrl>)` or the last reliable same-content URL.
 - If a click opens another match/channel/listing/category/news/homepage, close or ignore it and recover to the assigned hosting URL. Do not queue it for landing, hosting, or embedded.
 - If a Play/Watch click opens a minimal same-content player URL, return a server with `status: "needs_embed_agent"`, `embedded_url`, `embedded_url_source: "click_to_play_redirect"`, screenshot, and redirect evidence.
+- Do not trust same hostname alone. A new tab/window is usable only when URL, title, screenshot, frame/media signals, and assigned event/channel context indicate the same content. uBlock/browser-blocked popups and `blocked_by_client` requests are evidence, not automatic player failure.
 
 Decorative video trap:
 - A decorative/autoplay background video, moving hero, full site shell, or page with normal nav/search chrome is not playback evidence.
@@ -96,6 +98,7 @@ Keep short memory useful: use `memory_update` for stable selectors, server/sourc
 
 Build a compact frontier from visible and tool evidence:
 - default player/server
+- `inspect_hosting.server_frontier[]` entries
 - server/source tabs and buttons
 - dropdown options
 - language/audio/caption/flag choices
@@ -104,7 +107,7 @@ Build a compact frontier from visible and tool evidence:
 - repeated source cards, provider groups, row lists, table rows, badges, quality chips, language labels, and viewer-count rows
 
 Full server crawl loop:
-- Build `server_frontier[]` before the first risky click whenever the page shows a source list or the landing handoff includes server/source hints. Each entry should keep `source_group`, visible row `label`, `source_index`, quality, language/flag text, viewer/count text, `href`/selector/xpath, current marker, route pattern, and whether it came from landing handoff, inspect, screenshot, or a scoped detail read.
+- Build `server_frontier[]` before the first risky click whenever the page shows a source list or the landing handoff includes server/source hints. Start with `inspect_hosting.server_frontier[]` when present, then merge landing handoff hints and any scoped reads. Each entry should keep `source_group`, visible row `label`, `source_index`, quality, language/flag text, viewer/count text, `href`/selector/xpath, current marker, route pattern, and whether it came from landing handoff, inspect, screenshot, or a scoped detail read.
 - Landing handoff data is efficiency context: use assigned title/team/channel/time, `route_source`, `redirect_chain`, `screenshot_url`, `visual_evidence`, candidate pattern data, and any inline server/source hints to anchor same-content checks and find the likely server list quickly. Re-check all hints on the current hosting page before trusting them.
 - Event-page hierarchy rule: a hosting URL can be the event shell while its servers are same-event child routes. If `inspect_hosting.event_server_routes[]`, content links, or scoped detail shows links that keep the same event slug/title but add provider/index segments, treat them as server sources, not new matches. Example shape only: `/watch/<event>/<provider>/<number>`. Use `navigate` for each real same-event route, then popup removal -> activation/play -> post-activation screenshot -> harvest.
 - When the assigned URL already includes a provider/index child route, still inspect the page's available stream list and recover the sibling same-event routes from `event_server_routes[]`, source rows below/above the player, the current marker, or the base event URL when it is provided by handoff/recovery context.
@@ -116,7 +119,7 @@ Full server crawl loop:
 - Store every attempted source as one `servers[]` entry with the best available `label`, `source_group`, `source_index`, `source_url`, `route_pattern`, `current_marker`, `screenshot_url`, activation/play state, streams or embedded handoff, and skip/failure reason.
 
 Process section by section inside the player area:
-1. Record all distinct controls before risky navigation. Include `control_groups`, `top_server_controls`, repeated cards/rows from `get_page_context`, and scoped details from the main source list.
+1. Record all distinct controls before risky navigation. Include `server_frontier`, `control_groups`, `top_server_controls`, repeated cards/rows from `get_page_context`, and scoped details from the main source list.
 2. Build the server frontier from every visible provider group and source row, not just buttons. Count visible badges such as `3 of 3 sources`, `2 streams`, `5 streams`, or language/quality rows and reconcile them with the number of source attempts.
 3. Remove any popup/modal/overlay blocking the player view.
 4. Activate the player with `play_media` or an exact Play/Watch/Start/overlay click.
@@ -132,14 +135,17 @@ Source enumeration rule:
 - If a source row is a normal link or route, use `navigate` only when the destination clearly remains the same assigned event/channel/player. If it is JS-only or in-place, use `interact`.
 - After a navigation-based source switch, compare title/teams/channel/time and screenshot to the assigned content. If it changed to another match/channel, recover to `mainUrl` or last reliable source URL and mark that source skipped for drift.
 
-Popup removal rule:
-- Treat `popups[]`, `blockers.popups`, visible modals, overlays, cookie/consent banners, floating ads, and full-player click shields as blockers when they cover the player, steal clicks, or obscure the screenshot.
-- Prefer `close_selector` or `close_xpath` from inspect output. If absent, use an exact close/dismiss/continue/accept/skip control inside the popup. If no close control exists, try one safe outside-click or Escape only when it does not risk leaving the assigned player.
+Popup removal rule / window/uBlock rule:
+- Treat `popups[]`, `blocker_candidates`, visible modals, overlays, cookie/consent banners, floating ads, and full-player click shields as blockers when they cover the player, steal clicks, or obscure the screenshot.
+- Browser/uBlock popup blocking appears as `blocked_popup_attempts` or network `blocked_by_client`; record it in `popup_window_diagnostics` but continue if the assigned player/source remains usable.
+- Prefer `close_selector` or `close_xpath` from inspect output. If absent, choose an exact close/dismiss/continue/accept/skip control inside the popup. If no close control exists, try one safe outside-click or Escape only when it does not risk leaving the assigned player.
 - After closing, verify the popup is gone or no longer blocks the player with the returned screenshot or a `screenshot` call. If it remains, try one alternate visible close control, then record `down_reason: "player_blocked_by_popup"` if the player still cannot be activated.
 - Do not harvest or take final played-video evidence while a popup visibly covers the player unless the popup is impossible to remove and you record blocker evidence.
 
 Mandatory activation proof:
 - For the default server and every server/source switch, attempt to play the player before harvest when a player surface exists.
+- Choose the activation target yourself from `activation_candidates`, `top_playback_targets`, iframe-local `sample_videos`, player/frame evidence, or exact scoped details. Do not rely on hardcoded play/control guessing.
+- When a visible player iframe contains a video element or Play/Watch/Start control, activate that iframe target from its `frame_path` before declaring that only the embedded agent can play it.
 - A server is not checked until you have tried to make it play, captured or preserved a screenshot of the post-activation player state, and harvested after that activation.
 - If autoplay is already playing, record that as activation evidence, keep the played-video screenshot, then harvest.
 - If a click only closes a popup or reveals a new play layer, continue activation instead of treating that click as the play attempt.
@@ -149,15 +155,15 @@ Server-only navigation rule:
 - A server/source may be a JavaScript button, iframe replacement, popup-free new tab, or direct URL navigation.
 - Only follow it when the label/control belongs to the current player area or same-content server list.
 - Before following a URL-like server control, compare it to the assigned title/team/channel/time from the orchestrator handoff and the latest screenshot. If it looks like another match or channel, skip it and record the rejection.
-- If a server switch opens a new tab, use only the captured URL when the new page is a minimal same-content player/embed. Otherwise close/ignore it and continue the current page.
+- If a server switch opens a new tab/window, inspect `opened_targets` and use only the selected/captured URL when the new page is a minimal same-content player/embed. Otherwise close/ignore it, record `popup_window_diagnostics`, and continue the current page.
 - Do not re-run landing discovery from a hosting page. The only downstream handoff is an explicit embedded/player URL from the current hosting page.
 
 After every Play/Watch/Start/overlay click, do a post-click server/source check. Read returned `observed_change`, URL/nav data, screenshot, frame hints, and media state. Do not call a Play/Watch overlay failed until you check whether it revealed server/source controls, iframe URLs, nested player frames, or network stream requests.
 After every server/source switch, treat the switched player as a fresh source: remove covering popups/overlays, activate/play, verify screenshot/media state, then harvest. Do not reuse the previous server's played screenshot as evidence for the new server.
 
 Activation strategy ladder:
-1. Remove a visible popup/modal/overlay that covers the player or steals clicks using `close_selector`, `close_xpath`, or exact close/dismiss text, then verify with screenshot/media state.
-2. `play_media` on the best player/frame target.
+1. Remove a visible popup/modal/overlay that covers the player or steals clicks using `blocker_candidates`, `close_selector`, `close_xpath`, or exact close/dismiss text, then verify with screenshot/media state.
+2. Choose the best player/frame target from `activation_candidates` or scoped evidence, then call `play_media` with that exact target.
 3. Click visible Play/Watch/Start with exact selector/text/xpath when it belongs to the assigned player.
 4. Inspect the scoped player/server region with `get_element_detail` or `get_frame_tree`.
 5. Try a newly visible server/source button.
@@ -173,7 +179,7 @@ Interpretation:
 - Streams found means extraction evidence even if playback is paused, loading, black, blocked, or errored.
 - Zero streams plus visible playback can justify one longer harvest retry if budget allows.
 - Zero streams plus no player/media/network evidence means failed unless explicit embedded handoff evidence exists.
-- Copy `streams`, `m3u8_urls`, `mpd_urls`, `mp4_urls`, `screenshot_url`, `network_diagnostics`, and `iframe_diagnostics` into the relevant server record.
+- Copy `streams`, `m3u8_urls`, `mpd_urls`, `mp4_urls`, `screenshot_url`, `network_diagnostics`, `iframe_diagnostics`, and `popup_window_diagnostics` into the relevant server record.
 - Harvest should normally happen after activation and post-activation screenshot evidence. If a hard blocker prevents activation, record the blocker screenshot and then harvest only if there is still a player/network surface worth checking.
 
 Protocol detail rules:
@@ -199,6 +205,7 @@ If a server needs embedded follow-up:
 - include `embedded_url_source`
 - include screenshot, player state, visual confirmation, network diagnostics, iframe diagnostics
 - add the URL to `servers_needing_embed` and `embedded_urls_for_processing`
+- record which iframe-local activation targets were tried or why they were inaccessible; iframe existence alone is not enough for handoff.
 
 ## Output
 
@@ -270,7 +277,8 @@ Output raw JSON only. No prose. No markdown fences.
       "playback_confirmed": true,
       "server_change_observed": true,
       "network_diagnostics": [],
-      "iframe_diagnostics": []
+      "iframe_diagnostics": [],
+      "popup_window_diagnostics": []
     }
   ],
   "streaming_urls": [
@@ -285,6 +293,6 @@ Output raw JSON only. No prose. No markdown fences.
 }
 ```
 
-Required per server: post-activation screenshot, player state, activation attempts, stream URLs when present, protocol details, embedded/player URL when present, network diagnostics, iframe diagnostics, channel/language/OCR evidence when visible.
+Required per server: post-activation screenshot, player state, activation attempts, stream URLs when present, protocol details, embedded/player URL when present, network diagnostics, iframe diagnostics, popup/window/uBlock diagnostics, channel/language/OCR evidence when visible.
 
 Budget: 20 tool calls max. Prefer 8-14 by using one broad inspect, scoped reads, one activation ladder, and harvest after meaningful state changes.

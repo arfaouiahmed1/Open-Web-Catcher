@@ -8,7 +8,11 @@ import {
   withBrowserSession,
 } from '../shared/tool-runtime.js';
 import { getPageNetworkDiagnostics } from '../shared/browser.js';
-import { activatePlayback, getMediaRuntimeConfig as getSharedMediaRuntimeConfig } from '../shared/media-activation.js';
+import {
+  activatePlayback,
+  getMediaRuntimeConfig as getSharedMediaRuntimeConfig,
+  inspectPlaybackActivationCandidates,
+} from '../shared/media-activation.js';
 import { getBrowserRuntimeSettings } from '../shared/runtime-config.js';
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -65,12 +69,17 @@ async function performAction(browserWsEndpoint, {
       frame_path: resultFramePath,
       ok: !finalError,
       error: finalError,
-      observed_change: makeObservedChange(before, after, tabs.new_tab_urls),
+      observed_change: makeObservedChange(before, after, tabs.new_tab_urls, tabs),
       screenshotHandle: screenshot_target && !popupAdopted ? resolved.handle : null,
       data: {
         locator_used: resolved.locator_used,
         popup_adopted: popupAdopted,
-        opener_url: popupAdopted ? page.url() : '',
+        opener_url: tabs.opener_url,
+        opened_targets: tabs.opened_targets,
+        blocked_popup_attempts: tabs.blocked_popup_attempts,
+        selected_target: tabs.selected_target,
+        target_decision: tabs.target_decision,
+        active_page_url: tabs.active_page_url,
         stale_ref_detected: Boolean(resolved.stale_ref_detected),
         frame_fallback_applied: Boolean(resolved.frame_fallback_applied),
         frame_relocated: Boolean(resolved.frame_relocated),
@@ -514,6 +523,8 @@ export async function playMedia({
   selector = '',
   xpath = '',
   text = '',
+  x,
+  y,
   wait_ms = 1500,
   browserWsEndpoint,
   browserProfile = '',
@@ -524,6 +535,7 @@ export async function playMedia({
     const before = await capturePageSnapshot(page, frame_path);
     const tabs = trackNewTabs(browser, { openerPage: page });
     const hasLocator = Boolean(element_ref || selector || xpath || text);
+    const hasCoordinates = Number.isFinite(Number(x)) && Number.isFinite(Number(y));
     let resolved = hasLocator
       ? await resolveElementTarget(page, { frame_path, element_ref, selector, xpath, text })
       : { ok: false, frame_path, error: 'no_locator', code: 'no_locator' };
@@ -582,6 +594,41 @@ export async function playMedia({
       };
     }
 
+    if (!hasLocator && !hasCoordinates) {
+      const candidateInspection = await inspectPlaybackActivationCandidates({
+        frame: activeFrame,
+        framePath: activeFramePath,
+        browserId: 'puppeteer',
+      });
+      const after = await capturePageSnapshot(page, candidateInspection.frame_path || activeFramePath);
+      await tabs.settle().catch(() => page);
+      tabs.dispose();
+      return buildEnvelope(page, {
+        frame_path: candidateInspection.frame_path || activeFramePath,
+        ok: true,
+        error: null,
+        observed_change: makeObservedChange(before, after, tabs.new_tab_urls, tabs),
+        data: {
+          ...resolutionPayload,
+          popup_adopted: false,
+          opener_url: tabs.opener_url,
+          opened_targets: tabs.opened_targets,
+          blocked_popup_attempts: tabs.blocked_popup_attempts,
+          selected_target: tabs.selected_target,
+          target_decision: tabs.target_decision,
+          active_page_url: tabs.active_page_url,
+          needs_agent_choice: true,
+          playback_started: false,
+          media_confirmed: false,
+          final_error: null,
+          activation_candidates: candidateInspection.activation_candidates,
+          candidate_summary: candidateInspection.candidate_summary,
+          frame_relocated: Boolean(resolutionPayload.frame_relocated || candidateInspection.frame_relocated),
+          frame_url: candidateInspection.frame_url,
+        },
+      });
+    }
+
     let activation = null;
     let resultPage = page;
 
@@ -593,6 +640,9 @@ export async function playMedia({
         framePath: activeFramePath,
         waitMs: wait_ms,
         browserId: 'puppeteer',
+        preferredCoordinates: hasCoordinates ? { x: Number(x), y: Number(y) } : null,
+        allowCandidateClick: false,
+        allowPreflightClick: false,
       });
 
       if (wait_ms > 0) await wait(wait_ms);
@@ -625,12 +675,17 @@ export async function playMedia({
       frame_path: resultFramePath,
       ok: Boolean(activation?.playback_started),
       error: activation?.playback_started ? null : activation?.final_error,
-      observed_change: makeObservedChange(before, after, tabs.new_tab_urls),
+      observed_change: makeObservedChange(before, after, tabs.new_tab_urls, tabs),
       screenshotHandle: popupAdopted ? null : preferredHandle,
       data: {
         locator_used: resolutionPayload.locator_used,
         popup_adopted: popupAdopted,
-        opener_url: popupAdopted ? page.url() : '',
+        opener_url: tabs.opener_url,
+        opened_targets: tabs.opened_targets,
+        blocked_popup_attempts: tabs.blocked_popup_attempts,
+        selected_target: tabs.selected_target,
+        target_decision: tabs.target_decision,
+        active_page_url: tabs.active_page_url,
         stale_ref_detected: resolutionPayload.stale_ref_detected,
         frame_fallback_applied: resolutionPayload.frame_fallback_applied,
         frame_relocated: Boolean(resolutionPayload.frame_relocated || activation?.frame_relocated),
@@ -726,11 +781,16 @@ export async function clickCoordinates({
       frame_path: resultFramePath,
       ok: !finalError,
       error: finalError,
-      observed_change: makeObservedChange(before, after, tabs.new_tab_urls),
+      observed_change: makeObservedChange(before, after, tabs.new_tab_urls, tabs),
       data: {
         coordinates: { x, y },
         popup_adopted: popupAdopted,
-        opener_url: popupAdopted ? page.url() : '',
+        opener_url: tabs.opener_url,
+        opened_targets: tabs.opened_targets,
+        blocked_popup_attempts: tabs.blocked_popup_attempts,
+        selected_target: tabs.selected_target,
+        target_decision: tabs.target_decision,
+        active_page_url: tabs.active_page_url,
       },
     });
   });

@@ -120,6 +120,7 @@ const fingerprintSuiteCache = new Map();
 const launchedSessionMetadata = new Map();
 const browserProxyMetadata = new WeakMap();
 const browserPageLifecycleInstalled = new WeakSet();
+const activePageByBrowser = new WeakMap();
 
 function runtimeSetting(key) {
   return getBrowserRuntimeSettings('puppeteer')?.[key];
@@ -1740,7 +1741,24 @@ async function installPopupGuards(page) {
     }
     Object.defineProperty(globalThis, blockerKey, { value: true, writable: false });
 
-    const noopOpen = () => null;
+    const attemptsKey = '__owc_popup_blocker_attempts__';
+    globalThis[attemptsKey] = Array.isArray(globalThis[attemptsKey]) ? globalThis[attemptsKey] : [];
+    const recordOpenAttempt = (url = '', target = '', features = '') => {
+      const attempts = Array.isArray(globalThis[attemptsKey]) ? globalThis[attemptsKey] : [];
+      attempts.push({
+        url: String(url || ''),
+        target: String(target || ''),
+        features: String(features || ''),
+        timestamp: Date.now(),
+        blocked: true,
+        reason: 'window_open_blocked',
+      });
+      globalThis[attemptsKey] = attempts.slice(-30);
+    };
+    const noopOpen = (url = '', target = '', features = '') => {
+      recordOpenAttempt(url, target, features);
+      return null;
+    };
     try {
       Object.defineProperty(window, 'open', {
         configurable: true,
@@ -1757,7 +1775,21 @@ async function installPopupGuards(page) {
   });
 
   await page.evaluate(() => {
-    const noopOpen = () => null;
+    const attemptsKey = '__owc_popup_blocker_attempts__';
+    globalThis[attemptsKey] = Array.isArray(globalThis[attemptsKey]) ? globalThis[attemptsKey] : [];
+    const noopOpen = (url = '', target = '', features = '') => {
+      const attempts = Array.isArray(globalThis[attemptsKey]) ? globalThis[attemptsKey] : [];
+      attempts.push({
+        url: String(url || ''),
+        target: String(target || ''),
+        features: String(features || ''),
+        timestamp: Date.now(),
+        blocked: true,
+        reason: 'window_open_blocked',
+      });
+      globalThis[attemptsKey] = attempts.slice(-30);
+      return null;
+    };
     try {
       window.open = noopOpen;
     } catch {
@@ -1849,14 +1881,6 @@ function installBrowserPageLifecycle(browser) {
     }
 
     try {
-      if (getPopupBlockingEnabled()) {
-        const opener = typeof target.opener === 'function' ? target.opener() : null;
-        if (opener) {
-          const popup = await target.page();
-          await popup?.close().catch(() => {});
-          return;
-        }
-      }
       const page = await target.page();
       if (!page) {
         return;
@@ -2050,15 +2074,25 @@ export async function getPage(browser, {
   browserProfile = '',
 } = {}) {
   const pages = await browser.pages();
+  const activePage = activePageByBrowser.get(browser);
+  if (activePage && !activePage.isClosed?.()) {
+    await preparePageForAutomation(browser, activePage, {
+      targetUrl,
+      forceRotateFingerprint,
+      browserProfile,
+    });
+    return activePage;
+  }
+
   // Prefer the most recently active navigated page over blank placeholders.
   // Blank pages are opened by Puppeteer at launch and by previous tool calls,
   // but after navigate() the browser holds the real destination — use it.
   const navigated = pages.filter((p) => p.url() !== 'about:blank' && p.url() !== 'about:newtab');
-  const popupPages = navigated.filter((candidate) => {
+  const nonPopupPages = navigated.filter((candidate) => {
     const target = candidate.target?.();
-    return Boolean(target && typeof target.opener === 'function' && target.opener());
+    return !(target && typeof target.opener === 'function' && target.opener());
   });
-  const page = popupPages[popupPages.length - 1]
+  const page = nonPopupPages[nonPopupPages.length - 1]
     ?? navigated[navigated.length - 1]
     ?? pages.find((p) => p.url() === 'about:blank')
     ?? await browser.newPage();
@@ -2068,5 +2102,11 @@ export async function getPage(browser, {
     forceRotateFingerprint,
     browserProfile,
   });
+  setActivePage(browser, page);
   return page;
+}
+
+export function setActivePage(browser, page) {
+  if (!browser || !page || page.isClosed?.()) return;
+  activePageByBrowser.set(browser, page);
 }

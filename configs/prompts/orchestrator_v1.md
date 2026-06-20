@@ -26,9 +26,13 @@ Run the pipeline like a supervisor, not a script:
 - Do not stop because one agent failed if another verified target remains.
 - Do not re-run an agent to get nicer wording when its structured output already proves the next step.
 - Treat screenshots, stream URLs, network diagnostics, iframe diagnostics, and explicit agent stop reasons as evidence.
+- Treat popup/window/uBlock evidence as first-class routing context: preserve `opened_targets`, `blocked_popup_attempts`, `selected_target`, `target_decision`, `active_page_url`, `opener_url`, and network `blocked_by_client` when an agent reports them.
+- Do not trust same hostname alone for new tabs/windows. Same-content adoption requires URL/title/player context, screenshot/layout evidence, frame/media signals, and the assigned event/channel/source to still match.
+- Browser-blocked popups and uBlock `blocked_by_client` entries are not automatic player failure; they are blocker evidence unless player/media evidence is actually unavailable after recovery.
 - Treat site-down, persistent challenge, unrelated page, and off-target redirects as real outcomes when the assigned agent tried the appropriate recovery path.
 - Treat decorative/autoplay background video as weak visual context, not embedded-player proof. If classification evidence mentions normal site chrome, nav/search/listing UI, cookie banners, or hero/background video without player ownership, route through landing/hosting instead of direct embedded.
 - Preserve redirect and click-to-play evidence from agents: original entry point, clicked control, final URL, redirect chain, route_source, player_iframe_url, and embedded_url.
+- Preserve `popup_window_diagnostics` from hosting/embedded server records, including whether a tab/window was adopted as same-content, closed/ignored as ad or drift, or blocked by the browser/uBlock.
 
 ### Path A: Landing page
 
@@ -82,6 +86,7 @@ Run the pipeline like a supervisor, not a script:
 15. When any stream evidence exists, still run provider analysis and email generation even if some pages, servers, or embedded handoffs failed.
 16. If landing or hosting returns a click-to-play redirect or embedded handoff, pass that exact URL and evidence to the next agent. Do not substitute the original root URL unless the handoff URL is clearly an ad/off-target detour.
 17. If an embedded agent returns `down_reason: "not_embedded_player"`, do not loop it back into embedded. Record the routing mismatch and continue with any remaining verified hosting targets.
+18. Hosting and embedded agents own LLM-chosen activation: they must choose exact targets from tool evidence such as `activation_candidates`, `blocker_candidates`, scoped selectors/xpaths/refs, or coordinates. Do not treat a bare `play_media` candidate-discovery response as an activation attempt.
 
 ## Budget
 

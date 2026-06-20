@@ -180,7 +180,15 @@ function hostingRaw() {
     title: "Watch Match",
     screenshot_url: "https://res.cloudinary.com/demo/image/upload/hosting.png",
     contentLinks: [],
-    navLinks: [],
+    navLinks: [
+      {
+        text: "Argentina",
+        nearby_text: "Live TV Argentina",
+        href: "https://freeshot.live/live-tv/argentina",
+        selector: ".dropdown-menu a:nth-child(4)",
+        xpath: "//nav//a[4]",
+      },
+    ],
     buttons,
     elements: buttons,
     iframes: [
@@ -218,6 +226,17 @@ function hostingRaw() {
         purpose_hint: "player",
         sample_links: [],
         sample_buttons: buttons.slice(0, 6),
+        sample_videos: [
+          {
+            selector: "video",
+            xpath: "//video[1]",
+            src: "https://cdn.example.com/frame-master.m3u8",
+            readyState: 4,
+            paused: true,
+            x: 960,
+            y: 540,
+          },
+        ],
       },
     ],
     hosting_signals: {
@@ -379,6 +398,100 @@ test("landing summary returns grouped sections and top representatives only", ()
   assert.equal(summary.match_candidates, undefined);
 });
 
+test("landing summary keeps numbered pagination out of hosting candidates", () => {
+  const raw = {
+    ...largeLandingRaw(),
+    url: "https://freeshot.live/live-tv",
+    contentLinks: [
+      {
+        text: "ESPN ARG",
+        nearby_text: "ESPN ARG",
+        href: "https://freeshot.live/live-tv/espn-arg/871",
+        selector: ".show-listing a:nth-child(1)",
+        xpath: "//main//a[1]",
+      },
+      {
+        text: "2",
+        nearby_text: "1 2 3 4 5 6 7",
+        href: "https://freeshot.live/live-tv?page=2",
+        selector: ".pagination a:nth-child(2)",
+        xpath: "//nav//a[2]",
+      },
+      {
+        text: "»",
+        nearby_text: "1 2 3 4 5 6 7",
+        href: "https://freeshot.live/live-tv?page=73",
+        selector: ".pagination .next",
+        xpath: "//nav//a[9]",
+      },
+    ],
+    navLinks: [],
+    reveal_controls: [],
+    collapsed_sections: [],
+    pagination: {
+      detected: true,
+      type: "numbered",
+      elements: [
+        { text: "1", href: "https://freeshot.live/live-tv?page=1", selector: ".page-1", xpath: "//a[1]" },
+        { text: "2", href: "https://freeshot.live/live-tv?page=2", selector: ".page-2", xpath: "//a[2]" },
+        { text: "»", href: "https://freeshot.live/live-tv?page=73", selector: ".next", xpath: "//a[9]" },
+      ],
+    },
+  };
+
+  const summary = summarizeLandingInspect(raw);
+
+  assert.equal(summary.pagination.detected, true);
+  assert.equal(summary.pagination.type, "query");
+  assert.equal(summary.pagination.next_url, "https://freeshot.live/live-tv?page=2");
+  assert.equal(summary.pagination.url_pattern, "https://freeshot.live/live-tv?page={n}");
+  assert.deepEqual(summary.candidate_ledger.map((candidate) => candidate.url), [
+    "https://freeshot.live/live-tv/espn-arg/871",
+  ]);
+  assert.ok(summary.grouped_sections.groups.some((group) => group.label === "pagination_links"));
+});
+
+test("landing summary captures schedule provider buttons with row context", () => {
+  const raw = {
+    ...largeLandingRaw(),
+    url: "https://freestreams-live1d.pk/",
+    contentLinks: [
+      {
+        text: "TNT Sports",
+        nearby_text: "12:30 Cycling: Tour of Slovenia | Stage 1 TNT Sports TNT Sports #2",
+        row_text: "12:30 Cycling: Tour of Slovenia | Stage 1 TNT Sports TNT Sports #2",
+        href: "https://freestreams-live1d.pk/bttwo/",
+        selector: "tr:nth-child(1) a.button",
+        xpath: "//tr[1]//a[1]",
+        classes: "button",
+      },
+      {
+        text: "DAZN EN",
+        nearby_text: "18:00 World Cup Of Darts Sky Sports Sky Main Event DAZN EN",
+        row_text: "18:00 World Cup Of Darts Sky Sports Sky Main Event DAZN EN",
+        href: "https://freestreams-live1d.pk/dazn-en/",
+        selector: "tr:nth-child(2) a.button:nth-child(3)",
+        xpath: "//tr[2]//a[3]",
+        classes: "button",
+      },
+    ],
+    navLinks: [],
+    reveal_controls: [],
+    collapsed_sections: [],
+    pagination: { detected: false, type: null, elements: [] },
+  };
+
+  const summary = summarizeLandingInspect(raw);
+
+  assert.deepEqual(
+    summary.candidate_ledger.map((candidate) => candidate.url),
+    ["https://freestreams-live1d.pk/bttwo/", "https://freestreams-live1d.pk/dazn-en/"],
+  );
+  assert.equal(summary.candidate_ledger[0].scheduled_time, "12:30");
+  assert.match(summary.candidate_ledger[0].nearby_text, /Tour of Slovenia/);
+  assert.ok(summary.top_match_candidates.some((candidate) => candidate.url.endsWith("/dazn-en/")));
+});
+
 test("hosting summary preserves actionable server controls while compressing", () => {
   const summary = summarizeHostingInspect(hostingRaw());
 
@@ -391,6 +504,27 @@ test("hosting summary preserves actionable server controls while compressing", (
   assert.ok(summary.top_server_controls[0].xpath);
   assert.equal(typeof summary.top_server_controls[0].x, "number");
   assert.equal(typeof summary.top_server_controls[0].y, "number");
+  assert.ok(Array.isArray(summary.server_frontier));
+  assert.ok(summary.server_frontier.length >= summary.top_server_controls.length);
+  assert.ok(summary.server_frontier.some((entry) => entry.label.includes("Server 1")));
+  assert.ok(Array.isArray(summary.activation_candidates));
+  assert.ok(summary.activation_candidates.some((entry) => entry.requires_agent_choice));
+  assert.ok(summary.activation_candidates.some((entry) => entry.kind === "video"));
+  assert.ok(
+    summary.activation_candidates.some(
+      (entry) => entry.kind === "video" && entry.frame_path === "root.0",
+    ),
+  );
+  assert.ok(
+    summary.iframe_groups.some(
+      (group) =>
+        group.frame_path === "root.0" &&
+        Array.isArray(group.sample_videos) &&
+        group.sample_videos.some((video) => video.frame_path === "root.0"),
+    ),
+  );
+  assert.ok(Array.isArray(summary.blocker_candidates));
+  assert.ok(summary.blocker_candidates.some((entry) => entry.close_selector === ".close"));
   assert.ok(summary.stats.budget_fit);
   assert.ok(summary.stats.compressed_bytes <= 14 * 1024);
   assert.equal(summary.server_controls, undefined);
@@ -404,7 +538,113 @@ test("hosting summary detects multilingual stream option rows as server switches
   const texts = summary.top_server_controls.map((item) => item.text).join(" ");
   assert.match(texts, /Stream 1/);
   assert.match(texts, /Opcion 1/);
+  assert.ok(summary.server_frontier.some((entry) => entry.label.includes("Admin HD Stream 1")));
+  assert.ok(summary.server_frontier.some((entry) => entry.label.includes("Delta Opcion 1")));
   assert.match(texts, /مصدر 1/);
+});
+
+test("hosting summary promotes iframe-local source controls into server frontier", () => {
+  const raw = {
+    ...hostingRaw(),
+    buttons: [],
+    elements: [],
+    contentLinks: [],
+    frame_tree: [
+      {
+        frame_path: "root.0",
+        parent_frame_path: "root",
+        depth: 1,
+        is_main_frame: false,
+        url: "https://embed.example.com/player/1",
+        total_links: 0,
+        total_buttons: 2,
+        total_iframes: 0,
+        video_count: 1,
+        has_server_controls: true,
+        has_player_library: true,
+        purpose_hint: "player",
+        sample_links: [],
+        sample_buttons: [
+          {
+            text: "Frame Source 2 HD",
+            selector: ".source-list button:nth-child(2)",
+            xpath: "//button[2]",
+            x: 700,
+            y: 740,
+          },
+        ],
+      },
+    ],
+  };
+
+  const summary = summarizeHostingInspect(raw);
+
+  assert.ok(summary.top_server_controls.some((entry) => entry.frame_path === "root.0"));
+  assert.ok(
+    summary.server_frontier.some(
+      (entry) => entry.frame_path === "root.0" && entry.label === "Frame Source 2 HD",
+    ),
+  );
+});
+
+test("hosting summary does not classify generic nav links as server controls", () => {
+  const raw = {
+    ...hostingRaw(),
+    contentLinks: [
+      {
+        text: "DNS",
+        href: "https://one.one.one.one/dns/",
+        selector: ".Nav--link",
+        xpath: "//nav/a[2]",
+      },
+      {
+        text: "Families",
+        href: "https://one.one.one.one/family/",
+        selector: ".Nav--link",
+        xpath: "//nav/a[3]",
+      },
+    ],
+    buttons: [
+      {
+        text: "English",
+        selector: ".language-selector",
+        xpath: "//nav/div[1]",
+        x: 1843,
+        y: 37,
+        frame_path: "root",
+        kind: "button",
+        href: "",
+        data: {},
+      },
+    ],
+    elements: [
+      {
+        text: "DNS",
+        selector: ".Nav--link",
+        xpath: "//nav/a[2]",
+        x: 1618,
+        y: 37,
+        frame_path: "root",
+        kind: "link",
+        href: "https://one.one.one.one/dns/",
+        data: {},
+      },
+    ],
+    frame_tree: [],
+    hosting_signals: {
+      has_video: false,
+      has_player_iframe: false,
+      player_iframe_src: null,
+      visible_content_iframes: 0,
+      player_libraries: false,
+      server_tabs: false,
+    },
+  };
+
+  const summary = summarizeHostingInspect(raw);
+
+  assert.equal(summary.top_server_controls.length, 0);
+  assert.equal(summary.server_frontier.length, 0);
 });
 
 test("hosting summary exposes same-event route server links", () => {
@@ -456,6 +696,13 @@ test("hosting summary exposes same-event route server links", () => {
     summary.event_server_routes[0].route_pattern,
     "https://streamed.pk/watch/bologna-vs-inter-milan-2265406/{provider}/{n}",
   );
+  assert.ok(
+    summary.server_frontier.some(
+      (entry) =>
+        entry.frontier_source === "event_server_route" &&
+        entry.source_url === "https://streamed.pk/watch/bologna-vs-inter-milan-2265406/admin/1",
+    ),
+  );
 });
 
 test("embedded summary preserves source controls and frame focus groups", () => {
@@ -467,6 +714,9 @@ test("embedded summary preserves source controls and frame focus groups", () => 
   assert.ok(Array.isArray(summary.frame_focus_groups));
   assert.ok(Array.isArray(summary.top_source_controls));
   assert.ok(summary.top_source_controls.length >= 1);
+  assert.ok(Array.isArray(summary.activation_candidates));
+  assert.ok(summary.activation_candidates.some((entry) => entry.requires_agent_choice));
+  assert.ok(Array.isArray(summary.blocker_candidates));
   assert.ok(summary.stats.budget_fit);
   assert.ok(summary.stats.compressed_bytes <= 14 * 1024);
   assert.equal(summary.source_controls, undefined);

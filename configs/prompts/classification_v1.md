@@ -26,6 +26,8 @@ Popup-first rule:
 - After the dismissal click, read the returned screenshot/observed_change. If the popup closed or the underlying page is now visible, classify that underlying page state.
 - If the dismissal opens an unrelated external page or ad, recover to the last reliable same-site page when possible and classify from that last reliable state.
 - If the popup cannot be cleared in one focused attempt, classify from the limited underlying evidence only when enough is visible; otherwise classify `other` and record the popup blocker.
+- If a click or tool result reports `opened_targets`, `blocked_popup_attempts`, `selected_target`, `target_decision`, or network `blocked_by_client`, treat that as popup/window/uBlock evidence. Do not classify an ad/off-target popup as the page, and do not treat a blocked ad popup as site failure when the underlying page remains usable.
+- Do not trust same hostname alone for new tabs/windows; compare URL, title, screenshot, layout, frame/media signals, and the requested page context.
 
 ## Investigation Loop
 

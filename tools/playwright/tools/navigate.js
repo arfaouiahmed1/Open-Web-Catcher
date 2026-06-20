@@ -14,7 +14,7 @@ import {
   summarizeRetryAttempts,
 } from '../../shared/error-codes.js';
 import { screenshotFull } from '../shared/screenshot.js';
-import { detectAccessStateFromSignals, withBrowserSession } from '../shared/tool-runtime.js';
+import { detectAccessStateFromSignals, trackNewTabs, withBrowserSession } from '../shared/tool-runtime.js';
 
 // Playwright only supports 'load', 'domcontentloaded', 'networkidle', 'commit'.
 // Normalize Puppeteer-style values that the LLM or tool-registry may send.
@@ -152,7 +152,12 @@ export async function navigate({
 } = {}) {
   if (!url) throw new Error('url is required');
 
-  return withBrowserSession(browserWsEndpoint, async ({ page }) => {
+  return withBrowserSession(browserWsEndpoint, async ({ context, page }) => {
+    const tabs = trackNewTabs(context, {
+      openerPage: page,
+      adopt: false,
+      closeUnadopted: true,
+    });
     const beforeUrl = page.url();
 
     const redirectChain = [];
@@ -203,6 +208,9 @@ export async function navigate({
       success = true;
       error = null;
     }
+
+    await tabs.settle().catch(() => page);
+    tabs.dispose();
 
     const finalUrl = page.url();
     const navigated = beforeUrl !== finalUrl;
@@ -269,6 +277,12 @@ export async function navigate({
       retry_statistics,
       navigation_attempt_summary,
       access_state,
+      opened_targets: tabs.opened_targets,
+      blocked_popup_attempts: tabs.blocked_popup_attempts,
+      selected_target: tabs.selected_target,
+      target_decision: tabs.target_decision,
+      active_page_url: tabs.active_page_url,
+      opener_url: tabs.opener_url,
       effective_policy: network_diagnostics.effective_policy,
       effective_runtime: network_diagnostics.effective_runtime,
       critical_resource_failures: network_diagnostics.critical_resource_failures,

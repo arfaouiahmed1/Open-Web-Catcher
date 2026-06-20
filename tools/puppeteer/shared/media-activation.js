@@ -1,6 +1,9 @@
 import { getBrowserRuntimeSettings } from "./runtime-config.js";
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const PLAY_ACTION_PATTERN = /(play|watch|resume|start|continue|tap|unmute|go live)/i;
+const BLOCKER_ACTION_PATTERN = /(close|dismiss|accept|agree|allow|skip|ok|got it|x)/i;
+const SOURCE_SWITCH_PATTERN = /(server|source|mirror|backup|quality|audio|sub|caption|language|idioma|option|stream\s*\d+|link\s*\d+)/i;
 
 function deriveFramePath(frame) {
   if (!frame?.parentFrame?.()) return "root";
@@ -119,6 +122,8 @@ async function inspectFrameForPlayback(frame, { candidateLimit = 6 } = {}) {
       const role = String(node.getAttribute?.("role") || "").toLowerCase();
       const tag = String(node.tagName || "").toLowerCase();
       const attrs = `${className} ${role} ${text}`.toLowerCase();
+      const explicitPlay = /(play|watch|resume|start|continue|tap|unmute|go live)/.test(attrs);
+      const sourceSwitch = /(server|source|mirror|backup|quality|audio|sub|caption|language|idioma|option|stream\s*\d+|link\s*\d+)/.test(attrs) && !explicitPlay;
       const centerX = window.innerWidth / 2;
       const centerY = window.innerHeight / 2;
       const nodeCenterX = rect.left + rect.width / 2;
@@ -132,7 +137,7 @@ async function inspectFrameForPlayback(frame, { candidateLimit = 6 } = {}) {
         score += 120;
         kind = "video";
       }
-      if (/(play|watch|resume|start|continue|tap|unmute|go live|stream)/.test(attrs)) score += 55;
+      if (explicitPlay) score += 55;
       if (/(player|poster|overlay|control|button|video-js|jwplayer|plyr)/.test(attrs)) score += 24;
       if (/(close|dismiss|accept|agree|allow|skip|ok|continue|got it|×|x|✕)/.test(attrs)) score += 18;
       if (role === "button" || tag === "button" || tag === "a" || node.getAttribute?.("onclick")) score += 16;
@@ -142,6 +147,7 @@ async function inspectFrameForPlayback(frame, { candidateLimit = 6 } = {}) {
       else if (distance < 260) score += 10;
       if (rect.left <= centerX && rect.right >= centerX && rect.top <= centerY && rect.bottom >= centerY) score += 18;
       if (Number(window.getComputedStyle(node).zIndex || "0") >= 10) score += 4;
+      if (sourceSwitch && tag !== "video") score -= 70;
 
       return {
         score,
@@ -255,10 +261,11 @@ async function findBestPlaybackFrame(frame, { candidateLimit = 6 } = {}) {
   return best;
 }
 
-export async function runPlaybackPreflight(frame, runtime = getMediaRuntimeConfig()) {
-  return frame.evaluate(({ actionLimit }) => {
+export async function runPlaybackPreflight(frame, runtime = getMediaRuntimeConfig(), { clickBlockers = true } = {}) {
+  return frame.evaluate(({ actionLimit, blockerPattern, shouldClick }) => {
     const normalize = (value, max = 160) =>
       String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+    const blockerActionRe = new RegExp(blockerPattern, "i");
     const visible = (node) => {
       if (!(node instanceof Element)) return false;
       const rect = node.getBoundingClientRect();
@@ -322,8 +329,10 @@ export async function runPlaybackPreflight(frame, runtime = getMediaRuntimeConfi
         );
         const haystack = `${text} ${node.className || ""} ${node.getAttribute?.("role") || ""}`.toLowerCase();
         const nearCenter = rect.left <= centerX && rect.right >= centerX && rect.top <= centerY && rect.bottom >= centerY;
+        const blockerAction = blockerActionRe.test(haystack);
         let score = 0;
-        if (/(play|watch|resume|start|continue|unmute|stream)/.test(haystack)) score += 30;
+        if (!blockerAction) return { node, text, score };
+        score += 32;
         if (/(close|dismiss|accept|agree|allow|skip|ok|got it|×|✕|\bx\b)/.test(haystack)) score += 28;
         if (nearCenter) score += 18;
         if (rect.width * rect.height >= 12000) score += 8;
@@ -338,7 +347,7 @@ export async function runPlaybackPreflight(frame, runtime = getMediaRuntimeConfi
       .sort((a, b) => b.score - a.score);
 
     const actions = [];
-    for (const candidate of actionNodes.slice(0, actionLimit)) {
+    for (const candidate of shouldClick ? actionNodes.slice(0, actionLimit) : []) {
       try {
         candidate.node.click();
         actions.push(candidate.text || candidate.node.tagName.toLowerCase());
@@ -357,7 +366,11 @@ export async function runPlaybackPreflight(frame, runtime = getMediaRuntimeConfi
       actions,
       clicked: actions.length > 0,
     };
-  }, { actionLimit: runtime.preflight_action_limit }).catch(() => ({
+  }, {
+    actionLimit: runtime.preflight_action_limit,
+    blockerPattern: BLOCKER_ACTION_PATTERN.source,
+    shouldClick: Boolean(clickBlockers),
+  }).catch(() => ({
     overlays_detected: 0,
     overlays: [],
     actions: [],
@@ -494,10 +507,16 @@ async function clickPreferredCoordinates(page, point) {
   }
 }
 
-async function activateCandidatesInFrame(frame, runtime, { mute = false } = {}) {
-  return frame.evaluate(({ candidateLimit, muted }) => {
+async function activateCandidatesInFrame(
+  frame,
+  runtime,
+  { mute = false, allowCandidateClick = true, allowVideoPlay = true } = {},
+) {
+  return frame.evaluate(({ candidateLimit, muted, playPattern, sourceSwitchPattern, clickCandidates, playVideos }) => {
     const normalize = (value, max = 140) =>
       String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+    const playActionRe = new RegExp(playPattern, "i");
+    const sourceSwitchRe = new RegExp(sourceSwitchPattern, "i");
     const visible = (node) => {
       if (!(node instanceof Element)) return false;
       const rect = node.getBoundingClientRect();
@@ -530,25 +549,28 @@ async function activateCandidatesInFrame(frame, runtime, { mute = false } = {}) 
         const role = String(node.getAttribute?.("role") || "").toLowerCase();
         const tag = String(node.tagName || "").toLowerCase();
         const attrs = `${text} ${className} ${role}`.toLowerCase();
+        const explicitPlay = playActionRe.test(attrs);
+        const sourceSwitch = sourceSwitchRe.test(attrs) && !explicitPlay;
         const nodeCenterX = rect.left + rect.width / 2;
         const nodeCenterY = rect.top + rect.height / 2;
         const distance = Math.hypot(centerX - nodeCenterX, centerY - nodeCenterY);
         let score = 0;
         if (tag === "video") score += 90;
-        if (/(play|watch|resume|start|continue|tap|unmute|stream|go live)/.test(attrs)) score += 50;
+        if (explicitPlay) score += 50;
         if (/(player|poster|overlay|control|video-js|jwplayer|plyr)/.test(attrs)) score += 22;
         if (rect.left <= centerX && rect.right >= centerX && rect.top <= centerY && rect.bottom >= centerY) score += 18;
         if (distance < 180) score += 14;
         if (tag === "button" || role === "button" || tag === "a" || node.getAttribute?.("onclick")) score += 10;
         if (rect.width * rect.height >= 18000) score += 8;
-        return { node, score, text, tag };
+        if (sourceSwitch && tag !== "video") score -= 75;
+        return { node, score, text, tag, sourceSwitch };
       })
       .filter((entry) => entry.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, candidateLimit);
 
     const clicked = [];
-    for (const candidate of controls.slice(0, Math.min(candidateLimit, 3))) {
+    for (const candidate of (clickCandidates ? controls.slice(0, 1) : [])) {
       try {
         candidate.node.click();
         clicked.push({
@@ -556,6 +578,7 @@ async function activateCandidatesInFrame(frame, runtime, { mute = false } = {}) 
           text: candidate.text,
           tag: candidate.tag,
           score: candidate.score,
+          source_switch_suppressed: Boolean(candidate.sourceSwitch),
         });
       } catch {
         // ignore
@@ -564,7 +587,7 @@ async function activateCandidatesInFrame(frame, runtime, { mute = false } = {}) 
 
     const playCalls = [];
     const videos = Array.from(document.querySelectorAll("video")).filter(visible);
-    videos.forEach((video, index) => {
+    if (playVideos) videos.forEach((video, index) => {
       try {
         if (muted) {
           video.muted = true;
@@ -595,11 +618,81 @@ async function activateCandidatesInFrame(frame, runtime, { mute = false } = {}) 
   }, {
     candidateLimit: runtime.candidate_limit,
     muted: Boolean(mute),
+    playPattern: PLAY_ACTION_PATTERN.source,
+    sourceSwitchPattern: SOURCE_SWITCH_PATTERN.source,
+    clickCandidates: Boolean(allowCandidateClick),
+    playVideos: Boolean(allowVideoPlay),
   }).catch(() => ({
     clicked: [],
     play_calls: [],
     candidate_summary: [],
   }));
+}
+
+function candidateReason(candidate = {}) {
+  const haystack = `${candidate.kind || ""} ${candidate.tag || ""} ${candidate.text || ""} ${candidate.selector_hint || ""}`.toLowerCase();
+  if (candidate.kind === "video" || candidate.tag === "video") return "visible video element";
+  if (/play|watch|start|resume|unmute|go live/.test(haystack)) return "explicit play-like control";
+  if (/player|poster|overlay|control|video-js|jwplayer|plyr/.test(haystack)) return "player surface or overlay";
+  return "candidate from player/media region";
+}
+
+export async function inspectPlaybackActivationCandidates({
+  frame,
+  framePath = "root",
+  browserId = "puppeteer",
+} = {}) {
+  const runtime = getMediaRuntimeConfig(browserId);
+  const resolvedSummary = await inspectFrameForPlayback(frame, { candidateLimit: runtime.candidate_limit });
+  let activeFrame = frame;
+  let activeFramePath = framePath;
+  let frameRelocated = false;
+
+  if (!resolvedSummary.video_count && !resolvedSummary.top_candidates.length) {
+    const bestFrame = await findBestPlaybackFrame(frame, { candidateLimit: runtime.candidate_limit });
+    if (bestFrame && bestFrame.frame && bestFrame.frame !== frame && bestFrame.score > 0) {
+      activeFrame = bestFrame.frame;
+      activeFramePath = deriveFramePath(bestFrame.frame);
+      frameRelocated = true;
+    }
+  }
+
+  const summary = activeFrame === frame
+    ? resolvedSummary
+    : await inspectFrameForPlayback(activeFrame, { candidateLimit: runtime.candidate_limit });
+  const videoCandidates = (summary.videos || []).map((video, index) => ({
+    kind: "video",
+    text: video.text || "video",
+    frame_path: activeFramePath,
+    geometry: video.geometry || null,
+    paused: Boolean(video.paused),
+    ready_state: Number(video.ready_state || 0),
+    activation_reason: "visible video element",
+    requires_agent_choice: true,
+    index,
+  }));
+  const controlCandidates = (summary.top_candidates || []).map((candidate, index) => ({
+    kind: candidate.kind || candidate.tag || "control",
+    tag: candidate.tag || "",
+    text: candidate.text || "",
+    selector_hint: candidate.selector_hint || "",
+    frame_path: activeFramePath,
+    geometry: candidate.geometry || null,
+    score: Number(candidate.score || 0),
+    activation_reason: candidateReason(candidate),
+    requires_agent_choice: true,
+    index: videoCandidates.length + index,
+  }));
+
+  return {
+    runtime,
+    frame_path: activeFramePath,
+    frame_url: activeFrame.url(),
+    frame_relocated: frameRelocated,
+    candidate_summary: summary,
+    activation_candidates: [...videoCandidates, ...controlCandidates].slice(0, runtime.candidate_limit),
+    needs_agent_choice: true,
+  };
 }
 
 export async function activatePlayback({
@@ -610,6 +703,8 @@ export async function activatePlayback({
   waitMs = 1500,
   browserId = "puppeteer",
   preferredCoordinates = null,
+  allowCandidateClick = true,
+  allowPreflightClick = true,
 } = {}) {
   const runtime = getMediaRuntimeConfig(browserId);
   const resolvedSummary = await inspectFrameForPlayback(frame, { candidateLimit: runtime.candidate_limit });
@@ -627,7 +722,7 @@ export async function activatePlayback({
   }
 
   const candidateSummary = await inspectFrameForPlayback(activeFrame, { candidateLimit: runtime.candidate_limit });
-  const preflight = await runPlaybackPreflight(activeFrame, runtime);
+  const preflight = await runPlaybackPreflight(activeFrame, runtime, { clickBlockers: allowPreflightClick });
   if (preflight.clicked) {
     await wait(runtime.settle_after_action_ms);
   }
@@ -653,7 +748,11 @@ export async function activatePlayback({
       stepResults.push(await clickPreferredHandle(handle));
     }
 
-    const inFrameActivation = await activateCandidatesInFrame(activeFrame, runtime, { mute: muteForAttempt });
+    const inFrameActivation = await activateCandidatesInFrame(activeFrame, runtime, {
+      mute: muteForAttempt,
+      allowCandidateClick,
+      allowVideoPlay: true,
+    });
     stepResults.push(
       ...inFrameActivation.clicked,
       ...inFrameActivation.play_calls,

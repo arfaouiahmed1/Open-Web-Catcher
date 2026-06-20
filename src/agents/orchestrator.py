@@ -97,6 +97,7 @@ _HOSTING_EVIDENCE_CHECKLIST = [
     "record extracted m3u8/mpd/mp4 URLs for each server attempt",
     "record embedded_url or player_iframe_url when present",
     "record network_diagnostics and iframe_diagnostics",
+    "record popup_window_diagnostics for opened, blocked, adopted, or closed popup/window targets, including opened_targets, blocked_popup_attempts, target_decision, and blocked_by_client evidence",
     "record confirmed player_state before concluding on a server",
     "record detected channel metadata and screenshot-derived OCR text when the broadcast name is visible",
 ]
@@ -108,6 +109,7 @@ _EMBEDDED_EVIDENCE_CHECKLIST = [
     "record extracted m3u8/mpd/mp4 URLs for each server/source attempt",
     "record embedded_url or player_iframe_url when present",
     "record network_diagnostics and iframe_diagnostics",
+    "record popup_window_diagnostics for opened, blocked, adopted, or closed popup/window targets, including opened_targets, blocked_popup_attempts, target_decision, and blocked_by_client evidence",
     "record confirmed player_state before concluding on a server/source",
     "record detected channel metadata and screenshot-derived OCR text when the broadcast name is visible",
 ]

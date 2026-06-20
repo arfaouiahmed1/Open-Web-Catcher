@@ -289,6 +289,46 @@ def test_short_memory_captures_visible_live_match_count() -> None:
     assert run_memory["common"]["visible_live_counts"] == ["live_matches=36"]
 
 
+def test_short_memory_tracks_pagination_without_hosting_candidate() -> None:
+    memory = ShortTermMemory(page_type="landing_page")
+    memory.ingest_tool_result(
+        "inspect_landing",
+        {"url": "https://freeshot.live/live-tv"},
+        {
+            "pagination": {
+                "page_urls": [
+                    "https://freeshot.live/live-tv?page=2",
+                    "https://freeshot.live/live-tv?page=73",
+                ],
+                "sample_links": [
+                    {"text": "2", "href": "https://freeshot.live/live-tv?page=2"},
+                ],
+            },
+            "candidate_ledger": [
+                {
+                    "url": "https://freeshot.live/live-tv?page=2",
+                    "title": "2",
+                    "status": "unknown",
+                    "url_pattern": "https://freeshot.live/live-tv?page={n}",
+                },
+                {
+                    "url": "https://freeshot.live/live-tv/espn-arg/871",
+                    "title": "ESPN ARG",
+                    "status": "not_live",
+                    "url_pattern": "https://freeshot.live/live-tv/espn-arg/{n}",
+                },
+            ],
+        },
+    )
+
+    run_memory = memory.export_run_memory(page_type="landing_page")
+    assert "https://freeshot.live/live-tv?page={n}" in run_memory["common"]["pagination_patterns"]
+    assert run_memory["hosting_candidate_urls"] == [
+        "https://freeshot.live/live-tv/espn-arg/871"
+    ]
+    assert all("?page=" not in record for record in run_memory["match_records"])
+
+
 def test_landing_output_marks_completion_gap_when_visible_live_count_not_met() -> None:
     output, expanded = _augment_landing_output(
         {
@@ -316,6 +356,50 @@ def test_landing_output_marks_completion_gap_when_visible_live_count_not_met() -
     assert output["extraction_summary"]["hosting_pages_missing_from_visible_count"] == 21
     assert output["extraction_summary"]["completion_gap"] is True
     assert "expected 36" in output["extraction_summary"]["continuation_needed_reason"]
+
+
+def test_landing_pattern_expansion_skips_pagination_and_listing_pages() -> None:
+    output, expanded = _augment_landing_output(
+        {
+            "hosting_pages": [
+                {
+                    "url": "https://freeshot.live/live-tv/espn-arg/871",
+                    "title": "ESPN ARG",
+                    "status": "not_live",
+                    "patterns": {
+                        "url_pattern": "https://freeshot.live/live-tv/espn-arg/{n}"
+                    },
+                }
+            ],
+            "extraction_summary": {"hosting_pages_found": 1},
+        },
+        source_url="https://freeshot.live/live-tv",
+        run_memory={
+            "hosting_candidate_urls": [
+                "https://freeshot.live/live-tv?page=2",
+                "https://freeshot.live/live-tv/argentina",
+                "https://freeshot.live/live-tv/sky-sports/872",
+            ],
+            "match_records": [],
+            "common": {
+                "critical_links": [
+                    "https://freeshot.live/live-tv?page=73",
+                    "https://freeshot.live/live-tv/albania-kosovo",
+                    "https://freeshot.live/live-tv/fox-sports/873",
+                ],
+                "pagination_patterns": ["https://freeshot.live/live-tv?page={n}"],
+            },
+        },
+    )
+
+    assert expanded == 2
+    assert [page["url"] for page in output["hosting_pages"]] == [
+        "https://freeshot.live/live-tv/espn-arg/871",
+        "https://freeshot.live/live-tv/sky-sports/872",
+        "https://freeshot.live/live-tv/fox-sports/873",
+    ]
+    assert output["extraction_summary"]["pagination_detected"] is True
+    assert output["site_patterns"]["pagination"]["url_pattern"] == "https://freeshot.live/live-tv?page={n}"
 
 
 def test_landing_output_uses_model_visual_live_count_from_screenshot() -> None:
@@ -478,6 +562,31 @@ def test_hosting_normalizer_preserves_source_frontier_metadata() -> None:
     assert server["current_marker"] is True
 
 
+def test_hosting_normalizer_preserves_popup_window_diagnostics() -> None:
+    output = _normalize_hosting_output(
+        {
+            "servers": [
+                {
+                    "label": "Server 1",
+                    "status": "failed",
+                    "popup_diagnostics": [
+                        {
+                            "url": "https://ads.example/promo",
+                            "classification": "ad_or_drift",
+                            "action": "closed",
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+
+    diagnostics = output["servers"][0]["popup_window_diagnostics"]
+    assert diagnostics[0]["url"] == "https://ads.example/promo"
+    assert diagnostics[0]["classification"] == "ad_or_drift"
+    assert diagnostics[0]["action"] == "closed"
+
+
 def test_embedded_normalizer_infers_protocol_details_from_stream_objects() -> None:
     output = _normalize_embedded_output(
         {
@@ -528,3 +637,28 @@ def test_embedded_normalizer_preserves_source_frontier_metadata() -> None:
     assert server["source_url"] == "https://embed.example.com/player?source=2"
     assert server["route_pattern"] == "?source={n}"
     assert server["current_marker"] is False
+
+
+def test_embedded_normalizer_preserves_popup_window_diagnostics() -> None:
+    output = _normalize_embedded_output(
+        {
+            "servers": [
+                {
+                    "label": "Source 1",
+                    "status": "success",
+                    "window_diagnostics": [
+                        {
+                            "url": "https://player.example/embed",
+                            "classification": "same_content_player",
+                            "action": "adopted",
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+
+    diagnostics = output["servers"][0]["popup_window_diagnostics"]
+    assert diagnostics[0]["url"] == "https://player.example/embed"
+    assert diagnostics[0]["classification"] == "same_content_player"
+    assert diagnostics[0]["action"] == "adopted"

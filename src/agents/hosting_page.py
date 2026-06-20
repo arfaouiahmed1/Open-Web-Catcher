@@ -27,7 +27,7 @@ logger = get_logger(__name__)
 PROMPT_PATH = Path("configs/prompts/hosting_page_v1.md")
 _AGENT_CONTRACT = """\
 - extract verified stream URLs from the hosting page when possible
-- if the host page clearly exposes an iframe src or embedded player URL, return that embedded URL instead of guessing streams
+- if the host page clearly exposes an iframe src or embedded player URL, return that embedded URL only after trying accessible iframe-local activation evidence instead of guessing streams
 - respect the base policy's final JSON/output contract
 - use site memory only as hints and re-check everything on the live page
 - stay anchored to the assigned hosting content and recover from off-target drift
@@ -37,16 +37,21 @@ _AGENT_CONTRACT = """\
 - preserve source language labels when they are shown as flags, country emoji, audio labels, captions, or short codes
 - work across any language or script; verify channel/source labels from player evidence instead of English-only terms
 - detect source/server switches from multilingual rows, cards, provider groups, dropdown options, quality chips, language labels, and repeated stream/link/option patterns, not only English server buttons
+- use `inspect_hosting.server_frontier[]` as the initial source queue when present, then merge landing handoff hints and scoped source-list reads
 - build a server_frontier from landing handoff hints plus visible provider groups/source rows, then open, activate/play, screenshot, harvest, and record every same-content source; do not stop after the first successful server
 - treat same-event child routes such as provider/index watch URLs as server sources for the current event, using navigate for each real route and rejecting other event slugs
 - preserve source_group, source_index, source_url, route_pattern, and current_marker for every attempted source when visible or inferable
 - activate/play the default player and every switched server before harvest, capture the post-activation screenshot, then harvest that server
-- treat ad redirects, news/article detours, fake downloads, and unrelated provider pages as drift, then recover once
+- treat ad redirects, news/article detours, fake downloads, VPN/DNS utility pages, and unrelated provider pages as drift, then recover once
+- choose player activation targets from activation_candidates, top_playback_targets, exact scoped evidence, or coordinates; bare play_media is only candidate discovery and is not an activation attempt
+- when inspect_hosting exposes iframe-local sample_buttons, sample_links, or sample_videos, choose exact frame_path targets and try play_media or interact before embedded handoff
+- treat opened_targets, blocked_popup_attempts, target_decision, and blocked_by_client as popup/window/uBlock evidence; record popup_window_diagnostics per server/source
+- do not trust same hostname alone for a new tab/window; compare URL, title, screenshot/layout, assigned content, and media/frame signals before adopting it
 - after every Play/Watch overlay click, check whether server/source controls or iframe/player evidence loaded before failing
 - remove popups/modals/overlays that cover the assigned player using inspect popup close selectors/xpaths or exact close controls before activation, screenshots, harvest, or failure
 - switch only same-content server/source controls; never navigate to other matches, channels, listings, articles, or homepages
 - if playback does not start, try distinct activation strategies instead of repeating the same click
-- if playback fails or no streams are recovered, return an embedded fallback only when the current hosting page exposes an explicit iframe src or embedded/player URL; otherwise stop with failure evidence and no fabricated next target
+- if playback fails or no streams are recovered, return an embedded fallback only when the current hosting page exposes an explicit iframe src or embedded/player URL and iframe-local activation was tried or inaccessible; otherwise stop with failure evidence and no fabricated next target
 """
 
 
@@ -613,6 +618,11 @@ def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any
         or bool(server.get("switched")),
         "network_diagnostics": _normalize_diagnostics_list(server.get("network_diagnostics")),
         "iframe_diagnostics": _normalize_diagnostics_list(server.get("iframe_diagnostics")),
+        "popup_window_diagnostics": _normalize_diagnostics_list(
+            server.get("popup_window_diagnostics")
+            or server.get("popup_diagnostics")
+            or server.get("window_diagnostics")
+        ),
     }
 
 
@@ -907,6 +917,9 @@ def _build_server_results(servers: list[dict[str, Any]]) -> list[ServerResult]:
                 server_change_observed=bool(server.get("server_change_observed")),
                 network_diagnostics=_normalize_diagnostics_list(server.get("network_diagnostics")),
                 iframe_diagnostics=_normalize_diagnostics_list(server.get("iframe_diagnostics")),
+                popup_window_diagnostics=_normalize_diagnostics_list(
+                    server.get("popup_window_diagnostics")
+                ),
             )
         )
     return result

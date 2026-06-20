@@ -70,6 +70,7 @@ class ServerResult(BaseModel):
     server_change_observed: bool = False
     network_diagnostics: list[dict[str, Any]] = Field(default_factory=list)
     iframe_diagnostics: list[dict[str, Any]] = Field(default_factory=list)
+    popup_window_diagnostics: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ExtractionResult(BaseModel):

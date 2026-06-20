@@ -324,15 +324,21 @@ async function collectRootData(page) {
     const elInfo = (el) => {
       const r = el.getBoundingClientRect();
       const parentText = cleanText(el.parentElement?.innerText || el.parentElement?.textContent || "", 220);
+      const row = el.closest?.(
+        "tr,[role='row'],[class*='match'],[class*='event'],[class*='fixture'],[class*='game']",
+      );
+      const rowText = cleanText(row?.innerText || row?.textContent || "", 260);
       const section = el.closest?.("section,article,main,table,tbody,ul,ol,[class*='content'],[class*='schedule'],[class*='event'],[class*='match']");
       const sectionHeading =
         section?.querySelector?.("h1,h2,h3,h4,[class*='title'],[class*='heading'],thead") || null;
       return {
         text: cleanText(el.innerText || el.textContent || el.value || "", 140),
-        nearby_text: parentText,
+        nearby_text: cleanText([parentText, rowText].filter(Boolean).join(" | "), 260),
+        row_text: rowText,
         section_title: cleanText(sectionHeading?.innerText || sectionHeading?.textContent || "", 120),
         href: el.href || el.getAttribute("href") || "",
         src: el.src || el.currentSrc || el.getAttribute("src") || "",
+        classes: cleanText(el.className || "", 120),
         selector: selectorFor(el),
         xpath: xpathFor(el),
         x: Math.round(r.x + r.width / 2),

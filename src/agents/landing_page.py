@@ -37,11 +37,13 @@ _AGENT_CONTRACT = """\
 - default downstream route is `stream_extractor`; landing does not route directly to the embedded agent
 - preserve exact iframe src, frame URL, video src, player URL, and direct stream URLs in structured fields as hosting/provider hints
 - act like a compact AI crawler: maintain a frontier of live/watch/listing patterns, verify representatives, expand siblings, and stop only when distinct useful patterns are exhausted
-- prioritize main body/content candidates before header navigation, sidebars, sticky bars, or footer links
+- prioritize main body/content candidates before header navigation, sidebars, sticky bars, or footer links; header/footer navigation is a last-resort path only after body rows/cards/sections/tabs/pagination/load-more/reveal controls are exhausted or rejected
 - stay anchored to the main URL's domain/site; external domains need explicit same-content hosting/player evidence before navigation or handoff
 - treat channel-logo grids and channel directory cards as hosting candidate patterns when they lead to same-site watch/channel pages
 - treat channel posters with Play/Watch overlays as hosting candidates and check for loaded server/source/player evidence after a reveal click
 - work across any language or script; use layout, logos, href patterns, and visible controls before English keywords
+- treat opened_targets, blocked_popup_attempts, target_decision, and blocked_by_client as popup/window/uBlock evidence; keep only same-content hosting/player targets and ignore ad/off-target popups
+- do not trust same hostname alone for a new tab/window; compare URL, title, screenshot/layout, live row context, and media/frame signals
 - once a hosting pattern is verified, collect the best same-pattern siblings and keep checking other distinct live/watchable patterns instead of re-proving low-value alternatives
 - if no verified hosting targets remain after crawling useful patterns, return an empty result and stop instead of inventing a next hop
 """
@@ -111,7 +113,11 @@ def _coerce_memory_match_records(run_memory: dict[str, Any]) -> list[dict[str, A
         if not isinstance(record, dict):
             continue
         url = str(record.get("url") or "").strip()
-        if not url.startswith(("http://", "https://")) or _looks_like_low_value_url(url):
+        if (
+            not url.startswith(("http://", "https://"))
+            or _looks_like_low_value_url(url)
+            or _looks_like_pagination_url(url)
+        ):
             continue
         parsed.append(record)
     return parsed
@@ -179,6 +185,27 @@ def _looks_like_low_value_url(url: str) -> bool:
     if re.search(r"\.(css|js|png|jpe?g|gif|svg|ico|webp|pdf)(\?|$)", lowered):
         return True
     return False
+
+
+def _looks_like_pagination_url(url: str) -> bool:
+    candidate = str(url or "").lower().strip()
+    return bool(
+        candidate
+        and re.search(
+            r"([?&](page|paged|p|offset|start|cursor)=)|(/page/\d+)|(/p/\d+)|(-page-\d+)",
+            candidate,
+        )
+    )
+
+
+def _url_path_depth(url: str) -> int:
+    parsed = urlparse(str(url or "").strip())
+    return len([segment for segment in parsed.path.split("/") if segment])
+
+
+def _url_query_keys(url: str) -> tuple[str, ...]:
+    parsed = urlparse(str(url or "").strip())
+    return tuple(sorted({key for key, _ in parse_qsl(parsed.query or "", keep_blank_values=True)}))
 
 
 def _clean_optional_text(value: Any) -> str:
@@ -379,6 +406,8 @@ def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[st
         if not candidate_url.startswith(("http://", "https://")):
             continue
         if candidate_url in seen_urls:
+            continue
+        if _looks_like_pagination_url(candidate_url):
             continue
         seen_urls.add(candidate_url)
 
@@ -585,6 +614,8 @@ def _augment_landing_output(
     known_patterns: set[str] = set()
     known_pattern_signatures: set[str] = set()
     known_prefixes: set[str] = set()
+    known_prefix_depths: dict[str, set[int]] = {}
+    known_prefix_query_keys: dict[str, set[tuple[str, ...]]] = {}
     for page in hosting_pages:
         candidate_url = str(page.get("url") or "").strip()
         if candidate_url:
@@ -596,6 +627,8 @@ def _augment_landing_output(
             prefix = _hosting_prefix(candidate_url)
             if prefix:
                 known_prefixes.add(prefix)
+                known_prefix_depths.setdefault(prefix, set()).add(_url_path_depth(candidate_url))
+                known_prefix_query_keys.setdefault(prefix, set()).add(_url_query_keys(candidate_url))
 
         patterns = page.get("patterns", {})
         if isinstance(patterns, dict):
@@ -647,7 +680,7 @@ def _augment_landing_output(
         candidate_domain = _normalize_domain(candidate_url)
         if allowed_domains and candidate_domain not in allowed_domains:
             continue
-        if _looks_like_low_value_url(candidate_url):
+        if _looks_like_low_value_url(candidate_url) or _looks_like_pagination_url(candidate_url):
             continue
 
         candidate_pattern = _generalize_url_pattern(candidate_url)
@@ -657,7 +690,12 @@ def _augment_landing_output(
         signature_match = bool(
             candidate_signature and candidate_signature in known_pattern_signatures
         )
-        prefix_match = bool(candidate_prefix and candidate_prefix in known_prefixes)
+        prefix_match = bool(
+            candidate_prefix
+            and candidate_prefix in known_prefixes
+            and _url_path_depth(candidate_url) in known_prefix_depths.get(candidate_prefix, set())
+            and _url_query_keys(candidate_url) in known_prefix_query_keys.get(candidate_prefix, set())
+        )
         if not (pattern_match or signature_match or (prefix_match and known_pattern_signatures)):
             continue
 

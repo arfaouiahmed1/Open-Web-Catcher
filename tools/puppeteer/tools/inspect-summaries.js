@@ -21,6 +21,13 @@ const WATCH_PATTERN =
 const NAV_PATTERN =
   /(home|schedule|programacion|programaci[oó]n|api|status|channels|canales|category|categories|today|hoy|live|en vivo|leagues?|ligas?)/i;
 
+const PAGINATION_URL_PATTERN =
+  /([?&](page|paged|p|offset|start|cursor)=)|(\/page\/\d+)|(\/p\/\d+)|(-page-\d+)/i;
+const SCHEDULE_ROW_PATTERN =
+  /\b(?:[01]?\d|2[0-3]):[0-5]\d\b|featured events?|matchtime|clock:/i;
+const PROVIDER_CHANNEL_PATTERN =
+  /\b(?:sports?|espn|fox|sky|tnt|dazn|willow|bein|eurosport|tsn|nba\s*tv|nfl\s*network|bt\s*sport|sport\s*tv)\b/i;
+
 const CATEGORY_PATTERN =
   /(\/category\/|basketball|football|soccer|baseball|hockey|tennis|rugby|golf|nba|nhl|mlb|ufc|f1)/i;
 
@@ -28,11 +35,20 @@ const PLAY_PATTERN =
   /(play|watch|resume|start|stream|server|source|mirror|backup|quality|tap|option|opci[oó]n|opcao|op[cç][aã]o|servidor|servidores|canal|canales|canaux|quelle|fonte|fuente|lien|link|enlace|ver|voir|assistir|izle|شاهد|تشغيل|سيرفر|مصدر|قناة|لينك|رابط)/i;
 const SERVER_PATTERN =
   /(server|source|mirror|backup|embed|stream|quality|cdn|audio|sub|caption|option|opci[oó]n|opcao|op[cç][aã]o|servidor|servidores|servidor[ea]s?|fuente|fuentes|fonte|fontes|canal|canales|canaux|cha[iî]ne|quelle|lien|liens|link|links|enlace|enlaces|player|iframe|hd|sd|fhd|uhd|lang|language|idioma|idiomas|audio|áudio|sonido|voz|subt[ií]tulo|legenda|caption|زبان|لغة|لغات|سيرفر|سيرفرات|مصدر|مصادر|جودة|قناة|قنوات|رابط|روابط|لينك|لينكات)/i;
+const SERVER_LOCATOR_PATTERN =
+  /(server|source|mirror|backup|embed|stream|quality|cdn|player|iframe|data-server|data-source|data-embed)/i;
 const STREAM_URL_PATTERN = /(\.(m3u8|mpd|mp4|m4s|ts)(?:$|[?#])|\/(?:hls|dash|m3u8|mpd|manifest|playlist|tracks[^/]*)\/|(?:^|[?&])(format|type|protocol)=(hls|dash|m3u8|mpd)|(?:^|\/)(master|index|chunklist|playlist|manifest)(?:[.-]|$)|(?:^|\/)mono(?:[.-]|$).*?(token=|expires=))/i;
 const DIRECT_PLAYER_URL_PATTERN = /(embed|player|iframe|\/e\/|\/v\/|\/video\/|\/watch\/|stream)/i;
 
 const clean = (value, max = 160) =>
   String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+
+function compactScreenshotRef(value, max = 420) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^data:image\//i.test(raw)) return "inline_data_image_omitted";
+  return raw.length > max ? `${raw.slice(0, max)}...` : raw;
+}
 
 function dedupeBy(items, keyFn) {
   const seen = new Set();
@@ -83,6 +99,37 @@ function resolveUrlMaybe(url, baseUrl) {
   } catch {
     return raw;
   }
+}
+
+function looksLikePaginationUrl(url) {
+  return PAGINATION_URL_PATTERN.test(String(url || ""));
+}
+
+function pageNumberFromUrl(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    for (const key of ["page", "paged", "p", "offset", "start"]) {
+      const value = parsed.searchParams.get(key);
+      if (value && /^\d+$/.test(value)) return Number(value);
+    }
+    const pathMatch =
+      parsed.pathname.match(/\/(?:page|p)\/(\d+)(?:\/|$)/i) ||
+      parsed.pathname.match(/-page-(\d+)(?:\/|$)/i);
+    return pathMatch ? Number(pathMatch[1]) : null;
+  } catch {
+    const match =
+      raw.match(/[?&](?:page|paged|p|offset|start)=(\d+)/i) ||
+      raw.match(/\/(?:page|p)\/(\d+)(?:\/|$)/i) ||
+      raw.match(/-page-(\d+)(?:\/|$)/i);
+    return match ? Number(match[1]) : null;
+  }
+}
+
+function pageNumberFromText(text) {
+  const match = String(text || "").trim().match(/^\D*(\d{1,5})\D*$/);
+  return match ? Number(match[1]) : null;
 }
 
 function eventWatchBase(url) {
@@ -304,6 +351,9 @@ function buildOutputCounts(payload) {
     link_groups: (payload.link_groups || payload.match_groups || payload.navigation_groups || payload.grouped_sections?.groups || []).length,
     action_groups: (payload.action_groups || payload.control_groups || payload.playback_groups || payload.player_groups || []).length,
     top_watch_candidates: (payload.top_candidates?.watch || payload.top_match_candidates || []).length,
+    server_frontier: (payload.server_frontier || []).length,
+    activation_candidates: (payload.activation_candidates || []).length,
+    blocker_candidates: (payload.blocker_candidates || []).length,
     candidate_ledger: (payload.candidate_ledger || []).length,
     top_navigation_candidates: (payload.top_candidates?.navigation || []).length,
     top_action_candidates: (payload.top_candidates?.actions || payload.top_server_controls || payload.top_source_controls || payload.top_playback_targets || payload.top_player_targets || []).length,
@@ -382,9 +432,11 @@ function fitPayloadToBudget(payload, { budgetTarget, reducers, rawCounts }) {
 function collectLinks(data) {
   const rootContent = (data.contentLinks || []).map((entry) => ({
     text: clean(entry.text, 140),
-    nearby_text: clean(entry.nearby_text, 180),
+    nearby_text: clean(entry.nearby_text || entry.row_text, 220),
+    row_text: clean(entry.row_text, 260),
     section_title: clean(entry.section_title, 120),
     url: entry.href || "",
+    classes: clean(entry.classes, 120),
     selector: entry.selector || "",
     xpath: entry.xpath || "",
     x: Math.round(entry.x || 0),
@@ -394,9 +446,11 @@ function collectLinks(data) {
   }));
   const nav = (data.navLinks || []).map((entry) => ({
     text: clean(entry.text, 120),
-    nearby_text: clean(entry.nearby_text, 180),
+    nearby_text: clean(entry.nearby_text || entry.row_text, 220),
+    row_text: clean(entry.row_text, 260),
     section_title: clean(entry.section_title, 120),
     url: entry.href || "",
+    classes: clean(entry.classes, 120),
     selector: entry.selector || "",
     xpath: entry.xpath || "",
     x: Math.round(entry.x || 0),
@@ -407,9 +461,11 @@ function collectLinks(data) {
   const frameLinks = (data.frame_tree || []).flatMap((frame) =>
     (frame.sample_links || []).map((entry) => ({
       text: clean(entry.text, 120),
-      nearby_text: clean(entry.nearby_text, 180),
+      nearby_text: clean(entry.nearby_text || entry.row_text, 220),
+      row_text: clean(entry.row_text, 260),
       section_title: clean(entry.section_title, 120),
       url: entry.href || "",
+      classes: clean(entry.classes, 120),
       selector: entry.selector || "",
       xpath: entry.xpath || "",
       x: Math.round(entry.x || 0),
@@ -422,9 +478,11 @@ function collectLinks(data) {
     ...(data.collapsed_sections || []).flatMap((section) =>
       [...(section.hidden_link_samples || []), ...(section.sample_links || [])].map((entry) => ({
         text: clean(entry.text, 120),
-        nearby_text: clean(entry.nearby_text, 180),
+        nearby_text: clean(entry.nearby_text || entry.row_text, 220),
+        row_text: clean(entry.row_text, 260),
         section_title: clean(entry.section_title, 120),
         url: entry.href || "",
+        classes: clean(entry.classes, 120),
         selector: entry.selector || "",
         xpath: entry.xpath || "",
         x: Math.round(entry.x || 0),
@@ -437,9 +495,11 @@ function collectLinks(data) {
     ...(data.reveal_controls || []).flatMap((control) =>
       (control.sample_links || []).map((entry) => ({
         text: clean(entry.text, 120),
-        nearby_text: clean(entry.nearby_text, 180),
+        nearby_text: clean(entry.nearby_text || entry.row_text, 220),
+        row_text: clean(entry.row_text, 260),
         section_title: clean(entry.section_title, 120),
         url: entry.href || "",
+        classes: clean(entry.classes, 120),
         selector: entry.selector || "",
         xpath: entry.xpath || "",
         x: Math.round(entry.x || 0),
@@ -455,7 +515,10 @@ function collectLinks(data) {
     [...rootContent, ...nav, ...frameLinks, ...collapsedLinks]
       .filter((entry) => entry.url && !entry.url.startsWith("javascript:"))
       .filter((entry) => !NOISE_PATTERN.test(`${entry.text} ${entry.url}`))
-      .map((entry) => ({ ...entry, status: inferStatus(entry.text, entry.url) })),
+      .map((entry) => ({
+        ...entry,
+        status: inferStatus(`${entry.text} ${entry.nearby_text} ${entry.row_text}`, entry.url),
+      })),
     (entry) => `${entry.frame_path}|${entry.url}|${entry.text}|${entry.source}`,
   );
 }
@@ -482,13 +545,103 @@ function collectActions(data, { linksOnlyIfPlayable = false } = {}) {
         href: entry.href || "",
         data: entry.data || {},
         state: entry.state || "",
+        active: Boolean(entry.active),
+        checked: Boolean(entry.checked),
         hidden_link_count: Number(entry.hidden_link_count || 0),
         visible_link_count: Number(entry.visible_link_count || 0),
+        source: entry.source || "root",
       }))
       .filter((entry) => entry.text || entry.selector || entry.xpath)
       .filter((entry) => !linksOnlyIfPlayable || PLAY_PATTERN.test(`${entry.text} ${entry.selector} ${entry.xpath}`) || entry.kind !== "link"),
     (entry) => `${entry.frame_path}|${entry.kind}|${entry.selector}|${entry.xpath}|${entry.text}`,
   );
+}
+
+function isServerSourceAction(entry) {
+  const textHaystack = [
+    entry.text,
+    entry.data?.server,
+    entry.data?.source,
+    entry.data?.embed,
+  ].filter(Boolean).join(" ");
+  const locatorHaystack = [
+    entry.selector,
+    entry.xpath,
+    entry.href,
+  ].filter(Boolean).join(" ");
+  return SERVER_PATTERN.test(textHaystack) || SERVER_LOCATOR_PATTERN.test(locatorHaystack);
+}
+
+function collectFrameActions(data) {
+  const rows = [];
+  for (const frame of data.frame_tree || []) {
+    const framePath = frame.frame_path || "root";
+    for (const entry of frame.sample_buttons || []) {
+      rows.push({
+        kind: entry.kind || "button",
+        text: clean(entry.text, 120),
+        selector: entry.selector || "",
+        xpath: entry.xpath || "",
+        x: Math.round(entry.x || 0),
+        y: Math.round(entry.y || 0),
+        frame_path: framePath,
+        href: entry.href || entry.url || "",
+        data: entry.data || {},
+        state: entry.state || "",
+        active: Boolean(entry.active),
+        checked: Boolean(entry.checked),
+        hidden_link_count: Number(entry.hidden_link_count || 0),
+        visible_link_count: Number(entry.visible_link_count || 0),
+        source: "frame_button",
+      });
+    }
+    for (const entry of frame.sample_links || []) {
+      rows.push({
+        kind: "link",
+        text: clean(entry.text, 120),
+        selector: entry.selector || "",
+        xpath: entry.xpath || "",
+        x: Math.round(entry.x || 0),
+        y: Math.round(entry.y || 0),
+        frame_path: framePath,
+        href: entry.href || entry.url || "",
+        data: entry.data || {},
+        state: entry.state || "",
+        active: Boolean(entry.active),
+        checked: Boolean(entry.checked),
+        hidden_link_count: 0,
+        visible_link_count: 0,
+        source: "frame_link",
+      });
+    }
+  }
+
+  return dedupeBy(
+    rows.filter((entry) => entry.text || entry.selector || entry.xpath || entry.href),
+    (entry) => `${entry.frame_path}|${entry.kind}|${entry.selector}|${entry.xpath}|${entry.href}|${entry.text}`,
+  );
+}
+
+function collectFrameVideoTargets(data) {
+  const rows = [];
+  for (const frame of data.frame_tree || []) {
+    const framePath = frame.frame_path || "root";
+    for (const video of frame.sample_videos || []) {
+      rows.push({
+        kind: "video",
+        text: clean(video.src || "video", 120),
+        selector: video.selector || "",
+        xpath: video.xpath || "",
+        x: Math.round(video.x || 0),
+        y: Math.round(video.y || 0),
+        frame_path: framePath,
+        href: video.src || "",
+        ready_state: Number(video.readyState ?? video.ready_state ?? 0),
+        paused: Boolean(video.paused),
+      });
+    }
+  }
+  return rows;
 }
 
 function buildPlayerEvidence(data, { videoSampleLimit = 6, iframeSampleLimit = 6, frameSampleLimit = 6 } = {}) {
@@ -573,6 +726,7 @@ function landingLinkGroup(entry) {
   const text = String(entry.text || "").toLowerCase();
   const source = String(entry.source || "").toLowerCase();
   const status = String(entry.status || "").toLowerCase();
+  if (looksLikePaginationUrl(url)) return "pagination_links";
   if (/status/.test(url) || /\bstatus\b/.test(text)) return "status_links";
   if (source === "nav") return "header_nav";
   if (/\/category\//.test(url) || CATEGORY_PATTERN.test(text)) return "sports_categories";
@@ -587,7 +741,7 @@ function landingLinkGroup(entry) {
 
 function priorityForLabel(label) {
   if (["live_watch_cards", "watch_links", "server_switches", "source_switches", "play_controls", "reveal_controls"].includes(label)) return "high";
-  if (["sports_categories", "channel_watch_links", "live_channels", "filter_tabs", "schedule_links", "quality_switches"].includes(label)) return "medium";
+  if (["sports_categories", "channel_watch_links", "live_channels", "filter_tabs", "schedule_links", "pagination_links", "quality_switches"].includes(label)) return "medium";
   return "low";
 }
 
@@ -646,9 +800,12 @@ function compactActionCandidate(entry) {
     frame_path: entry.frame_path || "root",
     selector: entry.selector || "",
     xpath: entry.xpath || "",
+    href: entry.href || "",
     x: Math.round(entry.x || 0),
     y: Math.round(entry.y || 0),
     state: entry.state || "",
+    active: Boolean(entry.active),
+    data: entry.data || {},
     hidden_link_count: Number(entry.hidden_link_count || 0),
   };
 }
@@ -658,6 +815,7 @@ function compactLinkCandidate(entry) {
     text: entry.text,
     title: entry.text || entry.nearby_text || "",
     nearby_text: entry.nearby_text || "",
+    row_text: entry.row_text || "",
     source_section: entry.section_title || "",
     url: entry.url,
     status: entry.status,
@@ -678,16 +836,17 @@ function scheduledTimeFromText(...values) {
 }
 
 function compactLedgerCandidate(entry) {
-  const title = clean(entry.text || entry.nearby_text || "", 180);
-  const nearby = clean(entry.nearby_text || entry.text || "", 220);
+  const title = clean(entry.text || entry.row_text || entry.nearby_text || "", 180);
+  const nearby = clean(entry.row_text || entry.nearby_text || entry.text || "", 260);
   const pattern = generalizedUrlPattern(entry.url);
   return {
     url: entry.url,
     title,
     nearby_text: nearby,
+    row_text: clean(entry.row_text, 260),
     source_section: entry.section_title || "",
-    status: entry.status || inferStatus(`${entry.text} ${entry.nearby_text}`, entry.url),
-    scheduled_time: scheduledTimeFromText(entry.text, entry.nearby_text),
+    status: entry.status || inferStatus(`${entry.text} ${entry.nearby_text} ${entry.row_text}`, entry.url),
+    scheduled_time: scheduledTimeFromText(entry.text, entry.nearby_text, entry.row_text),
     source: entry.source || "",
     frame_path: entry.frame_path || "root",
     selector: entry.selector || "",
@@ -702,17 +861,35 @@ function compactLedgerCandidate(entry) {
 function candidatePriority(entry) {
   const sourceRank = { content: 6, collapsed: 5, reveal: 5, frame: 4, nav: 2 };
   let score = sourceRank[entry.source] || 1;
-  const haystack = `${entry.text || entry.title || ""} ${entry.nearby_text} ${entry.url}`.toLowerCase();
+  const haystack = `${entry.text || entry.title || ""} ${entry.nearby_text} ${entry.row_text} ${entry.classes || ""} ${entry.url}`.toLowerCase();
   if (/\blive\b|en vivo|directo|watch|play|stream|eventos|canal|channel|tv/.test(haystack)) score += 4;
   if (WATCH_PATTERN.test(haystack)) score += 3;
+  if (SCHEDULE_ROW_PATTERN.test(haystack)) score += 3;
+  if (PROVIDER_CHANNEL_PATTERN.test(haystack)) score += 2;
   if (entry.hidden) score -= 1;
   return score;
 }
 
+function looksLikeLandingCandidate(entry) {
+  if (!entry.url || looksLikePaginationUrl(entry.url)) return false;
+  const haystack = `${entry.text || ""} ${entry.nearby_text || ""} ${entry.row_text || ""} ${entry.classes || ""} ${entry.url || ""}`;
+  if (WATCH_PATTERN.test(haystack) || PROVIDER_CHANNEL_PATTERN.test(haystack)) return true;
+  return (
+    entry.source === "content" &&
+    SCHEDULE_ROW_PATTERN.test(haystack) &&
+    !NOISE_PATTERN.test(`${entry.text || ""} ${entry.url || ""}`)
+  );
+}
+
+function landingCandidateFrontier(links) {
+  const candidates = (links || []).filter((entry) => looksLikeLandingCandidate(entry));
+  const bodyCandidates = candidates.filter((entry) => entry.source !== "nav");
+  return bodyCandidates.length ? bodyCandidates : candidates;
+}
+
 function buildCandidateLedger(links, { limit = 100 } = {}) {
   const rows = dedupeBy(
-    (links || [])
-      .filter((entry) => entry.url && WATCH_PATTERN.test(`${entry.text} ${entry.nearby_text} ${entry.url}`))
+    landingCandidateFrontier(links)
       .map(compactLedgerCandidate)
       .sort((a, b) => candidatePriority(b) - candidatePriority(a)),
     (entry) => entry.url,
@@ -811,7 +988,7 @@ function buildActionGroups(actions, mode = "classification") {
 
 function actionGroupLabel(entry, mode) {
   const haystack =
-    `${entry.text} ${entry.href} ${entry.selector} ${entry.xpath} ${entry.data?.server || ""} ${entry.data?.source || ""} ${entry.data?.embed || ""}`.toLowerCase();
+    `${entry.text} ${entry.href} ${entry.data?.server || ""} ${entry.data?.source || ""} ${entry.data?.embed || ""}`.toLowerCase();
   if (
     entry.kind === "reveal_control" ||
     entry.data?.reveals_hidden_content ||
@@ -866,6 +1043,17 @@ function buildIframeGroups(data, mode = "hosting") {
         xpath: entry.xpath || "",
         frame_path: frame.frame_path,
       })), frame.purpose_hint === "player" || frame.has_server_controls ? "high" : "low", (entry) => `${entry.text}|${entry.url}|${entry.selector}`),
+      sample_videos: pickRepresentatives((frame.sample_videos || []).map((video) => ({
+        kind: "video",
+        text: clean(video.src || "video", 100),
+        selector: video.selector || "",
+        xpath: video.xpath || "",
+        x: Math.round(video.x || 0),
+        y: Math.round(video.y || 0),
+        frame_path: frame.frame_path,
+        ready_state: Number(video.readyState ?? video.ready_state ?? 0),
+        paused: Boolean(video.paused),
+      })), frame.purpose_hint === "player" || frame.video_count > 0 ? "high" : "low", (entry) => `${entry.frame_path}|${entry.selector}|${entry.xpath}|${entry.text}`),
     }))
     .sort((a, b) => {
       const rankDiff =
@@ -876,15 +1064,46 @@ function buildIframeGroups(data, mode = "hosting") {
 }
 
 function buildPaginationSummary(data) {
+  const currentPage = pageNumberFromUrl(data.url) || 1;
+  const paginationLinks = dedupeBy(
+    (data.pagination?.elements || [])
+      .map((entry) => {
+        const href = entry.href || "";
+        const pageNumber = pageNumberFromUrl(href) || pageNumberFromText(entry.text);
+        return {
+          text: clean(entry.text, 80),
+          href,
+          selector: entry.selector || "",
+          xpath: entry.xpath || "",
+          page: pageNumber,
+        };
+      })
+      .filter((entry) => entry.href || entry.text)
+      .filter((entry) => looksLikePaginationUrl(entry.href) || entry.page !== null),
+    (entry) => `${entry.href}|${entry.text}|${entry.selector}|${entry.xpath}`,
+  );
+  const numberedLinks = paginationLinks.filter((entry) => Number.isFinite(entry.page));
+  const pageNumbers = numberedLinks.map((entry) => Number(entry.page)).filter((value) => value > 0);
+  const nextLink =
+    numberedLinks
+      .filter((entry) => Number(entry.page) > currentPage)
+      .sort((a, b) => Number(a.page) - Number(b.page))[0] ||
+    paginationLinks.find((entry) => /next|»|›|more/i.test(`${entry.text} ${entry.href}`)) ||
+    null;
+  const firstPatternLink = paginationLinks.find((entry) => looksLikePaginationUrl(entry.href));
+
   return {
-    detected: Boolean(data.pagination?.detected),
-    type: data.pagination?.type || null,
-    sample_links: (data.pagination?.elements || []).map((entry) => ({
-      text: clean(entry.text, 80),
-      href: entry.href || "",
-      selector: entry.selector || "",
-      xpath: entry.xpath || "",
-    })),
+    detected: Boolean(data.pagination?.detected || paginationLinks.length),
+    type: firstPatternLink?.href?.includes("?") ? "query" : data.pagination?.type || null,
+    current_page: currentPage,
+    max_visible_page: pageNumbers.length ? Math.max(...pageNumbers) : null,
+    next_url: nextLink?.href || "",
+    url_pattern: firstPatternLink ? generalizedUrlPattern(firstPatternLink.href) : "",
+    page_urls: dedupeBy(
+      paginationLinks.map((entry) => entry.href).filter(Boolean),
+      (href) => href,
+    ).slice(0, 24),
+    sample_links: paginationLinks.slice(0, 24),
   };
 }
 
@@ -973,6 +1192,130 @@ function buildEventServerRoutes(data, actions, { limit = 48 } = {}) {
   ).slice(0, limit);
 }
 
+function sourceIndexFromText(...values) {
+  const haystack = values.map((value) => String(value || "")).join(" ");
+  const explicit =
+    haystack.match(/\b(?:stream|source|server|option|link|mirror|backup|canal|lien)\s*#?\s*(\d{1,3})\b/i) ||
+    haystack.match(/\b(\d{1,3})\s*(?:of|\/)\s*\d{1,3}\b/i) ||
+    haystack.match(/\b(?:s|src)[-_ ]?(\d{1,3})\b/i);
+  return explicit ? Number(explicit[1]) : null;
+}
+
+function sourceGroupFromText(label, data = {}) {
+  const dataGroup = clean(data.source || data.server || data.embed || "", 80);
+  if (dataGroup && !/^(?:s|src)?\d+$/i.test(dataGroup)) return dataGroup;
+
+  const firstSegment = String(label || "").split(/\s*(?:\/|\||-|–|—)\s*/)[0] || "";
+  const cleaned = clean(firstSegment, 80);
+  if (!cleaned) return "";
+  if (/^(?:stream|source|server|option|link|mirror|backup)\s*#?\s*\d+$/i.test(cleaned)) return "";
+  return cleaned;
+}
+
+function sourceQualityFromText(label) {
+  return String(label || "").match(/\b(4k|uhd|fhd|1080p|720p|hd|sd)\b/i)?.[1] || "";
+}
+
+function compactServerFrontierEntry(entry) {
+  const output = {
+    label: entry.label || "",
+    action: entry.action || "interact",
+    frontier_source: entry.frontier_source || "",
+    frame_path: entry.frame_path || "root",
+  };
+  for (const key of [
+    "source_group",
+    "source_url",
+    "route_pattern",
+    "selector",
+    "xpath",
+    "quality",
+  ]) {
+    if (entry[key]) output[key] = entry[key];
+  }
+  if (entry.source_index !== null && entry.source_index !== undefined) {
+    output.source_index = entry.source_index;
+  }
+  if (entry.current_marker) output.current_marker = true;
+  if (entry.expected_source_count) output.expected_source_count = entry.expected_source_count;
+  if (entry.x) output.x = entry.x;
+  if (entry.y) output.y = entry.y;
+  if (entry.data && Object.values(entry.data).some(Boolean)) output.data = entry.data;
+  return output;
+}
+
+function buildServerFrontier({
+  serverControls = [],
+  eventServerRoutes = [],
+  currentUrl = "",
+  limit = 48,
+} = {}) {
+  const rows = [];
+
+  for (const route of eventServerRoutes || []) {
+    rows.push({
+      label: route.label || route.source_url || "server route",
+      source_group: route.source_group || "",
+      source_index: route.source_index ?? sourceIndexFromText(route.label, route.source_url),
+      source_url: route.source_url || "",
+      href: route.source_url || "",
+      route_pattern: route.route_pattern || "",
+      current_marker: Boolean(route.current_marker),
+      selector: route.selector || "",
+      xpath: route.xpath || "",
+      frame_path: route.frame_path || "root",
+      action: "navigate",
+      frontier_source: "event_server_route",
+      expected_source_count: route.expected_source_count || sourceCountFromText(route.label),
+      quality: sourceQualityFromText(route.label),
+    });
+  }
+
+  for (const control of serverControls || []) {
+    const label = clean(control.text || control.href || "server control", 140);
+    const href = control.href || "";
+    const sameEventRoute = href ? sameEventServerRoute(href, currentUrl) : null;
+    const sourceIndex = sameEventRoute?.source_index ?? sourceIndexFromText(label, control.data?.server, control.data?.source, href);
+    const stateHaystack = `${control.state || ""} ${label} ${control.selector || ""}`;
+    rows.push({
+      label,
+      source_group: sameEventRoute?.provider || sourceGroupFromText(label, control.data),
+      source_index: sourceIndex,
+      source_url: href,
+      href,
+      route_pattern: sameEventRoute?.route_pattern || "",
+      current_marker: Boolean(control.active || control.checked || sameEventRoute?.current_marker || /\b(active|selected|current|playing|checked)\b/i.test(stateHaystack)),
+      selector: control.selector || "",
+      xpath: control.xpath || "",
+      frame_path: control.frame_path || "root",
+      x: Math.round(control.x || 0),
+      y: Math.round(control.y || 0),
+      action: href ? "navigate_or_click" : "interact",
+      frontier_source: control.source || (control.frame_path && control.frame_path !== "root" ? "frame_control" : "root_control"),
+      expected_source_count: sourceCountFromText(label),
+      quality: sourceQualityFromText(label),
+      data: control.data || {},
+    });
+  }
+
+  return dedupeBy(
+    rows
+      .filter((entry) => entry.label || entry.href || entry.selector || entry.xpath)
+      .sort((a, b) => {
+        if (a.current_marker !== b.current_marker) return a.current_marker ? -1 : 1;
+        if (a.frontier_source !== b.frontier_source) {
+          const sourceRank = { event_server_route: 3, frame_button: 2, frame_link: 2, root: 1, root_control: 1 };
+          return (sourceRank[b.frontier_source] || 0) - (sourceRank[a.frontier_source] || 0);
+        }
+        if ((a.source_group || "") !== (b.source_group || "")) {
+          return String(a.source_group || "").localeCompare(String(b.source_group || ""));
+        }
+        return Number(a.source_index || 0) - Number(b.source_index || 0);
+      }),
+    (entry) => `${entry.frame_path}|${entry.href}|${entry.selector}|${entry.xpath}|${entry.label}`,
+  ).slice(0, limit).map(compactServerFrontierEntry);
+}
+
 function buildCollapsedSectionSummary(data, { limit = 10, sampleLimit = 5 } = {}) {
   return dedupeBy(
     (data.collapsed_sections || []).map((section) => ({
@@ -1002,6 +1345,42 @@ function buildPopupSummary(data) {
     close_selector: popup.close_selector || null,
     close_xpath: popup.close_xpath || null,
   }));
+}
+
+function activationReason(entry) {
+  const haystack = `${entry.kind || ""} ${entry.text || ""} ${entry.selector || ""} ${entry.xpath || ""}`.toLowerCase();
+  if (entry.kind === "video") return "visible video element";
+  if (/play|watch|start|resume|unmute|go live/.test(haystack)) return "explicit play-like control";
+  if (/player|poster|overlay|control|video-js|jwplayer|plyr/.test(haystack)) return "player surface or overlay";
+  if (entry.href) return "player-like link target";
+  return "candidate from player/media region";
+}
+
+function buildActivationCandidates(targets, { limit = 16 } = {}) {
+  return pickTopActionCandidates(targets, "high")
+    .slice(0, limit)
+    .map((entry) => ({
+      ...entry,
+      activation_reason: activationReason(entry),
+      requires_agent_choice: true,
+    }));
+}
+
+function buildBlockerCandidates(popups, { limit = 10 } = {}) {
+  return (popups || [])
+    .slice(0, limit)
+    .map((popup, index) => ({
+      kind: "popup_or_overlay",
+      text: popup.text || "",
+      selector: popup.selector || "",
+      xpath: popup.xpath || "",
+      close_selector: popup.close_selector || "",
+      close_xpath: popup.close_xpath || "",
+      frame_path: "root",
+      blocker_reason: "visible popup/modal/overlay candidate",
+      requires_agent_choice: true,
+      index,
+    }));
 }
 
 function classificationHints(linkGroups, playerEvidence, data) {
@@ -1160,7 +1539,7 @@ export function summarizeClassificationInspect(data, options = {}) {
       title: data.title,
       screenshot: data.screenshot_url ? "available" : "missing",
     },
-    screenshot_url: data.screenshot_url,
+    screenshot_url: compactScreenshotRef(data.screenshot_url),
     classification_hints: classificationHints(linkGroups, playerEvidence, data),
     link_groups: linkGroups,
     action_groups: actionGroups,
@@ -1248,7 +1627,7 @@ export function summarizeLandingInspect(data, options = {}) {
       title: data.title,
       screenshot: data.screenshot_url ? "available" : "missing",
     },
-    screenshot_url: data.screenshot_url,
+    screenshot_url: compactScreenshotRef(data.screenshot_url),
     grouped_sections: {
       page: {
         url: data.url,
@@ -1263,7 +1642,7 @@ export function summarizeLandingInspect(data, options = {}) {
     candidate_ledger: candidateLedger,
     candidate_groups: candidateGroups,
     top_match_candidates: pickTopLinkCandidates(
-      links.filter((entry) => WATCH_PATTERN.test(`${entry.text} ${entry.nearby_text} ${entry.url}`)),
+      landingCandidateFrontier(links),
       "high",
     ),
     iframe_overview: {
@@ -1305,6 +1684,7 @@ export function summarizeLandingInspect(data, options = {}) {
       groupDetailCollections: [
         (result) => (result.iframe_overview.iframe_groups || []).map((group) => group.sample_buttons || []),
         (result) => (result.iframe_overview.iframe_groups || []).map((group) => group.sample_links || []),
+        (result) => (result.iframe_overview.iframe_groups || []).map((group) => group.sample_videos || []),
       ],
       miscCollections: [
         (result) => result.reveal_actions,
@@ -1328,9 +1708,9 @@ export function summarizeHostingInspect(data, options = {}) {
   const budgetTarget = options.budgetTargetBytes || DEFAULT_BUDGETS.hosting;
   const rawCounts = buildRawCounts(data);
   const actions = collectActions(data);
-  const serverControls = actions.filter((entry) =>
-    SERVER_PATTERN.test(`${entry.text} ${entry.selector} ${entry.xpath} ${entry.href} ${entry.data?.server || ""} ${entry.data?.source || ""}`),
-  );
+  const frameActions = collectFrameActions(data);
+  const allActions = [...actions, ...frameActions];
+  const serverControls = allActions.filter((entry) => isServerSourceAction(entry));
   const playbackTargets = dedupeBy(
     [
       ...(data.videos || []).map((video) => ({
@@ -1343,13 +1723,19 @@ export function summarizeHostingInspect(data, options = {}) {
         frame_path: "root",
         href: video.src || "",
       })),
-      ...actions.filter((entry) => PLAY_PATTERN.test(`${entry.text} ${entry.selector} ${entry.xpath}`)),
+      ...collectFrameVideoTargets(data),
+      ...allActions.filter((entry) => PLAY_PATTERN.test(`${entry.text} ${entry.selector} ${entry.xpath}`)),
     ],
     (entry) => `${entry.frame_path}|${entry.selector}|${entry.xpath}|${entry.text}`,
   );
   const playerEvidence = buildPlayerEvidence(data);
   const playerHandoffCandidates = buildPlayerHandoffCandidates(data);
   const eventServerRoutes = buildEventServerRoutes(data, serverControls);
+  const serverFrontier = buildServerFrontier({
+    serverControls,
+    eventServerRoutes,
+    currentUrl: data.url || "",
+  });
 
   const payload = {
     context_type: "hosting",
@@ -1358,13 +1744,16 @@ export function summarizeHostingInspect(data, options = {}) {
       title: data.title,
       screenshot: data.screenshot_url ? "available" : "missing",
     },
-    screenshot_url: data.screenshot_url,
+    screenshot_url: compactScreenshotRef(data.screenshot_url),
     control_groups: buildActionGroups(serverControls, "hosting"),
     playback_groups: buildActionGroups(playbackTargets, "hosting"),
     iframe_groups: buildIframeGroups(data, "hosting"),
     player_evidence: playerEvidence,
     player_handoff_candidates: playerHandoffCandidates,
     event_server_routes: eventServerRoutes,
+    server_frontier: serverFrontier,
+    activation_candidates: buildActivationCandidates(playbackTargets),
+    blocker_candidates: buildBlockerCandidates(buildPopupSummary(data)),
     top_server_controls: pickTopActionCandidates(serverControls, "high"),
     top_playback_targets: pickTopActionCandidates(playbackTargets, "high"),
     popups: buildPopupSummary(data),
@@ -1375,7 +1764,17 @@ export function summarizeHostingInspect(data, options = {}) {
   return fitPayloadToBudget(payload, {
     budgetTarget,
     rawCounts,
-    reducers: commonReducers({
+    reducers: [
+      {
+        name: "trim-event-routes-after-frontier",
+        apply(payload) {
+          if (!Array.isArray(payload.server_frontier) || payload.server_frontier.length <= 1) {
+            return false;
+          }
+          return reduceArray(payload.event_server_routes, 4);
+        },
+      },
+      ...commonReducers({
       groupCollections: (result) => [
         result.control_groups,
         result.playback_groups,
@@ -1384,6 +1783,9 @@ export function summarizeHostingInspect(data, options = {}) {
       primaryCandidateCollections: [
         (result) => result.top_server_controls,
         (result) => result.top_playback_targets,
+        (result) => result.server_frontier,
+        (result) => result.activation_candidates,
+        (result) => result.blocker_candidates,
       ],
       secondaryCandidateCollections: [],
       frameCollections: [
@@ -1394,13 +1796,15 @@ export function summarizeHostingInspect(data, options = {}) {
       groupDetailCollections: [
         (result) => (result.iframe_groups || []).map((group) => group.sample_buttons || []),
         (result) => (result.iframe_groups || []).map((group) => group.sample_links || []),
+        (result) => (result.iframe_groups || []).map((group) => group.sample_videos || []),
       ],
       miscCollections: [
         (result) => result.popups,
         (result) => result.player_handoff_candidates,
         (result) => result.event_server_routes,
       ],
-    }),
+      }),
+    ],
   });
 }
 
@@ -1408,9 +1812,7 @@ export function summarizeEmbeddedInspect(data, options = {}) {
   const budgetTarget = options.budgetTargetBytes || DEFAULT_BUDGETS.embedded;
   const rawCounts = buildRawCounts(data);
   const actions = collectActions(data);
-  const sourceControls = actions.filter((entry) =>
-    SERVER_PATTERN.test(`${entry.text} ${entry.selector} ${entry.xpath} ${entry.href} ${entry.data?.server || ""} ${entry.data?.source || ""} ${entry.data?.embed || ""}`),
-  );
+  const sourceControls = actions.filter((entry) => isServerSourceAction(entry));
   const playerTargets = dedupeBy(
     [
       ...(data.videos || []).map((video) => ({
@@ -1437,7 +1839,7 @@ export function summarizeEmbeddedInspect(data, options = {}) {
       title: data.title,
       screenshot: data.screenshot_url ? "available" : "missing",
     },
-    screenshot_url: data.screenshot_url,
+    screenshot_url: compactScreenshotRef(data.screenshot_url),
     control_groups: buildActionGroups(sourceControls, "embedded"),
     player_groups: buildActionGroups(playerTargets, "embedded"),
     frame_focus_groups: buildIframeGroups(data, "embedded"),
@@ -1445,6 +1847,8 @@ export function summarizeEmbeddedInspect(data, options = {}) {
     player_handoff_candidates: playerHandoffCandidates,
     top_source_controls: pickTopActionCandidates(sourceControls, "high"),
     top_player_targets: pickTopActionCandidates(playerTargets, "high"),
+    activation_candidates: buildActivationCandidates(playerTargets),
+    blocker_candidates: buildBlockerCandidates(buildPopupSummary(data)),
     popups: buildPopupSummary(data),
     lazy_load_warmup: data.lazy_load_warmup,
     stats: {},
@@ -1462,6 +1866,8 @@ export function summarizeEmbeddedInspect(data, options = {}) {
       primaryCandidateCollections: [
         (result) => result.top_source_controls,
         (result) => result.top_player_targets,
+        (result) => result.activation_candidates,
+        (result) => result.blocker_candidates,
       ],
       secondaryCandidateCollections: [],
       frameCollections: [
@@ -1472,6 +1878,7 @@ export function summarizeEmbeddedInspect(data, options = {}) {
       groupDetailCollections: [
         (result) => (result.frame_focus_groups || []).map((group) => group.sample_buttons || []),
         (result) => (result.frame_focus_groups || []).map((group) => group.sample_links || []),
+        (result) => (result.frame_focus_groups || []).map((group) => group.sample_videos || []),
       ],
       miscCollections: [
         (result) => result.popups,

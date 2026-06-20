@@ -71,7 +71,7 @@ Use `interact` aggressively but precisely when a visually repeated row/card has 
 
 Follow these steps in order unless a blocker or site-down state prevents progress:
 
-1. Section inventory: from screenshot plus `inspect_landing`, list each meaningful body section, table, grid, carousel, tab panel, schedule block, channel group, and visible pagination/load-more area. Ignore header/footer until body sections are exhausted.
+1. Section inventory: from screenshot plus `inspect_landing`, list each meaningful body section, table, grid, carousel, tab panel, schedule block, channel group, and visible pagination/load-more area. Ignore header/footer until all body sections and body continuation controls are exhausted.
 2. Section pass: work section by section. For each section, identify whether it is a row list, grid, table, card group, channel directory, inline server/source panel, or sub-listing pivot.
 3. Pattern ledger: for every section, build pattern buckets from visible row/card text, href family, selector/xpath family, icon/logo cues, time/status labels, score/countdown/badge signals, and repeated geometry. Keep the full visible candidate set for each bucket, not just the first item.
 4. Representative verification: verify one representative per distinct bucket. Use `navigate` for real hrefs, `interact` for JavaScript/no-href/disclosure rows, and scoped `get_element_detail` when the broad inspect missed visible row contents.
@@ -79,6 +79,7 @@ Follow these steps in order unless a blocker or site-down state prevents progres
 6. Inline server/source pass: if a row/card expands and exposes servers or sources on the landing page, record that expanded state as the hosting evidence and continue checking sibling rows with the same expandable structure.
 7. Visible count reconciliation: if the page visibly says a count such as `Live Matches (36)`, `36 live streams`, `live channels: 72`, or any language-equivalent live total, treat that number as an extraction target for that section. If there is no text count but the screenshot from `navigate`, `inspect_landing`, or a scrolled state visibly shows N live cards/badges, count them and use N as a lower-bound extraction target. Keep collecting live candidates through scroll, load-more, pagination, tabs, or scoped section reads until `hosting_pages` reaches the visible live count, the section is exhausted, or you record a concrete blocker in `reasoning_log`.
 8. Pagination and load-more pass: follow pagination, infinite scroll, load-more, or lazy-grid continuation only after current visible sections are inventoried. Use it to collect more candidates for the same proven live/watch/channel pattern, not to wander into unrelated navigation.
+   For numbered query pagination such as `/live-tv?page=2`, use `pagination.page_urls`, `pagination.next_url`, or the remembered `?page={n}` pattern as crawl frontier only. Never output paginator URLs themselves as `hosting_pages`; output the channel/event/card URLs found on each paginated page.
 9. Final completeness check: before final JSON, compare `hosting_pages` against the screenshot-visible rows/grids/sections, the inspect candidate ledgers, and any visible live-count header. If visible live events, upcoming events, or channel pages are missing, either extract them, reject them with evidence, or set `extraction_summary.completion_gap=true` with the expected count, returned count, and blocker/next continuation step.
 
 ## Frontier Policy
@@ -102,7 +103,7 @@ Prioritize:
 5. Visually repeated rows/cards with JavaScript expansion or disclosure controls that can reveal servers, sources, channels, player shells, or watch links.
 6. Body controls that can reveal watch links, channel lists, server/source areas, or a player shell.
 7. Pagination, infinite scroll, load-more, filters, and tabs that extend a promising body pattern, especially when a visible live count is not yet satisfied.
-8. Header navigation only when the body lacks candidates or the header leads back to body watch/channel content.
+8. Header navigation only after body sections, body tabs/filters, body load-more/pagination, and scoped body reads are exhausted, or when the header clearly leads back to body watch/channel content.
 
 Demote legal/contact/auth/footer links, social/app exits, ad or fake-download destinations, article-only pages, replay/VOD/archive/final-score rows, decorative video backgrounds, chat widgets, and already-checked sibling routes.
 
@@ -111,6 +112,7 @@ Focus the downstream handoff on live events, upcoming scheduled events, and live
 ## Evidence Rules
 
 - Region priority is body first. Header/footer candidates must not outrank body candidates with similar evidence.
+- Header/footer navigation is a last-resort route, not a starting point. Do not spend tool calls on header/footer links while any body live/watch/channel row, card, table, section, tab, filter, pagination, load-more, or reveal control remains unverified.
 - Domain discipline: stay anchored to `mainUrl`'s normalized domain/site. External URLs require explicit same-content watch/player evidence before navigation or handoff.
 - Multilingual pages are normal. Infer intent from layout, logos, icons, href families, alt/title/aria text, directionality, and visual controls before relying on English words.
 - Channel names on landing pages are hints only. Set `channel` only when visible page/player/logo/text evidence supports it; hosting/embedded agents must verify or override it.
@@ -118,6 +120,8 @@ Focus the downstream handoff on live events, upcoming scheduled events, and live
 - Off-air live TV channels are valid `not_live` candidates when the section/card is clearly a channel or live-TV route. Keep `team1`, `team2`, and `score` empty for channels.
 - A decorative/autoplay background video is not player ownership. Look for real watch/play controls, player rectangles, iframes, source/server controls, or same-content redirects.
 - If a blocker, popup, modal, consent banner, Cloudflare-style verification, browser error, DNS error, 404/5xx page, or site-down state blocks evidence, record exact visual/tool evidence and try one focused recovery when a clear control exists.
+- If a click or tool result reports `opened_targets`, `blocked_popup_attempts`, `selected_target`, `target_decision`, or network `blocked_by_client`, treat it as popup/window/uBlock evidence. Keep a selected same-content player/hosting target only when URL, title, screenshot, layout, and live row context match; otherwise ignore/close the popup and continue the landing crawl.
+- Do not trust same hostname alone for new tabs/windows; ad, promo, download, app, social, and unrelated provider pages are drift even when they share a domain.
 - If a page looks like an unrelated homepage, news article, blog post, or off-target provider page, verify it lacks watch/list/player structure before rejecting it.
 
 ## Pattern Verification

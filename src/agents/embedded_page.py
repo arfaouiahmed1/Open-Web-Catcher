@@ -40,6 +40,9 @@ _AGENT_CONTRACT = """\
 - preserve source_group, source_index, source_url, route_pattern, and current_marker for every attempted source when visible or inferable
 - activate/play the default player and every switched source before harvest, capture the post-activation screenshot, then harvest that source
 - treat ad redirects, news/article detours, fake downloads, and unrelated provider pages as drift, then recover once
+- choose player activation targets from activation_candidates, top_player_targets, exact scoped evidence, or coordinates; bare play_media is only candidate discovery and is not an activation attempt
+- treat opened_targets, blocked_popup_attempts, target_decision, and blocked_by_client as popup/window/uBlock evidence; record popup_window_diagnostics per source/server
+- do not trust same hostname alone for a new tab/window; compare URL, title, screenshot/layout, assigned player, and media/frame signals before adopting it
 - remove popups/modals/overlays that cover the assigned player using inspect popup close selectors/xpaths or exact close controls before activation, screenshots, harvest, or failure
 - switch only same-player source/server controls; never navigate to other matches, channels, listings, articles, or homepages
 - if no playable stream is recovered or the full-page embedded URL is blocked, stop with the failure evidence and do not invent another downstream fallback
@@ -606,6 +609,11 @@ def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any
         or bool(server.get("switched")),
         "network_diagnostics": _normalize_diagnostics_list(server.get("network_diagnostics")),
         "iframe_diagnostics": _normalize_diagnostics_list(server.get("iframe_diagnostics")),
+        "popup_window_diagnostics": _normalize_diagnostics_list(
+            server.get("popup_window_diagnostics")
+            or server.get("popup_diagnostics")
+            or server.get("window_diagnostics")
+        ),
     }
 
 
@@ -841,6 +849,9 @@ def _build_server_results(servers: list[dict[str, Any]]) -> list[ServerResult]:
                 server_change_observed=bool(server.get("server_change_observed")),
                 network_diagnostics=_normalize_diagnostics_list(server.get("network_diagnostics")),
                 iframe_diagnostics=_normalize_diagnostics_list(server.get("iframe_diagnostics")),
+                popup_window_diagnostics=_normalize_diagnostics_list(
+                    server.get("popup_window_diagnostics")
+                ),
             )
         )
     return result

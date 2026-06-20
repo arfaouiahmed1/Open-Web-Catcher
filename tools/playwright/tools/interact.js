@@ -448,8 +448,13 @@ export async function interact({
     mode,
     navigated,
     popup_adopted: popupAdopted,
-    opener_url: popupAdopted ? page.url() : '',
+    opener_url: tabs.opener_url,
     new_tab_urls,
+    opened_targets: tabs.opened_targets,
+    blocked_popup_attempts: tabs.blocked_popup_attempts,
+    selected_target: tabs.selected_target,
+    target_decision: tabs.target_decision,
+    active_page_url: tabs.active_page_url,
     url: finalUrl,
     frame: popupAdopted
       ? { frame_path: 'root', frame_url: finalUrl }

@@ -1,9 +1,13 @@
 import crypto from 'node:crypto';
 
-import { connectBrowser, getPage } from './browser.js';
+import { connectBrowser, getPage, setActivePage } from './browser.js';
 import { screenshotFull, screenshotViewport } from './screenshot.js';
 import { uploadImage } from './upload.js';
-import { isBlankPopupUrl, selectPopupCandidate } from '../../shared/popup-selection.js';
+import {
+  classifyPopupCandidate,
+  isBlankPopupUrl,
+  selectPopupCandidate,
+} from '../../shared/popup-selection.js';
 
 function hashValue(value) {
   return crypto.createHash('sha1').update(String(value)).digest('hex');
@@ -783,13 +787,19 @@ export async function captureScreenshot(page, {
   }
 }
 
-export function makeObservedChange(before, after, newTabUrls = []) {
+export function makeObservedChange(before, after, newTabUrls = [], popupTelemetry = {}) {
   return {
     navigated: before.url !== after.url,
     url_changed: before.url !== after.url,
     dom_changed: before.dom_epoch !== after.dom_epoch,
     popup_opened: newTabUrls.length > 0,
     new_tab_urls: newTabUrls,
+    opened_targets: popupTelemetry.opened_targets || [],
+    blocked_popup_attempts: popupTelemetry.blocked_popup_attempts || [],
+    selected_target: popupTelemetry.selected_target || null,
+    target_decision: popupTelemetry.target_decision || (newTabUrls.length ? 'no_adoptable_popup' : 'no_popup'),
+    active_page_url: popupTelemetry.active_page_url || after.url,
+    opener_url: popupTelemetry.opener_url || before.url,
   };
 }
 
@@ -863,6 +873,75 @@ export async function withBrowserSession(browserWsEndpoint, run, pageOptions = {
   }
 }
 
+async function readBlockedPopupAttempts(page, startedAt = 0) {
+  if (!page || page.isClosed?.()) return [];
+  return page.evaluate((since) => {
+    const rows = Array.isArray(globalThis.__owc_popup_blocker_attempts__)
+      ? globalThis.__owc_popup_blocker_attempts__
+      : [];
+    return rows
+      .filter((row) => Number(row?.timestamp || 0) >= since)
+      .slice(-30)
+      .map((row, index) => ({
+        index,
+        url: String(row?.url || ''),
+        target: String(row?.target || ''),
+        features: String(row?.features || ''),
+        timestamp: Number(row?.timestamp || 0),
+        blocked: true,
+        reason: String(row?.reason || 'window_open_blocked'),
+      }));
+  }, startedAt).catch(() => []);
+}
+
+function popupTargetTelemetry(candidate, openerUrl, selected = null, closeUnadopted = true) {
+  const classification = classifyPopupCandidate(candidate, openerUrl);
+  const isSelected = Boolean(selected && candidate === selected);
+  const action = isSelected
+    ? 'adopted'
+    : (closeUnadopted ? 'closed' : 'ignored');
+  const finalDecision = isSelected || closeUnadopted
+    ? classification.target_decision
+    : 'left_open_unadopted';
+  return {
+    index: Number(candidate?.index || 0),
+    initial_url: candidate?.initial_url || candidate?.initialUrl || '',
+    final_url: candidate?.url || candidate?.final_url || candidate?.finalUrl || '',
+    url: candidate?.url || candidate?.final_url || candidate?.finalUrl || '',
+    title: candidate?.title || '',
+    opener_url: openerUrl,
+    classification: classification.classification,
+    same_origin: Boolean(classification.same_origin),
+    adoptable: Boolean(classification.adoptable),
+    selected: isSelected,
+    adopted: isSelected,
+    action,
+    target_decision: finalDecision,
+    decision_reason: classification.reason,
+    closed: !isSelected && closeUnadopted,
+  };
+}
+
+function blockedPopupTelemetry(attempt, openerUrl, index = 0) {
+  const classification = classifyPopupCandidate(attempt, openerUrl);
+  return {
+    index,
+    url: String(attempt?.url || ''),
+    target: String(attempt?.target || ''),
+    features: String(attempt?.features || ''),
+    timestamp: Number(attempt?.timestamp || 0),
+    blocked: true,
+    reason: String(attempt?.reason || 'window_open_blocked'),
+    opener_url: openerUrl,
+    classification: classification.classification,
+    same_origin: Boolean(classification.same_origin),
+    adoptable: false,
+    action: 'blocked',
+    target_decision: classification.target_decision,
+    decision_reason: classification.reason,
+  };
+}
+
 export function trackNewTabs(browser, {
   openerPage = null,
   adopt = true,
@@ -872,6 +951,77 @@ export function trackNewTabs(browser, {
   const candidates = [];
   const pending = new Set();
   const openerUrl = openerPage?.url?.() || '';
+  const startedAt = Date.now();
+  const tracker = {
+    new_tab_urls: newTabUrls,
+    opened_targets: [],
+    blocked_popup_attempts: [],
+    selected_target: null,
+    target_decision: 'no_popup',
+    active_page_url: openerUrl,
+    opener_url: openerUrl,
+    async settle({ timeoutMs = 3000 } = {}) {
+      const tasks = [...pending];
+      if (tasks.length > 0) {
+        await Promise.race([
+          Promise.allSettled(tasks),
+          new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+        ]);
+      }
+
+      for (const candidate of candidates) {
+        if (!candidate.page?.isClosed?.()) {
+          candidate.url = candidate.page.url();
+          candidate.final_url = candidate.url;
+          candidate.title = await candidate.page.title().catch(() => '');
+          newTabUrls[candidate.index] = candidate.url;
+        }
+      }
+
+      const selected = adopt
+        ? selectPopupCandidate(candidates, openerUrl)
+        : null;
+
+      tracker.opened_targets.splice(
+        0,
+        tracker.opened_targets.length,
+        ...candidates.map((candidate) =>
+          popupTargetTelemetry(candidate, openerUrl, selected, closeUnadopted)),
+      );
+
+      const blockedAttempts = await readBlockedPopupAttempts(openerPage, startedAt);
+      tracker.blocked_popup_attempts.splice(
+        0,
+        tracker.blocked_popup_attempts.length,
+        ...blockedAttempts.map((attempt, index) =>
+          blockedPopupTelemetry(attempt, openerUrl, index)),
+      );
+
+      if (closeUnadopted) {
+        await Promise.allSettled(
+          candidates
+            .filter((candidate) => candidate !== selected)
+            .map((candidate) => candidate.page?.close?.()),
+        );
+      }
+
+      const resultPage = selected?.page && !selected.page.isClosed()
+        ? selected.page
+        : openerPage;
+      tracker.selected_target = selected
+        ? popupTargetTelemetry(selected, openerUrl, selected, closeUnadopted)
+        : null;
+      tracker.target_decision = tracker.selected_target
+        ? tracker.selected_target.target_decision
+        : (tracker.blocked_popup_attempts.length
+          ? 'blocked_popup_attempts_only'
+          : (tracker.opened_targets.length ? 'no_adoptable_popup' : 'no_popup'));
+      tracker.active_page_url = resultPage?.url?.() || openerUrl;
+      setActivePage(browser, resultPage || openerPage);
+      return resultPage || openerPage;
+    },
+    dispose: () => browser.off('targetcreated', listener),
+  };
 
   const recordTarget = async (target) => {
     if (target.type() !== 'page') return;
@@ -879,10 +1029,15 @@ export function trackNewTabs(browser, {
       const popup = await target.page();
       if (!popup || popup === openerPage) return;
 
+      const initialUrl = popup.url();
       const candidate = {
         index: candidates.length,
         page: popup,
-        url: popup.url(),
+        initial_url: initialUrl,
+        final_url: initialUrl,
+        url: initialUrl,
+        title: '',
+        opener_url: openerUrl,
       };
       candidates.push(candidate);
       newTabUrls.push(candidate.url);
@@ -895,6 +1050,8 @@ export function trackNewTabs(browser, {
       }
 
       candidate.url = popup.url();
+      candidate.final_url = candidate.url;
+      candidate.title = await popup.title().catch(() => '');
       newTabUrls[candidate.index] = candidate.url;
     } catch {
       // ignore
@@ -908,42 +1065,7 @@ export function trackNewTabs(browser, {
   };
 
   browser.on('targetcreated', listener);
-  return {
-    new_tab_urls: newTabUrls,
-    async settle({ timeoutMs = 3000 } = {}) {
-      const tasks = [...pending];
-      if (tasks.length > 0) {
-        await Promise.race([
-          Promise.allSettled(tasks),
-          new Promise((resolve) => setTimeout(resolve, timeoutMs)),
-        ]);
-      }
-
-      for (const candidate of candidates) {
-        if (!candidate.page?.isClosed?.()) {
-          candidate.url = candidate.page.url();
-          newTabUrls[candidate.index] = candidate.url;
-        }
-      }
-
-      const selected = adopt
-        ? selectPopupCandidate(candidates, openerUrl)
-        : null;
-
-      if (closeUnadopted) {
-        await Promise.allSettled(
-          candidates
-            .filter((candidate) => candidate !== selected)
-            .map((candidate) => candidate.page?.close?.()),
-        );
-      }
-
-      return selected?.page && !selected.page.isClosed()
-        ? selected.page
-        : openerPage;
-    },
-    dispose: () => browser.off('targetcreated', listener),
-  };
+  return tracker;
 }
 
 export async function readElementDetail(page, params = {}) {

@@ -30,6 +30,8 @@ _AGENT_CONTRACT = """\
 - do not attempt downstream extraction in this step
 - when a popup/modal/overlay dominates the screenshot, remove it with the safest same-page continue/close/dismiss control before classifying the underlying page
 - avoid promotional/external popup actions such as Join Discord, Bookmark, Download, Telegram, app-store, or ad buttons unless they are the only verified same-page clearance control
+- treat opened_targets, blocked_popup_attempts, target_decision, and blocked_by_client as popup/window/uBlock evidence; do not classify ad/off-target popups as the underlying page
+- do not trust same hostname alone for a new tab/window; compare URL, title, screenshot/layout, and media/frame signals
 """
 
 
