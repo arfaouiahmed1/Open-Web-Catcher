@@ -1,6 +1,6 @@
 \begin{figure}[H]
 \centering
-\resizebox{0.98\textwidth}{!}{%
+\resizebox{1.0\textwidth}{!}{%
 \begin{tikzpicture}[
   line cap=round,
   line join=round,
@@ -72,8 +72,10 @@
 \draw[arr] (actions.east) to[out=0,in=180] (browser.west);
 \draw[arr] (media.east) to[out=0,in=180] (output.west);
 \draw[soft] (browser.south) to[out=-90,in=90] node[lab, right=1pt] {captured state} (output.north);
-\draw[soft] (policy.south) to[out=-90,in=-145]
-  node[lab, pos=0.52, below=1pt] {session guardrails} (browser.south west);
+\coordinate (guardA) at (4.15,0.05);
+\coordinate (guardB) at (12.85,0.05);
+\draw[soft] (policy.south) -- (guardA) --
+  node[lab, pos=0.52, below=1pt] {session guardrails} (guardB) -- (output.south);
 
 \end{tikzpicture}
 }

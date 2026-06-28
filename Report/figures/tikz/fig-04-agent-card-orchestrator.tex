@@ -1,22 +1,22 @@
 \begin{figure}[H]
 \centering
-\resizebox{0.96\textwidth}{!}{%
+\resizebox{1.0\textwidth}{!}{%
 \begin{tikzpicture}[
   line cap=round,
   line join=round,
   panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
-    line width=0.55pt, inner sep=9pt},
+    line width=0.55pt, inner sep=11pt},
   block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
-    text width=3.70cm, minimum height=0.96cm, inner xsep=5pt,
-    inner ysep=4pt, text=black},
+    text width=3.48cm, minimum height=1.02cm, inner xsep=5pt,
+    inner ysep=5pt, text=black},
   input/.style={block, draw=accent!75, fill=blue!6},
   agent/.style={block, draw=orange!80!black, fill=orange!10,
-    text width=3.85cm, minimum height=1.08cm},
+    text width=3.62cm, minimum height=1.12cm},
   output/.style={block, draw=green!55!black, fill=green!8},
   detail/.style={block, draw=purple!65!black, fill=purple!7,
-    text width=11.70cm, minimum height=0.88cm},
+    text width=11.20cm, minimum height=0.96cm},
   guard/.style={block, draw=gray!62, fill=gray!9,
-    text width=11.70cm, minimum height=0.84cm},
+    text width=11.20cm, minimum height=0.92cm},
   paneltitle/.style={font=\scriptsize\bfseries, text=black!68,
     fill=white, inner sep=2pt},
   badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
@@ -29,11 +29,11 @@
     text=black!72}
 ]
 
-\node[input] (input) at (0,1.35) {Input\\{\normalfont\scriptsize seed URL, settings, observer, memory hints}};
-\node[agent] (agent) at (5.10,1.35) {OrchestratorAgent\\{\normalfont\scriptsize LangGraph route owner}};
-\node[output] (output) at (10.20,1.35) {Output\\{\normalfont\scriptsize PipelineResult, trace, providers, emails}};
-\node[detail] (detail) at (5.10,-0.45) {Details\\{\normalfont\scriptsize classify, build handoffs, own queues, aggregate streams, run provider/email nodes}};
-\node[guard] (guard) at (5.10,-1.72) {Guardrails\\{\normalfont\scriptsize does not browse directly; deterministic graph edges decide the next specialist}};
+\node[input] (input) at (0,1.62) {Input\\{\normalfont\scriptsize seed URL, settings, observer, memory hints}};
+\node[agent] (agent) at (5.10,1.62) {OrchestratorAgent\\{\normalfont\scriptsize LangGraph route owner}};
+\node[output] (output) at (10.20,1.62) {Output\\{\normalfont\scriptsize PipelineResult, trace, providers, emails}};
+\node[detail] (detail) at (5.10,-0.40) {Details\\{\normalfont\scriptsize classify, build handoffs, own queues, aggregate streams, run provider/email nodes}};
+\node[guard] (guard) at (5.10,-1.86) {Guardrails\\{\normalfont\scriptsize does not browse directly; deterministic graph edges decide the next specialist}};
 
 \begin{scope}[on background layer]
   \node[panel, fit=(input) (agent) (output) (detail) (guard)] (cardpanel) {};

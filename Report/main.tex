@@ -6,14 +6,35 @@
   \usepackage[utf8]{inputenc}
   \usepackage{newtxtext}
   \usepackage{newtxmath}
+  \newcommand{\acktitlefont}{\rmfamily}
+  \newcommand{\ackbodyfont}{\rmfamily}
+  \newcommand{\ackscriptfont}{\rmfamily}
 \else
   \usepackage{fontspec}
   \setmainfont{Times New Roman}
+  \IfFontExistsTF{EB Garamond}
+    {\newfontfamily\acktitlefont[Ligatures=TeX]{EB Garamond}}
+    {\IfFontExistsTF{TeX Gyre Pagella}
+      {\newfontfamily\acktitlefont[Ligatures=TeX]{TeX Gyre Pagella}}
+      {\newfontfamily\acktitlefont[Ligatures=TeX]{Georgia}}}
+  \IfFontExistsTF{EB Garamond}
+    {\newfontfamily\ackbodyfont[Ligatures=TeX]{EB Garamond}}
+    {\IfFontExistsTF{TeX Gyre Pagella}
+      {\newfontfamily\ackbodyfont[Ligatures=TeX]{TeX Gyre Pagella}}
+      {\newfontfamily\ackbodyfont[Ligatures=TeX]{Georgia}}}
+  \IfFontExistsTF{EB Garamond}
+    {\newfontfamily\ackscriptfont[Ligatures=TeX]{EB Garamond}}
+    {\IfFontExistsTF{TeX Gyre Pagella}
+      {\newfontfamily\ackscriptfont[Ligatures=TeX]{TeX Gyre Pagella}}
+      {\newfontfamily\ackscriptfont[Ligatures=TeX]{Georgia}}}
+  \usepackage{polyglossia}
+  \setdefaultlanguage{english}
 \fi
 \usepackage[a4paper,margin=2.5cm]{geometry}
 \usepackage{microtype}
 \usepackage{setspace}
 \usepackage{graphicx}
+\usepackage{pdfpages}
 \usepackage{pdflscape}
 \graphicspath{{figures/}}
 \usepackage{booktabs}
@@ -45,6 +66,7 @@
 \usepackage{tcolorbox}
 \tcbuselibrary{skins,breakable}
 \usepackage{pifont}
+\usepackage{lettrine}
 \newcommand{\sstar}{\ding{72}}
 \newcommand{\hstar}{\ding{73}}
 
@@ -104,6 +126,63 @@
 \definecolor{codeframe}{RGB}{220,220,220}
 \definecolor{codetext}{RGB}{40,40,40}
 \definecolor{accent}{RGB}{25,78,121}
+
+\newtcolorbox{chapterfocusbox}{
+  enhanced,
+  breakable,
+  colback=blue!3,
+  colframe=accent!75,
+  boxrule=0.6pt,
+  arc=2pt,
+  left=6pt,
+  right=6pt,
+  top=6pt,
+  bottom=6pt,
+  before skip=0.2em,
+  after skip=1.1em,
+  title=\textbf{Chapter focus}
+}
+\newcommand{\chapterfocus}[1]{%
+  \Needspace{9\baselineskip}%
+  \begin{chapterfocusbox}#1\end{chapterfocusbox}%
+}
+
+\newtcolorbox{frontmatterbox}[2][]{
+  enhanced,
+  breakable,
+  colback=blue!2,
+  colframe=accent!70,
+  boxrule=0.55pt,
+  arc=2pt,
+  left=6pt,
+  right=6pt,
+  top=5pt,
+  bottom=5pt,
+  before skip=0.55em,
+  after skip=0.55em,
+  fonttitle=\bfseries,
+  title={#2},
+  #1
+}
+
+\newenvironment{abstractresumeblock}[1]{%
+  \par\vspace{0.72em}%
+  \begin{center}%
+  {\bfseries\fontsize{13.0}{16.0}\selectfont #1\par}%
+  \vspace{0.28em}%
+  \begin{minipage}{0.80\textwidth}%
+  \small\setlength{\parindent}{0pt}\setlength{\parskip}{0.34em}%
+  \setstretch{1.08}%
+}{%
+  \end{minipage}%
+  \end{center}\par\vspace{0.28em}%
+}
+
+\newcommand{\acksection}[1]{%
+  \vspace{0.44cm}%
+  {\acktitlefont\scshape\fontsize{15.8}{19.0}\selectfont #1\par}%
+  \vspace{0.07cm}%
+}
 
 \newcommand{\owcFigureFrame}[1]{%
   \begingroup
@@ -183,9 +262,9 @@
   {}
 \titlespacing*{\subsubsection}{0.2cm}{0.9em plus 0.1em minus 0.05em}{0.42em}
 \preto{\chapter}{\Needspace{10\baselineskip}}
-\preto{\section}{\Needspace{4\baselineskip}}
-\preto{\subsection}{\Needspace{3\baselineskip}}
-\preto{\subsubsection}{\Needspace{3\baselineskip}}
+\preto{\section}{\Needspace{6\baselineskip}}
+\preto{\subsection}{\Needspace{6\baselineskip}}
+\preto{\subsubsection}{\Needspace{4\baselineskip}}
 
 \pagestyle{fancy}
 \fancyhf{}
@@ -219,6 +298,10 @@
 
 \hypersetup{pageanchor=false}
 
+\includepdf[pages=3,pagecommand={},fitpaper=true]{assets/esprit-report-cover.pdf}
+\includepdf[pages=1,pagecommand={},fitpaper=true]{assets/esprit-report-cover.pdf}
+
+\iffalse
 % =====================================================================
 %  PAGE 1 -- ESPRIT GRADUATION PROJECT COVER
 % =====================================================================
@@ -478,38 +561,129 @@ Ce formulaire doit \^etre rempli, sign\'e et \underline{\textbf{scann\'e}} / Thi
 Ce formulaire doit \^etre introduit apr\`es la page de garde / This form must be inserted after the cover page.
 }
 \newpage
+\fi
 
 \hypersetup{pageanchor=true}
 
 \pagenumbering{arabic}
 
-\chapter*{Abstract}
+\clearpage
+\phantomsection
 \addcontentsline{toc}{chapter}{Abstract}
-This report presents the design, development, and evaluation of Open Web Catcher (OWC), an agentic evidence-collection platform for illegal streaming websites. The work was carried out during a PFE internship at Soft Stars in the beIN SPORTS rights-protection context. The objective was to support evidence review by visiting target websites, classifying their pages, extracting hosting and stream evidence, detecting channel signals when visible, and preserving auditable outputs such as screenshots, traces, structured results, and provider metadata.
-
-The internship produced two related artifacts. The first was an exploratory n8n workflow used to validate browser-agent behavior on real dynamic targets and to provide a practical backup path for dynamic evidence cases. The second was the complete OWC engineering platform composed of a FastAPI backend, Next.js operator console, PostgreSQL persistence, MCP browser tooling, Puppeteer/Chrome runtime, specialist agents, model telemetry, and review outputs. The internal name Open Web Catcher was used because the platform focuses on catching evidence that is visible only through open-web browser interaction rather than through a static HTML response.
-
-The proposed architecture organizes evidence collection around specialized reasoning agents, browser automation tools, profile-scoped sessions, fingerprint and proxy controls, structured outputs, trace storage, screenshot capture, and evaluation metrics. The database described in this report is limited to observability, evaluation, traces, metrics, screenshots, errors, tool calls, and structured outputs; it is not the enterprise production database of the client organization.
-
+\thispagestyle{plain}
+\vspace*{0.18cm}
+\begin{abstractresumeblock}{Abstract}
+This report presents Open Web Catcher (OWC), an evidence-collection platform designed during a PFE internship at Soft Stars in a beIN SPORTS rights-protection context. The project addresses a practical problem: illegal streaming evidence often appears only after a browser renders the page, handles popups, traverses iframes, activates players, and observes media requests. The work produced two connected artifacts: an n8n landing-agent workflow used as an operational backup for dynamic landing pages, and the broader OWC platform built with FastAPI, Next.js, PostgreSQL, MCP browser tooling, Puppeteer/Chrome, specialist agents, traces, screenshots, provider enrichment, and telemetry. The evaluation focuses on reviewability rather than automatic enforcement: the system must preserve enough evidence for a human reviewer to understand what happened and what remains uncertain.
+\par\smallskip
 \textbf{Keywords:} Open Web Catcher; multi-agent system; browser automation; illegal streaming; evidence collection; stream extraction; channel detection; observability.
+\end{abstractresumeblock}
 
-\chapter*{R\'esum\'e}
-\addcontentsline{toc}{chapter}{R\'esum\'e}
-Ce rapport pr\'esente la conception, le d\'eveloppement et l'\'evaluation d'Open Web Catcher (OWC), une plateforme agentique de collecte de preuves pour les sites de streaming ill\'egal. Le travail a \'et\'e r\'ealis\'e dans le cadre d'un projet de fin d'\'etudes chez Soft Stars, dans un contexte de protection des droits li\'e \`a beIN SPORTS\@. L'objectif \'etait d'am\'eliorer l'observation des pages suspectes, la classification des pages, l'extraction des liens d'h\'ebergement et des preuves de flux, ainsi que la conservation de traces exploitables pour une revue humaine.
-
-Le projet s'est appuy\'e sur deux r\'ealisations compl\'ementaires. La premi\`ere est un workflow n8n utilis\'e pour valider rapidement l'id\'ee d'un agent capable de naviguer sur des pages dynamiques et de servir de solution de secours pour les cas de preuve dynamique. La seconde est OWC, une plateforme compos\'ee d'un backend FastAPI, d'une console Next.js, d'une base PostgreSQL, d'outils MCP bas\'es sur Puppeteer et Chrome, d'agents sp\'ecialis\'es, de m\'etriques d'utilisation des mod\`eles et d'artefacts de revue. L'architecture met l'accent sur la tra\c{c}abilit\'e, les captures d'\'ecran, les traces d'ex\'ecution, la d\'etection de canaux visibles, l'enrichissement fournisseur et l'observabilit\'e.
-
+\vspace{0.28em}
+\begin{abstractresumeblock}{R\'esum\'e}
+Ce rapport pr\'esente Open Web Catcher (OWC), une plateforme de collecte de preuves con\c{c}ue pendant un stage PFE chez Soft Stars dans un contexte de protection des droits li\'e \`a beIN SPORTS\@. Le projet r\'epond \`a un probl\`eme concret: les preuves de streaming ill\'egal apparaissent souvent seulement apr\`es le rendu navigateur, la gestion des popups, l'inspection des iframes, l'activation du lecteur et l'observation des requ\^etes m\'edia. Le travail a produit deux r\'ealisations compl\'ementaires: un workflow n8n utilis\'e comme solution de secours pour les pages dynamiques, puis la plateforme OWC construite avec FastAPI, Next.js, PostgreSQL, des outils MCP, Puppeteer/Chrome, des agents sp\'ecialis\'es, des traces, des captures d'\'ecran, l'enrichissement fournisseur et la t\'el\'em\'etrie. L'\'evaluation met l'accent sur la revue humaine et la tra\c{c}abilit\'e des preuves.
+\par\smallskip
 \textbf{Mots cl\'es:} Open Web Catcher; syst\`eme multi-agent; automatisation navigateur; streaming ill\'egal; collecte de preuves; extraction de flux; d\'etection de canaux; observabilit\'e.
+\end{abstractresumeblock}
 
-\chapter*{Acknowledgements}
+\clearpage
+
+\phantomsection
+\addcontentsline{toc}{chapter}{Dedication}
+\thispagestyle{plain}
+\newgeometry{top=2.35cm,bottom=2.35cm,left=3.05cm,right=3.05cm}
+\begingroup
+\ackbodyfont
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.45em}
+
+\vspace*{0.35cm}
+\begin{center}
+  {\ackbodyfont\itshape\fontsize{17}{25}\selectfont To the people who carried me through the quiet parts of this journey\par}
+  \vspace{1.25cm}
+  {\acktitlefont\fontsize{48}{56}\selectfont Dedication\par}
+  \vspace{0.26cm}
+  {\color{black!32}\rule{0.22\textwidth}{0.45pt}}\par
+\end{center}
+
+\vfill
+
+\begin{flushright}
+{\ackbodyfont\fontsize{16.2}{25.5}\selectfont
+To my parents, for their love, patience, and constant support.\par
+To my family, for giving me strength when the work became heavy.\par
+To my friends, for the encouragement, the late conversations, and the reminders
+that I was not doing this alone.\par}
+\end{flushright}
+
+\vfill
+
+\begin{center}
+  {\ackbodyfont\itshape\fontsize{13.5}{20}\selectfont This work is dedicated to you.}
+\end{center}
+\endgroup
+\restoregeometry
+\clearpage
+
+\phantomsection
 \addcontentsline{toc}{chapter}{Acknowledgements}
-I would like to express my sincere gratitude to my academic supervisor, Naadine Maazoun, for her guidance, feedback, and support throughout this PFE internship. Her remarks helped me keep the report focused on the engineering contribution, the methodology, and the clarity expected from an academic submission.
+\thispagestyle{plain}
+\newgeometry{top=1.12cm,bottom=1.42cm,left=2.78cm,right=2.78cm}
+\vspace*{0.04cm}
+\begingroup
+\ackbodyfont
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.36em}
+\fontsize{11.9}{16.6}\selectfont
 
-I would also like to thank my corporate supervisor, Wael Hkiri, for his technical direction, availability, and trust during the project. The discussions around real operational constraints, static-collection limitations, browser tooling, deployment choices, and evidence review shaped the work described in this report.
+\begin{center}
+  {\acktitlefont\fontsize{50}{56}\selectfont Acknowledgements\par}
+  \vspace{0.10cm}
+  {\ackbodyfont\itshape\fontsize{15.4}{22}\selectfont with gratitude\par}
+  \vspace{0.32cm}
+  {\color{black!30}\rule{0.28\textwidth}{0.45pt}}\par
+\end{center}
 
-I am grateful to the Soft Stars team for the professional environment, the technical exchanges, and the opportunity to work on a concrete rights-protection problem connected to the beIN SPORTS context. Their feedback helped turn early experiments into a clearer platform design.
+\vspace{0.54cm}
 
-Finally, I thank my family and friends for their encouragement and patience during the internship and the preparation of this report.
+{\fontsize{14.4}{20.5}\selectfont
+\lettrine[lines=3,loversize=0.16,findent=0.18em,nindent=0pt]{T}{his}
+project was a technical internship, but it was also a demanding personal
+journey. I am grateful to everyone who helped me keep going when the work
+became heavy, uncertain, or difficult to balance.\par}
+
+\acksection{To my family}
+Thank you for the patience, confidence, and quiet support you gave me throughout
+this period. Your presence gave me the stability I needed to finish the project
+and prepare this report with care.
+
+\acksection{To my friends}
+Thank you for staying close during the hard moments. The conversations,
+encouragement, and simple reminders not to give up helped more than you may
+realize.
+
+\acksection{To my academic supervisor}
+I am sincerely grateful to Naadine Maazoun for her guidance, feedback, and
+attention to the academic quality of this work. Her remarks helped me keep the
+report clear, structured, and focused on the engineering contribution.
+
+\acksection{To my corporate supervisor and the Soft Stars team}
+I would also like to thank Wael Hkiri for his technical direction, availability,
+and trust during the internship. The discussions around operational constraints,
+browser tooling, deployment choices, and evidence review shaped the project in a
+very practical way. I also thank the Soft Stars team for welcoming me, sharing
+their experience, and giving me the opportunity to work on a concrete
+rights-protection problem.
+
+\vspace{0.20cm}
+\begin{flushright}
+  {\ackbodyfont\scshape\fontsize{15.4}{20.8}\selectfont Ahmed ARFAOUI\par}
+  \vspace{0.02cm}
+  {\footnotesize\scshape 2025--2026}
+\end{flushright}
+\endgroup
+
+\restoregeometry
+\clearpage
 
 \tableofcontents
 \clearpage
@@ -518,7 +692,6 @@ Finally, I thank my family and friends for their encouragement and patience duri
 \listoftables
 \clearpage
 \input{chapters/front-acronyms}
-\input{chapters/front-terminology}
 
 \input{chapters/01-introduction}
 \input{chapters/02-methodology}
@@ -528,7 +701,6 @@ Finally, I thank my family and friends for their encouragement and patience duri
 \input{chapters/06-evaluation}
 \input{chapters/07-conclusion}
 
-\section*{References}
 \begingroup
 \small
 \begin{thebibliography}{99}
@@ -571,7 +743,7 @@ Available: \url{https://playwright.dev/docs/intro}
 Chrome DevTools Protocol,
 \emph{Chrome DevTools Protocol: Network Domain},
 Official documentation, 2026.
-Available: \url{https://chromedevtools.github.io/devtools-protocol/}
+Available: \url{https://chromedevtools.github.io/devtools-protocol/tot/Network/}
 
 % ---- Methodology ----
 
@@ -656,7 +828,8 @@ Available: \url{https://www.rfc-editor.org/rfc/rfc8216}
 ISO/IEC,
 \emph{Information technology\textemdash{}Dynamic adaptive streaming over HTTP (DASH)\textemdash{}Part 1:
 Media presentation description and segment formats}, ISO/IEC 23009\textendash{}1,
-2022.
+2019.
+Available: \url{https://www.iso.org/standard/79329.html}
 
 % ---- Ad Blocking and Privacy Tools ----
 
@@ -669,6 +842,11 @@ Available: \url{https://github.com/gorhill/uBlock}
 \end{thebibliography}
 \endgroup
 
+\clearpage
+\hypersetup{pageanchor=false}
+\includepdf[pages=2,pagecommand={},fitpaper=true]{assets/esprit-report-cover.pdf}
+
+\iffalse
 % =====================================================================
 %  LAST PAGE -- ESPRIT BACK COVER
 % =====================================================================
@@ -776,4 +954,5 @@ Available: \url{https://github.com/gorhill/uBlock}
 \end{tikzpicture}
 \restoregeometry{}
 
+\fi
 \end{document}

@@ -1108,26 +1108,6 @@ function OverviewPageContent() {
 
   const totalAgentRuns = agentSummary.reduce((s, r) => s + r.total, 0);
   const trackedAgentContextRuns = agentRows.filter((row) => contextUsage(row).contextWindow > 0).length;
-  const peakAgentContext = agentRows.reduce(
-    (peak, row) => {
-      const usage = contextUsage(row);
-      if (usage.contextPct > peak.contextPct) {
-        return {
-          ...usage,
-          actor: row.actor || row.agent_type || "",
-          model: row.model_name || "",
-        };
-      }
-      return peak;
-    },
-    {
-      contextWindow: Number(summary.peak_context_window || 0),
-      contextTokens: Number(summary.peak_context_tokens || 0),
-      contextPct: Number(summary.peak_context_usage_pct || 0),
-      actor: summary.peak_context_actor || "",
-      model: summary.peak_context_model || "",
-    },
-  );
 
   const agentStatusRows = useMemo(() => {
     const grouped = new Map();
@@ -1278,15 +1258,6 @@ function OverviewPageContent() {
       description: "Strict stream success",
       bar: (summary.success_rate || 0) * 100,
       accent: "mint",
-    },
-    {
-      label: "Peak context",
-      value: peakAgentContext.contextWindow > 0 ? formatPercent(peakAgentContext.contextPct) : "--",
-      description: peakAgentContext.actor
-        ? `${peakAgentContext.actor}${peakAgentContext.model ? ` / ${peakAgentContext.model}` : ""}`
-        : `${formatNumber(summary.context_tracked_agent_runs || trackedAgentContextRuns)} tracked agents`,
-      bar: peakAgentContext.contextWindow > 0 ? peakAgentContext.contextPct * 100 : 0,
-      accent: "signal",
     },
     {
       label: "Avg latency",
@@ -1520,12 +1491,6 @@ function OverviewPageContent() {
       value: formatNumber(trackedAgentContextRuns || summary.context_tracked_agent_runs || 0),
       description: "Agent rows with context window",
       accent: "mint",
-    },
-    {
-      label: "Peak context",
-      value: peakAgentContext.contextWindow > 0 ? formatPercent(peakAgentContext.contextPct) : "--",
-      description: peakAgentContext.actor || "No context window rows",
-      accent: "signal",
     },
     {
       label: "Tool calls",

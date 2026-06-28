@@ -1,34 +1,50 @@
 \chapter{Evaluation and Testing}
 
-This chapter evaluates Open Web Catcher (OWC) as an evidence-production system for
-rights-protection review. The goal is not to claim production-grade piracy detection or
-universal illegal-streaming coverage. The goal is to check whether the platform can take
-a suspected streaming page and produce a traceable evidence package: route decision,
-agent activity, screenshots, stream evidence, provider intelligence, email readiness,
-and operating-cost telemetry.
+I evaluate Open Web Catcher (OWC) as an evidence-production system for
+rights-protection review. I do not treat it as production-grade piracy detection or
+universal illegal-streaming coverage. The goal is narrower and more useful for this
+internship: check whether a suspected streaming page can produce a traceable evidence
+package.
 
-The evaluation is organized in the same order as the real review workflow. First, the
-chapter defines the business question. Then it explains the batch-test design and the
-status taxonomy used to interpret results. After that, it evaluates each specialist
-agent, studies one concrete run in detail, and reviews the dashboard telemetry and cost
-metrics. This structure is important because the final run status alone is too weak for
-this project: a website can fail because an agent behaved badly, but it can also fail
-because the site is dead, a hosting page is inaccessible, a stream server is down, or an
-embedded player does not expose media during the capture window.
+That package is evaluated through:
+\begin{itemize}
+  \item the route decision and specialist-agent activity;
+  \item screenshots and stream evidence;
+  \item provider intelligence and email readiness;
+  \item model, tool, token, and operating-cost telemetry.
+\end{itemize}
+
+The evaluation follows the real review workflow. It starts with the business question,
+then moves through batch design, status taxonomy, specialist-agent checks, one concrete
+run, dashboard telemetry, cost metrics, and limitations.
+
+This structure matters because final status alone is too weak. A website can fail
+because the agent behaved badly, but it can also fail because the site is dead, a
+hosting page is inaccessible, a stream server is down, or an embedded player exposes no
+media during the capture window.
+
+\chapterfocus{Here I evaluate OWC as a review-oriented evidence system. The chapter
+defines the business question, acceptance criteria, status taxonomy, KPI formulas,
+batch snapshot, agent-level checks, one detailed run case study, dashboard telemetry,
+cost evidence, operational limits, and the interpretation of the current results.}
 
 \section{Evaluation Objective and Business Context}
 
 \subsection{Business Issue}
 
 The practical business issue is manual uncertainty. A suspected live-sports streaming
-website rarely exposes all useful evidence on the first page. A landing page may only
-list matches. A hosting page may hide the player behind server buttons, popups, or
-delayed activation. An embedded page may be reachable only through an iframe or after a
-specific hosting server is selected. Even when a playlist URL is found, it still needs to
-be connected to screenshots, provider metadata, and a notice draft before a reviewer can
-use it.
+website rarely exposes all useful evidence on the first page:
+\begin{itemize}
+  \item a landing page may only list matches;
+  \item a hosting page may hide the player behind server buttons, popups, or delayed
+  activation;
+  \item an embedded page may be reachable only through an iframe or a selected hosting
+  server;
+  \item a playlist URL still needs screenshots, provider metadata, and a notice draft
+  before a reviewer can use it.
+\end{itemize}
 
-In a beIN-context rights-protection workflow, the analyst therefore needs an evidence
+In a beIN-context rights-protection workflow, the analyst needs an evidence
 bundle, not only a classification label. Soft Stars provides the internship engineering
 context, while beIN MEDIA GROUP provides the media-rights context in which live-sports
 piracy is treated as an operational protection problem.
@@ -89,7 +105,7 @@ evidence extraction, provider enrichment, and review-output generation.
 The repeated-run idea is important for this domain. A website that works once may stop
 working later because a player server goes offline, a page redirects, the site changes
 its anti-bot behavior, or the stream is available only during a live event. Repeated
-runs therefore test not only initial success, but also whether evidence-producing sites
+repeated runs test not only initial success, but also whether evidence-producing sites
 remain evidence-producing after prompt, tool, browser, or website changes.
 
 \input{figures/tikz/fig-06-evaluation-protocol}
@@ -182,12 +198,18 @@ agent/runtime failures, cancelled runs, and active runs.}
 
 \subsubsection{External Blockers Are Not Automatically Agent Faults}
 
-This distinction is especially important for live-streaming pages. A site can be down.
-A match page can exist while all hosting pages have been removed. A hosting page can be
-reachable while the selected server is down. An embedded player can load visually but
-produce no manifest request. These cases still reduce operational yield, but the agent
-evaluation should record them as availability or evidence-path blockers unless the trace
-shows that the agent skipped an available action.
+This distinction is especially important for live-streaming pages. The trace may show
+external blockers rather than an agent fault:
+\begin{itemize}
+  \item the site is down;
+  \item the match page exists but hosting pages were removed;
+  \item the hosting page is reachable but the selected server is down;
+  \item the embedded player loads visually but produces no manifest request.
+\end{itemize}
+
+These cases still reduce operational yield. They should be recorded as availability or
+evidence-path blockers unless the trace shows that the agent skipped an available
+action.
 
 \subsection{KPI Definitions}
 
@@ -239,13 +261,19 @@ running runs. The terminal status breakdown is 25 successful runs, 8 partial run
 failed runs, 10 cancelled runs, 14 no-hosting-page runs, 6 no-stream runs, and 2
 page-inaccessible runs.
 
-The strict success rate is 17.24\%. The partial rate is 5.52\%. Combining both gives a
-productive evidence rate of 22.76\%. The external blocker count is 22 terminal runs,
-or 15.17\% of terminal runs. If cancelled runs are removed from the quality denominator,
-the agent-adjusted non-failure rate is \(55/135 = 40.74\%\). This last value is not an
-evidence success rate; it is a diagnostic rate showing that part of the raw failure
-picture comes from site and server availability rather than only from agent/runtime
-failure.
+I interpret the current snapshot in layers:
+\begin{itemize}
+  \item strict success rate: 17.24\%;
+  \item partial rate: 5.52\%;
+  \item productive evidence rate: 22.76\%;
+  \item external blocker count: 22 terminal runs, or 15.17\%;
+  \item agent-adjusted non-failure rate without cancelled runs:
+  \(55/135 = 40.74\%\).
+\end{itemize}
+
+The last value is not an evidence success rate. It is a diagnostic rate showing that
+part of the raw failure picture comes from site and server availability rather than
+only from agent/runtime failure.
 
 \begin{table}[!htbp]
 \centering
@@ -287,7 +315,7 @@ because they navigate, interact, wait, and verify unstable pages. \\
 The agent pipeline is made of specialist responsibilities. Because of that, a whole-run
 label is not detailed enough. The selected run used in this chapter demonstrates the
 point: the embedded-page agent failed, but hosting-page agents still produced valid
-stream, screenshot, provider, and email evidence. The evaluation therefore checks the
+stream, screenshot, provider, and email evidence. The evaluation checks the
 behavior owned by each agent instead of treating the whole workflow as one black box.
 
 \begin{table}[!htbp]
@@ -334,11 +362,17 @@ whether the next agent receives the correct handoff.
 \subsubsection{Landing Tests}
 
 Landing-page tests check whether the agent can move beyond a listing page. The reviewer
-looks for match cards, event links, watch buttons, schedule sections, pagination, and
-host candidates. A landing page is not considered a failure just because it does not
-contain a stream. It only becomes an agent problem if useful hosting candidates were
-visible and the agent missed them. If the page genuinely exposes no usable downstream
-route, \texttt{no\_hosting\_pages} is the more accurate status.
+looks for:
+\begin{itemize}
+  \item match cards, event links, and watch buttons;
+  \item schedule sections and pagination;
+  \item host candidates or other downstream routes.
+\end{itemize}
+
+A landing page is not considered a failure just because it does not contain a stream.
+It becomes an agent problem only if useful hosting candidates were visible and missed.
+If the page exposes no usable downstream route, \texttt{no\_hosting\_pages} is the more
+accurate status.
 
 \subsection{Hosting Tests}
 
@@ -361,7 +395,7 @@ blocker rather than automatically an agent failure.
 
 Stream capture is evaluated after activation and server switching. This order matters:
 harvesting network traffic too early can produce empty results even when the page would
-generate a playlist after a play action. A passing hosting result therefore connects the
+generate a playlist after a play action. A passing hosting result connects the
 browser action, player state, screenshot, and stream evidence in the trace.
 
 \subsection{Embedded Tests}
@@ -399,13 +433,13 @@ verification before sending.
 
 \subsection{Agent Dashboard Evidence}
 
-\input{figures/tikz/fig-06-dashboard-agents}
-
 The agents dashboard supports behavior-level evaluation by separating agent runs, tool
 calls, LLM calls, context tracking, and status by agent type. It helps locate where a
 batch is struggling: classification, landing discovery, hosting activation, embedded
 inspection, or provider/email enrichment. It does not replace manual review, but it
 turns manual review into a more targeted process.
+
+\input{figures/tikz/fig-06-dashboard-agents}
 
 \section{Run-Based Evidence Case Study}
 
@@ -443,15 +477,13 @@ Estimated cost & \(\$0.12381188\) \\
 \label{tab:run-case-study-summary}
 \end{table}
 
-\input{figures/tikz/fig-06-run-lifecycle}
-
 The run summary screenshot validates that the selected case is a concrete persisted run,
 not only a manually written example. It shows the final status, run identity, timing,
 model/tool profile, and evidence counters in the operator console.
 
-\subsection{Trace and Agent Activity}
+\input{figures/tikz/fig-06-run-lifecycle}
 
-\input{figures/tikz/fig-06-run-trace-rows}
+\subsection{Trace and Agent Activity}
 
 The trace view is used to reconstruct the path from seed URL to final evidence. In this
 case, the trace shows the landing-page route, downstream discovery, hosting attempts,
@@ -459,44 +491,45 @@ and persisted specialist-agent activity. This is also where the embedded-agent n
 visible: the embedded path did not succeed, but the hosting path still produced enough
 evidence for the run to be useful.
 
+\input{figures/tikz/fig-06-run-trace-rows}
+
 \subsection{Landing Evidence}
+
+The landing screenshot explains why specialist routing was needed: the first page is
+only a match/listing context. The relevant test is whether the landing agent discovers
+a useful hosting or player path instead of stopping at the surface-level page label.
 
 \input{figures/tikz/fig-06-run-landing-evidence}
 
-The landing screenshot shows why specialist routing was needed. The first page is a
-match/listing context, so the relevant test is whether the landing agent can discover a
-useful hosting or player path instead of stopping at a surface-level page label.
-
 \subsection{Hosting and Player Evidence}
-
-\input{figures/tikz/fig-06-run-hosting-evidence}
 
 The first hosting screenshot validates player activation. It shows that the workflow
 reached a sports video/player state on the discovered path. This supports the hosting
 checks for navigation, activation, screenshot timing, and media-harvest context.
 
-\input{figures/tikz/fig-06-run-hosting-evidence-2}
+\input{figures/tikz/fig-06-run-hosting-evidence}
 
 The second hosting screenshot records another captured player state from the same
-evidence path. This matters because server behavior can vary during a run. Keeping
-multiple screenshots makes it easier to review whether a server was active, stalled,
-blocked, or unstable.
+evidence path. Server behavior can vary during a run, so multiple screenshots make it
+easier to review whether a server was active, stalled, blocked, or unstable.
+
+\input{figures/tikz/fig-06-run-hosting-evidence-2}
 
 \subsection{Stream, Provider, and Email Evidence}
-
-\input{figures/tikz/fig-06-run-provider-rows}
 
 The streams/provider view confirms that stream evidence was persisted together with
 source labels and screenshot support. This connection is important: the playlist URL is
 not an expiring token claim in this report; it is persistent review evidence because the
 playlist host can be used for provider attribution and email preparation.
 
-\input{figures/tikz/fig-06-run-provider-intel}
+\input{figures/tikz/fig-06-run-provider-rows}
 
 The provider-intelligence view shows the enrichment step. In this run, the playlist host
 \texttt{hy2.365kooora.blog} was resolved to BestDC Limited, organization
 \texttt{AS216014 BestDC Limited}, country \texttt{NL}, with an abuse-contact field. This
 turns stream discovery into provider-intelligence evidence.
+
+\input{figures/tikz/fig-06-run-provider-intel}
 
 \begin{tcolorbox}[
   enhanced,
@@ -528,12 +561,12 @@ verify rights ownership, jurisdiction, contact accuracy, and wording before send
 
 \subsection{Overview Metrics}
 
-\input{figures/tikz/fig-06-dashboard-overview}
-
 The overview dashboard gives the operational context for the batch. It shows that OWC is
 measurable: runs, success rate, cost, token volume, latency, active runs, and tool
-success are visible from the same console. These values should be read through the
+success are visible from the same console. They are useful only when read through the
 failure taxonomy, not as one generic model-accuracy claim.
+
+\input{figures/tikz/fig-06-dashboard-overview}
 
 \begin{table}[!htbp]
 \centering
@@ -575,13 +608,13 @@ dashboard/API snapshot.}
 
 \subsection{Token and Runtime Cost}
 
-\input{figures/tikz/fig-06-dashboard-tokens}
-
 Token telemetry is included because the project is also a data-science system
 evaluation. The cost of a browser agent depends on context size, cache reuse, output
 length, tool loops, and repeated attempts. Separating new input, cached input, and
 output tokens makes it possible to evaluate whether future prompt or tool changes are
 improving behavior without silently increasing cost.
+
+\input{figures/tikz/fig-06-dashboard-tokens}
 
 \subsection{Model and Runtime Selection Rationale}
 
@@ -672,18 +705,23 @@ cancelled runs, and true agent/runtime failures. A data-science interpretation m
 those categories separate before comparing prompt versions, browser settings, or model
 runtimes.
 
-The most useful conclusion is therefore not that OWC has solved illegal-streaming
-evidence collection. It has not. The useful conclusion is that OWC now exposes the right
+The most useful conclusion is not that OWC has solved illegal-streaming evidence
+collection. It has not. The useful conclusion is that OWC now exposes the right
 evaluation objects: agent route, navigation path, server switching, screenshot timing,
 stream capture, provider enrichment, email readiness, repeatability, and cost.
 
 \section{Chapter Conclusion}
 
 This evaluation judges OWC by agent behavior and evidence quality. The selected run is
-successful because it provides a reconstructable path from a seed URL to route
-classification, landing navigation, hosting/player evidence, screenshots, HLS playlist
-evidence, provider enrichment, cost telemetry, and a generated email draft for human
-review. The broader batch snapshot shows that the system is measurable, but also that
+successful because it provides a reconstructable path from:
+\begin{itemize}
+  \item seed URL and route classification;
+  \item landing navigation and hosting/player evidence;
+  \item screenshots and HLS playlist evidence;
+  \item provider enrichment, cost telemetry, and a generated email draft.
+\end{itemize}
+
+The broader batch snapshot shows that the system is measurable. It also shows that
 strict success remains low and many terminal rows require failure-category
 interpretation.
 

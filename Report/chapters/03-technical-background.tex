@@ -1,10 +1,10 @@
 \chapter{Technical Background}
 
-This chapter introduces the technical concepts needed before presenting the system
-architecture and implementation. It deliberately stays at a general level: the goal is
-to explain the web structures, streaming mechanisms, browser automation tools, and
-agentic concepts that make the project understandable. The concrete architecture,
-database schema, prompts, and tool contracts are described later.
+Before presenting the system architecture and implementation, I first introduce the
+technical concepts that make the project understandable. I keep this chapter at a
+general level because the reader needs the web structures, streaming mechanisms,
+browser automation tools, and agentic concepts before seeing the concrete architecture.
+The database schema, prompts, and tool contracts are described later.
 
 The chapter moves from the target websites themselves toward the technologies used to
 analyze them. It starts with page structures and DOM representation, then explains
@@ -12,6 +12,11 @@ streaming protocols and embedded players, then covers browser automation issues 
 ads, cookies, popups, and anti-bot providers. It ends with the agentic concepts used in
 the project: agents, prompts, tool use, workflow automation, LangChain, MCP servers, model providers,
 caching, and token usage.
+
+\chapterfocus{The goal here is to give the reader the vocabulary needed before the
+design chapters: streaming-site page roles, DOM structure, embedded players, media
+manifests, browser automation obstacles, screenshots, network logs, prompts, tool use,
+LangChain, MCP, provider behavior, caching, and token usage.}
 
 \section{Streaming Website Structures}
 
@@ -223,7 +228,7 @@ cache rules, and origin protection~\cite{cloudflare-challenges}.
 
 This is why the browser session matters. A raw HTTP request may fail even when the
 browser can play the stream, because the browser carries the active cookies, headers,
-referer, and JavaScript-generated state. The technical background therefore includes
+referer, and JavaScript-generated state. For that reason, the technical background includes
 both media protocols and web-provider behavior.
 
 \section{Browser Automation, Scraping, and Runtime Obstacles}
@@ -238,18 +243,25 @@ and listening to network activity~\cite{puppeteer,playwright,cdp}.
 
 Static collection is efficient when the target evidence is present in the fetched HTML
 or in simple linked pages. Its limitation appears when the evidence is created only
-after a runtime sequence: opening a collapsed channel group, clicking a server tab,
-activating the player, waiting for an iframe, and then observing the network. In those
-cases, the browser state is the evidence surface, not only the page source. This
-distinction is the technical reason why OWC adds browser agents to static monitoring
-instead of treating the first page source as sufficient.
+after a browser sequence:
+\begin{itemize}
+  \item open a collapsed channel group;
+  \item click a server tab;
+  \item activate the player;
+  \item wait for an iframe or player state;
+  \item observe the network requests.
+\end{itemize}
+
+In those cases, the browser state is the evidence surface, not only the page source.
+This is why OWC adds browser agents to static monitoring instead of treating the first
+page source as sufficient.
 
 \subsubsection{Rendered state as evidence}
 
 Rendered state includes visible text, player overlays, frame trees, screenshots, media
 elements, and network requests that appear after interaction. It matters because the
 final stream or channel signal may not exist at the first page load. A screenshot,
-media-state record, or tool trace can therefore explain why an agent believed the page
+media-state record, or tool trace can explain why an agent believed the page
 exposed unauthorized streaming behavior.
 
 \subsection{Puppeteer as a browser control layer}
@@ -262,11 +274,11 @@ important concept is not only ``click a button'' but full runtime observation:
   \item click buttons, tabs, overlays, server selectors, and play controls;
   \item traverse frames and iframes;
   \item capture screenshots for human review;
-  \item observe network requests through the Chrome DevTools Protocol;
+  \item observe network requests through the Chrome DevTools Protocol (CDP);
   \item read browser-side state through page-evaluation calls.
 \end{itemize}
 
-Puppeteer is therefore the bridge between a high-level extraction objective and the
+Puppeteer acts as the bridge between a high-level extraction objective and the
 actual state of the web page. It lets the system test what a user would see and what the
 browser actually requested.
 
@@ -346,7 +358,7 @@ must prevent premature conclusions. It should tell the agent to ground decisions
 visible page state, DOM evidence, screenshots, and network observations.
 
 Tokens are the units used by language models to process prompts and outputs. Long page
-snapshots, repeated tool results, and verbose traces increase token usage and therefore
+snapshots, repeated tool results, and verbose traces increase token usage and can also
 increase cost and latency. Token management is part of the technical background because
 browser agents can easily spend too much context on noisy HTML, ads, or repeated page
 states.
@@ -370,13 +382,21 @@ descriptions, or long context blocks are reused across many runs.
 
 \subsection{Workflow automation tools}
 
-Workflow automation tools let developers connect nodes for HTTP requests, browser
-actions, LLM calls, data transformations, and external services through a visual flow.
-They are useful for fast validation because a workflow can be assembled and adjusted
-before a full application is built. In this report, workflow automation is treated as an
-orchestration concept: it sequences steps, passes data between nodes, calls model
-providers, and makes evidence-collection logic visible during experimentation. The
-specific workflow tool used during implementation is introduced in Chapter~5.
+Workflow automation tools let developers connect HTTP requests, browser actions, LLM
+calls, data transformations, and external services through a visual flow. They are
+useful for fast validation because a workflow can be assembled and adjusted before a
+full application is built.
+
+In this report, workflow automation is treated as an orchestration concept. It helps
+to:
+\begin{itemize}
+  \item sequence evidence-collection steps;
+  \item pass data between browser, model, and processing nodes;
+  \item call model providers in a visible workflow;
+  \item make experimental extraction logic easier to inspect.
+\end{itemize}
+
+The specific workflow tool used during implementation is introduced in Chapter~5.
 
 \subsection{LangChain, tools, and MCP servers}
 
@@ -401,13 +421,17 @@ agentic process auditable.
 \clearpage
 \section{Chapter Summary}
 
-This chapter established the technical background for the rest of the report. It
-explained the page flow from landing pages to hosting pages and embedded players, the
-DOM structures used to inspect those pages, the streaming protocols and player embeds
-that carry the final evidence, and the browser-level obstacles caused by ads, cookies,
-popups, iframes, and provider-side checks. It also introduced the agentic concepts used
-later: ReAct-style loops, prompt engineering, tokens, provider caching, workflow
-automation, LangChain, and MCP tool servers.
+With this background in place, the report can now move from general concepts to the
+system design. This chapter explained:
+\begin{itemize}
+  \item the page flow from landing pages to hosting pages and embedded players;
+  \item the DOM structures used to inspect those pages;
+  \item the streaming protocols and player embeds that carry final evidence;
+  \item the browser obstacles caused by ads, cookies, popups, iframes, and provider
+  checks;
+  \item the agentic concepts used later: ReAct-style loops, prompt engineering,
+  tokens, provider caching, workflow automation, LangChain, and MCP tool servers.
+\end{itemize}
 
 The next chapters use these concepts more concretely. Chapter~4 translates them into
 architecture, and Chapter~5 explains how the implementation applies them in the actual

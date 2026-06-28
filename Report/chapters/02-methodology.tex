@@ -1,39 +1,58 @@
 \chapter{Methodology, Requirements Analysis, and Design Constraints}\label{chap:methodology}
 
 The internship was organized around Design Science Research Methodology (DSRM). This
-choice is deliberate: the work did not consist of studying a phenomenon from the
-outside or training a predictive model. It consisted of designing, building,
+choice fits the nature of the work. The project was not only about observing a
+phenomenon from the outside or training a predictive model. It was about designing, building,
 demonstrating, and evaluating an engineering artifact for a concrete organizational
-problem. In this report, that artifact is Open Web Catcher (OWC), the evidence
-collection platform built around browser tooling, specialist agents, trace storage,
-screenshots, provider enrichment, and reviewable outputs.
+problem.
 
-DSRM provides the backbone for the chapter structure that follows. The problem is first
-identified and motivated, then solution objectives are defined, the artifact is designed
-and developed, the artifact is demonstrated, the artifact is evaluated, and finally the
-work is communicated through this PFE report and its diagrams. This phase logic follows
-the design-science view of information-systems artifacts proposed by Hevner et
-al.~\cite{hevner-ds} and the DSRM process described by Peffers et
-al.~\cite{peffers-dsrm}.
+In this report, that artifact is Open Web Catcher (OWC), an evidence-collection
+platform built around:
+\begin{itemize}
+  \item browser tooling and specialist agents;
+  \item trace storage, screenshots, and stream evidence;
+  \item provider enrichment and reviewable outputs.
+\end{itemize}
+
+DSRM provides the backbone for the chapter structure that follows:
+\begin{itemize}
+  \item identify and motivate the problem;
+  \item define the solution objectives;
+  \item design and develop the artifact;
+  \item demonstrate and evaluate the artifact;
+  \item communicate the work through the PFE report and diagrams.
+\end{itemize}
+
+This phase logic follows the design-science view of information-systems artifacts
+proposed by Hevner et al.~\cite{hevner-ds} and the DSRM process described by Peffers
+et al.~\cite{peffers-dsrm}.
+
+\chapterfocus{Here I explain the method used to organize the project. Design
+Science Research Methodology connects the operational problem to the artifact that was
+built, then helps translate the mission into functional requirements, non-functional
+requirements, design constraints, and an internship timeline.}
 
 \section{DSRM as the Methodological Backbone}
 
 DSRM was selected because it gives equal importance to the organizational problem and
 to the engineered artifact. The operational problem was concrete: useful evidence often
 appeared only after browser rendering, interaction, iframe traversal, server switching,
-or media activation. The PFE work therefore needed a methodology that could justify a
-new artifact, not only describe a work plan.
+or media activation. The PFE work needed a methodology that could justify a new
+artifact, not only describe a work plan.
 
 \input{figures/tikz/fig-02-methodology-comparison}
 
 \subsection{Why DSRM Fits the Internship}
 
-The project has three properties that make DSRM suitable. First, it is
-artifact-centered: the final contribution is a platform and workflow design, not a
-pure analysis. Second, the artifact is evaluated through use: it is meaningful only if
-it can inspect real pages, produce traces, capture screenshots, and return evidence.
-Third, the organizational relevance is explicit: Soft Stars needed a more adaptable
-way to handle illegal streaming pages that became too dynamic for static extraction.
+The project has three properties that make DSRM suitable:
+\begin{itemize}
+  \item \textbf{Artifact-centered}: the contribution is a platform and workflow design,
+  not a pure analysis.
+  \item \textbf{Use-based evaluation}: the artifact matters only if it can inspect real
+  pages, produce traces, capture screenshots, and return evidence.
+  \item \textbf{Organizational relevance}: Soft Stars needed a more adaptable way to
+  handle streaming pages that became too dynamic for static extraction.
+\end{itemize}
 
 \subsection{DSRM Phases Used in the Report}
 
@@ -46,11 +65,17 @@ backbone.
 \subsubsection{Problem identification and motivation}
 
 The first phase established the practical problem: suspicious streaming pages could be
-found, but collecting reviewable evidence was difficult. Some pages exposed only lists
-of matches or channels. Others required a click on a server button before a player
-loaded. Others hid the player in an iframe or generated short-lived manifest URLs only
-after playback. A static HTML fetch can miss these states because it does not perform
-the same sequence of visual and network actions as a browser user.
+found, but collecting reviewable evidence was difficult. The difficulty appeared in
+several common cases:
+\begin{itemize}
+  \item pages that exposed only lists of matches or channels;
+  \item pages that required a server-button click before the player loaded;
+  \item pages that hid the player inside an iframe;
+  \item pages that generated short-lived manifest URLs only after playback.
+\end{itemize}
+
+A static HTML fetch can miss these states because it does not perform the same visual
+and network sequence as a browser user.
 
 \subsubsection{Objectives of the solution}
 
@@ -171,6 +196,25 @@ and provider results & High \\
 \caption{Functional requirements derived from the evidence-collection workflow.}\label{tab:fr-summary}
 \end{table}
 
+\section{Design Constraints and Requirement Traceability}
+
+The requirements were not independent checklist items. They came from a small set of
+constraints observed during the internship: pages were dynamic, players were nested,
+media URLs could be temporary, browser-agent runs consumed time and tokens, and the
+final output had to remain reviewable by a human analyst. Figure~\ref{fig:requirement-traceability}
+shows how the operational problem, requirements, artifact response, and review outputs
+connect.
+
+\input{figures/tikz/fig-02-requirement-traceability}
+
+The second traceability view focuses on design pressure. Each constraint forced a
+specific engineering response rather than a generic automation script. Figure~\ref{fig:design-constraints}
+summarizes these responses and explains why the artifact uses specialist agents,
+profile-scoped browser tooling, trace storage, telemetry, and a focused company
+deployment path.
+
+\input{figures/tikz/fig-02-design-constraints}
+
 \section{Non-Functional Requirements}
 
 The non-functional requirements explain the qualities required for the artifact to be
@@ -207,4 +251,5 @@ orchestrator and runs the landing agent through queue-driven container jobs. \\
 This DSRM framing defines the rest of the report. Chapter~3 introduces the technical
 concepts needed to understand the artifact. Chapter~4 describes the OWC architecture,
 including the agent routing, browser tool layer, fingerprint and proxy controls, and
-channel-detection path. Chapter~5 then explains how those decisions were implemented.
+channel-detection path. Chapter~5 then explains how the design decisions were
+implemented.

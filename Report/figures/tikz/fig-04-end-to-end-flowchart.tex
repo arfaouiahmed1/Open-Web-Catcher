@@ -1,83 +1,115 @@
-\begin{figure}[H]
+\begin{figure}[!htbp]
 \centering
-\resizebox{0.98\textwidth}{!}{%
+\resizebox{0.99\textwidth}{!}{%
 \begin{tikzpicture}[
   line cap=round,
   line join=round,
-  start/.style={draw=accent!85!black, fill=accent!10, rounded corners=12pt,
-    minimum width=2.75cm, minimum height=0.82cm, align=center,
-    font=\scriptsize\bfseries},
-  stepbox/.style={draw=accent!78, fill=blue!5, rounded corners=7pt,
-    minimum width=2.75cm, minimum height=0.86cm, align=center,
-    text width=2.55cm, font=\scriptsize\bfseries},
-  agent/.style={stepbox, draw=orange!80!black, fill=orange!10},
-  output/.style={stepbox, draw=green!55!black, fill=green!8},
-  blocked/.style={stepbox, draw=gray!62, fill=gray!9},
-  decision/.style={diamond, aspect=2.0, draw=accent!80, fill=white,
-    minimum width=2.65cm, minimum height=1.15cm, align=center,
-    text width=2.20cm, font=\scriptsize\bfseries},
-  arr/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.78pt,
-    accent!78, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  branch/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.76pt,
-    orange!82!black, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  skip/.style={-{Latex[length=1.9mm,width=1.4mm]}, line width=0.70pt,
-    gray!62, densely dashed, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.1pt,
-    text=black!70}
+  nodebase/.style={
+    rounded corners=7pt,
+    minimum height=0.72cm,
+    align=center,
+    inner xsep=4pt,
+    inner ysep=4pt,
+    font=\fontsize{6.8}{8.0}\selectfont
+  },
+  start/.style={nodebase, draw=accent!85!black, fill=accent!10,
+    text width=2.04cm, font=\fontsize{6.8}{8.0}\selectfont\bfseries},
+  stepbox/.style={nodebase, draw=accent!72, fill=blue!5, text width=2.08cm},
+  agent/.style={nodebase, draw=orange!82!black, fill=orange!10,
+    text width=2.26cm, font=\fontsize{6.65}{7.8}\selectfont\bfseries},
+  output/.style={nodebase, draw=green!55!black, fill=green!8, text width=2.24cm},
+  blocked/.style={nodebase, draw=gray!62, fill=gray!8, text width=2.26cm},
+  decision/.style={
+    diamond,
+    aspect=1.92,
+    draw=accent!78,
+    fill=white,
+    minimum width=2.24cm,
+    minimum height=1.02cm,
+    align=center,
+    text width=1.66cm,
+    inner sep=1.2pt,
+    font=\fontsize{6.65}{7.8}\selectfont\bfseries
+  },
+  lane/.style={draw=gray!30, fill=gray!2, rounded corners=9pt, inner sep=8pt},
+  lanetitle/.style={font=\fontsize{6.5}{7.5}\selectfont\bfseries,
+    text=gray!72!black, fill=white, inner xsep=2pt, inner ysep=1pt},
+  arr/.style={-{Latex[round,length=2.45mm,width=1.75mm]}, line width=0.78pt,
+    accent!78, shorten <=3pt, shorten >=4pt, rounded corners=6pt},
+  branch/.style={-{Latex[round,length=2.45mm,width=1.75mm]}, line width=0.78pt,
+    orange!82!black, shorten <=3pt, shorten >=4pt, rounded corners=6pt},
+  skip/.style={-{Latex[round,length=2.2mm,width=1.55mm]}, line width=0.66pt,
+    gray!62, densely dashed, shorten <=3pt, shorten >=4pt, rounded corners=6pt},
+  lab/.style={font=\fontsize{5.5}{6.4}\selectfont\bfseries,
+    fill=white, inner sep=1.1pt, text=black!67}
 ]
 
-\node[start] (start) at (0,6.10) {Operator submits target URL};
-\node[stepbox] (ui) at (3.20,6.10) {Next.js console\\{\normalfont\tiny \texttt{/live} workflow form}};
-\node[stepbox] (postrun) at (6.40,6.10) {\texttt{POST /ui/workflows/run}};
-\node[decision] (preflight) at (9.65,6.10) {Runtime ready?};
-\node[blocked] (blocked) at (13.15,6.10) {Return blocking reasons\\{\normalfont\tiny tools, browser, API}};
+\node[start] (operator) at (0,9.20) {Operator\\submits URL};
+\node[stepbox] (console) at (2.58,9.20) {Next.js console\\{\fontsize{5.4}{6}\selectfont \texttt{/live}}};
+\node[stepbox] (api) at (5.16,9.20) {\texttt{POST}\\{\fontsize{5.4}{6}\selectfont \texttt{/ui/workflows/run}}};
+\node[decision] (ready) at (7.72,9.20) {Runtime\\ready?};
+\node[blocked] (block) at (7.72,10.78) {Return blocking reasons\\{\fontsize{5.4}{6}\selectfont tools, browser, API}};
+\node[stepbox] (job) at (10.35,9.20) {Create background job\\{\fontsize{5.4}{6}\selectfont workflow run}};
+\node[stepbox] (observer) at (13.00,9.20) {Create RunObserver\\{\fontsize{5.4}{6}\selectfont active trace}};
 
-\node[stepbox] (queue) at (9.65,4.55) {Create background job\\{\normalfont\tiny \texttt{job\_type=workflow}}};
-\node[stepbox] (trace) at (9.65,3.30) {Create RunObserver\\{\normalfont\tiny root actor orchestrator}};
-\node[agent] (graph) at (9.65,2.05) {Run OrchestratorAgent};
-\node[agent] (classify) at (9.65,0.80) {ClassificationAgent};
-\node[decision] (route) at (9.65,-0.65) {Classified page type};
+\node[agent] (orchestrator) at (13.00,6.95) {OrchestratorAgent\\{\fontsize{5.4}{6}\selectfont routing owner}};
+\node[agent] (classify) at (10.35,5.92) {ClassificationAgent\\{\fontsize{5.4}{6}\selectfont page role}};
+\node[decision] (route) at (7.72,4.78) {Classified\\page type};
+\node[blocked] (unknown) at (13.00,4.78) {Unknown / irrelevant\\{\fontsize{5.4}{6}\selectfont no route evidence}};
 
-\node[agent] (landing) at (3.35,-2.20) {LandingPageAgent\\{\normalfont\tiny find watch candidates}};
-\node[agent] (hosting) at (6.50,-2.20) {HostingPageAgent\\{\normalfont\tiny operate servers}};
-\node[agent] (embedded) at (9.65,-2.20) {Embedded\\PageAgent\\{\normalfont\tiny inspect player context}};
-\node[blocked] (unknown) at (12.80,-2.20) {Unknown / irrelevant\\{\normalfont\tiny no route evidence}};
+\node[agent] (landing) at (2.58,2.55) {LandingPageAgent\\{\fontsize{5.4}{6}\selectfont find watch candidates}};
+\node[agent] (hosting) at (7.72,2.55) {HostingPageAgent\\{\fontsize{5.4}{6}\selectfont operate servers}};
+\node[agent] (embedded) at (13.00,2.55) {EmbeddedPageAgent\\{\fontsize{5.4}{6}\selectfont inspect player context}};
 
-\node[decision] (streams) at (9.65,-3.95) {Concrete streams found?};
-\node[output] (provider) at (6.50,-5.45) {Provider analysis\\{\normalfont\tiny IPInfo/RDAP contact}};
-\node[output] (email) at (9.65,-5.45) {Email generator\\{\normalfont\tiny reviewable drafts}};
-\node[blocked] (noevidence) at (12.80,-5.45) {Skip provider/email\\{\normalfont\tiny record no-stream reason}};
-\node[output] (persist) at (9.65,-6.90) {Persist result, events, calls, evidence};
-\node[start] (detail) at (9.65,-8.10) {Run detail dashboard\\{\normalfont\tiny \texttt{GET /ui/runs/\{run\_id\}}}};
+\node[decision] (streams) at (7.72,0.72) {Concrete\\streams found?};
+\node[blocked] (nostream) at (13.00,0.72) {Record no-stream outcome\\{\fontsize{5.4}{6}\selectfont skip provider/email}};
+\node[output] (provider) at (2.58,-1.28) {Provider analysis\\{\fontsize{5.4}{6}\selectfont IPInfo/RDAP contact}};
+\node[output] (email) at (5.98,-1.28) {Email generator\\{\fontsize{5.4}{6}\selectfont reviewable drafts}};
+\node[output] (persist) at (9.38,-1.28) {Persist result, events, calls, evidence};
+\node[start] (dashboard) at (13.00,-1.28) {Run detail dashboard\\{\fontsize{5.4}{6}\selectfont \texttt{/ui/runs/\{run\_id\}}}};
 
-\draw[arr] (start) -- (ui);
-\draw[arr] (ui) -- (postrun);
-\draw[arr] (postrun) -- (preflight);
-\draw[skip] (preflight) -- node[lab, above] {no} (blocked);
-\draw[arr] (preflight) -- node[lab, right] {yes} (queue);
-\draw[arr] (queue) -- (trace);
-\draw[arr] (trace) -- (graph);
-\draw[arr] (graph) -- (classify);
-\draw[arr] (classify) -- (route);
+\begin{scope}[on background layer]
+  \node[lane, fit=(operator)(console)(api)(ready)(block)(job)(observer)] (setupLane) {};
+  \node[lane, fit=(orchestrator)(classify)(route)(unknown)(landing)(hosting)(embedded)] (routeLane) {};
+  \node[lane, fit=(streams)(nostream)(provider)(email)(persist)(dashboard)] (evidenceLane) {};
+\end{scope}
 
-\draw[branch] (route) -- node[lab, above] {landing} (landing);
-\draw[branch] (route) -- node[lab, above] {hosting} (hosting);
-\draw[branch] (route) -- node[lab, right] {embedded} (embedded);
-\draw[skip] (route) -- node[lab, above] {unknown} (unknown);
-\draw[branch] (landing) -- (hosting);
-\draw[branch] (landing) to[out=0,in=180] (embedded);
-\draw[branch] (hosting) -- (embedded);
-\draw[arr] (hosting) -- (streams);
-\draw[arr] (embedded) -- (streams);
-\draw[skip] (unknown) -- (streams);
-\draw[arr] (streams) -- node[lab, left] {yes} (provider);
+\node[lanetitle, anchor=west] at ([xshift=4pt,yshift=-6pt]setupLane.north west) {Run setup};
+\node[lanetitle, anchor=west] at ([xshift=4pt,yshift=-6pt]routeLane.north west) {Agent routing};
+\node[lanetitle, anchor=west] at ([xshift=4pt,yshift=-6pt]evidenceLane.north west) {Evidence and review output};
+
+\draw[arr] (operator.east) -- (console.west);
+\draw[arr] (console.east) -- (api.west);
+\draw[arr] (api.east) -- (ready.west);
+\draw[skip] (ready.north) -- node[lab, right=1pt] {no} (block.south);
+\draw[arr] (ready.east) -- node[lab, above] {yes} (job.west);
+\draw[arr] (job.east) -- (observer.west);
+\draw[arr] (observer) -- (orchestrator);
+\draw[arr] (orchestrator.west) to[out=180,in=18] (classify.east);
+\draw[arr] (classify.west) to[out=198,in=58] (route.north east);
+
+\draw[branch] (route.south west) to[out=-142,in=78]
+  node[lab, above left=0pt, pos=0.42] {landing} (landing.north);
+\draw[branch] (route.south) -- node[lab, right=1pt] {hosting} (hosting.north);
+\draw[branch] (route.south east) to[out=-38,in=102]
+  node[lab, above right=0pt, pos=0.42] {embedded} (embedded.north);
+\draw[skip] (route.east) -- node[lab, above] {unknown} (unknown.west);
+
+\draw[branch] (landing.east) -- node[lab, above] {hosting pages} (hosting.west);
+\draw[branch] (hosting.east) -- node[lab, above] {iframe} (embedded.west);
+\draw[arr] (hosting.south) -- (streams.north);
+\draw[arr] (embedded.south) -- ++(0,-0.56) -| (streams.north east);
+\draw[skip] (unknown.south) -- (nostream.north);
+
+\draw[arr] (streams.south west) to[out=-126,in=90]
+  node[lab, left=1pt, pos=0.34] {yes} (provider.north);
+\draw[skip] (streams.east) -- node[lab, above] {no} (nostream.west);
 \draw[arr] (provider) -- (email);
 \draw[arr] (email) -- (persist);
-\draw[skip] (streams) -- node[lab, right] {no} (noevidence);
-\draw[skip] (noevidence) -- (persist);
-\draw[arr] (persist) -- (detail);
+\draw[arr] (persist) -- (dashboard);
+\draw[skip] (nostream.south) to[out=-90,in=34] (persist.north east);
 
 \end{tikzpicture}
 }
-\caption{End-to-end flowchart from workflow launch to persisted run-detail evidence, including runtime preflight, routing, conditional provider analysis, and no-stream handling.}\label{fig:end-to-end-flowchart}
+\caption{End-to-end workflow from launch to persisted evidence.}\label{fig:end-to-end-flowchart}
 \end{figure}

@@ -1,13 +1,17 @@
-\begin{figure}[H]
+\begin{figure}[!htbp]
 \centering
-\resizebox{0.94\textwidth}{!}{%
+\resizebox{1.0\textwidth}{!}{%
 \begin{tikzpicture}[
+  line cap=round,
+  line join=round,
   part/.style={draw=gray!55, fill=gray!8, rounded corners=3pt,
     minimum width=2.2cm, minimum height=0.58cm, align=center, font=\scriptsize\bfseries},
   msg/.style={->, >=Stealth, thick, accent!85, shorten <=2pt, shorten >=2pt},
   ret/.style={->, >=Stealth, dashed, gray!70, thick, shorten <=2pt, shorten >=2pt},
   life/.style={gray!28, dashed},
-  lab/.style={font=\tiny, fill=white, inner sep=1.2pt, align=center}
+  lab/.style={font=\tiny, fill=white, inner sep=1.2pt, align=center},
+  phase/.style={draw=gray!26, fill=gray!2, rounded corners=5pt, line width=0.45pt},
+  phaselab/.style={font=\tiny\bfseries, text=black!58, fill=white, inner sep=1.4pt}
 ]
 
 \foreach \x/\name/\id in {%
@@ -21,6 +25,18 @@
   \node[part] (\id) at (\x,0) {\name};
   \draw[life] (\x,-0.42) -- (\x,-9.05);
 }
+
+\begin{scope}[on background layer]
+  \node[phase, minimum width=5.75cm, minimum height=1.25cm,
+    anchor=north west] (brief) at (-0.25,-0.65) {};
+  \node[phase, minimum width=8.60cm, minimum height=5.25cm,
+    anchor=north west] (playerphase) at (5.05,-2.00) {};
+  \node[phase, minimum width=14.00cm, minimum height=2.05cm,
+    anchor=north west] (finalphase) at (-0.25,-7.00) {};
+\end{scope}
+\node[phaselab, anchor=south west] at ([xshift=0.10cm,yshift=0.04cm]brief.north west) {Embedded handoff};
+\node[phaselab, anchor=west] at ([xshift=3.20cm,yshift=-0.08cm]playerphase.north west) {Assigned player context};
+\node[phaselab, anchor=west] at ([xshift=0.10cm,yshift=-0.08cm]finalphase.north west) {Final media evidence or no-stream reason};
 
 \draw[msg] (orch.south) ++(0,-0.75) -- node[lab, above, text width=2.0cm]{player URL handoff} ++(2.7,0);
 \draw[msg] (agent.south) ++(0,-1.45) -- node[lab, above, text width=2.25cm]{strict navigation policy} ++(2.7,0);

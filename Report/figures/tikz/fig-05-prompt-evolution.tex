@@ -10,7 +10,7 @@
     text width=3.1cm, minimum height=0.85cm, inner xsep=5pt,
     inner ysep=4pt, text=black},
   weak/.style={block, draw=orange!80!black, fill=orange!9},
-  oldstop/.style={block, draw=gray!62, fill=gray!9},
+  baselinefail/.style={block, draw=gray!62, fill=gray!9},
   start/.style={block, draw=orange!80!black, fill=orange!9},
   tool/.style={block, draw=purple!65!black, fill=purple!7},
   browser/.style={block, draw=accent!75, fill=blue!6},
@@ -27,10 +27,10 @@
     text=black!72}
 ]
 
-% Earlier prompt path
-\node[weak] (old1) at (0,3.45) {Intent prompt\\{\normalfont\scriptsize solve the page}};
-\node[weak] (old2) at (4.15,3.45) {One-pass tool use\\{\normalfont\scriptsize sparse checks}};
-\node[oldstop] (old3) at (8.30,3.45) {Premature answer\\{\normalfont\scriptsize missing evidence}};
+% Baseline prompt risk path
+\node[weak] (old1) at (0,3.45) {Open-ended prompt\\{\normalfont\scriptsize broad page task}};
+\node[weak] (old2) at (4.15,3.45) {Sparse tool use\\{\normalfont\scriptsize weak verification}};
+\node[baselinefail] (old3) at (8.30,3.45) {Unclear answer\\{\normalfont\scriptsize missing evidence}};
 
 % Evidence-driven implementation path
 \node[start] (new1) at (0,0.80) {Observe\\{\normalfont\scriptsize current state}};
@@ -47,7 +47,7 @@
   \node[panel, fit=(new1) (new2) (new3) (new4) (new5) (feedbackleft) (feedbackright)] (loopanel) {};
 \end{scope}
 
-\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]legacypanel.north west) {Earlier one-pass prompt};
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]legacypanel.north west) {Baseline prompt risk};
 \node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]loopanel.north west) {Implemented evidence loop};
 
 \node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]new1.north west) {1};
@@ -67,5 +67,5 @@
   -- (new2.north);
 \end{tikzpicture}
 }
-\caption{Prompt evolution from one-pass intent prompts to evidence-driven agent loops.}\label{fig:prompt-evolution}
+\caption{Prompt design contrast between an open-ended browser task and the evidence-driven agent loop used in OWC.}\label{fig:prompt-evolution}
 \end{figure}

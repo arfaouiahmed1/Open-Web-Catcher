@@ -62,6 +62,16 @@ graph TD
   APIReady --> WebReady
 ```
 
+## PlantUML Deployment Diagram
+
+The report-ready UML deployment diagram is available as both source and rendered PNG:
+
+- PlantUML source: [`Report/figures/plantuml/deployment/open_web_catcher_deployment.puml`](../../Report/figures/plantuml/deployment/open_web_catcher_deployment.puml)
+- PNG render: [`Report/figures/plantuml/deployment/open_web_catcher_deployment.png`](../../Report/figures/plantuml/deployment/open_web_catcher_deployment.png)
+- PlantUML server URL: [`open_web_catcher_deployment.url.txt`](../../Report/figures/plantuml/deployment/open_web_catcher_deployment.url.txt)
+
+![Open Web Catcher UML deployment diagram](../../Report/figures/plantuml/deployment/open_web_catcher_deployment.png)
+
 ## Runtime Environment Flow
 
 ```mermaid
@@ -88,4 +98,3 @@ flowchart LR
 - If the page looks stale after docs or frontend changes, check whether Docker is serving an older built image.
 - `owc-tools` can be healthy while the browser endpoint is unhealthy. Use `/ui/browser/status` to distinguish MCP profile health from browser DevTools reachability.
 - `./data` is shared by backend and tool containers for runtime state, memory files, browser runtime config, and generated artifacts.
-

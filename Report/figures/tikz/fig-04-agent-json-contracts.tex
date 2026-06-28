@@ -1,0 +1,117 @@
+\begin{figure}[!htbp]
+\begingroup
+\hbadness=10000\relax
+\centering
+\resizebox{1.0\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  header/.style={draw=accent!75, fill=accent!8, rounded corners=5pt,
+    line width=0.55pt, text width=3.05cm, align=center,
+    font=\scriptsize\bfseries, inner sep=4pt},
+  stage/.style={draw=orange!78!black, fill=orange!8, rounded corners=5pt,
+    line width=0.6pt, text width=2.15cm, minimum height=1.10cm,
+    align=center, font=\scriptsize\bfseries, inner sep=4pt},
+  input/.style={draw=teal!70!black, fill=teal!6, rounded corners=5pt,
+    line width=0.6pt, text width=3.45cm, minimum height=1.24cm,
+    align=left, font=\scriptsize\raggedright, inner sep=4pt},
+  output/.style={draw=purple!66!black, fill=purple!7, rounded corners=5pt,
+    line width=0.6pt, text width=3.65cm, minimum height=1.24cm,
+    align=left, font=\scriptsize\raggedright, inner sep=4pt},
+  next/.style={draw=green!55!black, fill=green!8, rounded corners=5pt,
+    line width=0.6pt, text width=3.55cm, minimum height=1.24cm,
+    align=left, font=\scriptsize\raggedright, inner sep=4pt},
+  lane/.style={draw=gray!28, fill=gray!3, rounded corners=7pt, line width=0.5pt},
+  arr/.style={-{Latex[length=2.0mm,width=1.45mm]}, line width=0.75pt,
+    accent!78, shorten <=2pt, shorten >=2pt},
+  soft/.style={-{Latex[length=1.9mm,width=1.35mm]}, line width=0.70pt,
+    gray!62, dashed, shorten <=2pt, shorten >=2pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.0pt, text=black!72},
+  note/.style={draw=gray!45, fill=gray!6, rounded corners=4pt,
+    text width=13.8cm, align=center, font=\scriptsize, inner sep=5pt}
+]
+
+\path[use as bounding box] (-7.55,-7.55) rectangle (7.65,6.15);
+
+\node[header] at (-6.10,5.45) {Stage};
+\node[header] at (-2.65,5.45) {Input / handoff};
+\node[header] at (1.35,5.45) {JSON returned};
+\node[header] at (5.55,5.45) {Next contract};
+
+\foreach \y in {4.20,2.05,-0.10,-2.25,-4.40} {
+  \node[lane, minimum width=15.0cm, minimum height=1.74cm] at (0.05,\y) {};
+}
+
+\node[stage] (classStage) at (-6.10,4.20) {Classification\\agent};
+\node[input] (classIn) at (-2.65,4.20) {\textbf{Input}\\
+  \texttt{url, settings,}\\
+  \texttt{observer, memory}};
+\node[output] (classOut) at (1.35,4.20) {\textbf{Output}\\
+  \texttt{ClassificationResult}\\
+  \texttt{page\_type, confidence,}\\
+  \texttt{reasoning}};
+\node[next] (classNext) at (5.55,4.20) {\textbf{Route edge}\\
+  Selects landing, hosting, embedded, terminal failure, or provider/email path.};
+
+\node[stage] (landingStage) at (-6.10,2.05) {Landing-page\\agent};
+\node[input] (landingIn) at (-2.65,2.05) {\textbf{Input}\\
+  \texttt{HandoffContext}\\
+  root URL, target URL, page type, memory hints.};
+\node[output] (landingOut) at (1.35,2.05) {\textbf{Output}\\
+  \texttt{hosting\_pages[],}\\
+  \texttt{direct\_stream\_urls[],}\\
+  \texttt{site\_patterns, rejected\_urls}};
+\node[next] (landingNext) at (5.55,2.05) {\textbf{Normalized result}\\
+  Builds \texttt{MatchInfo[]} and \texttt{ExtractionResult}; fills pending queues.};
+
+\node[stage] (hostingStage) at (-6.10,-0.10) {Hosting-page\\agent};
+\node[input] (hostingIn) at (-2.65,-0.10) {\textbf{Input}\\
+  assigned watch URL, match hints, server hints, navigation policy.};
+\node[output] (hostingOut) at (1.35,-0.10) {\textbf{Output}\\
+  \texttt{decision, servers[],}\\
+  \texttt{streaming\_urls[],}\\
+  \texttt{embedded\_urls[]}};
+\node[next] (hostingNext) at (5.55,-0.10) {\textbf{Normalized result}\\
+  Stores evidence and turns iframe/player URLs into embedded-agent handoffs.};
+
+\node[stage] (embeddedStage) at (-6.10,-2.25) {Embedded-page\\agent};
+\node[input] (embeddedIn) at (-2.65,-2.25) {\textbf{Input}\\
+  embedded/player URL, source hosting status, required evidence.};
+\node[output] (embeddedOut) at (1.35,-2.25) {\textbf{Output}\\
+  \texttt{page\_classification,}\\
+  \texttt{servers[],}\\
+  \texttt{all\_stream\_urls[]}};
+\node[next] (embeddedNext) at (5.55,-2.25) {\textbf{Normalized result}\\
+  Adds stream evidence, screenshots, player state, or no-stream/blocker reason.};
+
+\node[stage] (providerStage) at (-6.10,-4.40) {Provider and\\email tools};
+\node[input] (providerIn) at (-2.65,-4.40) {\textbf{Input}\\
+  final stream rows, screenshots, extraction results, infringing URL.};
+\node[output] (providerOut) at (1.35,-4.40) {\textbf{Output}\\
+  \texttt{ProviderInfo[]} for hosts\\
+  \texttt{TakedownEmail[]} for review};
+\node[next] (providerNext) at (5.55,-4.40) {\textbf{Final aggregate}\\
+  \texttt{PipelineResult}\\
+  classification, matches, streams, metrics, status.};
+
+\foreach \a/\b/\c in {classStage/classIn/classOut,landingStage/landingIn/landingOut,hostingStage/hostingIn/hostingOut,embeddedStage/embeddedIn/embeddedOut,providerStage/providerIn/providerOut} {
+  \draw[arr] (\a.east) -- (\b.west);
+  \draw[arr] (\b.east) -- (\c.west);
+}
+\foreach \a/\b in {classOut/classNext,landingOut/landingNext,hostingOut/hostingNext,embeddedOut/embeddedNext,providerOut/providerNext} {
+  \draw[arr] (\a.east) -- (\b.west);
+}
+
+\draw[soft] (classNext.south) -- node[lab, right=1pt] {handoff} (landingNext.north);
+\draw[soft] (landingNext.south) -- node[lab, right=1pt] {candidate} (hostingNext.north);
+\draw[soft] (hostingNext.south) -- node[lab, right=1pt] {iframe} (embeddedNext.north);
+\draw[soft] (embeddedNext.south) -- node[lab, right=1pt] {evidence} (providerNext.north);
+
+\node[note] at (0.05,-6.62)
+  {Boundary rule: each specialist reasons internally, but every handoff is a typed JSON contract. The orchestrator normalizes raw specialist JSON into the next bounded task and finally into \texttt{PipelineResult}.};
+
+\end{tikzpicture}%
+}
+\endgroup
+\caption{Agent JSON contracts and orchestrator handoffs.}\label{fig:agent-json-contracts}
+\end{figure}

@@ -1,0 +1,40 @@
+@startuml embedded_activity_no_storage
+title Embedded Page Agent - Activity Diagram (No Storage Lifelines)
+skinparam shadowing false
+start
+:Receive direct embedded/player URL;
+:Compile prompt with player-only scope;
+:Open embedded browser profile;
+:Navigate to assigned player URL;
+:Run inspect_embedded;
+if (full-page block or inaccessible player?) then (yes)
+  :Capture blocker evidence;
+  :Return failed result\nwithout downstream fallback;
+else (no)
+endif
+
+while (same-player source/control remains?) is (yes)
+  if (redirect or popup drift occurs?) then (yes)
+    :Recover to assigned player URL once;
+  else (no)
+  endif
+  :Select exact frame-local play/source target;
+  :Activate player or source;
+  :Capture screenshot and player state;
+  :Harvest media/network streams;
+  if (stream URL found?) then (yes)
+    :Record stream, protocol,\nsource label, channel evidence;
+  else (no)
+    :Record no-stream diagnostics;
+  endif
+endwhile (done)
+
+if (any streams?) then (yes)
+  :Return SUCCESS ExtractionResult;
+elseif (partial playback evidence?) then (yes)
+  :Return PARTIAL ExtractionResult;
+else (none)
+  :Return FAILED ExtractionResult;
+endif
+stop
+@enduml

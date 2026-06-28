@@ -1,65 +1,57 @@
-\chapter*{List of Acronyms}
+\phantomsection
 \addcontentsline{toc}{chapter}{List of Acronyms}
+\thispagestyle{plain}
+\newgeometry{top=1.55cm,bottom=1.45cm,left=2.25cm,right=2.25cm}
 
 \begingroup
-\small
-\setlength{\tabcolsep}{5pt}
-\renewcommand{\arraystretch}{1.16}
-\noindent\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.0cm}
-                  >{\raggedright\arraybackslash}X}
+\fontsize{8.0}{8.85}\selectfont
+\setlength{\tabcolsep}{3.4pt}
+\renewcommand{\arraystretch}{1.00}
+\noindent\begin{tabularx}{\textwidth}{@{}Q{1.38cm}Y Q{2.15cm}Y@{}}
 \toprule
-\rowcolor{accent!8}
-Acronym & Meaning \\
+\multicolumn{4}{c}{\bfseries\fontsize{16}{18.6}\selectfont List of Acronyms} \\[0.25em]
 \midrule
-AI & Artificial Intelligence \\
-API & Application Programming Interface \\
-ASB & Azure Service Bus \\
-CDN & Content Delivery Network \\
-CDP & Chrome DevTools Protocol \\
-DASH & Dynamic Adaptive Streaming over HTTP \\
-DB & Database \\
-DNS & Domain Name System \\
-DOM & Document Object Model \\
-DSRM & Design Science Research Methodology \\
-E2E & End-to-End \\
-HLS & HTTP Live Streaming \\
-HTML & Hypertext Markup Language \\
-HTTP & Hypertext Transfer Protocol \\
-IP & Internet Protocol \\
-JSON & JavaScript Object Notation \\
-KPI & Key Performance Indicator \\
-LLM & Large Language Model \\
-M3U8 & UTF-8 M3U playlist format \\
-\bottomrule
-\end{tabularx}
-
-\clearpage
-
-\noindent\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash\bfseries}p{3.0cm}
-                  >{\raggedright\arraybackslash}X}
-\toprule
-\rowcolor{accent!8}
-Acronym & Meaning \\
+\rowcolor{accent!7}
+Acr. & Meaning and use in the report & Acr. & Meaning and use in the report \\
 \midrule
-MCP & Model Context Protocol \\
-MPEG-DASH & MPEG Dynamic Adaptive Streaming over HTTP \\
-MPD & Media Presentation Description \\
-OWC & Open Web Catcher \\
-OCR & Optical Character Recognition \\
-PFE & Projet de Fin d'Etudes \\
-RDAP & Registration Data Access Protocol \\
-RPD & Requests Per Day \\
-RPM & Requests Per Minute \\
-SSE & Server-Sent Events \\
-SQL & Structured Query Language \\
-TPM & Tokens Per Minute \\
-TTL & Time To Live \\
-UI & User Interface \\
-URL & Uniform Resource Locator \\
-UUID & Universally Unique Identifier \\
-UX & User Experience \\
-WHOIS & Domain registration lookup protocol or service \\
+AI & Artificial Intelligence; model-assisted browser reasoning. &
+API & Application Programming Interface; FastAPI and console endpoints. \\
+ASB & Azure Service Bus; deployed n8n landing-agent queue path. &
+CDN & Content Delivery Network; stream, asset, and challenge hosting layer. \\
+CDP & Chrome DevTools Protocol; browser network/runtime observation. &
+DASH & Dynamic Adaptive Streaming over HTTP; adaptive streaming protocol. \\
+DB & Database; short label for persisted run and review records. &
+DMCA & Digital Millennium Copyright Act; takedown-email context. \\
+DNS & Domain Name System; host attribution and provider enrichment. &
+DOM & Document Object Model; rendered page tree inspected by agents. \\
+DSRM & Design Science Research Methodology; method behind the artifact. &
+FR & Functional Requirement; requirement identifiers in Chapter~2. \\
+HLS & HTTP Live Streaming; playlist protocol represented by \texttt{.m3u8}. &
+HTML & Hypertext Markup Language; static source compared with rendered state. \\
+HTTP & Hypertext Transfer Protocol; pages, APIs, manifests, and media. &
+IP & Internet Protocol; network address used for attribution. \\
+JSON & JavaScript Object Notation; agent outputs, traces, and settings. &
+KPI & Key Performance Indicator; success, stream yield, cost, and tool rate. \\
+LLM & Large Language Model; reasoning runtime for specialist agents. &
+M3U8 & UTF-8 M3U Playlist; HLS playlist extension used as evidence. \\
+MCP & Model Context Protocol; tool interface for browser actions. &
+MPD & Media Presentation Description; MPEG-DASH manifest evidence. \\
+MPEG-DASH & MPEG Dynamic Adaptive Streaming over HTTP; DASH standard name. &
+NFR & Non-Functional Requirement; reliability, cost, security, observability. \\
+OCR & Optical Character Recognition; future screenshot/channel reading. &
+OWC & Open Web Catcher; reference platform built during the internship. \\
+PFE & Projet de Fin d'Etudes; internship project and report context. &
+RDAP & Registration Data Access Protocol; ownership metadata source. \\
+RFC & Request for Comments; standards source for HLS. &
+RPD & Requests Per Day; provider/model rate-limit unit. \\
+RPM & Requests Per Minute; model and API throughput unit. &
+SQL & Structured Query Language; PostgreSQL query layer. \\
+TPM & Tokens Per Minute; LLM throughput limit. &
+UI & User Interface; operator console screens and controls. \\
+URL & Uniform Resource Locator; targets, candidates, streams, evidence links. &
+XHR & XMLHttpRequest; dynamic browser request pattern. \\
 \bottomrule
 \end{tabularx}
 \endgroup
 \clearpage
+\restoregeometry

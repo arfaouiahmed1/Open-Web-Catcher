@@ -1,0 +1,39 @@
+@startuml landing_activity_no_storage
+title Landing Page Agent - Activity Diagram (No Storage Lifelines)
+skinparam shadowing false
+start
+:Receive landing URL and orchestrator handoff;
+:Compile prompt with landing-only responsibilities;
+:Open landing browser profile;
+:Inspect main body content first;
+while (useful body frontier remains?) is (yes)
+  if (match/card/schedule rows visible?) then (yes)
+    :Extract row context, titles,\nchannels, and candidate links;
+  else (no)
+  endif
+  if (tabs, filters, reveal buttons,\nload-more, or pagination exist?) then (yes)
+    :Use continuation control;
+    :Inspect updated body state;
+  else (no)
+  endif
+  if (candidate pattern verified?) then (yes)
+    :Collect same-pattern siblings;
+  else (no)
+    :Reject low-value, ad, unrelated,\nor pagination-only target;
+  endif
+endwhile (exhausted)
+
+if (body content produced no target?) then (yes)
+  :Use header/footer navigation\nas last-resort discovery;
+else (no)
+endif
+
+:Normalize hosting candidates;
+:Preserve iframe, video, player,\nand direct-stream hints;
+if (verified hosting or stream evidence exists?) then (yes)
+  :Return successful ExtractionResult;
+else (no)
+  :Return empty failed/blocked result\nwithout fabricating a URL;
+endif
+stop
+@enduml

@@ -1,13 +1,17 @@
-\begin{figure}[H]
+\begin{figure}[!htbp]
 \centering
-\resizebox{0.94\textwidth}{!}{%
+\resizebox{1.0\textwidth}{!}{%
 \begin{tikzpicture}[
+  line cap=round,
+  line join=round,
   part/.style={draw=gray!55, fill=gray!8, rounded corners=3pt,
     minimum width=2.25cm, minimum height=0.58cm, align=center, font=\scriptsize\bfseries},
   msg/.style={->, >=Stealth, thick, accent!85, shorten <=2pt, shorten >=2pt},
   ret/.style={->, >=Stealth, dashed, gray!70, thick, shorten <=2pt, shorten >=2pt},
   life/.style={gray!28, dashed},
-  lab/.style={font=\tiny, fill=white, inner sep=1.2pt, align=center}
+  lab/.style={font=\tiny, fill=white, inner sep=1.2pt, align=center},
+  phase/.style={draw=gray!26, fill=gray!2, rounded corners=5pt, line width=0.45pt},
+  phaselab/.style={font=\tiny\bfseries, text=black!58, fill=white, inner sep=1.4pt}
 ]
 
 \foreach \x/\name/\id in {%
@@ -21,6 +25,18 @@
   \node[part] (\id) at (\x,0) {\name};
   \draw[life] (\x,-0.42) -- (\x,-6.95);
 }
+
+\begin{scope}[on background layer]
+  \node[phase, minimum width=5.95cm, minimum height=1.25cm,
+    anchor=north west] (brief) at (-0.25,-0.65) {};
+  \node[phase, minimum width=8.80cm, minimum height=2.50cm,
+    anchor=north west] (inspect) at (5.15,-2.00) {};
+  \node[phase, minimum width=14.50cm, minimum height=1.90cm,
+    anchor=north west] (route) at (-0.25,-4.75) {};
+\end{scope}
+\node[phaselab, anchor=west] at ([xshift=0.10cm,yshift=-0.08cm]brief.north west) {Bounded task};
+\node[phaselab, anchor=west] at ([xshift=0.10cm,yshift=-0.08cm]inspect.north west) {Rendered-page inspection};
+\node[phaselab, anchor=west] at ([xshift=0.10cm,yshift=-0.08cm]route.north west) {Typed route result};
 
 \draw[msg] (orch.south) ++(0,-0.75) -- node[lab, above]{URL + route task} ++(2.8,0);
 \draw[msg] (agent.south) ++(0,-1.45) -- node[lab, above]{prompt + tools} ++(2.8,0);

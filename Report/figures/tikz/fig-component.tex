@@ -5,87 +5,85 @@
   line cap=round,
   line join=round,
   cluster/.style={draw=gray!32, fill=gray!3, rounded corners=9pt,
-    line width=0.55pt, inner sep=9pt},
+    line width=0.55pt, inner sep=8pt},
   block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
-    inner xsep=6pt, inner ysep=4pt, minimum height=0.78cm, text=black},
-  actor/.style={block, draw=gray!65, fill=gray!8, text width=2.10cm},
-  frontend/.style={block, draw=accent!78, fill=blue!6, text width=3.30cm},
-  backend/.style={block, draw=accent!88!black, fill=blue!9, text width=3.10cm},
-  agent/.style={block, draw=orange!78!black, fill=orange!10, text width=3.08cm},
-  tool/.style={block, draw=purple!65!black, fill=purple!7, text width=3.05cm},
-  data/.style={block, draw=green!55!black, fill=green!8, text width=3.05cm},
-  ext/.style={block, draw=gray!62, fill=gray!9, text width=3.05cm},
+    inner xsep=6pt, inner ysep=4pt, minimum height=0.76cm, text=black},
+  actor/.style={block, draw=gray!65, fill=gray!8, text width=1.95cm},
+  frontend/.style={block, draw=accent!78, fill=blue!6, text width=2.72cm},
+  backend/.style={block, draw=accent!88!black, fill=blue!9, text width=2.72cm},
+  agent/.style={block, draw=orange!78!black, fill=orange!10, text width=2.72cm},
+  tool/.style={block, draw=purple!65!black, fill=purple!7, text width=2.72cm},
+  data/.style={block, draw=green!55!black, fill=green!8, text width=2.72cm},
+  ext/.style={block, draw=gray!62, fill=gray!9, text width=2.72cm},
   grouplabel/.style={font=\scriptsize\bfseries, text=black!68, inner sep=2pt},
-  arr/.style={-{Latex[length=2.2mm,width=1.7mm]}, line width=0.86pt,
+  arr/.style={-{Latex[round,length=1.9mm,width=1.45mm]}, line width=0.82pt,
     accent!82, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  route/.style={-{Latex[length=2.2mm,width=1.7mm]}, line width=0.84pt,
+  route/.style={-{Latex[round,length=1.9mm,width=1.45mm]}, line width=0.82pt,
     orange!82!black, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  toolarr/.style={-{Latex[length=2.2mm,width=1.7mm]}, line width=0.84pt,
+  toolarr/.style={-{Latex[round,length=1.9mm,width=1.45mm]}, line width=0.80pt,
     purple!68!black, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.75pt,
+  soft/.style={-{Latex[round,length=1.65mm,width=1.22mm]}, line width=0.70pt,
     gray!62, densely dashed, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
   lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
     text=black!70}
 ]
 
-\node[actor] (operator) at (0,4.85) {Operator};
+\node[actor] (operator) at (-1.75,3.95) {Operator};
 
-\node[frontend] (console) at (3.75,5.70) {Next.js console\\{\normalfont\tiny active routes: \texttt{/}, \texttt{/live}, \texttt{/runs}, \texttt{/runs/[runId]}, \texttt{/providers}, \texttt{/settings}}};
-\node[frontend] (apiclient) at (3.75,4.35) {\texttt{web/lib/api.js}\\{\normalfont\tiny API URL builder + fetch helper}};
-\node[frontend] (rundetail) at (3.75,3.00) {Run detail UI\\{\normalfont\tiny agent desk, evidence tabs, browser frames}};
+\node[frontend] (console) at (1.70,5.00) {Next.js console\\{\normalfont\tiny active screens + topbar}};
+\node[frontend] (apiclient) at (1.70,3.75) {\texttt{web/lib/api.js}\\{\normalfont\tiny URL builder + fetch helper}};
+\node[frontend] (rundetail) at (1.70,2.50) {Run detail UI\\{\normalfont\tiny evidence tabs + traces}};
 
-\node[backend] (fastapi) at (8.10,5.70) {\texttt{src/api/app.py}\\{\normalfont\tiny UI routes + background jobs}};
-\node[backend] (dataset) at (8.10,4.35) {Dataset API\\{\normalfont\tiny sites, batches, streaming}};
-\node[backend] (providerconfig) at (8.10,3.00) {Provider config\\{\normalfont\tiny models, keys, runtime settings}};
-\node[backend] (registry) at (8.10,1.65) {Run registry\\{\normalfont\tiny active in-memory traces}};
+\node[backend] (fastapi) at (5.10,5.00) {\texttt{src/api/app.py}\\{\normalfont\tiny UI routes + jobs}};
+\node[backend] (dataset) at (5.10,3.75) {Dataset and workflow APIs\\{\normalfont\tiny sites, batches, streaming}};
+\node[backend] (registry) at (5.10,2.50) {Settings and run registry\\{\normalfont\tiny config + active traces}};
 
-\node[agent] (orch) at (12.60,5.70) {OrchestratorAgent\\{\normalfont\tiny deterministic routing + aggregation}};
-\node[agent] (specialists) at (12.60,4.35) {Browser specialists\\{\normalfont\tiny classification, landing, hosting, embedded}};
-\node[agent] (downstream) at (12.60,3.00) {Provider + email tools\\{\normalfont\tiny IPInfo/RDAP + review drafts}};
+\node[agent] (orch) at (8.50,5.00) {OrchestratorAgent\\{\normalfont\tiny routing + aggregation}};
+\node[agent] (specialists) at (8.50,3.75) {Browser specialists\\{\normalfont\tiny classify, land, host, embed}};
+\node[agent] (downstream) at (8.50,2.50) {Provider + email tools\\{\normalfont\tiny enrichment + review drafts}};
 
-\node[tool] (mcp) at (17.00,5.70) {\texttt{mcp\_client.py}\\{\normalfont\tiny profile-scoped sessions}};
-\node[tool] (browser) at (17.00,4.35) {Puppeteer / Playwright\\{\normalfont\tiny Chrome browser profiles}};
-\node[tool] (policy) at (17.00,3.00) {Shared browser policy\\{\normalfont\tiny proxy, runtime, error codes}};
+\node[tool] (mcp) at (11.90,5.00) {MCP sessions\\{\normalfont\tiny profile-scoped tool access}};
+\node[tool] (browser) at (11.90,3.75) {Browser automation\\{\normalfont\tiny Puppeteer / Playwright}};
+\node[tool] (policy) at (11.90,2.50) {Runtime policy\\{\normalfont\tiny proxy, limits, errors}};
 
-\node[data] (db) at (3.75,0.00) {Postgres\\{\normalfont\tiny runs, telemetry, evidence}};
-\node[data] (files) at (8.10,0.00) {\texttt{data/} runtime files\\{\normalfont\tiny memory + browser state}};
-\node[ext] (gemini) at (12.60,0.00) {Google GenAI / Gemini\\{\normalfont\tiny model calls}};
-\node[ext] (external) at (17.00,0.00) {External services\\{\normalfont\tiny Cloudinary, IPInfo, RDAP, target sites}};
+\node[data] (db) at (1.70,0.25) {Postgres\\{\normalfont\tiny runs, telemetry, evidence}};
+\node[data] (files) at (5.10,0.25) {\texttt{data/} runtime files\\{\normalfont\tiny memory + browser state}};
+\node[ext] (gemini) at (8.50,0.25) {Google GenAI / Gemini\\{\normalfont\tiny model calls}};
+\node[ext] (external) at (11.90,0.25) {External services\\{\normalfont\tiny Cloudinary, IPInfo, RDAP}};
 
 \begin{scope}[on background layer]
   \node[cluster, fit=(console) (apiclient) (rundetail)] (frontbox) {};
-  \node[cluster, fit=(fastapi) (dataset) (providerconfig) (registry)] (backbox) {};
+  \node[cluster, fit=(fastapi) (dataset) (registry)] (backbox) {};
   \node[cluster, fit=(orch) (specialists) (downstream)] (runtimebox) {};
   \node[cluster, fit=(mcp) (browser) (policy)] (toolbox) {};
   \node[cluster, fit=(db) (files) (gemini) (external)] (databox) {};
 \end{scope}
 
-\node[grouplabel, anchor=south west] at ([xshift=0.15cm,yshift=0.08cm]frontbox.north west) {Next.js Operator Console};
-\node[grouplabel, anchor=south west] at ([xshift=0.15cm,yshift=0.08cm]backbox.north west) {FastAPI Backend};
-\node[grouplabel, anchor=south west] at ([xshift=0.15cm,yshift=0.08cm]runtimebox.north west) {LangGraph / LangChain Runtime};
-\node[grouplabel, anchor=south west] at ([xshift=0.15cm,yshift=0.08cm]toolbox.north west) {MCP Browser Tools};
-\node[grouplabel, anchor=south west] at ([xshift=0.15cm,yshift=0.08cm]databox.north west) {Persistence and External Services};
+\node[grouplabel, anchor=south west] at ([xshift=0.12cm,yshift=0.08cm]frontbox.north west) {Operator console};
+\node[grouplabel, anchor=south west] at ([xshift=0.12cm,yshift=0.08cm]backbox.north west) {FastAPI backend};
+\node[grouplabel, anchor=south west] at ([xshift=0.12cm,yshift=0.08cm]runtimebox.north west) {Agent runtime};
+\node[grouplabel, anchor=south west] at ([xshift=0.12cm,yshift=0.08cm]toolbox.north west) {Browser tooling};
+\node[grouplabel, anchor=south west] at ([xshift=0.12cm,yshift=0.08cm]databox.north west) {Persistence and external services};
 
-\draw[arr] (operator) -- node[lab, above] {uses} (frontbox.west |- apiclient);
-\draw[arr] (console) -- (apiclient);
-\draw[arr] (rundetail) -- (apiclient);
-\draw[arr] (apiclient) -- node[lab, above] {HTTP API} (fastapi);
-\draw[arr] (fastapi) -- (dataset);
-\draw[arr] (fastapi) -- (providerconfig);
-\draw[arr] (fastapi) -- (registry);
-\draw[route] (fastapi) -- node[lab, above] {job task} (orch);
-\draw[route] (orch) -- (specialists);
-\draw[route] (orch) -- (downstream);
-\draw[toolarr] (specialists) -- node[lab, above] {tool calls} (mcp);
-\draw[toolarr] (mcp) -- (browser);
-\draw[toolarr] (browser) -- (policy);
-\draw[soft] (fastapi.south) |- (db.west);
+\draw[arr] (operator.east) -- node[lab, above] {uses} (frontbox.west |- apiclient);
+\draw[arr] (console.south) -- (apiclient.north);
+\draw[arr] (rundetail.north) -- (apiclient.south);
+\draw[arr] (apiclient.east) -- node[lab, above] {HTTP API} (fastapi.west);
+\draw[arr] (fastapi.south) -- (dataset.north);
+\draw[arr] (dataset.south) -- (registry.north);
+\draw[route] (fastapi.east) -- node[lab, above] {job task} (orch.west);
+\draw[route] (orch.south) -- (specialists.north);
+\draw[route] (specialists.south) -- (downstream.north);
+\draw[toolarr] (specialists.east) -- node[lab, above] {tool calls} (mcp.west);
+\draw[toolarr] (mcp.south) -- (browser.north);
+\draw[toolarr] (browser.south) -- (policy.north);
 \draw[soft] (registry.south) -- (files.north);
+\draw[soft] (fastapi.south) to[out=-90,in=90] (db.north);
 \draw[soft] (specialists.south) -- (gemini.north);
-\draw[soft] (downstream.south) |- (external.north);
-\draw[soft] (browser.south) -- (external.north);
+\draw[soft] (downstream.south) to[out=-90,in=90] (external.north);
+\draw[soft] (browser.south) to[out=-90,in=90] (external.north);
 
 \end{tikzpicture}
 }
-\caption{System component diagram grounded in the active console routes, FastAPI modules, agent runtime, browser tools, persistence, and external services.}\label{fig:component}
+\caption{System component diagram for the OWC runtime.}\label{fig:component}
 \end{figure}

@@ -1,0 +1,34 @@
+@startuml landing_sequence_no_storage
+title Landing Page Agent - Sequence Diagram (No Storage Lifelines)
+hide footbox
+skinparam shadowing false
+actor "Orchestrator" as Orchestrator
+control "LandingPageAgent" as Agent
+participant "Prompt compiler" as Prompt
+participant "landing MCP tools" as Tools
+participant "Gemini model" as LLM
+participant "_augment_landing_output" as Normalize
+
+Orchestrator -> Agent: run(root URL, landing handoff)
+Agent -> Prompt: Compile landing prompt,\nbody-first crawler contract, handoff
+Prompt --> Agent: Layered prompt
+Agent -> Tools: Open landing profile
+Agent -> Tools: Bootstrap navigate/context\nand inspect_landing
+Tools --> Agent: Sections, cards, rows,\nlinks, pagination, media hints
+
+loop meaningful landing frontier remains
+  Agent -> LLM: Current page state + candidate ledger
+  LLM --> Agent: Tool call or final JSON
+  alt inspect or detail needed
+    Agent -> Tools: inspect_landing / query / scoped detail
+    Tools --> Agent: Candidate structure
+  else continuation action needed
+    Agent -> Tools: scroll / tab / filter / load more / pagination
+    Tools --> Agent: Updated page state
+  end
+end
+
+Agent -> Normalize: Normalize hosting_pages,\nreject pagination-only URLs,\npreserve streams and player hints
+Normalize --> Agent: Clean landing payload
+Agent --> Orchestrator: ExtractionResult(hosting pages,\ndirect streams, site patterns)
+@enduml

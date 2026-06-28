@@ -1,0 +1,32 @@
+@startuml embedded_sequence_no_storage
+title Embedded Page Agent - Sequence Diagram (No Storage Lifelines)
+hide footbox
+skinparam shadowing false
+actor "Orchestrator" as Orchestrator
+control "EmbeddedPageAgent" as Agent
+participant "Prompt compiler" as Prompt
+participant "embedded MCP tools" as Tools
+participant "Gemini model" as LLM
+participant "_normalize_embedded_output" as Normalize
+
+Orchestrator -> Agent: run(embedded/player URL, embedded handoff)
+Agent -> Prompt: Compile embedded prompt,\nplayer-only contract, handoff
+Prompt --> Agent: Layered prompt
+Agent -> Tools: Open embedded profile
+Agent -> Tools: Bootstrap navigate/context\nand inspect_embedded
+Tools --> Agent: Frame tree, activation targets,\nsource controls, media state
+
+loop each same-player source/control
+  Agent -> LLM: Player-local evidence and targets
+  LLM --> Agent: Source activation or harvest plan
+  Agent -> Tools: Dismiss overlay or recover drift if needed
+  Agent -> Tools: Activate frame-local play/source target
+  Tools --> Agent: Updated player/media state
+  Agent -> Tools: screenshot + harvest/capture streams
+  Tools --> Agent: Stream candidates and diagnostics
+end
+
+Agent -> Normalize: Normalize servers, streams,\nplayer state, channel metadata
+Normalize --> Agent: Clean embedded payload
+Agent --> Orchestrator: ExtractionResult(streams or no-stream evidence)
+@enduml

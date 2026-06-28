@@ -1,0 +1,88 @@
+@startuml company_landing_agent_backup_deployment
+title Company Deployment Flow - Landing-Agent Backup
+
+top to bottom direction
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam defaultTextAlignment center
+skinparam wrapWidth 150
+skinparam linetype ortho
+skinparam nodesep 46
+skinparam ranksep 42
+skinparam ArrowColor #4A6FA5
+
+skinparam node {
+  BackgroundColor #F7FAFC
+  BorderColor #2F4F6F
+  FontColor #1E2A36
+}
+skinparam queue {
+  BackgroundColor #EAF2FF
+  BorderColor #4A6FA5
+  FontColor #1E2A36
+}
+skinparam cloud {
+  BackgroundColor #F2F7FF
+  BorderColor #5A78A5
+  FontColor #1E2A36
+}
+skinparam component {
+  BackgroundColor #EAF8EA
+  BorderColor #3F7A42
+  FontColor #1E2A36
+}
+skinparam artifact {
+  BackgroundColor #FFF8E7
+  BorderColor #7A5A00
+  FontColor #1E2A36
+}
+
+node "Company environment" as CompanyIn <<system>> {
+  component "Primary workflow\nsubmits fallback task" as SubmitTask
+}
+
+queue "Azure Service Bus\nagent_tasks queue" as AgentTasks
+
+node "Focused Azure Container Apps Job" as ACAJob <<execution environment>> {
+  node "Browser-agent container" as JobContainer <<container>> {
+    component "n8n landing agent\nbackup worker" as LandingWorker
+    component "Puppeteer MCP\nlocal endpoint" as PuppeteerMCP
+    node "Chrome profiles\nbrowser runtime" as ChromeProfiles <<browser>>
+    artifact "Agent reply\ncandidates + metadata" as AgentReply
+  }
+}
+
+queue "Azure Service Bus\nresults queue" as ResultsQueue
+
+node "Company environment" as CompanyOut <<system>> {
+  component "Primary workflow\nreviews and integrates result" as ReviewResult
+}
+
+cloud "External dependencies" as External {
+  node "Model endpoint\nLLM reasoning" as ModelEndpoint
+  node "Target landing pages\nrendered websites" as TargetSites
+}
+
+SubmitTask -down-> AgentTasks
+AgentTasks -down-> LandingWorker
+
+LandingWorker -down-> PuppeteerMCP
+PuppeteerMCP -down-> ChromeProfiles
+ChromeProfiles -down-> AgentReply
+
+AgentReply -down-> ResultsQueue
+ResultsQueue -down-> ReviewResult
+
+LandingWorker -right-> ModelEndpoint
+ChromeProfiles -right-> TargetSites
+
+SubmitTask -[hidden]down- AgentTasks
+AgentTasks -[hidden]down- ACAJob
+ACAJob -[hidden]down- ResultsQueue
+ResultsQueue -[hidden]down- ReviewResult
+LandingWorker -[hidden]down- PuppeteerMCP
+PuppeteerMCP -[hidden]down- ChromeProfiles
+ChromeProfiles -[hidden]down- AgentReply
+ACAJob -[hidden]right- External
+ModelEndpoint -[hidden]down- TargetSites
+@enduml

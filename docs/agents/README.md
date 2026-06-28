@@ -161,3 +161,4 @@ That tool boundary is the main reason the agents can be inspected in the dashboa
 - [Embedded](./embedded.md)
 - [Provider Analysis](./provider-analysis.md)
 - [Email Generator](./email-generator.md)
+- [PlantUML Sequence And Activity Diagrams Without Storage](./plantuml-no-storage.md)

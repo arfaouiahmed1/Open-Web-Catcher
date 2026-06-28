@@ -1,0 +1,87 @@
+@startuml open_web_catcher_deployment
+title Open Web Catcher - UML Deployment Diagram
+left to right direction
+
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam defaultTextAlignment center
+skinparam wrapWidth 190
+skinparam maxMessageSize 120
+skinparam linetype polyline
+skinparam nodesep 70
+skinparam ranksep 55
+skinparam node {
+  BackgroundColor #F7FAFC
+  BorderColor #2F4F6F
+}
+skinparam database {
+  BackgroundColor #FFF8E7
+  BorderColor #7A5A00
+}
+skinparam cloud {
+  BackgroundColor #F2F7FF
+  BorderColor #5A78A5
+}
+skinparam folder {
+  BackgroundColor #F5F5F5
+  BorderColor #666666
+}
+
+actor "Operator" as Operator
+
+node "Operator workstation" as Workstation <<device>> {
+  artifact "Web browser\nhttp://localhost:3000" as Browser
+}
+
+node "Docker host\n(docker-compose.yml)" as Host <<execution environment>> {
+  node "owc-web\nNext.js 15 + React 19\nhost 3000 -> container 3001" as Web <<container>>
+
+  node "owc\nFastAPI + Uvicorn\nPython 3.11\nhost 8000 -> container 8000" as API <<container>> {
+    component "Agent runtime\nLangGraph + LangChain\nOrchestrator + specialists" as Runtime
+  }
+
+  database "postgres\npostgres:16-alpine\ninternal port 5432" as Postgres
+
+  node "owc-tools\nPuppeteer + Chrome\nMCP host 3001 -> 3000\nCDP host 9222 -> 9222" as Puppeteer <<container>>
+
+  node "owc-tools-playwright\nPlaywright + Chrome\nMCP host 3002 -> 3001\nCDP host 9223 -> 9223" as Playwright <<container>>
+
+  folder "./data volume\nruntime state, browser config,\nmemory, generated artifacts" as Data
+  folder "./configs:ro\nprompts and settings" as Configs
+  folder "./datasets:ro\nseed and evaluation sites" as Datasets
+}
+
+cloud "External services" as External {
+  node "Google GenAI / Gemini\nmodel inference" as Gemini
+  node "IPInfo + RDAP / Whois\nprovider enrichment" as IPInfo
+  node "Cloudinary\nscreenshot hosting" as Cloudinary
+}
+
+Operator -right-> Browser : uses
+Browser -right-> Web : HTTP
+Web -right-> API : REST/SSE API
+API -down-> Postgres : SQL
+API -right-> Puppeteer : MCP
+API -right-> Playwright : MCP
+API -up-> Data : runtime files
+API -up-> Configs : settings
+API -up-> Datasets : datasets
+Puppeteer -up-> Data : browser state
+Playwright -up-> Data : browser state
+Runtime -down-> Gemini : LLM
+API -down-> IPInfo : lookup
+Puppeteer -down-> Cloudinary : screenshots
+Playwright -down-> Cloudinary : screenshots
+
+Web -[hidden]right- API
+API -[hidden]right- Puppeteer
+Puppeteer -[hidden]down- Playwright
+API -[hidden]down- Postgres
+Configs -[hidden]right- Data
+
+note bottom of API
+  Depends on healthy postgres,
+  owc-tools, and owc-tools-playwright.
+  The web container starts after the API is healthy.
+end note
+@enduml

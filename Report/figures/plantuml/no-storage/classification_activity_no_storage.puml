@@ -1,0 +1,31 @@
+@startuml classification_activity_no_storage
+title Classification Agent - Activity Diagram (No Storage Lifelines)
+skinparam shadowing false
+start
+:Receive URL from orchestrator;
+:Compile classification prompt\nwith route-only contract;
+:Open classification browser profile;
+:Navigate to URL and inspect rendered page;
+if (popup or overlay dominates?) then (yes)
+  :Use safest same-page close/continue control;
+  :Inspect page again;
+else (no)
+endif
+
+while (page type is not justified\nand tool budget remains?) is (yes)
+  :Read broad context or scoped element/frame detail;
+  :Compare URL, title, layout,\nmedia/frame signals, and visible text;
+endwhile (ready or budget exhausted)
+
+if (landing signals dominate?) then (yes)
+  :Return landing_page;
+elseif (watch/server host signals dominate?) then (yes)
+  :Return host_page;
+elseif (direct player/iframe page is proven?) then (yes)
+  :Return embed_video_page;
+else (unknown)
+  :Return other;
+endif
+:Include confidence and concise evidence reasoning;
+stop
+@enduml

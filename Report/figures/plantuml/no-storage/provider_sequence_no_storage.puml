@@ -1,0 +1,25 @@
+@startuml provider_sequence_no_storage
+title Provider Analysis Tool - Sequence Diagram (No Storage Lifelines)
+hide footbox
+skinparam shadowing false
+actor "Orchestrator" as Orchestrator
+participant "_collect_all_streams" as Collector
+control "IPInfoTool" as Tool
+participant "lookup_multiple" as Lookup
+cloud "DNS / IPInfo / RDAP / Whois" as External
+
+Orchestrator -> Collector: extraction_results
+Collector --> Orchestrator: Deduped provider-like stream URLs
+alt no stream URLs
+  Orchestrator -> Orchestrator: Skip provider analysis
+else stream URLs exist
+  Orchestrator -> Tool: _arun(stream_urls)
+  Tool -> Lookup: lookup_multiple(stream_urls, token)
+  loop each unique stream host
+    Lookup -> External: Resolve host/IP/provider\nand abuse contact evidence
+    External --> Lookup: Provider, location,\nRDAP/Whois details
+  end
+  Lookup --> Tool: ProviderInfo[]
+  Tool --> Orchestrator: JSON provider rows
+end
+@enduml

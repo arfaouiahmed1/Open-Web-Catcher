@@ -1,69 +1,80 @@
-\begin{figure}[H]
+\clearpage
+\newgeometry{margin=1.05cm}
+\begin{figure}[p]
 \centering
-\resizebox{0.96\textwidth}{!}{%
+\vspace*{\fill}
+\resizebox{!}{0.82\textheight}{%
 \begin{tikzpicture}[
   line cap=round,
   line join=round,
   start/.style={draw=accent!85!black, fill=accent!10, rounded corners=12pt,
-    minimum width=2.55cm, minimum height=0.78cm, align=center,
+    minimum width=3.05cm, minimum height=0.82cm, align=center,
     font=\scriptsize\bfseries},
   stepbox/.style={draw=accent!78, fill=blue!5, rounded corners=7pt,
-    minimum width=2.80cm, minimum height=0.88cm, align=center,
-    text width=2.58cm, font=\scriptsize\bfseries},
+    minimum width=3.22cm, minimum height=0.86cm, align=center,
+    text width=2.90cm, font=\scriptsize\bfseries},
   tool/.style={stepbox, draw=purple!65!black, fill=purple!7},
   model/.style={stepbox, draw=orange!80!black, fill=orange!10},
   output/.style={stepbox, draw=green!55!black, fill=green!8},
-  decision/.style={diamond, aspect=1.9, draw=accent!80, fill=white,
-    minimum width=2.58cm, minimum height=1.08cm, align=center,
-    text width=2.04cm, font=\scriptsize\bfseries},
-  arr/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.78pt,
+  decision/.style={diamond, aspect=1.85, draw=accent!80, fill=white,
+    minimum width=3.12cm, minimum height=1.22cm, align=center,
+    text width=2.28cm, font=\scriptsize\bfseries},
+  arr/.style={-{Latex[round,length=1.85mm,width=1.38mm]}, line width=0.78pt,
     accent!78, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  toolarr/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.76pt,
+  toolarr/.style={-{Latex[round,length=1.85mm,width=1.38mm]}, line width=0.76pt,
     purple!68!black, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  loop/.style={-{Latex[length=1.9mm,width=1.4mm]}, line width=0.70pt,
-    orange!82!black, densely dashed, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.1pt,
+  loop/.style={-{Latex[round,length=1.75mm,width=1.28mm]}, line width=0.70pt,
+    orange!82!black, densely dashed, shorten <=3pt, shorten >=3pt,
+    rounded corners=8pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.2pt,
     text=black!70}
 ]
 
-\node[start] (start) at (0,4.20) {Agent.run};
-\node[stepbox] (prompt) at (3.25,4.20) {Compile prompt\\{\normalfont\tiny policy, contract, runtime, memory}};
-\node[tool] (tools) at (6.50,4.20) {Open MCP profile session\\{\normalfont\tiny stage-specific tools}};
-\node[tool] (bootstrap) at (9.75,4.20) {Bootstrap observations\\{\normalfont\tiny memory, navigation, inspect}};
-\node[model] (llm) at (13.00,4.20) {Gemini turn\\{\normalfont\tiny messages + bound tools}};
+\node[start] (start) at (0,10.35) {Agent.run};
+\node[stepbox] (prompt) at (0,9.05) {Compile prompt\\{\normalfont\tiny policy, contract, runtime, memory}};
+\node[tool] (tools) at (0,7.75) {Open MCP profile session\\{\normalfont\tiny stage-specific tools}};
+\node[tool] (bootstrap) at (0,6.45) {Bootstrap observations\\{\normalfont\tiny memory, navigation, inspect}};
+\node[model] (llm) at (0,5.15) {Gemini turn\\{\normalfont\tiny messages + bound tools}};
+\node[decision] (tooldecision) at (0,3.48) {Tool calls requested?};
+\node[decision] (progress) at (0,1.15) {Progress\\or stop?};
 
-\node[decision] (tooldecision) at (13.00,2.55) {Tool calls requested?};
-\node[decision] (cache) at (9.75,1.15) {Read-only cache hit?};
-\node[tool] (invoke) at (6.50,1.15) {Invoke MCP tool\\{\normalfont\tiny timeout + error handling}};
-\node[stepbox] (record) at (3.25,1.15) {Record telemetry\\{\normalfont\tiny usage, tool call, context}};
-\node[decision] (progress) at (0,1.15) {Progress or stop?};
+\node[decision] (cache) at (4.25,3.48) {Read-only cache hit?};
+\node[tool] (invoke) at (4.25,1.98) {Invoke MCP tool\\{\normalfont\tiny timeout + error handling}};
+\node[stepbox] (record) at (4.25,0.50) {Record telemetry\\{\normalfont\tiny usage, tool call, context}};
+\node[stepbox] (compact) at (-4.65,0.50) {Context checkpoint\\{\normalfont\tiny compact only when high}};
 
-\node[stepbox] (compact) at (0,-0.55) {Compact context\\{\normalfont\tiny when usage is high}};
-\node[output] (parse) at (3.25,-1.90) {Parse final JSON\\{\normalfont\tiny structured answer}};
-\node[output] (normalize) at (6.50,-1.90) {Normalize to Pydantic schema};
-\node[output] (remember) at (9.75,-1.90) {Store memory profile\\{\normalfont\tiny if enabled}};
-\node[start] (finish) at (13.00,-1.90) {Agent result};
+\node[output] (parse) at (0,-1.18) {Parse final JSON\\{\normalfont\tiny structured answer}};
+\node[output] (normalize) at (0,-2.48) {Normalize to Pydantic schema};
+\node[output] (remember) at (0,-3.78) {Store memory profile\\{\normalfont\tiny if enabled}};
+\node[start] (finish) at (0,-5.08) {Agent result};
 
 \draw[arr] (start) -- (prompt);
 \draw[arr] (prompt) -- (tools);
 \draw[arr] (tools) -- (bootstrap);
 \draw[arr] (bootstrap) -- (llm);
 \draw[arr] (llm) -- (tooldecision);
-\draw[toolarr] (tooldecision) -- node[lab, above] {yes} (cache);
-\draw[toolarr] (cache) -- node[lab, above] {miss} (invoke);
-\draw[toolarr] (invoke) -- (record);
-\draw[toolarr] (cache.south) -- ++(0,-0.52) -| node[lab, below, pos=0.28] {hit} (record.south);
-\draw[arr] (record) -- (progress);
-\draw[loop] (progress.north) to[out=110,in=250] node[lab, left] {continue} (llm.south west);
-\draw[loop] (progress) -- node[lab, left] {context high} (compact);
-\draw[loop] (compact.west) to[out=180,in=210] (llm.south west);
-\draw[arr] (tooldecision) |- node[lab, right] {final answer} (parse.east);
-\draw[arr] (progress) |- node[lab, left] {done or budget exhausted} (parse.west);
+\draw[arr] (tooldecision.south) -- node[lab, left=2pt, pos=0.30] {no} (progress.north);
+
+\draw[toolarr] (tooldecision.east) -- node[lab, above] {yes} (cache.west);
+\draw[toolarr] (cache.south west) to[out=-125,in=145]
+  node[lab, above left=0pt, pos=0.55] {miss} ([yshift=0.10cm]invoke.west);
+\draw[toolarr] (invoke.south) -- (record.north);
+\draw[toolarr] (cache.east) -- ++(0.42,0) |-
+  node[lab, right=1pt, pos=0.50] {hit} (record.east);
+\draw[arr] (record.west) to[out=180,in=0,looseness=0.92] (progress.east);
+
+\draw[loop] (progress.west) -- node[lab, above, pos=0.38] {continue} (compact.east);
+\draw[loop] (compact.north) -- ++(0,1.50) -| node[lab, above, pos=0.24] {next turn} (llm.west);
+
+\draw[arr] (progress.south) -- node[lab, right=1pt, pos=0.42] {done or budget exhausted} (parse.north);
 \draw[arr] (parse) -- (normalize);
 \draw[arr] (normalize) -- (remember);
 \draw[arr] (remember) -- (finish);
 
 \end{tikzpicture}
 }
-\caption{Shared activity loop used by the browser-facing agents: prompt compilation, MCP session setup, model/tool turns, telemetry recording, context control, schema normalization, and optional memory writing.}\label{fig:shared-agent-loop}
+\caption{Shared activity loop for browser-facing agents.}\label{fig:shared-agent-loop}
+\vspace*{\fill}
 \end{figure}
+\restoregeometry{}
+\clearpage

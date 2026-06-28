@@ -1,0 +1,64 @@
+@startuml orchestrator_sequence_no_storage
+title Orchestrator Agent - Sequence Diagram (No Storage Lifelines)
+hide footbox
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+actor Operator
+boundary "FastAPI job runner" as API
+control "OrchestratorAgent" as Orchestrator
+control "LangGraph state graph" as Graph
+participant "ClassificationAgent" as Classification
+participant "LandingPageAgent" as Landing
+participant "HostingPageAgent" as Hosting
+participant "EmbeddedPageAgent" as Embedded
+participant "IPInfoTool" as Provider
+participant "EmailTool" as Email
+
+Operator -> API: Submit seed URL
+API -> Orchestrator: run(url)
+Orchestrator -> Graph: ainvoke(initial PipelineState)
+Graph -> Classification: run(seed URL)
+Classification --> Graph: ClassificationResult(page_type, confidence, reasoning)
+
+alt page_type == landing_page
+  Graph -> Landing: run(root URL, landing handoff)
+  Landing --> Graph: ExtractionResult(hosting_pages,\nembedded hints, direct streams)
+  Graph -> Graph: Deduplicate candidates\nqueue hosting targets
+else page_type == host_page
+  Graph -> Graph: Queue root URL as hosting target
+else page_type == embed_video_page
+  Graph -> Graph: Queue root URL only if it is a direct player
+else other or failed classification
+  Graph -> Graph: Keep reason and skip browser specialists
+end
+
+loop while pending hosting URLs exist
+  par Each hosting target within concurrency limit
+    Graph -> Hosting: run(hosting URL, hosting handoff)
+    Hosting --> Graph: ExtractionResult(streams,\nserver rows, embedded URLs)
+  end
+  Graph -> Graph: Append extraction results\nqueue explicit embedded URLs
+end
+
+loop while pending embedded URLs exist
+  par Each embedded target within concurrency limit
+    Graph -> Embedded: run(embedded/player URL, embedded handoff)
+    Embedded --> Graph: ExtractionResult(streams,\nscreenshots, diagnostics)
+  end
+  Graph -> Graph: Append embedded extraction results
+end
+
+alt stream URLs found
+  Graph -> Provider: _arun(stream_urls)
+  Provider --> Graph: ProviderInfo[]
+  Graph -> Email: _arun(root URL, providers, extractions)
+  Email --> Graph: TakedownEmail[]
+else no stream URLs
+  Graph -> Graph: Skip provider analysis\nand takedown drafting
+end
+
+Graph --> Orchestrator: final PipelineState
+Orchestrator -> Orchestrator: Build PipelineResult\nand final status
+Orchestrator --> API: PipelineResult
+API --> Operator: Reviewable run result
+@enduml

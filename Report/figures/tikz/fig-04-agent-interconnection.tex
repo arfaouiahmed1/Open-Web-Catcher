@@ -1,6 +1,6 @@
-\begin{figure}[H]
+\begin{figure}[!htbp]
 \centering
-\resizebox{0.98\textwidth}{!}{%
+\resizebox{1.0\textwidth}{!}{%
 \begin{tikzpicture}[
   line cap=round,
   line join=round,
@@ -36,6 +36,9 @@
   route/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.84pt,
     orange!80!black, shorten <=3pt, shorten >=3pt, rounded corners=8pt,
     preaction={draw=white, line width=2.2pt}},
+  routehint/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.70pt,
+    orange!72!black, densely dashed, shorten <=3pt, shorten >=3pt,
+    rounded corners=10pt, preaction={draw=white, line width=2.0pt}},
   stream/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.84pt,
     green!55!black, shorten <=3pt, shorten >=3pt, rounded corners=8pt,
     preaction={draw=white, line width=2.2pt}},
@@ -88,8 +91,9 @@
 
 \draw[route] (landing.south) -- node[lbl, right=1pt] {hosting\_pages} (hosting.north);
 \draw[route] (hosting.south) -- node[lbl, right=1pt] {embedded\_url / player\_frame} (embedded.north);
-\draw[route] (landing.east) to[out=0,in=0,looseness=0.86]
-  node[lbl, pos=0.44, right=1pt] {direct embedded URLs} (embedded.east);
+\draw[routehint] (landing.east) to[out=5,in=5,looseness=1.36]
+  node[lbl, pos=0.20, right=1pt, text width=1.25cm, align=center]
+  {direct embedded} (embedded.east);
 
 \draw[stream] (hosting.east) to[out=0,in=180]
   node[lbl, pos=0.42, above=1pt] {streams} ([yshift=0.22cm]providers.west);

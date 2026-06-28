@@ -1,54 +1,39 @@
 \chapter{System Architecture}\label{chap:architecture}
 
-This chapter presents the architecture of Open Web Catcher (OWC), the
-evidence-collection platform developed during the internship. It starts with the user-facing system and
-runtime components, then narrows into the multi-agent pipeline, the handoff
-contract between agents, the responsibilities of each agent, and the browser-tool
-layer that lets agents read and act on rendered pages. It closes with the data that
-makes a run reviewable. Chapter~5 then maps these architectural decisions to the
-implementation. In this chapter, OWC means the academic/reference platform designed
-during the internship: the backend, console, browser tooling, specialist agents,
-runtime telemetry, persistence, and review outputs.
+I present the architecture of Open Web Catcher (OWC) as the evidence-collection
+platform developed during the internship. The chapter starts with the user-facing
+system and runtime components, then narrows into the multi-agent pipeline, agent
+handoffs, browser tooling, and persisted review data.
 
-\begin{tcolorbox}[
-  enhanced,
-  breakable,
-  colback=blue!3,
-  colframe=accent!75,
-  boxrule=0.6pt,
-  arc=2pt,
-  left=6pt,
-  right=6pt,
-  top=6pt,
-  bottom=6pt,
-  title=\textbf{Chapter focus}
-]
-The system is a staged evidence pipeline, not a single unrestricted browser
-agent. FastAPI starts and records runs. The orchestrator owns the LangGraph
-route, memory lookup, queues, handoffs, aggregation, provider analysis, and email
-draft generation. Four browser-facing specialists perform bounded work:
-classification, landing-page discovery, hosting-page extraction, and
-embedded-player extraction. Each specialist receives a narrow task, uses only
-its profile-scoped MCP browser tools, returns typed output, and leaves events
-  that explain both success and failure. Channel detection is handled by the
-  agents as part of evidence interpretation, while the browser runtime carries the
-  practical controls required by this domain: rendered-page context retrieval,
-  screenshot capture, profile-scoped sessions, fingerprint handling, and proxy
-  rotation.
-\end{tcolorbox}
+Here, OWC refers to the reference platform I built during the internship:
+backend, console, browser tools, specialist agents, runtime telemetry, persistence,
+and review outputs. Chapter~5 then maps these architectural decisions to the
+implementation.
+
+\chapterfocus{The system is a staged evidence pipeline, not a single unrestricted
+browser agent. FastAPI starts and records runs. The orchestrator owns the route,
+handoffs, queues, aggregation, provider analysis, and email drafting. Four
+browser-facing specialists perform bounded work: classification, landing-page
+discovery, hosting-page extraction, and embedded-player extraction. Each specialist
+uses profile-scoped MCP browser tools, returns typed output, and leaves events that
+explain success or failure.}
 
 \section{System Purpose and Architecture Reading Path}
 
-The platform is an evidence-collection workbench for illegal streaming
-websites. The operator launches investigations and reviews the resulting
-evidence. The engineer or administrator maintains models, prompts, pricing,
-datasets, browser runtime settings, and MCP tool configuration. External
-services provide target website content, model inference, screenshot storage,
-and provider ownership data.
+The platform is an evidence-collection workbench for illegal streaming websites. Its
+roles are separated on purpose:
+\begin{itemize}
+  \item the operator launches investigations and reviews evidence;
+  \item the engineer or administrator maintains models, prompts, pricing, datasets,
+  browser settings, and MCP tools;
+  \item external services supply target sites, model inference, screenshot storage, and
+  provider data.
+\end{itemize}
 
-\input{figures/tikz/fig-use-case-overview}
+The useful architectural view here is not a generic use-case picture. It is the path
+from an operator action to the records that make the action reviewable later.
 
-The architecture should be read in four layers:
+I present the architecture in four layers:
 \begin{enumerate}
   \item \textbf{Product layer}: the operator console launches runs, monitors
   progress, and reviews evidence.
@@ -65,7 +50,7 @@ The architecture should be read in four layers:
 \begin{tabularx}{\textwidth}{Q{3.25cm} Y Y}
 \toprule
 \rowcolor{accent!8}
-Use-case group & User intent & System response \\
+Console responsibility & Operator intent & Persisted or observable response \\
 \midrule
 Launch investigation & Submit one URL, a single-agent test, or a dataset batch.
 & Create a traceable run, validate runtime readiness, and schedule execution. \\
@@ -79,7 +64,7 @@ and datasets. & Persist configuration and expose health or preflight feedback
 before runs start. \\
 \bottomrule
 \end{tabularx}
-\caption{Use-case responsibilities across operator and administration workflows.}\label{tab:architecture-actors}
+\caption{Operator-facing responsibilities and the runtime records they create.}\label{tab:architecture-actors}
 \end{table}
 
 \section{Global Runtime Architecture}
@@ -123,6 +108,8 @@ The frontend route map is part of the architecture because the console is the
 operator's entry point into the runtime. The active screens are the dashboard,
 live pipeline, results, run detail, provider lookup, and settings pages; the
 \texttt{/agents} path is kept only as a redirect to \texttt{/live}.
+The route map starts with the shared console shell, then moves to the active screens,
+and finally shows the FastAPI route groups consumed by each screen.
 
 \input{figures/tikz/fig-04-frontend-route-flow}
 
@@ -141,19 +128,26 @@ orchestrator checks memory as soft guidance, calls classification, routes to the
 appropriate specialist path, collects evidence, and only then runs provider
 analysis and email generation.
 
+I use three complementary views for the same run. Figure~\ref{fig:end-to-end-flowchart}
+shows the operational path: where the run can block, branch, skip provider/email
+work, or stop with a no-stream result. Figure~\ref{fig:end-to-end-agent-map} shows
+ownership: specialist stages, browser runtime, provider analysis, and final pipeline
+result. Figure~\ref{fig:run-sequence} shows timing: when the API, orchestrator,
+specialist agents, tools, observer, and database exchange information during one
+investigation.
+
 \input{figures/tikz/fig-04-end-to-end-flowchart}
 
-The flowchart shows the operational path and the blocking decisions. The next
-map expands the same route as an agent architecture, showing the specialist
-stages, shared browser runtime, downstream provider analysis, and final
-pipeline result.
+After the decision path is clear, the next view shifts from ``what happens
+next?'' to ``who owns each part of the work?'' The same run crosses the console,
+API, orchestrator, browser tools, storage layer, and review outputs, so ownership
+has to stay visible.
 
 \input{figures/tikz/fig-04-end-to-end-agent-map}
 
-The sequence view shows the same workflow as a runtime contract. A run starts as
-an API request, becomes a background job and active trace, executes through the
-orchestrator graph, records model and tool activity, and is finally returned to
-the console as normalized run-detail data.
+The sequence diagram then adds the time dimension. It shows how the same
+components exchange requests, tool calls, trace events, and final run data
+during one investigation.
 
 \input{figures/tikz/fig-run-sequence}
 
@@ -221,32 +215,44 @@ extractions. & Enrich stream hosts and draft reviewable takedown notices. &
 \caption{Agent and tool responsibility map.}\label{tab:agent-responsibilities}
 \end{table}
 
-In this design, communication is visible at three levels. First, route decisions
-are graph edges, so the next stage is explicit. Second, handoff text gives each
-specialist the local context it needs without making it own the whole pipeline.
-Third, the observer records agent starts, model calls, tool calls, screenshots,
-status changes, costs, and final rollups so the dashboard can explain what
-happened.
+In this design, communication is visible at three levels:
+\begin{itemize}
+  \item route decisions are graph edges, so the next stage is explicit;
+  \item handoff text gives each specialist the local context it needs;
+  \item the observer records agent starts, model calls, tool calls, screenshots,
+  status changes, costs, and final rollups.
+\end{itemize}
 
-Prompt compilation is also part of the communication contract. Each
-browser-facing specialist receives the same architectural ingredients but a
-different stage contract. The compiled prompt combines the base policy, the
-agent-specific contract, the URL task brief, runtime context, long-memory hints,
-and short-memory working state. Short memory is run-local: it tracks recent
-navigation, tool calls, selectors, candidates, streams, server records,
-screenshots, and the next working objective. Long memory is cross-run site
-memory: it stores summarized playbooks in the site-memory database and profile
-JSON so a future run can receive hints without trusting them blindly. Both are
-soft context; live browser evidence still decides the route.
+That is why the dashboard can explain what happened instead of only showing a final
+status. Figure~\ref{fig:agent-json-contracts} expands the same contract into the
+concrete JSON fields used by the current schemas, orchestrator, and prompts.
+
+Prompt compilation is also part of the communication contract. Each browser-facing
+specialist receives the same basic ingredients but a different stage contract:
+\begin{itemize}
+  \item the base policy and agent-specific instructions;
+  \item the URL task brief and runtime context;
+  \item long-memory site hints and short-memory working state.
+\end{itemize}
+
+Short memory is run-local. It tracks recent navigation, tool calls, selectors,
+candidates, streams, server records, screenshots, and the next working objective.
+Long memory is cross-run site memory. It stores summarized playbooks so a future run
+can receive hints without trusting them blindly. In both cases, live browser evidence
+still decides the route.
 
 \input{figures/tikz/fig-04-prompt-memory-compilation}
+
+That compilation step explains what each model call receives. The shared loop
+below focuses on what happens after the prompt is ready: browser inspection,
+tool use, observation recording, and normalized output.
+
+\input{figures/tikz/fig-04-shared-agent-loop}
 
 The browser-facing specialists then reuse the same inner loop. Each one compiles
 its prompt, opens the correct MCP browser profile, lets the model request tools,
 records every model and tool turn, controls context growth, and normalizes the
 final answer into the stage schema.
-
-\input{figures/tikz/fig-04-shared-agent-loop}
 
 \section{Agent-by-Agent Design}
 
@@ -258,7 +264,13 @@ emission, but it does not inspect pages directly.
 
 \input{figures/tikz/fig-04-orchestrator-activity}
 
+The activity view is intentionally procedural. The next card summarizes the
+orchestrator as a component: its inputs, decisions, outputs, and failure signals.
+
 \input{figures/tikz/fig-04-agent-card-orchestrator}
+
+The sequence view closes the orchestrator subsection by showing how those
+responsibilities appear during a real API-triggered run.
 
 \input{figures/tikz/fig-04-seq-orchestrator}
 
@@ -315,25 +327,35 @@ media evidence.
 
 \input{figures/tikz/fig-04-agent-card-embedded}
 
+The component card gives the embedded agent's scope. The sequence diagram then
+shows the narrower runtime path: open the assigned player context, inspect
+frames, activate playback, capture evidence, and return the result.
+
 \input{figures/tikz/fig-04-seq-embedded}
 
 \subsection{Channel Detection Across Agents}
 
 Channel detection is an agent responsibility, not a standalone browser tool. The
 tools expose page text, DOM structure, frame state, screenshots, server labels, and
-media requests; the agents decide whether those signals are strong enough to become
-evidence. This distinction matters because a channel name printed on a landing page
-is only a hint, while a channel label near an activated player or inside the embedded
-player context is stronger evidence.
+media requests. The agents decide whether those signals are strong enough to become
+evidence.
 
-The responsibility is shared across the route. Classification can preserve obvious
-channel text from the first page observation. The landing agent keeps channel and
-match hints attached to candidate hosting URLs. The hosting agent verifies whether
-the selected server or player still corresponds to the same channel. The embedded
-agent has the final opportunity to confirm, refine, or reject the channel signal from
-iframe-local text, player overlays, and screenshot evidence. The orchestrator then
-normalizes these observations as candidates, final channel fields, and confidence
-notes in the pipeline result.
+This distinction matters because a channel name printed on a landing page is only a
+hint. A channel label near an activated player or inside the embedded player context is
+stronger evidence.
+
+The responsibility is shared across the route:
+\begin{itemize}
+  \item classification preserves obvious channel text from the first page observation;
+  \item landing keeps channel and match hints attached to candidate hosting URLs;
+  \item hosting checks whether the selected server or player still matches the same
+  channel;
+  \item embedded confirms, refines, or rejects the signal from iframe-local text,
+  player overlays, and screenshots.
+\end{itemize}
+
+The orchestrator then normalizes these observations as candidates, final channel
+fields, and confidence notes in the pipeline result.
 
 \begin{table}[!htbp]
 \centering
@@ -372,11 +394,17 @@ are artifacts for human review.
 \section{Browser Tooling and Runtime Controls}
 
 After the agent responsibilities are clear, the browser-tool layer explains how the
-agents observe and change real web pages. OWC does not ask an agent to reason from
-raw HTML alone. Illegal streaming pages are usually rendered by JavaScript, split
-across nested frames, and guarded by overlays, popups, server tabs, tokenized URLs,
-or delayed media requests. For that reason, every browser-facing specialist receives
-a profile-scoped MCP tool surface backed by Puppeteer and Chrome.
+agents observe and change real web pages. OWC does not ask an agent to reason from raw
+HTML alone. Illegal streaming pages are often:
+\begin{itemize}
+  \item rendered by JavaScript;
+  \item split across nested frames;
+  \item guarded by overlays, popups, and server tabs;
+  \item dependent on tokenized URLs or delayed media requests.
+\end{itemize}
+
+For that reason, every browser-facing specialist receives a profile-scoped MCP tool
+surface backed by Puppeteer and Chrome.
 
 \input{figures/tikz/fig-04-browser-tooling-layer}
 
@@ -393,11 +421,15 @@ element, frame, media, or screenshot operation when it needs proof.
 
 Inspection tools are the first read layer. They inspect the rendered Document Object
 Model (DOM), not only the first server response. Broad inspectors summarize visible
-text, grouped anchors, buttons, candidate cards, server controls, iframe trees,
-player containers, media clues, and screenshot links. Page-type inspectors specialize
-that same idea: the landing inspector looks for match cards and hosting candidates,
-the hosting inspector looks for server/source controls and player state, and the
-embedded inspector focuses on iframe-local player evidence.
+text, grouped anchors, buttons, candidate cards, server controls, iframe trees, player
+containers, media clues, and screenshot links.
+
+Page-type inspectors make that broad idea more precise:
+\begin{itemize}
+  \item the landing inspector looks for match cards and hosting candidates;
+  \item the hosting inspector looks for server/source controls and player state;
+  \item the embedded inspector focuses on iframe-local player evidence.
+\end{itemize}
 
 Context tools are narrower. When an agent sees a possible target in a broad
 observation, it can request element details, a selector-specific subtree, a frame
@@ -409,25 +441,32 @@ is used to choose where to look, and scoped context is used before acting.
 
 \subsubsection{Navigation and interaction}
 
-Navigation has two different meanings in OWC\@. When inspection returns a real link or
-candidate URL, the agent uses URL navigation: open the link, wait for the document to
-settle, then inspect the new page. When the page requires JavaScript to reveal content,
-the agent stays in the same browser context and uses interaction tools: click a tab or
-server button, scroll to trigger lazy loading, type into an input, select a control, or
-attempt playback. Both paths must be followed by a new observation because either a new
-document or a changed DOM state can invalidate the previous context.
+Navigation has two different meanings in OWC\@:
+\begin{itemize}
+  \item \textbf{URL navigation}: open a real link or candidate URL, wait for the
+  document to settle, then inspect the new page.
+  \item \textbf{In-page interaction}: stay in the same browser context and click tabs,
+  server buttons, scroll triggers, inputs, selectors, or playback controls.
+\end{itemize}
+
+Both paths must be followed by a new observation. A new document or a changed DOM state
+can invalidate the previous context.
 
 \input{figures/tikz/fig-04-tool-navigation-flow}
 
 \subsubsection{Evidence and media extraction}
 
-Evidence tools convert browser state into reviewable artifacts. Screenshots show what
-the page looked like after navigation or interaction. Media-state tools confirm
-whether a player is present, whether playback started, and whether the active frame
-changed. Stream-harvesting tools collect \texttt{m3u8}, \texttt{mpd}, \texttt{mp4},
-or related candidates from network and browser signals. The agent still decides
-whether the candidate is acceptable evidence, but the tools provide the structured
-facts that make the decision auditable.
+Evidence tools convert browser state into reviewable artifacts:
+\begin{itemize}
+  \item screenshots show what the page looked like after navigation or interaction;
+  \item media-state tools confirm player presence, playback state, and active frame
+  changes;
+  \item stream-harvesting tools collect \texttt{m3u8}, \texttt{mpd}, \texttt{mp4}, or
+  related candidates from network and browser signals.
+\end{itemize}
+
+The agent still decides whether the candidate is acceptable evidence, but the tools
+provide the structured facts that make the decision auditable.
 
 \input{figures/tikz/fig-04-tool-evidence-flow}
 
@@ -449,13 +488,17 @@ profile. Fingerprint handling controls properties such as browser identity, navi
 surface, viewport-related behavior, and profile fallback so that repeated browser
 sessions do not expose an obviously inconsistent automation profile.
 
-Proxy rotation is handled at runtime as a validated sticky strategy. Candidate proxies
-can be collected from configured remote or custom sources, validated against a test
-endpoint, and kept for the current browser profile while they remain healthy. Rotation
-occurs after failure instead of on every click, because changing network identity during
-one investigation can break cookies, session-bound player URLs, and tokenized media
-links. If no proxy candidate works, the runtime can fall back to direct browsing
-instead of incorrectly reporting the target site as unreachable.
+Proxy rotation is handled at runtime as a validated sticky strategy:
+\begin{itemize}
+  \item candidate proxies are collected from configured remote or custom sources;
+  \item each candidate is validated against a test endpoint;
+  \item the selected proxy stays with the current browser profile while healthy;
+  \item rotation happens after failure, not after every click.
+\end{itemize}
+
+Changing network identity mid-run can break cookies, session-bound player URLs, and
+tokenized media links. If no proxy candidate works, the runtime can fall back to
+direct browsing instead of incorrectly reporting the target site as unreachable.
 
 \begin{table}[!htbp]
 \centering
@@ -485,12 +528,17 @@ and observation events. \\
 
 \section{Data, Trace, and Reviewability View}
 
-The reviewability view is stored as normalized database records, not only as one
-large final JSON object. The central class is \texttt{PipelineRunRecord}. It
-stores the stable run identity, root URL, final status, aggregate counts, token
-totals, cost totals, and high-level classification fields. Background jobs can
-exist before a pipeline row is finalized, but once the run is persisted the
-agent, telemetry, prompt, memory, evidence, provider, screenshot, and email
+The reviewability view is stored as normalized database records, not only as one large
+final JSON object. The central class is \texttt{PipelineRunRecord}. It stores:
+\begin{itemize}
+  \item stable run identity and root URL;
+  \item final status and high-level classification fields;
+  \item aggregate evidence counts;
+  \item token totals and cost totals.
+\end{itemize}
+
+Background jobs can exist before a pipeline row is finalized. Once the run is
+persisted, agent, telemetry, prompt, memory, evidence, provider, screenshot, and email
 records attach back to \texttt{pipeline\_runs}.
 
 This is the database shape behind the run-detail console. The dashboard can show
@@ -499,12 +547,181 @@ tool calls, runtime events, prompt compilations, memory hints, streams,
 screenshots, providers, and email drafts are queryable as separate rows.
 
 \texttt{PipelineResult} is the aggregate runtime object returned by the
-orchestrator, grouping classification, matches, extraction results, streams,
-screenshots, provider analysis, emails, final status, and metrics.
+orchestrator. It groups classification, matches, extraction results, streams,
+screenshots, provider analysis, emails, final status, and metrics. In the Python
+runtime this object is convenient, but the report also needs to show why the final
+result is split into database tables that answer different review questions.
+
+Figure~\ref{fig:runtime-schema} shows the runtime result as a class diagram. The
+diagram uses composition for objects owned by the aggregate result and a dashed
+dependency where an email draft references provider enrichment data. It is a runtime
+class diagram, not a database entity-relationship diagram.
 
 \input{figures/tikz/fig-04-runtime-schema}
 
-\input{figures/tikz/fig-04-db-class-diagram}
+\begin{table}[!htbp]
+\centering
+\footnotesize
+\begin{tabularx}{\textwidth}{Q{3.05cm} Y Y}
+\toprule
+\rowcolor{accent!8}
+Database table family & Representative tables & Architectural reason \\
+\midrule
+Run identity and job state &
+\texttt{background\_jobs}, \texttt{pipeline\_runs}, \texttt{run\_snapshots},
+legacy \texttt{runs}. &
+Keeps a durable job/run handle from launch to terminal status. The run row
+stores the root URL, page type, success flag, failure mode, counts, duration,
+token totals, and cost totals; the snapshot preserves a full fallback payload. \\
+Agent timeline &
+\texttt{agent\_runs}, \texttt{agent\_outputs}, \texttt{runtime\_events}. &
+Explains which actor ran, which target URL it handled, how many model and tool
+turns it used, what status it reached, and which event sequence led to the final
+decision. \\
+Model and prompt telemetry &
+\texttt{llm\_calls}, \texttt{run\_model\_usage}, \texttt{prompt\_versions},
+\texttt{prompt\_compilations}, \texttt{pricing\_configs}. &
+Makes model behavior auditable: provider, model, prompt hash/version, cache
+mode, token split, context-window use, and estimated cost are not hidden inside
+the final answer. \\
+Browser and tool evidence &
+\texttt{tool\_calls}, \texttt{tool\_playground\_calls},
+\texttt{run\_screenshots}. &
+Connects browser actions to reviewable evidence. Tool rows keep arguments,
+status, previews, errors, and timing; screenshot rows attribute images to the
+agent, invocation, tool, target URL, and event sequence that produced them. \\
+Extracted evidence and review output &
+\texttt{run\_streams}, \texttt{provider\_analyses},
+\texttt{provider\_lookup\_checks}, \texttt{takedown\_emails}. &
+Separates concrete stream evidence from provider enrichment and draft notices.
+This lets a reviewer trace an email back to specific stream URLs, screenshots,
+server labels, and abuse-contact resolution. \\
+Human review, evaluation, and memory &
+\texttt{run\_decisions}, \texttt{run\_tasks}, \texttt{dataset\_sites},
+\texttt{dataset\_batches}, \texttt{dataset\_site\_runs},
+\texttt{memory\_entries}, \texttt{memory\_hints\_used}. &
+Supports manual follow-up, batch evaluation, and cross-run learning without
+letting memory or reviewer notes replace live browser evidence. \\
+\bottomrule
+\end{tabularx}
+\caption{Database table families used to turn an agent run into reviewable records.}\label{tab:database-table-families}
+\end{table}
+
+The table structure is intentionally normalized because different reviewers ask
+different questions:
+\begin{itemize}
+  \item ``What stream was found?'' points to \texttt{run\_streams}.
+  \item Hosting-stop questions point to \texttt{agent\_runs},
+  \texttt{runtime\_events}, and \texttt{tool\_calls}.
+  \item ``What did this run cost?'' points to \texttt{run\_model\_usage} and
+  \texttt{llm\_calls}.
+\end{itemize}
+
+This separation lets the dashboard show product evidence and operational traceability
+without treating one JSON blob as the only source of truth.
+
+The contract between agents is intentionally simple. The model can inspect the page,
+use tools, and reason through a difficult browser state, but the value that crosses a
+stage boundary must be structured. This prevents the next agent from depending on vague
+prose such as ``the second server looked good''.
+
+Instead, the orchestrator passes a bounded \texttt{HandoffContext} containing:
+\begin{itemize}
+  \item the target URL, page role, and route source;
+  \item known match or channel context;
+  \item navigation policy and required evidence checklist;
+  \item memory hints that still need browser verification.
+\end{itemize}
+
+The summary below is a chain of contracts, not a chat between agents:
+\begin{itemize}
+  \item classification produces a small routing object;
+  \item landing turns a listing page into candidate watch targets;
+  \item hosting captures streams or hands an explicit player URL to embedded;
+  \item embedded works inside that player context and returns final media,
+  screenshot, or blocker evidence;
+  \item provider and email tools run only after stream rows exist.
+\end{itemize}
+
+This is why the final \texttt{PipelineResult} can point back to the screenshots and
+stream hosts that justify the review output.
+
+A useful way to read the contract is to ask what the next stage is allowed to trust.
+It can trust typed fields such as \texttt{page\_type}, \texttt{hosting\_pages[]},
+\texttt{embedded\_urls\_for\_processing[]}, and \texttt{all\_stream\_urls[]}.
+
+It should not trust:
+\begin{itemize}
+  \item the previous model's private chain of thought;
+  \item temporary browser impressions;
+  \item a long natural-language summary that cannot be checked later.
+\end{itemize}
+
+This is why the handoff object carries both the evidence already collected and the
+checklist that still has to be proved.
+
+This contract also makes failed runs easier to review:
+\begin{itemize}
+  \item if landing found schedule rows but no valid hosting target, the run stops with
+  that specific reason;
+  \item if hosting found an iframe but no stream URL, embedded receives the iframe as a
+  new bounded task;
+  \item if provider and email steps run, they start from persisted stream and
+  screenshot rows, not from a vague claim that a stream existed.
+\end{itemize}
+
+The same structure is what makes the dashboard understandable to a reviewer.
+Instead of one large log blob, the run can be read as a sequence: route decision,
+landing candidates, hosting evidence, embedded-player evidence, provider
+identification, and draft email. Each step has an input object, an output object,
+and a reason for either continuing or stopping.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\begin{tabularx}{\textwidth}{Q{2.45cm} Y Y Y}
+\toprule
+\rowcolor{accent!8}
+Stage & JSON input it receives & JSON output it must return & Why the boundary matters \\
+\midrule
+Classification & Seed URL, runtime settings, observer, and memory hints. &
+\texttt{ClassificationResult} with \texttt{url}, \texttt{page\_type},
+\texttt{confidence}, \texttt{reasoning}, and \texttt{agent\_type}. & Converts the
+first rendered browser state into a route decision instead of letting later
+agents guess the page role. \\
+Landing & \texttt{HandoffContext} with root URL, target URL, upstream page type,
+classification reasoning, and memory hints. & Landing JSON with hosting pages,
+direct stream URLs, site patterns, and rejected URLs, normalized into
+\texttt{MatchInfo[]} and \texttt{ExtractionResult}. & Preserves match rows,
+schedule context, hosting links, and rejected candidates before the workflow
+moves to player pages. \\
+Hosting & \texttt{HandoffContext} with assigned watch URL, match/channel hints,
+server hints, navigation policy, and required evidence checklist. & Hosting JSON
+with \texttt{decision}, server rows, stream URL rows, embedded-player handoff
+URLs, and channel metadata. & Separates server/player interaction from landing
+discovery and creates explicit embedded handoffs when the player is inside an
+iframe. \\
+Embedded & \texttt{HandoffContext} with embedded/player URL, source hosting
+status, navigation policy, and evidence checklist. & Embedded JSON with
+\texttt{page\_classification}, \texttt{servers[]}, \texttt{all\_stream\_urls[]},
+\texttt{failed\_servers}, \texttt{session\_summary}, and channel fields. & Keeps
+iframe/player inspection focused; it can return stream evidence or a clear
+no-stream/blocker explanation without restarting discovery. \\
+Provider and email & Final stream rows, screenshots, extraction results, and the
+original infringing URL. & \texttt{ProviderInfo[]} and \texttt{TakedownEmail[]},
+then the final \texttt{PipelineResult}. & Turns browser evidence into review
+material while keeping the email a draft for human validation. \\
+\bottomrule
+\end{tabularx}
+\caption{Agent JSON contract summary used by the orchestrator.}\label{tab:agent-json-contract-summary}
+\end{table}
+
+Figure~\ref{fig:agent-json-contracts} expands the same chain into a full visual
+contract map. It makes the handoff rule explicit: each specialist receives a
+bounded JSON task, returns a typed JSON result, and leaves the orchestrator to
+normalize that result before another agent is called.
+
+\input{figures/tikz/fig-04-agent-json-contracts}
 
 \begin{table}[!htbp]
 \centering
@@ -532,15 +749,19 @@ screenshots, streams, provider rows, and email drafts. & The data behind
 
 \section{Chapter Summary}
 
-The architecture is a staged, reviewable evidence pipeline. The operator starts
-and reviews runs through the console. FastAPI controls execution and persistence.
-The orchestrator uses LangGraph to route between agents and to preserve handoff
-state~\cite{langchain-docs,langgraph-docs}. Each specialist agent uses LangChain
-and LangGraph for the model and tool loop, interprets channel evidence according
-to its page role, and calls profile-scoped MCP browser tools for rendered DOM
-context, frame inspection, screenshots, media state, and network evidence. Browser
-runtime controls handle profile state, fingerprint behavior, proxy selection,
-popup recovery, iframe recovery, and screenshot capture. Provider and email tools
-run only after streams exist, and storage preserves both the final answer and the
-failure path. The next chapter maps these architecture boundaries to the concrete
-implementation.
+The architecture can be read as a staged, reviewable evidence pipeline:
+\begin{itemize}
+  \item the operator starts and reviews runs through the console;
+  \item FastAPI controls execution, persistence, settings, and run-detail APIs;
+  \item the orchestrator uses LangGraph to route between agents and preserve
+  handoff state~\cite{langchain-docs,langgraph-docs};
+  \item specialist agents use LangChain/LangGraph loops and profile-scoped MCP
+  browser tools for rendered DOM context, frame inspection, screenshots, media
+  state, and network evidence;
+  \item browser runtime controls handle profile state, fingerprint behavior,
+  proxy selection, popup recovery, iframe recovery, and screenshot capture;
+  \item provider and email tools run only after streams exist;
+  \item storage preserves both the final result and the failure path.
+\end{itemize}
+
+The next chapter maps these architecture boundaries to the concrete implementation.

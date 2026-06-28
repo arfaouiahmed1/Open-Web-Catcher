@@ -1,51 +1,74 @@
 \begin{figure}[H]
 \centering
-\resizebox{0.98\textwidth}{!}{%
+\resizebox{1.0\textwidth}{!}{%
 \begin{tikzpicture}[
   line cap=round,
   line join=round,
   start/.style={draw=accent!85!black, fill=accent!10, rounded corners=12pt,
-    minimum width=2.75cm, minimum height=0.78cm, align=center,
+    minimum width=2.45cm, minimum height=0.76cm, align=center,
     font=\scriptsize\bfseries},
   action/.style={draw=accent!78, fill=blue!5, rounded corners=7pt,
-    minimum width=2.95cm, minimum height=0.86cm, align=center,
+    minimum width=2.70cm, minimum height=0.84cm, align=center,
+    text width=2.48cm, font=\scriptsize\bfseries},
+  queue/.style={draw=orange!80!black, fill=orange!10, rounded corners=7pt,
+    minimum width=2.64cm, minimum height=1.08cm, align=center,
+    text width=2.42cm, font=\scriptsize\bfseries},
+  output/.style={draw=green!55!black, fill=green!8, rounded corners=7pt,
+    minimum width=3.00cm, minimum height=0.86cm, align=center,
     text width=2.72cm, font=\scriptsize\bfseries},
-  queue/.style={action, draw=orange!80!black, fill=orange!10},
-  output/.style={action, draw=green!55!black, fill=green!8},
-  skipbox/.style={action, draw=gray!62, fill=gray!9},
-  decision/.style={diamond, aspect=2.0, draw=accent!80, fill=white,
-    minimum width=2.75cm, minimum height=1.12cm, align=center,
-    text width=2.18cm, font=\scriptsize\bfseries},
-  arr/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.78pt,
+  skipbox/.style={draw=gray!62, fill=gray!9, rounded corners=7pt,
+    minimum width=2.64cm, minimum height=1.08cm, align=center,
+    text width=2.42cm, font=\scriptsize\bfseries},
+  decision/.style={diamond, aspect=2.05, draw=accent!80, fill=white,
+    minimum width=2.70cm, minimum height=1.04cm, align=center,
+    text width=2.04cm, font=\scriptsize\bfseries},
+  merge/.style={line width=0.82pt, gray!58, rounded corners=4pt},
+  dispatch/.style={line width=0.78pt, orange!82!black, rounded corners=4pt},
+  arr/.style={-{Latex[round,length=1.85mm,width=1.38mm]}, line width=0.78pt,
     accent!78, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  hand/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.76pt,
+  hand/.style={-{Latex[round,length=1.85mm,width=1.38mm]}, line width=0.76pt,
     orange!82!black, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  soft/.style={-{Latex[length=1.9mm,width=1.4mm]}, line width=0.70pt,
+  soft/.style={-{Latex[round,length=1.70mm,width=1.25mm]}, line width=0.70pt,
     gray!62, densely dashed, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.1pt,
+  softline/.style={line width=0.70pt, gray!62, densely dashed,
+    rounded corners=6pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.2pt,
     text=black!70}
 ]
 
-\node[start] (start) at (0,5.60) {Start orchestrator};
-\node[action] (state) at (3.45,5.60) {Initialize PipelineState\\{\normalfont\tiny URL, run id, queues}};
-\node[action] (started) at (6.90,5.60) {Emit \texttt{pipeline\_started}};
-\node[action] (memory) at (10.35,5.60) {Read long-term memory\\{\normalfont\tiny soft hints if enabled}};
-\node[queue] (classify) at (13.80,5.60) {Run ClassificationAgent};
+\node[start] (start) at (-5.60,5.55) {Start orchestrator};
+\node[action] (state) at (-2.75,5.55) {Initialize PipelineState\\{\normalfont\tiny URL, run id, queues}};
+\node[action] (started) at (0.10,5.55) {Emit \texttt{pipeline\_started}};
+\node[action] (memory) at (2.95,5.55) {Read long-term memory\\{\normalfont\tiny optional hints}};
+\node[action] (classify) at (5.80,5.55) {Run ClassificationAgent};
 
-\node[decision] (page) at (13.80,3.95) {\texttt{page\_type}};
-\node[queue] (landing) at (7.05,2.30) {Build landing handoff\\run LandingPageAgent};
-\node[queue] (hosting) at (10.40,2.30) {Queue hosting targets\\run HostingPageAgent};
-\node[queue] (embedded) at (13.75,2.30) {Queue embedded targets\\run EmbeddedPageAgent};
-\node[skipbox] (unknown) at (17.10,2.30) {Unknown path\\{\normalfont\tiny preserve reason}};
+\node[decision] (page) at (5.80,4.02) {\texttt{page\_type}};
 
-\node[output] (aggregate) at (13.75,0.60) {Aggregate streams, matches, screenshots\\{\normalfont\tiny dedupe provider-like URLs}};
-\node[decision] (found) at (13.75,-1.10) {Streams found?};
-\node[output] (provider) at (10.40,-2.75) {Run provider analysis};
-\node[output] (emails) at (13.75,-2.75) {Generate takedown drafts};
-\node[skipbox] (skip) at (17.10,-2.75) {Skip provider/email\\emit skipped decision};
-\node[output] (status) at (13.75,-4.25) {Compute final status};
-\node[output] (result) at (13.75,-5.55) {Build \texttt{PipelineResult}};
-\node[start] (return) at (13.75,-6.80) {Return result};
+\node[queue] (landing) at (-0.05,2.42) {Landing route\\{\normalfont\tiny discover candidate hosting targets}};
+\node[queue] (hosting) at (3.85,2.42) {Hosting route\\{\normalfont\tiny validate pages and iframes}};
+\node[queue] (embedded) at (7.75,2.42) {Embedded route\\{\normalfont\tiny extract playable streams}};
+\node[skipbox] (unknown) at (11.65,2.42) {Unknown route\\{\normalfont\tiny preserve classification reason}};
+
+\coordinate (dispatchL) at (-0.05,3.25);
+\coordinate (dispatchH) at (3.85,3.25);
+\coordinate (dispatchC) at (5.80,3.25);
+\coordinate (dispatchE) at (7.75,3.25);
+\coordinate (dispatchU) at (11.65,3.25);
+
+\coordinate (mergeL) at (-0.05,1.34);
+\coordinate (mergeH) at (3.85,1.34);
+\coordinate (mergeE) at (7.75,1.34);
+\coordinate (mergeU) at (11.65,1.34);
+\coordinate (mergeC) at (5.80,1.34);
+
+\node[output] (aggregate) at (5.80,0.40) {Aggregate specialist outputs\\{\normalfont\tiny streams, matches, screenshots}};
+\node[decision] (found) at (5.80,-1.05) {Streams found?};
+\node[output] (provider) at (2.40,-2.45) {Run provider analysis};
+\node[output] (emails) at (5.80,-2.45) {Generate takedown drafts};
+\node[skipbox] (skip) at (9.20,-2.45) {Skip provider/email\\{\normalfont\tiny emit skipped decision}};
+\node[output] (status) at (5.80,-3.86) {Compute final status};
+\node[output] (result) at (5.80,-5.05) {Build \texttt{PipelineResult}};
+\node[start] (return) at (5.80,-6.20) {Return result};
 
 \draw[arr] (start) -- (state);
 \draw[arr] (state) -- (started);
@@ -53,26 +76,35 @@
 \draw[arr] (memory) -- (classify);
 \draw[arr] (classify) -- (page);
 
-\draw[hand] (page) -- node[lab, above] {landing} (landing);
-\draw[hand] (page) -- node[lab, left] {hosting} (hosting);
-\draw[hand] (page) -- node[lab, right] {embedded} (embedded);
-\draw[soft] (page) -- node[lab, above] {unknown} (unknown);
-\draw[hand] (landing) -- (hosting);
-\draw[hand] (landing) to[out=0,in=180] (embedded);
-\draw[hand] (hosting) -- (embedded);
-\draw[arr] (hosting) -- (aggregate);
-\draw[arr] (embedded) -- (aggregate);
-\draw[soft] (unknown) -- (aggregate);
+\draw[hand, shorten >=7pt] (page.south) -- (dispatchC);
+\draw[dispatch] (dispatchL) -- (dispatchE);
+\draw[softline] (dispatchE) -- (dispatchU);
+\node[lab, above=1pt] at (dispatchC) {dispatch by page type};
+\draw[hand] (dispatchL) -- (landing.north);
+\draw[hand] (dispatchH) -- (hosting.north);
+\draw[hand] (dispatchE) -- (embedded.north);
+\draw[soft] (dispatchU) -- (unknown.north);
+
+\draw[hand] (landing.south) -- (mergeL);
+\draw[hand] (hosting.south) -- (mergeH);
+\draw[hand] (embedded.south) -- (mergeE);
+\draw[soft] (unknown.south) -- (mergeU);
+\draw[merge] (mergeL) -- (mergeU);
+\node[lab, above=1pt] at (mergeC) {merge specialist queues};
+\draw[arr] (mergeC) -- (aggregate.north);
 \draw[arr] (aggregate) -- (found);
-\draw[arr] (found) -- node[lab, left] {yes} (provider);
-\draw[arr] (provider) -- (emails);
-\draw[arr] (emails) -- (status);
-\draw[soft] (found) -- node[lab, right] {no} (skip);
-\draw[soft] (skip) -- (status);
+
+\draw[arr] (found.south west) to[out=-120,in=90]
+  node[lab, left=1pt] {yes} (provider.north);
+\draw[arr] (provider.east) -- (emails.west);
+\draw[arr] (emails.south) -- (status.north);
+\draw[soft] (found.south east) to[out=-60,in=90]
+  node[lab, right=1pt] {no} (skip.north);
+\draw[soft] (skip.south) to[out=-90,in=0] (status.east);
 \draw[arr] (status) -- (result);
 \draw[arr] (result) -- (return);
 
 \end{tikzpicture}
 }
-\caption{Orchestrator activity diagram showing initialization, classification routing, specialist queues, aggregation, provider/email decisions, and final \texttt{PipelineResult} construction.}\label{fig:orchestrator-activity}
+\caption[Orchestrator activity and routing decisions]{Orchestrator activity diagram showing initialization, classification routing, specialist queues, aggregation, provider/email decisions, and final \texttt{PipelineResult} construction.}\label{fig:orchestrator-activity}
 \end{figure}

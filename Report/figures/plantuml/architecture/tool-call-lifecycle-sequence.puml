@@ -1,0 +1,55 @@
+@startuml tool_call_lifecycle_sequence
+title Browser Tool Call Lifecycle - UML Sequence Diagram
+
+hide footbox
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam defaultTextAlignment center
+
+participant "Browser-facing\nspecialist agent" as Agent
+participant "Gemini model" as LLM
+participant "ToolResultCache" as Cache
+participant "MCP client" as MCP
+participant "Tool family" as Tool
+participant "Chrome browser\nrendered page" as Browser
+participant "ShortTermMemory\nworking state" as ShortMemory
+
+Agent -> LLM: Send messages,\nworking state, bound tools
+LLM --> Agent: AIMessage with tool call(s)
+
+loop for each requested tool call
+  Agent -> Agent: Classify tool as\nread-only or mutating
+  alt read-only inspection/context tool
+    Agent -> Cache: lookup(tool name + args + page state)
+    alt cache hit
+      Cache --> Agent: cached observation
+    else cache miss
+      Agent -> MCP: invoke tool
+      MCP -> Tool: dispatch to family\ninspection/context/evidence/memory
+      Tool -> Browser: inspect rendered DOM,\nframe, media, or state
+      Browser --> Tool: structured observation
+      Tool --> MCP: tool result
+      MCP --> Agent: tool result
+      Agent -> Cache: store read-only observation
+    end
+  else mutating navigation/interaction tool
+    Agent -> MCP: invoke tool
+    MCP -> Tool: dispatch navigation/action
+    Tool -> Browser: navigate, click,\nscroll, type, play, wait
+    Browser --> Tool: changed page state
+    Tool --> MCP: tool result
+    MCP --> Agent: tool result
+    Agent -> Cache: invalidate stale observations
+  end
+
+  Agent -> ShortMemory: ingest tool result\nselectors, frame paths,\ncandidates, streams, screenshots
+  ShortMemory --> Agent: updated working state
+end
+
+Agent -> LLM: Continue with updated context
+alt model has enough evidence
+  LLM --> Agent: final JSON
+else needs another action
+  LLM --> Agent: next tool call(s)
+end
+@enduml

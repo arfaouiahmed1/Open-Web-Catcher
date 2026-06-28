@@ -1,89 +1,121 @@
 \chapter{General Conclusion}\label{chap:conclusion}
 
+\chapterfocus{The conclusion brings the internship contribution together. It restates
+the evidence collection problem, summarizes the n8n backup and OWC platform outcomes,
+identifies the main engineering contributions, explains the deployment choice, and
+closes with limitations and future work for the next iteration.}
+
 This PFE internship addressed a practical evidence-collection problem in the sports
-rights-protection domain. Soft Stars needed a workflow that could preserve reviewable
-evidence from dynamic illegal streaming websites. The most useful evidence is often not
-present in the first HTML response. It appears after a rendered page loads scripts,
-after a channel group is opened, after a
-server button is selected, after a player is activated, or after an embedded iframe
-requests a short-lived media manifest. The central problem was therefore not only to
-find suspicious URLs, but to preserve a reviewable browser trace that explains how the
-evidence was reached.
+rights-protection domain. Soft Stars needed more than a list of suspicious URLs. It
+needed a way to preserve what happened in the browser and why the collected evidence
+could be reviewed later.
 
-The work followed Design Science Research Methodology as the sole methodological
-backbone. The organizational problem was first identified through the limitations of
-static collection and manual review. The solution objectives were then defined around
-classification, browser interaction, screenshots, stream evidence, channel metadata,
-provider enrichment, traceability, and review. The artifact was designed and developed
-in two steps. The n8n workflow validated the idea quickly and gave the company a
-landing-agent backup path for dynamic targets. Open Web Catcher (OWC) then organized the
-same work into a complete platform made of FastAPI, Next.js, PostgreSQL, MCP browser
-tools, Puppeteer/Chrome runtime, specialist agents, model telemetry, and evidence
-outputs.
+The main difficulty was that useful evidence rarely appears in the first HTML response.
+In practice, it often appears only after:
+\begin{itemize}
+  \item the page finishes rendering JavaScript-heavy content;
+  \item a channel group, match card, or server list is opened;
+  \item a player is activated and the media state changes;
+  \item an iframe or embedded page requests a short-lived media manifest.
+\end{itemize}
 
-The main contribution is the separation of the investigation into clear page roles and
-agent responsibilities. The orchestrator controls the run, prepares handoffs, manages
-queues, and aggregates results. The classification agent decides whether a URL is a
-landing, hosting, embedded, or irrelevant page. The landing agent discovers match,
-event, channel, hosting, or embedded candidates. The hosting agent activates server and
-player controls while preserving screenshots and diagnostics. The embedded agent stays
-inside direct player contexts and harvests final media evidence. Provider enrichment
-and takedown-email drafting are downstream review stages, not automatic enforcement
-actions.
+The work followed Design Science Research Methodology as its methodological backbone.
+The problem was identified through the limits of static collection and manual review.
+The solution objectives then focused on classification, browser interaction,
+screenshots, stream evidence, channel metadata, provider enrichment, traceability, and
+human review.
 
-OWC also contributes a more reliable browser-tool layer. The tool profiles separate
-broad inspection, precise context reads, navigation, interaction, screenshot capture,
-media-state checks, stream harvesting, and memory hints. Browser runtime controls
-handle profile-scoped sessions, fingerprint behavior, proxy validation, sticky proxy
-selection, popup recovery, iframe recovery, and media verification. This made the
-workflow more explainable: a failure could be linked to classification, a missing
-hosting candidate, a player activation problem, an iframe issue, a proxy failure, a
-missing stream, or a skipped provider stage instead of being reduced to a vague failed
-scrape.
+The artifact was built in two steps:
+\begin{itemize}
+  \item \textbf{n8n prototype}: four browser-agent workflows for classification,
+  landing, hosting, and embedded-player extraction. Only the landing agent was deployed
+  as the focused company backup for dynamic targets.
+  \item \textbf{Open Web Catcher}: the complete platform built around FastAPI, Next.js,
+  PostgreSQL, MCP browser tools, Puppeteer/Chrome, specialist agents, model telemetry,
+  and reviewable evidence outputs.
+\end{itemize}
+
+The main engineering contribution is the separation of the investigation into clear
+page roles and agent responsibilities:
+\begin{itemize}
+  \item the orchestrator controls the run, prepares handoffs, manages queues, and
+  aggregates results;
+  \item the classification agent decides whether the URL is a landing, hosting,
+  embedded, or irrelevant page;
+  \item the landing agent discovers match, event, channel, hosting, and embedded
+  candidates;
+  \item the hosting agent activates server and player controls while preserving
+  screenshots and diagnostics;
+  \item the embedded agent stays inside direct player contexts and harvests final media
+  evidence.
+\end{itemize}
+
+Provider enrichment and takedown-email drafting remain downstream review stages. They
+are not automatic enforcement actions, which keeps the system aligned with the need
+for human verification.
+
+OWC also contributes a more reliable browser-tool layer. Tool profiles separate broad
+inspection, precise context reads, navigation, interaction, screenshot capture,
+media-state checks, stream harvesting, and memory hints. Runtime controls then handle
+profile-scoped sessions, fingerprint behavior, proxy validation, sticky proxy
+selection, popup recovery, iframe recovery, and media verification.
+
+This makes failures easier to understand. A failed run can be linked to a specific
+cause: classification uncertainty, missing hosting candidates, player activation
+failure, iframe drift, proxy failure, missing streams, or skipped provider analysis. It
+is no longer reduced to a vague failed scrape.
 
 The implementation also produced a review-oriented operator experience. The console
-shows run status, active traces, screenshots, streams, model usage, cached tokens,
-costs, tool calls, provider results, persistence health, and runtime events. This is
-important because evidence collection is not useful if the operator cannot understand
-what happened after the browser closes. The database is therefore used for
-observability and review: it stores runs, agent runs, runtime events, LLM calls, tool
-calls, screenshots, streams, provider analyses, email drafts, prompt compilations, and
-memory hints.
+shows run status, traces, screenshots, streams, model usage, cached tokens, costs, tool
+calls, provider results, persistence health, and runtime events. The database supports
+that review by storing runs, agent runs, runtime events, LLM calls, tool calls,
+screenshots, streams, provider analyses, email drafts, prompt compilations, and memory
+hints.
 
-The company deployment decision remained pragmatic. The complete OWC platform defines
-the long-term architecture, but the operational deployment focused on the validated n8n
-landing-agent backup. Target URLs arrive through the \texttt{agent\_tasks} Azure
-Service Bus queue, a focused container runs the landing-agent worker, Puppeteer MCP,
-and Chrome, and the extracted matched URLs with metadata are returned through a
-configured results queue. This keeps the primary company workflow and the AI browser
-agent decoupled while still giving the company a path for dynamic pages that require
-rendered-state reasoning.
+The deployment decision remained pragmatic. The complete OWC platform defines the
+long-term architecture, while the operational deployment focuses on the validated n8n
+landing-agent backup:
+\begin{itemize}
+  \item target URLs arrive through the \texttt{agent\_tasks} Azure Service Bus queue;
+  \item a focused container runs the landing-agent worker, Puppeteer MCP, and Chrome;
+  \item matched URLs, metadata, screenshots, rejected URLs, and failure information are
+  returned through the configured results queue.
+\end{itemize}
 
-The project remains a foundation rather than a finished production enforcement
-platform. Some pages will still fail because of anti-bot behavior, unstable player
-code, server-switching variance, misleading channel labels, popup-heavy navigation, or
-unavailable providers. Human review is still necessary before evidence is used
-operationally. The
-evaluation also needs to grow over larger controlled batches before strong accuracy or
-cost claims can be made. However, the internship achieved its main objective: it turned
-a fragile investigation problem into a structured artifact with page-role separation,
-browser evidence, traces, screenshots, stream extraction, channel detection, provider
-enrichment, deployment direction, and clear limitations.
+This keeps the primary company workflow and the AI browser agent decoupled while still
+covering dynamic pages that need rendered-state reasoning.
 
-The future work is therefore concrete. OWC should be evaluated on larger labeled
-website batches, with stronger regression checks for classification, landing discovery,
-hosting activation, embedded extraction, channel detection, stream yield, provider
-coverage, tool success, token usage, and cost per run. Browser memory can be improved
-so successful selectors and server patterns are reused without hardcoding sites. The
-operator console can add screenshot annotation for reviewers. Deployment can expand
-from the landing-agent backup toward more queue-driven specialist agents once the
-company decides that the operational risk and cost are justified.
+The project remains a foundation rather than a finished enforcement platform. Some
+pages will still fail because of anti-bot behavior, CAPTCHA or challenge pages,
+unstable player code, server-switching variance, misleading channel labels,
+popup-heavy navigation, or unavailable providers. Human review is still necessary
+before evidence is used operationally, and larger controlled batches are needed before
+making strong accuracy or cost claims.
 
-Overall, the internship demonstrated that an AI-assisted browser workflow is a suitable
-complement to static monitoring when it is constrained, observable, and designed
-around evidence rather than around unconstrained automation. The value of OWC is not
-that it permanently solves every illegal streaming website. Its value is that it gives
-Soft Stars a clear engineering foundation for investigating dynamic streaming pages:
-classify the page, follow controlled handoffs, interact with the browser, verify the
-player state, extract evidence, preserve the trace, and make the result understandable
-for human review.
+\section{Perspectives}
+
+The next iteration should focus on concrete improvements:
+\begin{itemize}
+  \item CAPTCHA and challenge-page handling, with clear blocked-state evidence instead
+  of silent retries;
+  \item larger labeled website batches and stronger regression checks;
+  \item better reuse of successful selectors and server patterns without hardcoding
+  individual sites;
+  \item OCR-assisted screenshot review for channel labels, player overlays, and blocked
+  pages;
+  \item screenshot annotation and reviewer notes inside the operator console;
+  \item provider-enrichment validation before email drafting, especially when CDN or
+  intermediary hosts hide the true origin;
+  \item gradual deployment from the landing-agent backup toward more queue-driven
+  specialist agents when the operational risk and cost are acceptable.
+\end{itemize}
+
+Overall, the internship demonstrated that an AI-assisted browser workflow can
+complement static monitoring when it is constrained, observable, and designed around
+evidence. OWC does not claim to permanently solve every illegal streaming website. Its
+value is more practical. It gives Soft Stars a foundation for:
+\begin{itemize}
+  \item classifying pages and following controlled handoffs;
+  \item interacting with the browser and verifying player state;
+  \item preserving traces and making the result understandable for human review.
+\end{itemize}

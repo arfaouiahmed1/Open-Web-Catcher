@@ -1,13 +1,22 @@
 \chapter{Introduction}\label{chap:introduction}
 
 This PFE report presents the work carried out at Soft Stars in the context of
-illegal sports-streaming evidence collection for beIN SPORTS\@. The project started from
-a concrete operational need: suspicious pages could be discovered, but the evidence
-needed for review was often hidden behind browser-rendered interfaces, popups, iframe
+illegal sports-streaming evidence collection for beIN SPORTS\@. The project started
+from a concrete operational need: suspicious pages could be discovered, but the
+evidence needed for review was often hidden behind browser behavior.
+
+In practice, that evidence could depend on rendered interfaces, popups, iframe
 players, server buttons, redirects, and short-lived media manifests. The internship
-therefore focused on designing an evidence workflow that could observe the page like a
-browser user, keep a trace of what happened, and return reviewable evidence instead of
-only a final URL\@.
+focused on a clear goal: design an evidence workflow that observes the
+page like a browser user, preserves the trace, and returns reviewable evidence instead
+of only a final URL\@.
+
+\chapterfocus{I use this opening chapter to explain why the internship mattered, who
+the work served, and how the project was scoped. It distinguishes the existing company
+workflow, the deployed n8n landing-agent backup, and Open Web Catcher as the reference
+platform built for the academic study. It also defines the problem, the mission
+deliverables, the project boundaries, and the report structure used by the following
+chapters.}
 
 \section{Host Organization and Internship Context}
 
@@ -19,43 +28,120 @@ reviewed by operational, legal, or business teams.
 
 The internship took place in a sports media-protection context connected to beIN
 SPORTS\@. In this domain, the practical problem is not only detecting that a suspicious
-website exists. A rights-protection workflow also needs enough evidence to understand
-what was visible, which channel or event was exposed, which page led to the player,
-which technical host or provider was involved, and whether a human reviewer can trust
-the result after the browser session has ended.
+website exists. A rights-protection workflow also needs enough evidence to answer
+review questions after the browser session has ended:
+\begin{itemize}
+  \item what was visible on the page;
+  \item which channel, event, or match appeared;
+  \item which page led to the player;
+  \item which technical host or provider was involved;
+  \item whether the result is trustworthy enough for human review.
+\end{itemize}
+
+\subsection{Target Users and Business Context}
+
+The project was made for a concrete rights-protection setting. For a broadcaster
+such as beIN SPORTS, illegal live streams weaken the value of exclusive broadcasting
+rights, create unauthorized alternatives during high-value events, and make
+enforcement difficult when the useful evidence disappears after the browser session.
+The business need is not only to find suspicious domains. It is also to shorten the
+path from a reported URL to reviewable technical evidence: page screenshots,
+channel or event context, stream URLs, provider information, and a trace explaining
+how the result was obtained.
+
+The main target users are the teams who need to transform a suspicious page into a
+reviewable case. Rights-protection operators need faster triage and fewer manual
+browser repetitions. Technical analysts need enough runtime detail to understand why
+the system followed a specific page, server button, iframe, or media request.
+Legal and compliance reviewers need evidence that can be checked by a human before
+any external action is taken. Business stakeholders need visibility on whether the
+monitoring workflow supports the protection of licensed content and operational
+prioritization.
+
+\begin{table}[!htbp]
+\centering
+\small
+\begin{tabularx}{\textwidth}{Q{3.15cm} Y Y}
+\toprule
+\rowcolor{accent!8}
+Target user group & Practical need & Project contribution \\
+\midrule
+Rights-protection operators &
+Triage suspicious pages quickly and avoid repeating fragile manual browser steps. &
+Browser-guided evidence collection, screenshots, candidate URLs, and clear run
+status. \\
+Technical analysts &
+Understand dynamic pages, popups, iframes, server buttons, redirects, and media
+requests. &
+Specialist agents, structured traces, tool-call records, and separated page-role
+logic. \\
+Legal and compliance reviewers &
+Review evidence before escalation or takedown preparation. &
+Human-reviewable screenshots, stream evidence, provider enrichment, and draft email
+artifacts. \\
+Business and client stakeholders &
+Protect the value of licensed sports content and prioritize enforcement effort. &
+A clearer monitoring workflow that connects suspicious pages to auditable evidence
+and operational reporting. \\
+\bottomrule
+\end{tabularx}
+\caption{Target users and business value of the evidence workflow.}
+\label{tab:intro-target-users}
+\end{table}
 
 \input{figures/tikz/fig-01-organization-logos}
 
 \section{Existing Solutions and Project Positioning}
 
 Before this PFE work, the company already had an operational workflow for monitoring
-and processing suspicious streaming websites. That existing work remained the primary
+and processing suspicious streaming websites. That workflow remained the primary
 company process. It was useful for broad discovery, recurring checks, and normal cases
-where the page structure was stable enough to process through crawler-style logic.
-However, many streaming sites hide the useful evidence behind browser runtime behavior:
-JavaScript-rendered match cards, server buttons, popups, nested iframes, player
-activation steps, and short-lived \texttt{m3u8} or \texttt{mpd} media requests. In
-this report, the company workflow means the existing Soft Stars operational monitoring
-and crawler-based processing path that remains the primary company work.
+where the page structure was stable enough for crawler-style logic.
+
+The limitation appeared on pages where useful evidence was created only at browser
+runtime:
+\begin{itemize}
+  \item JavaScript-rendered match cards or schedules;
+  \item server buttons and popups that had to be handled in order;
+  \item nested iframes and player activation steps;
+  \item short-lived \texttt{m3u8} or \texttt{mpd} media requests.
+\end{itemize}
+
+In this report, the company workflow means the existing Soft Stars operational
+monitoring and crawler-based processing path that remains the primary company work.
 
 \input{figures/tikz/fig-01-crawler-to-owc}
 
-The n8n landing agent was therefore positioned as a backup to the company workflow, not
-as a replacement for it. When the primary flow could not find enough landing-page
-evidence, it could send a task containing the target URL and execution metadata to the
-landing agent. The agent then opened the rendered page, inspected visible match and
-channel cues, followed candidate links when needed, and returned candidate URLs,
-metadata, screenshots, rejected links, and reasoning notes for review or downstream
-processing. In this report, the n8n landing agent means the focused backup browser
-workflow used when the company workflow needs rendered landing-page reasoning.
+For that reason, the n8n landing agent was positioned as a backup to the company workflow,
+not as a replacement for it. When the primary flow could not find enough landing-page
+evidence, it could send a task with the target URL and execution metadata to the
+landing agent.
+
+The backup agent then performed a focused browser task:
+\begin{itemize}
+  \item open the rendered page;
+  \item inspect visible match, channel, and schedule cues;
+  \item follow candidate links when needed;
+  \item return candidate URLs, metadata, screenshots, rejected links, and reasoning
+  notes for review or downstream processing.
+\end{itemize}
+
+In this report, the n8n landing agent means the focused backup browser workflow used
+when the company workflow needs rendered landing-page reasoning.
 
 OWC had a different role. It was the academic and engineering reference platform built
 during the internship to study the n8n limitations and propose a cleaner architecture
-around specialist agents, browser tools, traces, memory, model telemetry, persistence,
-and evaluation. In other words, the deployed company-side decision stayed focused on a
-landing-agent backup, while OWC describes the broader design that could support a more
-complete future platform. In this report, OWC means that academic/reference platform,
-not the deployed company workflow itself.
+around:
+\begin{itemize}
+  \item specialist agents and browser tools;
+  \item traces, screenshots, and memory;
+  \item model telemetry, persistence, and evaluation.
+\end{itemize}
+
+The deployed company-side decision stayed focused on a landing-agent backup. OWC
+describes the broader design that could support a more complete future platform. In
+this report, OWC means the reference platform built for the academic study, not the
+deployed company workflow itself.
 
 \section{Problem Statement}
 
@@ -73,11 +159,18 @@ short-lived media URLs. The evidence path often has several roles:
 \end{itemize}
 
 If those roles are mixed together, the system becomes hard to debug. A failed result
-could mean that the page was classified incorrectly, that a landing candidate was
-missed, that a hosting server was not activated, that an iframe was not inspected, or
-that the final media request was not connected to provider evidence. The project
-therefore required an architecture that separates page roles, specialist agents, browser
-tools, screenshots, traces, model usage, provider enrichment, and final review outputs.
+could mean several different things:
+\begin{itemize}
+  \item the page was classified incorrectly;
+  \item a landing candidate was missed;
+  \item a hosting server was not activated;
+  \item an iframe was not inspected;
+  \item the final media request was not connected to provider evidence.
+\end{itemize}
+
+The project required an architecture that separates page roles, specialist
+agents, browser tools, screenshots, traces, model usage, provider enrichment, and final
+review outputs.
 
 \section{Internship Mission and Scope}
 
@@ -93,12 +186,17 @@ could inspect visible page state, follow candidate links, handle page-specific
 obstacles, and return useful match or hosting metadata.
 
 The second artifact was Open Web Catcher (OWC), the complete platform designed during
-the internship as an academic/reference architecture. The internal name was chosen
-because the project catches evidence from the open web through browser-visible behavior
-rather than through a static HTML response. In this report, OWC refers to the whole
-project: the FastAPI backend, Next.js operator console, PostgreSQL persistence, MCP
-browser tooling, Puppeteer/Chrome runtime, specialist agents, model telemetry, and
-evidence review outputs.
+the internship as the reference architecture for the report. The internal name was
+chosen because the project catches evidence from the open web through browser-visible
+behavior rather than through a static HTML response.
+
+In this report, OWC refers to the whole project:
+\begin{itemize}
+  \item FastAPI backend and Next.js operator console;
+  \item PostgreSQL persistence and MCP browser tooling;
+  \item Puppeteer/Chrome runtime and specialist agents;
+  \item model telemetry and evidence review outputs.
+\end{itemize}
 
 \subsection{Mission Deliverables}
 
@@ -145,13 +243,18 @@ The main contributions of the PFE work are:
 
 \section{Report Structure}
 
-Chapter~2 presents DSRM as the sole methodology and derives the project requirements.
-Chapter~3 introduces the technical background needed to understand streaming pages,
-browser automation, media manifests, agent workflows, and evidence traceability.
-Chapter~4 describes the OWC architecture, including the agent responsibilities, browser
-tooling, fingerprint and proxy handling, channel detection, persistence, and
-reviewability. Chapter~5 explains the implementation path from the n8n backup workflow
-to the OWC platform and the company deployment flow. Chapter~6 presents evaluation and
-testing results. Chapter~7 provides the general conclusion.
+The report is organized as follows:
+\begin{itemize}
+  \item \textbf{Chapter~2} presents DSRM as the methodology and derives the project
+  requirements.
+  \item \textbf{Chapter~3} introduces streaming pages, browser automation, media
+  manifests, agent workflows, and evidence traceability.
+  \item \textbf{Chapter~4} describes the OWC architecture: agents, browser tooling,
+  channel detection, persistence, and reviewability.
+  \item \textbf{Chapter~5} explains the implementation path from the n8n backup to OWC
+  and the company deployment flow.
+  \item \textbf{Chapter~6} presents evaluation and testing results.
+  \item \textbf{Chapter~7} provides the general conclusion.
+\end{itemize}
 
 \input{figures/tikz/fig-01-report-map}

@@ -1,72 +1,77 @@
 \begin{figure}[H]
 \centering
-\resizebox{1.0\textwidth}{!}{%
+\makebox[\textwidth][c]{%
+\resizebox{0.96\textwidth}{!}{%
 \begin{tikzpicture}[
   line cap=round,
   line join=round,
   shell/.style={draw=accent!85!black, fill=accent!10, rounded corners=8pt,
-    minimum width=4.4cm, minimum height=0.82cm, align=center,
+    minimum width=11.60cm, minimum height=0.74cm, align=center,
+    font=\scriptsize\bfseries},
+  router/.style={draw=accent!65, fill=blue!3, rounded corners=7pt,
+    minimum width=11.60cm, minimum height=0.66cm, align=center,
     font=\scriptsize\bfseries},
   page/.style={draw=accent!78, fill=blue!5, rounded corners=7pt,
-    minimum width=2.65cm, minimum height=0.96cm, align=center,
-    text width=2.48cm, font=\scriptsize\bfseries},
-  redirect/.style={page, draw=gray!65, fill=gray!8, dashed},
+    minimum width=2.02cm, minimum height=0.95cm, align=center,
+    text width=1.84cm, font=\tiny\bfseries},
+  redirect/.style={draw=gray!65, fill=gray!8, rounded corners=6pt, dashed,
+    minimum width=2.02cm, minimum height=0.56cm, align=center,
+    text width=1.84cm, font=\tiny\bfseries},
   api/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
-    minimum width=2.72cm, minimum height=1.02cm, align=center,
-    text width=2.55cm, font=\tiny\bfseries},
+    minimum width=2.02cm, minimum height=0.96cm, align=center,
+    text width=1.84cm, font=\tiny\bfseries},
   cluster/.style={draw=gray!30, fill=gray!2, rounded corners=9pt,
-    line width=0.55pt, inner sep=9pt},
-  arr/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.78pt,
+    line width=0.55pt, inner sep=8pt},
+  arr/.style={-{Latex[round,length=1.85mm,width=1.38mm]}, line width=0.78pt,
     accent!78, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  apiarr/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.78pt,
-    green!50!black, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  soft/.style={-{Latex[length=1.9mm,width=1.4mm]}, line width=0.70pt,
-    gray!62, densely dashed, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  label/.style={font=\scriptsize\bfseries, text=black!68, inner sep=2pt}
+  apiarr/.style={-{Latex[round,length=1.85mm,width=1.38mm]}, line width=0.76pt,
+    green!50!black, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[round,length=1.70mm,width=1.25mm]}, line width=0.70pt,
+    gray!62, densely dashed, shorten <=3pt, shorten >=3pt},
+  label/.style={font=\tiny\bfseries, text=black!68, fill=white,
+    inner xsep=3pt, inner ysep=1.2pt}
 ]
+\path[use as bounding box] (-1.38,0.04) rectangle (12.26,6.03);
 
-\node[shell] (shell) at (7.55,5.10) {AppShell navigation and topbar};
+\node[shell] (shell) at (5.45,5.55) {AppShell navigation, shared topbar, and authenticated console frame};
+\node[router] (router) at (5.45,4.65) {React Router exposes the active console screens below};
 
-\node[page] (dashboard) at (0,3.45) {\texttt{/}\\OverviewPage};
-\node[page] (live) at (3.10,3.45) {\texttt{/live}\\workflow + agent launcher};
-\node[page] (runs) at (6.20,3.45) {\texttt{/runs}\\websites, batches, history};
-\node[page] (detail) at (9.30,3.45) {\texttt{/runs/[runId]}\\run detail};
-\node[page] (providers) at (12.40,3.45) {\texttt{/providers}\\provider lookup};
-\node[page] (settings) at (15.50,3.45) {\texttt{/settings}\\configuration};
-\node[redirect] (agents) at (3.10,4.68) {\texttt{/agents}\\redirects to \texttt{/live}};
+\node[redirect] (agents) at (2.18,3.84) {\texttt{/agents}\\redirect};
 
-\node[api] (overviewapi) at (0,1.20) {\texttt{/ui/overview}\\recent events\\tools + database health};
-\node[api] (launchapi) at (3.10,1.20) {\texttt{/ui/workflows/run}\\\texttt{/ui/agents/test}\\browser status};
-\node[api] (runsapi) at (6.20,1.20) {\texttt{/ui/runs}\\\texttt{/api/datasets/*}};
-\node[api] (detailapi) at (9.30,1.20) {\texttt{/ui/runs/\{run\_id\}}\\stream, screenshot, cancel};
-\node[api] (providerapi) at (12.40,1.20) {\texttt{/ui/providers/lookup}\\provider history};
-\node[api] (settingsapi) at (15.50,1.20) {\texttt{/ui/config}\\models, pricing, keys};
+\node[page] (dashboard) at (0.00,2.78) {\texttt{/}\\Overview};
+\node[page] (live) at (2.18,2.78) {\texttt{/live}\\workflow launcher};
+\node[page] (runs) at (4.36,2.78) {\texttt{/runs}\\run history};
+\node[page] (detail) at (6.54,2.78) {\texttt{/runs/[runId]}\\run detail};
+\node[page] (providers) at (8.72,2.78) {\texttt{/providers}\\lookup};
+\node[page] (settings) at (10.90,2.78) {\texttt{/settings}\\config};
+
+\node[api] (overviewapi) at (0.00,0.80) {\texttt{/ui/overview}\\events, health};
+\node[api] (launchapi) at (2.18,0.80) {\texttt{/ui/workflows}\\[-1pt]\texttt{/run}\\\texttt{/ui/agents/test}};
+\node[api] (runsapi) at (4.36,0.80) {\texttt{/ui/runs}\\\texttt{/api/datasets/*}};
+\node[api] (detailapi) at (6.54,0.80) {\texttt{/ui/runs/\{run\_id\}}\\stream, cancel};
+\node[api] (providerapi) at (8.72,0.80) {\texttt{/ui/providers}\\[-1pt]\texttt{/lookup}\\provider history};
+\node[api] (settingsapi) at (10.90,0.80) {\texttt{/ui/config}\\models, keys};
 
 \begin{scope}[on background layer]
   \node[cluster, fit=(dashboard) (live) (runs) (detail) (providers) (settings) (agents)] (pages) {};
   \node[cluster, fit=(overviewapi) (launchapi) (runsapi) (detailapi) (providerapi) (settingsapi)] (apis) {};
 \end{scope}
 
-\node[label, anchor=south west] at ([xshift=0.12cm,yshift=0.06cm]pages.north west) {Active frontend routes};
-\node[label, anchor=south west] at ([xshift=0.12cm,yshift=0.06cm]apis.north west) {FastAPI route groups};
+\node[label, anchor=east] at ([xshift=-0.10cm]pages.west) {Frontend routes};
+\node[label, anchor=east] at ([xshift=-0.10cm]apis.west) {FastAPI routes};
 
-\draw[arr] (shell) -- (dashboard);
-\draw[arr] (shell) -- (live);
-\draw[arr] (shell) -- (runs);
-\draw[arr] (shell) -- (providers);
-\draw[arr] (shell) -- (settings);
-\draw[soft] (agents) -- (live);
-\draw[arr] (runs) -- (detail);
+\draw[arr] (shell.south) -- (router.north);
+\draw[soft] (agents.south) -- (live.north);
+\draw[arr] (runs.east) -- (detail.west);
 
-\draw[apiarr] (dashboard) -- (overviewapi);
-\draw[apiarr] (live) -- (launchapi);
-\draw[apiarr] (runs) -- (runsapi);
-\draw[apiarr] (detail) -- (detailapi);
-\draw[apiarr] (detail.south) to[out=-80,in=105] (providerapi.north);
-\draw[apiarr] (providers) -- (providerapi);
-\draw[apiarr] (settings) -- (settingsapi);
+\draw[apiarr] (dashboard.south) -- (overviewapi.north);
+\draw[apiarr] (live.south) -- (launchapi.north);
+\draw[apiarr] (runs.south) -- (runsapi.north);
+\draw[apiarr] (detail.south) -- (detailapi.north);
+\draw[apiarr] (providers.south) -- (providerapi.north);
+\draw[apiarr] (settings.south) -- (settingsapi.north);
 
 \end{tikzpicture}
-}
-\caption{Frontend route and data-flow diagram showing active console screens, the \texttt{/agents} redirect, and the backend route groups consumed by each screen.}\label{fig:frontend-route-flow}
+}}
+\caption{Frontend console routes and API route groups.}\label{fig:frontend-route-flow}
 \end{figure}

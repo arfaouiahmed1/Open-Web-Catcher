@@ -1,0 +1,103 @@
+@startuml fig_04_07_shared_browser_agent_activity_loop
+title Figure 4.7: Shared Activity Loop for Browser-Facing Agents
+
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam activity {
+  BackgroundColor #F7FAFC
+  BorderColor #2F4F6F
+  FontColor #111827
+}
+skinparam note {
+  BackgroundColor #FFF8E7
+  BorderColor #7A5A00
+}
+
+start
+:Agent.run(url, observer, optional handoff);
+
+partition "Prompt Preparation" {
+  :Build LLM if not already initialized;
+  :Create run-local short memory;
+  :Read long-memory hints as soft guidance;
+  :Compile layered prompt\nbase policy + agent contract + task brief + runtime context;
+}
+
+partition "Tool Session" {
+  :Open stage-specific MCP browser profile;
+  :Bootstrap current page context;
+  :Run memory lookup before live inspection;
+  :Navigate or attach to target URL;
+  :Collect first broad browser observation;
+}
+
+partition "Model / Tool Loop" {
+  repeat
+    :Send messages, working state,\nand bound tools to Gemini;
+    if (model requests tool calls?) then (yes)
+      if (read-only cached result exists?) then (yes)
+        :Reuse cached tool result;
+      else (no)
+        :Invoke MCP browser tool\nwith timeout and error handling;
+        if (tool mutates browser state?) then (yes)
+          :Invalidate stale read-only observations;
+        else (no)
+        endif
+      endif
+      :Ingest tool result into short memory;
+      :Update tool budget, context counters,\nand latest observation;
+    else (final answer)
+      :Receive final JSON or final text;
+    endif
+
+    if (context window is high?) then (yes)
+      :Create continuation capsule\nand compact previous turns;
+    else (no)
+    endif
+  repeat while (needs another turn and tool budget remains?) is (yes)
+}
+
+partition "Result Boundary" {
+  if (tool budget exhausted?) then (yes)
+    :Ask model for final JSON now;
+  else (no)
+  endif
+  :Parse final JSON object;
+  if (JSON parse failed?) then (yes)
+    :Keep parse error and raw final text preview;
+  else (no)
+  endif
+  :Merge short-memory evidence\ninto agent output;
+  :Normalize output to stage schema;
+  :Build Pydantic result object;
+}
+
+partition "Return Contract" {
+  if (agent type is classification?) then (classification)
+    :Return ClassificationResult;
+  elseif (agent type is landing?) then (landing)
+    :Return ExtractionResult with hosting_pages,\ndirect streams, and pattern metadata;
+  elseif (agent type is hosting?) then (hosting)
+    :Return ExtractionResult with streams,\nserver rows, diagnostics, or embedded handoff;
+  else (embedded)
+    :Return ExtractionResult with player streams,\nscreenshots, diagnostics, or blocker evidence;
+  endif
+}
+
+stop
+
+legend right
+  Browser-facing agents:
+  - ClassificationAgent
+  - LandingPageAgent
+  - HostingPageAgent
+  - EmbeddedPageAgent
+
+  Shared runtime:
+  compile_agent_prompt,
+  agent_tools(profile),
+  run_agent_loop,
+  ShortTermMemory,
+  output normalization.
+endlegend
+@enduml

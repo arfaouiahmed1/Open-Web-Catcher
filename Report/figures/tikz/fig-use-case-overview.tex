@@ -1,38 +1,42 @@
 \begin{figure}[H]
 \centering
-\resizebox{0.96\textwidth}{!}{%
+\resizebox{1.0\textwidth}{!}{%
 \begin{tikzpicture}[
   line cap=round,
   line join=round,
   actor/.style={draw=gray!70, fill=gray!7, rounded corners=4pt,
-    minimum width=2.7cm, minimum height=0.82cm, align=center, font=\small\bfseries},
+    minimum width=2.55cm, minimum height=0.86cm, align=center,
+    font=\small\bfseries},
   uc/.style={draw=accent!78, fill=blue!5, rounded corners=9pt,
-    minimum width=4.05cm, minimum height=0.82cm, align=center,
-    font=\scriptsize\bfseries, text width=3.78cm},
+    minimum width=4.10cm, minimum height=0.86cm, align=center,
+    font=\scriptsize\bfseries, text width=3.82cm},
   review/.style={uc, draw=green!55!black, fill=green!8},
   config/.style={uc, draw=purple!65!black, fill=purple!7},
   launch/.style={uc, draw=orange!80!black, fill=orange!10},
   boundary/.style={draw=gray!45, fill=gray!2, rounded corners=10pt,
-    inner sep=12pt, line width=0.55pt},
-  assoc/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.78pt,
-    gray!72, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+    inner sep=13pt, line width=0.55pt},
+  assoc/.style={-{Latex[length=1.9mm,width=1.4mm]}, line width=0.74pt,
+    gray!68, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
   flow/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.82pt,
     accent!78, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  note/.style={font=\tiny\bfseries, text=black!62, fill=white, inner sep=1.1pt}
+  soft/.style={-{Latex[length=1.9mm,width=1.4mm]}, line width=0.70pt,
+    gray!62, densely dashed, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
+  note/.style={font=\tiny\bfseries, text=black!62, fill=white, inner sep=1.2pt}
 ]
 
-\node[actor] (operator) at (-5.55,0.15) {Operator};
+\node[actor] (operator) at (-6.35,0.55) {Operator};
 
-\node[uc] (dashboard) at (-1.45,3.25) {View operational dashboard\\{\normalfont\tiny costs, tokens, providers, recent events}};
-\node[launch] (workflow) at (-1.45,2.02) {Launch full workflow run\\{\normalfont\tiny seed URL through the orchestrator}};
-\node[launch] (testagent) at (-1.45,0.79) {Test one specialist agent\\{\normalfont\tiny classification, landing, hosting, embedded}};
-\node[uc] (datasets) at (-1.45,-0.44) {Manage dataset sites and batches\\{\normalfont\tiny websites, batches, run history}};
+\node[uc] (dashboard) at (-2.15,3.20) {View operational dashboard\\{\normalfont\tiny costs, tokens, providers, recent events}};
+\node[launch] (workflow) at (-2.15,1.88) {Launch full workflow run\\{\normalfont\tiny seed URL through the orchestrator}};
+\node[launch] (testagent) at (-2.15,0.56) {Test one specialist agent\\{\normalfont\tiny classification, landing, hosting, embedded}};
+\node[uc] (datasets) at (-2.15,-0.76) {Manage dataset sites and batches\\{\normalfont\tiny websites, batches, run history}};
 
-\node[review] (inspect) at (3.35,2.62) {Inspect run detail and traces\\{\normalfont\tiny events, tool calls, screenshots}};
-\node[review] (evidence) at (3.35,1.22) {Review evidence bundle\\{\normalfont\tiny streams, screenshots, providers, emails}};
-\node[review] (lookup) at (3.35,-0.18) {Run manual provider lookup\\{\normalfont\tiny provider history and enrichment}};
-\node[config] (settings) at (3.35,-1.58) {Manage settings\\{\normalfont\tiny models, browser, pricing, keys, MCP tools}};
+\node[review] (inspect) at (3.35,2.54) {Inspect run detail and traces\\{\normalfont\tiny events, tool calls, screenshots}};
+\node[review] (evidence) at (3.35,1.14) {Review evidence bundle\\{\normalfont\tiny streams, screenshots, providers, emails}};
+\node[review] (lookup) at (3.35,-0.26) {Run manual provider lookup\\{\normalfont\tiny provider history and enrichment}};
+\node[config] (settings) at (3.35,-1.66) {Manage settings\\{\normalfont\tiny models, browser, pricing, keys, MCP tools}};
 
+\coordinate (entry) at (-4.55,0.55);
 \begin{scope}[on background layer]
   \node[boundary, fit=(dashboard) (workflow) (testagent) (datasets) (inspect) (evidence) (lookup) (settings)] (system) {};
 \end{scope}
@@ -40,21 +44,19 @@
 \node[anchor=south, font=\small\bfseries, text=accent] at ([yshift=0.12cm]system.north)
   {Open Web Catcher Console};
 
-\draw[assoc] (operator) -- (dashboard);
-\draw[assoc] (operator) -- (workflow);
-\draw[assoc] (operator) -- (testagent);
-\draw[assoc] (operator) -- (datasets);
-\draw[assoc] (operator) -- (lookup);
-\draw[assoc] (operator) -- (settings);
+\draw[assoc] (operator.east) -- node[note, above] {uses} (entry);
+\draw[assoc] (entry) |- (dashboard.west);
+\draw[assoc] (entry) |- (workflow.west);
+\draw[assoc] (entry) -- (testagent.west);
+\draw[assoc] (entry) |- (datasets.west);
+\draw[assoc] (entry) |- (settings.west);
 
-\draw[flow] (workflow) -- node[note, above] {creates run} (inspect);
-\draw[flow] (testagent) -- node[note, above] {creates run} (inspect);
-\draw[flow] (datasets) -- node[note, left] {batch launch} (workflow);
-\draw[flow] (inspect) -- node[note, right] {opens outputs} (evidence);
-\draw[flow] (evidence) -- node[note, right] {enriches host} (lookup);
-\draw[flow] (settings) -- node[note, below] {preflight state} (workflow);
+\draw[flow] (workflow.east) -- node[note, above] {creates run} (inspect.west);
+\draw[flow] (testagent.east) -- node[note, above] {creates run} (evidence.west);
+\draw[flow] (inspect.south) -- node[note, right] {opens outputs} (evidence.north);
+\draw[flow] (evidence.south) -- node[note, right] {enriches host} (lookup.north);
 
 \end{tikzpicture}
 }
-\caption{Use-case diagram for the active OWC console actions: launch, test, dataset management, trace inspection, evidence review, provider lookup, and configuration.}\label{fig:use-case-overview}
+\caption{Use-case diagram for active OWC console actions.}\label{fig:use-case-overview}
 \end{figure}

@@ -1,40 +1,43 @@
 \addvspace {10\p@ }
+\contentsline {table}{\numberline {1.1}{\ignorespaces Target users and business value of the evidence workflow.}}{16}{table.caption.8}%
 \addvspace {10\p@ }
-\contentsline {table}{\numberline {2.1}{\ignorespaces DSRM phase mapping to project activities and outputs.}}{29}{table.caption.14}%
-\contentsline {table}{\numberline {2.2}{\ignorespaces Functional requirements derived from the evidence-collection workflow.}}{30}{table.caption.16}%
-\contentsline {table}{\numberline {2.3}{\ignorespaces Non-functional requirements and implementation responses.}}{31}{table.caption.17}%
+\contentsline {table}{\numberline {2.1}{\ignorespaces DSRM phase mapping to project activities and outputs.}}{24}{table.caption.14}%
+\contentsline {table}{\numberline {2.2}{\ignorespaces Functional requirements derived from the evidence-collection workflow.}}{25}{table.caption.16}%
+\contentsline {table}{\numberline {2.3}{\ignorespaces Non-functional requirements and implementation responses.}}{28}{table.caption.19}%
 \addvspace {10\p@ }
-\contentsline {table}{\numberline {3.1}{\ignorespaces Streaming-site page taxonomy and evidence role.}}{35}{table.caption.20}%
-\contentsline {table}{\numberline {3.2}{\ignorespaces DOM signals used to understand streaming-site pages.}}{36}{table.caption.22}%
-\contentsline {table}{\numberline {3.3}{\ignorespaces Browser-level obstacles and handling strategies.}}{40}{table.caption.25}%
+\contentsline {table}{\numberline {3.1}{\ignorespaces Streaming-site page taxonomy and evidence role.}}{32}{table.caption.22}%
+\contentsline {table}{\numberline {3.2}{\ignorespaces DOM signals used to understand streaming-site pages.}}{33}{table.caption.24}%
+\contentsline {table}{\numberline {3.3}{\ignorespaces Browser-level obstacles and handling strategies.}}{37}{table.caption.27}%
 \addvspace {10\p@ }
-\contentsline {table}{\numberline {4.1}{\ignorespaces Use-case responsibilities across operator and administration workflows.}}{46}{table.caption.30}%
-\contentsline {table}{\numberline {4.2}{\ignorespaces Global runtime boundaries used by OWC.}}{47}{table.caption.32}%
-\contentsline {table}{\numberline {4.3}{\ignorespaces Agent and tool responsibility map.}}{52}{table.caption.38}%
-\contentsline {table}{\numberline {4.4}{\ignorespaces Channel detection responsibilities across the specialist agents.}}{60}{table.caption.52}%
-\contentsline {table}{\numberline {4.5}{\ignorespaces Browser runtime controls that support reliable and reviewable evidence collection.}}{64}{table.caption.60}%
-\contentsline {table}{\numberline {4.6}{\ignorespaces Runtime data boundaries and persisted review outputs.}}{67}{table.caption.63}%
+\contentsline {table}{\numberline {4.1}{\ignorespaces Operator-facing responsibilities and the runtime records they create.}}{43}{table.caption.31}%
+\contentsline {table}{\numberline {4.2}{\ignorespaces Global runtime boundaries used by OWC.}}{44}{table.caption.33}%
+\contentsline {table}{\numberline {4.3}{\ignorespaces Agent and tool responsibility map.}}{48}{table.caption.39}%
+\contentsline {table}{\numberline {4.4}{\ignorespaces Channel detection responsibilities across the specialist agents.}}{57}{table.caption.53}%
+\contentsline {table}{\numberline {4.5}{\ignorespaces Browser runtime controls that support reliable and reviewable evidence collection.}}{62}{table.caption.61}%
+\contentsline {table}{\numberline {4.6}{\ignorespaces Database table families used to turn an agent run into reviewable records.}}{63}{table.caption.63}%
+\contentsline {table}{\numberline {4.7}{\ignorespaces Agent JSON contract summary used by the orchestrator.}}{66}{table.caption.64}%
+\contentsline {table}{\numberline {4.8}{\ignorespaces Runtime data boundaries and persisted review outputs.}}{68}{table.caption.66}%
 \addvspace {10\p@ }
-\contentsline {table}{\numberline {5.1}{\ignorespaces n8n prototype agent roles and implementation lessons.}}{72}{table.caption.68}%
-\contentsline {table}{\numberline {5.2}{\ignorespaces n8n prototype limitations and engineering consequences.}}{73}{table.caption.69}%
-\contentsline {table}{\numberline {5.3}{\ignorespaces Backend API responsibilities in OWC.}}{74}{table.caption.72}%
-\contentsline {table}{\numberline {5.4}{\ignorespaces Current Next.js operator-console surfaces and backend dependencies.}}{75}{table.caption.73}%
-\contentsline {table}{\numberline {5.5}{\ignorespaces Browser automation engine comparison for the MCP tool layer.}}{79}{table.caption.77}%
-\contentsline {table}{\numberline {5.6}{\ignorespaces Puppeteer MCP tool groups and responsibilities.}}{79}{table.caption.78}%
-\contentsline {table}{\numberline {5.7}{\ignorespaces Specialist agent objectives and assigned tool surfaces.}}{80}{table.caption.80}%
-\contentsline {table}{\numberline {5.8}{\ignorespaces Runtime constraints and their implementation responses.}}{81}{table.caption.81}%
-\contentsline {table}{\numberline {5.9}{\ignorespaces Model-runtime concerns handled by the agent platform.}}{83}{table.caption.84}%
-\contentsline {table}{\numberline {5.10}{\ignorespaces Prompt engineering rules enforced by the specialist agents.}}{83}{table.caption.85}%
-\contentsline {table}{\numberline {5.11}{\ignorespaces PostgreSQL observability records and their implementation role.}}{84}{table.caption.86}%
-\contentsline {table}{\numberline {5.12}{\ignorespaces Landing-agent deployment scope and responsibilities.}}{86}{table.caption.89}%
+\contentsline {table}{\numberline {5.1}{\ignorespaces n8n prototype agent roles and implementation lessons.}}{74}{table.caption.71}%
+\contentsline {table}{\numberline {5.2}{\ignorespaces n8n prototype limitations and engineering consequences.}}{75}{table.caption.72}%
+\contentsline {table}{\numberline {5.3}{\ignorespaces Backend API responsibilities in OWC.}}{76}{table.caption.75}%
+\contentsline {table}{\numberline {5.4}{\ignorespaces Current Next.js operator-console surfaces and backend dependencies.}}{77}{table.caption.76}%
+\contentsline {table}{\numberline {5.5}{\ignorespaces Browser automation engine comparison for the MCP tool layer.}}{81}{table.caption.80}%
+\contentsline {table}{\numberline {5.6}{\ignorespaces Puppeteer MCP tool groups and responsibilities.}}{81}{table.caption.81}%
+\contentsline {table}{\numberline {5.7}{\ignorespaces Specialist agent objectives and assigned tool surfaces.}}{82}{table.caption.83}%
+\contentsline {table}{\numberline {5.8}{\ignorespaces Runtime constraints and their implementation responses.}}{83}{table.caption.84}%
+\contentsline {table}{\numberline {5.9}{\ignorespaces Model-runtime concerns handled by the agent platform.}}{85}{table.caption.87}%
+\contentsline {table}{\numberline {5.10}{\ignorespaces Prompt engineering rules enforced by the specialist agents.}}{85}{table.caption.88}%
+\contentsline {table}{\numberline {5.11}{\ignorespaces PostgreSQL observability records and their implementation role.}}{86}{table.caption.89}%
+\contentsline {table}{\numberline {5.12}{\ignorespaces Landing-agent deployment scope and responsibilities.}}{88}{table.caption.92}%
 \addvspace {10\p@ }
-\contentsline {table}{\numberline {6.1}{\ignorespaces Website-level acceptance criteria used during batch evaluation.}}{89}{table.caption.91}%
-\contentsline {table}{\numberline {6.2}{\ignorespaces Failure taxonomy used to separate productive evidence, external blockers, agent/runtime failures, cancelled runs, and active runs.}}{90}{table.caption.92}%
-\contentsline {table}{\numberline {6.3}{\ignorespaces KPI definitions used to interpret batch results without hiding partials or external blockers.}}{91}{table.caption.93}%
-\contentsline {table}{\numberline {6.4}{\ignorespaces Current batch outcome snapshot used for Chapter 6 interpretation.}}{92}{table.caption.94}%
-\contentsline {table}{\numberline {6.5}{\ignorespaces Agent-specific tests used during manual and batch evaluation.}}{93}{table.caption.95}%
-\contentsline {table}{\numberline {6.6}{\ignorespaces Selected-run metadata used as the main Chapter 6 evidence case study.}}{96}{table.caption.97}%
-\contentsline {table}{\numberline {6.7}{\ignorespaces Current evidence, provider, tool, cost, and token telemetry from the overview dashboard/API snapshot.}}{103}{table.caption.106}%
-\contentsline {table}{\numberline {6.8}{\ignorespaces Model/runtime selection rationale used instead of unsupported model-ranking metrics.}}{105}{table.caption.108}%
-\contentsline {table}{\numberline {6.9}{\ignorespaces Limitations that remain after evidence-first evaluation.}}{106}{table.caption.109}%
+\contentsline {table}{\numberline {6.1}{\ignorespaces Website-level acceptance criteria used during batch evaluation.}}{92}{table.caption.94}%
+\contentsline {table}{\numberline {6.2}{\ignorespaces Failure taxonomy used to separate productive evidence, external blockers, agent/runtime failures, cancelled runs, and active runs.}}{92}{table.caption.95}%
+\contentsline {table}{\numberline {6.3}{\ignorespaces KPI definitions used to interpret batch results without hiding partials or external blockers.}}{93}{table.caption.96}%
+\contentsline {table}{\numberline {6.4}{\ignorespaces Current batch outcome snapshot used for Chapter 6 interpretation.}}{94}{table.caption.97}%
+\contentsline {table}{\numberline {6.5}{\ignorespaces Agent-specific tests used during manual and batch evaluation.}}{95}{table.caption.98}%
+\contentsline {table}{\numberline {6.6}{\ignorespaces Selected-run metadata used as the main Chapter 6 evidence case study.}}{99}{table.caption.100}%
+\contentsline {table}{\numberline {6.7}{\ignorespaces Current evidence, provider, tool, cost, and token telemetry from the overview dashboard/API snapshot.}}{105}{table.caption.109}%
+\contentsline {table}{\numberline {6.8}{\ignorespaces Model/runtime selection rationale used instead of unsupported model-ranking metrics.}}{107}{table.caption.111}%
+\contentsline {table}{\numberline {6.9}{\ignorespaces Limitations that remain after evidence-first evaluation.}}{108}{table.caption.112}%
 \addvspace {10\p@ }
