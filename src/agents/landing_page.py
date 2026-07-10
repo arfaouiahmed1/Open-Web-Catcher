@@ -38,11 +38,13 @@ _AGENT_CONTRACT = """\
 - preserve exact iframe src, frame URL, video src, player URL, and direct stream URLs in structured fields as hosting/provider hints
 - act like a compact AI crawler: maintain a frontier of live/watch/listing patterns, verify representatives, expand siblings, and stop only when distinct useful patterns are exhausted
 - prioritize main body/content candidates before header navigation, sidebars, sticky bars, or footer links; header/footer navigation is a last-resort path only after body rows/cards/sections/tabs/pagination/load-more/reveal controls are exhausted or rejected
-- stay anchored to the main URL's domain/site; external domains need explicit same-content hosting/player evidence before navigation or handoff
+- stay anchored to the main URL's site intent, but allow one external-domain probe when it comes from a visible body watch/play/channel control or popup telemetry tied to the current row/card
 - treat channel-logo grids and channel directory cards as hosting candidate patterns when they lead to same-site watch/channel pages
 - treat channel posters with Play/Watch overlays as hosting candidates and check for loaded server/source/player evidence after a reveal click
+- reject article/news URLs such as /read, /post, /article, and /news unless the specific row/card has explicit match-card, server, player, iframe, or schedule evidence; article pages may contain match widgets, but related news cards and headers are not hosting_pages
 - work across any language or script; use layout, logos, href patterns, and visible controls before English keywords
-- treat opened_targets, blocked_popup_attempts, target_decision, and blocked_by_client as popup/window/uBlock evidence; keep only same-content hosting/player targets and ignore ad/off-target popups
+- treat opened_targets, blocked_popup_attempts, selected_target, target_decision, active_page_url, extracted_player_urls, and blocked_by_client as popup/window/uBlock evidence; keep same-content hosting/player targets even when the hostname differs, and recover/backtrack once from ad/off-target popups that expose no candidates
+- treat any full-page blocker that hides body candidates or steals clicks as a landing blocker; clear safe same-page dismissal controls before crawling, then verify the revealed page state before returning sparse or empty hosting_pages
 - do not trust same hostname alone for a new tab/window; compare URL, title, screenshot/layout, live row context, and media/frame signals
 - once a hosting pattern is verified, collect the best same-pattern siblings and keep checking other distinct live/watchable patterns instead of re-proving low-value alternatives
 - if no verified hosting targets remain after crawling useful patterns, return an empty result and stop instead of inventing a next hop
@@ -113,10 +115,12 @@ def _coerce_memory_match_records(run_memory: dict[str, Any]) -> list[dict[str, A
         if not isinstance(record, dict):
             continue
         url = str(record.get("url") or "").strip()
+        record["url"] = url
         if (
             not url.startswith(("http://", "https://"))
             or _looks_like_low_value_url(url)
             or _looks_like_pagination_url(url)
+            or _looks_like_article_only_candidate(record)
         ):
             continue
         parsed.append(record)
@@ -185,6 +189,96 @@ def _looks_like_low_value_url(url: str) -> bool:
     if re.search(r"\.(css|js|png|jpe?g|gif|svg|ico|webp|pdf)(\?|$)", lowered):
         return True
     return False
+
+
+def _looks_like_article_or_news_url(url: str) -> bool:
+    path = urlparse(str(url or "").strip()).path.lower()
+    return bool(
+        path
+        and re.search(
+            r"/(?:read|post|posts|article|articles|news|blog|story|stories)(?:/|$)",
+            path,
+        )
+    )
+
+
+def _has_explicit_player_or_match_evidence(page: dict[str, Any]) -> bool:
+    for key in (
+        "iframes",
+        "video_srcs",
+        "player_urls",
+        "direct_stream_urls",
+        "server_hints",
+        "servers",
+    ):
+        value = page.get(key)
+        if isinstance(value, list) and value:
+            return True
+
+    if str(page.get("route") or "").strip().lower() == "embed_agent":
+        return True
+    if str(page.get("team1") or "").strip() and str(page.get("team2") or "").strip():
+        return True
+
+    metadata = page.get("metadata") if isinstance(page.get("metadata"), dict) else {}
+    visual = " ".join(str(item or "") for item in page.get("visual_evidence", []) if item)
+    structural_haystack = " ".join(
+        str(value or "")
+        for value in (
+            page.get("scheduled_time"),
+            page.get("route_source"),
+            page.get("classification_reason"),
+            metadata.get("source"),
+            metadata.get("source_section"),
+            metadata.get("selector"),
+            metadata.get("xpath"),
+            visual,
+        )
+    )
+    title_haystack = " ".join(
+        str(value or "")
+        for value in (
+            page.get("title"),
+            page.get("participants"),
+            page.get("team1"),
+            page.get("team2"),
+        )
+    )
+    if re.search(
+        r"\b(player|iframe|server|source|embed|video|match card|fixture|schedule row|live row|watch button|play button)\b",
+        f"{structural_haystack} {title_haystack}",
+        re.IGNORECASE,
+    ):
+        return True
+    if re.search(
+        r"\b(news|article|blog|related|recommended|popular)\b",
+        structural_haystack,
+        re.IGNORECASE,
+    ):
+        return False
+    return bool(
+        re.search(
+            r"(\bvs\.?\b|\bv\b|versus|@| x |\d{1,2}:\d{2}|score|kickoff|against)",
+            structural_haystack,
+            re.IGNORECASE,
+        )
+        or (
+            re.search(
+                r"(\bvs\.?\b|\bv\b|versus|@| x |\d{1,2}:\d{2}|score|kickoff|against)",
+                title_haystack,
+                re.IGNORECASE,
+            )
+            and re.search(
+                r"\b(match|fixture|event|schedule|live|card|row|team|club|channel|player|server)\b",
+                structural_haystack,
+                re.IGNORECASE,
+            )
+        )
+    )
+
+
+def _looks_like_article_only_candidate(page: dict[str, Any]) -> bool:
+    return _looks_like_article_or_news_url(str(page.get("url") or "")) and not _has_explicit_player_or_match_evidence(page)
 
 
 def _looks_like_pagination_url(url: str) -> bool:
@@ -504,6 +598,8 @@ def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[st
 
         if _is_explicit_non_live_candidate(page_dict):
             continue
+        if _looks_like_article_only_candidate(page_dict):
+            continue
 
         raw_patterns = page_dict.get("patterns")
         patterns: dict[str, Any] = dict(raw_patterns) if isinstance(raw_patterns, dict) else {}
@@ -680,7 +776,11 @@ def _augment_landing_output(
         candidate_domain = _normalize_domain(candidate_url)
         if allowed_domains and candidate_domain not in allowed_domains:
             continue
-        if _looks_like_low_value_url(candidate_url) or _looks_like_pagination_url(candidate_url):
+        if (
+            _looks_like_low_value_url(candidate_url)
+            or _looks_like_pagination_url(candidate_url)
+            or _looks_like_article_or_news_url(candidate_url)
+        ):
             continue
 
         candidate_pattern = _generalize_url_pattern(candidate_url)

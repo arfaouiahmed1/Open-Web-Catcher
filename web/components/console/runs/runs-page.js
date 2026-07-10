@@ -4,7 +4,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   BarChart3,
@@ -214,7 +214,61 @@ function datasetStatusLabel(value) {
   return statusLabel(status);
 }
 
-function SiteIdentity({ site }) {
+function siteHealthLabel(health) {
+  if (!health) return "not checked";
+  const status = String(health.status || "").trim().toLowerCase();
+  if (status === "working") return "working";
+  if (status === "blocked" || status === "blocked_access") return "blocked access";
+  if (status === "anti_bot") return "anti-bot";
+  if (status === "limited") return "limited";
+  if (status === "seized") return "seized";
+  if (status === "parked") return "parked";
+  if (status === "empty") return "empty";
+  if (status === "asset_only") return "asset only";
+  return "down";
+}
+
+function siteHealthDetail(health) {
+  if (!health) return "Run a health check for this table row";
+  const parts = [];
+  if (health.http_status) parts.push(`HTTP ${health.http_status}`);
+  if (health.method) parts.push(health.method);
+  if (health.latency_ms) parts.push(`${formatNumber(health.latency_ms)}ms`);
+  if (health.sample_size) parts.push(`${formatNumber(health.sample_size)} bytes checked`);
+  if (health.content_reason) parts.push(health.content_reason);
+  if (health.error) parts.push(health.error);
+  return parts.join(" - ") || "No probe details";
+}
+
+function isHealthDeleteCandidate(health) {
+  if (!health) return false;
+  const status = String(health.status || "").trim().toLowerCase();
+  if (status === "blocked" || status === "blocked_access" || status === "anti_bot") return false;
+  if (health.delete_candidate === false) return false;
+  return !health.working;
+}
+
+function SiteHealthBadge({ health }) {
+  const working = Boolean(health?.working);
+  const tone = health?.tone || (working ? "success" : "warning");
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span>
+          <Badge tone={tone} className="gap-1">
+            <span className={`h-1.5 w-1.5 rounded-full ${tone === "success" ? "bg-[var(--mint)]" : "bg-[var(--signal)]"}`} />
+            {siteHealthLabel(health)}
+          </Badge>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="right" className="max-w-xs text-xs">
+        {siteHealthDetail(health)}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function SiteIdentity({ site, health }) {
   return (
     <div className="min-w-0">
       <div className="flex items-center gap-2">
@@ -231,6 +285,7 @@ function SiteIdentity({ site }) {
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
         <span>#{site.id}</span>
+        <SiteHealthBadge health={health} />
         {site.source ? <span>{site.source}</span> : null}
         {site.notes ? (
           <Tooltip>
@@ -739,6 +794,11 @@ export function RunsPage() {
   const [selectedHistoryRunIds, setSelectedHistoryRunIds] = useState([]);
   const [pricingMap, setPricingMap] = useState(null);
   const [selectedSiteIds, setSelectedSiteIds] = useState([]);
+  const [siteHealthMap, setSiteHealthMap] = useState({});
+  const [isSiteHealthChecking, setIsSiteHealthChecking] = useState(false);
+  const [siteHealthCheckedAt, setSiteHealthCheckedAt] = useState("");
+  const [healthCheckScope, setHealthCheckScope] = useState("all");
+  const [healthSelectionAction, setHealthSelectionAction] = useState("choose");
   const [query, setQuery] = useState("");
   const [language, setLanguage] = useState("");
   const [label, setLabel] = useState("");
@@ -770,6 +830,7 @@ export function RunsPage() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [lastSyncAt, setLastSyncAt] = useState("");
   const [syncMode, setSyncMode] = useState("stream");
+  const suppressDatasetReloadUntilRef = useRef(0);
 
   const languages = meta.languages || FALLBACK_LANGUAGES;
   const labels = meta.labels || FALLBACK_LABELS;
@@ -981,6 +1042,7 @@ export function RunsPage() {
         try {
           const payload = JSON.parse(event.data || "{}");
           if (payload?.type === "dataset_snapshot" && payload?.changed) {
+            if (Date.now() < suppressDatasetReloadUntilRef.current) return;
             setRefreshTick((value) => value + 1);
           }
         } catch {}
@@ -1122,6 +1184,78 @@ export function RunsPage() {
     setSelectedSiteIds(sites.map((site) => site.id));
   }
 
+  function healthForSite(site) {
+    return siteHealthMap[String(site?.id ?? "")] || siteHealthMap[String(site?.url ?? "")] || null;
+  }
+
+  function sitesForHealthCheck() {
+    if (healthCheckScope === "selected") return selectedSites;
+    if (healthCheckScope === "unchecked") return sites.filter((site) => !healthForSite(site));
+    if (healthCheckScope === "not_working") {
+      return sites.filter((site) => {
+        const health = healthForSite(site);
+        return isHealthDeleteCandidate(health);
+      });
+    }
+    return sites;
+  }
+
+  async function checkVisibleSiteHealth() {
+    const targetSites = sitesForHealthCheck();
+    if (!targetSites.length) return;
+    setIsSiteHealthChecking(true);
+    setActionError("");
+    try {
+      const payload = await apiFetch("/api/datasets/sites/health-check", {
+        method: "POST",
+        body: JSON.stringify({
+          site_ids: targetSites.map((site) => site.id).filter(Boolean),
+          timeout_seconds: 5,
+          limit: Math.min(targetSites.length, 1000),
+        }),
+      });
+      setSiteHealthMap((current) => {
+        const next = { ...current };
+        for (const result of payload.results || []) {
+          if (result.site_id !== null && result.site_id !== undefined) {
+            next[String(result.site_id)] = result;
+          }
+          if (result.url) {
+            next[String(result.url)] = result;
+          }
+        }
+        return next;
+      });
+      setSiteHealthCheckedAt(payload.checked_at || new Date().toISOString());
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to check website health");
+    } finally {
+      setIsSiteHealthChecking(false);
+    }
+  }
+
+  function selectSitesByHealth(action) {
+    setHealthSelectionAction("choose");
+    if (!action || action === "choose") return;
+    if (action === "clear") {
+      setSelectedSiteIds([]);
+      return;
+    }
+    const ids = sites
+      .filter((site) => {
+        const health = healthForSite(site);
+        if (action === "all") return true;
+        if (action === "working") return Boolean(health?.working);
+        if (action === "not_working") return isHealthDeleteCandidate(health);
+        if (action === "checked") return Boolean(health);
+        if (action === "unchecked") return !health;
+        return false;
+      })
+      .map((site) => site.id)
+      .filter(Boolean);
+    setSelectedSiteIds(ids);
+  }
+
   function openCreateSite() {
     setEditingSite(null);
     setSiteSaveError("");
@@ -1197,18 +1331,85 @@ export function RunsPage() {
     }
   }
 
-  async function deleteSite(siteId) {
-    setBusyAction(`delete-site-${siteId}`);
+  function removeDeletedSites(siteIds) {
+    const ids = Array.from(new Set((siteIds || []).map((id) => Number(id)).filter(Boolean)));
+    if (!ids.length) return;
+    const idSet = new Set(ids);
+    const deletedSites = sites.filter((site) => idSet.has(Number(site.id)));
+    const deletedUrls = new Set(deletedSites.map((site) => String(site.url || "")));
+    const deletedCount = deletedSites.length;
+    const deletedUnlabeled = deletedSites.filter((site) => !site.language || !site.label).length;
+
+    setSites((current) => current.filter((site) => !idSet.has(Number(site.id))));
+    setSiteTotal((current) => Math.max(0, Number(current || 0) - deletedCount));
+    setMeta((current) => {
+      const statsPayload = current.stats || {};
+      return {
+        ...current,
+        stats: {
+          ...statsPayload,
+          total: Math.max(0, Number(statsPayload.total || 0) - deletedCount),
+          unlabeled: Math.max(0, Number(statsPayload.unlabeled || 0) - deletedUnlabeled),
+        },
+      };
+    });
+    setSelectedSiteIds((current) => current.filter((id) => !idSet.has(Number(id))));
+    setSiteHealthMap((current) => {
+      const next = { ...current };
+      for (const id of idSet) {
+        delete next[String(id)];
+      }
+      for (const url of deletedUrls) {
+        if (url) delete next[url];
+      }
+      return next;
+    });
+    if (siteDetail?.site?.id && idSet.has(Number(siteDetail.site.id))) {
+      setDetailOpen(false);
+      setSiteDetail(null);
+      setSelectedRunId("");
+    }
+  }
+
+  async function deleteSites(siteIds, busyKey = "delete-sites") {
+    const ids = Array.from(new Set((siteIds || []).map((id) => Number(id)).filter(Boolean)));
+    if (!ids.length) return;
+    setBusyAction(busyKey);
     setActionError("");
     try {
-      await apiFetch(`/api/datasets/sites/${siteId}`, { method: "DELETE" });
-      setSelectedSiteIds((current) => current.filter((id) => id !== siteId));
-      setRefreshTick((value) => value + 1);
+      suppressDatasetReloadUntilRef.current = Date.now() + 5000;
+      if (ids.length === 1) {
+        await apiFetch(`/api/datasets/sites/${ids[0]}`, { method: "DELETE" });
+      } else {
+        await apiFetch("/api/datasets/sites/bulk-delete", {
+          method: "POST",
+          body: JSON.stringify({ ids }),
+        });
+      }
+      removeDeletedSites(ids);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Failed to delete website");
+      setActionError(error instanceof Error ? error.message : "Failed to delete websites");
     } finally {
       setBusyAction("");
     }
+  }
+
+  async function deleteSite(siteId) {
+    await deleteSites([siteId], `delete-site-${siteId}`);
+  }
+
+  async function deleteSelectedSites() {
+    await deleteSites(selectedSiteIds, "delete-selected-sites");
+  }
+
+  async function deleteDownSites() {
+    const ids = sites
+      .filter((site) => {
+        const health = healthForSite(site);
+        return isHealthDeleteCandidate(health);
+      })
+      .map((site) => site.id);
+    await deleteSites(ids, "delete-down-sites");
   }
 
   async function createBatch({ urls = [], site = null } = {}) {
@@ -1395,6 +1596,50 @@ export function RunsPage() {
 
   const allVisibleSelected = sites.length > 0 && selectedSiteIds.length === sites.length;
   const selectedUrls = selectedSites.map((site) => site.url).filter(Boolean);
+  const visibleHealthRows = sites.map((site) => healthForSite(site)).filter(Boolean);
+  const checkedVisibleCount = visibleHealthRows.length;
+  const workingVisibleCount = visibleHealthRows.filter((health) => health.working).length;
+  const uncheckedVisibleCount = Math.max(0, sites.length - checkedVisibleCount);
+  const notWorkingVisibleCount = visibleHealthRows.filter(isHealthDeleteCandidate).length;
+  const downSiteIds = sites
+    .filter((site) => {
+      const health = healthForSite(site);
+      return isHealthDeleteCandidate(health);
+    })
+    .map((site) => site.id)
+    .filter(Boolean);
+  const healthCheckTargetCount = sitesForHealthCheck().length;
+  const healthCheckScopeOptions = [
+    {
+      value: "all",
+      label: `Check all (${sites.length})`,
+      description: "All filtered websites in this table",
+    },
+    {
+      value: "selected",
+      label: `Check selected (${selectedSites.length})`,
+      description: "Only manually selected websites",
+    },
+    {
+      value: "unchecked",
+      label: `Check unchecked (${uncheckedVisibleCount})`,
+      description: "Rows without a health result yet",
+    },
+    {
+      value: "not_working",
+      label: `Recheck not working (${notWorkingVisibleCount})`,
+      description: "Rows currently yellow",
+    },
+  ];
+  const healthSelectionOptions = [
+    { value: "choose", label: "Select websites", description: "Choose rows by health state" },
+    { value: "working", label: `Working (${workingVisibleCount})` },
+    { value: "not_working", label: `Not working (${notWorkingVisibleCount})` },
+    { value: "checked", label: `Checked (${checkedVisibleCount})` },
+    { value: "unchecked", label: `Unchecked (${uncheckedVisibleCount})` },
+    { value: "all", label: `All filtered (${sites.length})` },
+    { value: "clear", label: "Clear selection" },
+  ];
   const historyPageCount = Math.max(Math.ceil(runHistoryTotal / HISTORY_PAGE_SIZE), 1);
   const historyStart = runHistoryTotal ? historyPage * HISTORY_PAGE_SIZE + 1 : 0;
   const historyEnd = Math.min((historyPage + 1) * HISTORY_PAGE_SIZE, runHistoryTotal);
@@ -1532,6 +1777,58 @@ export function RunsPage() {
                     </CardDescription>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    <Select
+                      className="w-[210px]"
+                      value={healthCheckScope}
+                      onChange={setHealthCheckScope}
+                      options={healthCheckScopeOptions}
+                      disabled={isSiteHealthChecking}
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={checkVisibleSiteHealth}
+                      disabled={!healthCheckTargetCount || isSiteHealthChecking}
+                    >
+                      <Activity className={`h-4 w-4 ${isSiteHealthChecking ? "animate-pulse" : ""}`} />
+                      {isSiteHealthChecking ? "Checking..." : `Check websites (${healthCheckTargetCount})`}
+                    </Button>
+                    <Select
+                      className="w-[190px]"
+                      value={healthSelectionAction}
+                      onChange={selectSitesByHealth}
+                      options={healthSelectionOptions}
+                      disabled={!sites.length || isSiteHealthChecking}
+                    />
+                    <ConfirmAction
+                      title="Delete selected websites?"
+                      description="Selected websites are removed from the dataset. Existing run records remain linked by run ID and batch history."
+                      actionLabel={`Delete ${selectedSiteIds.length} selected`}
+                      onConfirm={deleteSelectedSites}
+                      trigger={(
+                        <Button
+                          variant="danger"
+                          disabled={!selectedSiteIds.length || busyAction === "delete-selected-sites"}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Delete selected ({selectedSiteIds.length})
+                        </Button>
+                      )}
+                    />
+                    <ConfirmAction
+                      title="Delete down websites?"
+                      description="Deletes checked dead/fake-success websites: down, seized, parked, empty, limited, asset-only, or HTTP-error rows. Blocked access and anti-bot rows are kept."
+                      actionLabel={`Delete ${downSiteIds.length} down`}
+                      onConfirm={deleteDownSites}
+                      trigger={(
+                        <Button
+                          variant="danger"
+                          disabled={!downSiteIds.length || busyAction === "delete-down-sites"}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Delete down ({downSiteIds.length})
+                        </Button>
+                      )}
+                    />
                     <Button
                       variant="outline"
                       onClick={() => createBatch({ urls: selectedUrls })}
@@ -1577,6 +1874,10 @@ export function RunsPage() {
                   <Button variant="ghost" onClick={() => { setQuery(""); setLanguage(""); setLabel(""); }}>
                     Reset
                   </Button>
+                  <div className="text-xs text-muted-foreground">
+                    Health: {formatNumber(workingVisibleCount)} working / {formatNumber(checkedVisibleCount)} checked
+                    {siteHealthCheckedAt ? ` - ${formatRelativeTime(siteHealthCheckedAt)}` : ""}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -1616,7 +1917,7 @@ export function RunsPage() {
                             <Checkbox checked={selectedSiteIds.includes(site.id)} onCheckedChange={(checked) => toggleSite(site.id, checked === true)} aria-label={`Select ${site.url}`} />
                           </TableCell>
                           <TableCell className="align-middle">
-                            <SiteIdentity site={site} />
+                            <SiteIdentity site={site} health={healthForSite(site)} />
                           </TableCell>
                           <TableCell className="align-middle">
                             <Select

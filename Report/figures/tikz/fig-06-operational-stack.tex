@@ -1,0 +1,50 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
+    line width=0.55pt, inner sep=9pt},
+  card/.style={draw=accent!60, fill=blue!5, rounded corners=7pt,
+    line width=0.62pt, align=center, font=\scriptsize, text width=2.55cm,
+    minimum height=1.12cm, inner sep=5pt},
+  evidence/.style={card, draw=accent!68, fill=blue!5},
+  orange/.style={card, draw=orange!80!black, fill=orange!9},
+  cost/.style={card, draw=accent!55, fill=blue!3},
+  title/.style={font=\scriptsize\bfseries, fill=white, inner sep=2pt,
+    text=black!72},
+  val/.style={font=\large\bfseries, text=accent!88!black}
+]
+
+\node[evidence] (streams) at (0,1.25) {{\large\bfseries\color{accent!88!black}136}\\[-1pt]{\tiny stream records}};
+\node[evidence] (emails) at (2.95,1.25) {{\large\bfseries\color{accent!88!black}67}\\[-1pt]{\tiny generated emails}};
+\node[evidence] (providers) at (5.90,1.25) {{\large\bfseries\color{accent!88!black}12}\\[-1pt]{\tiny unique providers}};
+
+\node[orange] (tools) at (0,-0.55) {{\large\bfseries\color{accent!88!black}3,209}\\[-1pt]{\tiny total tool calls}};
+\node[orange] (toolsok) at (2.95,-0.55) {{\large\bfseries\color{accent!88!black}98.49\%}\\[-1pt]{\tiny observed tool success}};
+\node[orange] (duration) at (5.90,-0.55) {{\large\bfseries\color{accent!88!black}7.636s}\\[-1pt]{\tiny average tool duration}};
+
+\node[cost] (spend) at (8.85,1.25) {{\large\bfseries\color{accent!88!black}\(\$15.95\)}\\[-1pt]{\tiny total model spend}};
+\node[cost] (avgcost) at (11.80,1.25) {{\large\bfseries\color{accent!88!black}\(\$0.110\)}\\[-1pt]{\tiny average terminal cost}};
+\node[cost] (cache) at (8.85,-0.55) {{\large\bfseries\color{accent!88!black}32.9\%}\\[-1pt]{\tiny cache ratio}};
+\node[cost] (tokens) at (11.80,-0.55) {{\large\bfseries\color{accent!88!black}83.5M}\\[-1pt]{\tiny dashboard token counter}};
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(streams) (emails) (providers)] (evidence) {};
+  \node[panel, fit=(tools) (toolsok) (duration)] (toolpanel) {};
+  \node[panel, fit=(spend) (avgcost) (cache) (tokens)] (costpanel) {};
+\end{scope}
+
+\node[title, anchor=west] at ([xshift=0.12cm,yshift=-0.13cm]evidence.north west)
+  {Evidence yield};
+\node[title, anchor=west] at ([xshift=0.12cm,yshift=-0.13cm]toolpanel.north west)
+  {Browser-tool cost};
+\node[title, anchor=west] at ([xshift=0.12cm,yshift=-0.13cm]costpanel.north west)
+  {Model/token cost};
+
+\node[font=\tiny, text=black!60, align=center] at (6.0,-2.03)
+  {Token counters are kept as dashboard telemetry; the chapter does not recompute them into a separate billing formula.};
+
+\end{tikzpicture}%
+}
+\caption{Operational telemetry stack for evidence yield, browser tools, tokens, and model spend.}\label{fig:operational-stack}
+\end{figure}

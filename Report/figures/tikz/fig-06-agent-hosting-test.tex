@@ -1,0 +1,57 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
+    line width=0.55pt, inner sep=11pt},
+  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=2.42cm, minimum height=0.88cm, inner xsep=5pt,
+    inner ysep=5pt, text=black},
+  input/.style={block, draw=accent!75, fill=blue!6},
+  action/.style={block, draw=orange!80!black, fill=orange!10},
+  tool/.style={block, draw=purple!65!black, fill=purple!7},
+  output/.style={block, draw=green!55!black, fill=green!8},
+  guard/.style={block, draw=gray!62, fill=gray!9, text width=12.7cm},
+  badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
+    inner sep=1.25pt, minimum size=8.5pt},
+  paneltitle/.style={font=\scriptsize\bfseries, text=black!68,
+    fill=white, inner sep=2pt},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!78, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.74pt,
+    gray!62, densely dashed, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
+    text=black!72}
+]
+
+\node[input] (popup) at (0,1.18) {Page state\\{\normalfont\scriptsize popup, overlay, focus}};
+\node[action] (player) at (3.05,1.18) {Player action\\{\normalfont\scriptsize play and close controls}};
+\node[action] (server) at (6.10,1.18) {Server order\\{\normalfont\scriptsize switch paths deliberately}};
+\node[tool] (network) at (9.15,1.18) {Network wait\\{\normalfont\scriptsize manifest/media activity}};
+\node[output] (evidence) at (12.20,1.18) {Evidence\\{\normalfont\scriptsize screenshot, stream, iframe}};
+\node[guard] (guard) at (6.10,-0.62) {Pass condition: the trace shows which server
+state was tested and avoids repeated clicks that do not change the page.};
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(popup) (player) (server) (network) (evidence) (guard)] (hostingpanel) {};
+\end{scope}
+
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]hostingpanel.north west)
+  {Hosting-agent evaluation path};
+\foreach \figNode/\num in {popup/1,player/2,server/3,network/4,evidence/5} {
+  \node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]\figNode.north west) {\num};
+}
+
+\draw[arr] (popup.east) -- (player.west);
+\draw[arr] (player.east) -- (server.west);
+\draw[arr] (server.east) -- (network.west);
+\draw[arr] (network.east) -- (evidence.west);
+\draw[soft] (server.south) -- node[lab, right=1pt] {review gate} (guard.north);
+
+\end{tikzpicture}}
+\caption{Hosting-agent test: interaction quality is evaluated through popup handling,
+player activation, server switching, screenshots, and stream evidence.}
+\label{fig:eval-agent-hosting-test}
+\end{figure}

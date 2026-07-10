@@ -1,0 +1,43 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=3.0cm, minimum height=0.88cm, inner xsep=5pt, inner ysep=4pt,
+    text=black},
+  input/.style={block, draw=accent!70, fill=blue!5},
+  work/.style={block, draw=purple!65!black, fill=purple!7},
+  review/.style={block, draw=green!55!black, fill=green!8},
+  guard/.style={block, draw=orange!80!black, fill=orange!8},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!78, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.76pt,
+    gray!62, densely dashed, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
+    inner sep=1.25pt, minimum size=8.5pt}
+]
+
+\node[input] (evidence) at (0,1.2) {Streams\\{\normalfont\scriptsize URL + screenshot}};
+\node[input] (provider) at (3.7,1.2) {Provider rows\\{\normalfont\scriptsize org + contact}};
+\node[work] (group) at (7.4,1.2) {Group by contact\\{\normalfont\scriptsize one draft per target}};
+\node[work] (compose) at (11.1,1.2) {Compose draft\\{\normalfont\scriptsize page + stream + proof}};
+\node[review] (draft) at (14.8,1.2) {Review artifact\\{\normalfont\scriptsize not auto-sent}};
+\node[guard] (human) at (14.8,-1.0) {Human gate\\{\normalfont\scriptsize rights + wording check}};
+
+\foreach \target/\num in {evidence/1,provider/2,group/3,compose/4,draft/5}{%
+  \node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]\target.north west) {\num};
+}
+
+\draw[arr] (evidence.east) -- (provider.west);
+\draw[arr] (provider.east) -- (group.west);
+\draw[arr] (group.east) -- (compose.west);
+\draw[arr] (compose.east) -- (draft.west);
+\draw[soft] (draft.south) -- (human.north);
+
+\end{tikzpicture}
+}
+\caption{Email-generation sequence: group evidence into human-review takedown drafts.}
+\label{fig:seq-email-generator}
+\end{figure}

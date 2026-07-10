@@ -1,0 +1,72 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.99\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
+    line width=0.55pt, inner sep=12pt},
+  card/.style={rounded corners=7pt, align=center, font=\scriptsize,
+    text width=3.55cm, minimum height=2.05cm, inner xsep=6pt, inner ysep=6pt},
+  prototype/.style={card, draw=accent!75, fill=blue!6},
+  measured/.style={card, draw=orange!82!black, fill=orange!10},
+  projected/.style={card, draw=green!55!black, fill=green!8},
+  note/.style={rounded corners=6pt, draw=gray!42, fill=white,
+    text width=11.9cm, align=center, font=\scriptsize, inner sep=6pt},
+  badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
+    inner sep=1.35pt, minimum size=9pt},
+  paneltitle/.style={font=\scriptsize\bfseries, text=black!68,
+    fill=white, inner sep=2pt},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!78, rounded corners=8pt, shorten <=4pt, shorten >=4pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.74pt,
+    gray!62, densely dashed, rounded corners=8pt, shorten <=4pt, shorten >=4pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
+    text=black!72}
+]
+
+\node[prototype] (n8n) at (0,1.25)
+  {{\bfseries n8n playground}\\[2pt]
+   {\Large\bfseries 150+}\\[-1pt]
+   working websites\\[2pt]
+   {\normalfont\scriptsize feasibility across MENA and global sources}};
+
+\node[measured] (owcstrict) at (5.05,1.25)
+  {{\bfseries OWC strict snapshot}\\[2pt]
+   {\Large\bfseries 24}\\[-1pt]
+   distinct websites\\[2pt]
+   {\normalfont\scriptsize persisted success/partial evidence only}};
+
+\node[projected] (owcprojected) at (10.10,1.25)
+  {{\bfseries OWC reachable set}\\[2pt]
+   {\Large\bfseries 180+}\\[-1pt]
+   running websites\\[2pt]
+   {\normalfont\scriptsize n8n coverage + clone reuse + new OWC routing}};
+
+\node[note] (discipline) at (5.05,-1.55)
+  {OWC is not just a higher count: it adds screenshots, traces, provider/email rows,
+  token/cache telemetry, and an average recorded model cost of \(\$0.152003\) per
+  persisted run.};
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(n8n) (owcstrict) (owcprojected) (discipline)] (coveragepanel) {};
+\end{scope}
+
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]coveragepanel.north west)
+  {Coverage interpretation bridge};
+
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]n8n.north west) {1};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]owcstrict.north west) {2};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]owcprojected.north west) {3};
+
+\draw[arr] (n8n.east) -- node[lab, above=2pt] {prototype lesson} (owcstrict.west);
+\draw[arr] (owcstrict.east) -- node[lab, above=2pt] {instrumented projection} (owcprojected.west);
+\draw[soft] (n8n.south) to[out=-90,in=180] node[lab, below left=1pt] {different denominator} (discipline.west);
+\draw[soft] (owcprojected.south) to[out=-90,in=0] node[lab, below right=1pt] {requires quota + reruns} (discipline.east);
+
+\end{tikzpicture}}
+\caption{Coverage bridge from n8n feasibility to strict OWC evidence and projected OWC
+reach. The middle value is intentionally stricter because it counts persisted
+evidence-producing websites rather than broad prototype reach.}
+\label{fig:eval-n8n-owc-coverage-cost}
+\end{figure}

@@ -7,6 +7,8 @@ export const EXTERNAL_OR_EXPECTED_BLOCKER_STATUSES = new Set([
   "site_dead",
   "no_streams",
   "no_hosting_pages",
+  "llm_api_down",
+  "llm_rate_limited",
 ]);
 export const AGENT_FAILURE_STATUSES = new Set(["failed", "timeout", "redirect"]);
 export const CANCELLED_STATUSES = new Set(["cancelled"]);
@@ -30,6 +32,8 @@ export function terminalStatus(value) {
       "page_inaccessible",
       "no_hosting_pages",
       "no_streams",
+      "llm_api_down",
+      "llm_rate_limited",
     ].includes(status)
   ) return status;
   return "";
@@ -98,7 +102,13 @@ export function statusToneForDataset(status) {
   const value = String(status || "").trim().toLowerCase();
   if (value === "success") return "success";
   if (value === "partial") return "warning";
-  if (value === "no_hosting_pages" || value === "no_streams" || value === "cancelled") return "warning";
+  if (
+    value === "no_hosting_pages"
+    || value === "no_streams"
+    || value === "cancelled"
+    || value === "llm_api_down"
+    || value === "llm_rate_limited"
+  ) return "warning";
   if (["failed", "page_inaccessible", "site_dead", "timeout"].includes(value)) return "danger";
   if (value === "running" || value === "retrying") return "live";
   return "default";

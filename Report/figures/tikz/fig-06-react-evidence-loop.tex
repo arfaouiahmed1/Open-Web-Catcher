@@ -1,0 +1,75 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  frame/.style={draw=gray!28, fill=gray!2, rounded corners=10pt,
+    line width=0.55pt, inner sep=8pt},
+  question/.style={draw=accent!78!black, fill=blue!4, rounded corners=8pt,
+    line width=0.75pt, align=center, font=\scriptsize,
+    text width=11.7cm, minimum height=0.66cm, inner sep=5pt},
+  stage/.style={draw=gray!42, fill=white, rounded corners=7pt,
+    line width=0.62pt, align=left, font=\scriptsize,
+    text width=2.03cm, minimum height=1.85cm, inner sep=5.5pt},
+  stageblue/.style={stage, draw=accent!68!black, fill=blue!4},
+  stageorange/.style={stage, draw=orange!82!black, fill=orange!7},
+  ledger/.style={draw=accent!72!black, fill=accent!7, rounded corners=7pt,
+    line width=0.65pt, align=center, font=\scriptsize,
+    text width=11.4cm, minimum height=0.72cm, inner sep=5pt},
+  final/.style={draw=orange!82!black, fill=orange!8, rounded corners=8pt,
+    line width=0.70pt, align=center, font=\scriptsize,
+    text width=11.4cm, minimum height=0.70cm, inner sep=5pt},
+  arr/.style={-{Latex[length=2.0mm,width=1.45mm]}, line width=0.74pt,
+    accent!72, shorten <=3pt, shorten >=3pt},
+  softarr/.style={-{Latex[length=1.7mm,width=1.20mm]}, line width=0.58pt,
+    gray!58, shorten <=3pt, shorten >=3pt},
+]
+
+\node[question] (question) at (5.20,2.82)
+  {\textbf{Question:} Does this hosting page expose stream evidence for the selected match?};
+
+\node[stageblue] (observe) at (0,1.18)
+  {{\color{accent!85!black}\bfseries 1. Observe}\\[2pt]
+  \textbf{Inspect hosting page}\\
+  match title, server controls, overlay state};
+\node[stageblue] (act) at (2.60,1.18)
+  {{\color{accent!85!black}\bfseries 2. Act}\\[2pt]
+  \textbf{Remove blocker}\\
+  close popup while preserving match and server context};
+\node[stageblue] (verify) at (5.20,1.18)
+  {{\color{accent!85!black}\bfseries 3. Verify}\\[2pt]
+  \textbf{Activate player}\\
+  use Server 1 and confirm the visible state changes};
+\node[stageblue] (frame) at (7.80,1.18)
+  {{\color{accent!85!black}\bfseries 4. Inspect frame}\\[2pt]
+  \textbf{Follow iframe path}\\
+  test frame-local controls before judging evidence};
+\node[stageorange] (harvest) at (10.40,1.18)
+  {{\color{orange!82!black}\bfseries 5. Harvest}\\[2pt]
+  \textbf{Capture media trace}\\
+  record playlist or media URLs with screenshot proof};
+
+\begin{scope}[on background layer]
+  \node[frame, fit=(observe) (act) (verify) (frame) (harvest)] {};
+\end{scope}
+
+\node[ledger] (ledger) at (5.20,-0.92)
+  {\textbf{Evidence ledger:} match \quad|\quad server \quad|\quad popup
+  \quad|\quad iframe path \quad|\quad screenshot + network};
+\node[final] (answer) at (5.20,-2.02)
+  {\textbf{Structured result:} hosting URL, server label, embedded frame path,
+  playlist/media URL, screenshot reference, and blocker notes.};
+
+\draw[arr] (observe.east) -- (act.west);
+\draw[arr] (act.east) -- (verify.west);
+\draw[arr] (verify.east) -- (frame.west);
+\draw[arr] (frame.east) -- (harvest.west);
+\draw[softarr] (5.20,0.02) -- (ledger.north);
+\draw[softarr] (ledger.south) -- (answer.north);
+
+\end{tikzpicture}%
+}
+\caption{ReAct-style hosting prompt example represented as an evidence loop instead of a code listing.}
+\label{fig:eval-react-hosting-example}
+\end{figure}

@@ -1,0 +1,61 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.96\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
+    line width=0.55pt, inner sep=10pt},
+  box/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=2.65cm, minimum height=0.82cm, inner xsep=5pt,
+    inner ysep=4pt, text=black},
+  state/.style={box, draw=accent!75, fill=blue!6},
+  graphnode/.style={box, draw=purple!65!black, fill=purple!7},
+  decision/.style={box, draw=orange!80!black, fill=orange!9},
+  output/.style={box, draw=green!55!black, fill=green!8},
+  title/.style={font=\scriptsize\bfseries, text=black!70, fill=white,
+    inner sep=2pt},
+  arr/.style={-{Latex[length=2.1mm,width=1.55mm]}, line width=0.82pt,
+    accent!78, shorten <=3pt, shorten >=3pt},
+  branch/.style={-{Latex[length=2.1mm,width=1.55mm]}, line width=0.78pt,
+    purple!68!black, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=1.9mm,width=1.35mm]}, line width=0.68pt,
+    gray!60, densely dashed, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.1pt,
+    text=black!72}
+]
+
+\node[state] (statebox) at (0,1.10) {Shared state\\URL, queues, results};
+\node[graphnode] (classify) at (3.45,1.10) {Node\\classify page};
+\node[decision] (route) at (6.90,1.10) {Conditional edge\\choose next node};
+\node[graphnode] (landing) at (10.35,2.35) {Landing node\\discover targets};
+\node[graphnode] (hosting) at (10.35,1.10) {Hosting node\\activate player};
+\node[graphnode] (embedded) at (10.35,-0.15) {Embedded node\\extract media};
+\node[output] (final) at (13.95,1.10) {Final nodes\\provider + report};
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(statebox) (classify) (route) (landing) (hosting) (embedded) (final)] (graphPanel) {};
+\end{scope}
+\node[title, anchor=west] at ([xshift=0.12cm,yshift=-0.13cm]graphPanel.north west)
+  {LangGraph-style stateful workflow};
+
+\draw[arr] (statebox.east) -- (classify.west);
+\draw[arr] (classify.east) -- (route.west);
+\draw[branch] (route.east) -- node[lab, above=1pt] {landing} (landing.west);
+\draw[branch] (route.east) -- node[lab, above=1pt] {hosting} (hosting.west);
+\draw[branch] (route.east) -- node[lab, below=1pt] {embedded} (embedded.west);
+\draw[arr] (landing.east) -- (final.west);
+\draw[arr] (hosting.east) -- (final.west);
+\draw[arr] (embedded.east) -- (final.west);
+\draw[soft] (landing.south) -- node[lab, right=2pt] {queue} (hosting.north);
+\draw[soft] (hosting.south) -- node[lab, right=2pt] {iframe} (embedded.north);
+
+\node[draw=gray!36, fill=gray!7, rounded corners=6pt,
+  font=\tiny\bfseries, text=black!70, inner xsep=6pt, inner ysep=4pt,
+  text width=10.2cm, align=center] at (6.90,-1.65)
+  {The graph is not only a diagram: each node reads and updates state, and edges decide the next node from that state.};
+
+\end{tikzpicture}
+}
+\caption{LangGraph workflow concept: named nodes, shared state, and conditional routing.}\label{fig:langgraph-general}
+\end{figure}

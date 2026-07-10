@@ -103,6 +103,35 @@ test("tab tracker adopts same-content player and closes ad targets", async () =>
   ]);
 });
 
+test("tab tracker exposes decoded player urls from adopted popup redirects", async () => {
+  const context = new EventEmitter();
+  const opener = fakePage({ url: "https://sports.example/watch/game-1", title: "Game 1" });
+  const encoded = [
+    Buffer.from("سيرفر 1 =").toString("base64"),
+    Buffer.from(" https://player.syria-player.live/albaplayer/beinmax1/").toString("base64"),
+  ].join("__");
+  const popupPage = fakePage({
+    url: `https://elsaudia.net/read925/55.php?hash=${encoded}`,
+    title: "Get Business Loan",
+  });
+  const tracker = trackNewTabs(context, { openerPage: opener, adopt: true, closeUnadopted: true });
+
+  context.emit("page", popupPage);
+  const activePage = await tracker.settle({ timeoutMs: 50 });
+  tracker.dispose();
+
+  assert.equal(activePage, popupPage);
+  assert.equal(tracker.target_decision, "adopt_same_content_player");
+  assert.equal(tracker.selected_target.classification, "encoded_player_redirect");
+  assert.deepEqual(tracker.selected_target.extracted_player_urls, [
+    "https://player.syria-player.live/albaplayer/beinmax1/",
+  ]);
+  assert.equal(tracker.opened_targets[0].adopted, true);
+  assert.deepEqual(tracker.opened_targets[0].extracted_player_urls, [
+    "https://player.syria-player.live/albaplayer/beinmax1/",
+  ]);
+});
+
 test("tab tracker reports blocked window.open attempts without hijacking active page", async () => {
   const context = new EventEmitter();
   const opener = fakePage({

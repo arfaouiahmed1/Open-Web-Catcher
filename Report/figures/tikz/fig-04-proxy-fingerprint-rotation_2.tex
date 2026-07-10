@@ -1,0 +1,37 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.96\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  node/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=3.05cm, minimum height=0.9cm, inner xsep=5pt, inner ysep=4pt,
+    text=black},
+  source/.style={node, draw=accent!70, fill=blue!5},
+  validate/.style={node, draw=purple!65!black, fill=purple!7},
+  sticky/.style={node, draw=green!55!black, fill=green!8},
+  warn/.style={node, draw=orange!80!black, fill=orange!8},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!78, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.76pt,
+    gray!62, densely dashed, rounded corners=8pt, shorten <=3pt, shorten >=3pt}
+]
+
+\node[source] (sources) at (0,0.9) {Proxy sources\\{\normalfont\scriptsize remote + custom lists}};
+\node[validate] (test) at (3.8,0.9) {Validation\\{\normalfont\scriptsize endpoint + timeout}};
+\node[sticky] (profile) at (7.6,0.9) {Sticky profile\\{\normalfont\scriptsize keep identity during run}};
+\node[sticky] (browser) at (11.4,0.9) {Browser session\\{\normalfont\scriptsize cookies + media URLs}};
+\node[warn] (fallback) at (7.6,-1.25) {Fallback\\{\normalfont\scriptsize rotate after failure or browse direct}};
+
+\draw[arr] (sources.east) -- (test.west);
+\draw[arr] (test.east) -- (profile.west);
+\draw[arr] (profile.east) -- (browser.west);
+\draw[soft] (test.south) -- node[font=\tiny, fill=white, inner sep=1pt, right=2pt]{invalid} (fallback.north);
+\draw[soft] (fallback.east) to[out=0,in=-90] node[font=\tiny, fill=white, inner sep=1pt, right=2pt]{retry policy} (browser.south);
+
+\end{tikzpicture}
+}
+\caption{Proxy and fingerprint strategy: validate candidates, keep identity sticky during
+a run, and rotate only after failure.}
+\label{fig:proxy-fingerprint-rotation}
+\end{figure}

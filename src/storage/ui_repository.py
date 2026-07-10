@@ -51,6 +51,9 @@ from src.utils.console_state import (
     normalize_run_display_status,
 )
 
+WORKING_WEBSITE_STATUSES = ("success", "partial")
+NO_STREAM_OR_HOSTING_STATUSES = ("no_streams", "no_hosting_pages")
+
 
 def _json_ready(value: Any) -> Any:
     if isinstance(value, datetime):
@@ -129,9 +132,69 @@ _NO_HOSTING_RE = re.compile(
     r"no functional components|standard .*wordpress)",
     re.IGNORECASE,
 )
+_LLM_PROVIDER_HINT_RE = re.compile(
+    r"(llm|model|provider|gemini|google|google[_ -]?genai|openai|anthropic|"
+    r"claude|gpt|api)",
+    re.IGNORECASE,
+)
+_LLM_RATE_LIMIT_RE = re.compile(
+    r"(llm[_ -]?rate[_ -]?limited|rate[_ -]?limit|rateLimit|resource[_ -]?exhausted|"
+    r"quota|429|too many requests)",
+    re.IGNORECASE,
+)
+_LLM_API_DOWN_RE = re.compile(
+    r"(llm[_ -]?(api[_ -]?)?(down|timeout|timed out)|model call timed out|"
+    r"final model call timed out|api[_ -]?down|service unavailable|"
+    r"temporarily unavailable|unavailable|overload|503|deadline exceeded|"
+    r"connection (refused|reset|aborted))",
+    re.IGNORECASE,
+)
+
+
+def _compact_text(value: Any) -> str:
+    if isinstance(value, dict):
+        return " ".join(_compact_text(item) for item in value.values())
+    if isinstance(value, list):
+        return " ".join(_compact_text(item) for item in value)
+    return str(value or "")
+
+
+def _llm_provider_blocker_status(
+    *,
+    failure_mode: str = "",
+    kind: str = "",
+    message: str = "",
+    details: Any = None,
+) -> str:
+    kind_normalized = str(kind or "").strip().lower()
+    text = " ".join(
+        [
+            str(failure_mode or ""),
+            kind_normalized,
+            str(message or ""),
+            _compact_text(details),
+        ]
+    )
+    has_llm_hint = bool(_LLM_PROVIDER_HINT_RE.search(text) or kind_normalized.startswith("llm_"))
+
+    if kind_normalized == "llm_rate_limited":
+        return "llm_rate_limited"
+    if _LLM_RATE_LIMIT_RE.search(text) and (
+        has_llm_hint or re.search(r"(resource[_ -]?exhausted|quota|429)", text, re.IGNORECASE)
+    ):
+        return "llm_rate_limited"
+    if kind_normalized == "llm_timeout":
+        return "llm_api_down"
+    if _LLM_API_DOWN_RE.search(text) and has_llm_hint:
+        return "llm_api_down"
+    return ""
 
 
 def _derived_failed_run_status(row: PipelineRunRecord) -> str:
+    llm_blocker_status = _llm_provider_blocker_status(failure_mode=str(row.failure_mode or ""))
+    if llm_blocker_status:
+        return llm_blocker_status
+
     text = " ".join(
         [
             str(row.failure_mode or ""),
@@ -182,6 +245,69 @@ class OperatorConsoleRepository:
 
     def __init__(self, session: Session) -> None:
         self._session = session
+
+    def _llm_provider_blocker_rollup(self) -> dict[str, Any]:
+        by_run_id: dict[int, str] = {}
+
+        def remember(run_id: Any, status: str) -> None:
+            if not status:
+                return
+            key = int(run_id)
+            existing = by_run_id.get(key)
+            if existing == "llm_rate_limited":
+                return
+            by_run_id[key] = status
+
+        failure_rows = (
+            self._session.query(PipelineRunRecord.id, PipelineRunRecord.failure_mode)
+            .filter(PipelineRunRecord.final_status.in_(RUN_FAILURE_STATUSES))
+            .all()
+        )
+        for run_id, failure_mode in failure_rows:
+            remember(
+                run_id,
+                _llm_provider_blocker_status(failure_mode=str(failure_mode or "")),
+            )
+
+        event_rows = (
+            self._session.query(
+                RuntimeEventRecord.pipeline_run_id,
+                RuntimeEventRecord.kind,
+                RuntimeEventRecord.message,
+                RuntimeEventRecord.details_json,
+            )
+            .join(PipelineRunRecord, PipelineRunRecord.id == RuntimeEventRecord.pipeline_run_id)
+            .filter(PipelineRunRecord.final_status.in_(RUN_FAILURE_STATUSES))
+            .filter(RuntimeEventRecord.kind.in_(["llm_rate_limited", "llm_timeout", "llm_error"]))
+            .all()
+        )
+        for run_id, kind, message, details in event_rows:
+            remember(
+                run_id,
+                _llm_provider_blocker_status(
+                    kind=str(kind or ""),
+                    message=str(message or ""),
+                    details=details or {},
+                ),
+            )
+
+        breakdown = {
+            "llm_rate_limited": len(
+                [status for status in by_run_id.values() if status == "llm_rate_limited"]
+            ),
+            "llm_api_down": len(
+                [status for status in by_run_id.values() if status == "llm_api_down"]
+            ),
+        }
+        return {
+            "total": len(by_run_id),
+            "breakdown": breakdown,
+            "status": "rate_limited"
+            if breakdown["llm_rate_limited"]
+            else "api_down"
+            if breakdown["llm_api_down"]
+            else "ok",
+        }
 
     def list_pricing_configs(self) -> list[PricingConfig]:
         rows = (
@@ -444,6 +570,22 @@ class OperatorConsoleRepository:
                 .all()
             )
         }
+        distinct_working_websites = int(
+            self._session.query(
+                func.count(func.distinct(func.lower(func.trim(PipelineRunRecord.root_url))))
+            )
+            .filter(PipelineRunRecord.final_status.in_(WORKING_WEBSITE_STATUSES))
+            .filter(func.trim(PipelineRunRecord.root_url) != "")
+            .scalar()
+            or 0
+        )
+        no_stream_or_hosting_runs = int(
+            self._session.query(func.count(PipelineRunRecord.id))
+            .filter(PipelineRunRecord.final_status.in_(NO_STREAM_OR_HOSTING_STATUSES))
+            .scalar()
+            or 0
+        )
+        llm_provider_blockers = self._llm_provider_blocker_rollup()
 
         recent_parallelism = 0
         recent_run_ids = [row.id for row in recent_runs]
@@ -511,6 +653,13 @@ class OperatorConsoleRepository:
                 else 0.0,
                 "cancelled_runs": cancelled_count,
                 "status_breakdown": status_breakdown,
+                "llm_provider_status": llm_provider_blockers["status"],
+                "llm_provider_blocked_runs": llm_provider_blockers["total"],
+                "llm_rate_limited_runs": llm_provider_blockers["breakdown"][
+                    "llm_rate_limited"
+                ],
+                "llm_api_down_runs": llm_provider_blockers["breakdown"]["llm_api_down"],
+                "llm_provider_blocker_breakdown": llm_provider_blockers["breakdown"],
                 "total_tokens_in": total_tokens_in,
                 "total_cached_input_tokens": int(
                     llm_usage_totals.get("cached_input_tokens", 0) or 0
@@ -536,6 +685,8 @@ class OperatorConsoleRepository:
                 else 0.0,
                 "avg_latency_seconds": round(avg_latency, 3),
                 "runs_with_streams": runs_with_streams,
+                "distinct_working_websites": distinct_working_websites,
+                "no_stream_or_hosting_runs": no_stream_or_hosting_runs,
                 "runs_with_emails": runs_with_emails,
                 "stream_yield_rate": round(runs_with_streams / rate_denominator, 4)
                 if rate_denominator

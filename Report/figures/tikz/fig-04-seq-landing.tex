@@ -1,57 +1,5 @@
-\begin{figure}[!htbp]
+\begin{figure}[H]
 \centering
-\resizebox{1.0\textwidth}{!}{%
-\begin{tikzpicture}[
-  line cap=round,
-  line join=round,
-  part/.style={draw=gray!55, fill=gray!8, rounded corners=3pt,
-    minimum width=2.2cm, minimum height=0.58cm, align=center, font=\scriptsize\bfseries},
-  msg/.style={->, >=Stealth, thick, accent!85, shorten <=2pt, shorten >=2pt},
-  ret/.style={->, >=Stealth, dashed, gray!70, thick, shorten <=2pt, shorten >=2pt},
-  life/.style={gray!28, dashed},
-  lab/.style={font=\tiny, fill=white, inner sep=1.2pt, align=center},
-  phase/.style={draw=gray!26, fill=gray!2, rounded corners=5pt, line width=0.45pt},
-  phaselab/.style={font=\tiny\bfseries, text=black!58, fill=white, inner sep=1.4pt}
-]
-
-\foreach \x/\name/\id in {%
-  0/Orchestrator/orch,
-  2.7/Landing\\agent/agent,
-  5.4/LangChain\\loop/loop,
-  8.1/Landing\\MCP/mcp,
-  10.8/Target\\page/site,
-  13.5/Queues/queues
-}{%
-  \node[part] (\id) at (\x,0) {\name};
-  \draw[life] (\x,-0.42) -- (\x,-8.35);
-}
-
-\begin{scope}[on background layer]
-  \node[phase, minimum width=5.75cm, minimum height=1.25cm,
-    anchor=north west] (brief) at (-0.25,-0.65) {};
-  \node[phase, minimum width=8.60cm, minimum height=4.55cm,
-    anchor=north west] (discover) at (5.05,-2.00) {};
-  \node[phase, minimum width=14.00cm, minimum height=1.95cm,
-    anchor=north west] (queues) at (-0.25,-6.80) {};
-\end{scope}
-\node[phaselab, anchor=south west] at ([xshift=0.10cm,yshift=0.04cm]brief.north west) {Landing handoff};
-\node[phaselab, anchor=west] at ([xshift=0.70cm,yshift=-0.08cm]discover.north west) {Discover candidates};
-\node[phaselab, anchor=west] at ([xshift=0.10cm,yshift=-0.08cm]queues.north west) {Queue downstream targets};
-
-\draw[msg] (orch.south) ++(0,-0.75) -- node[lab, above]{landing handoff} ++(2.7,0);
-\draw[msg] (agent.south) ++(0,-1.45) -- node[lab, above, text width=2.0cm]{role prompt + memory} ++(2.7,0);
-\draw[msg] (loop.south) ++(0,-2.15) -- node[lab, above]{inspect landing} ++(2.7,0);
-\draw[msg] (mcp.south) ++(0,-2.85) -- node[lab, above]{browse listing} ++(2.7,0);
-\draw[ret] (site.south) ++(0,-3.55) -- node[lab, above, text width=2.0cm]{cards, links, frames} ++(-2.7,0);
-\draw[ret] (mcp.south) ++(0,-4.25) -- node[lab, above, text width=2.0cm]{grouped candidates} ++(-2.7,0);
-\draw[msg] (loop.south) ++(0,-4.95) -- node[lab, above, text width=2.25cm]{navigate / interact if needed} ++(2.7,0);
-\draw[ret] (mcp.south) ++(0,-5.65) -- node[lab, above]{new evidence} ++(-2.7,0);
-\draw[ret] (loop.south) ++(0,-6.35) -- node[lab, above]{MatchInfo list} ++(-2.7,0);
-\draw[ret] (agent.south) ++(0,-7.05) -- node[lab, above]{ExtractionResult} ++(-2.7,0);
-\draw[msg] (orch.south) ++(0,-7.75) -- node[lab, above]{hosting queue} ++(13.5,0);
-\draw[msg] (orch.south) ++(0,-8.45) -- node[lab, above, text width=2.55cm]{embedded queue / direct streams} ++(13.5,0);
-
-\end{tikzpicture}
-}
+\includegraphics[width=0.92\textwidth,height=0.58\textheight,keepaspectratio]{figures/fig-04-seq-landing.png}
 \caption{Landing-agent sequence: convert listing-page evidence into downstream queues.}\label{fig:seq-landing}
 \end{figure}

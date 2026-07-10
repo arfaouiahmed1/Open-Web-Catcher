@@ -12,6 +12,15 @@ const PRIORITY_RANK = {
   low: 1,
 };
 
+const ARTICLE_URL_PATTERN =
+  /\/(?:read|post|posts|article|articles|news|blog|story|stories)(?:\/|$)/i;
+const ARTICLE_SECTION_PATTERN =
+  /(news|article|blog|story|related|popular|recommended|more news|more stories|أخبار|خبر|مقالات|اقرأ|المزيد)/i;
+const STRONG_MATCH_CONTEXT_PATTERN =
+  /(\bvs\.?\b|\bv\b|versus|@| x |×|\b\d{1,2}:\d{2}\b|match[-_\s]?card|fixture|event[-_\s]?card|schedule[-_\s]?row|live[-_\s]?match|team[-_\s]?[ab]|score|kickoff|against|ضد|مباراة|مباريات|موعد|الساعة|بث مباشر)/i;
+const PLAYER_CONTEXT_PATTERN =
+  /(player|iframe|server|source|watch button|play button|stream button|embed|video|server_hints|inline_server_list|js_expanded_row)/i;
+
 const NOISE_PATTERN =
   /(login|sign in|signup|register|privacy|terms|cookie|contact|about|help|faq|telegram|discord|twitter|facebook|instagram)/i;
 
@@ -103,6 +112,49 @@ function resolveUrlMaybe(url, baseUrl) {
 
 function looksLikePaginationUrl(url) {
   return PAGINATION_URL_PATTERN.test(String(url || ""));
+}
+
+function isArticleOrNewsUrl(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return false;
+  try {
+    return ARTICLE_URL_PATTERN.test(new URL(raw, "https://example.invalid").pathname);
+  } catch {
+    return ARTICLE_URL_PATTERN.test(raw);
+  }
+}
+
+function hasStrongMatchCardEvidence(entry) {
+  const source = String(entry.source || "").toLowerCase();
+  if (source === "nav") return false;
+  const structuralHaystack = [
+    entry.nearby_text,
+    entry.row_text,
+    entry.section_title,
+    entry.classes,
+    entry.selector,
+    entry.xpath,
+  ].map((value) => String(value || "")).join(" ");
+  const titleHaystack = String(entry.text || "");
+  if (PLAYER_CONTEXT_PATTERN.test(`${structuralHaystack} ${titleHaystack}`)) return true;
+  if (ARTICLE_SECTION_PATTERN.test(`${entry.section_title || ""} ${entry.classes || ""} ${entry.selector || ""}`)) {
+    return false;
+  }
+  if (
+    STRONG_MATCH_CONTEXT_PATTERN.test(structuralHaystack) ||
+    (
+      STRONG_MATCH_CONTEXT_PATTERN.test(titleHaystack) &&
+      /(match|fixture|event|schedule|live|card|row|team|club|channel|player|server)/i.test(structuralHaystack)
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function isArticleOnlyCandidate(entry) {
+  if (!isArticleOrNewsUrl(entry.url)) return false;
+  return !hasStrongMatchCardEvidence(entry);
 }
 
 function pageNumberFromUrl(url) {
@@ -727,6 +779,7 @@ function landingLinkGroup(entry) {
   const source = String(entry.source || "").toLowerCase();
   const status = String(entry.status || "").toLowerCase();
   if (looksLikePaginationUrl(url)) return "pagination_links";
+  if (isArticleOnlyCandidate(entry)) return "news_article_links";
   if (/status/.test(url) || /\bstatus\b/.test(text)) return "status_links";
   if (source === "nav") return "header_nav";
   if (/\/category\//.test(url) || CATEGORY_PATTERN.test(text)) return "sports_categories";
@@ -862,6 +915,8 @@ function candidatePriority(entry) {
   const sourceRank = { content: 6, collapsed: 5, reveal: 5, frame: 4, nav: 2 };
   let score = sourceRank[entry.source] || 1;
   const haystack = `${entry.text || entry.title || ""} ${entry.nearby_text} ${entry.row_text} ${entry.classes || ""} ${entry.url}`.toLowerCase();
+  if (isArticleOnlyCandidate(entry)) score -= 12;
+  if (ARTICLE_SECTION_PATTERN.test(`${entry.section_title || ""} ${entry.classes || ""}`)) score -= 4;
   if (/\blive\b|en vivo|directo|watch|play|stream|eventos|canal|channel|tv/.test(haystack)) score += 4;
   if (WATCH_PATTERN.test(haystack)) score += 3;
   if (SCHEDULE_ROW_PATTERN.test(haystack)) score += 3;
@@ -872,6 +927,7 @@ function candidatePriority(entry) {
 
 function looksLikeLandingCandidate(entry) {
   if (!entry.url || looksLikePaginationUrl(entry.url)) return false;
+  if (isArticleOnlyCandidate(entry)) return false;
   const haystack = `${entry.text || ""} ${entry.nearby_text || ""} ${entry.row_text || ""} ${entry.classes || ""} ${entry.url || ""}`;
   if (WATCH_PATTERN.test(haystack) || PROVIDER_CHANNEL_PATTERN.test(haystack)) return true;
   return (
@@ -1601,7 +1657,7 @@ function splitLandingGroups(linkGroups) {
       ["live_watch_cards", "watch_links", "live_channels"].includes(group.label),
     ).map(toGroupRef),
     navigationGroups: linkGroups.filter((group) =>
-      ["header_nav", "sports_categories", "schedule_links", "status_links", "mirror_links"].includes(group.label),
+      ["header_nav", "sports_categories", "schedule_links", "status_links", "mirror_links", "news_article_links"].includes(group.label),
     ).map(toGroupRef),
   };
 }

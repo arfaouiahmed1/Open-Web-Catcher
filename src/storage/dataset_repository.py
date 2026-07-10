@@ -258,6 +258,24 @@ class DatasetRepository:
             rows = rows[:limit]
         return {"total": total, "sites": [self._site_payload(row) for row in rows]}
 
+    def list_sites_by_ids(self, site_ids: list[int]) -> list[dict[str, Any]]:
+        ids: list[int] = []
+        seen: set[int] = set()
+        for value in site_ids:
+            try:
+                site_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if site_id <= 0 or site_id in seen:
+                continue
+            seen.add(site_id)
+            ids.append(site_id)
+        if not ids:
+            return []
+        rows = self._session.query(DatasetSiteRecord).filter(DatasetSiteRecord.id.in_(ids)).all()
+        by_id = {int(row.id): row for row in rows}
+        return [self._site_payload(by_id[site_id]) for site_id in ids if site_id in by_id]
+
     def create_site(
         self,
         *,
@@ -434,6 +452,26 @@ class DatasetRepository:
         self._session.delete(row)
         self._session.commit()
         return True
+
+    def bulk_delete_sites(self, site_ids: list[int]) -> int:
+        ids: list[int] = []
+        seen: set[int] = set()
+        for value in site_ids:
+            try:
+                site_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if site_id <= 0 or site_id in seen:
+                continue
+            ids.append(site_id)
+            seen.add(site_id)
+        if not ids:
+            return 0
+        rows = self._session.query(DatasetSiteRecord).filter(DatasetSiteRecord.id.in_(ids)).all()
+        for row in rows:
+            self._session.delete(row)
+        self._session.commit()
+        return len(rows)
 
     def bulk_update(
         self,

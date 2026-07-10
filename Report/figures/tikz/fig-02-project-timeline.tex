@@ -6,8 +6,8 @@
                     text=white, minimum size=7mm, inner sep=0pt,
                     font=\scriptsize\bfseries},
   card/.style={draw=accent!62, fill=blue!5, rounded corners=6pt,
-               text width=2.62cm, minimum height=1.15cm,
-               align=center, font=\footnotesize, inner sep=6pt},
+               text width=2.62cm, minimum height=0.92cm,
+               align=center, font=\footnotesize, inner sep=4pt},
   neutral/.style={card, draw=gray!60, fill=gray!8},
   proto/.style={card, draw=orange!65!black, fill=orange!9},
   build/.style={card, draw=accent!72, fill=blue!7},
@@ -30,18 +30,18 @@
 \node[milestone] (p5) at (12.0,0) {5};
 \node[milestone] (p6) at (14.75,0) {6};
 
-\node[neutral] (start) at (1.0,1.55)
-  {\textbf{Evidence needs}\\Static limits and review goals};
-\node[proto] (n8n) at (3.75,-1.55)
-  {\textbf{n8n prototype}\\Landing workflow validation};
-\node[proto] (fixes) at (6.5,1.55)
-  {\textbf{Failure analysis}\\Browser states, iframes, fixes};
-\node[build] (owc) at (9.25,-1.55)
-  {\textbf{OWC platform}\\Architecture and runtime};
-\node[eval] (evaluation) at (12.0,1.55)
-  {\textbf{Batch evaluation}\\Telemetry and evidence review};
-\node[synth] (report) at (14.75,-1.55)
-  {\textbf{PFE synthesis}\\Report and final diagrams};
+\node[neutral] (start) at (1.0,1.18)
+  {\textbf{Dec.}\\Evidence needs\\Static limits};
+\node[proto] (n8n) at (3.75,-1.18)
+  {\textbf{Jan.}\\n8n prototype\\Browser validation};
+\node[proto] (fixes) at (6.5,1.18)
+  {\textbf{Feb.--Mar.}\\Puppeteer agents\\LangGraph loops};
+\node[build] (owc) at (9.25,-1.18)
+  {\textbf{Apr.}\\OWC platform\\API, UI, storage};
+\node[eval] (evaluation) at (12.0,1.18)
+  {\textbf{May}\\Evaluation\\Telemetry review};
+\node[synth] (report) at (14.75,-1.18)
+  {\textbf{June 1}\\PFE synthesis\\Final report};
 
 \node[phase] at (1.0,-0.55) {Scope};
 \node[phase] at (3.75,0.55) {Validate};
@@ -58,5 +58,5 @@
 \draw[stem] (p6.south) -- (report.north);
 \end{tikzpicture}
 }
-\caption{Internship timeline from evidence needs analysis to evaluated OWC architecture.}\label{fig:timeline}
+\caption{Internship timeline from December feasibility work to the final OWC synthesis on June 1.}\label{fig:timeline}
 \end{figure}

@@ -1,0 +1,68 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.96\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!30, fill=gray!2, rounded corners=9pt,
+    line width=0.52pt, inner sep=9pt},
+  box/.style={rounded corners=6pt, align=center, font=\scriptsize,
+    text width=2.92cm, minimum height=0.78cm, inner xsep=5pt,
+    inner ysep=4pt, text=black},
+  input/.style={box, draw=accent!74, fill=blue!5},
+  policy/.style={box, draw=orange!82!black, fill=orange!8},
+  control/.style={box, draw=purple!64!black, fill=purple!6},
+  result/.style={box, draw=green!55!black, fill=green!8},
+  note/.style={draw=gray!36, fill=gray!7, rounded corners=5pt,
+    align=center, font=\tiny\bfseries, text width=4.18cm,
+    inner sep=4pt, text=black!70},
+  title/.style={font=\scriptsize\bfseries, text=black!68, fill=white,
+    inner xsep=3pt, inner ysep=1pt},
+  arr/.style={-{Latex[length=2.05mm,width=1.48mm]}, line width=0.78pt,
+    accent!78, rounded corners=6pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=1.82mm,width=1.24mm]}, line width=0.62pt,
+    gray!60, densely dashed, rounded corners=6pt, shorten <=3pt,
+    shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.0pt,
+    text=black!68}
+]
+
+\node[input] (profile) at (0,1.58) {Agent profile\\{\normalfont\tiny classification, landing, hosting, embedded}};
+\node[input] (target) at (0,0.22) {Target state\\{\normalfont\tiny current URL, frames, handoff}};
+\node[policy] (selector) at (3.78,0.90) {Runtime selector\\{\normalfont\tiny standard or streaming-safe}};
+
+\node[control] (adblock) at (7.44,2.23) {Ad blocking\\{\normalfont\tiny uBOL policy and lists}};
+\node[control] (proxy) at (7.44,0.90) {Proxy policy\\{\normalfont\tiny fetch, dedupe, validate, stick}};
+\node[control] (fingerprint) at (7.44,-0.43) {Fingerprint policy\\{\normalfont\tiny generate, sync, inject}};
+
+\node[result] (chrome) at (11.28,0.90) {Isolated Chrome page\\{\normalfont\tiny one MCP-visible browser session}};
+\node[result] (telemetry) at (11.28,-1.08) {Runtime evidence\\{\normalfont\tiny blocked requests, proxy choice, fingerprint metadata}};
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(profile) (target) (selector) (adblock) (proxy) (fingerprint) (chrome) (telemetry)] (mainpanel) {};
+\end{scope}
+
+\node[title, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]mainpanel.north west)
+  {Browser runtime controls around the Puppeteer MCP session};
+
+\draw[arr] (profile.east) -- (selector.west);
+\draw[arr] (target.east) -- (selector.west);
+\draw[arr] (selector.east) -- (adblock.west);
+\draw[arr] (selector.east) -- (proxy.west);
+\draw[arr] (selector.east) -- (fingerprint.west);
+\draw[arr] (adblock.east) -- (chrome.west);
+\draw[arr] (proxy.east) -- (chrome.west);
+\draw[arr] (fingerprint.east) -- (chrome.west);
+\draw[arr] (chrome.south) -- node[lab, right=1pt] {record} (telemetry.north);
+
+\node[note] (safe) at (3.78,-1.25)
+  {Streaming-safe mode can loosen\\filters for playback.};
+\node[note] (audit) at (7.44,-1.83)
+  {Control decisions are persisted so evidence remains explainable.};
+\draw[soft] (selector.south) -- (safe.north);
+\draw[soft] (fingerprint.south) -- (audit.north);
+
+\end{tikzpicture}%
+}
+\caption{Runtime controls applied before a Puppeteer browser page is exposed to the MCP tools.}\label{fig:browser-runtime-controls}
+\end{figure}

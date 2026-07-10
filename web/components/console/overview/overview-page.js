@@ -7,6 +7,7 @@ import { Bot, CircleDollarSign, Coins, Cpu, Globe2, LayoutGrid, Loader2 } from "
 
 import { apiUrl } from "@/lib/api";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/utils";
+import { overviewFailureOnlySuccessRate } from "@/lib/overview-metrics";
 import { estimateCallCost, loadPricing, synthCallsFromModelUsage } from "@/lib/pricing";
 import { statusLabel } from "@/lib/run-status";
 import { KpiCard } from "@/components/kpi-card";
@@ -582,13 +583,14 @@ function SectionLabel({ children }) {
 }
 
 /** System live-status pills strip. */
-function StatusStrip({ summary, activeRuns }) {
+function StatusStrip({ summary }) {
+  const workingWebsites = Number(summary.distinct_working_websites || 0);
+  const noStreamOrHostingRuns = Number(summary.no_stream_or_hosting_runs || 0);
   const items = [
     {
-      label: "Active",
-      value: activeRuns,
-      color: activeRuns > 0 ? "var(--signal)" : "var(--mute-3)",
-      live: activeRuns > 0,
+      label: "Working sites",
+      value: workingWebsites,
+      color: workingWebsites > 0 ? "var(--mint)" : "var(--mute-3)",
     },
     { label: "Queued", value: summary.queued_jobs || 0, color: "var(--mute)" },
     {
@@ -602,9 +604,9 @@ function StatusStrip({ summary, activeRuns }) {
       color: "var(--violet)",
     },
     {
-      label: "Peak ∥",
-      value: summary.recent_max_parallelism || 0,
-      color: "var(--mint)",
+      label: "No stream/host",
+      value: noStreamOrHostingRuns,
+      color: noStreamOrHostingRuns > 0 ? "var(--signal)" : "var(--mute-3)",
     },
     {
       label: "Streams",
@@ -905,6 +907,9 @@ function OverviewPageContent() {
 
   /* ── derived data ────────────────────────────────────────────────────── */
   const summary = overview?.summary ?? EMPTY_OBJECT;
+  const dashboardSuccessRate = overviewFailureOnlySuccessRate(summary);
+  const distinctWorkingWebsites = Number(summary.distinct_working_websites || 0);
+  const noStreamOrHostingRuns = Number(summary.no_stream_or_hosting_runs || 0);
   const rawTrend = overview?.trend ?? EMPTY_ARRAY;
   const rawModelRows = overview?.model_breakdown ?? EMPTY_ARRAY;
   const overviewProviderRows = overview?.provider_breakdown ?? EMPTY_ARRAY;
@@ -1245,6 +1250,15 @@ function OverviewPageContent() {
   }
 
   /* ── Overview KPI sets ───────────────────────────────────────────────── */
+  const llmProviderBlockedRuns = Number(summary.llm_provider_blocked_runs || 0);
+  const llmRateLimitedRuns = Number(summary.llm_rate_limited_runs || 0);
+  const llmApiDownRuns = Number(summary.llm_api_down_runs || 0);
+  const llmProviderStatus =
+    llmRateLimitedRuns > 0
+      ? "Rate limited"
+      : llmApiDownRuns > 0
+        ? "API down"
+        : "OK";
   const overviewKpisRow1 = [
     {
       label: "Total runs",
@@ -1254,9 +1268,9 @@ function OverviewPageContent() {
     },
     {
       label: "Success rate",
-      value: formatPercent(summary.success_rate || 0),
-      description: "Strict stream success",
-      bar: (summary.success_rate || 0) * 100,
+      value: formatPercent(dashboardSuccessRate),
+      description: "Only failed runs lower this",
+      bar: dashboardSuccessRate * 100,
       accent: "mint",
     },
     {
@@ -1282,11 +1296,10 @@ function OverviewPageContent() {
       accent: "sky",
     },
     {
-      label: "Active runs",
-      value: formatNumber(activeRuns.length),
-      description: "Currently streaming",
-      live: activeRuns.length > 0,
-      accent: activeRuns.length > 0 ? "violet" : undefined,
+      label: "Working websites",
+      value: formatNumber(distinctWorkingWebsites),
+      description: "Distinct success/partial sites",
+      accent: distinctWorkingWebsites > 0 ? "mint" : undefined,
     },
     {
       label: "Failed 24 h",
@@ -1317,16 +1330,18 @@ function OverviewPageContent() {
       accent: "sky",
     },
     {
-      label: "Cached tokens",
-      value: formatNumber(summary.total_cached_input_tokens || 0),
-      description: "Prompt cache savings",
-      accent: "violet",
+      label: "LLM API",
+      value: llmProviderStatus,
+      description: llmProviderBlockedRuns
+        ? `${formatNumber(llmProviderBlockedRuns)} rate/down runs excluded`
+        : "No rate-limit or outage blockers",
+      accent: llmProviderBlockedRuns ? "signal" : "mint",
     },
     {
-      label: "Peak ∥",
-      value: formatNumber(summary.recent_max_parallelism || 0),
-      description: "Max concurrent agents",
-      accent: "mint",
+      label: "No streams/hosting",
+      value: formatNumber(noStreamOrHostingRuns),
+      description: "Runs with no streams or hosting pages",
+      accent: noStreamOrHostingRuns > 0 ? "signal" : undefined,
     },
   ];
 
@@ -1750,7 +1765,7 @@ function OverviewPageContent() {
           </div>
 
           {/* Live status strip */}
-          <StatusStrip summary={summary} activeRuns={activeRuns.length} />
+          <StatusStrip summary={summary} />
 
           {/* Activity trend — 3 area lines */}
           {trend.length > 2 && (
@@ -1842,11 +1857,11 @@ function OverviewPageContent() {
             />
           )}
 
-          {/* Active + recent runs */}
+          {/* Live + recent runs */}
           <div className="grid gap-5 xl:grid-cols-[340px_1fr]">
             <Panel>
               <PanelHead
-                title="Active runs"
+                title="Live traces"
                 sub="Live traces still streaming"
                 accent="var(--violet)"
                 aside={
@@ -1863,7 +1878,7 @@ function OverviewPageContent() {
                   .map((row) => <ActiveRunRow key={row.run_id} run={row} />)
               ) : (
                 <div className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40">
-                  No active runs
+                  No live traces
                 </div>
               )}
             </Panel>

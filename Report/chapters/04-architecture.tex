@@ -1,5 +1,7 @@
 \chapter{System Architecture}\label{chap:architecture}
 
+\section{Introduction}
+
 I present the architecture of Open Web Catcher (OWC) as the evidence-collection
 platform developed during the internship. The chapter starts with the user-facing
 system and runtime components, then narrows into the multi-agent pipeline, agent
@@ -10,13 +12,13 @@ backend, console, browser tools, specialist agents, runtime telemetry, persisten
 and review outputs. Chapter~5 then maps these architectural decisions to the
 implementation.
 
-\chapterfocus{The system is a staged evidence pipeline, not a single unrestricted
-browser agent. FastAPI starts and records runs. The orchestrator owns the route,
+The system is a staged evidence pipeline, not a single unrestricted browser agent.
+FastAPI starts and records runs. The orchestrator owns the route,
 handoffs, queues, aggregation, provider analysis, and email drafting. Four
 browser-facing specialists perform bounded work: classification, landing-page
 discovery, hosting-page extraction, and embedded-player extraction. Each specialist
 uses profile-scoped MCP browser tools, returns typed output, and leaves events that
-explain success or failure.}
+explain success or failure.
 
 \section{System Purpose and Architecture Reading Path}
 
@@ -30,7 +32,7 @@ roles are separated on purpose:
   provider data.
 \end{itemize}
 
-The useful architectural view here is not a generic use-case picture. It is the path
+The useful architectural view is not a generic use-case picture. It is the path
 from an operator action to the records that make the action reviewable later.
 
 I present the architecture in four layers:
@@ -128,39 +130,36 @@ orchestrator checks memory as soft guidance, calls classification, routes to the
 appropriate specialist path, collects evidence, and only then runs provider
 analysis and email generation.
 
-I use three complementary views for the same run. Figure~\ref{fig:end-to-end-flowchart}
-shows the operational path: where the run can block, branch, skip provider/email
-work, or stop with a no-stream result. Figure~\ref{fig:end-to-end-agent-map} shows
-ownership: specialist stages, browser runtime, provider analysis, and final pipeline
-result. Figure~\ref{fig:run-sequence} shows timing: when the API, orchestrator,
-specialist agents, tools, observer, and database exchange information during one
-investigation.
+The complete pipeline view is shown in Figure~\ref{fig:end-to-end-flowchart}.
+It starts with the operator and API readiness check, then follows the orchestrator
+as it initializes pipeline state, reads memory as soft guidance, calls
+classification, and either records an unsupported page or prepares bounded
+handoffs for specialist work. The same activity diagram continues through the
+specialist-extraction loop to the reviewable result. Landing, hosting, and
+embedded work can add more hosting or embedded targets, but every turn returns
+typed JSON to the orchestrator. The orchestrator then normalizes evidence,
+aggregates matches, streams, screenshots, and failures, and decides whether
+downstream provider and email stages are allowed to run.
 
-\input{figures/tikz/fig-04-end-to-end-flowchart}
-
-After the decision path is clear, the next view shifts from ``what happens
-next?'' to ``who owns each part of the work?'' The same run crosses the console,
-API, orchestrator, browser tools, storage layer, and review outputs, so ownership
-has to stay visible.
-
-\input{figures/tikz/fig-04-end-to-end-agent-map}
-
-The sequence diagram then adds the time dimension. It shows how the same
-components exchange requests, tool calls, trace events, and final run data
-during one investigation.
-
-\input{figures/tikz/fig-run-sequence}
-
-The pipeline has three important rules:
+Across this pipeline, there are four important rules:
 \begin{itemize}
-  \item \textbf{Agents do not call each other directly}: every specialist
-  returns typed output to the orchestrator.
-  \item \textbf{The orchestrator owns queues}: landing can add hosting or
-  embedded targets, hosting can add more hosting or embedded targets, and
-  embedded returns final media evidence.
+  \item \textbf{Readiness gates execution}: browser, tool, or API setup problems
+  return blocking reasons before the agent graph starts.
+  \item \textbf{Agents do not call each other directly}: every specialist returns
+  typed output to the orchestrator.
+  \item \textbf{The orchestrator owns queues}: landing can add hosting or embedded
+  targets, hosting can add more hosting or embedded targets, and embedded returns
+  final media evidence.
   \item \textbf{Downstream stages require streams}: provider analysis and email
   generation are skipped when no stream URL exists.
 \end{itemize}
+
+The stage-specific sequence diagrams later in the chapter then zoom into timing
+inside the orchestrator and each browser-facing specialist.
+\clearpage
+\input{figures/tikz/fig-04-end-to-end-flowchart}
+\clearpage
+\FloatBarrier
 
 \section{Agent Communication and Orchestrator Handoffs}
 
@@ -224,8 +223,8 @@ In this design, communication is visible at three levels:
 \end{itemize}
 
 That is why the dashboard can explain what happened instead of only showing a final
-status. Figure~\ref{fig:agent-json-contracts} expands the same contract into the
-concrete JSON fields used by the current schemas, orchestrator, and prompts.
+status. The concrete JSON fields used by the current schemas, orchestrator, and prompts
+are summarized later in Table~\ref{tab:agent-json-contract-summary}.
 
 Prompt compilation is also part of the communication contract. Each browser-facing
 specialist receives the same basic ingredients but a different stage contract:
@@ -254,6 +253,8 @@ its prompt, opens the correct MCP browser profile, lets the model request tools,
 records every model and tool turn, controls context growth, and normalizes the
 final answer into the stage schema.
 
+\FloatBarrier
+\clearpage
 \section{Agent-by-Agent Design}
 
 \subsection{Orchestrator Agent}
@@ -269,10 +270,13 @@ orchestrator as a component: its inputs, decisions, outputs, and failure signals
 
 \input{figures/tikz/fig-04-agent-card-orchestrator}
 
-The sequence view closes the orchestrator subsection by showing how those
-responsibilities appear during a real API-triggered run.
+The sequence view closes the orchestrator subsection by showing the real-time
+handoff pattern: route preparation, specialist execution, trace events, and the
+final route decision.
 
 \input{figures/tikz/fig-04-seq-orchestrator}
+\FloatBarrier
+\clearpage
 
 \subsection{Classification Agent}
 
@@ -284,11 +288,13 @@ extraction begins.
 
 A landing result sends the run to the landing agent. A hosting result queues the
 root URL for the hosting agent. An embedded result queues the root URL for the
-embedded agent only when the page looks like a direct player. Unknown or
-irrelevant pages skip provider and email stages because no stream evidence
-exists.
+embedded agent only when the page looks like a direct player. The sequence view
+shows this decision as a bounded classification exchange that returns only a
+typed route result, not stream evidence.
 
 \input{figures/tikz/fig-04-seq-classification}
+\FloatBarrier
+\clearpage
 
 \subsection{Landing-Page Agent}
 
@@ -298,11 +304,14 @@ homepages, schedule pages, directory pages, and match listings.
 
 \input{figures/tikz/fig-04-agent-card-landing}
 
-The orchestrator deduplicates landing outputs. Normal watch or server pages go
-to the hosting queue, direct player URLs go to the embedded queue, and
-provider-like media URLs are preserved as stream evidence.
+The orchestrator deduplicates landing outputs: watch or server pages enter the
+hosting queue, direct player URLs enter the embedded queue, and provider-like
+media URLs remain stream evidence. The sequence view focuses on candidate
+discovery and queue updates, not playback.
 
 \input{figures/tikz/fig-04-seq-landing}
+\FloatBarrier
+\clearpage
 
 \subsection{Hosting-Page Agent}
 
@@ -312,11 +321,13 @@ screenshots, and returns streams or explicit embedded-player handoffs.
 
 \input{figures/tikz/fig-04-agent-card-hosting}
 
-If the page exposes an iframe or direct player URL instead of a stream, the
-hosting result carries that URL as an embedded handoff. If playback fails, it
-still returns diagnostics so the run explains why extraction stopped.
+Hosting returns either stream evidence, an embedded handoff, or diagnostics.
+The sequence view separates server selection, player activation, evidence
+capture, and the final stream-or-handoff result.
 
 \input{figures/tikz/fig-04-seq-hosting}
+\FloatBarrier
+\clearpage
 
 \subsection{Embedded-Page Agent}
 
@@ -328,10 +339,13 @@ media evidence.
 \input{figures/tikz/fig-04-agent-card-embedded}
 
 The component card gives the embedded agent's scope. The sequence diagram then
-shows the narrower runtime path: open the assigned player context, inspect
-frames, activate playback, capture evidence, and return the result.
+shows the narrower runtime path: stay inside the assigned player context, inspect
+frames, activate playback, capture evidence, and return either final media
+evidence or a blocker reason.
 
 \input{figures/tikz/fig-04-seq-embedded}
+\FloatBarrier
+\clearpage
 
 \subsection{Channel Detection Across Agents}
 
@@ -380,6 +394,8 @@ before provider analysis. \\
 \caption{Channel detection responsibilities across the specialist agents.}\label{tab:channel-detection-agents}
 \end{table}
 
+\FloatBarrier
+\clearpage
 \subsection{Provider Analysis and Email Generation}
 
 Provider analysis and email generation are downstream evidence-packaging stages.
@@ -390,6 +406,18 @@ into reviewable takedown drafts. These drafts are not sent automatically; they
 are artifacts for human review.
 
 \input{figures/tikz/fig-04-agent-card-provider-email}
+
+The two downstream tool sequences make this packaging boundary explicit. Provider
+analysis first deduplicates stream hosts and resolves ownership evidence. Email
+generation then groups provider rows, stream evidence, screenshots, and channel
+context into review-only drafts.
+
+\input{figures/tikz/fig-04-seq-provider-analysis}
+
+\FloatBarrier
+\clearpage
+\input{figures/tikz/fig-04-seq-email-generator}
+\FloatBarrier
 
 \section{Browser Tooling and Runtime Controls}
 
@@ -500,6 +528,8 @@ Changing network identity mid-run can break cookies, session-bound player URLs, 
 tokenized media links. If no proxy candidate works, the runtime can fall back to
 direct browsing instead of incorrectly reporting the target site as unreachable.
 
+\input{figures/tikz/fig-04-proxy-fingerprint-rotation}
+
 \begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{Q{3.2cm} Y Y}
@@ -539,29 +569,14 @@ final JSON object. The central class is \texttt{PipelineRunRecord}. It stores:
 
 Background jobs can exist before a pipeline row is finalized. Once the run is
 persisted, agent, telemetry, prompt, memory, evidence, provider, screenshot, and email
-records attach back to \texttt{pipeline\_runs}.
+records attach back to \texttt{pipeline\_runs}. Table~\ref{tab:database-table-families}
+summarizes those records as review families rather than as one monolithic JSON blob.
 
-This is the database shape behind the run-detail console. The dashboard can show
-the final answer and the failure path because agent runs, model calls, browser
-tool calls, runtime events, prompt compilations, memory hints, streams,
-screenshots, providers, and email drafts are queryable as separate rows.
-
-\texttt{PipelineResult} is the aggregate runtime object returned by the
-orchestrator. It groups classification, matches, extraction results, streams,
-screenshots, provider analysis, emails, final status, and metrics. In the Python
-runtime this object is convenient, but the report also needs to show why the final
-result is split into database tables that answer different review questions.
-
-Figure~\ref{fig:runtime-schema} shows the runtime result as a class diagram. The
-diagram uses composition for objects owned by the aggregate result and a dashed
-dependency where an email draft references provider enrichment data. It is a runtime
-class diagram, not a database entity-relationship diagram.
-
-\input{figures/tikz/fig-04-runtime-schema}
-
-\begin{table}[!htbp]
+\begin{table}[H]
 \centering
-\footnotesize
+\scriptsize
+\setlength{\tabcolsep}{3.5pt}
+\renewcommand{\arraystretch}{0.94}
 \begin{tabularx}{\textwidth}{Q{3.05cm} Y Y}
 \toprule
 \rowcolor{accent!8}
@@ -570,42 +585,50 @@ Database table family & Representative tables & Architectural reason \\
 Run identity and job state &
 \texttt{background\_jobs}, \texttt{pipeline\_runs}, \texttt{run\_snapshots},
 legacy \texttt{runs}. &
-Keeps a durable job/run handle from launch to terminal status. The run row
-stores the root URL, page type, success flag, failure mode, counts, duration,
-token totals, and cost totals; the snapshot preserves a full fallback payload. \\
+Keeps the durable run handle, root URL, status, counts, duration, token totals,
+cost totals, and fallback snapshot. \\
 Agent timeline &
 \texttt{agent\_runs}, \texttt{agent\_outputs}, \texttt{runtime\_events}. &
-Explains which actor ran, which target URL it handled, how many model and tool
-turns it used, what status it reached, and which event sequence led to the final
-decision. \\
+Shows the actor, target URL, model/tool turns, status, and event sequence behind
+the final decision. \\
 Model and prompt telemetry &
 \texttt{llm\_calls}, \texttt{run\_model\_usage}, \texttt{prompt\_versions},
 \texttt{prompt\_compilations}, \texttt{pricing\_configs}. &
-Makes model behavior auditable: provider, model, prompt hash/version, cache
-mode, token split, context-window use, and estimated cost are not hidden inside
-the final answer. \\
+Keeps provider, model, prompt version, cache mode, token split, context-window
+use, and estimated cost visible. \\
 Browser and tool evidence &
 \texttt{tool\_calls}, \texttt{tool\_playground\_calls},
 \texttt{run\_screenshots}. &
-Connects browser actions to reviewable evidence. Tool rows keep arguments,
-status, previews, errors, and timing; screenshot rows attribute images to the
-agent, invocation, tool, target URL, and event sequence that produced them. \\
+Connects browser actions to arguments, status, errors, timing, screenshots,
+target URLs, and event sequence. \\
 Extracted evidence and review output &
 \texttt{run\_streams}, \texttt{provider\_analyses},
 \texttt{provider\_lookup\_checks}, \texttt{takedown\_emails}. &
-Separates concrete stream evidence from provider enrichment and draft notices.
-This lets a reviewer trace an email back to specific stream URLs, screenshots,
-server labels, and abuse-contact resolution. \\
+Separates streams from provider enrichment and draft notices so emails trace
+back to stream URLs, screenshots, server labels, and contacts. \\
 Human review, evaluation, and memory &
 \texttt{run\_decisions}, \texttt{run\_tasks}, \texttt{dataset\_sites},
 \texttt{dataset\_batches}, \texttt{dataset\_site\_runs},
 \texttt{memory\_entries}, \texttt{memory\_hints\_used}. &
-Supports manual follow-up, batch evaluation, and cross-run learning without
-letting memory or reviewer notes replace live browser evidence. \\
+Supports manual follow-up, batch evaluation, and reusable hints without replacing
+live browser evidence. \\
 \bottomrule
 \end{tabularx}
 \caption{Database table families used to turn an agent run into reviewable records.}\label{tab:database-table-families}
 \end{table}
+
+This is the database shape behind the run-detail console. The dashboard can show
+the final answer and the failure path because agent runs, model calls, browser
+tool calls, runtime events, prompt compilations, memory hints, streams,
+screenshots, providers, and email drafts are queryable as separate rows.
+
+\texttt{PipelineResult} is the aggregate runtime object returned by the
+orchestrator. It groups classification, matches, extraction results, streams,
+screenshots, provider analysis, emails, and final status. The surrounding
+\texttt{PipelineRun} and \texttt{RunMetrics} records carry execution state, model
+usage, tool usage, and cost totals. In the Python runtime this object graph is
+convenient, but the report also needs to show why the final result is split into
+database tables that answer different review questions.
 
 The table structure is intentionally normalized because different reviewers ask
 different questions:
@@ -633,7 +656,7 @@ Instead, the orchestrator passes a bounded \texttt{HandoffContext} containing:
   \item memory hints that still need browser verification.
 \end{itemize}
 
-The summary below is a chain of contracts, not a chat between agents:
+The following summary is a chain of contracts, not a chat between agents:
 \begin{itemize}
   \item classification produces a small routing object;
   \item landing turns a listing page into candidate watch targets;
@@ -716,13 +739,6 @@ material while keeping the email a draft for human validation. \\
 \caption{Agent JSON contract summary used by the orchestrator.}\label{tab:agent-json-contract-summary}
 \end{table}
 
-Figure~\ref{fig:agent-json-contracts} expands the same chain into a full visual
-contract map. It makes the handoff rule explicit: each specialist receives a
-bounded JSON task, returns a typed JSON result, and leaves the orchestrator to
-normalize that result before another agent is called.
-
-\input{figures/tikz/fig-04-agent-json-contracts}
-
 \begin{table}[!htbp]
 \centering
 \begin{tabularx}{\textwidth}{Q{3.1cm} Y Y}
@@ -747,7 +763,7 @@ screenshots, streams, provider rows, and email drafts. & The data behind
 \caption{Runtime data boundaries and persisted review outputs.}\label{tab:architecture-data-boundaries}
 \end{table}
 
-\section{Chapter Summary}
+\section{Conclusion}
 
 The architecture can be read as a staged, reviewable evidence pipeline:
 \begin{itemize}

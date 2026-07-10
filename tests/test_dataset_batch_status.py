@@ -37,6 +37,21 @@ def test_created_batch_starts_queued_with_site_runs() -> None:
         session.close()
 
 
+def test_bulk_delete_sites_removes_unique_matching_rows() -> None:
+    repo, session = _repo_session()
+    try:
+        first = repo.create_site(url="https://one.example/live", language="english", label="sports")
+        second = repo.create_site(url="https://two.example/live", language="english", label="sports")
+
+        deleted = repo.bulk_delete_sites([first["id"], first["id"], 999999])
+
+        remaining = repo.list_sites(limit=0)["sites"]
+        assert deleted == 1
+        assert [site["id"] for site in remaining] == [second["id"]]
+    finally:
+        session.close()
+
+
 def test_cancel_batch_marks_only_non_terminal_site_runs_cancelled() -> None:
     repo, session = _repo_session()
     try:

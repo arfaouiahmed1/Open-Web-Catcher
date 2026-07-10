@@ -1,0 +1,84 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.92\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  band/.style={draw=gray!28, fill=gray!2, rounded corners=10pt,
+    line width=0.52pt, inner sep=8pt},
+  card/.style={draw=accent!72, fill=blue!5, rounded corners=7pt,
+    align=center, font=\scriptsize\bfseries, text width=2.72cm,
+    minimum height=0.92cm, inner xsep=5pt, inner ysep=4pt, text=black},
+  binder/.style={card, draw=accent!86!black, fill=accent!8,
+    text width=3.25cm, minimum height=1.18cm},
+  site/.style={card, draw=purple!62!black, fill=purple!6,
+    text width=2.82cm},
+  option/.style={draw=gray!48, fill=white, rounded corners=6pt,
+    align=center, font=\tiny\bfseries, text width=1.38cm,
+    minimum height=0.58cm, inner sep=3pt},
+  chosen/.style={option, draw=green!55!black, fill=green!9},
+  fallback/.style={option, draw=orange!78!black, fill=orange!9,
+    text width=1.56cm},
+  title/.style={font=\scriptsize\bfseries, text=black!68, fill=white,
+    inner xsep=3pt, inner ysep=1pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1pt,
+    text=black!68},
+  arr/.style={-{Latex[length=2.05mm,width=1.48mm]}, line width=0.78pt,
+    accent!78, rounded corners=6pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=1.82mm,width=1.24mm]}, line width=0.62pt,
+    gray!60, densely dashed, rounded corners=6pt, shorten <=3pt,
+    shorten >=3pt}
+]
+
+\node[card] (profile) at (0,0) {Browser profile\\{\normalfont\tiny cookies, cache, session}};
+\node[binder] (bind) at (6.05,0) {Runtime identity binding\\{\normalfont\tiny selected proxy + selected fingerprint}};
+\node[site] (site) at (12.05,0) {Target site\\{\normalfont\tiny observes one coherent visitor}};
+
+\node[option] (pA) at (3.45,2.05) {Proxy A};
+\node[chosen] (pB) at (5.20,2.05) {Proxy B};
+\node[option] (pC) at (6.95,2.05) {Proxy C};
+\node[fallback] (direct) at (9.02,2.05) {Direct fallback};
+
+\node[option] (fA) at (3.45,-2.05) {FP 1};
+\node[chosen] (fB) at (5.20,-2.05) {FP 2};
+\node[option] (fC) at (6.95,-2.05) {FP 3};
+\node[fallback] (safe) at (9.02,-2.05) {Safe default};
+
+\begin{scope}[on background layer]
+  \node[band, fit=(pA) (pB) (pC) (direct)] (networkband) {};
+  \node[band, fit=(fA) (fB) (fC) (safe)] (fingerband) {};
+  \node[band, fit=(profile) (bind) (site)] (runband) {};
+\end{scope}
+
+\node[title, anchor=west] at ([xshift=0.12cm,yshift=-0.12cm]networkband.north west)
+  {Network route rotation};
+\node[title, anchor=west] at ([xshift=0.12cm,yshift=-0.12cm]fingerband.north west)
+  {Browser fingerprint rotation};
+\node[title, anchor=west] at ([xshift=0.12cm,yshift=-0.12cm]runband.north west)
+  {Single run state};
+
+\draw[arr] (profile.east) -- node[lab, above=1pt] {profile scope} (bind.west);
+\draw[arr] (bind.east) -- node[lab, above=1pt] {sticky identity} (site.west);
+\draw[arr] (pB.south) -- node[lab, right=1pt] {validated proxy} (bind.north);
+\draw[arr] (fB.north) -- node[lab, right=1pt] {browser surface} (bind.south);
+
+\draw[soft] (pA.north) to[out=35,in=145]
+  node[lab, above=1pt] {validate candidates} (pC.north);
+\draw[soft] (pC.east) -- node[lab, above=1pt] {if none pass} (direct.west);
+\draw[soft] (fA.south) to[out=-35,in=-145]
+  node[lab, below=1pt] {policy rotation} (fC.south);
+\draw[soft] (fC.east) -- node[lab, below=1pt] {fallback} (safe.west);
+\draw[soft] (site.north) to[out=90,in=18]
+  node[lab, above=1pt] {network failure} (direct.east);
+\draw[soft] (site.south) to[out=-90,in=-18]
+  node[lab, below=1pt] {identity fallback} (safe.east);
+
+\node[draw=gray!36, fill=gray!7, rounded corners=5pt, font=\tiny\bfseries,
+  text=black!70, align=center, text width=10.6cm, minimum height=0.34cm,
+  inner xsep=5pt, inner ysep=3pt] at (6.05,-3.12)
+  {Rotation is not per click: the selected proxy and fingerprint stay bound to the browser profile until validation fails or policy selects a fallback.};
+
+\end{tikzpicture}%
+}
+\caption{Proxy and fingerprint rotation as one coherent runtime identity.}\label{fig:proxy-fingerprint-rotation}
+\end{figure}

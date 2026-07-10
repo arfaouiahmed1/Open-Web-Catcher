@@ -15,6 +15,8 @@ RUN_FAILURE_STATUSES = {
     "page_inaccessible",
     "no_hosting_pages",
     "no_streams",
+    "llm_api_down",
+    "llm_rate_limited",
 }
 RUN_CANCELLED_STATUSES = {"cancelled"}
 RUN_TERMINAL_STATUSES = RUN_SUCCESS_STATUSES | RUN_FAILURE_STATUSES | RUN_CANCELLED_STATUSES
@@ -25,6 +27,8 @@ RUN_EXTERNAL_BLOCKER_STATUSES = {
     "site_dead",
     "no_streams",
     "no_hosting_pages",
+    "llm_api_down",
+    "llm_rate_limited",
 }
 RUN_AGENT_FAILURE_STATUSES = {"failed", "timeout", "redirect"}
 RUN_ADJUSTED_SUCCESS_STATUSES = RUN_PRODUCTIVE_SUCCESS_STATUSES | RUN_EXTERNAL_BLOCKER_STATUSES

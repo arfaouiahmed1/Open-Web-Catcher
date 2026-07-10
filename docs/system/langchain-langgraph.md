@@ -2,7 +2,7 @@
 
 > **Navigation:** [Docs Home](../README.md) | [Section Index](./README.md) | Previous: [System Architecture](./architecture.md) | Next: [Runtime Classes And Functions](./runtime-classes-functions.md)
 
-This system uses LangChain for model/tool abstractions and LangGraph for deterministic agent control flow. The distinction matters: LangChain provides messages, tool binding, and the Gemini chat model wrapper; LangGraph provides explicit state machines for the agent loop and the orchestrator route; the application code owns the domain policy.
+This system uses LangChain for model/tool abstractions and LangGraph for deterministic agent control flow. For a shorter agent-focused version, see [How Agents Use LangChain And LangGraph](../agents/how-agents-use-langchain-langgraph.md). The distinction matters: LangChain provides messages, tool binding, and the Gemini chat model wrapper; LangGraph provides explicit state machines for the agent loop and the orchestrator route; the application code owns the domain policy.
 
 The result is not a single unconstrained chatbot. It is a controlled workflow where LLM calls are one step inside a larger graph.
 

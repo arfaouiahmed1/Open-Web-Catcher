@@ -492,6 +492,65 @@ test("landing summary captures schedule provider buttons with row context", () =
   assert.ok(summary.top_match_candidates.some((candidate) => candidate.url.endsWith("/dazn-en/")));
 });
 
+test("landing summary rejects article cards that only look live from title text", () => {
+  const raw = {
+    ...largeLandingRaw(),
+    url: "https://martinchavez98.org/post/yacine-tv-premier-league-live",
+    contentLinks: [
+      {
+        text: "Yacine TV World Cup 2026 live all matches HD",
+        nearby_text: "Latest football news Yacine TV World Cup 2026 live all matches HD",
+        row_text: "Latest football news Yacine TV World Cup 2026 live all matches HD",
+        section_title: "Latest News",
+        href: "https://martinchavez98.org/post/yacine-tv-world-cup-2026",
+        selector: ".related-posts a:nth-child(1)",
+        xpath: "//aside//a[1]",
+        classes: "related-post-card",
+      },
+      {
+        text: "Champions League Final 2026 live stream",
+        nearby_text: "Related article Champions League Final 2026 live stream",
+        row_text: "Related article Champions League Final 2026 live stream",
+        section_title: "Popular articles",
+        href: "https://martinchavez98.org/post/yacine-tv-champions-league-final-2026",
+        selector: ".popular-posts a:nth-child(1)",
+        xpath: "//aside//a[2]",
+        classes: "news-card",
+      },
+      {
+        text: "Team A vs Team B",
+        nearby_text: "20:00 Team A vs Team B Watch Live",
+        row_text: "20:00 Team A vs Team B Watch Live",
+        section_title: "Live Matches",
+        href: "https://martinchavez98.org/match/team-a-team-b",
+        selector: ".match-card a:nth-child(1)",
+        xpath: "//main//section[2]//a[1]",
+        classes: "match-card live-match",
+      },
+    ],
+    navLinks: [
+      makeLink(0, "Home", "https://martinchavez98.org/", "nav"),
+      makeLink(1, "Yacine TV live", "https://martinchavez98.org/post/yacine-tv-premier-league-live", "nav"),
+    ],
+    reveal_controls: [],
+    collapsed_sections: [],
+    pagination: { detected: false, type: null, elements: [] },
+  };
+
+  const summary = summarizeLandingInspect(raw);
+
+  assert.deepEqual(summary.candidate_ledger.map((candidate) => candidate.url), [
+    "https://martinchavez98.org/match/team-a-team-b",
+  ]);
+  assert.equal(summary.top_match_candidates[0].url, "https://martinchavez98.org/match/team-a-team-b");
+  assert.ok(summary.navigation_groups.some((group) => group.label === "news_article_links"));
+  assert.ok(
+    summary.grouped_sections.groups.some(
+      (group) => group.label === "news_article_links" && group.priority === "low",
+    ),
+  );
+});
+
 test("hosting summary preserves actionable server controls while compressing", () => {
   const summary = summarizeHostingInspect(hostingRaw());
 

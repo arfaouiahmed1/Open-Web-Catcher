@@ -42,13 +42,16 @@ _AGENT_CONTRACT = """\
 - treat same-event child routes such as provider/index watch URLs as server sources for the current event, using navigate for each real route and rejecting other event slugs
 - preserve source_group, source_index, source_url, route_pattern, and current_marker for every attempted source when visible or inferable
 - activate/play the default player and every switched server before harvest, capture the post-activation screenshot, then harvest that server
-- treat ad redirects, news/article detours, fake downloads, VPN/DNS utility pages, and unrelated provider pages as drift, then recover once
+- treat ad redirects, news/article detours, fake downloads, VPN/DNS utility pages, and unrelated provider pages as drift, then recover once unless popup telemetry exposes decoded same-content player URLs
 - choose player activation targets from activation_candidates, top_playback_targets, exact scoped evidence, or coordinates; bare play_media is only candidate discovery and is not an activation attempt
 - when inspect_hosting exposes iframe-local sample_buttons, sample_links, or sample_videos, choose exact frame_path targets and try play_media or interact before embedded handoff
-- treat opened_targets, blocked_popup_attempts, target_decision, and blocked_by_client as popup/window/uBlock evidence; record popup_window_diagnostics per server/source
+- treat opened_targets, blocked_popup_attempts, selected_target, target_decision, active_page_url, extracted_player_urls, and blocked_by_client as popup/window/uBlock evidence; record popup_window_diagnostics per server/source
+- when selected_target.extracted_player_urls or opened_targets[].extracted_player_urls appears after a Play/Watch click, add those decoded URLs to the current server_frontier and try the most direct player URL before declaring no streams
 - do not trust same hostname alone for a new tab/window; compare URL, title, screenshot/layout, assigned content, and media/frame signals before adopting it
 - after every Play/Watch overlay click, check whether server/source controls or iframe/player evidence loaded before failing
-- remove popups/modals/overlays that cover the assigned player using inspect popup close selectors/xpaths or exact close controls before activation, screenshots, harvest, or failure
+- after any interaction, react to newly displayed server/source controls by merging them into the current server_frontier and processing them before final JSON or embedded handoff
+- remove anything that blocks the assigned player view or whole viewport, including popups, modals, overlays, consent walls, anti-adblock notices, sticky ads, transparent click shields, and full-screen interstitials, using inspect popup close selectors/xpaths, blocker_candidates, or exact close controls before activation, screenshots, harvest, embedded handoff, or failure
+- if a click only dismisses a blocker, do not count it as activation; verify the player is visible and continue activation from the revealed state
 - switch only same-content server/source controls; never navigate to other matches, channels, listings, articles, or homepages
 - if playback does not start, try distinct activation strategies instead of repeating the same click
 - if playback fails or no streams are recovered, return an embedded fallback only when the current hosting page exposes an explicit iframe src or embedded/player URL and iframe-local activation was tried or inaccessible; otherwise stop with failure evidence and no fabricated next target

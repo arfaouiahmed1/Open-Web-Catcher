@@ -1,57 +1,73 @@
 \phantomsection
 \addcontentsline{toc}{chapter}{List of Acronyms}
+\chapter*{List of Acronyms}
 \thispagestyle{plain}
-\newgeometry{top=1.55cm,bottom=1.45cm,left=2.25cm,right=2.25cm}
 
 \begingroup
-\fontsize{8.0}{8.85}\selectfont
-\setlength{\tabcolsep}{3.4pt}
-\renewcommand{\arraystretch}{1.00}
-\noindent\begin{tabularx}{\textwidth}{@{}Q{1.38cm}Y Q{2.15cm}Y@{}}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0pt}
+\fontsize{9.7}{12.0}\selectfont
+\setlength{\tabcolsep}{6pt}
+\renewcommand{\arraystretch}{1.24}
+
+\begin{longtable}{@{}Q{2.65cm}>{\raggedright\arraybackslash}p{12.75cm}@{}}
 \toprule
-\multicolumn{4}{c}{\bfseries\fontsize{16}{18.6}\selectfont List of Acronyms} \\[0.25em]
-\midrule
 \rowcolor{accent!7}
-Acr. & Meaning and use in the report & Acr. & Meaning and use in the report \\
+Acronym & Meaning and use in the report \\
 \midrule
-AI & Artificial Intelligence; model-assisted browser reasoning. &
-API & Application Programming Interface; FastAPI and console endpoints. \\
-ASB & Azure Service Bus; deployed n8n landing-agent queue path. &
-CDN & Content Delivery Network; stream, asset, and challenge hosting layer. \\
-CDP & Chrome DevTools Protocol; browser network/runtime observation. &
-DASH & Dynamic Adaptive Streaming over HTTP; adaptive streaming protocol. \\
-DB & Database; short label for persisted run and review records. &
-DMCA & Digital Millennium Copyright Act; takedown-email context. \\
-DNS & Domain Name System; host attribution and provider enrichment. &
-DOM & Document Object Model; rendered page tree inspected by agents. \\
-DSRM & Design Science Research Methodology; method behind the artifact. &
-FR & Functional Requirement; requirement identifiers in Chapter~2. \\
-HLS & HTTP Live Streaming; playlist protocol represented by \texttt{.m3u8}. &
-HTML & Hypertext Markup Language; static source compared with rendered state. \\
-HTTP & Hypertext Transfer Protocol; pages, APIs, manifests, and media. &
-IP & Internet Protocol; network address used for attribution. \\
-JSON & JavaScript Object Notation; agent outputs, traces, and settings. &
-KPI & Key Performance Indicator; success, stream yield, cost, and tool rate. \\
-LLM & Large Language Model; reasoning runtime for specialist agents. &
-M3U8 & UTF-8 M3U Playlist; HLS playlist extension used as evidence. \\
-MCP & Model Context Protocol; tool interface for browser actions. &
-MPD & Media Presentation Description; MPEG-DASH manifest evidence. \\
-MPEG-DASH & MPEG Dynamic Adaptive Streaming over HTTP; DASH standard name. &
-NFR & Non-Functional Requirement; reliability, cost, security, observability. \\
-OCR & Optical Character Recognition; future screenshot/channel reading. &
+\endfirsthead
+\multicolumn{2}{@{}l@{}}{{\bfseries\fontsize{20}{24}\selectfont List of Acronyms (continued)}}\\[0.45cm]
+\toprule
+\rowcolor{accent!7}
+Acronym & Meaning and use in the report \\
+\midrule
+\endhead
+AI & Artificial Intelligence; model-assisted browser reasoning and evidence interpretation. \\
+API & Application Programming Interface; FastAPI routes and operator-console endpoints. \\
+ASN & Autonomous System Number; network ownership identifier used during provider enrichment. \\
+ASB & Azure Service Bus; queue path used by the deployed n8n landing-agent backup. \\
+CAPTCHA & Completely Automated Public Turing test to tell Computers and Humans Apart; challenge category that can block automated evidence collection. \\
+CDN & Content Delivery Network; hosting layer for assets, challenge pages, and stream delivery. \\
+CDP & Chrome DevTools Protocol; browser network and runtime observation interface. \\
+DASH & Dynamic Adaptive Streaming over HTTP; shorthand used for MPEG-DASH playback and manifests. \\
+DB & Database; short label for persisted run, trace, stream, and review records. \\
+DMCA & Digital Millennium Copyright Act; takedown-email context for provider notifications. \\
+DNS & Domain Name System; source of host, name-resolution, and provider-enrichment evidence. \\
+DOM & Document Object Model; rendered browser tree inspected by the agents. \\
+DSRM & Design Science Research Methodology; research method used to structure the artifact work. \\
+FP & Fingerprint profile; browser-identity profile shorthand used in the fingerprint-rotation diagram. \\
+FR & Functional Requirement; requirement identifiers used in Chapter~2. \\
+HLS & HTTP Live Streaming; playlist protocol represented by \texttt{.m3u8} evidence. \\
+HTML & Hypertext Markup Language; static source compared with rendered browser state. \\
+HTTP & Hypertext Transfer Protocol; request layer for pages, APIs, manifests, and media. \\
+IP & Internet Protocol; network address used for stream-host and provider attribution. \\
+JSON & JavaScript Object Notation; format used for agent outputs, traces, and settings. \\
+KPI & Key Performance Indicator; success, stream-yield, cost, token, and tool-call measures. \\
+LLM & Large Language Model; reasoning runtime used by the specialist agents. \\
+M3U8 & UTF-8 M3U Playlist; HLS playlist extension captured as stream evidence. \\
+MCP & Model Context Protocol; tool interface used by the browser agents. \\
+\pagebreak
+MENA & Middle East and North Africa; regional coverage context used in the n8n prototype evaluation. \\
+MPD & Media Presentation Description; MPEG-DASH manifest captured as stream evidence. \\
+MPEG-DASH & MPEG standard for Dynamic Adaptive Streaming over HTTP; full standard name behind DASH. \\
+NFR & Non-Functional Requirement; reliability, cost, security, and observability constraints. \\
+OCR & Optical Character Recognition; future direction for screenshot and channel-name reading. \\
 OWC & Open Web Catcher; reference platform built during the internship. \\
-PFE & Projet de Fin d'Etudes; internship project and report context. &
-RDAP & Registration Data Access Protocol; ownership metadata source. \\
-RFC & Request for Comments; standards source for HLS. &
-RPD & Requests Per Day; provider/model rate-limit unit. \\
-RPM & Requests Per Minute; model and API throughput unit. &
-SQL & Structured Query Language; PostgreSQL query layer. \\
-TPM & Tokens Per Minute; LLM throughput limit. &
-UI & User Interface; operator console screens and controls. \\
-URL & Uniform Resource Locator; targets, candidates, streams, evidence links. &
-XHR & XMLHttpRequest; dynamic browser request pattern. \\
+PFE & Projet de Fin d'Etudes; graduation internship project and report context. \\
+RDAP & Registration Data Access Protocol; ownership metadata source used for provider enrichment. \\
+RFC & Request for Comments; standards publication source used for HLS. \\
+RPD & Requests Per Day; provider or model rate-limit unit. \\
+RPM & Requests Per Minute; model and API throughput unit. \\
+SQL & Structured Query Language; query layer used by PostgreSQL. \\
+SSE & Server-Sent Events; one-way event stream used by the MCP client session model. \\
+TLS & Transport Layer Security; protocol layer discussed with HTTP headers and browser fingerprinting. \\
+TPM & Tokens Per Minute; LLM throughput-limit unit. \\
+UA & User-Agent; browser identity string and client-hint shorthand used in fingerprinting controls. \\
+UI & User Interface; operator-console screens and controls. \\
+URL & Uniform Resource Locator; targets, candidates, stream links, and evidence links. \\
+XML & Extensible Markup Language; markup family used by MPEG-DASH MPD manifests. \\
+XHR & XMLHttpRequest; dynamic browser request pattern observed during page inspection. \\
 \bottomrule
-\end{tabularx}
+\end{longtable}
 \endgroup
 \clearpage
-\restoregeometry

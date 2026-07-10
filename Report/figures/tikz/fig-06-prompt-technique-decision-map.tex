@@ -1,0 +1,62 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  group/.style={draw=gray!32, fill=gray!2, rounded corners=8pt,
+    line width=0.55pt, inner sep=7pt},
+  title/.style={font=\tiny\bfseries, text=black!75, fill=white,
+    rounded corners=4pt, draw=gray!30, inner xsep=5pt, inner ysep=2pt},
+  card/.style={draw=gray!38, fill=white, rounded corners=6pt,
+    line width=0.58pt, align=left, font=\tiny,
+    text width=2.45cm, minimum height=1.30cm, inner sep=5pt},
+  selected/.style={card, draw=accent!85!black, fill=accent!7, line width=0.75pt},
+  caution/.style={card, draw=orange!78!black, fill=orange!8},
+  avoided/.style={card, draw=red!55!black, fill=red!5},
+  kept/.style={card, draw=accent!70, fill=blue!5},
+  arr/.style={-{Latex[length=1.8mm,width=1.25mm]}, line width=0.62pt,
+    accent!65, shorten <=2pt, shorten >=2pt}
+]
+
+\node[title] (foundTitle) at (1.55,3.55) {Foundational techniques};
+\node[card] (zero) at (0,2.55)
+  {\textbf{Zero-shot}\\Direct instruction only.\\\textit{Trace result:} fast, but skipped checks on messy pages.};
+\node[card] (few) at (3.05,2.55)
+  {\textbf{Few-shot}\\3-5 examples for format.\\\textit{Trace result:} cleaner JSON, layout bias risk.};
+\node[card] (role) at (6.10,2.55)
+  {\textbf{Role/persona}\\Investigator or analyst lens.\\\textit{Trace result:} better tone, weak action choice alone.};
+
+\node[title] (reasonTitle) at (1.55,1.15) {Advanced reasoning techniques};
+\node[kept] (cot) at (0,0.15)
+  {\textbf{Chain-of-thought}\\Stepwise reasoning.\\\textit{Trace result:} useful only when tied to fresh tool evidence.};
+\node[caution] (tot) at (3.05,0.15)
+  {\textbf{Tree of thoughts}\\Multiple branches.\\\textit{Trace result:} too expensive for repeated browser runs.};
+\node[kept] (stepback) at (6.10,0.15)
+  {\textbf{Step-back}\\Ask page-role strategy first.\\\textit{Trace result:} helpful for routing and blockers.};
+
+\node[title] (opTitle) at (2.95,-1.25) {Operational and structural techniques};
+\node[kept] (chain) at (-1.50,-2.25)
+  {\textbf{Prompt chaining}\\Stage outputs feed next stage.\\\textit{Decision:} kept as pipeline design.};
+\node[avoided] (knowledge) at (1.55,-2.25)
+  {\textbf{Generated knowledge}\\Invent background before answer.\\\textit{Decision:} avoided for evidence claims.};
+\node[kept] (struct) at (4.60,-2.25)
+  {\textbf{Structured output}\\Fixed JSON fields.\\\textit{Decision:} required for parsers and dashboards.};
+\node[selected] (react) at (7.65,-2.25)
+  {\textbf{ReAct loop}\\Observe, reason, act, verify.\\\textit{Decision:} selected for tool consistency.};
+
+\begin{scope}[on background layer]
+  \node[group, fit=(foundTitle) (zero) (few) (role)] {};
+  \node[group, fit=(reasonTitle) (cot) (tot) (stepback)] {};
+  \node[group, fit=(opTitle) (chain) (knowledge) (struct) (react)] {};
+\end{scope}
+
+\draw[arr] (chain.east) -- (knowledge.west);
+\draw[arr] (knowledge.east) -- (struct.west);
+\draw[arr] (struct.east) -- (react.west);
+
+\end{tikzpicture}%
+}
+\caption{Prompt-engineering techniques tested during browser-agent evaluation and the reason ReAct was selected.}
+\label{fig:prompt-technique-decision-map}
+\end{figure}

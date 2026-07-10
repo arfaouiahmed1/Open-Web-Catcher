@@ -1124,6 +1124,7 @@ function popupTargetTelemetry(candidate, openerUrl, selected = null, closeUnadop
     action,
     target_decision: finalDecision,
     decision_reason: classification.reason,
+    extracted_player_urls: classification.extracted_player_urls || [],
     closed: !isSelected && closeUnadopted,
   };
 }
@@ -1145,6 +1146,7 @@ function blockedPopupTelemetry(attempt, openerUrl, index = 0) {
     action: "blocked",
     target_decision: classification.target_decision,
     decision_reason: classification.reason,
+    extracted_player_urls: classification.extracted_player_urls || [],
   };
 }
 

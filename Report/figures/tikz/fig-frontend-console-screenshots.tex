@@ -1,16 +1,12 @@
-\begin{figure}[H]
-\centering
-\begin{minipage}{0.98\textwidth}
-  \centering
-  \owcFigureFrame{\includegraphics[width=0.94\linewidth]{frontend-dashboard.png}}\\[0.25em]
-  \owcFigurePanelTitle{Dashboard telemetry}
-\end{minipage}
+\owcFixedRotatedFigurePage{frontend-dashboard.png}
+  {OWC dashboard overview telemetry screen.}
+  {fig:frontend-console-screenshots}
+  {The dashboard overview makes completed executions inspectable by summarizing run
+  status, success rate, working websites, cost, token, latency, stream yield, tool, and
+  agent telemetry.}
 
-\owcFigurePanelGap{}
-\begin{minipage}{0.98\textwidth}
-  \centering
-  \owcFigureFrame{\includegraphics[width=0.94\linewidth]{frontend-live-workflow.png}}\\[0.25em]
-  \owcFigurePanelTitle{Live workflow launcher}
-\end{minipage}
-\caption{OWC dashboard and live-run console screens.}\label{fig:frontend-console-screenshots}
-\end{figure}
+\owcFixedRotatedFigurePage{frontend-live-workflow.png}
+  {OWC live workflow launcher screen.}
+  {fig:frontend-live-workflow-screenshot}
+  {The live launcher exposes workflow and single-agent starts with runtime preflight checks,
+  so operators can see why a run is ready or blocked before execution.}

@@ -1,0 +1,52 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.94\textwidth}{!}{%
+\begin{tikzpicture}[
+  axislabel/.style={font=\scriptsize\bfseries, align=center, text=black!75},
+  grid/.style={gray!26, line width=0.45pt},
+  chosen/.style={accent!85!black, line width=1.25pt},
+  compare/.style={accent!68, line width=1.05pt, dashed},
+  broker/.style={orange!80!black, line width=1.05pt, dotted},
+  dot/.style={circle, inner sep=1.8pt}
+]
+
+\def\R{3.0}
+\foreach \r in {1,2,3}{
+  \draw[grid] (90:\r) -- (18:\r) -- (-54:\r) -- (-126:\r) -- (162:\r) -- cycle;
+}
+\foreach \a in {90,18,-54,-126,162}{\draw[grid] (0,0) -- (\a:\R);}
+
+\node[axislabel] at (90:3.55) {Tool\\discipline};
+\node[axislabel] at (18:3.70) {Long\\context};
+\node[axislabel] at (-54:3.72) {Cost\\control};
+\node[axislabel] at (-126:3.72) {Latency\\stability};
+\node[axislabel] at (162:3.72) {Trace/cache\\visibility};
+
+% Scores are qualitative internship test scores on a 1--3 scale.
+\coordinate (g1) at (90:3.0);   \coordinate (g2) at (18:3.0);
+\coordinate (g3) at (-54:2.8);  \coordinate (g4) at (-126:2.7); \coordinate (g5) at (162:2.7);
+\coordinate (p1) at (90:2.8);   \coordinate (p2) at (18:2.6);
+\coordinate (p3) at (-54:2.1);  \coordinate (p4) at (-126:2.6); \coordinate (p5) at (162:2.8);
+\coordinate (l1) at (90:2.0);   \coordinate (l2) at (18:2.5);
+\coordinate (l3) at (-54:3.0);  \coordinate (l4) at (-126:1.6); \coordinate (l5) at (162:1.6);
+
+\draw[chosen, fill=accent!12, opacity=0.92] (g1) -- (g2) -- (g3) -- (g4) -- (g5) -- cycle;
+\draw[compare, fill=blue!5, opacity=0.74] (p1) -- (p2) -- (p3) -- (p4) -- (p5) -- cycle;
+\draw[broker, fill=orange!9, opacity=0.70] (l1) -- (l2) -- (l3) -- (l4) -- (l5) -- cycle;
+
+\foreach \p in {g1,g2,g3,g4,g5}{\node[dot, fill=accent!85!black] at (\p) {};}
+\foreach \p in {p1,p2,p3,p4,p5}{\node[dot, fill=accent!68] at (\p) {};}
+\foreach \p in {l1,l2,l3,l4,l5}{\node[dot, fill=orange!80!black] at (\p) {};}
+
+\node[draw=gray!30, fill=white, rounded corners=5pt, anchor=west, font=\scriptsize,
+  align=left, inner sep=5pt] at (4.35,0.75) {\textcolor{accent!85!black}{\rule{12pt}{2.2pt}} Gemini API default\\
+\textcolor{accent!68}{\rule{12pt}{2.2pt}} OpenAI API comparator\\
+\textcolor{orange!80!black}{\rule{12pt}{2.2pt}} OpenRouter/open-weight experiments};
+
+\node[font=\tiny, text=black!60, align=center] at (0,-4.05)
+{Scores summarize practical internship tests on a 1--3 scale; they compare suitability for OWC browser-agent runs, not general model intelligence.};
+
+\end{tikzpicture}%
+}
+\caption{Qualitative provider/runtime comparison used for OWC model selection.}\label{fig:llm-comparison-radar}
+\end{figure}

@@ -1,4 +1,6 @@
-\chapter{Introduction}\label{chap:introduction}
+\chapter{General Introduction}\label{chap:introduction}
+
+\section{Introduction}
 
 This PFE report presents the work carried out at Soft Stars in the context of
 illegal sports-streaming evidence collection for beIN SPORTS\@. The project started
@@ -11,12 +13,12 @@ focused on a clear goal: design an evidence workflow that observes the
 page like a browser user, preserves the trace, and returns reviewable evidence instead
 of only a final URL\@.
 
-\chapterfocus{I use this opening chapter to explain why the internship mattered, who
-the work served, and how the project was scoped. It distinguishes the existing company
+This opening chapter explains why the internship mattered, who the work served, and
+how the project was scoped. It distinguishes the existing company
 workflow, the deployed n8n landing-agent backup, and Open Web Catcher as the reference
 platform built for the academic study. It also defines the problem, the mission
 deliverables, the project boundaries, and the report structure used by the following
-chapters.}
+chapters.
 
 \section{Host Organization and Internship Context}
 
@@ -130,7 +132,7 @@ In this report, the n8n landing agent means the focused backup browser workflow 
 when the company workflow needs rendered landing-page reasoning.
 
 OWC had a different role. It was the academic and engineering reference platform built
-during the internship to study the n8n limitations and propose a cleaner architecture
+during the internship to study the n8n limitations and propose a clearer architecture
 around:
 \begin{itemize}
   \item specialist agents and browser tools;
@@ -248,13 +250,19 @@ The report is organized as follows:
   \item \textbf{Chapter~2} presents DSRM as the methodology and derives the project
   requirements.
   \item \textbf{Chapter~3} introduces streaming pages, browser automation, media
-  manifests, agent workflows, and evidence traceability.
+  manifests, agent workflows, provider caching, and evidence traceability.
   \item \textbf{Chapter~4} describes the OWC architecture: agents, browser tooling,
   channel detection, persistence, and reviewability.
-  \item \textbf{Chapter~5} explains the implementation path from the n8n backup to OWC
-  and the company deployment flow.
+  \item \textbf{Chapter~5} explains the implementation path from the n8n backup to OWC,
+  including caching, observability, and the company deployment flow.
   \item \textbf{Chapter~6} presents evaluation and testing results.
-  \item \textbf{Chapter~7} provides the general conclusion.
+  \item \textbf{Chapter~7} provides the general conclusion and perspectives.
 \end{itemize}
 
 \input{figures/tikz/fig-01-report-map}
+
+\section{Conclusion}
+
+This chapter establishes the internship context, the operational problem, the project
+scope, and the report organization. The next chapter turns this context into a
+methodological frame and a set of requirements for the artifact.

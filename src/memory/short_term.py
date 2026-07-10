@@ -55,6 +55,75 @@ def _looks_like_pagination_url(url: str) -> bool:
     )
 
 
+def _looks_like_article_or_news_url(url: str) -> bool:
+    path = urlparse(str(url or "").strip()).path.lower()
+    return bool(
+        path
+        and re.search(
+            r"/(?:read|post|posts|article|articles|news|blog|story|stories)(?:/|$)",
+            path,
+        )
+    )
+
+
+def _has_strong_match_card_evidence(entry: dict[str, Any]) -> bool:
+    if str(entry.get("source") or "").strip().lower() == "nav":
+        return False
+    structural_haystack = " ".join(
+        str(entry.get(key) or "")
+        for key in (
+            "nearby_text",
+            "row_text",
+            "scheduled_time",
+            "source_section",
+            "route_source",
+            "selector",
+            "xpath",
+            "classes",
+        )
+    )
+    title_haystack = " ".join(
+        str(entry.get(key) or "") for key in ("title", "text", "participants")
+    )
+    if re.search(
+        r"\b(player|iframe|server|source|embed|video|match card|fixture|schedule row|live row|watch button|play button)\b",
+        f"{structural_haystack} {title_haystack}",
+        re.IGNORECASE,
+    ):
+        return True
+    if re.search(
+        r"\b(news|article|blog|related|recommended|popular)\b",
+        structural_haystack,
+        re.IGNORECASE,
+    ):
+        return False
+    return bool(
+        re.search(
+            r"(\bvs\.?\b|\bv\b|versus|@| x |\d{1,2}:\d{2}|score|kickoff|against)",
+            structural_haystack,
+            re.IGNORECASE,
+        )
+        or (
+            re.search(
+                r"(\bvs\.?\b|\bv\b|versus|@| x |\d{1,2}:\d{2}|score|kickoff|against)",
+                title_haystack,
+                re.IGNORECASE,
+            )
+            and re.search(
+                r"\b(match|fixture|event|schedule|live|card|row|team|club|channel|player|server)\b",
+                structural_haystack,
+                re.IGNORECASE,
+            )
+        )
+    )
+
+
+def _looks_like_article_only_candidate(url: str, entry: dict[str, Any] | None = None) -> bool:
+    if not _looks_like_article_or_news_url(url):
+        return False
+    return not _has_strong_match_card_evidence(entry or {})
+
+
 def _looks_like_stream_url(url: str) -> bool:
     candidate = str(url or "").strip().lower()
     parsed = urlparse(candidate)
@@ -224,6 +293,10 @@ class ShortTermMemory:
             "match_records": [],
             "visible_live_counts": [],
             "server_records": [],
+            "server_frontier": [],
+            "activation_targets": [],
+            "blocker_targets": [],
+            "observed_changes": [],
             "server_screenshots": [],
             "server_stream_urls": [],
             "activated_servers": [],
@@ -350,6 +423,7 @@ class ShortTermMemory:
                     max_items=self._signal_limit("visible_live_counts"),
                 )
             self._capture_hosting_candidates(payload, base_url=base_url)
+            self._capture_server_frontier(payload, base_url=base_url)
             self._capture_server_artifacts(payload)
 
         if tool_name in {"memory_update", "memory_lookup"}:
@@ -459,6 +533,10 @@ class ShortTermMemory:
             "server_records"
         ):
             lines.append(f"- server records remembered: {len(run_memory['server_records'])}")
+        if run_memory.get("page_type") in {"hosting_page", "embedded_page"} and run_memory.get(
+            "server_frontier"
+        ):
+            lines.append(f"- server/source frontier remembered: {len(run_memory['server_frontier'])}")
         return "\n".join(lines)
 
     def working_state(
@@ -540,6 +618,26 @@ class ShortTermMemory:
                 "- server snapshots remembered: "
                 + (f"`{len(server_records)}`" if server_records else "`none yet`")
             )
+            server_frontier = run_memory.get("server_frontier", [])
+            lines.append(
+                "- pending server/source frontier remembered: "
+                + (f"`{len(server_frontier)}`" if server_frontier else "`none yet`")
+            )
+            activation_targets = run_memory.get("activation_targets", [])
+            lines.append(
+                "- activation targets remembered: "
+                + (
+                    ", ".join(f"`{item}`" for item in activation_targets[:4])
+                    if activation_targets
+                    else "`none yet`"
+                )
+            )
+            observed_changes = run_memory.get("observed_changes", [])
+            if observed_changes:
+                lines.append(
+                    "- recent observed changes: "
+                    + ", ".join(f"`{item}`" for item in observed_changes[:4])
+                )
             activated = run_memory.get("activated_servers", [])
             lines.append(
                 "- activated servers in this run: "
@@ -579,6 +677,10 @@ class ShortTermMemory:
         }
         hosting_specific = {
             "server_records": list(self._signals["server_records"]),
+            "server_frontier": list(self._signals["server_frontier"]),
+            "activation_targets": list(self._signals["activation_targets"]),
+            "blocker_targets": list(self._signals["blocker_targets"]),
+            "observed_changes": list(self._signals["observed_changes"]),
             "server_screenshots": list(self._signals["server_screenshots"]),
             "server_stream_urls": list(self._signals["server_stream_urls"]),
             "activated_servers": list(self._signals["activated_servers"]),
@@ -599,6 +701,10 @@ class ShortTermMemory:
             "visible_live_counts": landing_specific["visible_live_counts"],
             "iframe_urls": common["iframe_urls"],
             "server_records": hosting_specific["server_records"],
+            "server_frontier": hosting_specific["server_frontier"],
+            "activation_targets": hosting_specific["activation_targets"],
+            "blocker_targets": hosting_specific["blocker_targets"],
+            "observed_changes": hosting_specific["observed_changes"],
             "server_screenshots": hosting_specific["server_screenshots"],
             "server_stream_urls": hosting_specific["server_stream_urls"],
             "activated_servers": hosting_specific["activated_servers"],
@@ -629,6 +735,10 @@ class ShortTermMemory:
             "match_records": 260,
             "visible_live_counts": 60,
             "server_records": 220,
+            "server_frontier": 220,
+            "activation_targets": 140,
+            "blocker_targets": 120,
+            "observed_changes": 120,
             "server_screenshots": 220,
             "server_stream_urls": 320,
             "activated_servers": 140,
@@ -651,6 +761,10 @@ class ShortTermMemory:
                     "stream_urls": 700,
                     "server_labels": 220,
                     "server_records": 320,
+                    "server_frontier": 420,
+                    "activation_targets": 260,
+                    "blocker_targets": 220,
+                    "observed_changes": 220,
                     "server_screenshots": 320,
                     "server_stream_urls": 900,
                     "activated_servers": 220,
@@ -702,7 +816,14 @@ class ShortTermMemory:
                 else:
                     continue
                 resolved = _resolve_url_candidate(candidate, base_url=base_url)
-                if resolved and not _looks_like_pagination_url(resolved):
+                if (
+                    resolved
+                    and not _looks_like_pagination_url(resolved)
+                    and not _looks_like_article_only_candidate(
+                        resolved,
+                        entry if isinstance(entry, dict) else {},
+                    )
+                ):
                     discovered.append(resolved)
                     if isinstance(entry, dict):
                         patterns = entry.get("patterns") if isinstance(entry.get("patterns"), dict) else {}
@@ -745,6 +866,177 @@ class ShortTermMemory:
                 max_items=self._signal_limit("hosting_candidate_urls"),
             )
             self._capture_url(candidate)
+
+    def _capture_server_frontier(self, payload: dict[str, Any], *, base_url: str = "") -> None:
+        for key in ("server_frontier", "event_server_routes", "top_server_controls", "top_source_controls"):
+            self._capture_frontier_entries(payload.get(key), source=key, base_url=base_url)
+
+        for key in ("control_groups", "playback_groups", "player_groups", "frame_focus_groups"):
+            groups = payload.get(key, [])
+            if not isinstance(groups, list):
+                continue
+            for group in groups:
+                if not isinstance(group, dict):
+                    continue
+                group_label = str(group.get("label") or group.get("group_id") or key).strip()
+                for nested_key in ("sample_items", "items", "controls", "sample_controls"):
+                    self._capture_frontier_entries(
+                        group.get(nested_key),
+                        source=f"{key}:{group_label}",
+                        base_url=base_url,
+                    )
+
+        self._capture_target_entries(
+            payload.get("activation_candidates"),
+            key="activation_targets",
+            source="activation_candidates",
+            base_url=base_url,
+        )
+        for key in ("top_playback_targets", "top_player_targets"):
+            self._capture_target_entries(
+                payload.get(key),
+                key="activation_targets",
+                source=key,
+                base_url=base_url,
+            )
+        self._capture_target_entries(
+            payload.get("blocker_candidates"),
+            key="blocker_targets",
+            source="blocker_candidates",
+            base_url=base_url,
+        )
+        self._capture_target_entries(
+            payload.get("popups"),
+            key="blocker_targets",
+            source="popups",
+            base_url=base_url,
+        )
+
+        observed_change = payload.get("observed_change")
+        if isinstance(observed_change, dict):
+            self._remember_observed_change(observed_change, base_url=base_url)
+
+    def _capture_frontier_entries(self, entries: Any, *, source: str, base_url: str = "") -> None:
+        if not isinstance(entries, list):
+            return
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                continue
+            record = self._compact_target_record(entry, source=source, index=index)
+            if not record:
+                continue
+            self._remember_signal(
+                "server_frontier",
+                json.dumps(record, ensure_ascii=False, sort_keys=True),
+                max_items=self._signal_limit("server_frontier"),
+            )
+            label = str(record.get("label") or "").strip()
+            if label:
+                self._remember_signal(
+                    "server_labels",
+                    label,
+                    max_items=self._signal_limit("server_labels"),
+                )
+            for url_key in ("url", "href", "source_url", "embedded_url", "player_iframe_url"):
+                resolved = _resolve_url_candidate(str(entry.get(url_key) or ""), base_url=base_url)
+                if resolved:
+                    self._capture_url(resolved)
+
+    def _capture_target_entries(
+        self,
+        entries: Any,
+        *,
+        key: str,
+        source: str,
+        base_url: str = "",
+    ) -> None:
+        if not isinstance(entries, list):
+            return
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                continue
+            record = self._compact_target_record(entry, source=source, index=index)
+            if not record:
+                continue
+            self._remember_signal(
+                key,
+                json.dumps(record, ensure_ascii=False, sort_keys=True),
+                max_items=self._signal_limit(key),
+            )
+            for url_key in ("url", "href", "src", "source_url", "embedded_url", "player_iframe_url"):
+                resolved = _resolve_url_candidate(str(entry.get(url_key) or ""), base_url=base_url)
+                if resolved:
+                    self._capture_url(resolved)
+
+    def _compact_target_record(self, entry: dict[str, Any], *, source: str, index: int) -> dict[str, Any]:
+        label = str(
+            entry.get("label")
+            or entry.get("text")
+            or entry.get("title")
+            or entry.get("kind")
+            or entry.get("action")
+            or entry.get("reason")
+            or f"{source}_{index + 1}"
+        ).strip()
+        record: dict[str, Any] = {"source": source, "label": label[:140]}
+        for key in (
+            "source_group",
+            "source_index",
+            "source_url",
+            "url",
+            "href",
+            "selector",
+            "xpath",
+            "element_ref",
+            "frame_path",
+            "route_pattern",
+            "current_marker",
+            "action",
+            "kind",
+            "reason",
+        ):
+            value = entry.get(key)
+            if value in (None, "", [], {}):
+                continue
+            if isinstance(value, (dict, list)):
+                record[key] = json.dumps(value, ensure_ascii=False, sort_keys=True)[:260]
+            else:
+                record[key] = str(value)[:260]
+        return {key: value for key, value in record.items() if value not in ("", None)}
+
+    def _remember_observed_change(self, observed_change: dict[str, Any], *, base_url: str = "") -> None:
+        record: dict[str, Any] = {}
+        for key in (
+            "navigated",
+            "url",
+            "url_after",
+            "active_page_url",
+            "selected_target",
+            "target_decision",
+            "playback_started",
+            "media_state",
+        ):
+            value = observed_change.get(key)
+            if value in (None, "", [], {}):
+                continue
+            record[key] = str(value)[:220]
+        for key in ("opened_targets", "blocked_popup_attempts", "new_tab_urls"):
+            values = observed_change.get(key)
+            if isinstance(values, list) and values:
+                record[key] = json.dumps(values[:5], ensure_ascii=False, sort_keys=True)[:500]
+        if record:
+            self._remember_signal(
+                "observed_changes",
+                json.dumps(record, ensure_ascii=False, sort_keys=True),
+                max_items=self._signal_limit("observed_changes"),
+            )
+        for candidate in _extract_nested_strings(
+            observed_change,
+            {"url", "href", "src", "url_after", "active_page_url", "selected_target"},
+        ):
+            resolved = _resolve_url_candidate(candidate, base_url=base_url)
+            if resolved:
+                self._capture_url(resolved)
 
     def _capture_server_artifacts(self, payload: dict[str, Any]) -> None:
         for label in (
@@ -928,8 +1220,14 @@ class ShortTermMemory:
         if last.get("kind") == "tool" and last.get("status") == "success":
             if self._signals["stream_urls"]:
                 return "verify stream stability and continue with the next distinct server/source"
+            if self._signals["server_frontier"]:
+                return "continue the remembered server/source frontier before broad discovery"
+            if self._signals["activation_targets"]:
+                return "choose an exact remembered activation target and verify the post-action state"
             return "build on the last successful action and verify whether new streams or targets appeared"
         if last.get("kind") == "tool":
+            if self._signals["server_frontier"]:
+                return "try the next remembered server/source candidate instead of repeating the failed step"
             if self._signals["selectors"]:
                 return "try a different remembered selector/xpath before another full-page scan"
             return "try a different locator or inspect the page before retrying the same action"

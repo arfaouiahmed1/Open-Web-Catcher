@@ -1,5 +1,7 @@
 \chapter{Methodology, Requirements Analysis, and Design Constraints}\label{chap:methodology}
 
+\section{Introduction}
+
 The internship was organized around Design Science Research Methodology (DSRM). This
 choice fits the nature of the work. The project was not only about observing a
 phenomenon from the outside or training a predictive model. It was about designing, building,
@@ -27,10 +29,10 @@ This phase logic follows the design-science view of information-systems artifact
 proposed by Hevner et al.~\cite{hevner-ds} and the DSRM process described by Peffers
 et al.~\cite{peffers-dsrm}.
 
-\chapterfocus{Here I explain the method used to organize the project. Design
-Science Research Methodology connects the operational problem to the artifact that was
+This chapter explains the method used to organize the project. Design Science
+Research Methodology connects the operational problem to the artifact that was
 built, then helps translate the mission into functional requirements, non-functional
-requirements, design constraints, and an internship timeline.}
+requirements, design constraints, and an internship timeline.
 
 \section{DSRM as the Methodological Backbone}
 
@@ -155,10 +157,11 @@ explanation for academic and company review. & Written report and final synthesi
 
 \section{Project Evolution Timeline}
 
-The timeline follows the DSRM logic but remains concrete. The internship started with
-evidence needs and static-collection limits, moved to browser-agent experiments, then
-to the n8n landing-agent backup workflow, and finally to the OWC platform architecture
-and evaluation.
+The timeline follows the DSRM logic but remains concrete. From December to March, the
+work stayed close to feasibility: evidence needs, static-collection limits, n8n browser
+agents, Puppeteer experiments, and the first LangChain/LangGraph agent loops. During
+April and May, the focus moved to OWC itself: the FastAPI and Next.js platform,
+PostgreSQL observability, profiled MCP tools, evaluation screens, and final synthesis.
 
 \input{figures/tikz/fig-02-project-timeline}
 
@@ -167,33 +170,41 @@ and evaluation.
 The functional requirements describe what the artifact must do to support the
 evidence-collection workflow.
 
-\begin{table}[!htbp]
+\begin{table}[H]
 \centering
-\begin{tabularx}{\textwidth}{Q{1.35cm} Y Q{2.15cm}}
+\small
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.06}
+\begin{tabularx}{\textwidth}{Q{1.05cm} Q{1.50cm} Y Y}
 \toprule
 \rowcolor{accent!8}
-ID & Requirement summary & Priority \\
+ID & Priority & Requirement & Evidence role \\
 \midrule
-FR-1 & URL ingestion and run lifecycle management & Critical \\
-FR-2 & Page-type classification using rendered browser evidence & Critical \\
-FR-3 & Orchestrator handoff from classification to landing, hosting, or embedded
-agents & Critical \\
-FR-4 & Landing-page discovery of match, event, channel, and hosting candidates & High \\
-FR-5 & Hosting-page interaction with server/source controls, overlays, and play
-buttons & Critical \\
-FR-6 & Embedded-player inspection through frame trees, player state, and media
-signals & Critical \\
-FR-7 & Screenshot capture at important evidence and failure points & High \\
-FR-8 & Stream evidence extraction for manifests, media URLs, and embedded
-fallbacks & Critical \\
-FR-9 & Channel detection from landing hints, player context, screenshot/OCR text,
-and structured agent output & High \\
-FR-10 & Provider enrichment and reviewable evidence bundle generation & Medium \\
-FR-11 & Operator console views for runs, telemetry, screenshots, tools, settings,
-and provider results & High \\
+FR-1 & Critical & URL intake and run lifecycle control &
+Creates a traceable run that can be started, cancelled, resumed, and reviewed. \\
+FR-2 & Critical & Rendered page-type classification &
+Decides whether the browser is on a landing, hosting, embedded, unsupported, or failed page. \\
+FR-3 & Critical & Orchestrator handoff by page type &
+Routes the run to the right specialist while preserving the evidence context. \\
+FR-4 & High & Landing discovery of matches, events, channels, and hosting candidates &
+Keeps listing-page and schedule-row context before the run moves downstream. \\
+FR-5 & Critical & Hosting controls, overlays, and play-button interaction &
+Handles the interaction needed to reach a player, server state, stream, or iframe. \\
+FR-6 & Critical & Embedded frame, player-state, and media inspection &
+Inspects iframe-local player state before judging whether final stream evidence exists. \\
+FR-7 & High & Screenshot capture at evidence and failure points &
+Gives human reviewers visual proof for accepted, partial, and failed runs. \\
+FR-8 & Critical & Manifest, media-URL, and embedded stream extraction &
+Collects the technical stream evidence that supports rights-protection review. \\
+FR-9 & High & Channel detection from page, player, OCR, and agent output &
+Links the extracted evidence to the channel or event being investigated. \\
+FR-10 & Medium & Provider enrichment and reviewable evidence bundle generation &
+Turns stream hosts and metadata into provider rows and review-ready evidence bundles. \\
+FR-11 & High & Console review of telemetry, tools, settings, and provider results &
+Lets operators inspect outcomes, costs, tool behavior, screenshots, and provider evidence. \\
 \bottomrule
 \end{tabularx}
-\caption{Functional requirements derived from the evidence-collection workflow.}\label{tab:fr-summary}
+\caption{Functional requirements for the evidence-collection workflow.}\label{tab:fr-summary}
 \end{table}
 
 \section{Design Constraints and Requirement Traceability}
@@ -220,8 +231,10 @@ deployment path.
 The non-functional requirements explain the qualities required for the artifact to be
 useful after a run finishes.
 
-\begin{table}[!htbp]
+\begin{table}[H]
 \centering
+\small
+\renewcommand{\arraystretch}{0.96}
 \begin{tabularx}{\textwidth}{Q{1.35cm} Y Y}
 \toprule
 \rowcolor{accent!8}
@@ -247,6 +260,8 @@ orchestrator and runs the landing agent through queue-driven container jobs. \\
 \end{tabularx}
 \caption{Non-functional requirements and implementation responses.}\label{tab:nfr-summary}
 \end{table}
+
+\section{Conclusion}
 
 This DSRM framing defines the rest of the report. Chapter~3 introduces the technical
 concepts needed to understand the artifact. Chapter~4 describes the OWC architecture,

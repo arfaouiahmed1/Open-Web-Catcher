@@ -1,62 +1,62 @@
 \begin{figure}[H]
 \centering
-\resizebox{1.0\textwidth}{!}{%
+\resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
   line cap=round,
   line join=round,
-  panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
-    line width=0.55pt, inner sep=11pt},
-  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
-    text width=3.48cm, minimum height=1.02cm, inner xsep=5pt,
-    inner ysep=5pt, text=black},
-  input/.style={block, draw=accent!75, fill=blue!6},
-  agent/.style={block, draw=orange!80!black, fill=orange!10,
-    text width=3.62cm, minimum height=1.12cm},
-  output/.style={block, draw=green!55!black, fill=green!8},
-  detail/.style={block, draw=purple!65!black, fill=purple!7,
-    text width=11.20cm, minimum height=0.96cm},
-  guard/.style={block, draw=gray!62, fill=gray!9,
-    text width=11.20cm, minimum height=0.92cm},
-  paneltitle/.style={font=\scriptsize\bfseries, text=black!68,
-    fill=white, inner sep=2pt},
+  panel/.style={draw=gray!30, fill=gray!2, rounded corners=9pt,
+    line width=0.52pt, inner sep=10pt},
+  card/.style={rounded corners=6pt, align=center, font=\scriptsize,
+    text width=3.34cm, minimum height=0.96cm, inner xsep=5pt,
+    inner ysep=4pt, text=black},
+  input/.style={card, draw=accent!74, fill=blue!5},
+  role/.style={card, draw=orange!82!black, fill=orange!8,
+    text width=3.44cm, minimum height=1.06cm},
+  output/.style={card, draw=green!55!black, fill=green!8},
+  scope/.style={card, draw=purple!62!black, fill=purple!6,
+    text width=10.85cm, minimum height=0.84cm},
+  guard/.style={card, draw=gray!58, fill=gray!7,
+    text width=10.85cm, minimum height=0.80cm},
+  title/.style={font=\scriptsize\bfseries, text=black!68, fill=white,
+    inner xsep=3pt, inner ysep=1pt},
   badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
-    inner sep=1.25pt, minimum size=8.5pt},
-  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
-    accent!80, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
-  guardarr/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.74pt,
-    gray!62, densely dashed, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
-  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
-    text=black!72}
+    inner sep=1.35pt, minimum size=9.5pt},
+  arr/.style={-{Latex[length=2.05mm,width=1.48mm]}, line width=0.78pt,
+    accent!78, rounded corners=6pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=1.85mm,width=1.28mm]}, line width=0.62pt,
+    gray!58, densely dashed, rounded corners=6pt, shorten <=3pt,
+    shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.1pt,
+    text=black!68}
 ]
 
-\node[input] (input) at (0,1.62) {Input\\{\normalfont\scriptsize verified iframe/player URL, parent context}};
-\node[agent] (agent) at (5.10,1.62) {EmbeddedPageAgent\\{\normalfont\scriptsize iframe/player extractor}};
-\node[output] (output) at (10.20,1.62) {Output\\{\normalfont\scriptsize stream URLs, screenshots, frame diagnostics}};
-\node[detail] (detail) at (5.10,-0.40) {Details\\{\normalfont\scriptsize stay in player context, inspect frames, click local controls, recover drift}};
-\node[guard] (guard) at (5.10,-1.86) {Guardrails\\{\normalfont\scriptsize does not follow general site navigation; no streams means provider/email skip}};
+\node[input] (input) at (0,1.68)
+  {\textbf{Input}\\[-1pt]{\normalfont\scriptsize verified iframe or player URL, parent context}};
+\node[role] (agent) at (5.10,1.68)
+  {\textbf{EmbeddedPageAgent}\\[-1pt]{\normalfont\scriptsize iframe and player extractor}};
+\node[output] (output) at (10.20,1.68)
+  {\textbf{Output}\\[-1pt]{\normalfont\scriptsize stream URLs, captures, frame diagnostics}};
+\node[scope] (scope) at (5.10,0.25)
+  {\textbf{Work scope}\\[-1pt]{\normalfont\scriptsize stay in player context, inspect frames, click local controls, recover drift}};
+\node[guard] (guard) at (5.10,-0.94)
+  {\textbf{Boundary}\\[-1pt]{\normalfont\scriptsize does not follow general site navigation; no streams means provider and email skip}};
 
 \begin{scope}[on background layer]
-  \node[panel, fit=(input) (agent) (output) (detail) (guard)] (cardpanel) {};
+  \node[panel, fit=(input) (agent) (output) (scope) (guard)] (contractpanel) {};
 \end{scope}
 
-\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]cardpanel.north west) {Agent design contract};
-
-\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]input.north west) {1};
-\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]agent.north west) {2};
-\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]output.north west) {3};
-\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]detail.north west) {4};
-\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]guard.north west) {5};
-
-\draw[arr] (input.east) to[out=0,in=180]
-  node[lab, above=1pt] {context} (agent.west);
-\draw[arr] (agent.east) to[out=0,in=180]
-  node[lab, above=1pt] {result} (output.west);
-\draw[arr] (agent.south) to[out=-90,in=90]
-  node[lab, right=1pt] {work scope} (detail.north);
-\draw[guardarr] (detail.south) to[out=-90,in=90]
-  node[lab, right=1pt] {boundary} (guard.north);
-
-\end{tikzpicture}
+\node[title, anchor=west] at ([xshift=0.14cm,yshift=-0.13cm]contractpanel.north west)
+  {Agent design contract};
+\foreach \n/\num in {input/1,agent/2,output/3,scope/4,guard/5}{
+  \node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]\n.north west) {\num};
 }
-\caption{Embedded-page-agent design card.}\label{fig:agent-card-embedded}
+
+\draw[arr] (input.east) -- node[lab, above=1pt] {context} (agent.west);
+\draw[arr] (agent.east) -- node[lab, above=1pt] {result} (output.west);
+\draw[arr] (agent.south) -- node[lab, right=1pt] {scope} (scope.north);
+\draw[soft] (scope.south) -- node[lab, right=1pt] {guardrail} (guard.north);
+
+\end{tikzpicture}%
+}
+\caption{Embedded-page-agent contract map.}\label{fig:agent-card-embedded}
 \end{figure}

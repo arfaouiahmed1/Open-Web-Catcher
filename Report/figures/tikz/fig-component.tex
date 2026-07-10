@@ -1,89 +1,96 @@
 \begin{figure}[H]
 \centering
-\resizebox{1.0\textwidth}{!}{%
+\resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
+  x=1cm,
+  y=1cm,
   line cap=round,
   line join=round,
-  cluster/.style={draw=gray!32, fill=gray!3, rounded corners=9pt,
-    line width=0.55pt, inner sep=8pt},
-  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
-    inner xsep=6pt, inner ysep=4pt, minimum height=0.76cm, text=black},
-  actor/.style={block, draw=gray!65, fill=gray!8, text width=1.95cm},
-  frontend/.style={block, draw=accent!78, fill=blue!6, text width=2.72cm},
-  backend/.style={block, draw=accent!88!black, fill=blue!9, text width=2.72cm},
-  agent/.style={block, draw=orange!78!black, fill=orange!10, text width=2.72cm},
-  tool/.style={block, draw=purple!65!black, fill=purple!7, text width=2.72cm},
-  data/.style={block, draw=green!55!black, fill=green!8, text width=2.72cm},
-  ext/.style={block, draw=gray!62, fill=gray!9, text width=2.72cm},
-  grouplabel/.style={font=\scriptsize\bfseries, text=black!68, inner sep=2pt},
-  arr/.style={-{Latex[round,length=1.9mm,width=1.45mm]}, line width=0.82pt,
-    accent!82, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  route/.style={-{Latex[round,length=1.9mm,width=1.45mm]}, line width=0.82pt,
-    orange!82!black, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  toolarr/.style={-{Latex[round,length=1.9mm,width=1.45mm]}, line width=0.80pt,
-    purple!68!black, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  soft/.style={-{Latex[round,length=1.65mm,width=1.22mm]}, line width=0.70pt,
-    gray!62, densely dashed, shorten <=3pt, shorten >=3pt, rounded corners=6pt},
-  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
-    text=black!70}
+  every node/.style={font=\sffamily},
+  group/.style={draw=#1!42, fill=#1!4, rounded corners=9pt,
+    line width=0.58pt, inner sep=7pt},
+  title/.style={font=\scriptsize\bfseries, text=black!74, fill=white,
+    inner xsep=2.4pt, inner ysep=1pt},
+  card/.style={rounded corners=6pt, align=center, text=black,
+    font=\scriptsize, inner xsep=5pt, inner ysep=4pt,
+    minimum height=1.05cm, text width=2.70cm, line width=0.58pt},
+  actor/.style={card, draw=gray!65, fill=gray!8, text width=1.90cm,
+    font=\scriptsize\bfseries},
+  console/.style={card, draw=accent!74, fill=blue!6},
+  backend/.style={card, draw=accent!88!black, fill=blue!9},
+  agent/.style={card, draw=orange!78!black, fill=orange!10},
+  browser/.style={card, draw=purple!65!black, fill=purple!7},
+  data/.style={card, draw=green!55!black, fill=green!8, text width=2.36cm},
+  ext/.style={card, draw=gray!62, fill=gray!9, text width=2.36cm},
+  flow/.style={-{Latex[round,length=2.1mm,width=1.45mm]}, line width=0.82pt,
+    accent!82, shorten <=5pt, shorten >=5pt, rounded corners=6pt},
+  route/.style={-{Latex[round,length=2.1mm,width=1.45mm]}, line width=0.82pt,
+    orange!82!black, shorten <=5pt, shorten >=5pt, rounded corners=6pt},
+  toolflow/.style={-{Latex[round,length=2.1mm,width=1.45mm]}, line width=0.82pt,
+    purple!68!black, shorten <=5pt, shorten >=5pt, rounded corners=6pt},
+  support/.style={-{Latex[round,length=1.8mm,width=1.25mm]}, line width=0.68pt,
+    gray!62, densely dashed, shorten <=5pt, shorten >=5pt, rounded corners=6pt},
+  pill/.style={font=\tiny\bfseries, fill=white, inner xsep=1.7pt,
+    inner ysep=0.9pt, text=black!72}
 ]
 
-\node[actor] (operator) at (-1.75,3.95) {Operator};
+\node[actor] (operator) at (0.00,4.88) {Operator\\{\normalfont\tiny start and review}};
 
-\node[frontend] (console) at (1.70,5.00) {Next.js console\\{\normalfont\tiny active screens + topbar}};
-\node[frontend] (apiclient) at (1.70,3.75) {\texttt{web/lib/api.js}\\{\normalfont\tiny URL builder + fetch helper}};
-\node[frontend] (rundetail) at (1.70,2.50) {Run detail UI\\{\normalfont\tiny evidence tabs + traces}};
+\node[console] (console1) at (2.75,6.12) {\textbf{Next.js console}\\{\normalfont\tiny active screens, topbar}};
+\node[console] (console2) at (2.75,4.88) {\textbf{API client}\\{\normalfont\tiny URL builder, fetch helper}};
+\node[console] (console3) at (2.75,3.64) {\textbf{Run detail UI}\\{\normalfont\tiny evidence tabs, traces}};
 
-\node[backend] (fastapi) at (5.10,5.00) {\texttt{src/api/app.py}\\{\normalfont\tiny UI routes + jobs}};
-\node[backend] (dataset) at (5.10,3.75) {Dataset and workflow APIs\\{\normalfont\tiny sites, batches, streaming}};
-\node[backend] (registry) at (5.10,2.50) {Settings and run registry\\{\normalfont\tiny config + active traces}};
+\node[backend] (api1) at (6.20,6.12) {\textbf{FastAPI app}\\{\normalfont\tiny UI routes, jobs}};
+\node[backend] (api2) at (6.20,4.88) {\textbf{Workflow APIs}\\{\normalfont\tiny sites, batches, streaming}};
+\node[backend] (api3) at (6.20,3.64) {\textbf{Settings registry}\\{\normalfont\tiny config, costs, traces}};
 
-\node[agent] (orch) at (8.50,5.00) {OrchestratorAgent\\{\normalfont\tiny routing + aggregation}};
-\node[agent] (specialists) at (8.50,3.75) {Browser specialists\\{\normalfont\tiny classify, land, host, embed}};
-\node[agent] (downstream) at (8.50,2.50) {Provider + email tools\\{\normalfont\tiny enrichment + review drafts}};
+\node[agent] (runtime1) at (9.65,6.12) {\textbf{Orchestrator}\\{\normalfont\tiny route owner, queues}};
+\node[agent] (runtime2) at (9.65,4.88) {\textbf{Browser specialists}\\{\normalfont\tiny classify, land, host, embed}};
+\node[agent] (runtime3) at (9.65,3.64) {\textbf{Provider + email}\\{\normalfont\tiny enrichment, drafts}};
 
-\node[tool] (mcp) at (11.90,5.00) {MCP sessions\\{\normalfont\tiny profile-scoped tool access}};
-\node[tool] (browser) at (11.90,3.75) {Browser automation\\{\normalfont\tiny Puppeteer / Playwright}};
-\node[tool] (policy) at (11.90,2.50) {Runtime policy\\{\normalfont\tiny proxy, limits, errors}};
+\node[browser] (tool1) at (13.10,6.12) {\textbf{MCP sessions}\\{\normalfont\tiny profile-scoped tools}};
+\node[browser] (tool2) at (13.10,4.88) {\textbf{Browser automation}\\{\normalfont\tiny Puppeteer / Chrome}};
+\node[browser] (tool3) at (13.10,3.64) {\textbf{Runtime policy}\\{\normalfont\tiny proxy, limits, errors}};
 
-\node[data] (db) at (1.70,0.25) {Postgres\\{\normalfont\tiny runs, telemetry, evidence}};
-\node[data] (files) at (5.10,0.25) {\texttt{data/} runtime files\\{\normalfont\tiny memory + browser state}};
-\node[ext] (gemini) at (8.50,0.25) {Google GenAI / Gemini\\{\normalfont\tiny model calls}};
-\node[ext] (external) at (11.90,0.25) {External services\\{\normalfont\tiny Cloudinary, IPInfo, RDAP}};
+\node[data] (db) at (1.42,1.08) {\textbf{Postgres}\\{\normalfont\tiny runs, telemetry, evidence}};
+\node[data] (files) at (4.65,1.08) {\textbf{Runtime files}\\{\normalfont\tiny memory, browser state}};
+\node[ext] (gemini) at (7.88,1.08) {\textbf{Gemini}\\{\normalfont\tiny model calls}};
+\node[ext] (external) at (11.11,1.08) {\textbf{External services}\\{\normalfont\tiny Cloudinary, IPInfo, RDAP}};
 
 \begin{scope}[on background layer]
-  \node[cluster, fit=(console) (apiclient) (rundetail)] (frontbox) {};
-  \node[cluster, fit=(fastapi) (dataset) (registry)] (backbox) {};
-  \node[cluster, fit=(orch) (specialists) (downstream)] (runtimebox) {};
-  \node[cluster, fit=(mcp) (browser) (policy)] (toolbox) {};
-  \node[cluster, fit=(db) (files) (gemini) (external)] (databox) {};
+  \node[group=blue, fit=(console1) (console2) (console3)] (consolebox) {};
+  \node[group=accent, fit=(api1) (api2) (api3)] (apibox) {};
+  \node[group=orange, fit=(runtime1) (runtime2) (runtime3)] (runtimebox) {};
+  \node[group=purple, fit=(tool1) (tool2) (tool3)] (toolbox) {};
+  \node[group=green, fit=(db) (files) (gemini) (external)] (databox) {};
 \end{scope}
 
-\node[grouplabel, anchor=south west] at ([xshift=0.12cm,yshift=0.08cm]frontbox.north west) {Operator console};
-\node[grouplabel, anchor=south west] at ([xshift=0.12cm,yshift=0.08cm]backbox.north west) {FastAPI backend};
-\node[grouplabel, anchor=south west] at ([xshift=0.12cm,yshift=0.08cm]runtimebox.north west) {Agent runtime};
-\node[grouplabel, anchor=south west] at ([xshift=0.12cm,yshift=0.08cm]toolbox.north west) {Browser tooling};
-\node[grouplabel, anchor=south west] at ([xshift=0.12cm,yshift=0.08cm]databox.north west) {Persistence and external services};
+\node[title, anchor=south west] at ([xshift=0.10cm,yshift=0.06cm]consolebox.north west) {Operator console};
+\node[title, anchor=south west] at ([xshift=0.10cm,yshift=0.06cm]apibox.north west) {FastAPI backend};
+\node[title, anchor=south west] at ([xshift=0.10cm,yshift=0.06cm]runtimebox.north west) {Agent runtime};
+\node[title, anchor=south west] at ([xshift=0.10cm,yshift=0.06cm]toolbox.north west) {Browser tooling};
+\node[title, anchor=south west] at ([xshift=0.10cm,yshift=0.06cm]databox.north west) {Persistence and external services};
 
-\draw[arr] (operator.east) -- node[lab, above] {uses} (frontbox.west |- apiclient);
-\draw[arr] (console.south) -- (apiclient.north);
-\draw[arr] (rundetail.north) -- (apiclient.south);
-\draw[arr] (apiclient.east) -- node[lab, above] {HTTP API} (fastapi.west);
-\draw[arr] (fastapi.south) -- (dataset.north);
-\draw[arr] (dataset.south) -- (registry.north);
-\draw[route] (fastapi.east) -- node[lab, above] {job task} (orch.west);
-\draw[route] (orch.south) -- (specialists.north);
-\draw[route] (specialists.south) -- (downstream.north);
-\draw[toolarr] (specialists.east) -- node[lab, above] {tool calls} (mcp.west);
-\draw[toolarr] (mcp.south) -- (browser.north);
-\draw[toolarr] (browser.south) -- (policy.north);
-\draw[soft] (registry.south) -- (files.north);
-\draw[soft] (fastapi.south) to[out=-90,in=90] (db.north);
-\draw[soft] (specialists.south) -- (gemini.north);
-\draw[soft] (downstream.south) to[out=-90,in=90] (external.north);
-\draw[soft] (browser.south) to[out=-90,in=90] (external.north);
+\draw[flow] (operator.east) -- node[pill, above] {uses} (consolebox.west |- console2);
+\draw[flow] (consolebox.east |- console2) -- node[pill, above] {HTTP API} (apibox.west |- api2);
+\draw[route] (apibox.east |- api2) -- node[pill, above] {job task} (runtimebox.west |- runtime2);
+\draw[toolflow] (runtimebox.east |- runtime2) -- node[pill, above] {tool calls} (toolbox.west |- tool2);
+
+\draw[flow] ([xshift=0.30cm]console1.south) -- ([xshift=0.30cm]console2.north);
+\draw[flow] ([xshift=0.30cm]console2.south) -- ([xshift=0.30cm]console3.north);
+\draw[flow] ([xshift=0.30cm]api1.south) -- ([xshift=0.30cm]api2.north);
+\draw[flow] ([xshift=0.30cm]api2.south) -- ([xshift=0.30cm]api3.north);
+\draw[route] ([xshift=0.30cm]runtime1.south) -- ([xshift=0.30cm]runtime2.north);
+\draw[route] ([xshift=0.30cm]runtime2.south) -- ([xshift=0.30cm]runtime3.north);
+\draw[toolflow] ([xshift=0.30cm]tool1.south) -- ([xshift=0.30cm]tool2.north);
+\draw[toolflow] ([xshift=0.30cm]tool2.south) -- ([xshift=0.30cm]tool3.north);
+
+\draw[support] (apibox.south) -- node[pill, right=1pt] {state} (files.north);
+\draw[support] (runtimebox.south) -- node[pill, right=1pt] {model calls} (gemini.north);
+\draw[support] (toolbox.south) to[out=-90,in=90] node[pill, right=1pt] {lookups} (external.north);
+\draw[support] (consolebox.south) to[out=-90,in=95] node[pill, left=1pt] {review records} (db.north);
 
 \end{tikzpicture}
 }
-\caption{System component diagram for the OWC runtime.}\label{fig:component}
+\caption{OWC runtime component boundaries from operator action to persisted evidence.}\label{fig:component}
 \end{figure}

@@ -1092,6 +1092,21 @@ async def run_agent_loop(
             "server_evidence": _truncate_for_capsule(run_memory.get("server_records", []), 500)
             if isinstance(run_memory, dict)
             else [],
+            "pending_server_frontier": _truncate_for_capsule(
+                run_memory.get("server_frontier", []), 500
+            )
+            if isinstance(run_memory, dict)
+            else [],
+            "activation_targets": _truncate_for_capsule(
+                run_memory.get("activation_targets", []), 320
+            )
+            if isinstance(run_memory, dict)
+            else [],
+            "observed_changes": _truncate_for_capsule(
+                run_memory.get("observed_changes", []), 320
+            )
+            if isinstance(run_memory, dict)
+            else [],
             "screenshots": _truncate_for_capsule(run_memory.get("server_screenshots", []), 260)
             if isinstance(run_memory, dict)
             else [],

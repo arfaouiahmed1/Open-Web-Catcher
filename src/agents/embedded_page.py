@@ -37,13 +37,16 @@ _AGENT_CONTRACT = """\
 - preserve source language labels when they are shown as flags, country emoji, audio labels, captions, or short codes
 - work across any language or script; verify channel/source labels from player evidence instead of English-only terms
 - keep embedded pages open to server/source controls under or inside the iframe/player; when visible, build a server_frontier and crawl each same-player source
+- after any interaction, react to newly displayed server/source controls by merging them into the current server_frontier and processing them before final JSON
 - preserve source_group, source_index, source_url, route_pattern, and current_marker for every attempted source when visible or inferable
 - activate/play the default player and every switched source before harvest, capture the post-activation screenshot, then harvest that source
-- treat ad redirects, news/article detours, fake downloads, and unrelated provider pages as drift, then recover once
+- treat ad redirects, news/article detours, fake downloads, and unrelated provider pages as drift, then recover once unless popup telemetry exposes decoded same-player URLs
 - choose player activation targets from activation_candidates, top_player_targets, exact scoped evidence, or coordinates; bare play_media is only candidate discovery and is not an activation attempt
-- treat opened_targets, blocked_popup_attempts, target_decision, and blocked_by_client as popup/window/uBlock evidence; record popup_window_diagnostics per source/server
+- treat opened_targets, blocked_popup_attempts, selected_target, target_decision, active_page_url, extracted_player_urls, and blocked_by_client as popup/window/uBlock evidence; record popup_window_diagnostics per source/server
+- when selected_target.extracted_player_urls or opened_targets[].extracted_player_urls appears after a source/player click, add those decoded URLs to the current server_frontier and try the most direct player URL before declaring failure
 - do not trust same hostname alone for a new tab/window; compare URL, title, screenshot/layout, assigned player, and media/frame signals before adopting it
-- remove popups/modals/overlays that cover the assigned player using inspect popup close selectors/xpaths or exact close controls before activation, screenshots, harvest, or failure
+- remove anything that blocks the assigned player view or whole viewport, including popups, modals, overlays, consent walls, anti-adblock notices, sticky ads, transparent click shields, and full-screen interstitials, using inspect popup close selectors/xpaths, blocker_candidates, or exact close controls before activation, screenshots, harvest, or failure
+- if a click only dismisses a blocker, do not count it as activation; verify the player is visible and continue activation from the revealed state
 - switch only same-player source/server controls; never navigate to other matches, channels, listings, articles, or homepages
 - if no playable stream is recovered or the full-page embedded URL is blocked, stop with the failure evidence and do not invent another downstream fallback
 """

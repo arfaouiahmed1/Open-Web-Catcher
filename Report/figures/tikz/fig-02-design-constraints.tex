@@ -1,60 +1,58 @@
 \begin{figure}[H]
 \centering
-\resizebox{0.91\textwidth}{!}{%
+\resizebox{0.96\textwidth}{!}{%
 \begin{tikzpicture}[
   line cap=round,
   line join=round,
-  panel/.style={draw=gray!28, fill=gray!2, rounded corners=8pt,
-    inner xsep=12pt, inner ysep=12pt},
-  paneltitle/.style={font=\footnotesize\bfseries, text=black!72, fill=white,
+  target/.style={draw=accent!80, fill=blue!6, rounded corners=7pt,
+    text width=8.7cm, minimum height=0.66cm, align=center,
+    font=\small\bfseries, inner sep=5pt},
+  group/.style={draw=gray!32, fill=gray!2, rounded corners=8pt,
+    inner xsep=8pt, inner ysep=8pt},
+  label/.style={font=\scriptsize\bfseries, text=black!68, fill=white,
     inner xsep=4pt, inner ysep=1pt},
-  target/.style={draw=accent!85, fill=blue!7, rounded corners=8pt,
-    text width=6.30cm, minimum height=1.22cm, align=center,
-    font=\small\bfseries, inner sep=7pt},
-  constraint/.style={draw=gray!60, fill=gray!7, rounded corners=6pt,
-    text width=4.15cm, minimum height=1.42cm, align=center,
-    font=\footnotesize,
-    inner xsep=8pt, inner ysep=6pt},
+  constraint/.style={draw=gray!62, fill=gray!7, rounded corners=6pt,
+    text width=3.25cm, minimum height=0.82cm, align=center,
+    font=\scriptsize, inner sep=4pt},
   response/.style={draw=green!55!black, fill=green!8, rounded corners=6pt,
-    text width=4.90cm, minimum height=1.42cm, align=center,
-    font=\footnotesize,
-    inner xsep=8pt, inner ysep=6pt},
-  arr/.style={-{Latex[round,length=2.7mm,width=1.9mm]}, line width=0.86pt,
-    accent!72, shorten <=6pt, shorten >=6pt}
+    text width=3.25cm, minimum height=0.82cm, align=center,
+    font=\scriptsize, inner sep=4pt},
+  arr/.style={-{Latex[length=2.0mm,width=1.4mm]}, line width=0.70pt,
+    accent!72, shorten <=3pt, shorten >=3pt}
 ]
-\node[target] (core) at (6.65,10.10) {Design target\\reviewable browser evidence that survives manual review};
+\node[target] (core) at (5.80,3.35)
+  {Design target: reviewable browser evidence that survives manual review};
 
-\node[constraint] (dynamic) at (1.95,7.02) {\textbf{Dynamic rendering}\\Evidence appears after JavaScript\\and browser actions};
-\node[response] (r1) at (7.90,7.02) {Rendered browser\\observation and actions};
+\foreach \x/\name/\c/\r in {
+  0/dynamic/{\textbf{Dynamic rendering}\\evidence appears after scripts and clicks}/{Rendered browser\\observation and actions},
+  5.8/frames/{\textbf{Nested players}\\streams move through hosting pages and iframes}/{Specialist landing, hosting,\\and embedded agents},
+  11.6/tokens/{\textbf{Temporary media}\\short-lived manifests and URLs}/{Screenshots plus provider context\\on stream rows}
+} {
+  \node[constraint] (\name c) at (\x,1.42) {\c};
+  \node[response] (\name r) at (\x,-0.02) {\r};
+  \draw[arr] (\name c.south) -- (\name r.north);
+}
 
-\node[constraint] (frames) at (1.95,5.12) {\textbf{Nested players}\\Streams move through\\hosting pages and iframes};
-\node[response] (r2) at (7.90,5.12) {Specialist landing, hosting,\\and embedded agents};
-
-\node[constraint] (tokens) at (1.95,3.22) {\textbf{Temporary media}\\Tokenized manifests\\can be short lived};
-\node[response] (r3) at (7.90,3.22) {Screenshots plus provider context\\on stream rows};
-
-\node[constraint] (runtime) at (1.95,0.44) {\textbf{Runtime cost}\\Runs consume time,\\tools, and tokens};
-\node[response] (r4) at (7.90,0.44) {Latency, token, cost,\\and tool health telemetry};
-
-\node[constraint] (review) at (1.95,-1.46) {\textbf{Human review}\\Evidence must stay clear\\after the run};
-\node[response] (r5) at (7.90,-1.46) {Trace storage, failure labels,\\and review screens};
-
-\node[constraint] (deployment) at (1.95,-3.36) {\textbf{Deployment fit}\\Company flow needed\\a focused backup path};
-\node[response] (r6) at (7.90,-3.36) {n8n backup path;\\OWC reference platform};
+\foreach \x/\name/\c/\r in {
+  0/runtime/{\textbf{Runtime cost}\\runs consume time, tools, and tokens}/{Latency, token, cost,\\and tool-health telemetry},
+  5.8/review/{\textbf{Human review}\\evidence must stay clear after the run}/{Trace storage, failure labels,\\and review screens},
+  11.6/deploy/{\textbf{Deployment fit}\\company flow needed a focused backup path}/{n8n backup path;\\OWC reference platform}
+} {
+  \node[constraint] (\name c) at (\x,-2.25) {\c};
+  \node[response] (\name r) at (\x,-3.69) {\r};
+  \draw[arr] (\name c.south) -- (\name r.north);
+}
 
 \begin{scope}[on background layer]
-  \node[panel, fit=(dynamic) (frames) (tokens) (r1) (r2) (r3)] (browserpanel) {};
-  \node[panel, fit=(runtime) (review) (deployment) (r4) (r5) (r6)] (opspanel) {};
+  \node[group, fit=(dynamicc) (tokensr)] (browserpanel) {};
+  \node[group, fit=(runtimec) (deployr)] (opspanel) {};
 \end{scope}
-
-\node[paneltitle, anchor=west] at ([xshift=0.12cm,yshift=-0.16cm]browserpanel.north west)
+\node[label, anchor=west] at ([xshift=0.12cm,yshift=-0.13cm]browserpanel.north west)
   {Browser and evidence constraints};
-\node[paneltitle, anchor=west] at ([xshift=0.12cm,yshift=-0.16cm]opspanel.north west)
+\node[label, anchor=west] at ([xshift=0.12cm,yshift=-0.13cm]opspanel.north west)
   {Operational constraints};
 
-\foreach \c/\r in {dynamic/r1,frames/r2,tokens/r3,runtime/r4,review/r5,deployment/r6} {
-  \draw[arr] (\c.east) -- (\r.west);
-}
+\draw[arr] (core.south) -- ++(0,-0.26);
 \end{tikzpicture}
 }
 \caption{Main design constraints and the engineering responses selected for OWC.}\label{fig:design-constraints}

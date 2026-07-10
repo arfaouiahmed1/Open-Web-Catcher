@@ -1,0 +1,49 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  card/.style={draw=gray!34, fill=white, rounded corners=8pt,
+    line width=0.62pt, align=left, font=\scriptsize, text width=3.34cm,
+    minimum height=2.26cm, inner sep=6pt},
+  chosen/.style={card, draw=accent!80, fill=blue!6},
+  alt/.style={card, draw=accent!68, fill=blue!5},
+  broker/.style={card, draw=orange!80!black, fill=orange!9},
+  openw/.style={card, draw=accent!55, fill=blue!3},
+  title/.style={font=\scriptsize\bfseries, text=accent!85!black},
+  arr/.style={-{Latex[length=2.0mm,width=1.45mm]}, accent!70, line width=0.72pt,
+    shorten <=3pt, shorten >=3pt},
+  note/.style={font=\tiny\bfseries, rounded corners=4pt, draw=gray!35,
+    fill=white, inner xsep=5pt, inner ysep=2pt, text=black!70}
+]
+
+\node[chosen] (gemini) at (0,0) {\textbf{Gemini API}\\[-1pt]
+{\tiny first-party runtime used in the captured evaluation}\\[2pt]
+\textbf{Fit:} long context, cache visibility, dashboard integration\\[-1pt]
+\textbf{Risk:} still needs strict prompts and trace checks};
+
+\node[alt] (openai) at (3.95,0) {\textbf{OpenAI API}\\[-1pt]
+{\tiny first-party comparison provider}\\[2pt]
+\textbf{Fit:} stable provider identity, caching and tooling docs\\[-1pt]
+\textbf{Risk:} not the implemented dashboard default here};
+
+\node[broker] (openrouter) at (7.90,0) {\textbf{OpenRouter}\\[-1pt]
+{\tiny broker across third-party hosts}\\[2pt]
+\textbf{Fit:} quick access to many open/proprietary models\\[-1pt]
+\textbf{Risk:} host routing, fallback, latency, and identity drift};
+
+\node[openw] (openweight) at (11.85,0) {\textbf{Open-weight/direct}\\[-1pt]
+{\tiny Mistral, DeepSeek, Z.ai, Qwen-style options}\\[2pt]
+\textbf{Fit:} cost/control experiments\\[-1pt]
+\textbf{Risk:} deployment, cache, rate-limit, and support variance};
+
+\foreach \a/\b in {gemini/openai,openai/openrouter,openrouter/openweight}{
+  \draw[arr] (\a.east) -- (\b.west);
+}
+
+\node[note, anchor=west] at (-1.65,-1.65)
+  {Provider comparison is operational: model identity, routing stability, cache visibility, rate limits, latency, and cost are more important than a generic intelligence ranking.};
+
+\end{tikzpicture}%
+}
+\caption{LLM provider comparison frame used for OWC runtime selection.}\label{fig:llm-provider-map}
+\end{figure}

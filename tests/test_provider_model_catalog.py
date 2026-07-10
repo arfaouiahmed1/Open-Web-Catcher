@@ -6,6 +6,7 @@ from src.utils.provider_models import (
     is_google_genai_model_id,
     normalize_agent_model_config,
     resolve_google_model_runtime_profile,
+    resolve_model_context_window,
 )
 
 
@@ -50,6 +51,20 @@ def test_google_runtime_model_ids_include_gemma_and_gemini() -> None:
     assert is_google_genai_model_id("google/gemini-2.5-pro")
     assert is_google_genai_model_id("google/gemma-3-27b-it")
     assert not is_google_genai_model_id("gpt-5")
+
+
+def test_gemini_31_flash_lite_reports_context_window_from_fallbacks() -> None:
+    settings = Settings()
+    settings.google_api_key = ""
+    settings.provider_model_catalog_cache = {}
+
+    payload = get_provider_model_catalog(settings, provider="google", max_models=20)
+    row = next(item for item in payload["models"] if item["id"] == "gemini-3.1-flash-lite")
+
+    assert row["context_window"] == 1_048_576
+    assert resolve_model_context_window("gemini-3.1-flash-lite", "google_genai") == 1_048_576
+    assert resolve_model_context_window("google/gemini-3.1-flash-lite", "google") == 1_048_576
+    assert resolve_model_context_window("gemini-3.1-flash-lite-preview", "google_genai") == 1_048_576
 
 
 def test_agent_model_config_normalizes_legacy_non_google_provider() -> None:

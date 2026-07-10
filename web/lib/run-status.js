@@ -7,6 +7,8 @@ export const RUN_STATUSES = [
   "no_hosting_pages",
   "page_inaccessible",
   "no_streams",
+  "llm_rate_limited",
+  "llm_api_down",
   "timeout",
   "site_dead",
   "redirect",
@@ -31,6 +33,7 @@ export function statusTone(value) {
   if (status === "partial") return "warning";
   if (status === "no_hosting_pages") return "warning";
   if (status === "no_streams") return "warning";
+  if (status === "llm_rate_limited" || status === "llm_api_down") return "warning";
   if (status === "page_inaccessible" || status === "site_dead" || status === "timeout") return "danger";
   return "danger";
 }
@@ -44,6 +47,8 @@ export function statusLabel(value) {
   if (status === "no_hosting_pages") return "No hosting pages";
   if (status === "page_inaccessible") return "Page inaccessible";
   if (status === "no_streams") return "No streams";
+  if (status === "llm_rate_limited") return "LLM rate limited";
+  if (status === "llm_api_down") return "LLM API down";
   if (status === "timeout") return "Timeout";
   if (status === "site_dead") return "Site dead";
   if (status === "redirect") return "Redirect";

@@ -1,0 +1,62 @@
+\begin{figure}[!htbp]
+\centering
+\resizebox{0.96\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
+    line width=0.55pt, inner sep=12pt},
+  box/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=2.75cm, minimum height=0.88cm, inner xsep=6pt,
+    inner ysep=5pt, text=black},
+  run/.style={box, draw=orange!80!black, fill=orange!9},
+  agent/.style={box, draw=accent!75, fill=blue!6},
+  event/.style={box, draw=purple!65!black, fill=purple!7},
+  evidence/.style={box, draw=green!55!black, fill=green!8},
+  view/.style={box, draw=gray!62, fill=gray!9, text width=3.25cm},
+  title/.style={font=\scriptsize\bfseries, text=black!68, fill=white,
+    inner sep=2pt},
+  arr/.style={-{Latex[length=2.1mm,width=1.55mm]}, line width=0.82pt,
+    accent!78, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=1.9mm,width=1.35mm]}, line width=0.66pt,
+    gray!62, densely dashed, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.1pt,
+    text=black!72}
+]
+
+\node[run] (pipeline) at (0,2.85) {pipeline run\\{\normalfont\scriptsize one investigation}};
+\node[agent] (agents) at (3.65,2.85) {agent runs\\{\normalfont\scriptsize role + attempt}};
+\node[event] (calls) at (7.30,2.85) {tool and LLM calls\\{\normalfont\scriptsize ordered trace}};
+\node[evidence] (evidence) at (10.95,2.85) {evidence rows\\{\normalfont\scriptsize streams + screenshots}};
+\node[view] (review) at (14.80,2.85) {review screens\\{\normalfont\scriptsize searchable outcome}};
+
+\node[view] (snapshot) at (3.65,0.15) {replay JSON\\{\normalfont\scriptsize final result shape}};
+\node[view] (usage) at (7.30,0.15) {usage rows\\{\normalfont\scriptsize tokens + cost}};
+\node[view] (memory) at (10.95,0.15) {memory links\\{\normalfont\scriptsize hints used + learned}};
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(pipeline) (agents) (calls) (evidence) (review)] (ledger) {};
+  \node[panel, fit=(snapshot) (usage) (memory)] (support) {};
+\end{scope}
+
+\node[title, anchor=west] at ([xshift=0.12cm,yshift=-0.13cm]ledger.north west)
+  {Normalized observability path};
+\node[title, anchor=west] at ([xshift=0.12cm,yshift=-0.13cm]support.north west)
+  {Replay and explanation support};
+
+\draw[arr] (pipeline.east) -- (agents.west);
+\draw[arr] (agents.east) -- (calls.west);
+\draw[arr] (calls.east) -- (evidence.west);
+\draw[arr] (evidence.east) -- (review.west);
+
+\draw[soft] (pipeline.south) to[out=-70,in=170]
+  node[lab, pos=0.55, above=1pt] {snapshot} (snapshot.west);
+\draw[soft] (calls.south) -- node[lab, right=2pt] {usage} (usage.north);
+\draw[soft] (agents.south) to[out=-30,in=150]
+  node[lab, pos=0.55, above=1pt] {hints} (memory.west);
+\draw[soft] (memory.north) -- (evidence.south);
+
+\end{tikzpicture}
+}
+\caption{How PostgreSQL turns a parallel browser-agent run into replayable and searchable observability records.}\label{fig:observability-ledger}
+\end{figure}

@@ -2,7 +2,7 @@
 
 > **Navigation:** [Docs Home](../README.md) | [Section Index](./README.md) | Previous: [Example Run db970f27](../workflow/run-db970f27.md) | Next: [Orchestrator](./orchestrator.md)
 
-The runtime has one orchestrator and four browser-facing specialist agents. Provider analysis and email generation are implemented as LangChain `BaseTool` integrations called by the orchestrator after extraction.
+The runtime has one orchestrator and four browser-facing specialist agents. Provider analysis and email generation are implemented as LangChain `BaseTool` integrations called by the orchestrator after extraction. For the short mental model of LangChain versus LangGraph in this codebase, start with [How Agents Use LangChain And LangGraph](./how-agents-use-langchain-langgraph.md).
 
 The design is intentionally split by responsibility. Classification should decide what kind of page is in front of the browser. Landing should find useful downstream watch pages. Hosting should operate the page that owns server/source controls. Embedded should stay inside player/iframe contexts. Provider analysis and email generation should run only after stream evidence exists.
 
@@ -154,6 +154,7 @@ That tool boundary is the main reason the agents can be inspected in the dashboa
 
 ## Agent Pages
 
+- [How Agents Use LangChain And LangGraph](./how-agents-use-langchain-langgraph.md)
 - [Orchestrator](./orchestrator.md)
 - [Classification](./classification.md)
 - [Landing](./landing.md)

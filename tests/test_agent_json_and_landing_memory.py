@@ -1,3 +1,5 @@
+import json
+
 from src.agents.base import parse_json_object
 from src.agents.embedded_page import _normalize_embedded_output
 from src.agents.hosting_page import _normalize_hosting_output
@@ -137,6 +139,42 @@ def test_landing_normalizer_preserves_server_hints_for_hosting() -> None:
     assert pages[0]["server_hints"][0]["route_pattern"] == "/watch/game-1/{provider}/{n}"
 
 
+def test_landing_normalizer_rejects_article_urls_without_match_or_player_evidence() -> None:
+    pages = _normalize_hosting_pages(
+        [
+            {
+                "url": "/post/yacine-tv-world-cup-2026",
+                "title": "Yacine TV World Cup 2026 live all matches HD",
+                "status": "live",
+                "route_source": "related_news_card",
+            },
+            {
+                "url": "/match/team-a-team-b",
+                "title": "Team A vs Team B",
+                "participants": "Team A vs Team B",
+                "scheduled_time": "20:00",
+                "status": "live",
+                "route_source": "match_card",
+            },
+            {
+                "url": "/post/team-a-team-b-live",
+                "title": "Team A vs Team B",
+                "participants": "Team A vs Team B",
+                "scheduled_time": "20:00",
+                "status": "live",
+                "route_source": "match_card",
+                "server_hints": [{"label": "Server 1", "selector": ".server-1"}],
+            },
+        ],
+        source_url="https://martinchavez98.org/post/yacine-tv-premier-league-live",
+    )
+
+    assert [page["url"] for page in pages] == [
+        "https://martinchavez98.org/match/team-a-team-b",
+        "https://martinchavez98.org/post/team-a-team-b-live",
+    ]
+
+
 def test_short_memory_saves_match_records_from_landing_tool_payload() -> None:
     memory = ShortTermMemory(page_type="landing_page")
     memory.ingest_tool_result(
@@ -160,6 +198,47 @@ def test_short_memory_saves_match_records_from_landing_tool_payload() -> None:
         "https://site.example/live/sweden-czechia/40925152"
     ]
     assert '"status": "live"' in run_memory["match_records"][0]
+
+
+def test_short_memory_skips_related_article_cards_from_landing_candidates() -> None:
+    memory = ShortTermMemory(page_type="landing_page")
+    memory.ingest_tool_result(
+        "inspect_landing",
+        {"url": "https://martinchavez98.org/post/yacine-tv-premier-league-live"},
+        {
+            "candidate_ledger": [
+                {
+                    "url": "https://martinchavez98.org/post/yacine-tv-world-cup-2026",
+                    "title": "Yacine TV World Cup 2026 live all matches HD",
+                    "nearby_text": "Latest news Yacine TV World Cup 2026 live all matches HD",
+                    "status": "live",
+                    "source": "content",
+                    "source_section": "Latest News",
+                    "selector": ".related-posts a",
+                    "xpath": "//aside//a[1]",
+                    "url_pattern": "https://martinchavez98.org/post/yacine-tv-world-cup-{n}",
+                },
+                {
+                    "url": "https://martinchavez98.org/match/team-a-team-b",
+                    "title": "Team A vs Team B",
+                    "nearby_text": "20:00 Team A vs Team B Watch Live",
+                    "row_text": "20:00 Team A vs Team B Watch Live",
+                    "status": "live",
+                    "source": "content",
+                    "source_section": "Live Matches",
+                    "selector": ".match-card a",
+                    "xpath": "//main//section[2]//a[1]",
+                    "url_pattern": "https://martinchavez98.org/match/team-a-team-b",
+                },
+            ]
+        },
+    )
+
+    run_memory = memory.export_run_memory(page_type="landing_page")
+    assert run_memory["hosting_candidate_urls"] == [
+        "https://martinchavez98.org/match/team-a-team-b"
+    ]
+    assert "yacine-tv-world-cup-2026" not in "".join(run_memory["match_records"])
 
 
 def test_short_memory_saves_full_landing_candidate_ledger() -> None:
@@ -574,6 +653,7 @@ def test_hosting_normalizer_preserves_popup_window_diagnostics() -> None:
                             "url": "https://ads.example/promo",
                             "classification": "ad_or_drift",
                             "action": "closed",
+                            "extracted_player_urls": ["https://player.example/embed/1"],
                         }
                     ],
                 }
@@ -585,6 +665,7 @@ def test_hosting_normalizer_preserves_popup_window_diagnostics() -> None:
     assert diagnostics[0]["url"] == "https://ads.example/promo"
     assert diagnostics[0]["classification"] == "ad_or_drift"
     assert diagnostics[0]["action"] == "closed"
+    assert diagnostics[0]["extracted_player_urls"] == ["https://player.example/embed/1"]
 
 
 def test_embedded_normalizer_infers_protocol_details_from_stream_objects() -> None:
@@ -651,6 +732,7 @@ def test_embedded_normalizer_preserves_popup_window_diagnostics() -> None:
                             "url": "https://player.example/embed",
                             "classification": "same_content_player",
                             "action": "adopted",
+                            "extracted_player_urls": ["https://player.example/embed"],
                         }
                     ],
                 }
@@ -662,3 +744,69 @@ def test_embedded_normalizer_preserves_popup_window_diagnostics() -> None:
     assert diagnostics[0]["url"] == "https://player.example/embed"
     assert diagnostics[0]["classification"] == "same_content_player"
     assert diagnostics[0]["action"] == "adopted"
+    assert diagnostics[0]["extracted_player_urls"] == ["https://player.example/embed"]
+
+
+def test_short_memory_captures_hosting_frontier_activation_and_observed_changes() -> None:
+    memory = ShortTermMemory(page_type="hosting_page")
+
+    memory.ingest_tool_result(
+        "inspect_hosting",
+        {"url": "https://site.example/watch/game-1"},
+        {
+            "server_frontier": [
+                {
+                    "label": "Server HD",
+                    "source_group": "primary",
+                    "source_index": 1,
+                    "source_url": "/watch/game-1/server/1",
+                    "selector": ".server-hd",
+                    "route_pattern": "/watch/game-1/server/{n}",
+                    "current_marker": True,
+                }
+            ],
+            "activation_candidates": [
+                {
+                    "kind": "button",
+                    "text": "Play",
+                    "selector": ".play",
+                    "frame_path": "root.0",
+                    "reason": "visible player button",
+                }
+            ],
+            "blocker_candidates": [
+                {
+                    "label": "Close ad",
+                    "selector": ".ad-close",
+                    "reason": "covers player",
+                }
+            ],
+            "observed_change": {
+                "navigated": False,
+                "url_after": "https://site.example/watch/game-1",
+                "target_decision": "same_page_update",
+            },
+        },
+    )
+
+    run_memory = memory.export_run_memory(page_type="hosting_page")
+    assert run_memory["server_frontier"]
+    assert run_memory["activation_targets"]
+    assert run_memory["blocker_targets"]
+    assert run_memory["observed_changes"]
+    assert run_memory["agent_specific"]["hosting_page"]["server_frontier"]
+
+    frontier = json.loads(run_memory["server_frontier"][0])
+    assert frontier["label"] == "Server HD"
+    assert frontier["source_group"] == "primary"
+    assert frontier["source_url"] == "/watch/game-1/server/1"
+    assert "https://site.example/watch/game-1/server/1" in run_memory["critical_links"]
+
+    working_state = memory.working_state(
+        objective="Extract all sources",
+        page_type="hosting_page",
+        page_url="https://site.example/watch/game-1",
+    )
+    assert "pending server/source frontier remembered: `1`" in working_state
+    assert "activation targets remembered" in working_state
+    assert "recent observed changes" in working_state

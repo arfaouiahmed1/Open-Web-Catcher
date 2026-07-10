@@ -1,0 +1,58 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.96\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
+    line width=0.55pt, inner sep=10pt},
+  box/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=2.85cm, minimum height=0.84cm, inner xsep=5pt,
+    inner ysep=4pt, text=black},
+  agent/.style={box, draw=orange!70!black, fill=orange!10},
+  mcp/.style={box, draw=accent!75, fill=blue!6},
+  engine/.style={box, draw=purple!65!black, fill=purple!7},
+  state/.style={box, draw=gray!62, fill=gray!9},
+  evidence/.style={box, draw=green!55!black, fill=green!8},
+  target/.style={box, draw=black!45, fill=white},
+  title/.style={font=\scriptsize\bfseries, text=black!70, fill=white,
+    inner sep=2pt},
+  arr/.style={-{Latex[length=2.1mm,width=1.55mm]}, line width=0.82pt,
+    accent!78, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=1.9mm,width=1.35mm]}, line width=0.68pt,
+    gray!60, densely dashed, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.1pt,
+    text=black!72}
+]
+
+\node[agent] (agent) at (0,1.35) {Agent\\task + tool call};
+\node[mcp] (toolserver) at (3.65,1.35) {MCP tool server\\allowed actions};
+\node[engine] (engine) at (7.10,1.35) {Browser engine\\Puppeteer + Chrome};
+\node[state] (profile) at (7.10,0.05) {Session profile\\cookies, storage};
+\node[state] (identity) at (7.10,-1.25) {Identity controls\\proxy, fingerprint, policy};
+\node[evidence] (logs) at (10.55,0.05) {Evidence logs\\DOM, screenshot, network};
+\node[target] (site) at (14.05,1.35) {Target site\\observes one session};
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(toolserver) (engine) (profile) (identity) (logs)] (containerPanel) {};
+\end{scope}
+\node[title, anchor=west] at ([xshift=0.12cm,yshift=-0.13cm]containerPanel.north west)
+  {Browser container boundary};
+
+\draw[arr] (agent.east) -- node[lab, above=2pt] {tool request} (toolserver.west);
+\draw[arr] (toolserver.east) -- node[lab, above=2pt] {bounded action} (engine.west);
+\draw[arr] (engine.east) -- node[lab, above=2pt] {browser traffic} (site.west);
+\draw[soft] (profile.north) -- node[lab, right=1pt] {state} (engine.south);
+\draw[soft] (identity.north) -- node[lab, right=1pt] {surface} (profile.south);
+\draw[arr] (engine.east) to[out=-18,in=155] node[lab, above=1pt] {observe} (logs.west);
+\draw[soft] (logs.west) to[out=180,in=-30] node[lab, below=1pt] {result} (agent.south);
+
+\node[draw=gray!36, fill=gray!7, rounded corners=6pt,
+  font=\tiny\bfseries, text=black!70, inner xsep=6pt, inner ysep=4pt,
+  text width=10.6cm, align=center] at (6.95,-2.45)
+  {The container keeps browser actions, profile state, identity controls, and evidence capture inside one coherent session boundary.};
+
+\end{tikzpicture}
+}
+\caption{Browser-container isolation used for automated evidence collection.}\label{fig:browser-container-general}
+\end{figure}

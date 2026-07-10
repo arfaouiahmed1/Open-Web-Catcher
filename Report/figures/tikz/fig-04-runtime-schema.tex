@@ -1,156 +1,255 @@
-\begin{figure}[!htbp]
+\begin{landscape}
+\thispagestyle{landscape}
+\begin{figure}[H]
 \centering
-\resizebox{0.99\textwidth}{!}{%
+\vspace*{\fill}
+\makebox[\linewidth][c]{%
+\resizebox{1.03\linewidth}{!}{%
 \begin{tikzpicture}[
   line cap=round,
   line join=round,
-  umlbox/.style={
-    rectangle split,
-    rectangle split parts=2,
-    rectangle split draw splits=true,
-    rectangle split part fill={blue!6,white},
-    draw=accent!76,
-    line width=0.55pt,
-    rounded corners=2pt,
-    inner xsep=5pt,
-    inner ysep=4pt,
-    text width=2.62cm,
-    font=\fontsize{6.1}{7.25}\selectfont,
-    rectangle split part align={center,left},
-    align=left
-  },
-  root/.style={umlbox, text width=4.15cm, line width=0.75pt,
-    draw=accent!90!black, rectangle split part fill={accent!12,white}},
-  routeclass/.style={umlbox, draw=orange!82!black,
-    rectangle split part fill={orange!10,white}},
-  evidenceclass/.style={umlbox, draw=green!55!black,
-    rectangle split part fill={green!8,white}},
-  reviewclass/.style={umlbox, draw=purple!65!black,
-    rectangle split part fill={purple!7,white}},
-  metricclass/.style={umlbox, draw=gray!65,
-    rectangle split part fill={gray!10,white}},
-  compo/.style={draw=accent!76, line width=0.62pt,
-    {Diamond[length=6pt,width=4.6pt,fill=accent!76]}-,
-    shorten <=1pt, shorten >=4pt, rounded corners=6pt},
-  assoc/.style={draw=accent!66, line width=0.58pt,
-    shorten <=2pt, shorten >=2pt, rounded corners=6pt},
-  dep/.style={draw=gray!62, line width=0.55pt, dash pattern=on 2.4pt off 1.8pt,
-    -{Latex[round,length=1.55mm,width=1.15mm]},
-    shorten <=2pt, shorten >=3pt, rounded corners=6pt},
-  mult/.style={font=\fontsize{5.4}{6.2}\selectfont\bfseries,
-    fill=white, inner sep=1.1pt, text=black!68},
-  note/.style={draw=gray!35, fill=gray!3, rounded corners=5pt,
-    text width=11.6cm, align=center,
-    font=\fontsize{5.8}{6.8}\selectfont, text=gray!72!black,
-    inner xsep=5pt, inner ysep=4pt}
+  class/.style={draw=black!66, fill=white, rounded corners=1.2pt,
+    line width=0.48pt, text width=2.82cm, align=left,
+    inner xsep=4.4pt, inner ysep=3.2pt,
+    font=\fontsize{5.9}{6.65}\selectfont},
+  compact/.style={class, text width=2.42cm},
+  medium/.style={class, text width=2.78cm},
+  wide/.style={class, text width=3.08cm},
+  xwide/.style={class, text width=3.30cm},
+  output/.style={class, draw=green!48!black, fill=green!7},
+  execution/.style={class, draw=blue!58!black, fill=blue!6},
+  agent/.style={class, draw=orange!72!black, fill=orange!8},
+  config/.style={class, draw=purple!58!black, fill=purple!6},
+  owns/.style={{Diamond[length=6.4pt,width=5.8pt,fill=black!72]}-,
+    draw=black!58, line width=0.58pt, shorten <=1pt, shorten >=2pt,
+    rounded corners=5pt},
+  part/.style={draw=black!54, line width=0.52pt, shorten <=1pt,
+    shorten >=2pt, rounded corners=5pt},
+  ref/.style={-{Latex[round,length=1.45mm,width=1.05mm]}, draw=black!48,
+    line width=0.48pt, dash pattern=on 2.4pt off 1.8pt,
+    shorten <=2pt, shorten >=2pt, rounded corners=5pt},
+  bus/.style={draw=black!46, line width=0.50pt},
+  card/.style={font=\fontsize{5.0}{5.5}\selectfont, fill=white,
+    inner sep=1.05pt, text=black!72},
+  role/.style={font=\fontsize{5.0}{5.5}\selectfont, fill=white,
+    inner sep=1.10pt, text=black!64}
 ]
-\newcommand{\attr}[1]{+\,#1\\}
-
-\node[root] (result) at (0,6.05) {%
-  {\bfseries PipelineResult}\nodepart{two}%
-  \attr{run\_id: str}\attr{url: str}%
-  \attr{classification: ClassificationResult[0..1]}%
-  \attr{matches: MatchInfo[0..*]}%
-  \attr{extraction\_results: ExtractionResult[0..*]}%
-  \attr{final\_status: ExtractionStatus}%
-  \attr{all\_streams: StreamURL[0..*]}%
-  \attr{all\_screenshots: str[0..*]}%
-  \attr{provider\_analysis: ProviderInfo[0..*]}%
-  \attr{takedown\_emails: TakedownEmail[0..*]}%
-  \attr{metrics: RunMetrics[0..1]}%
-};
-
-\node[routeclass] (classification) at (-6.25,2.62) {%
-  {\bfseries ClassificationResult}\nodepart{two}%
-  \attr{url: str}\attr{page\_type: PageType}%
-  \attr{confidence: Confidence}\attr{reasoning: str}%
-  \attr{agent\_type: AgentType}%
-};
-
-\node[evidenceclass] (match) at (-3.12,2.62) {%
-  {\bfseries MatchInfo}\nodepart{two}%
-  \attr{url: str}\attr{title: str}%
-  \attr{channel: str[0..1]}\attr{route: str}%
-  \attr{iframes: list[str]}\attr{player\_urls: list[str]}%
-  \attr{server\_hints: list[dict]}\attr{metadata: dict[str, Any]}%
-};
-
-\node[evidenceclass] (extract) at (0,2.62) {%
-  {\bfseries ExtractionResult}\nodepart{two}%
-  \attr{url: str}\attr{page\_type: PageType}%
-  \attr{status: ExtractionStatus}\attr{servers: list[ServerResult]}%
-  \attr{streams: list[StreamURL]}\attr{screenshots: list[str]}%
-  \attr{embedded\_urls: list[str]}\attr{agent\_type: AgentType}%
-};
-
-\node[reviewclass] (provider) at (3.12,2.62) {%
-  {\bfseries ProviderInfo}\nodepart{two}%
-  \attr{stream\_url: str}\attr{ip: str}%
-  \attr{hostname: str}\attr{org: str}%
-  \attr{provider: str}\attr{country: str}%
-  \attr{abuse\_email: str}\attr{whois\_raw: str}%
-};
-
-\node[metricclass, text width=2.82cm] (metrics) at (6.25,2.62) {%
-  {\bfseries RunMetrics}\nodepart{two}%
-  \attr{run\_id: str}\attr{url: str}%
-  \attr{started\_at: datetime}%
-  \attr{finished\_at: datetime[0..1]}\attr{total\_tool\_calls: int}%
-  \attr{total\_llm\_calls: int}\attr{total\_tokens\_in/out: int}%
-  \attr{estimated\_total\_cost\_usd: float}\attr{model\_usage: ModelUsage[*]}%
-  \attr{success: bool}%
-};
-
-\node[evidenceclass] (server) at (-1.55,-1.08) {%
-  {\bfseries ServerResult}\nodepart{two}%
-  \attr{label: str}\attr{source\_url: str[0..1]}%
-  \attr{server\_up: bool}\attr{m3u8\_urls: list[str]}%
-  \attr{mpd\_urls: list[str]}\attr{mp4\_urls: list[str]}%
-  \attr{primary\_stream: str[0..1]}\attr{screenshot\_url: str[0..1]}%
-  \attr{embedded\_url: str[0..1]}\attr{status: str}%
-};
-
-\node[evidenceclass] (stream) at (1.55,-1.08) {%
-  {\bfseries StreamURL}\nodepart{two}%
-  \attr{url: str}\attr{protocol: str}%
-  \attr{quality: str}\attr{source\_layer: str}%
-  \attr{channel\_name: str}\attr{captured\_at: datetime}%
-};
-
-\node[reviewclass, text width=3.72cm] (email) at (5.60,-1.08) {%
-  {\bfseries TakedownEmail}\nodepart{two}%
-  \attr{provider: str}\attr{abuse\_email: str}%
-  \attr{channel\_name: str}\attr{subject: str}%
-  \attr{body: str}\attr{infringing\_url: str}%
-  \attr{stream\_urls: str[0..*]}\attr{screenshot\_urls: str[0..*]}%
-};
-
-\node[reviewclass, text width=3.72cm] (streamev) at (5.60,-4.70) {%
-  {\bfseries StreamEvidence}\nodepart{two}%
-  \attr{stream\_url: str}\attr{protocol: str}%
-  \attr{source\_layer: str}\attr{server\_label: str}%
-  \attr{channel\_name: str}%
-  \attr{screenshot\_urls: str[0..*]}\attr{page\_url: str}%
-  \attr{provider\_hostname: str}%
-};
-
-\draw[compo, draw=green!55!black] (extract.south) -- ++(0,-0.50)
-  -| node[mult, near end, right=1pt] {0..*} (server.north);
-\draw[compo, draw=green!55!black] (extract.south) -- ++(0,-0.50)
-  -| node[mult, near end, right=1pt] {0..*} (stream.north);
-
-\draw[dep] (provider.south) to[out=-90,in=90]
-  node[mult, right=1pt, pos=0.50] {stream\_url} (stream.north);
-\draw[dep] (email.north west) to[out=155,in=-72]
-  node[mult, above=1pt, pos=0.48] {provider\_info 0..1} (provider.south east);
-\draw[compo, draw=purple!65!black] (email.south) --
-  node[mult, right=4pt, pos=0.78] {0..*} (streamev.north);
-
-\node[note] at (0,-6.72)
-  {\texttt{PipelineResult} lists top-level aggregate fields. Diamonds show nested
-  ownership; dashed arrows show references.};
-
-\end{tikzpicture}
+\newcommand{\schemafield}[1]{+\,#1\\}
+\newcommand{\schemaclass}[2]{%
+  {\centering\fontsize{6.9}{7.55}\selectfont\bfseries #1\par}%
+  \vspace{0.7pt}%
+  \rule{\linewidth}{0.25pt}\\[-0.2pt]%
+  #2%
 }
-\caption{Class diagram of the runtime result centered on \texttt{PipelineResult}.}\label{fig:runtime-schema}
+
+% Execution trace lane.
+\node[execution, wide] (run) at (-9.65,2.10) {\schemaclass{PipelineRun}{%
+  \schemafield{runId : String}%
+  \schemafield{rootUrl : String}%
+  \schemafield{status : RunStatus}%
+  \schemafield{durationSeconds : Real}%
+  \schemafield{startedAt : DateTime}%
+  \schemafield{finishedAt : DateTime}%
+}};
+
+\node[execution, compact] (decision) at (-6.10,5.60) {\schemaclass{RunDecision}{%
+  \schemafield{title : String}%
+  \schemafield{category : String}%
+  \schemafield{status : DecisionStatus}%
+}};
+
+\node[execution, compact] (task) at (-3.25,5.60) {\schemaclass{RunTask}{%
+  \schemafield{title : String}%
+  \schemafield{priority : PriorityLevel}%
+  \schemafield{status : TaskStatus}%
+}};
+
+\node[execution, wide] (metrics) at (-6.10,2.10) {\schemaclass{RunMetrics}{%
+  \schemafield{totalTokensIn : Integer}%
+  \schemafield{totalTokensOut : Integer}%
+  \schemafield{totalLlmCalls : Integer}%
+  \schemafield{totalToolCalls : Integer}%
+  \schemafield{estimatedTotalCostUsd : Real}%
+}};
+
+\node[execution, wide] (usage) at (-2.45,2.10) {\schemaclass{ModelUsage}{%
+  \schemafield{provider : String}%
+  \schemafield{modelName : String}%
+  \schemafield{llmCalls : Integer}%
+  \schemafield{inputTokens : Integer}%
+  \schemafield{outputTokens : Integer}%
+  \schemafield{estimatedTotalCostUsd : Real}%
+}};
+
+\node[agent, wide] (agentexec) at (1.20,2.10) {\schemaclass{AgentExecution}{%
+  \schemafield{actor : String}%
+  \schemafield{agentType : AgentType}%
+  \schemafield{status : ExecutionStatus}%
+  \schemafield{durationSeconds : Real}%
+  \schemafield{startedAt : DateTime}%
+  \schemafield{finishedAt : DateTime}%
+}};
+
+\node[agent, wide] (llmcall) at (4.85,3.62) {\schemaclass{LLMCall}{%
+  \schemafield{seq : Integer}%
+  \schemafield{provider : String}%
+  \schemafield{modelName : String}%
+  \schemafield{inputTokens : Integer}%
+  \schemafield{outputTokens : Integer}%
+  \schemafield{estimatedCostUsd : Real}%
+}};
+
+\node[agent, medium] (toolcall) at (4.85,0.92) {\schemaclass{ToolCall}{%
+  \schemafield{seq : Integer}%
+  \schemafield{toolName : String}%
+  \schemafield{status : ToolStatus}%
+  \schemafield{durationSeconds : Real}%
+}};
+
+\node[agent, wide] (promptcomp) at (8.40,3.62) {\schemaclass{PromptCompilation}{%
+  \schemafield{cacheMode : String}%
+  \schemafield{isStaticCacheHit : Boolean}%
+  \schemafield{isMemoryInjected : Boolean}%
+}};
+
+\node[agent, compact] (memoryhint) at (8.40,0.92) {\schemaclass{MemoryHintUsed}{%
+  \schemafield{timestamp : DateTime}%
+}};
+
+\node[config, medium] (promptversion) at (11.62,3.62) {\schemaclass{PromptVersion}{%
+  \schemafield{semanticVersion : String}%
+  \schemafield{contentHash : String}%
+  \schemafield{isActive : Boolean}%
+}};
+
+\node[config, medium] (memoryentry) at (11.62,0.92) {\schemaclass{MemoryEntry}{%
+  \schemafield{domain : String}%
+  \schemafield{pageType : PageType}%
+  \schemafield{success : Boolean}%
+  \schemafield{data : Map}%
+}};
+
+\node[execution, medium] (event) at (1.20,5.60) {\schemaclass{RuntimeEvent}{%
+  \schemafield{seq : Integer}%
+  \schemafield{timestamp : DateTime}%
+  \schemafield{actor : String}%
+  \schemafield{kind : String}%
+  \schemafield{message : String}%
+}};
+
+% Output and artifact lane.
+\node[output, wide] (result) at (-9.65,-2.42) {\schemaclass{PipelineResult}{%
+  \schemafield{runId : String}%
+  \schemafield{url : String}%
+  \schemafield{finalStatus : ExtractionStatus}%
+}};
+
+\node[output, medium] (classification) at (-6.10,-2.42) {\schemaclass{ClassificationResult}{%
+  \schemafield{url : String}%
+  \schemafield{pageType : PageType}%
+  \schemafield{confidence : Confidence}%
+  \schemafield{reasoning : String}%
+  \schemafield{agentType : AgentType}%
+}};
+
+\node[output, xwide] (match) at (-2.45,-2.42) {\schemaclass{MatchInfo}{%
+  \schemafield{url : String}%
+  \schemafield{title : String}%
+  \schemafield{channel : String}%
+  \schemafield{route : String}%
+  \schemafield{confidence : Integer}%
+  \schemafield{iframes : List\textless String\textgreater}%
+  \schemafield{playerUrls : List\textless String\textgreater}%
+}};
+
+\node[output, xwide] (extract) at (1.20,-2.42) {\schemaclass{ExtractionResult}{%
+  \schemafield{url : String}%
+  \schemafield{pageType : PageType}%
+  \schemafield{status : ExtractionStatus}%
+  \schemafield{primaryChannel : String}%
+  \schemafield{durationSeconds : Real}%
+  \schemafield{errorMessage : String}%
+}};
+
+\node[output, medium] (stream) at (4.85,-2.42) {\schemaclass{StreamURL}{%
+  \schemafield{url : String}%
+  \schemafield{protocol : String}%
+  \schemafield{quality : String}%
+  \schemafield{sourceLayer : String}%
+  \schemafield{capturedAt : DateTime}%
+}};
+
+\node[output, medium] (provider) at (8.40,-2.42) {\schemaclass{ProviderInfo}{%
+  \schemafield{streamUrl : String}%
+  \schemafield{ip : String}%
+  \schemafield{hostname : String}%
+  \schemafield{providerName : String}%
+  \schemafield{abuseEmail : String}%
+}};
+
+\node[output, medium] (email) at (11.62,-2.42) {\schemaclass{TakedownEmail}{%
+  \schemafield{providerName : String}%
+  \schemafield{abuseEmail : String}%
+  \schemafield{subject : String}%
+  \schemafield{body : String}%
+  \schemafield{infringingUrl : String}%
+}};
+
+\node[output, wide] (server) at (1.20,-5.48) {\schemaclass{ServerResult}{%
+  \schemafield{label : String}%
+  \schemafield{serverUp : Boolean}%
+  \schemafield{status : String}%
+  \schemafield{primaryStream : String}%
+  \schemafield{playbackConfirmed : Boolean}%
+  \schemafield{m3u8Urls : List\textless String\textgreater}%
+}};
+
+\node[output, medium] (screenshot) at (4.85,-5.48) {\schemaclass{Screenshot}{%
+  \schemafield{url : String}%
+  \schemafield{label : String}%
+  \schemafield{actor : String}%
+  \schemafield{targetUrl : String}%
+  \schemafield{capturedAt : DateTime}%
+}};
+
+% Execution trace relationships.
+\coordinate (runTraceHub) at (-8.02,3.94);
+\draw[owns] (run.north east) -- (runTraceHub);
+\draw[part] (runTraceHub) -| node[card, near end, left=1pt] {0..*} (decision.south);
+\draw[part] (runTraceHub) -| node[card, near end, right=1pt] {0..*} (task.south);
+\draw[part] (runTraceHub) -| node[card, near end, right=1pt] {0..*} (event.south);
+\draw[owns] (run.east) -- node[card, above=3pt, pos=0.50] {0..1} (metrics.west);
+\draw[owns] (metrics.east) -- node[card, above=3pt, pos=0.50] {0..*} (usage.west);
+\draw[owns] (run.east) -- ++(0.45,0) |- node[card, near end, above=1pt] {0..*} (agentexec.west);
+\draw[owns] (run.south) -- node[card, left=1pt, pos=0.50] {0..1} (result.north);
+
+\coordinate (agentHub) at (3.02,2.10);
+\draw[owns] (agentexec.east) -- (agentHub);
+\draw[part] (agentHub) |- node[card, near end, above=1pt] {0..*} (llmcall.west);
+\draw[part] (agentHub) |- node[card, near end, below=1pt] {0..*} (toolcall.west);
+\draw[part] (agentHub) -| node[card, near end, right=1pt] {0..1} (promptcomp.south);
+\draw[part] (agentHub) -| node[card, near end, right=1pt] {0..*} (memoryhint.north);
+\draw[ref] (promptcomp.east) -- node[role, above=3pt, pos=0.50] {version} (promptversion.west);
+\draw[ref] (memoryhint.east) -- node[role, above=3pt, pos=0.50] {memory} (memoryentry.west);
+
+% Runtime result relationships.
+\coordinate (resultHub) at (-8.02,-0.72);
+\draw[owns] (result.north east) -- (resultHub);
+\draw[part] (resultHub) -| node[card, near end, left=1pt] {0..1} (classification.north);
+\draw[part] (resultHub) -| node[card, near end, left=1pt] {0..*} (match.north);
+\draw[part] (resultHub) -| node[card, near end, right=1pt] {0..*} (extract.north);
+\draw[part] (resultHub) -| node[card, near end, right=1pt] {0..*} (stream.north);
+\draw[part] (resultHub) -| node[card, near end, right=1pt] {0..*} (provider.north);
+\draw[part] (resultHub) -| node[card, near end, right=1pt] {0..*} (email.north);
+\draw[part] (resultHub) -| node[card, near end, right=1pt] {0..*} (screenshot.north);
+\draw[owns] (extract.south) -- node[card, right=1pt, pos=0.50] {0..*} (server.north);
+\draw[owns] (extract.east) -- node[card, above=3pt, pos=0.50] {0..*} (stream.west);
+\draw[ref] (provider.south west) to[out=-118,in=-62]
+  node[role, below=3pt, pos=0.52] {streamUrl} (stream.south east);
+\draw[ref] (email.west) -- node[role, above=3pt, pos=0.50] {provider} (provider.east);
+\end{tikzpicture}%
+}}
+\caption{UML class diagram for runtime output, execution trace, and reviewability artifacts.}\label{fig:runtime-schema}
+\vspace*{\fill}
 \end{figure}
+\end{landscape}

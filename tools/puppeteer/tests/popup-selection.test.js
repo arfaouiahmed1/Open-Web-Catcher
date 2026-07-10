@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   classifyPopupCandidate,
+  extractPopupPlayerUrls,
   isBlankPopupUrl,
   scorePopupCandidate,
   selectPopupCandidate,
@@ -72,6 +73,33 @@ test('same-content player can be adopted across hostnames', () => {
   assert.equal(classification.adoptable, true);
   assert.equal(classification.target_decision, 'adopt_same_content_player');
   assert.equal(selectPopupCandidate([candidate], 'https://sports.example.com/watch/game-1'), candidate);
+});
+
+test('off-domain popup with encoded player urls is adopted as same-content evidence', () => {
+  const encoded = [
+    Buffer.from('سيرفر 1 =').toString('base64'),
+    Buffer.from(' https://ex.roooom.online/?alba-player=ysscores\nسيرفر 2 =').toString('base64'),
+    Buffer.from(' https://player.syria-player.live/albaplayer/beinmax1/\nسيرفر 3 => https://s30.yalla-sport.top/ch/ch1.php').toString('base64'),
+  ].join('__');
+  const candidate = {
+    url: `https://elsaudia.net/read925/55.php?hash=${encoded}`,
+    title: 'Get Business Loan',
+  };
+  const classification = classifyPopupCandidate(
+    candidate,
+    'https://www.yallashoot.video/video/bein-sports-max-1-live-stream-28-6-2026/',
+  );
+
+  assert.equal(classification.same_origin, false);
+  assert.equal(classification.adoptable, true);
+  assert.equal(classification.classification, 'encoded_player_redirect');
+  assert.equal(classification.target_decision, 'adopt_same_content_player');
+  assert.deepEqual(extractPopupPlayerUrls(candidate), [
+    'https://ex.roooom.online/?alba-player=ysscores',
+    'https://player.syria-player.live/albaplayer/beinmax1/',
+    'https://s30.yalla-sport.top/ch/ch1.php',
+  ]);
+  assert.equal(selectPopupCandidate([candidate], 'https://www.yallashoot.video/video/watch'), candidate);
 });
 
 test('multiple tabs adopt only the best player target', () => {

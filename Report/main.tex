@@ -41,6 +41,7 @@
 \usepackage{longtable}
 \usepackage{tabularx}
 \usepackage{array}
+\usepackage{amsmath}
 \usepackage{etoolbox}
 \usepackage{float}
 \usepackage{flafter}
@@ -127,26 +128,6 @@
 \definecolor{codetext}{RGB}{40,40,40}
 \definecolor{accent}{RGB}{25,78,121}
 
-\newtcolorbox{chapterfocusbox}{
-  enhanced,
-  breakable,
-  colback=blue!3,
-  colframe=accent!75,
-  boxrule=0.6pt,
-  arc=2pt,
-  left=6pt,
-  right=6pt,
-  top=6pt,
-  bottom=6pt,
-  before skip=0.2em,
-  after skip=1.1em,
-  title=\textbf{Chapter focus}
-}
-\newcommand{\chapterfocus}[1]{%
-  \Needspace{9\baselineskip}%
-  \begin{chapterfocusbox}#1\end{chapterfocusbox}%
-}
-
 \newtcolorbox{frontmatterbox}[2][]{
   enhanced,
   breakable,
@@ -193,6 +174,33 @@
 }
 \newcommand{\owcFigurePanelTitle}[1]{{\small\bfseries #1}}
 \newcommand{\owcFigurePanelGap}{\vspace{0.85em}}
+\newcommand{\owcFixedRotatedFigurePage}[4]{%
+  \clearpage
+  \begingroup
+  \thispagestyle{plain}%
+  \setlength{\parindent}{0pt}%
+  \vspace*{\fill}%
+  \noindent\makebox[\textwidth][c]{%
+    \rotatebox{90}{%
+      \begin{minipage}{0.955\textheight}%
+      \centering
+      \owcFigureFrame{%
+        \includegraphics[width=0.965\linewidth,height=0.74\textwidth,keepaspectratio]{#1}%
+      }%
+      \captionsetup{hypcap=false}%
+      \captionof{figure}{#2}\label{#3}%
+      \vspace{0.35em}%
+      \begin{minipage}{0.82\linewidth}%
+      \small\setlength{\parindent}{0pt}%
+      #4%
+      \end{minipage}%
+      \end{minipage}%
+    }%
+  }%
+  \vspace*{\fill}%
+  \endgroup
+  \clearpage
+}
 
 \lstdefinestyle{reportstyle}{
   basicstyle=\ttfamily\small\color{codetext},
@@ -266,14 +274,41 @@
 \preto{\subsection}{\Needspace{6\baselineskip}}
 \preto{\subsubsection}{\Needspace{4\baselineskip}}
 
+\newif\ifmainpagination
+\mainpaginationfalse
+\renewcommand{\chaptermark}[1]{\markboth{Chapter\ \thechapter\ --\ #1}{}}
+\renewcommand{\sectionmark}[1]{}
+\newcommand{\reportpagemark}{\ifmainpagination\thepage/\pageref*{LastMainPage}\fi}
+\newcommand{\reportheadername}{%
+  \ifmainpagination{\footnotesize\color{gray!65!black}\textsc{Open Web Catcher}}\fi%
+}
+\newcommand{\reportheaderchapter}{%
+  \ifmainpagination{\footnotesize\color{accent!78!black}\nouppercase{\leftmark}}\fi%
+}
+\newcommand{\reportpagefooters}{%
+  \fancyfoot[R]{\reportpagemark}%
+}
+\newcommand{\cleartolandscapespread}{%
+  \clearpage
+}
 \pagestyle{fancy}
 \fancyhf{}
-\fancyfoot[R]{\thepage/\pageref*{TotPages}}
-\renewcommand{\headrulewidth}{0pt}
+\fancyhead[L]{\reportheadername}
+\fancyhead[R]{\reportheaderchapter}
+\reportpagefooters
+\renewcommand{\headrulewidth}{\ifmainpagination 0.35pt\else 0pt\fi}
 \renewcommand{\footrulewidth}{0pt}
 \fancypagestyle{plain}{%
   \fancyhf{}%
-  \fancyfoot[R]{\thepage/\pageref*{TotPages}}%
+  \fancyhead[L]{\reportheadername}%
+  \fancyhead[R]{\reportheaderchapter}%
+  \reportpagefooters%
+  \renewcommand{\headrulewidth}{\ifmainpagination 0.35pt\else 0pt\fi}%
+  \renewcommand{\footrulewidth}{0pt}%
+}
+\fancypagestyle{landscape}{%
+  \fancyhf{}%
+  \reportpagefooters%
   \renewcommand{\headrulewidth}{0pt}%
   \renewcommand{\footrulewidth}{0pt}%
 }
@@ -285,7 +320,7 @@
 \newcommand{\departmentName}{Information Technology}
 \newcommand{\hostOrganization}{Soft Stars}
 \newcommand{\clientName}{beIN SPORTS}
-\newcommand{\internshipPeriod}{2025--2026}
+\newcommand{\internshipPeriod}{December 2025--June 1, 2026 (6 months)}
 \newcommand{\supervisorName}{Naadine Maazoun}
 \newcommand{\industrySupervisorName}{Wael Hkiri}
 % ===== ESPRIT COVER PAGE COLORS =====
@@ -299,7 +334,7 @@
 \hypersetup{pageanchor=false}
 
 \includepdf[pages=3,pagecommand={},fitpaper=true]{assets/esprit-report-cover.pdf}
-\includepdf[pages=1,pagecommand={},fitpaper=true]{assets/esprit-report-cover.pdf}
+\includepdf[pages=2,pagecommand={},fitpaper=true]{assets/Rapport_PFE_Ahmed_Arfaoui.pdf}
 
 \iffalse
 % =====================================================================
@@ -453,7 +488,7 @@
   {{\bfseries Soft Stars}\\[0.35em]{\small Host organization}};
 
 % ==========================================================
-%  BOTTOM LOGO STRIP -- accreditation logos (text placeholders)
+%  BOTTOM LOGO STRIP -- accreditation labels
 % ==========================================================
 \draw[espritgray!50, line width=0.4pt]
   ([xshift=0cm, yshift=2.0cm]current page.south west) --
@@ -564,8 +599,7 @@ Ce formulaire doit \^etre introduit apr\`es la page de garde / This form must be
 \fi
 
 \hypersetup{pageanchor=true}
-
-\pagenumbering{arabic}
+\pagenumbering{roman}
 
 \clearpage
 \phantomsection
@@ -598,7 +632,7 @@ Ce rapport pr\'esente Open Web Catcher (OWC), une plateforme de collecte de preu
 
 \vspace*{0.35cm}
 \begin{center}
-  {\ackbodyfont\itshape\fontsize{17}{25}\selectfont To the people who carried me through the quiet parts of this journey\par}
+  {\ackbodyfont\itshape\fontsize{17}{25}\selectfont To the people who supported me throughout this work\par}
   \vspace{1.25cm}
   {\acktitlefont\fontsize{48}{56}\selectfont Dedication\par}
   \vspace{0.26cm}
@@ -628,60 +662,57 @@ that I was not doing this alone.\par}
 \addcontentsline{toc}{chapter}{Acknowledgements}
 \thispagestyle{plain}
 \newgeometry{top=1.12cm,bottom=1.42cm,left=2.78cm,right=2.78cm}
-\vspace*{0.04cm}
+\vspace*{0.08cm}
 \begingroup
 \ackbodyfont
 \setlength{\parindent}{0pt}
-\setlength{\parskip}{0.36em}
-\fontsize{11.9}{16.6}\selectfont
+\setlength{\parskip}{0.30em}
+\fontsize{11.55}{15.75}\selectfont
 
 \begin{center}
   {\acktitlefont\fontsize{50}{56}\selectfont Acknowledgements\par}
   \vspace{0.10cm}
-  {\ackbodyfont\itshape\fontsize{15.4}{22}\selectfont with gratitude\par}
-  \vspace{0.32cm}
-  {\color{black!30}\rule{0.28\textwidth}{0.45pt}}\par
+  {\ackbodyfont\itshape\fontsize{14.4}{19}\selectfont with gratitude\par}
+  \vspace{0.26cm}
+  {\color{black!30}\rule{0.20\textwidth}{0.45pt}}\par
 \end{center}
 
-\vspace{0.54cm}
+\vspace{0.46cm}
 
-{\fontsize{14.4}{20.5}\selectfont
-\lettrine[lines=3,loversize=0.16,findent=0.18em,nindent=0pt]{T}{his}
-project was a technical internship, but it was also a demanding personal
-journey. I am grateful to everyone who helped me keep going when the work
-became heavy, uncertain, or difficult to balance.\par}
+\lettrine[lines=2,lhang=0.05,loversize=0.08]{A}{t the end of this internship and report,}
+I would like to express my sincere gratitude to the people and institutions who
+supported this work and helped turn it into a complete engineering project.
 
-\acksection{To my family}
-Thank you for the patience, confidence, and quiet support you gave me throughout
-this period. Your presence gave me the stability I needed to finish the project
-and prepare this report with care.
-
-\acksection{To my friends}
-Thank you for staying close during the hard moments. The conversations,
-encouragement, and simple reminders not to give up helped more than you may
-realize.
+\acksection{To ESPRIT}
+I warmly thank the Higher Private School of Engineering and Technology, ESPRIT,
+and especially the Department of Computer Science, for the academic framework,
+resources, and support provided throughout my studies. This environment made it
+possible to connect a concrete professional mission with a rigorous engineering
+methodology.
 
 \acksection{To my academic supervisor}
-I am sincerely grateful to Naadine Maazoun for her guidance, feedback, and
-attention to the academic quality of this work. Her remarks helped me keep the
-report clear, structured, and focused on the engineering contribution.
+I am deeply grateful to my academic supervisor, Nadine Maazoun, for her
+availability, guidance, and precise feedback. Her remarks helped me keep the
+report structured, technically grounded, and focused on the real contribution of
+the project.
 
-\acksection{To my corporate supervisor and the Soft Stars team}
-I would also like to thank Wael Hkiri for his technical direction, availability,
-and trust during the internship. The discussions around operational constraints,
-browser tooling, deployment choices, and evidence review shaped the project in a
-very practical way. I also thank the Soft Stars team for welcoming me, sharing
-their experience, and giving me the opportunity to work on a concrete
-rights-protection problem.
+\acksection{To my professional supervisor}
+I also thank my professional supervisor, Wael Hkiri, for his trust, technical
+direction, and continuous follow-up during the internship. His feedback on
+operational constraints, browser tooling, deployment choices, and evidence review
+had a direct impact on the project.
 
-\vspace{0.20cm}
-\begin{flushright}
-  {\ackbodyfont\scshape\fontsize{15.4}{20.8}\selectfont Ahmed ARFAOUI\par}
-  \vspace{0.02cm}
-  {\footnotesize\scshape 2025--2026}
-\end{flushright}
+\acksection{To the Soft Stars team}
+My sincere thanks go to the Soft Stars team for welcoming me, sharing their
+experience, and giving me the opportunity to work on a concrete
+rights-protection problem in a professional environment.
+
+\acksection{To the jury members}
+Finally, I respectfully thank the members of the jury for the time and attention
+they will devote to evaluating this work. I hope that this report reflects the
+effort invested in the project and responds clearly to their expectations.
+
 \endgroup
-
 \restoregeometry
 \clearpage
 
@@ -693,6 +724,9 @@ rights-protection problem.
 \clearpage
 \input{chapters/front-acronyms}
 
+\clearpage
+\mainpaginationtrue
+\pagenumbering{arabic}
 \input{chapters/01-introduction}
 \input{chapters/02-methodology}
 \input{chapters/03-technical-background}
@@ -711,19 +745,37 @@ rights-protection problem.
 Google,
 \emph{Gemini API Rate Limits},
 Google AI for Developers documentation, 2026.
-Available: \url{https://ai.google.dev/gemini-api/docs/rate-limits}
+Available: \url{https://ai.google.dev/gemini-api/docs/rate-limits}. Consulted on: May~20, 2026.
 
 \bibitem{gemini-pricing}
 Google,
 \emph{Gemini Developer API Pricing},
 Google AI for Developers documentation, 2026.
-Available: \url{https://ai.google.dev/gemini-api/docs/pricing}
+Available: \url{https://ai.google.dev/gemini-api/docs/pricing}. Consulted on: May~21, 2026.
 
 \bibitem{gemini-caching}
 Google,
 \emph{Context Caching in the Gemini API},
 Google AI for Developers documentation, 2026.
-Available: \url{https://ai.google.dev/gemini-api/docs/caching}
+Available: \url{https://ai.google.dev/gemini-api/docs/caching}. Consulted on: May~22, 2026.
+
+\bibitem{zai-pricing}
+Z.ai,
+\emph{GLM-4.5 API Pricing},
+Z.ai documentation, 2026.
+Available: \url{https://docs.z.ai/guides/llm/glm-4.5}. Consulted on: May~27, 2026.
+
+\bibitem{zai-glm45}
+Z.ai,
+\emph{GLM-4.5 Model Documentation},
+Z.ai documentation, 2026.
+Available: \url{https://docs.z.ai/guides/llm/glm-4.5}. Consulted on: May~27, 2026.
+
+\bibitem{openai-gpt54-mini}
+OpenAI,
+\emph{API Pricing},
+OpenAI documentation, 2026.
+Available: \url{https://openai.com/api/pricing/}. Consulted on: May~29, 2026.
 
 % ---- Browser automation and web runtime documentation ----
 
@@ -731,19 +783,13 @@ Available: \url{https://ai.google.dev/gemini-api/docs/caching}
 Google Chrome Developers,
 \emph{Puppeteer API Reference},
 Official documentation, 2026.
-Available: \url{https://pptr.dev}
-
-\bibitem{playwright}
-Microsoft,
-\emph{Playwright Documentation},
-Official documentation, 2026.
-Available: \url{https://playwright.dev/docs/intro}
+Available: \url{https://pptr.dev}. Consulted on: February~6, 2026.
 
 \bibitem{cdp}
 Chrome DevTools Protocol,
 \emph{Chrome DevTools Protocol: Network Domain},
 Official documentation, 2026.
-Available: \url{https://chromedevtools.github.io/devtools-protocol/tot/Network/}
+Available: \url{https://chromedevtools.github.io/devtools-protocol/tot/Network/}. Consulted on: January~23, 2026.
 
 % ---- Methodology ----
 
@@ -751,50 +797,62 @@ Available: \url{https://chromedevtools.github.io/devtools-protocol/tot/Network/}
 A. R. Hevner, S. T. March, J. Park, and S. Ram,
 \emph{Design Science in Information Systems Research},
 \emph{MIS Quarterly}, vol.~28, no.~1, pp.~75--105, 2004.
-Available: \url{https://www.jstor.org/stable/25148625}
+Available: \url{https://www.jstor.org/stable/25148625}. Consulted on: December~9, 2025.
 
 \bibitem{peffers-dsrm}
 K. Peffers, T. Tuunanen, M. A. Rothenberger, and S. Chatterjee,
 \emph{A Design Science Research Methodology for Information Systems Research},
 \emph{Journal of Management Information Systems}, vol.~24, no.~3, pp.~45--77, 2007.
-Available: \href{https://doi.org/10.2753/MIS0742-1222240302}{DOI landing page}
+Available: \href{https://doi.org/10.2753/MIS0742-1222240302}{doi:10.2753/MIS0742-1222240302}. Consulted on: December~10, 2025.
 
 % ---- Web Technologies and APIs ----
 
 \bibitem{fastapi}
 S. Ram\'{\i}rez,
 \emph{FastAPI\@: Modern, Fast Web Framework for Building APIs with Python},
-2024. Available: \url{https://fastapi.tiangolo.com}
+2024. Available: \url{https://fastapi.tiangolo.com}. Consulted on: April~8, 2026.
 
 \bibitem{nextjs}
 Vercel,
 \emph{Next.js: The React Framework for the Web},
 Vercel, 2024.
-Available: \url{https://nextjs.org/docs}
+Available: \url{https://nextjs.org/docs}. Consulted on: April~9, 2026.
 
 \bibitem{langchain-docs}
 LangChain,
 \emph{LangChain Agents and Tools Documentation},
 Official documentation, 2026.
-Available: \url{https://docs.langchain.com/oss/python/langchain/agents}
+Available: \url{https://docs.langchain.com/oss/python/langchain/agents}. Consulted on: March~5, 2026.
 
 \bibitem{langgraph-docs}
 LangChain,
 \emph{LangGraph Overview},
 Official documentation, 2026.
-Available: \url{https://docs.langchain.com/oss/python/langgraph/overview}
+Available: \url{https://docs.langchain.com/oss/python/langgraph/overview}. Consulted on: March~7, 2026.
 
 \bibitem{mcp-spec}
 Model Context Protocol,
 \emph{Model Context Protocol Specification},
 Official documentation, 2026.
-Available: \href{https://modelcontextprotocol.io/specification/2024-11-05/basic/index}{Model Context Protocol specification}
+Available: \url{https://modelcontextprotocol.io/specification/2025-06-18}. Consulted on: April~14, 2026.
 
 \bibitem{n8n}
 n8n GmbH,
 \emph{n8n: Workflow Automation for Technical People},
 2024.
-Available: \url{https://docs.n8n.io}
+Available: \url{https://docs.n8n.io}. Consulted on: December~18, 2025.
+
+\bibitem{n8n-langchain}
+n8n GmbH,
+\emph{LangChain Concepts in n8n},
+n8n documentation, 2026.
+Available: \url{https://docs.n8n.io/advanced-ai/langchain/langchain-n8n/}. Consulted on: January~12, 2026.
+
+\bibitem{n8n-ai-agent}
+n8n GmbH,
+\emph{AI Agent Node Documentation},
+n8n documentation, 2026.
+Available: \url{https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/}. Consulted on: January~12, 2026.
 
 % ---- Cloud and Deployment ----
 
@@ -802,19 +860,19 @@ Available: \url{https://docs.n8n.io}
 Microsoft,
 \emph{Jobs in Azure Container Apps},
 \emph{Microsoft Learn}, 2024.
-Available: \url{https://learn.microsoft.com/en-us/azure/container-apps/jobs}
+Available: \url{https://learn.microsoft.com/en-us/azure/container-apps/jobs}. Consulted on: May~16, 2026.
 
 \bibitem{azure-servicebus}
 Microsoft,
 \emph{Azure Service Bus Messaging Service},
 \emph{Microsoft Learn}, 2024.
-Available: \url{https://learn.microsoft.com/en-us/azure/service-bus-messaging/}
+Available: \url{https://learn.microsoft.com/en-us/azure/service-bus-messaging/}. Consulted on: May~15, 2026.
 
 \bibitem{cloudflare-challenges}
 Cloudflare,
 \emph{How Cloudflare Challenges Work},
 Official documentation, 2026.
-Available: \url{https://developers.cloudflare.com/cloudflare-challenges/concepts/how-challenges-work/}
+Available: \url{https://developers.cloudflare.com/cloudflare-challenges/concepts/how-challenges-work/}. Consulted on: January~29, 2026.
 
 % ---- Streaming Protocols and Media ----
 
@@ -822,14 +880,14 @@ Available: \url{https://developers.cloudflare.com/cloudflare-challenges/concepts
 R. Pantos and W. May,
 \emph{HTTP Live Streaming}, RFC 8216,
 Internet Engineering Task Force (IETF), August 2017.
-Available: \url{https://www.rfc-editor.org/rfc/rfc8216}
+Available: \url{https://www.rfc-editor.org/rfc/rfc8216}. Consulted on: January~14, 2026.
 
 \bibitem{dash-standard}
 ISO/IEC,
 \emph{Information technology\textemdash{}Dynamic adaptive streaming over HTTP (DASH)\textemdash{}Part 1:
 Media presentation description and segment formats}, ISO/IEC 23009\textendash{}1,
 2019.
-Available: \url{https://www.iso.org/standard/79329.html}
+Available: \url{https://www.iso.org/standard/79329.html}. Consulted on: January~16, 2026.
 
 % ---- Ad Blocking and Privacy Tools ----
 
@@ -837,14 +895,16 @@ Available: \url{https://www.iso.org/standard/79329.html}
 R. Hill,
 \emph{uBlock Origin: An Efficient Blocker for Chromium and Firefox},
 GitHub, 2024.
-Available: \url{https://github.com/gorhill/uBlock}
+Available: \url{https://github.com/gorhill/uBlock}. Consulted on: January~27, 2026.
 
 \end{thebibliography}
 \endgroup
 
+\label{LastMainPage}
 \clearpage
+\mainpaginationfalse
 \hypersetup{pageanchor=false}
-\includepdf[pages=2,pagecommand={},fitpaper=true]{assets/esprit-report-cover.pdf}
+\includepdf[pages=2,pagecommand={},fitpaper=true,trim=0 2pt 1.5pt 1.5pt,clip]{assets/esprit-report-cover.pdf}
 
 \iffalse
 % =====================================================================

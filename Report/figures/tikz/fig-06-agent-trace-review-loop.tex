@@ -1,0 +1,91 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.965\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!32, fill=gray!2, rounded corners=8pt,
+    line width=0.52pt, minimum height=4.05cm, inner sep=0pt},
+  tracePanel/.style={panel, minimum width=4.35cm},
+  gatePanel/.style={panel, minimum width=3.35cm},
+  boardPanel/.style={panel, minimum width=4.90cm},
+  title/.style={font=\small\bfseries, text=accent!86!black, align=left},
+  slice/.style={draw=accent!42, fill=white, rounded corners=4pt,
+    font=\scriptsize\bfseries, align=left, text=black!82,
+    text width=3.05cm, minimum height=0.42cm, inner xsep=6pt,
+    inner ysep=3.2pt},
+  stripe/.style={rectangle, rounded corners=2pt, minimum width=0.12cm,
+    minimum height=0.36cm, inner sep=0pt},
+  gate/.style={draw=accent!60, fill=blue!5, rounded corners=6pt,
+    text width=2.42cm, minimum height=0.88cm, align=center,
+    font=\scriptsize\bfseries, inner xsep=6pt, inner ysep=5pt},
+  gateNote/.style={draw=gray!35, fill=white, rounded corners=4pt,
+    text width=2.30cm, minimum height=0.40cm, align=center,
+    font=\tiny\bfseries, text=black!70, inner xsep=4pt,
+    inner ysep=2.8pt},
+  decision/.style={rounded corners=5pt, align=left, font=\scriptsize\bfseries,
+    text width=3.78cm, minimum height=0.52cm, inner xsep=7pt,
+    inner ysep=4.2pt, text=black},
+  accept/.style={decision, draw=green!52!black, fill=green!8},
+  inspect/.style={decision, draw=orange!78!black, fill=orange!9},
+  patch/.style={decision, draw=red!65!black, fill=red!7},
+  exclude/.style={decision, draw=gray!56, fill=gray!7},
+  arrow/.style={-{Latex[length=2.1mm,width=1.45mm]}, line width=0.78pt,
+    accent!76, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=1.7mm,width=1.15mm]}, line width=0.58pt,
+    gray!58, densely dashed, shorten <=2pt, shorten >=2pt},
+  loopbox/.style={draw=accent!35, fill=blue!3, rounded corners=5pt,
+    text width=9.80cm, minimum height=0.50cm, align=center,
+    font=\scriptsize\bfseries, text=black!76, inner xsep=7pt,
+    inner ysep=4pt}
+]
+
+\node[tracePanel] (tracePanel) at (0,0) {};
+\node[gatePanel] (gatePanel) at (4.65,0) {};
+\node[boardPanel] (boardPanel) at (9.12,0) {};
+
+\node[title, anchor=north west] at ([xshift=0.26cm,yshift=-0.26cm]tracePanel.north west)
+  {Trace evidence reviewed};
+\node[slice] (route) at ([yshift=0.94cm]tracePanel.center) {Route decision};
+\node[slice] (context) at ([yshift=0.38cm]tracePanel.center) {Context handoff};
+\node[slice] (action) at ([yshift=-0.18cm]tracePanel.center) {Action effect};
+\node[slice] (evidence) at ([yshift=-0.74cm]tracePanel.center) {Evidence state};
+\node[slice] (tooluse) at ([yshift=-1.30cm]tracePanel.center) {Tool economy};
+
+\foreach \nodeName/\col in {route/accent!78,context/cyan!60!black,action/orange!80!black,evidence/green!55!black,tooluse/purple!65!black} {
+  \node[stripe, fill=\col, anchor=west] at ([xshift=0.07cm]\nodeName.west) {};
+}
+
+\node[title, anchor=north west] at ([xshift=0.26cm,yshift=-0.26cm]gatePanel.north west)
+  {Reviewer gate};
+\node[gate] (gate) at ([yshift=0.56cm]gatePanel.center)
+  {Replayable and trusted?};
+\node[gateNote] (g1) at ([yshift=-0.34cm]gatePanel.center) {route clear};
+\node[gateNote] (g2) at ([yshift=-0.84cm]gatePanel.center) {state verified};
+\node[gateNote] (g3) at ([yshift=-1.34cm]gatePanel.center) {cost bounded};
+
+\node[title, anchor=north west] at ([xshift=0.26cm,yshift=-0.26cm]boardPanel.north west)
+  {Reviewer decision board};
+\node[accept] (accept) at ([yshift=0.98cm]boardPanel.center)
+  {Accept behavior};
+\node[inspect] (manual) at ([yshift=0.34cm]boardPanel.center)
+  {Inspect manually};
+\node[patch] (patch) at ([yshift=-0.30cm]boardPanel.center)
+  {Patch prompt/tool};
+\node[exclude] (exclude) at ([yshift=-0.94cm]boardPanel.center)
+  {Exclude from scoring};
+
+\draw[arrow] (tracePanel.east) -- (gatePanel.west);
+\draw[arrow] (gatePanel.east) -- (boardPanel.west);
+
+\node[loopbox] (loop) at (4.45,-2.62)
+  {Optimization loop: patch contract, replay trusted traces, review next run.};
+
+\end{tikzpicture}%
+}
+\caption{Trace-review gate and reviewer decision board used for agent evaluation.
+The review separates route, context, action, evidence, and tool-use signals before
+accepting a run, inspecting it manually, patching the prompt/tool contract, or excluding
+the run from scoring.}
+\label{fig:eval-agent-trace-review-loop}
+\end{figure}

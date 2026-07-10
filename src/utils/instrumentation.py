@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from src.utils.config import Settings
+from src.utils.provider_models import resolve_model_context_window
 
 _PLACEHOLDER_VALUES = {
     "",
@@ -217,13 +218,17 @@ def resolve_model_pricing(settings: Settings, model_name: str, provider: str = "
         composite_alias = f"{provider_key}::{alias_key}" if provider_key else ""
         match = (pricing.get(composite_alias, {}) if composite_alias else {}) or pricing.get(alias_key, {})
 
+    context_window = int(match.get("context_window", 0) or 0)
+    if context_window <= 0:
+        context_window = int(resolve_model_context_window(model_name, provider) or 0)
+
     return {
         "provider": str(match.get("provider") or provider_key or "").strip(),
         "input_per_million": float(match.get("input_per_million", 0.0) or 0.0),
         "output_per_million": float(match.get("output_per_million", 0.0) or 0.0),
         "cached_input_per_million": float(match.get("cached_input_per_million", 0.0) or 0.0),
         "cache_write_per_million": float(match.get("cache_write_per_million", 0.0) or 0.0),
-        "context_window": int(match.get("context_window", 0) or 0),
+        "context_window": context_window,
     }
 
 

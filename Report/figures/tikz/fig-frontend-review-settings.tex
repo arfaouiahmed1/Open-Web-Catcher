@@ -1,17 +1,13 @@
-\begin{figure}[H]
-\centering
-\begin{minipage}{0.98\textwidth}
-  \centering
-  \owcFigureFrame{\includegraphics[width=0.96\linewidth]{frontend-runs-websites.png}}\\[0.25em]
-  \owcFigurePanelTitle{Run and website review}
-\end{minipage}
+\owcFixedRotatedFigurePage{frontend-run-detail.png}
+  {OWC run detail review screen.}
+  {fig:frontend-review-settings}
+  {The run detail page turns one completed execution into a reviewable record: status,
+  root URL, summary, estimated cost, LLM and tool calls, screenshots, streams, agents
+  touched, and stage progression.}
 
-\owcFigurePanelGap{}
-\begin{minipage}{0.98\textwidth}
-  \centering
-  \owcFigureFrame{\includegraphics[width=0.96\linewidth]{frontend-providers.png}}\\[0.25em]
-  \owcFigurePanelTitle{Provider enrichment review}
-\end{minipage}
-
-\caption{OWC review screens for run results and provider enrichment, enlarged so tables remain readable in print.}\label{fig:frontend-review-settings}
-\end{figure}
+\owcFixedRotatedFigurePage{frontend-provider-results.png}
+  {OWC provider enrichment review screen.}
+  {fig:frontend-providers-screenshot}
+  {The provider enrichment view connects recovered stream URLs to provider and country
+  evidence, making the result bundle easier to review after extraction and before a
+  takedown draft is approved.}

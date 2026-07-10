@@ -1,0 +1,52 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
+    line width=0.55pt, inner sep=11pt},
+  block/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=3.18cm, minimum height=0.94cm, inner xsep=5pt,
+    inner ysep=5pt, text=black},
+  input/.style={block, draw=accent!75, fill=blue!6},
+  agent/.style={block, draw=orange!80!black, fill=orange!10},
+  output/.style={block, draw=green!55!black, fill=green!8},
+  guard/.style={block, draw=gray!62, fill=gray!9, text width=12.2cm},
+  badge/.style={circle, fill=accent!86, text=white, font=\tiny\bfseries,
+    inner sep=1.25pt, minimum size=8.5pt},
+  paneltitle/.style={font=\scriptsize\bfseries, text=black!68,
+    fill=white, inner sep=2pt},
+  arr/.style={-{Latex[length=2.15mm,width=1.65mm]}, line width=0.86pt,
+    accent!78, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=2.0mm,width=1.5mm]}, line width=0.74pt,
+    gray!62, densely dashed, rounded corners=8pt, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.15pt,
+    text=black!72}
+]
+
+\node[input] (observe) at (0,1.15) {Observe state\\{\normalfont\scriptsize URL, title, body, frames}};
+\node[agent] (decide) at (4.25,1.15) {Classify route\\{\normalfont\scriptsize landing, hosting, embedded, blocker}};
+\node[output] (handoff) at (8.50,1.15) {Specialist handoff\\{\normalfont\scriptsize task and visible evidence}};
+\node[guard] (guard) at (4.25,-0.62) {Pass condition: the route matches visible page
+evidence and does not create an avoidable reroute for the next agent.};
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(observe) (decide) (handoff) (guard)] (classpanel) {};
+\end{scope}
+
+\node[paneltitle, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]classpanel.north west)
+  {Classification-agent evaluation path};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]observe.north west) {1};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]decide.north west) {2};
+\node[badge, anchor=north west] at ([xshift=0.08cm,yshift=-0.08cm]handoff.north west) {3};
+
+\draw[arr] (observe.east) -- node[lab, above=1pt] {page signals} (decide.west);
+\draw[arr] (decide.east) -- node[lab, above=1pt] {route contract} (handoff.west);
+\draw[soft] (decide.south) -- node[lab, right=1pt] {review gate} (guard.north);
+
+\end{tikzpicture}}
+\caption{Classification-agent test: the decision is accepted only when route, handoff,
+and next state are supported by observable browser evidence.}
+\label{fig:eval-agent-classification-test}
+\end{figure}

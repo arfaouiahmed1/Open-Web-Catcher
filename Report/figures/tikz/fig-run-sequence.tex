@@ -2,58 +2,112 @@
 \centering
 \resizebox{1.0\textwidth}{!}{%
 \begin{tikzpicture}[
+  x=1cm,
+  y=1cm,
   line cap=round,
   line join=round,
-  part/.style={draw=gray!55, fill=gray!8, rounded corners=3pt,
-    minimum width=2.08cm, minimum height=0.58cm, align=center, font=\scriptsize\bfseries},
-  msg/.style={->, >=Stealth, thick, accent!85, shorten <=2pt, shorten >=2pt},
-  ret/.style={->, >=Stealth, dashed, gray!70, thick, shorten <=2pt, shorten >=2pt},
-  life/.style={gray!28, dashed},
-  lab/.style={font=\tiny, fill=white, inner sep=1.2pt, align=center},
-  phase/.style={draw=gray!26, fill=gray!2, rounded corners=5pt, line width=0.45pt},
-  phaselab/.style={font=\tiny\bfseries, text=black!58, fill=white, inner sep=1.4pt}
+  participant/.style={draw=gray!58, fill=gray!8, rounded corners=2.5pt,
+    minimum width=2.10cm, minimum height=0.58cm, align=center,
+    font=\scriptsize\bfseries},
+  lifeline/.style={gray!34, densely dashed, line width=0.45pt},
+  activation/.style={draw=accent!50, fill=accent!8, line width=0.35pt,
+    minimum width=0.16cm, inner sep=0pt},
+  call/.style={-{Latex[round,length=2.10mm,width=1.45mm]}, line width=0.72pt,
+    accent!84, shorten <=2pt, shorten >=2pt},
+  reply/.style={-{Latex[round,length=2.00mm,width=1.35mm]}, line width=0.62pt,
+    gray!70, densely dashed, shorten <=2pt, shorten >=2pt},
+  msglabel/.style={font=\fontsize{5.7}{6.3}\selectfont, fill=white,
+    inner xsep=1.2pt, inner ysep=0.7pt, align=center, text=black!78},
+  sdframe/.style={draw=gray!45, fill=white, line width=0.42pt},
+  operator/.style={draw=gray!45, fill=white, line width=0.42pt,
+    font=\fontsize{5.8}{6.4}\selectfont\bfseries,
+    inner xsep=2.0pt, inner ysep=0.8pt, anchor=north west},
+  guard/.style={font=\fontsize{5.6}{6.2}\selectfont, text=black!66,
+    fill=white, inner xsep=1.2pt, inner ysep=0.7pt, anchor=west}
 ]
 
-\foreach \x/\name/\id in {%
-  0/Operator/op,
-  2.45/Console/ui,
-  4.9/FastAPI + job/api,
-  7.35/Orchestrator/graph,
-  9.8/Specialist/agent,
-  12.25/MCP + Gemini/tools,
-  14.7/Postgres/db
-}{%
-  \node[part] (\id) at (\x,0) {\name};
-  \draw[life] (\x,-0.42) -- (\x,-8.85);
-}
+\def\bottom{-12.80}
+
+\node[participant] (operator) at (0,0) {Operator};
+\node[participant] (console) at (2.45,0) {Console};
+\node[participant] (api) at (4.90,0) {FastAPI};
+\node[participant] (orchestrator) at (7.35,0) {Orchestrator};
+\node[participant] (specialists) at (9.80,0) {Specialists};
+\node[participant] (tools) at (12.25,0) {MCP + LLM};
+\node[participant] (store) at (14.70,0) {Store};
+\draw[lifeline] (operator.south) -- (0,\bottom);
+\draw[lifeline] (console.south) -- (2.45,\bottom);
+\draw[lifeline] (api.south) -- (4.90,\bottom);
+\draw[lifeline] (orchestrator.south) -- (7.35,\bottom);
+\draw[lifeline] (specialists.south) -- (9.80,\bottom);
+\draw[lifeline] (tools.south) -- (12.25,\bottom);
+\draw[lifeline] (store.south) -- (14.70,\bottom);
 
 \begin{scope}[on background layer]
-  \node[phase, minimum width=5.35cm, minimum height=1.82cm,
-    anchor=north west] (launchphase) at (-0.25,-0.55) {};
-  \node[phase, minimum width=10.65cm, minimum height=3.40cm,
-    anchor=north west] (runphase) at (4.60,-2.66) {};
-  \node[phase, minimum width=5.35cm, minimum height=2.44cm,
-    anchor=north west] (reviewphase) at (-0.25,-6.35) {};
+  \node[sdframe, minimum width=16.80cm, minimum height=13.25cm,
+    anchor=north west] (sd) at (-1.05,0.35) {};
+  \node[sdframe, minimum width=9.55cm, minimum height=3.60cm,
+    anchor=north west] (agentloop) at (6.20,-4.55) {};
+  \node[sdframe, minimum width=14.35cm, minimum height=3.55cm,
+    anchor=north west] (reviewopt) at (1.40,-9.10) {};
 \end{scope}
-\node[phaselab, anchor=west] at ([xshift=0.10cm,yshift=0.12cm]launchphase.south west) {Launch};
-\node[phaselab, anchor=west] at ([xshift=0.10cm,yshift=-0.08cm]runphase.north west) {Agent execution and persistence};
-\node[phaselab, anchor=west] at ([xshift=0.10cm,yshift=-0.08cm]reviewphase.north west) {Console review};
+\node[operator] (sdop) at (sd.north west) {sd};
+\node[guard] at ([xshift=0.05cm]sdop.east) {Workflow run};
+\node[operator] (loopop) at (agentloop.north west) {loop};
+\node[guard] at ([xshift=0.05cm]loopop.east) {[while specialist queues are non-empty]};
+\node[operator] (reviewop) at (reviewopt.north west) {opt};
+\node[guard] at ([xshift=0.05cm]reviewop.east) {[operator opens run detail]};
 
-\draw[msg] (op.south) ++(0,-0.45) -- node[lab, above]{submit URL} ++(2.45,0);
-\draw[msg] (ui.south) ++(0,-0.78) -- node[lab, above]{POST workflow run} ++(2.45,0);
-\draw[msg] (api.south) ++(0,-1.48) -- node[lab, above, text width=2.2cm]{create job and trace} ++(9.8,0);
-\draw[ret] (api.south) ++(0,-2.18) -- node[lab, above]{run id} ++(-2.45,0);
-\draw[msg] (api.south) ++(0,-2.88) -- node[lab, above]{run\_pipeline(url)} ++(2.45,0);
-\draw[msg] (graph.south) ++(0,-3.58) -- node[lab, above, text width=2.25cm]{classification and handoffs} ++(2.45,0);
-\draw[msg] (agent.south) ++(0,-4.28) -- node[lab, above, text width=2.1cm]{model turns and browser tools} ++(2.45,0);
-\draw[ret] (tools.south) ++(0,-4.98) -- node[lab, above, text width=2.25cm]{observations and model output} ++(-2.45,0);
-\draw[ret] (agent.south) ++(0,-5.68) -- node[lab, above]{typed result} ++(-2.45,0);
-\draw[msg] (graph.south) ++(0,-6.38) -- node[lab, above, text width=2.35cm]{persist result and telemetry} ++(7.35,0);
-\draw[msg] (ui.south) ++(0,-7.08) -- node[lab, above]{GET run detail} ++(2.45,0);
-\draw[ret] (api.south) ++(0,-7.78) -- node[lab, above, text width=2.2cm]{evidence and trace payload} ++(-2.45,0);
-\draw[ret] (ui.south) ++(0,-8.48) -- node[lab, above]{review} ++(-2.45,0);
+\node[activation, minimum height=11.70cm, anchor=north]
+  at ($(console.south)+(0,-0.48)$) {};
+\node[activation, minimum height=10.35cm, anchor=north]
+  at ($(api.south)+(0,-1.18)$) {};
+\node[activation, minimum height=4.75cm, anchor=north]
+  at ($(store.south)+(0,-1.88)$) {};
+\node[activation, minimum height=4.25cm, anchor=north]
+  at ($(orchestrator.south)+(0,-3.98)$) {};
+\node[activation, minimum height=2.30cm, anchor=north]
+  at ($(specialists.south)+(0,-4.68)$) {};
+\node[activation, minimum height=0.70cm, anchor=north]
+  at ($(tools.south)+(0,-5.38)$) {};
+\node[activation, minimum height=1.55cm, anchor=north]
+  at ($(store.south)+(0,-9.68)$) {};
+
+\draw[call] ($(operator.south)+(0,-0.50)$) --
+  node[msglabel, above]{submit seed URL} ($(console.south)+(0,-0.50)$);
+\draw[call] ($(console.south)+(0,-1.20)$) --
+  node[msglabel, above]{POST workflow run} ($(api.south)+(0,-1.20)$);
+\draw[call] ($(api.south)+(0,-1.90)$) --
+  node[msglabel, above, text width=2.20cm]{create job and trace} ($(store.south)+(0,-1.90)$);
+\draw[reply] ($(store.south)+(0,-2.60)$) --
+  node[msglabel, above]{run id} ($(api.south)+(0,-2.60)$);
+\draw[reply] ($(api.south)+(0,-3.30)$) --
+  node[msglabel, above]{accepted run id} ($(console.south)+(0,-3.30)$);
+\draw[call] ($(api.south)+(0,-4.00)$) --
+  node[msglabel, above]{start pipeline} ($(orchestrator.south)+(0,-4.00)$);
+\draw[call] ($(orchestrator.south)+(0,-4.70)$) --
+  node[msglabel, above]{dispatch handoff} ($(specialists.south)+(0,-4.70)$);
+\draw[call] ($(specialists.south)+(0,-5.40)$) --
+  node[msglabel, above, text width=2.05cm]{model turn or browser tool} ($(tools.south)+(0,-5.40)$);
+\draw[reply] ($(tools.south)+(0,-6.10)$) --
+  node[msglabel, above, text width=2.15cm]{observation and JSON} ($(specialists.south)+(0,-6.10)$);
+\draw[reply] ($(specialists.south)+(0,-6.80)$) --
+  node[msglabel, above]{typed output} ($(orchestrator.south)+(0,-6.80)$);
+\draw[call] ($(orchestrator.south)+(0,-7.50)$) --
+  node[msglabel, above, text width=2.25cm]{persist evidence and telemetry} ($(store.south)+(0,-7.50)$);
+\draw[reply] ($(orchestrator.south)+(0,-8.20)$) --
+  node[msglabel, above]{PipelineResult} ($(api.south)+(0,-8.20)$);
+\draw[call] ($(console.south)+(0,-9.70)$) --
+  node[msglabel, above]{GET run detail} ($(api.south)+(0,-9.70)$);
+\draw[call] ($(api.south)+(0,-10.40)$) --
+  node[msglabel, above]{load evidence bundle} ($(store.south)+(0,-10.40)$);
+\draw[reply] ($(store.south)+(0,-11.10)$) --
+  node[msglabel, above]{run detail payload} ($(api.south)+(0,-11.10)$);
+\draw[reply] ($(api.south)+(0,-11.80)$) --
+  node[msglabel, above]{review payload} ($(console.south)+(0,-11.80)$);
+\draw[reply] ($(console.south)+(0,-12.50)$) --
+  node[msglabel, above]{review evidence} ($(operator.south)+(0,-12.50)$);
 
 \end{tikzpicture}
-}
-\caption{Sequence diagram for launching, executing, persisting, and reviewing a workflow run.}\label{fig:run-sequence}
+}\caption{Workflow-run sequence from launch and agent execution to persisted review records.}\label{fig:run-sequence}
 \end{figure}

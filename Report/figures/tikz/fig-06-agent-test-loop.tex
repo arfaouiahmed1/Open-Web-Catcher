@@ -1,0 +1,55 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.96\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  card/.style={draw=gray!35, fill=white, rounded corners=7pt,
+    line width=0.55pt, inner sep=7pt, align=center},
+  teststep/.style={card, minimum width=3.05cm, minimum height=1.05cm,
+    font=\scriptsize, text width=2.78cm},
+  good/.style={teststep, draw=green!45!black, fill=green!7},
+  action/.style={teststep, draw=accent!70, fill=blue!5},
+  warn/.style={teststep, draw=orange!75!black, fill=orange!8},
+  proof/.style={teststep, draw=purple!60!black, fill=purple!7},
+  title/.style={font=\scriptsize\bfseries, text=black!72},
+  badge/.style={circle, fill=accent!88, text=white, font=\tiny\bfseries,
+    minimum size=12pt, inner sep=0pt},
+  arr/.style={-{Latex[length=2.2mm,width=1.6mm]}, line width=0.8pt,
+    accent!75, shorten <=3pt, shorten >=3pt},
+  softarr/.style={-{Latex[length=2.0mm,width=1.45mm]}, line width=0.72pt,
+    gray!62, densely dashed, shorten <=3pt, shorten >=3pt}
+]
+
+\node[title] at (0,2.15) {Agent Test Loop};
+
+\node[action] (route) at (-5.4,0.8) {\textbf{Route}\\classification matches visible page state};
+\node[action] (navigate) at (-1.8,0.8) {\textbf{Navigate}\\landing rows, pagination, candidates};
+\node[warn] (activate) at (1.8,0.8) {\textbf{Activate}\\play button, popup recovery, server switch};
+\node[proof] (capture) at (5.4,0.8) {\textbf{Capture}\\screenshots, streams, provider/email rows};
+
+\node[good] (manual) at (-3.6,-1.35) {\textbf{Manual check}\\trace proves the correct next action};
+\node[good] (cost) at (3.6,-1.35) {\textbf{Cost check}\\fewer useless tools for the same evidence};
+
+\node[badge] at ([xshift=-0.16cm,yshift=-0.16cm]route.north west) {1};
+\node[badge] at ([xshift=-0.16cm,yshift=-0.16cm]navigate.north west) {2};
+\node[badge] at ([xshift=-0.16cm,yshift=-0.16cm]activate.north west) {3};
+\node[badge] at ([xshift=-0.16cm,yshift=-0.16cm]capture.north west) {4};
+
+\draw[arr] (route.east) -- (navigate.west);
+\draw[arr] (navigate.east) -- (activate.west);
+\draw[arr] (activate.east) -- (capture.west);
+\draw[softarr] (capture.south) .. controls (4.5,-0.75) and (3.2,-0.95) .. (cost.north);
+\draw[softarr] (navigate.south) .. controls (-2.6,-0.65) and (-3.2,-0.95) .. (manual.north);
+\draw[softarr] (manual.west) .. controls (-6.5,-1.25) and (-6.35,0.45) .. (route.west);
+\draw[softarr] (cost.east) .. controls (6.6,-1.25) and (6.35,0.45) .. (capture.east);
+
+\node[font=\tiny, text=black!62, align=center, text width=11.8cm] at (0,-2.35)
+{The score is not a single percentage. A reviewer checks whether the agent followed the
+right browser evidence path, then compares cost and tool count for equivalent evidence.};
+\end{tikzpicture}
+}
+\caption{Compact agent-test loop used to review route choice, navigation, activation,
+evidence capture, manual trace quality, and cost discipline.}
+\label{fig:agent-test-loop}
+\end{figure}

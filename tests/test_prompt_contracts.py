@@ -151,6 +151,44 @@ def test_landing_prompt_uses_react_screenshots_and_broad_then_scoped_tools() -> 
     assert '{ "kind": "link", "limit": 10 }' in landing
 
 
+def test_landing_prompt_enforces_bounded_crawler_contract() -> None:
+    landing = _prompt("landing_page_v1.md")
+
+    for phrase in (
+        "Crawler Contract",
+        "Work like a bounded, evidence-driven crawler",
+        "return every currently visible or reachable live match",
+        "Maintain a `crawl_frontier[]`",
+        "representative_verified",
+        "accepted_sibling",
+        "rejected_with_reason",
+        "Efficient crawler loop",
+        "Verify one representative per distinct pattern",
+        "bulk-add same-pattern siblings",
+        "Pagination URLs are crawl frontier, never final hosting targets",
+        "accepted+rejected+blocked candidates reconcile",
+        "Do not return an empty or sparse `hosting_pages` result",
+        "False-positive discipline",
+        "If accepted candidates are fewer than the visible live rows",
+    ):
+        assert phrase in landing
+
+
+def test_all_prompts_make_react_mandatory() -> None:
+    for name in (
+        "classification_v1.md",
+        "orchestrator_v1.md",
+        "landing_page_v1.md",
+        "hosting_page_v1.md",
+        "embedded_page_v1.md",
+    ):
+        text = _prompt(name)
+        assert "mandatory" in text.lower(), name
+        if name != "orchestrator_v1.md":
+            for token in ("OBSERVE", "STATE", "HYPOTHESIS", "ACTION", "VERIFY"):
+                assert token in text, name
+
+
 def test_landing_prompt_reconciles_inspect_screenshots_and_inline_servers() -> None:
     landing = _prompt("landing_page_v1.md")
 
@@ -304,10 +342,12 @@ def test_agent_contracts_cover_popup_windows_ublock_and_llm_activation() -> None
             "bare play_media is only candidate discovery",
             "popup_window_diagnostics",
             "same hostname alone",
+            "extracted_player_urls",
         ):
             assert phrase in text, name
 
     assert "popup_window_diagnostics" in orchestrator
+    assert "extracted_player_urls" in orchestrator
 
 
 def test_prompts_handle_multilingual_channel_grids_and_bad_redirects() -> None:
@@ -326,7 +366,8 @@ def test_prompts_handle_multilingual_channel_grids_and_bad_redirects() -> None:
     for phrase in (
         "Multilingual pages are normal",
         "Domain discipline",
-        "External URLs require explicit same-content watch/player evidence",
+        "External URLs may be probed",
+        "recover once with `go_back`",
         "channel-logo or directory cards",
         "memory_update",
     ):
@@ -390,11 +431,77 @@ def test_hosting_and_embedded_prompts_dismiss_popups_and_stay_same_content() -> 
             "Do not navigate to another match",
             "If a click opens another match/channel/listing/category/news/homepage",
             "compare it to the assigned title/team/channel/time",
+            "extracted_player_urls",
+            "cross-domain page",
+            "go_back",
         ):
             assert phrase in text, name
 
     assert "Do not re-run landing discovery from a hosting page" in hosting
     assert "Embedded has no downstream fallback" in embedded
+
+
+def test_prompts_handle_full_page_and_player_view_blockers() -> None:
+    landing = _prompt("landing_page_v1.md")
+    hosting = _prompt("hosting_page_v1.md")
+    embedded = _prompt("embedded_page_v1.md")
+
+    for phrase in (
+        "anything that blocks the body",
+        "hides all useful page content",
+        "full-screen interstitials",
+        "anti-adblock notices",
+        "transparent click shields",
+        "Do not return sparse or empty `hosting_pages` merely because the initial screenshot was blocked",
+        "crawl the revealed body",
+        "concrete full-page blocker",
+    ):
+        assert phrase in landing
+
+    for name, text in (("hosting", hosting), ("embedded", embedded)):
+        for phrase in (
+            "anything that blocks the assigned player view or the whole viewport",
+            "anti-adblock notices",
+            "notification prompts",
+            "sticky/floating ads",
+            "transparent click shields",
+            "full-screen interstitials",
+            "Remove a visible player blocker before activation",
+            "Do not treat a blocker-dismissal click as a play/activation attempt",
+            "continue with activation from the newly revealed player state",
+            "selector/xpath/text evidence",
+        ):
+            assert phrase in text, name
+
+    assert "Do not harvest, hand off to embedded, or take final played-video evidence" in hosting
+    assert "Remove a visible popup/modal/overlay or player blocker" in embedded
+
+
+def test_agent_contracts_handle_full_page_and_player_view_blockers() -> None:
+    landing = _agent("landing_page.py")
+    hosting = _agent("hosting_page.py")
+    embedded = _agent("embedded_page.py")
+
+    for phrase in (
+        "full-page blocker",
+        "hides body candidates",
+        "clear safe same-page dismissal controls",
+        "verify the revealed page state",
+    ):
+        assert phrase in landing
+
+    for name, text in (("hosting", hosting), ("embedded", embedded)):
+        for phrase in (
+            "anything that blocks the assigned player view or whole viewport",
+            "anti-adblock notices",
+            "transparent click shields",
+            "full-screen interstitials",
+            "blocker_candidates",
+            "if a click only dismisses a blocker",
+            "do not count it as activation",
+            "continue activation from the revealed state",
+        ):
+            assert phrase in text, name
 
 
 def test_hosting_and_embedded_prompts_require_played_screenshot_before_harvest() -> None:
@@ -512,6 +619,24 @@ def test_embedded_prompt_keeps_server_source_loop_open() -> None:
         assert phrase in embedded
 
 
+def test_hosting_and_embedded_prompts_react_to_dynamic_source_content() -> None:
+    hosting = _prompt("hosting_page_v1.md")
+    embedded = _prompt("embedded_page_v1.md")
+
+    for name, text in (("hosting", hosting), ("embedded", embedded)):
+        for phrase in (
+            "Dynamic content reaction",
+            "newly visible controls",
+            "merge them into `server_frontier[]` immediately",
+            "Do not assume nothing happened just because navigation did not occur",
+            "not exhausted until those",
+        ):
+            assert phrase in text, name
+
+    assert "before final JSON or embedded handoff" in hosting
+    assert "before final JSON" in embedded
+
+
 def test_landing_prompt_prioritizes_body_and_stays_on_main_domain() -> None:
     landing = _prompt("landing_page_v1.md")
     landing_agent = _agent("landing_page.py")
@@ -524,12 +649,33 @@ def test_landing_prompt_prioritizes_body_and_stays_on_main_domain() -> None:
         "Do not spend tool calls on header/footer links while any body live/watch/channel row",
         "Domain discipline",
         "stay anchored to `mainUrl`'s normalized domain/site",
-        "External URLs require explicit same-content watch/player evidence",
+        "External URLs are allowed as probes",
+        "extracted_player_urls",
         "off-target provider page",
     ):
         assert phrase in landing
 
     assert "header/footer navigation is a last-resort path" in landing_agent
+
+
+def test_landing_prompt_rejects_article_news_cards_before_match_widgets() -> None:
+    landing = _prompt("landing_page_v1.md")
+    landing_agent = _agent("landing_page.py")
+
+    for phrase in (
+        "Article/news URLs such as `/read/...`, `/post/...`, `/article/...`, `/news/...`",
+        "related-story cards are not hosting targets",
+        "Article pages can still contain real match cards or channel widgets",
+        "Extract the body match/card/widget URLs or reveal controls",
+        "not the article URL, related news cards, breadcrumbs, header links, or latest/popular-story cards",
+        "reject it as `news_article_link`",
+        "On article/detail pages, ignore breadcrumbs, share links, related posts",
+        "News/article cards remain rejected unless they expose player/server/match-card evidence",
+    ):
+        assert phrase in landing
+
+    assert "reject article/news URLs such as /read, /post, /article, and /news" in landing_agent
+    assert "related news cards and headers are not hosting_pages" in landing_agent
 
 
 def test_hosting_prompt_requires_iframe_local_activation_before_handoff() -> None:

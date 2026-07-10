@@ -1,0 +1,53 @@
+\begin{figure}[!htbp]
+\centering
+\begingroup
+\def\msFigureW{0.98\textwidth}
+\def\msCardW{2.55cm}
+\def\msCardH{1.18cm}
+\def\msGapX{0.18cm}
+\def\msRowGap{0.50cm}
+\def\msPad{5pt}
+\def\msPanelPad{9pt}
+\def\msValue#1#2{{\large\bfseries\color{#1}#2}}
+\def\msLabel#1{{\scriptsize\bfseries\color{black!72}#1}}
+\def\msHint#1{{\tiny\color{black!58}#1}}
+\resizebox{\msFigureW}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  node distance=\msRowGap and \msGapX,
+  panel/.style={draw=gray!32, fill=gray!2, rounded corners=10pt,
+    line width=0.55pt, inner sep=\msPanelPad},
+  card/.style={draw=accent!52, fill=white, rounded corners=7pt,
+    line width=0.62pt, align=center, text width=\msCardW,
+    minimum height=\msCardH, inner sep=\msPad},
+  outcome/.style={card, draw=accent!66, fill=blue!5},
+  ops/.style={card, draw=accent!52, fill=blue!3},
+  blocker/.style={card, draw=orange!80!black, fill=orange!8},
+  title/.style={font=\scriptsize\bfseries, fill=white, inner xsep=4pt,
+    inner ysep=1.5pt, text=black!72}
+]
+
+\node[outcome] (total) {\msValue{accent!88!black}{149}\\[-1pt]\msLabel{total runs}\\[-1pt]\msHint{145 terminal}};
+\node[outcome, right=of total] (success) {\msValue{accent!88!black}{17.24\%}\\[-1pt]\msLabel{strict success}\\[-1pt]\msHint{25 success}};
+\node[outcome, right=of success] (productive) {\msValue{accent!88!black}{22.76\%}\\[-1pt]\msLabel{productive evidence}\\[-1pt]\msHint{success + partial}};
+\node[blocker, right=of productive] (blockers) {\msValue{orange!82!black}{15.17\%}\\[-1pt]\msLabel{external blockers}\\[-1pt]\msHint{22 terminal rows}};
+
+\node[ops, below=of total] (tools) {\msValue{accent!88!black}{98.49\%}\\[-1pt]\msLabel{tool success}\\[-1pt]\msHint{3,066 / 3,113}};
+\node[ops, right=of tools] (duration) {\msValue{accent!88!black}{7.636s}\\[-1pt]\msLabel{avg. tool duration}\\[-1pt]\msHint{browser tools}};
+\node[ops, right=of duration] (cost) {\msValue{accent!88!black}{\$0.110}\\[-1pt]\msLabel{avg. terminal cost}\\[-1pt]\msHint{model spend}};
+\node[ops, right=of cost] (cache) {\msValue{accent!88!black}{32.9\%}\\[-1pt]\msLabel{cache ratio}\\[-1pt]\msHint{input reuse}};
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(total) (success) (productive) (blockers)] (outcomePanel) {};
+  \node[panel, fit=(tools) (duration) (cost) (cache)] (opsPanel) {};
+\end{scope}
+
+\node[title, anchor=west] at ([xshift=0.16cm,yshift=-0.14cm]outcomePanel.north west) {Outcome metrics};
+\node[title, anchor=west] at ([xshift=0.16cm,yshift=-0.14cm]opsPanel.north west) {Operational metrics};
+
+\end{tikzpicture}%
+}
+\endgroup
+\caption{Evaluation metric cards summarizing batch outcomes, tool reliability, cost, and cache behavior.}\label{fig:evaluation-metrics-summary}
+\end{figure}

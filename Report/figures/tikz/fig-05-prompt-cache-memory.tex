@@ -1,0 +1,66 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.96\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  panel/.style={draw=gray!30, fill=gray!2, rounded corners=9pt,
+    line width=0.52pt, inner sep=9pt},
+  block/.style={rounded corners=6pt, align=center, font=\scriptsize,
+    text width=2.82cm, minimum height=0.78cm, inner xsep=5pt,
+    inner ysep=4pt, text=black},
+  stable/.style={block, draw=accent!74, fill=blue!5},
+  dynamic/.style={block, draw=orange!82!black, fill=orange!8},
+  memory/.style={block, draw=purple!64!black, fill=purple!6},
+  result/.style={block, draw=green!55!black, fill=green!8},
+  key/.style={draw=accent!65, fill=accent!7, rounded corners=5pt,
+    align=center, font=\tiny\bfseries, text width=4.30cm,
+    inner sep=4pt, text=black!72},
+  title/.style={font=\scriptsize\bfseries, text=black!68, fill=white,
+    inner xsep=3pt, inner ysep=1pt},
+  arr/.style={-{Latex[length=2.05mm,width=1.48mm]}, line width=0.78pt,
+    accent!78, rounded corners=6pt, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=1.82mm,width=1.24mm]}, line width=0.62pt,
+    gray!60, densely dashed, rounded corners=6pt, shorten <=3pt,
+    shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.0pt,
+    text=black!68}
+]
+
+\node[stable] (base) at (0,1.90) {Base policy\\{\normalfont\tiny stable instructions}};
+\node[stable] (contract) at (3.20,1.90) {Agent contract\\{\normalfont\tiny duties and tool schema}};
+\node[stable] (runtime) at (6.40,1.90) {Runtime envelope\\{\normalfont\tiny profile, budget, model}};
+\node[result] (prefix) at (9.60,1.90) {Cacheable prefix\\{\normalfont\tiny ordered section hash}};
+
+\node[dynamic] (task) at (0,-0.62) {Task brief\\{\normalfont\tiny current URL and objective}};
+\node[memory] (site) at (3.20,-0.62) {Site memory\\{\normalfont\tiny validated domain hints}};
+\node[memory] (ledger) at (6.40,-0.62) {Working state\\{\normalfont\tiny latest observations}};
+\node[result] (compiled) at (9.60,-0.62) {Compiled prompt\\{\normalfont\tiny sent to the model}};
+
+\begin{scope}[on background layer]
+  \node[panel, fit=(base) (contract) (runtime) (prefix)] (stablepanel) {};
+  \node[panel, fit=(task) (site) (ledger) (compiled)] (dynamicpanel) {};
+\end{scope}
+
+\node[title, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]stablepanel.north west)
+  {Stable prefix kept provider-cache friendly};
+\node[title, anchor=west] at ([xshift=0.13cm,yshift=-0.13cm]dynamicpanel.north west)
+  {Dynamic suffix kept current for the run};
+
+\draw[arr] (base.east) -- (contract.west);
+\draw[arr] (contract.east) -- (runtime.west);
+\draw[arr] (runtime.east) -- (prefix.west);
+\draw[arr] (task.east) -- (site.west);
+\draw[arr] (site.east) -- (ledger.west);
+\draw[arr] (ledger.east) -- (compiled.west);
+\draw[soft] (prefix.south) -- node[lab, right=1pt] {reused first} (compiled.north);
+
+\node[key] (cachekey) at (4.80,0.60)
+  {Stable sections form the cache key;\\task and memory stay after the reused prefix.};
+\draw[soft] (prefix.south west) to[out=-135,in=25] (cachekey.east);
+\draw[soft] (cachekey.west) to[out=205,in=90] (task.north);
+
+\end{tikzpicture}%
+}
+\caption{Prompt assembly layout used to keep stable instructions cache-eligible while memory and task state remain current.}\label{fig:prompt-cache-memory}
+\end{figure}

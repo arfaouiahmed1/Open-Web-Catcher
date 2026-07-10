@@ -1,0 +1,124 @@
+\begin{figure}[H]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+  line cap=round,
+  line join=round,
+  shelf/.style={draw=gray!32, fill=gray!3, rounded corners=10pt,
+    line width=0.55pt, inner sep=10pt},
+  box/.style={rounded corners=6pt, align=center, font=\scriptsize\bfseries,
+    text width=2.22cm, minimum height=0.82cm, inner xsep=5pt,
+    inner ysep=4pt, text=black},
+  nav/.style={box, draw=accent!75, fill=blue!6},
+  inspect/.style={box, draw=orange!80!black, fill=orange!9},
+  action/.style={box, draw=purple!65!black, fill=purple!7},
+  evidence/.style={box, draw=green!55!black, fill=green!8},
+  memory/.style={box, draw=gray!62, fill=gray!9},
+  zoom/.style={draw=gray!36, fill=white, rounded corners=8pt,
+    line width=0.58pt, inner sep=8pt},
+  toolstep/.style={rounded corners=5pt, align=center, font=\tiny\bfseries,
+    text width=2.38cm, minimum height=0.60cm, inner sep=4pt,
+    draw=gray!50, fill=gray!6, text=black!82},
+  selectedInspect/.style={box, draw=orange!80!black, fill=orange!12,
+    minimum height=0.90cm},
+  selectedInteract/.style={box, draw=purple!75!black, fill=purple!10,
+    minimum height=0.90cm},
+  selectedHarvest/.style={box, draw=green!60!black, fill=green!10,
+    minimum height=0.90cm},
+  title/.style={font=\scriptsize\bfseries, text=black!70, fill=white,
+    inner sep=2pt},
+  arr/.style={-{Latex[length=2.1mm,width=1.55mm]}, line width=0.78pt,
+    accent!78, shorten <=3pt, shorten >=3pt},
+  soft/.style={-{Latex[length=1.9mm,width=1.35mm]}, line width=0.65pt,
+    gray!60, densely dashed, shorten <=3pt, shorten >=3pt},
+  lab/.style={font=\tiny\bfseries, fill=white, inner sep=1.1pt,
+    text=black!72}
+]
+
+% Tool shelf
+\node[nav] (navigate) at (0,3.45) {\texttt{navigate}\\\texttt{open\_url}};
+\node[inspect] (inspectbox) at (2.85,3.45) {\texttt{inspect}\\\texttt{inspect\_*}};
+\node[action] (interact) at (5.70,3.45) {\texttt{interact}\\\texttt{play\_media}};
+\node[evidence] (harvest) at (8.55,3.45) {\texttt{harvest}\\\texttt{capture\_streams}};
+\node[evidence] (screen) at (11.40,3.45) {\texttt{screenshot}\\\texttt{media\_state}};
+\node[memory] (memory) at (14.25,3.45) {\texttt{memory\_lookup}\\\texttt{memory\_update}};
+
+\begin{scope}[on background layer]
+  \node[shelf, fit=(navigate) (inspectbox) (interact) (harvest) (screen) (memory)] (toolshelf) {};
+\end{scope}
+\node[title, anchor=west] at ([xshift=0.12cm,yshift=-0.14cm]toolshelf.north west)
+  {Puppeteer MCP tool shelf};
+
+% Inspect zoom
+\node[selectedInspect] (inspectZoom) at (1.35,0.90) {\texttt{inspect\_*}};
+\node[toolstep] (s1) at (1.35,-0.07) {warm lazy page\\with bounded scroll};
+\node[toolstep] (s2) at (1.35,-0.91) {group links, rows,\\frames, controls};
+\node[toolstep] (s3) at (1.35,-1.75) {rank candidates\\by page role};
+\node[toolstep] (s4) at (1.35,-2.59) {return compact\\JSON + screenshot};
+
+\begin{scope}[on background layer]
+  \node[zoom, fit=(inspectZoom) (s1) (s2) (s3) (s4)] (inspectPanel) {};
+\end{scope}
+\node[title, anchor=west] at ([xshift=0.12cm,yshift=-0.13cm]inspectPanel.north west)
+  {Inside \texttt{inspect}};
+
+% Interact zoom
+\node[selectedInteract] (interactZoom) at (7.10,0.90) {\texttt{interact}};
+\node[toolstep] (i1) at (7.10,-0.07) {resolve frame\\and locator};
+\node[toolstep] (i2) at (7.10,-0.91) {capture before\\state};
+\node[toolstep] (i3) at (7.10,-1.75) {click, type, play,\\or coordinates};
+\node[toolstep] (i4) at (7.10,-2.59) {verify state,\\tabs, screenshot};
+
+\begin{scope}[on background layer]
+  \node[zoom, fit=(interactZoom) (i1) (i2) (i3) (i4)] (interactPanel) {};
+\end{scope}
+\node[title, anchor=west] at ([xshift=0.12cm,yshift=-0.13cm]interactPanel.north west)
+  {Inside \texttt{interact}};
+
+% Harvest zoom
+\node[selectedHarvest] (harvestZoom) at (12.85,0.90) {\texttt{harvest}};
+\node[toolstep] (h1) at (12.85,-0.07) {open CDP\\network capture};
+\node[toolstep] (h2) at (12.85,-0.91) {listen to requests\\and responses};
+\node[toolstep] (h3) at (12.85,-1.75) {scan DOM, iframes,\\players, performance};
+\node[toolstep] (h4) at (12.85,-2.59) {dedupe streams\\with diagnostics};
+
+\begin{scope}[on background layer]
+  \node[zoom, fit=(harvestZoom) (h1) (h2) (h3) (h4)] (harvestPanel) {};
+\end{scope}
+\node[title, anchor=west] at ([xshift=0.12cm,yshift=-0.13cm]harvestPanel.north west)
+  {Inside \texttt{harvest}};
+
+% Shelf arrows
+\draw[arr] (navigate.east) -- (inspectbox.west);
+\draw[arr] (inspectbox.east) -- (interact.west);
+\draw[arr] (interact.east) -- (harvest.west);
+\draw[arr] (harvest.east) -- (screen.west);
+\draw[arr] (screen.east) -- (memory.west);
+
+% Zoom connectors
+\draw[soft] (inspectbox.south) to[out=-100,in=90]
+  node[lab, pos=0.55, left=1pt] {zoom} (inspectZoom.north);
+\draw[soft] (interact.south) to[out=-90,in=90]
+  node[lab, pos=0.55, right=1pt] {zoom} (interactZoom.north);
+\draw[soft] (harvest.south) to[out=-80,in=90]
+  node[lab, pos=0.55, right=1pt] {zoom} (harvestZoom.north);
+
+\draw[arr] (s1.south) -- (s2.north);
+\draw[arr] (s2.south) -- (s3.north);
+\draw[arr] (s3.south) -- (s4.north);
+\draw[arr] (i1.south) -- (i2.north);
+\draw[arr] (i2.south) -- (i3.north);
+\draw[arr] (i3.south) -- (i4.north);
+\draw[arr] (h1.south) -- (h2.north);
+\draw[arr] (h2.south) -- (h3.north);
+\draw[arr] (h3.south) -- (h4.north);
+
+\node[draw=gray!36, fill=gray!7, rounded corners=6pt,
+  font=\tiny\bfseries, text=black!70, inner xsep=6pt, inner ysep=4pt,
+  minimum width=12.2cm] at (7.10,-3.75)
+  {The agent sees named, scoped tools; page summarization, interaction reliability, and stream capture stay inside auditable implementations.};
+
+\end{tikzpicture}
+}
+\caption{Puppeteer MCP toolbox with implementation zooms into \texttt{inspect}, \texttt{interact}, and \texttt{harvest}.}\label{fig:puppeteer-toolbox}
+\end{figure}
