@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999998 (TeX Live 2026) (preloaded format=xelatex 2026.5.11)  6 JUL 2026 13:33
+This is XeTeX, Version 3.141592653-2.6-0.999998 (TeX Live 2026) (preloaded format=xelatex 2026.5.11)  10 JUL 2026 16:48
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1497,18 +1497,18 @@ File: assets/esprit-report-cover.pdf Graphic file (type pdf)
 
 
 ]
-File: assets/Rapport_PFE_Ahmed_Arfaoui.pdf Graphic file (type pdf)
-<use assets/Rapport_PFE_Ahmed_Arfaoui.pdf>
-File: assets/Rapport_PFE_Ahmed_Arfaoui.pdf Graphic file (type pdf)
-<use assets/Rapport_PFE_Ahmed_Arfaoui.pdf, page 2>
-File: assets/Rapport_PFE_Ahmed_Arfaoui.pdf Graphic file (type pdf)
-<use assets/Rapport_PFE_Ahmed_Arfaoui.pdf, page 2>
-File: assets/Rapport_PFE_Ahmed_Arfaoui.pdf Graphic file (type pdf)
-<use assets/Rapport_PFE_Ahmed_Arfaoui.pdf, page 2>
-File: assets/Rapport_PFE_Ahmed_Arfaoui.pdf Graphic file (type pdf)
-<use assets/Rapport_PFE_Ahmed_Arfaoui.pdf, page 2>
-File: assets/Rapport_PFE_Ahmed_Arfaoui.pdf Graphic file (type pdf)
-<use assets/Rapport_PFE_Ahmed_Arfaoui.pdf, page 2>
+File: assets/CamScanner 07-10-2026 15.58.pdf Graphic file (type pdf)
+<use assets/CamScanner 07-10-2026 15.58.pdf>
+File: assets/CamScanner 07-10-2026 15.58.pdf Graphic file (type pdf)
+<use assets/CamScanner 07-10-2026 15.58.pdf, page 1>
+File: assets/CamScanner 07-10-2026 15.58.pdf Graphic file (type pdf)
+<use assets/CamScanner 07-10-2026 15.58.pdf, page 1>
+File: assets/CamScanner 07-10-2026 15.58.pdf Graphic file (type pdf)
+<use assets/CamScanner 07-10-2026 15.58.pdf, page 1>
+File: assets/CamScanner 07-10-2026 15.58.pdf Graphic file (type pdf)
+<use assets/CamScanner 07-10-2026 15.58.pdf, page 1>
+File: assets/CamScanner 07-10-2026 15.58.pdf Graphic file (type pdf)
+<use assets/CamScanner 07-10-2026 15.58.pdf, page 1>
  [2.2
 
 ]
@@ -1986,7 +1986,7 @@ Package rerunfilecheck Info: File `main.out' has not changed.
  ) 
 Here is how much of TeX's memory you used:
  52920 strings out of 467992
- 1266592 string characters out of 5433177
+ 1266616 string characters out of 5433177
  1927137 words of memory out of 5000000
  80663 multiletter control sequences out of 15000+600000
  634124 words of font info for 132 fonts, out of 8000000 for 9000
