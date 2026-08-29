@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 
 import { Suspense, useState } from "react";
@@ -7,15 +6,15 @@ import { apiUrl } from "@/lib/api";
 
 const TOKEN_KEY = "owc_token";
 
-function LoginForm() {
+function LoginForm(): React.JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [email, setEmail] = useState<string>("");
+  const [password, setPassword] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [submitting, setSubmitting] = useState<boolean>(false);
 
-  async function onSubmit(event) {
+  async function onSubmit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     setError("");
     setSubmitting(true);
@@ -33,7 +32,7 @@ function LoginForm() {
         );
         return;
       }
-      const data = await response.json();
+      const data: { access_token: string } = await response.json() as { access_token: string };
       localStorage.setItem(TOKEN_KEY, data.access_token);
       const next = searchParams.get("next");
       router.push(next && next.startsWith("/") ? next : "/");
@@ -72,7 +71,7 @@ function LoginForm() {
           required
           autoComplete="username"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
           className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-500/40"
           style={{
             background: "var(--card, #0f131c)",
@@ -89,7 +88,7 @@ function LoginForm() {
           required
           autoComplete="current-password"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
           className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-500/40"
           style={{
             background: "var(--card, #0f131c)",
@@ -115,7 +114,7 @@ function LoginForm() {
   );
 }
 
-export default function LoginPage() {
+export default function LoginPage(): React.JSX.Element {
   return (
     <Suspense fallback={null}>
       <LoginForm />

@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 
 import { Database, ShieldCheck } from "lucide-react";
@@ -7,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatNumber } from "@/lib/utils";
 
-const PRIORITY_TABLES = [
+const PRIORITY_TABLES: Array<[string, string]> = [
   ["pipeline_runs", "Runs"],
   ["agent_runs", "Agent runs"],
   ["runtime_events", "Runtime events"],
@@ -18,7 +17,7 @@ const PRIORITY_TABLES = [
   ["memory_entries", "Memory"],
 ];
 
-function CountCard({ label, value, accent = "var(--sky)" }) {
+function CountCard({ label, value, accent = "var(--sky)" }: { label: string; value: number; accent?: string }): React.JSX.Element {
   return (
     <div className="rounded-lg border bg-muted/20 px-3 py-2.5">
       <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</div>
@@ -29,8 +28,12 @@ function CountCard({ label, value, accent = "var(--sky)" }) {
   );
 }
 
-export function DashboardPersistencePanel({ entries = [] }) {
-  const byName = Object.fromEntries((entries || []).map((row) => [row.name, row.row_count || 0]));
+export interface DashboardPersistencePanelProps {
+  entries?: Array<{ name: string; row_count?: number }>;
+}
+
+export function DashboardPersistencePanel({ entries = [] }: DashboardPersistencePanelProps): React.JSX.Element {
+  const byName: Record<string, number> = Object.fromEntries((entries || []).map((row) => [row.name, row.row_count || 0]));
   const visible = PRIORITY_TABLES.filter(([name]) => Object.prototype.hasOwnProperty.call(byName, name));
 
   return (
