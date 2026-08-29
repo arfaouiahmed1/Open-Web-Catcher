@@ -247,8 +247,8 @@ def test_gemini_31_flash_lite_context_window_is_reported_through_compaction() ->
         model_name="gemini-3.1-flash-lite",
         provider="google_genai",
     )
-    assert pricing["provider"] == "google"
-    assert pricing["context_window"] == context_window
+    # Cost math v2: unpriced models resolve to None instead of a zeroed row.
+    assert pricing is None
     expected_usage_pct = round(900000 / context_window, 6)
     event_usage_pct = round(900000 / context_window, 4)
 

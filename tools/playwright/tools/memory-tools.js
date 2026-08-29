@@ -1,78 +1,22 @@
 /**
  * tools/memory-tools.js - Shared profile memory read/write tools.
  *
- * This store is intentionally lightweight JSON so both Python agents and
- * MCP tools can read/write the same per-domain, per-agent memory profiles.
+ * Plan task 18, phase 2: the duplicated JSON-profile store that used to live
+ * here is DECOMMISSIONED. These tools are now thin proxies to the Python
+ * backend's pgvector site-hint endpoints:
+ *
+ *   memory_lookup  -> GET  {BACKEND}/memory?domain=...&page_type=...
+ *   memory_update  -> POST {BACKEND}/memory/update
+ *
+ * The backend distills every update into a single summarized (domain,
+ * page_type) hint row, so both the Python agents and these MCP tools read and
+ * write the same store with no local duplication.
  */
 
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { URL } from 'node:url';
-
-const MEMORY_FILE = process.env.MCP_MEMORY_FILE || 'data/site_memory_profiles.json';
-const PROFILE_VERSION = 1;
-const ARRAY_LIMITS = {
-  selectors: 64,
-  pagination_url_patterns: 32,
-  url_patterns: 60,
-  navigation_hints: 60,
-  critical_links: 600,
-  server_labels: 220,
-  stream_hosts: 160,
-  ui_signals: 40,
-  hosting_candidate_urls: 900,
-  server_records: 420,
-  server_screenshots: 360,
-  server_stream_urls: 900,
-  activated_servers: 260,
-  playbook_steps: 260,
-  rejected_patterns: 220,
-  failure_cues: 160,
-  pagination_rules: 120,
-  landing_match_urls: 900,
-  continuation_notes: 80,
-};
-
-function dedupe(values) {
-  const seen = new Set();
-  const result = [];
-  for (const value of values || []) {
-    const normalized = String(value || '').trim();
-    if (!normalized || seen.has(normalized)) {
-      continue;
-    }
-    seen.add(normalized);
-    result.push(normalized);
-  }
-  return result;
-}
-
-function asStringList(value) {
-  const normalizeItem = (item) => {
-    if (typeof item === 'string') {
-      return item;
-    }
-    if (item && typeof item === 'object') {
-      try {
-        return JSON.stringify(item);
-      } catch {
-        return String(item);
-      }
-    }
-    return String(item);
-  };
-
-  if (value === null || value === undefined) {
-    return [];
-  }
-  if (Array.isArray(value)) {
-    return dedupe(value.map((item) => normalizeItem(item)));
-  }
-  if (value instanceof Set) {
-    return dedupe(Array.from(value).map((item) => normalizeItem(item)));
-  }
-  return dedupe([normalizeItem(value)]);
-}
+const BACKEND_URL =
+  process.env.MCP_MEMORY_BACKEND_URL ||
+  process.env.OWC_API_URL ||
+  'http://127.0.0.1:8000';
 
 function normalizeDomain(urlOrDomain) {
   const raw = String(urlOrDomain || '').trim();
@@ -102,259 +46,36 @@ function normalizePageType(pageType) {
   return String(pageType || '').trim() || 'unknown';
 }
 
-function profileKey(domain, pageType) {
-  return `${domain}::${pageType}`;
-}
-
-function safeInt(value, fallback = 0) {
-  const parsed = Number.parseInt(String(value), 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function defaultProfile(domain, pageType) {
-  return {
-    domain,
-    page_type: pageType,
-    revision: 0,
-    updated_at: '',
-    updated_by: '',
-    last_refresh_reason: '',
-    ui_change_detected: false,
-    ui_change_notes: [],
-    selectors: [],
-    pagination_url_patterns: [],
-    url_patterns: [],
-    navigation_hints: [],
-    critical_links: [],
-    server_labels: [],
-    stream_hosts: [],
-    ui_signals: [],
-    hosting_candidate_urls: [],
-    server_records: [],
-    server_screenshots: [],
-    server_stream_urls: [],
-    activated_servers: [],
-    playbook_steps: [],
-    rejected_patterns: [],
-    failure_cues: [],
-    pagination_rules: [],
-    landing_match_urls: [],
-    continuation_notes: [],
-  };
-}
-
-function clone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
-function looksLikePagination(url) {
-  const candidate = String(url || '').toLowerCase();
-  if (!candidate) {
-    return false;
-  }
-  return Boolean(candidate.match(/([?&](page|p|offset|start|cursor)=)|\/page\/\d+|\/p\/\d+|-page-\d+/));
-}
-
-function looksLikeStream(url) {
-  const candidate = String(url || '').trim().toLowerCase();
-  let path = candidate;
-  let query = '';
-  try {
-    const parsed = new URL(candidate);
-    path = parsed.pathname || '';
-    query = parsed.search.slice(1);
-  } catch {
-    // Keep the raw candidate for relative URLs saved in memory.
-  }
-  if (/\.(m3u8|mpd|mp4|m4s|ts)(?:$|[?#])/.test(candidate) || /\.(m3u8|mpd|mp4|m4s|ts)$/.test(path)) {
-    return true;
-  }
-  const streamContext =
-    /(^|[/_.-])(hls|dash|manifest|playlist|master|chunklist|m3u8|mpd|mono)([/_.-]|$)/.test(path)
-    || /(^|[?&])(hls|dash|m3u8|mpd|playlist|manifest|stream)=/.test(query)
-    || /(^|[?&])(format|type|protocol)=(hls|dash|m3u8|mpd)/.test(query);
-  if (!streamContext) return false;
-  return Boolean(
-    /\/(?:hls|dash|m3u8|mpd|manifest|playlist|tracks[^/]*)\//.test(path)
-      || /(?:^|\/)(?:master|index|chunklist|playlist|manifest)(?:[.-]|$)/.test(path)
-      || /(^|[?&])(format|type|protocol)=(hls|dash|m3u8|mpd)/.test(query)
-      || (/(?:^|\/)mono(?:[.-]|$)/.test(path) && (query.includes('token=') || query.includes('expires=')))
-  );
-}
-
-function generalizeUrlPattern(url) {
-  const raw = String(url || '').trim();
-  if (!raw) {
-    return '';
-  }
-
-  let parsed;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    return raw.replace(/\d+/g, '{n}').replace(/[0-9a-fA-F]{8,}/g, '{id}');
-  }
-
-  const hostname = normalizeDomain(raw);
-  const pathName = parsed.pathname
-    .replace(/\/\d+(?=\/|$)/g, '/{n}')
-    .replace(/\/[0-9a-fA-F]{8,}(?=\/|$)/g, '/{id}')
-    .replace(/\/[A-Za-z0-9_-]{24,}(?=\/|$)/g, '/{token}');
-
-  const params = [];
-  for (const [key, value] of parsed.searchParams.entries()) {
-    let normalized = value;
-    if (/^\d+$/.test(normalized)) {
-      normalized = '{n}';
-    } else if (/^[0-9a-fA-F]{8,}$/.test(normalized)) {
-      normalized = '{id}';
-    } else if (normalized.length >= 24 && /^[A-Za-z0-9_-]+$/.test(normalized)) {
-      normalized = '{token}';
+function asStringList(value) {
+  const normalizeItem = (item) => {
+    if (typeof item === 'string') {
+      return item;
     }
-    params.push([key, normalized]);
-  }
-  params.sort((left, right) => String(left[0]).localeCompare(String(right[0])));
-
-  const query = new URLSearchParams(params)
-    .toString()
-    .replace(/%7B/gi, '{')
-    .replace(/%7D/gi, '}');
-  return `${parsed.protocol}//${hostname}${pathName}${query ? `?${query}` : ''}`;
-}
-
-async function readStore() {
-  const resolved = path.resolve(MEMORY_FILE);
-  try {
-    const raw = await fs.readFile(resolved, 'utf-8');
-    const parsed = JSON.parse(raw || '{}');
-    if (!parsed || typeof parsed !== 'object') {
-      return { version: PROFILE_VERSION, profiles: {} };
-    }
-    const profiles = parsed.profiles && typeof parsed.profiles === 'object' ? parsed.profiles : {};
-    return {
-      version: safeInt(parsed.version, PROFILE_VERSION),
-      profiles,
-      _path: resolved,
-    };
-  } catch {
-    return {
-      version: PROFILE_VERSION,
-      profiles: {},
-      _path: resolved,
-    };
-  }
-}
-
-async function writeStore(store) {
-  const resolved = store._path || path.resolve(MEMORY_FILE);
-  const payload = {
-    version: PROFILE_VERSION,
-    profiles: store.profiles || {},
-  };
-  await fs.mkdir(path.dirname(resolved), { recursive: true });
-  const tmp = `${resolved}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(payload, null, 2), 'utf-8');
-  await fs.rename(tmp, resolved);
-}
-
-function mergeField(existingProfile, patch, field, replace, maxItems) {
-  const existing = asStringList(existingProfile[field] || []);
-  const incoming = asStringList((patch || {})[field] || []);
-
-  if (replace && Object.prototype.hasOwnProperty.call(patch || {}, field)) {
-    return incoming.slice(0, maxItems);
-  }
-  if (!incoming.length) {
-    return existing.slice(0, maxItems);
-  }
-  return dedupe([...existing, ...incoming]).slice(0, maxItems);
-}
-
-function toUpdatedList(profile) {
-  return [
-    ...asStringList(profile.selectors || []),
-    ...asStringList(profile.url_patterns || []),
-  ];
-}
-
-function toPatchSignature(patch) {
-  return [
-    ...asStringList((patch || {}).selectors || []),
-    ...asStringList((patch || {}).url_patterns || []),
-  ];
-}
-
-function buildDerivedPatch(rawPatch) {
-  const patch = {
-    selectors: asStringList(rawPatch.selectors || []),
-    pagination_url_patterns: asStringList(rawPatch.pagination_url_patterns || []),
-    url_patterns: asStringList(rawPatch.url_patterns || []),
-    navigation_hints: asStringList(rawPatch.navigation_hints || []),
-    critical_links: asStringList(rawPatch.critical_links || []),
-    server_labels: asStringList(rawPatch.server_labels || []),
-    stream_hosts: asStringList(rawPatch.stream_hosts || []),
-    ui_signals: asStringList(rawPatch.ui_signals || []),
-    hosting_candidate_urls: asStringList(rawPatch.hosting_candidate_urls || []),
-    server_records: asStringList(rawPatch.server_records || []),
-    server_screenshots: asStringList(rawPatch.server_screenshots || []),
-    server_stream_urls: asStringList(rawPatch.server_stream_urls || []),
-    activated_servers: asStringList(rawPatch.activated_servers || []),
-    playbook_steps: asStringList(rawPatch.playbook_steps || []),
-    rejected_patterns: asStringList(rawPatch.rejected_patterns || []),
-    failure_cues: asStringList(rawPatch.failure_cues || []),
-    pagination_rules: asStringList(rawPatch.pagination_rules || []),
-    landing_match_urls: asStringList(rawPatch.landing_match_urls || []),
-    continuation_notes: asStringList(rawPatch.continuation_notes || []),
-    ui_change_notes: asStringList(rawPatch.ui_change_notes || []),
-    ui_change_detected: Boolean(rawPatch.ui_change_detected),
-  };
-
-  for (const link of patch.critical_links) {
-    if (!link.startsWith('http://') && !link.startsWith('https://')) {
-      continue;
-    }
-    patch.url_patterns.push(generalizeUrlPattern(link));
-    if (looksLikePagination(link)) {
-      patch.pagination_url_patterns.push(generalizeUrlPattern(link));
-    }
-    if (looksLikeStream(link)) {
-      const host = normalizeDomain(link);
-      if (host) {
-        patch.stream_hosts.push(host);
+    if (item && typeof item === 'object') {
+      try {
+        return JSON.stringify(item);
+      } catch {
+        return String(item);
       }
     }
-  }
+    return String(item);
+  };
 
-  for (const link of patch.hosting_candidate_urls) {
-    if (!link.startsWith('http://') && !link.startsWith('https://')) {
-      continue;
-    }
-    patch.critical_links.push(link);
-    patch.landing_match_urls.push(link);
-    patch.url_patterns.push(generalizeUrlPattern(link));
-    if (looksLikePagination(link)) {
-      patch.pagination_url_patterns.push(generalizeUrlPattern(link));
-    }
+  if (value === null || value === undefined) {
+    return [];
   }
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeItem(item)).filter((item) => item.length > 0);
+  }
+  return [normalizeItem(value)].filter((item) => item.length > 0);
+}
 
-  for (const link of patch.server_stream_urls) {
-    if (!link.startsWith('http://') && !link.startsWith('https://')) {
-      continue;
-    }
-    patch.critical_links.push(link);
-    if (looksLikeStream(link)) {
-      const host = normalizeDomain(link);
-      if (host) {
-        patch.stream_hosts.push(host);
-      }
-    }
+async function backendFetch(path, options) {
+  const response = await fetch(`${BACKEND_URL}${path}`, options);
+  if (!response.ok) {
+    throw new Error(`backend ${path} responded HTTP ${response.status}`);
   }
-
-  for (const key of Object.keys(ARRAY_LIMITS)) {
-    patch[key] = dedupe(patch[key] || []).slice(0, ARRAY_LIMITS[key]);
-  }
-  patch.ui_change_notes = dedupe(patch.ui_change_notes || []).slice(0, 6);
-  return patch;
+  return response.json();
 }
 
 export async function memoryLookup({
@@ -369,59 +90,65 @@ export async function memoryLookup({
     throw new Error('memory_lookup requires a valid url or domain');
   }
   const pageType = normalizePageType(page_type || 'unknown');
-  const store = await readStore();
-  const key = profileKey(domain, pageType);
-  const exact = store.profiles[key] ? clone(store.profiles[key]) : null;
 
-  let relatedProfiles = [];
-  if (include_related) {
-    relatedProfiles = Object.values(store.profiles || {})
-      .filter((profile) => profile && profile.domain === domain && profile.page_type !== pageType)
-      .sort((left, right) => String(right.updated_at || '').localeCompare(String(left.updated_at || '')))
-      .slice(0, Math.max(Number(limit) || 1, 1))
-      .map((profile) => clone(profile));
+  try {
+    const payload = await backendFetch(
+      `/memory?domain=${encodeURIComponent(domain)}&limit=${Math.max(Number(limit) || 3, 1)}`,
+    );
+    const entries = Array.isArray(payload.entries) ? payload.entries : [];
+    const exact = entries.find((entry) => entry.page_type === pageType) || null;
+    const relatedProfiles = include_related
+      ? entries.filter((entry) => entry.page_type !== pageType)
+      : [];
+
+    return {
+      ok: true,
+      domain,
+      page_type: pageType,
+      profile_found: Boolean(exact),
+      profile: exact
+        ? {
+            domain: exact.domain,
+            page_type: exact.page_type,
+            summary_text: exact.summary_text || '',
+            selectors: exact.selectors || [],
+            playbook_steps: exact.navigation_steps || [],
+            navigation_hints: exact.navigation_steps || [],
+            success_rate: exact.success_rate,
+            updated_at: exact.updated_at || '',
+          }
+        : null,
+      related_profiles: relatedProfiles.map((entry) => ({
+        domain: entry.domain,
+        page_type: entry.page_type,
+        summary_text: entry.summary_text || '',
+        selectors: entry.selectors || [],
+        playbook_steps: entry.navigation_steps || [],
+      })),
+      memory_first_recommendation: exact
+        ? 'Use remembered selectors/url patterns first, then escalate to heavy tools only if hints fail.'
+        : 'No exact hint found; gather lightweight evidence and store new selectors/patterns with memory_update.',
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      domain,
+      page_type: pageType,
+      error: `memory_lookup backend unavailable: ${error.message}`,
+    };
   }
-
-  return {
-    ok: true,
-    domain,
-    page_type: pageType,
-    profile_found: Boolean(exact),
-    profile: exact,
-    related_profiles: relatedProfiles,
-    memory_first_recommendation: exact
-      ? 'Use remembered selectors/url patterns first, then escalate to heavy tools only if hints fail.'
-      : 'No exact profile found; gather lightweight evidence and store new selectors/patterns with memory_update.',
-  };
 }
 
 export async function memoryUpdate({
   url = '',
   page_type = '',
   selectors = [],
-  pagination_url_patterns = [],
-  url_patterns = [],
   navigation_hints = [],
-  critical_links = [],
-  server_labels = [],
-  stream_hosts = [],
-  ui_signals = [],
-  hosting_candidate_urls = [],
-  server_records = [],
-  server_screenshots = [],
-  server_stream_urls = [],
-  activated_servers = [],
   playbook_steps = [],
-  rejected_patterns = [],
-  failure_cues = [],
-  pagination_rules = [],
-  landing_match_urls = [],
-  continuation_notes = [],
-  ui_change_notes = [],
-  ui_change_detected = false,
   refresh_reason = '',
-  replace = false,
+  status = 'success',
   browserWsEndpoint: _browserWsEndpoint,
+  ..._legacyFields
 } = {}) {
   const domain = normalizeDomain(url);
   if (!domain) {
@@ -433,105 +160,27 @@ export async function memoryUpdate({
     throw new Error('memory_update requires page_type');
   }
 
-  const reason = String(refresh_reason || '').trim();
-  const patch = buildDerivedPatch({
-    selectors,
-    pagination_url_patterns,
-    url_patterns,
-    navigation_hints,
-    critical_links,
-    server_labels,
-    stream_hosts,
-    ui_signals,
-    hosting_candidate_urls,
-    server_records,
-    server_screenshots,
-    server_stream_urls,
-    activated_servers,
-    playbook_steps,
-    rejected_patterns,
-    failure_cues,
-    pagination_rules,
-    landing_match_urls,
-    continuation_notes,
-    ui_change_notes,
-    ui_change_detected,
-  });
-
-  const store = await readStore();
-  const key = profileKey(domain, pageType);
-  const existing = store.profiles[key] ? clone(store.profiles[key]) : defaultProfile(domain, pageType);
-  const merged = clone(existing);
-
-  let changed = false;
-  for (const [field, maxItems] of Object.entries(ARRAY_LIMITS)) {
-    const nextValues = mergeField(existing, patch, field, Boolean(replace), maxItems);
-    merged[field] = nextValues;
-    if (JSON.stringify(nextValues) !== JSON.stringify(asStringList(existing[field] || []))) {
-      changed = true;
-    }
+  try {
+    const payload = await backendFetch('/memory/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: String(url).trim(),
+        page_type: pageType,
+        refresh_reason: String(refresh_reason || '').trim(),
+        status: String(status || 'success').trim().toLowerCase(),
+        selectors: asStringList(selectors),
+        navigation_steps: asStringList(navigation_hints),
+        playbook_steps: asStringList(playbook_steps),
+      }),
+    });
+    return { ok: true, updated: true, domain, page_type: pageType, hint: payload };
+  } catch (error) {
+    return {
+      ok: false,
+      domain,
+      page_type: pageType,
+      error: `memory_update backend unavailable: ${error.message}`,
+    };
   }
-
-  if (patch.ui_change_detected) {
-    merged.ui_change_detected = true;
-    changed = true;
-  }
-
-  const oldSignature = new Set(toUpdatedList(existing));
-  const incomingSignature = new Set(toPatchSignature(patch));
-  if (oldSignature.size > 0 && incomingSignature.size > 0) {
-    let overlapCount = 0;
-    for (const entry of incomingSignature) {
-      if (oldSignature.has(entry)) {
-        overlapCount += 1;
-      }
-    }
-    const overlap = overlapCount / Math.max(incomingSignature.size, 1);
-    if (overlap < 0.35) {
-      merged.ui_change_detected = true;
-      merged.ui_change_notes = dedupe([
-        ...asStringList(existing.ui_change_notes || []),
-        ...asStringList(patch.ui_change_notes || []),
-        `structural drift detected (signature overlap=${overlap.toFixed(2)})`,
-      ]).slice(0, 6);
-      changed = true;
-    }
-  }
-
-  if (patch.ui_change_notes.length) {
-    const notes = dedupe([
-      ...asStringList(existing.ui_change_notes || []),
-      ...patch.ui_change_notes,
-    ]).slice(0, 6);
-    if (JSON.stringify(notes) !== JSON.stringify(asStringList(existing.ui_change_notes || []))) {
-      merged.ui_change_notes = notes;
-      changed = true;
-    }
-  }
-
-  if (reason && reason !== String(existing.last_refresh_reason || '')) {
-    merged.last_refresh_reason = reason;
-    changed = true;
-  }
-
-  if (changed) {
-    merged.revision = safeInt(existing.revision, 0) + 1;
-    merged.updated_at = new Date().toISOString();
-    merged.updated_by = 'mcp_tool';
-  } else {
-    merged.revision = safeInt(existing.revision, 0);
-    merged.updated_at = String(existing.updated_at || '');
-    merged.updated_by = String(existing.updated_by || '');
-  }
-
-  store.profiles[key] = merged;
-  await writeStore(store);
-
-  return {
-    ok: true,
-    updated: changed,
-    domain,
-    page_type: pageType,
-    profile: clone(merged),
-  };
 }

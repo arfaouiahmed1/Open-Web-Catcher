@@ -61,7 +61,7 @@ Write-OwcInfo ("Port mode: " + (& { if ($AutoPort) { "auto (will shift on confli
 Write-OwcInfo "MCP tools host port: $($context.ToolsHostPort)"
 Write-OwcInfo "Playwright tools host port: $($context.PlaywrightToolsHostPort)"
 Write-OwcInfo "Web host port: $($context.WebHostPort)"
-Write-OwcInfo "Chrome debug ports: $($context.ToolsDebugHostPort) (puppeteer), $($context.PlaywrightToolsDebugHostPort) (playwright)"
+Write-OwcInfo "Chrome debug ports: $($context.PlaywrightToolsDebugHostPort) (playwright)"
 Write-OwcInfo "API host port: 8000 (fixed)"
 
 # Fail fast if API port 8000 is held by something other than our own stopped container.

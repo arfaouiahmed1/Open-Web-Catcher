@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from datetime import datetime
+from datetime import UTC, datetime
 from threading import Lock
 from typing import Any
 
@@ -46,6 +46,13 @@ def _extract_cache_metrics(
     response_metadata: Any = None,
     additional_kwargs: Any = None,
 ) -> dict[str, Any]:
+    """Extract raw cache token buckets without applying billing semantics.
+
+    No clamping happens here: Anthropic reports ``input_tokens`` EXCLUDING
+    cache read/write, so ``min(cached, input)`` truncated real reads. The
+    subset/disjoint branch lives in :meth:`RunObserver.add_llm_usage`, driven
+    by the pricing row's ``cached_is_subset_of_input``.
+    """
     usage_dict = _coerce_mapping(usage)
     response_dict = _coerce_mapping(response_metadata)
     kwargs_dict = _coerce_mapping(additional_kwargs)
@@ -66,9 +73,30 @@ def _extract_cache_metrics(
     openai_details = _coerce_mapping(usage_dict.get("input_token_details") or usage_dict.get("prompt_tokens_details"))
     cached_tokens = _to_int(openai_details.get("cached_tokens"))
 
+    # Gemini-native implicit-cache fields (COST-F1).
+    if not cached_tokens:
+        cached_tokens = _to_int(
+            usage_dict.get("cached_content_token_count") or usage_dict.get("cachedContentTokenCount")
+        )
+    if not cached_tokens:
+        cached_tokens = _to_int(
+            openai_details.get("cached_content_token_count") or openai_details.get("cachedContentTokenCount")
+        )
+
     # Anthropic-style prompt caching fields.
     cache_read_input_tokens = _to_int(usage_dict.get("cache_read_input_tokens"))
     cache_creation_input_tokens = _to_int(usage_dict.get("cache_creation_input_tokens"))
+    # Normalized LiteLLM payloads nest read/write under input_token_details.
+    cache_read_input_tokens = max(
+        cache_read_input_tokens,
+        _to_int(openai_details.get("cache_read")),
+        _to_int(openai_details.get("cache_read_input_tokens")),
+    )
+    cache_creation_input_tokens = max(
+        cache_creation_input_tokens,
+        _to_int(openai_details.get("cache_creation")),
+        _to_int(openai_details.get("cache_creation_input_tokens")),
+    )
     if cache_read_input_tokens:
         cached_tokens = max(cached_tokens, cache_read_input_tokens)
 
@@ -76,26 +104,80 @@ def _extract_cache_metrics(
         # Fallback for providers that surface cache details in nested metadata.
         response_usage = _coerce_mapping(response_dict.get("token_usage") or response_dict.get("usage"))
         response_details = _coerce_mapping(response_usage.get("input_token_details") or response_usage.get("prompt_tokens_details"))
-        cached_tokens = _to_int(response_details.get("cached_tokens"))
+        cached_tokens = _to_int(
+            response_details.get("cached_tokens")
+            or response_details.get("cached_content_token_count")
+            or response_usage.get("cached_content_token_count")
+            or response_usage.get("cachedContentTokenCount")
+        )
 
     if not cached_tokens:
         kwargs_usage = _coerce_mapping(kwargs_dict.get("usage") or kwargs_dict.get("token_usage"))
         kwargs_details = _coerce_mapping(kwargs_usage.get("input_token_details") or kwargs_usage.get("prompt_tokens_details"))
-        cached_tokens = _to_int(kwargs_details.get("cached_tokens"))
+        cached_tokens = _to_int(
+            kwargs_details.get("cached_tokens")
+            or kwargs_details.get("cached_content_token_count")
+            or kwargs_usage.get("cached_content_token_count")
+            or kwargs_usage.get("cachedContentTokenCount")
+        )
 
-    cached_tokens = max(0, min(cached_tokens, input_tokens))
-    new_input_tokens = max(input_tokens - cached_tokens, 0)
     cache_hit = cached_tokens > 0 or cache_read_input_tokens > 0
 
     return {
         "cache_hit": cache_hit,
         "input_tokens": input_tokens,
         "cached_input_tokens": cached_tokens,
-        "new_input_tokens": new_input_tokens,
         "output_tokens": output_tokens,
         "cache_read_input_tokens": cache_read_input_tokens,
         "cache_creation_input_tokens": cache_creation_input_tokens,
     }
+
+
+def _extract_thinking_tokens(
+    usage: Any,
+    *,
+    response_metadata: Any = None,
+    additional_kwargs: Any = None,
+) -> int:
+    """Pull reasoning/thinking token counts from any family's payload."""
+    usage_dict = _coerce_mapping(usage)
+    response_dict = _coerce_mapping(response_metadata)
+    kwargs_dict = _coerce_mapping(additional_kwargs)
+
+    output_details = _coerce_mapping(
+        usage_dict.get("output_token_details") or usage_dict.get("completion_tokens_details")
+    )
+    candidates = (
+        output_details.get("reasoning_tokens"),
+        usage_dict.get("reasoning_tokens"),
+        usage_dict.get("thoughts_token_count"),
+        usage_dict.get("thoughtsTokenCount"),
+        response_dict.get("thought_token_count"),
+        response_dict.get("thoughts_token_count"),
+        response_dict.get("thoughtsTokenCount"),
+    )
+    for candidate in candidates:
+        value = _to_int(candidate)
+        if value:
+            return value
+
+    for nested in (
+        _coerce_mapping(response_dict.get("token_usage") or response_dict.get("usage")),
+        _coerce_mapping(kwargs_dict.get("usage") or kwargs_dict.get("token_usage")),
+    ):
+        nested_details = _coerce_mapping(
+            nested.get("output_token_details") or nested.get("completion_tokens_details")
+        )
+        for candidate in (
+            nested_details.get("reasoning_tokens"),
+            nested.get("reasoning_tokens"),
+            nested.get("thoughts_token_count"),
+            nested.get("thoughtsTokenCount"),
+        ):
+            value = _to_int(candidate)
+            if value:
+                return value
+    return 0
 
 
 def _extract_provider_reported_costs(
@@ -159,7 +241,7 @@ def _extract_provider_reported_costs(
 
 class RuntimeEvent(BaseModel):
     seq: int
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     actor: str
     kind: str
     message: str
@@ -194,7 +276,7 @@ class _RunState:
         self.run_id = run_id
         self.root_actor = root_actor
         self.observability = observability
-        self.started_at = datetime.utcnow()
+        self.started_at = datetime.now(UTC)
         self.finished_at: datetime | None = None
         self.events: list[RuntimeEvent] = []
         self.metrics = RunMetrics(run_id=run_id, url="")
@@ -203,6 +285,9 @@ class _RunState:
         self.cancel_reason = ""
         self._next_seq = 1
         self._lock = Lock()
+        self._unpriced_warned_models: set[str] = set()
+        self.max_cost_usd: float | None = None
+        self._cost_threshold_exceeded_emitted: bool = False
 
     def _get_model_usage(self, model_name: str, provider: str) -> ModelUsage:
         normalized_model = (model_name or "unknown").strip() or "unknown"
@@ -248,6 +333,10 @@ class RunObserver:
     def set_url(self, url: str) -> None:
         with self._state._lock:
             self._state.metrics.url = url
+
+    def set_max_cost_usd(self, max_cost_usd: float | None) -> None:
+        with self._state._lock:
+            self._state.max_cost_usd = max_cost_usd
 
     def mark_agent(self, agent_type: AgentType) -> None:
         with self._state._lock:
@@ -324,8 +413,27 @@ class RunObserver:
         )
         cache_hit = bool(resolved_cache.get("cache_hit", False))
         cached_input_tokens = _to_int(resolved_cache.get("cached_input_tokens"))
-        new_input_tokens = _to_int(resolved_cache.get("new_input_tokens"))
         cache_creation_input_tokens = _to_int(resolved_cache.get("cache_creation_input_tokens"))
+        thinking_tokens = _extract_thinking_tokens(
+            usage,
+            response_metadata=response_metadata,
+            additional_kwargs=additional_kwargs,
+        )
+
+        # Per-family cache semantics from the pricing row (COST-F2): SUBSET
+        # means cached/write tokens are part of ``input`` (Gemini/OpenAI);
+        # DISJOINT means ``input`` excludes them (Anthropic).
+        subset_flag = pricing.get("cached_is_subset_of_input")
+        cached_is_subset_of_input = True if subset_flag is None else bool(subset_flag)
+        multiplier_value = pricing.get("cache_write_multiplier")
+        cache_write_multiplier = 1.0 if multiplier_value is None else float(multiplier_value or 0.0)
+        thinking_flag = pricing.get("thinking_billed_as_output")
+        thinking_billed_as_output = True if thinking_flag is None else bool(thinking_flag)
+
+        if cached_is_subset_of_input:
+            new_input_tokens = max(input_tokens - cached_input_tokens - cache_creation_input_tokens, 0)
+        else:
+            new_input_tokens = max(input_tokens, 0)
 
         reported_costs = _extract_provider_reported_costs(
             usage,
@@ -340,6 +448,7 @@ class RunObserver:
                 "estimated_total_cost_usd",
             )
         )
+        emit_pricing_warning = False
         if has_reported_costs:
             costs = reported_costs
             cost_source = "provider_reported"
@@ -349,26 +458,24 @@ class RunObserver:
             pricing_cached_input = float(pricing.get("cached_input_per_million", 0.0) or 0.0)
             pricing_cache_write = float(pricing.get("cache_write_per_million", 0.0) or 0.0)
             if pricing_input > 0.0 or pricing_output > 0.0 or pricing_cached_input > 0.0 or pricing_cache_write > 0.0:
-                if cache_hit or cache_creation_input_tokens > 0:
-                    billable_input_tokens = max(new_input_tokens, 0)
-                else:
-                    billable_input_tokens = max(input_tokens, 0)
-                cache_write_tokens = min(max(cache_creation_input_tokens, 0), max(billable_input_tokens, 0))
-                billable_input_tokens = max(billable_input_tokens - cache_write_tokens, 0)
                 costs = estimate_usage_cost(
-                    billable_input_tokens,
+                    input_tokens,
                     output_tokens,
                     cached_input_tokens=cached_input_tokens,
-                    cache_write_input_tokens=cache_write_tokens,
+                    cache_write_input_tokens=cache_creation_input_tokens,
+                    thinking_tokens=thinking_tokens,
                     input_per_million=pricing_input,
                     output_per_million=pricing_output,
                     cached_input_per_million=pricing_cached_input,
                     cache_write_per_million=pricing_cache_write,
+                    cache_write_multiplier=cache_write_multiplier,
+                    cached_is_subset_of_input=cached_is_subset_of_input,
+                    thinking_billed_as_output=thinking_billed_as_output,
                 )
                 cost_source = "provider_pricing_catalog"
             else:
                 costs = reported_costs
-                cost_source = "provider_unreported"
+                cost_source = "unpriced"
 
         with self._state._lock:
             metrics = self._state.metrics
@@ -386,7 +493,14 @@ class RunObserver:
             metrics.estimated_cache_write_cost_usd = round(
                 metrics.estimated_cache_write_cost_usd + costs["estimated_cache_write_cost_usd"], 8
             )
-            metrics.estimated_output_cost_usd = round(metrics.estimated_output_cost_usd + costs["estimated_output_cost_usd"], 8)
+            # Thinking bills at the output rate, so its dollars fold into the
+            # output-cost lines to keep total == sum(stored line items).
+            metrics.estimated_output_cost_usd = round(
+                metrics.estimated_output_cost_usd
+                + costs["estimated_output_cost_usd"]
+                + costs.get("estimated_thinking_cost_usd", 0.0),
+                8,
+            )
             metrics.estimated_total_cost_usd = round(metrics.estimated_total_cost_usd + costs["estimated_total_cost_usd"], 8)
 
             model_usage = self._state._get_model_usage(model_name or "unknown", resolved_provider)
@@ -404,8 +518,55 @@ class RunObserver:
             model_usage.estimated_cache_write_cost_usd = round(
                 model_usage.estimated_cache_write_cost_usd + costs["estimated_cache_write_cost_usd"], 8
             )
-            model_usage.estimated_output_cost_usd = round(model_usage.estimated_output_cost_usd + costs["estimated_output_cost_usd"], 8)
+            model_usage.estimated_output_cost_usd = round(
+                model_usage.estimated_output_cost_usd
+                + costs["estimated_output_cost_usd"]
+                + costs.get("estimated_thinking_cost_usd", 0.0),
+                8,
+            )
             model_usage.estimated_total_cost_usd = round(model_usage.estimated_total_cost_usd + costs["estimated_total_cost_usd"], 8)
+
+            if cost_source == "unpriced":
+                warned_key = (model_name or "unknown").strip() or "unknown"
+                if warned_key not in self._state._unpriced_warned_models:
+                    self._state._unpriced_warned_models.add(warned_key)
+                    emit_pricing_warning = True
+
+            emit_threshold_exceeded = False
+            if (
+                self._state.max_cost_usd is not None
+                and not self._state._cost_threshold_exceeded_emitted
+                and metrics.estimated_total_cost_usd >= self._state.max_cost_usd
+            ):
+                self._state._cost_threshold_exceeded_emitted = True
+                emit_threshold_exceeded = True
+
+        if emit_pricing_warning:
+            self.emit(
+                "pricing_missing",
+                f"No pricing configured for model '{model_name or 'unknown'}'; cost recorded as $0.",
+                status="warning",
+                details={
+                    "model_name": model_name or "unknown",
+                    "provider": resolved_provider,
+                    "cost_source": cost_source,
+                },
+            )
+
+        if emit_threshold_exceeded:
+            with self._state._lock:
+                current_total = self._state.metrics.estimated_total_cost_usd
+                cap = self._state.max_cost_usd
+            self.emit(
+                "cost_threshold_exceeded",
+                f"Run cost ${current_total:.4f} reached max_cost_usd cap ${cap:.4f}; requesting cancellation.",
+                status="warning",
+                details={
+                    "estimated_total_cost_usd": current_total,
+                    "max_cost_usd": cap,
+                },
+            )
+            self.request_cancel(reason=f"Cost cap ${cap:.4f} reached (actual ${current_total:.4f}).")
 
         return {
             "provider": resolved_provider,
@@ -414,11 +575,14 @@ class RunObserver:
             "cached_input_tokens": cached_input_tokens,
             "new_input_tokens": new_input_tokens,
             "cache_creation_input_tokens": cache_creation_input_tokens,
+            "thinking_tokens": thinking_tokens,
             "cache_hit": cache_hit,
+            "cached_is_subset_of_input": cached_is_subset_of_input,
             "estimated_input_cost_usd": float(costs.get("estimated_input_cost_usd", 0.0) or 0.0),
             "estimated_cached_input_cost_usd": float(costs.get("estimated_cached_input_cost_usd", 0.0) or 0.0),
             "estimated_cache_write_cost_usd": float(costs.get("estimated_cache_write_cost_usd", 0.0) or 0.0),
             "estimated_output_cost_usd": float(costs.get("estimated_output_cost_usd", 0.0) or 0.0),
+            "estimated_thinking_cost_usd": float(costs.get("estimated_thinking_cost_usd", 0.0) or 0.0),
             "estimated_total_cost_usd": float(costs.get("estimated_total_cost_usd", 0.0) or 0.0),
             "cost_source": cost_source,
             "pricing": {
@@ -463,7 +627,7 @@ class RunObserver:
 
     def finish(self, *, success: bool, failure_mode: str = "") -> None:
         with self._state._lock:
-            self._state.finished_at = datetime.utcnow()
+            self._state.finished_at = datetime.now(UTC)
             self._state.completed = True
             self._state.metrics.finished_at = self._state.finished_at
             self._state.metrics.total_duration_seconds = (self._state.finished_at - self._state.started_at).total_seconds()
@@ -566,7 +730,8 @@ def get_observability_status(settings: Settings) -> ObservabilityStatus:
 
 
 def get_model_pricing_for_settings(settings: Settings, model_name: str, provider: str = "") -> dict[str, Any]:
-    return resolve_model_pricing(settings, model_name=model_name, provider=provider)
+    """Resolve pricing rows for a model; ``{}`` when the model is unpriced."""
+    return resolve_model_pricing(settings, model_name=model_name, provider=provider) or {}
 
 
 run_registry = RunRegistry()

@@ -1,0 +1,80 @@
+case[0] provider=GenericHost abuse=reports@generichost.io
+subject: DMCA Notice: unauthorized streaming hosted by GenericHost
+channel:
+rights_owner_reference_url:
+stream_urls: ['https://mirror.generic-host.io/v/clip.mp4']
+screenshot_urls: ['https://res.cloudinary.com/demo/image/upload/generic_server.jpg']
+server_labels: ['source 1']
+body:
+Object: Broadcast_LIPTV_ID
+GenericHost, reports@generichost.io
+To whom it may concern
+
+This letter constitutes a formal notification under the provisions of the Digital Millennium
+Copyright Act (DMCA), 17 U.S.C. § 512, to demand the immediate removal or disabling
+of access to infringing copyrighted material hosted on, or accessible through your servers,
+relating to the unauthorised retransmission of licensed audio-visual content and channel signals.
+
+I am the copyright owner or an agent authorized to act on behalf of the owner of the
+following copyrighted work(s): https://pirate-stream.example/.
+A representative list of our copyrighted works may also be provided upon request.
+
+The infringing materials are located at the following URLs and evidence links:
+Title(s): Broadcast stream
+Abuse date: <GENERATED_AT>
+Infringing page: https://pirate-stream.example/
+- URL(s): https://mirror.generic-host.io/v/clip.mp4
+  Protocol: mp4
+  Server/Source: source 1
+  Infringement Evidence: https://res.cloudinary.com/demo/image/upload/generic_server.jpg
+
+I have a good faith belief that the use of the copyrighted material described above is not
+authorized by the copyright owner, its agent, or the law.
+I declare, under penalty of perjury, that the information in this notification is accurate
+and that I am authorized to act on behalf of the owner of an exclusive right that is allegedly infringed.
+
+We demand the immediate removal or disabling of access to the infringing material
+identified above and that the reported entity cease any further infringement.
+
+If you believe you have received this notice in error, you may submit a counter-notice in accordance with 17 U.S.C. § 512(g).
+
+case[1] provider=MirrorRelay abuse=abuse@mirrorrelay.io
+subject: DMCA Notice: unauthorized streaming hosted by MirrorRelay
+channel:
+rights_owner_reference_url:
+stream_urls: ['https://mirror.generic-host.io/v/clip.mp4']
+screenshot_urls: ['https://res.cloudinary.com/demo/image/upload/generic_server.jpg']
+server_labels: ['source 1']
+body:
+Object: Broadcast_LIPTV_ID
+MirrorRelay, abuse@mirrorrelay.io
+To whom it may concern
+
+This letter constitutes a formal notification under the provisions of the Digital Millennium
+Copyright Act (DMCA), 17 U.S.C. § 512, to demand the immediate removal or disabling
+of access to infringing copyrighted material hosted on, or accessible through your servers,
+relating to the unauthorised retransmission of licensed audio-visual content and channel signals.
+
+I am the copyright owner or an agent authorized to act on behalf of the owner of the
+following copyrighted work(s): https://pirate-stream.example/.
+A representative list of our copyrighted works may also be provided upon request.
+
+The infringing materials are located at the following URLs and evidence links:
+Title(s): Broadcast stream
+Abuse date: <GENERATED_AT>
+Infringing page: https://pirate-stream.example/
+- URL(s): https://mirror.generic-host.io/v/clip.mp4
+  Protocol: mp4
+  Server/Source: source 1
+  Hostname: mirror.generic-host.io
+  Infringement Evidence: https://res.cloudinary.com/demo/image/upload/generic_server.jpg
+
+I have a good faith belief that the use of the copyrighted material described above is not
+authorized by the copyright owner, its agent, or the law.
+I declare, under penalty of perjury, that the information in this notification is accurate
+and that I am authorized to act on behalf of the owner of an exclusive right that is allegedly infringed.
+
+We demand the immediate removal or disabling of access to the infringing material
+identified above and that the reported entity cease any further infringement.
+
+If you believe you have received this notice in error, you may submit a counter-notice in accordance with 17 U.S.C. § 512(g).

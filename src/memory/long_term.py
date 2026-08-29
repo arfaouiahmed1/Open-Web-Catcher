@@ -1,20 +1,27 @@
-"""Long-term site memory for cross-run extraction hints."""
+"""Long-term site memory for cross-run extraction hints.
+
+Plan task 18 phase 2: the legacy ``site_memory.db`` SQLite store and the JSON
+profiles store are DECOMMISSIONED. :class:`LongTermMemory` keeps its public
+surface (``remember``, ``build_prompt_context``) so orchestrator/agent call
+sites stay untouched, but every read/write now flows through the relational
+pgvector store (``site_hints`` via :class:`SiteHintRepository` /
+:func:`src.memory.site_hint_writer.write_site_hint`). Historical rows were
+imported into ``site_hints`` by alembic revision ``20260826_0022`` before the
+old stores stopped being written.
+"""
 
 from __future__ import annotations
 
 import json
 import re
-import sqlite3
-from collections import Counter
-from datetime import datetime
-from pathlib import Path
-from threading import Lock
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from src.utils.logging import get_logger
 from src.utils.observability import RunTrace
 
-_PROFILE_VERSION = 1
+logger = get_logger(__name__)
+
 _PROFILE_ARRAY_LIMITS = {
     "selectors": 32,
     "pagination_url_patterns": 16,
@@ -69,10 +76,6 @@ def _format_memory_items(values: list[str], limit: int = 4) -> str:
     return ", ".join(f"`{item}`" for item in items) if items else "`none`"
 
 
-def _format_counter_items(counter: Counter[str], limit: int = 4) -> str:
-    return _format_memory_items([item for item, _ in counter.most_common(limit)], limit)
-
-
 def _looks_like_pagination_url(url: str) -> bool:
     candidate = str(url or "").lower()
     if not candidate:
@@ -123,42 +126,6 @@ def _generalize_url_pattern(url: str) -> str:
     return normalized
 
 
-def _build_profile_key(domain: str, page_type: str) -> str:
-    return f"{domain}::{page_type}"
-
-
-def _default_profile(domain: str, page_type: str) -> dict[str, Any]:
-    return {
-        "domain": domain,
-        "page_type": page_type,
-        "revision": 0,
-        "updated_at": "",
-        "updated_by": "",
-        "last_refresh_reason": "",
-        "ui_change_detected": False,
-        "ui_change_notes": [],
-        "selectors": [],
-        "pagination_url_patterns": [],
-        "url_patterns": [],
-        "navigation_hints": [],
-        "critical_links": [],
-        "server_labels": [],
-        "stream_hosts": [],
-        "ui_signals": [],
-        "hosting_candidate_urls": [],
-        "server_records": [],
-        "server_screenshots": [],
-        "server_stream_urls": [],
-        "activated_servers": [],
-        "playbook_steps": [],
-        "rejected_patterns": [],
-        "failure_cues": [],
-        "pagination_rules": [],
-        "landing_match_urls": [],
-        "continuation_notes": [],
-    }
-
-
 def _extract_urls_from_payload(value: Any, *, limit: int = 120) -> list[str]:
     urls: list[str] = []
 
@@ -196,40 +163,14 @@ def _extract_urls_from_payload(value: Any, *, limit: int = 120) -> list[str]:
     return _dedupe_keep_order([url for url in urls if url.startswith(("http://", "https://"))])
 
 
-def _safe_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _should_refresh_profile_from_failed_entry(entry: dict[str, Any]) -> bool:
-    page_type = str(entry.get("page_type", "") or "").strip().lower()
-    if page_type != "landing_page":
-        return False
-
-    hosting_candidates = _coerce_string_list(entry.get("hosting_candidate_urls", []))
-    if hosting_candidates:
-        return True
-
-    critical_links = _coerce_string_list(entry.get("critical_links", []))
-    url_patterns = _coerce_string_list(entry.get("url_patterns", []))
-    selectors = _coerce_string_list(entry.get("selectors", []))
-    tool_steps = _coerce_string_list(entry.get("tool_steps", []))
-
-    if len(url_patterns) >= 3 and len(critical_links) >= 5:
-        return True
-    if len(tool_steps) >= 4 and len(selectors) >= 2 and len(critical_links) >= 3:
-        return True
-    return False
-
-
 class LongTermMemory:
     """Stores reusable site-playbook hints across extraction runs.
 
-    This is not classic RAG. It is a structured site-memory store: successful
-    tool sequences, repeated selectors, server labels, stream hosts, and
-    recurring failure patterns grouped by domain and page type.
+    This is not classic RAG. It is a structured site-memory store backed by
+    the pgvector ``site_hints`` table (one row per domain/page_type). The
+    legacy ``site_memory.db`` / JSON-profile stores were decommissioned in
+    plan task 18 phase 2; ``db_path``/``profiles_path`` are accepted for
+    call-site compatibility and ignored.
     """
 
     def __init__(
@@ -238,175 +179,7 @@ class LongTermMemory:
         profiles_path: str | None = None,
         entry_ttl_days: int = 90,
     ) -> None:
-        self.db_path = db_path
         self._entry_ttl_days = max(int(entry_ttl_days or 90), 1)
-        db_file = Path(db_path)
-        db_file.parent.mkdir(parents=True, exist_ok=True)
-        if profiles_path:
-            self._profiles_path = Path(profiles_path)
-        else:
-            self._profiles_path = db_file.with_name(f"{db_file.stem}_profiles.json")
-        self._profiles_path.parent.mkdir(parents=True, exist_ok=True)
-        self._profile_lock = Lock()
-        self._bootstrap()
-
-    def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path, check_same_thread=False)
-
-    def _bootstrap(self) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS site_memory_entries (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    domain TEXT NOT NULL,
-                    page_type TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    run_id TEXT NOT NULL,
-                    url TEXT NOT NULL,
-                    success INTEGER NOT NULL,
-                    data TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT
-                )
-                """
-            )
-            # Migration: add expires_at to existing databases that lack the column.
-            try:
-                conn.execute("ALTER TABLE site_memory_entries ADD COLUMN expires_at TEXT")
-            except Exception:
-                pass  # Column already exists — no action needed.
-            conn.commit()
-
-    def save_pattern(self, domain: str, pattern_type: str, data: dict[str, Any]) -> None:
-        payload = dict(data)
-        payload.setdefault("pattern_type", pattern_type)
-        self.remember(
-            url=f"https://{domain}",
-            page_type=pattern_type,
-            status=str(payload.get("status", "unknown")),
-            payload=payload,
-            run_id=str(payload.get("run_id", "")),
-        )
-
-    def get_patterns(self, domain: str, pattern_type: str | None = None) -> list[dict[str, Any]]:
-        rows = self._fetch_entries(domain=domain, page_type=pattern_type, limit=25)
-        return [row["data"] for row in rows]
-
-    def list_profiles(
-        self,
-        *,
-        domain: str | None = None,
-        page_type: str | None = None,
-        limit: int = 25,
-    ) -> list[dict[str, Any]]:
-        normalized_domain = _normalize_domain(domain or "") if domain else ""
-        normalized_page_type = str(page_type or "").strip()
-        with self._profile_lock:
-            store = self._load_profiles_store()
-        profiles = list(store["profiles"].values())
-        if normalized_domain:
-            profiles = [profile for profile in profiles if profile.get("domain") == normalized_domain]
-        if normalized_page_type:
-            profiles = [profile for profile in profiles if profile.get("page_type") == normalized_page_type]
-        profiles.sort(key=lambda item: str(item.get("updated_at", "")), reverse=True)
-        capped = profiles[: max(int(limit or 1), 1)]
-        return [json.loads(json.dumps(item)) for item in capped]
-
-    def get_profile(self, *, url: str, page_type: str) -> dict[str, Any]:
-        domain = _normalize_domain(url)
-        normalized_page_type = str(page_type or "").strip()
-        if not domain or not normalized_page_type:
-            return {}
-        key = _build_profile_key(domain, normalized_page_type)
-        with self._profile_lock:
-            store = self._load_profiles_store()
-            profile = store["profiles"].get(key)
-            if profile is None:
-                return {}
-            return json.loads(json.dumps(profile))
-
-    def upsert_profile(
-        self,
-        *,
-        url: str,
-        page_type: str,
-        patch: dict[str, Any],
-        source: str = "agent_auto",
-        reason: str = "",
-        replace: bool = False,
-    ) -> dict[str, Any]:
-        domain = _normalize_domain(url)
-        normalized_page_type = str(page_type or "").strip()
-        if not domain or not normalized_page_type:
-            return {}
-
-        key = _build_profile_key(domain, normalized_page_type)
-        now = datetime.utcnow().isoformat()
-
-        with self._profile_lock:
-            store = self._load_profiles_store()
-            existing = dict(store["profiles"].get(key) or _default_profile(domain, normalized_page_type))
-            merged = dict(existing)
-            changed = False
-
-            for field, max_items in _PROFILE_ARRAY_LIMITS.items():
-                existing_values = _coerce_string_list(existing.get(field, []))
-                incoming_values = _coerce_string_list((patch or {}).get(field, []))
-                if replace and field in (patch or {}):
-                    next_values = incoming_values[:max_items]
-                elif incoming_values:
-                    next_values = _dedupe_keep_order([*existing_values, *incoming_values])[:max_items]
-                else:
-                    next_values = existing_values[:max_items]
-                merged[field] = next_values
-                if next_values != existing_values:
-                    changed = True
-
-            explicit_ui_change = bool((patch or {}).get("ui_change_detected", False))
-            if explicit_ui_change:
-                merged["ui_change_detected"] = True
-                changed = True
-
-            old_signature = set(_coerce_string_list(existing.get("selectors", [])) + _coerce_string_list(existing.get("url_patterns", [])))
-            incoming_signature = set(_coerce_string_list((patch or {}).get("selectors", [])) + _coerce_string_list((patch or {}).get("url_patterns", [])))
-            if old_signature and incoming_signature:
-                overlap = len(old_signature & incoming_signature) / max(len(incoming_signature), 1)
-                if overlap < 0.35:
-                    merged["ui_change_detected"] = True
-                    ui_note = f"structural drift detected (signature overlap={overlap:.2f})"
-                    merged["ui_change_notes"] = _dedupe_keep_order(
-                        _coerce_string_list(existing.get("ui_change_notes", [])) + [ui_note]
-                    )[:6]
-                    changed = True
-
-            patch_notes = _coerce_string_list((patch or {}).get("ui_change_notes", []))
-            if patch_notes:
-                merged["ui_change_notes"] = _dedupe_keep_order(
-                    _coerce_string_list(existing.get("ui_change_notes", [])) + patch_notes
-                )[:6]
-                changed = True
-
-            reason_text = str(reason or "").strip()
-            if reason_text and reason_text != str(existing.get("last_refresh_reason", "")):
-                merged["last_refresh_reason"] = reason_text
-                changed = True
-
-            merged.setdefault("domain", domain)
-            merged.setdefault("page_type", normalized_page_type)
-
-            if changed:
-                merged["revision"] = _safe_int(existing.get("revision", 0), 0) + 1
-                merged["updated_at"] = now
-                merged["updated_by"] = str(source or "agent_auto")
-            else:
-                merged["revision"] = _safe_int(existing.get("revision", 0), 0)
-                merged["updated_at"] = str(existing.get("updated_at", ""))
-                merged["updated_by"] = str(existing.get("updated_by", ""))
-
-            store["profiles"][key] = merged
-            self._save_profiles_store(store)
-            return json.loads(json.dumps(merged))
 
     def remember(
         self,
@@ -420,7 +193,6 @@ class LongTermMemory:
         run_id: str = "",
         short_memory_summary: str = "",
     ) -> dict[str, Any]:
-        domain = _normalize_domain(url)
         data = build_site_memory_entry(
             url=url,
             page_type=page_type,
@@ -430,482 +202,85 @@ class LongTermMemory:
             actor=actor,
             short_memory_summary=short_memory_summary,
         )
-        from datetime import timedelta  # noqa: PLC0415
-        now = datetime.utcnow()
-        expires_at_str = (now + timedelta(days=self._entry_ttl_days)).isoformat()
 
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO site_memory_entries
-                (domain, page_type, status, run_id, url, success, data, created_at, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    domain,
-                    page_type,
-                    status,
-                    run_id,
-                    url,
-                    1 if data["success"] else 0,
-                    json.dumps(data, ensure_ascii=False),
-                    now.isoformat(),
-                    expires_at_str,
-                ),
-            )
-            conn.commit()
+        # Phase 2 write path: straight into the pgvector site_hints store.
+        # The legacy sqlite insert + JSON profile refresh are gone; the single
+        # (domain, page_type) hint row carries summary + playbook + selectors.
+        try:
+            from src.memory.site_hint_writer import write_site_hint
+            from src.storage.database import SessionLocal
 
-        should_refresh_profile = bool(data.get("success"))
-        if not should_refresh_profile:
-            should_refresh_profile = _should_refresh_profile_from_failed_entry(data)
-
-        if should_refresh_profile:
-            profile_patch = self._build_profile_patch(entry=data, payload=payload or {})
-            if profile_patch:
-                self.upsert_profile(
-                    url=url,
+            session = SessionLocal()
+            try:
+                write_site_hint(
+                    session,
+                    domain=url,
                     page_type=page_type,
-                    patch=profile_patch,
-                    source="agent_auto",
-                    reason=f"auto refresh from {page_type} ({status})",
-                    replace=False,
+                    raw_entry=data,
+                    ttl_days=self._entry_ttl_days,
                 )
+            finally:
+                session.close()
+        except Exception as exc:  # pragma: no cover - runtime safeguard
+            logger.warning("Could not persist site hint for %s: %s", url, exc)
+
         return data
 
     def build_prompt_context(self, url: str, page_type: str, limit: int = 6) -> str:
+        """Render remembered hints as a prompt block from ``site_hints``."""
         domain = _normalize_domain(url)
-        rows = self._fetch_entries(domain=domain, page_type=page_type, limit=limit)
-        if not rows:
-            rows = self._fetch_entries(domain=domain, page_type=None, limit=max(limit, 4))
-        if not rows:
+        if not domain:
             return ""
 
-        profile = self.get_profile(url=url, page_type=page_type)
-        if not profile:
-            domain_profiles = self.list_profiles(domain=domain, page_type=page_type, limit=1)
-            profile = domain_profiles[0] if domain_profiles else {}
+        try:
+            from src.storage.database import SessionLocal
+            from src.storage.repositories import SiteHintRepository
+        except Exception:  # pragma: no cover - storage unavailable in tests
+            return ""
 
-        tool_counts: Counter[str] = Counter()
-        target_counts: Counter[str] = Counter()
-        selector_counts: Counter[str] = Counter()
-        server_counts: Counter[str] = Counter()
-        stream_host_counts: Counter[str] = Counter()
-        url_pattern_counts: Counter[str] = Counter()
-        pagination_counts: Counter[str] = Counter()
-        critical_link_counts: Counter[str] = Counter()
-        latest_step_playbook: list[str] = []
-        latest_detailed_playbook: list[str] = []
-        rejected_patterns: list[str] = []
-        pagination_rules: list[str] = []
-        landing_match_urls: list[str] = []
-        continuation_notes: list[str] = []
-        failure_patterns: list[str] = []
-        successes = 0
+        session = SessionLocal()
+        try:
+            repo = SiteHintRepository(session)
+            records = repo.get_hints(domain=domain, page_type=page_type, limit=max(int(limit), 1))
+            if not records:
+                records = repo.get_hints(domain=domain, limit=max(int(limit), 4))
+        except Exception as exc:  # pragma: no cover - runtime safeguard
+            logger.warning("Could not load site hints for %s: %s", url, exc)
+            return ""
+        finally:
+            session.close()
 
-        for row in rows:
-            data = row["data"]
-            successes += 1 if data.get("success") else 0
-            tool_counts.update(data.get("tool_sequence", []))
-            target_counts.update(data.get("navigation_targets", []))
-            selector_counts.update(data.get("selectors", []))
-            server_counts.update(data.get("server_labels", []))
-            stream_host_counts.update(data.get("stream_hosts", []))
-            url_pattern_counts.update(data.get("url_patterns", []))
-            pagination_counts.update(data.get("pagination_patterns", []))
-            critical_link_counts.update(data.get("critical_links", []))
-            if not latest_step_playbook and data.get("success"):
-                latest_step_playbook = _coerce_string_list(data.get("tool_steps", []))
-                latest_detailed_playbook = _coerce_string_list(data.get("playbook_steps", []))
-            rejected_patterns.extend(_coerce_string_list(data.get("rejected_patterns", [])))
-            pagination_rules.extend(_coerce_string_list(data.get("pagination_rules", [])))
-            landing_match_urls.extend(_coerce_string_list(data.get("landing_match_urls", [])))
-            continuation_notes.extend(_coerce_string_list(data.get("continuation_notes", [])))
-            if not data.get("success") and data.get("result_summary"):
-                failure_patterns.append(str(data["result_summary"]))
-            failure_patterns.extend(_coerce_string_list(data.get("failure_cues", [])))
-
-        profile_selectors = _coerce_string_list(profile.get("selectors", [])) if profile else []
-        profile_url_patterns = _coerce_string_list(profile.get("url_patterns", [])) if profile else []
-        profile_pagination = (
-            _coerce_string_list(profile.get("pagination_url_patterns", [])) if profile else []
-        )
-        profile_servers = _coerce_string_list(profile.get("activated_servers", [])) if profile else []
-        profile_streams = _coerce_string_list(profile.get("server_stream_urls", [])) if profile else []
-        profile_playbook = _coerce_string_list(profile.get("playbook_steps", [])) if profile else []
-        profile_rejected = _coerce_string_list(profile.get("rejected_patterns", [])) if profile else []
-        profile_pagination_rules = _coerce_string_list(profile.get("pagination_rules", [])) if profile else []
-        profile_landing_urls = _coerce_string_list(profile.get("landing_match_urls", [])) if profile else []
+        if not records:
+            return ""
 
         lines = [
             "SITE MEMORY PLAYBOOK",
             "Use as hints only; re-verify on the live page.",
-            f"- scope: `{domain}` `{page_type}`; remembered `{len(rows)}` runs, `{successes}` successes",
-            "- steps: "
-            + (
-                " -> ".join(f"`{step}`" for step in latest_step_playbook[:5])
-                if latest_step_playbook
-                else _format_counter_items(tool_counts, 4)
-            ),
-            "- detailed playbook: "
-            + (
-                " -> ".join(
-                    f"`{step}`"
-                    for step in _dedupe_keep_order([*profile_playbook, *latest_detailed_playbook])[:6]
-                )
-                if (profile_playbook or latest_detailed_playbook)
-                else "`none`"
-            ),
-            "- selectors/clicks: "
-            + _format_memory_items([*profile_selectors, *[item for item, _ in selector_counts.most_common(4)]], 5),
-            "- route patterns: "
-            + _format_memory_items(
-                [
-                    *profile_url_patterns,
-                    *[item for item, _ in url_pattern_counts.most_common(4)],
-                ],
-                5,
-            ),
-            "- pagination: "
-            + _format_memory_items(
-                [*profile_pagination, *[item for item, _ in pagination_counts.most_common(3)]],
-                3,
-            ),
-            "- pagination rules: "
-            + _format_memory_items([*profile_pagination_rules, *pagination_rules], 4),
+            f"- scope: `{domain}` `{page_type}`; `{len(records)}` remembered hint(s)",
         ]
-
-        if page_type == "landing_page" and profile and profile.get("hosting_candidate_urls"):
+        for record in records:
+            rate_pct = round(float(record.success_rate or 0.0) * 100)
             lines.append(
-                f"- landing: `{len(_coerce_string_list(profile.get('hosting_candidate_urls', [])))}` remembered hosting candidates; infer patterns, do not replay stale URLs"
+                f"- summary [{record.page_type}, success~{rate_pct}%]: "
+                f"{(record.summary_text or '').strip()[:400]}"
             )
-        if page_type == "landing_page" and (profile_landing_urls or landing_match_urls):
-            lines.append(
-                "- landing match urls: "
-                + _format_memory_items([*profile_landing_urls, *landing_match_urls], 5)
-            )
-        if page_type in {"hosting_page", "embedded_page"}:
-            lines.append(
-                "- player/server: "
-                + _format_memory_items(
-                    [*profile_servers, *[item for item, _ in server_counts.most_common(4)]],
-                    5,
+            steps = [str(step) for step in (record.navigation_steps or [])][:6]
+            if steps:
+                lines.append(
+                    "- detailed playbook: "
+                    + " -> ".join(f"`{step}`" for step in steps)
                 )
-            )
-            lines.append(
-                "- streams/hosts: "
-                + _format_memory_items(
-                    [
-                        *profile_streams,
-                        *[item for item, _ in stream_host_counts.most_common(4)],
-                    ],
-                    5,
+            selectors = [str(item) for item in (record.selectors or [])][:5]
+            if selectors:
+                lines.append(
+                    "- selectors/clicks: "
+                    + _format_memory_items(selectors, 5)
                 )
-            )
-        if profile and profile.get("ui_change_detected"):
-            notes = _coerce_string_list(profile.get("ui_change_notes", []))
-            lines.append("- drift: " + _format_memory_items(notes or ["possible structural drift"], 2))
-        rejected = _dedupe_keep_order([*profile_rejected, *rejected_patterns])
-        if rejected:
-            lines.append("- rejected patterns: " + _format_memory_items(rejected, 4))
-        if continuation_notes:
-            lines.append("- continuation notes: " + _format_memory_items(continuation_notes, 2))
-        if failure_patterns:
-            lines.append(
-                "- recent failures: "
-                + "; ".join(f"`{pattern[:90]}`" for pattern in failure_patterns[:2])
-            )
         lines.append("- policy: try remembered selectors/patterns first, then inspect if they fail")
         return "\n".join(lines)
 
     def close(self) -> None:
         """Maintained for backwards compatibility."""
-
-    def _fetch_entries(self, *, domain: str, page_type: str | None, limit: int) -> list[dict[str, Any]]:
-        query = """
-            SELECT page_type, status, success, data, created_at
-            FROM site_memory_entries
-            WHERE domain = ?
-            AND (expires_at IS NULL OR expires_at > datetime('now'))
-        """
-        params: list[Any] = [domain]
-        if page_type:
-            query += " AND page_type = ?"
-            params.append(page_type)
-        query += " ORDER BY created_at DESC LIMIT ?"
-        params.append(max(int(limit or 1), 1))
-
-        with self._connect() as conn:
-            rows = conn.execute(query, params).fetchall()
-        return [
-            {
-                "page_type": row[0],
-                "status": row[1],
-                "success": bool(row[2]),
-                "data": json.loads(row[3]),
-                "created_at": row[4],
-            }
-            for row in rows
-        ]
-
-    def _load_profiles_store(self) -> dict[str, Any]:
-        default_store = {"version": _PROFILE_VERSION, "profiles": {}}
-        if not self._profiles_path.exists():
-            return default_store
-        try:
-            raw = self._profiles_path.read_text(encoding="utf-8")
-            loaded = json.loads(raw or "{}")
-            if not isinstance(loaded, dict):
-                return default_store
-            profiles = loaded.get("profiles")
-            if not isinstance(profiles, dict):
-                profiles = {}
-            return {
-                "version": _safe_int(loaded.get("version", _PROFILE_VERSION), _PROFILE_VERSION),
-                "profiles": profiles,
-            }
-        except Exception:
-            return default_store
-
-    def _save_profiles_store(self, store: dict[str, Any]) -> None:
-        payload = {
-            "version": _PROFILE_VERSION,
-            "profiles": store.get("profiles", {}),
-        }
-        temp_path = self._profiles_path.with_suffix(self._profiles_path.suffix + ".tmp")
-        temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        temp_path.replace(self._profiles_path)
-
-    def _build_profile_patch(self, *, entry: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-        patch: dict[str, list[str]] = {
-            "selectors": _coerce_string_list(entry.get("selectors", [])),
-            "pagination_url_patterns": _coerce_string_list(entry.get("pagination_patterns", [])),
-            "url_patterns": _coerce_string_list(entry.get("url_patterns", [])),
-            "navigation_hints": _coerce_string_list(entry.get("navigation_targets", [])),
-            "critical_links": _coerce_string_list(entry.get("critical_links", [])),
-            "server_labels": _coerce_string_list(entry.get("server_labels", [])),
-            "stream_hosts": _coerce_string_list(entry.get("stream_hosts", [])),
-            "ui_signals": [],
-            "hosting_candidate_urls": _coerce_string_list(entry.get("hosting_candidate_urls", [])),
-            "server_records": _coerce_string_list(entry.get("server_records", [])),
-            "server_screenshots": _coerce_string_list(entry.get("server_screenshots", [])),
-            "server_stream_urls": _coerce_string_list(entry.get("server_stream_urls", [])),
-            "activated_servers": _coerce_string_list(entry.get("activated_servers", [])),
-            "playbook_steps": _coerce_string_list(entry.get("playbook_steps", [])),
-            "rejected_patterns": _coerce_string_list(entry.get("rejected_patterns", [])),
-            "failure_cues": _coerce_string_list(entry.get("failure_cues", [])),
-            "pagination_rules": _coerce_string_list(entry.get("pagination_rules", [])),
-            "landing_match_urls": _coerce_string_list(entry.get("landing_match_urls", [])),
-            "continuation_notes": _coerce_string_list(entry.get("continuation_notes", [])),
-        }
-        patch["navigation_hints"].extend(_coerce_string_list(entry.get("tool_steps", [])))
-        patch["playbook_steps"].extend(_coerce_string_list(entry.get("tool_steps", [])))
-
-        for target in patch["navigation_hints"]:
-            if "=" not in target:
-                continue
-            candidate = str(target).split("=", 1)[1].strip()
-            if candidate.startswith(("http://", "https://")):
-                patch["critical_links"].append(candidate)
-                patch["url_patterns"].append(_generalize_url_pattern(candidate))
-                if _looks_like_pagination_url(candidate):
-                    patch["pagination_url_patterns"].append(_generalize_url_pattern(candidate))
-
-        site_patterns = payload.get("site_patterns", {}) if isinstance(payload, dict) else {}
-        if isinstance(site_patterns, dict):
-            for key in ("hosting_url_pattern", "listing_url_pattern", "url_pattern"):
-                value = site_patterns.get(key)
-                if value:
-                    patch["url_patterns"].append(str(value))
-            pagination = site_patterns.get("pagination", {})
-            if isinstance(pagination, dict):
-                pagination_pattern = pagination.get("url_pattern")
-                if pagination_pattern:
-                    patch["pagination_url_patterns"].append(str(pagination_pattern))
-                for key, value in pagination.items():
-                    if value:
-                        patch["pagination_rules"].append(f"{key}={value}")
-
-        run_memory = payload.get("run_memory", {}) if isinstance(payload, dict) else {}
-        if isinstance(run_memory, dict):
-            common_memory = run_memory.get("common", run_memory)
-            if isinstance(common_memory, dict):
-                patch["selectors"].extend(_coerce_string_list(common_memory.get("selectors", [])))
-                patch["pagination_url_patterns"].extend(
-                    _coerce_string_list(common_memory.get("pagination_patterns", []))
-                )
-                patch["url_patterns"].extend(_coerce_string_list(common_memory.get("url_patterns", [])))
-                patch["critical_links"].extend(_coerce_string_list(common_memory.get("critical_links", [])))
-                patch["server_labels"].extend(_coerce_string_list(common_memory.get("server_labels", [])))
-                patch["stream_hosts"].extend(_coerce_string_list(common_memory.get("stream_hosts", [])))
-
-            patch["hosting_candidate_urls"].extend(
-                _coerce_string_list(run_memory.get("hosting_candidate_urls", []))
-            )
-            patch["server_records"].extend(_coerce_string_list(run_memory.get("server_records", [])))
-            patch["server_screenshots"].extend(
-                _coerce_string_list(run_memory.get("server_screenshots", []))
-            )
-            patch["server_stream_urls"].extend(
-                _coerce_string_list(run_memory.get("server_stream_urls", []))
-            )
-            patch["activated_servers"].extend(_coerce_string_list(run_memory.get("activated_servers", [])))
-
-            agent_specific = run_memory.get("agent_specific", {})
-            if isinstance(agent_specific, dict):
-                for scoped in agent_specific.values():
-                    if not isinstance(scoped, dict):
-                        continue
-                    patch["hosting_candidate_urls"].extend(
-                        _coerce_string_list(scoped.get("hosting_candidate_urls", []))
-                    )
-                    patch["server_records"].extend(_coerce_string_list(scoped.get("server_records", [])))
-                    patch["server_screenshots"].extend(
-                        _coerce_string_list(scoped.get("server_screenshots", []))
-                    )
-                    patch["server_stream_urls"].extend(
-                        _coerce_string_list(scoped.get("server_stream_urls", []))
-                    )
-                    patch["activated_servers"].extend(
-                        _coerce_string_list(scoped.get("activated_servers", []))
-                    )
-
-        extraction_summary = payload.get("extraction_summary", {}) if isinstance(payload, dict) else {}
-        if isinstance(extraction_summary, dict):
-            for key in ("pagination_detected", "pages_paginated", "pagination_rule", "stop_reason"):
-                if extraction_summary.get(key):
-                    patch["pagination_rules"].append(f"{key}={extraction_summary.get(key)}")
-            patch["rejected_patterns"].extend(
-                _coerce_string_list(extraction_summary.get("rejected_patterns", []))
-            )
-            patch["failure_cues"].extend(_coerce_string_list(extraction_summary.get("failure_cues", [])))
-
-        for key in ("rejected_patterns", "rejected_urls", "rejected_candidates", "blocked_patterns"):
-            patch["rejected_patterns"].extend(_coerce_string_list(payload.get(key, [])) if isinstance(payload, dict) else [])
-
-        agent_run = payload.get("agent_run", {}) if isinstance(payload, dict) else {}
-        if isinstance(agent_run, dict):
-            if agent_run.get("stop_reason"):
-                patch["failure_cues"].append(f"stop_reason={agent_run.get('stop_reason')}")
-            if agent_run.get("parse_error"):
-                patch["failure_cues"].append(f"parse_error={agent_run.get('parse_error')}")
-            for capsule in agent_run.get("continuation_capsules", []) or []:
-                if not isinstance(capsule, dict):
-                    continue
-                note = {
-                    "index": capsule.get("continuation_index"),
-                    "reason": capsule.get("compaction_reason"),
-                    "next_best_move": capsule.get("next_best_move"),
-                }
-                patch["continuation_notes"].append(
-                    json.dumps(note, ensure_ascii=False, sort_keys=True)
-                )
-
-        hosting_pages = payload.get("hosting_pages", []) if isinstance(payload, dict) else []
-        if isinstance(hosting_pages, list):
-            for candidate in hosting_pages:
-                if isinstance(candidate, dict):
-                    candidate_url = str(candidate.get("url") or candidate.get("href") or "").strip()
-                elif isinstance(candidate, str):
-                    candidate_url = str(candidate).strip()
-                else:
-                    candidate_url = ""
-                if not candidate_url.startswith(("http://", "https://")):
-                    continue
-                patch["hosting_candidate_urls"].append(candidate_url)
-                patch["landing_match_urls"].append(candidate_url)
-                patch["critical_links"].append(candidate_url)
-                patch["url_patterns"].append(_generalize_url_pattern(candidate_url))
-                if _looks_like_pagination_url(candidate_url):
-                    patch["pagination_url_patterns"].append(_generalize_url_pattern(candidate_url))
-
-        servers = payload.get("servers", []) if isinstance(payload, dict) else []
-        if isinstance(servers, list):
-            for index, server in enumerate(servers):
-                if not isinstance(server, dict):
-                    continue
-                label = str(server.get("label") or server.get("name") or server.get("server") or f"server_{index + 1}").strip()
-                if label:
-                    patch["server_labels"].append(label)
-
-                screenshot_url = str(server.get("screenshot_url") or "").strip()
-                if screenshot_url:
-                    patch["server_screenshots"].append(screenshot_url)
-
-                embedded_url = str(server.get("embedded_url") or "").strip()
-                if embedded_url.startswith(("http://", "https://")):
-                    patch["critical_links"].append(embedded_url)
-                    patch["url_patterns"].append(_generalize_url_pattern(embedded_url))
-
-                stream_urls: list[str] = []
-                for field in ("m3u8_urls", "mpd_urls", "mp4_urls"):
-                    values = server.get(field, [])
-                    if not isinstance(values, list):
-                        continue
-                    for value in values:
-                        stream_candidate = str(value or "").strip()
-                        if stream_candidate:
-                            stream_urls.append(stream_candidate)
-                primary_stream = str(server.get("primary_stream") or "").strip()
-                if primary_stream:
-                    stream_urls.append(primary_stream)
-
-                unique_streams = _dedupe_keep_order(stream_urls)
-                patch["server_stream_urls"].extend(unique_streams)
-                for stream_candidate in unique_streams:
-                    patch["critical_links"].append(stream_candidate)
-                    patch["stream_hosts"].append(_normalize_domain(stream_candidate))
-
-                status = str(server.get("status") or "").strip().lower()
-                player_state = str(server.get("player_state") or "").strip().lower()
-                server_up = bool(server.get("server_up"))
-                if label and (
-                    server_up
-                    or status in {"success", "partial", "active"}
-                    or player_state in {"playing", "loading", "ready"}
-                ):
-                    patch["activated_servers"].append(label)
-
-                server_record = {
-                    "label": label,
-                    "status": status or ("success" if server_up else "unknown"),
-                    "player_state": player_state or "unknown",
-                    "server_up": server_up,
-                    "stream_count": len(unique_streams),
-                    "primary_stream": primary_stream,
-                    "embedded_url": embedded_url,
-                    "screenshot_url": screenshot_url,
-                }
-                patch["server_records"].append(
-                    json.dumps(server_record, ensure_ascii=False, sort_keys=True)
-                )
-
-        payload_urls = _extract_urls_from_payload(payload)
-        patch["critical_links"].extend(payload_urls)
-        patch["url_patterns"].extend([_generalize_url_pattern(item) for item in payload_urls])
-        patch["pagination_url_patterns"].extend(
-            [_generalize_url_pattern(item) for item in payload_urls if _looks_like_pagination_url(item)]
-        )
-
-        for field, max_items in _PROFILE_ARRAY_LIMITS.items():
-            patch[field] = _dedupe_keep_order([value for value in patch.get(field, []) if value])[:max_items]
-
-        return {field: values for field, values in patch.items() if values}
-
-    def _result_summary(self, page_type: str, status: str, payload: dict[str, Any]) -> str:
-        if page_type == "classification":
-            return f"classified as {payload.get('page_type', 'unknown')} with confidence {payload.get('confidence', 'unknown')}"
-        if page_type == "landing_page":
-            return f"landing run {status}; hosting pages found={len(payload.get('hosting_pages', []) or [])}"
-        if page_type in {"hosting_page", "embedded_page"}:
-            decision = payload.get("decision", "")
-            stream_count = len(payload.get("streaming_urls", []) or []) + len(payload.get("all_stream_urls", []) or [])
-            successful_servers = payload.get("successful_servers", 0)
-            return (
-                f"{page_type} run {status}; decision={decision or 'n/a'}; "
-                f"streams={stream_count}; successful_servers={successful_servers}"
-            )
-        return f"{page_type} run {status}"
-
 
 def build_site_memory_entry(
     *,

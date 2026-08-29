@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import create_engine
@@ -147,7 +147,7 @@ def test_batch_adjusted_success_counts_external_blockers_and_excludes_cancelled(
             .all()
         )
         statuses = ["success", "page_inaccessible", "no_streams", "failed", "cancelled"]
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         for row, status in zip(rows, statuses, strict=True):
             row.status = status
             row.final_status = status
@@ -192,7 +192,7 @@ def test_site_payload_exposes_adjusted_metrics_without_changing_strict_counts() 
             .all()
         )
         statuses = ["success", "page_inaccessible", "failed", "cancelled"]
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         for row, status in zip(rows, statuses, strict=True):
             row.site_id = first_site.id
             row.status = status

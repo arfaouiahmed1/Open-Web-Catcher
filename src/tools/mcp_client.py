@@ -23,7 +23,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, AsyncGenerator
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -149,7 +149,7 @@ REQUIRED_TOOLS_BY_PROFILE = {
 
 
 def _disabled_tools_for_profile(settings: Settings, profile: str) -> set[str]:
-    browser = str(getattr(settings, "browser_engine", "") or "puppeteer").strip().lower()
+    browser = str(getattr(settings, "browser_engine", "") or "playwright").strip().lower()
     by_browser = getattr(settings, "disabled_tools_by_browser_profile", {}) or {}
     if isinstance(by_browser, dict):
         browser_profiles = by_browser.get(browser, {})
@@ -166,11 +166,34 @@ def _disabled_tools_for_profile(settings: Settings, profile: str) -> set[str]:
     return set()
 
 
+def _target_query_params(target_url: str | None) -> str:
+    """Build URL-safe targetHost/targetUrl query params for the SSE URL.
+
+    Returns "" when no usable target is known so legacy profile-only
+    sessions stay byte-identical to the pre-target wire format.
+    """
+    candidate = str(target_url or "").strip()
+    if not candidate:
+        return ""
+    try:
+        parsed = urlsplit(candidate)
+    except ValueError:
+        return ""
+    host = (parsed.hostname or "").strip().lower()
+    if not host:
+        return ""
+    params = f"targetHost={quote(host, safe='')}"
+    if parsed.scheme and parsed.netloc:
+        params += f"&targetUrl={quote(candidate, safe='')}"
+    return params
+
+
 @asynccontextmanager
 async def agent_tools(
     profile: str,
     settings: Settings,
     observer: "RunObserver | None" = None,
+    target_url: str | None = None,
 ) -> AsyncGenerator[list[BaseTool], None]:
     """Async context manager that yields LangChain tools for the given profile.
 
@@ -181,20 +204,29 @@ async def agent_tools(
     Args:
         profile: One of classification | landing | hosting | embedded
         settings: Application settings (provides mcp_server_url)
+        observer: Optional run observer for telemetry events
+        target_url: Optional workflow target URL. When set, its normalized
+            host (and the URL itself) travel as SSE query params so the
+            server can key the persistent browser jar by
+            (profile, target-host). Omit it to get the stable profile-only jar.
 
     Yields:
         List of LangChain BaseTool objects ready for bind_tools()
 
     Example:
-        async with agent_tools("hosting", settings) as tools:
+        async with agent_tools("hosting", settings, target_url=url) as tools:
             result = await run_agent_loop(llm, tools, system_prompt, message)
     """
     if profile not in VALID_PROFILES:
         raise ValueError(f"Unknown profile '{profile}'. Valid: {VALID_PROFILES}")
 
-    run_query = ""
+    query_parts: list[str] = []
     if observer is not None and getattr(observer, "run_id", ""):
-        run_query = f"?runId={quote(str(observer.run_id), safe='')}"
+        query_parts.append(f"runId={quote(str(observer.run_id), safe='')}")
+    target_query = _target_query_params(target_url)
+    if target_query:
+        query_parts.append(target_query)
+    run_query = f"?{'&'.join(query_parts)}" if query_parts else ""
     url = f"{settings.mcp_server_url}/mcp/{profile}/sse{run_query}"
     logger.info("Connecting to MCP profile '%s' at %s", profile, url)
     if observer is not None:
@@ -281,6 +313,16 @@ async def agent_tools(
             raise RuntimeError(
                 f"MCP profile '{profile}' disabled required tools: {', '.join(missing_after_filter)}"
             )
+
+        # Plan task 18 phase 2: register the backend agentic memory_search
+        # tool on every profile. It talks straight to the pgvector site_hints
+        # store (no MCP round-trip), replacing the old per-turn memory stuffing.
+        if bool(getattr(settings, "memory_enabled", True)):
+            from src.memory.agentic_tool import build_memory_search_tool
+
+            tools = [*tools, build_memory_search_tool()]
+
+        tool_names = [t.name for t in tools]
 
         logger.info("MCP profile '%s' loaded %d tools: %s", profile, len(tools), tool_names)
         if observer is not None:

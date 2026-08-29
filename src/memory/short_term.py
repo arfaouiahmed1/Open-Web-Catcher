@@ -718,7 +718,8 @@ class ShortTermMemory:
         if bucket is None:
             return
         merged = _dedupe_keep_order([*bucket, str(value or "")])
-        self._signals[key] = merged[:max_items]
+        # Newest-wins ring buffer: past cap, evict oldest so fresh signals survive [SCH-H3].
+        self._signals[key] = merged[-max_items:]
 
     def _signal_limit(self, key: str) -> int:
         page_type = self.page_type

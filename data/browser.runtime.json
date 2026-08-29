@@ -1,7 +1,7 @@
 {
-  "browser_engine": "puppeteer",
+  "browser_engine": "playwright",
   "browser_runtime": {
-    "puppeteer": {
+    "playwright": {
       "launch_timeout_ms": 45000,
       "extra_launch_args": [],
       "adblock_allowlist_hosts": [],
@@ -49,59 +49,6 @@
         2000,
         4000
       ],
-      "media_cors_patch_enabled": true,
-      "media_playback_verification_enabled": true,
-      "media_playback_verification_timeout_ms": 7000,
-      "media_activation_settle_ms": 1200,
-      "media_activation_candidate_limit": 8,
-      "media_preflight_action_limit": 4
-    },
-    "playwright": {
-      "launch_timeout_ms": 45000,
-      "extra_launch_args": [],
-      "adblock_allowlist_hosts": [],
-      "fingerprint_rotation_mode": "origin",
-      "fingerprint_fallback_strategy": "profile",
-      "fingerprint_rotation_interval_ms": 180000,
-      "fingerprint_rotation_max_uses": 6,
-      "fingerprint_recent_pool_size": 12,
-      "proxy_enabled": false,
-      "proxy_source_mode": "hybrid",
-      "proxy_source_order": [
-        "openproxylist-https",
-        "proxifly-http",
-        "monosans-http",
-        "speedx-http",
-        "openproxylist-socks5",
-        "proxifly-socks5",
-        "monosans-socks5",
-        "speedx-socks5",
-        "proxifly-socks4"
-      ],
-      "proxy_custom_list": [],
-      "proxy_rotation_mode": "sticky",
-      "proxy_selection_strategy": "ordered",
-      "proxy_fallback_strategy": "direct",
-      "proxy_fetch_timeout_ms": 8000,
-      "proxy_validation_timeout_ms": 12000,
-      "proxy_cache_ttl_ms": 600000,
-      "proxy_max_candidates": 25,
-      "proxy_test_url": "https://api.ipify.org?format=json",
-      "streaming_safe_mode": "adaptive",
-      "media_proxy_strategy": "direct_first",
-      "asset_diagnostics_enabled": true,
-      "popup_blocking_enabled": false,
-      "ubol_enabled": true,
-      "iframe_sandbox_patch_enabled": true,
-      "iframe_auto_recovery_enabled": true,
-      "iframe_recovery_timeout_ms": 20000,
-      "media_capture_timeout_ms": 30000,
-      "media_retry_count": 3,
-      "media_retry_backoff_ms": [
-        1000,
-        2000,
-        4000
-      ],
       "media_cors_patch_enabled": false,
       "media_playback_verification_enabled": true,
       "media_playback_verification_timeout_ms": 7000,
@@ -111,9 +58,9 @@
     }
   },
   "runtime_sync": {
-    "source_path": "/app/data/settings.runtime.yaml",
-    "bridge_path": "/app/data/browser.runtime.json",
-    "synced_at": "2026-07-02T14:13:43.609011+00:00",
+    "source_path": "C:\\Users\\ahmed\\Desktop\\PFE New Test\\data\\settings.runtime.yaml",
+    "bridge_path": "C:\\Users\\ahmed\\Desktop\\PFE New Test\\data\\browser.runtime.json",
+    "synced_at": "2026-08-29T11:50:16.204563+00:00",
     "active_runtime_source": "runtime_yaml"
   }
 }

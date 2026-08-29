@@ -118,6 +118,7 @@ const elementRefSchema = z.string().optional().default('').describe('Element ref
 const selectorSchema = z.string().optional().default('').describe('CSS selector');
 const xpathSchema = z.string().optional().default('').describe('XPath locator');
 const textSchema = z.string().optional().default('').describe('Visible text fragment');
+const nodeIdSchema = z.string().optional().default('').describe('Context-tree node id (use with scope_element_ref/scope_selector/scope_xpath)');
 const waitMsSchema = z.number().optional().default(1500).describe('Wait after action in milliseconds');
 const interactModeSchema = z.enum(['click', 'play', 'type', 'select', 'coordinates', 'check', 'checkbox', 'radio']).optional().default('click');
 const locatorStrategySchema = z.enum(['strict', 'xpath_first', 'selector_first', 'text_first']).optional().default('strict');
@@ -142,7 +143,7 @@ const TOOL_SPECS = {
     (browserWsEndpoint, toolImpls) => (args) => toolImpls.get_page_context({ ...args, browserWsEndpoint }),
   ),
   query_elements: spec(
-    'Use when you already know what to target (kind/text/attrs) and need element_ref handles for follow-up actions. Supports regex matching for noisy pages.',
+    'Use when you already know what to target (kind/text/attrs) and need element_ref handles for follow-up actions. Supports regex matching and subtree scoping (scope_element_ref/scope_selector/scope_xpath).',
     {
       frame_path: 'root',
       kind: 'link',
@@ -150,10 +151,11 @@ const TOOL_SPECS = {
       text_regex: '(watch|play|live)',
       attr_name: 'data-server',
       attr_value_regex: 'server\\s*[0-9]+',
+      scope_selector: '.server-list',
       visible_only: true,
       limit: 10,
     },
-    { ok: true, total_matches: 3, matches: [{ kind: 'link', text: 'Watch now', element_ref: '...' }], screenshot_url: 'https://res.cloudinary.com/...' },
+    { ok: true, total_matches: 3, query_specificity: 2, scope_applied: true, matches: [{ kind: 'link', text: 'Watch now', element_ref: '...' }], screenshot_url: 'https://res.cloudinary.com/...' },
     {
       frame_path: framePathSchema,
       kind: z.enum(['link', 'button', 'input', 'checkbox', 'radio', 'select', 'video', 'iframe', 'form', 'tab', 'overlay']).optional(),
@@ -164,6 +166,11 @@ const TOOL_SPECS = {
       attr_name: z.string().optional().default(''),
       attr_value_contains: z.string().optional().default(''),
       attr_value_regex: z.string().optional().default(''),
+      scope_node_id: nodeIdSchema,
+      scope_element_ref: elementRefSchema,
+      scope_selector: selectorSchema,
+      scope_xpath: xpathSchema,
+      scope_text: textSchema,
       visible_only: z.boolean().optional().default(true),
       limit: z.number().optional().default(20),
     },

@@ -14,13 +14,14 @@ from time import perf_counter
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.agents.errors import RunCancelledError
+from src.agents.pools import cancel_run_pools
 from src.api.provider_config import (
     ModelConfigRequest,
     apply_ui_config_update,
@@ -47,14 +48,18 @@ from src.storage.dataset_repository import DatasetRepository
 from src.storage.models import PricingConfigRecord
 from src.storage.repositories import (
     BackgroundJobRepository,
+    RunPlanRepository,
     RunRepository,
     normalize_runtime_event_payload,
 )
 from src.storage.ui_repository import OperatorConsoleRepository
 from src.utils.config import (
     Settings,
+    SettingsPatchError,
     normalize_runtime_profile,
+    read_settings_with_sources,
     resolve_agent_runtime_config,
+    validate_settings_patch,
 )
 from src.utils.console_state import (
     JOB_ACTIVE_STATUSES,
@@ -72,6 +77,7 @@ from src.utils.service_health import (
     probe_browser,
     probe_mcp,
 )
+from src.utils.timefmt import iso_z
 
 logger = get_logger(__name__)
 
@@ -183,11 +189,29 @@ class RunRequest(BaseModel):
 class DatasetExportRequest(BaseModel):
     dataset_name: str = ""
     limit: int = 25
-    path: str = ""
 
 
 class PromptUpdateRequest(BaseModel):
     content: str = ""
+
+
+class MemorySearchRequest(BaseModel):
+    query: str
+    domain: str = ""
+    page_type: str = ""
+    limit: int = 8
+
+
+class MemoryUpdateRequest(BaseModel):
+    """Write payload for the Node memory_update proxy (plan task 18 phase 2)."""
+
+    url: str
+    page_type: str = "unknown"
+    refresh_reason: str = ""
+    status: str = "success"
+    selectors: list[str] = []
+    navigation_steps: list[str] = []
+    playbook_steps: list[str] = []
 
 
 class PromptDryRunRequest(BaseModel):
@@ -249,7 +273,7 @@ def reset_settings_cache() -> None:
 
 
 def _playground_tool_session_key(profile: str, settings: Settings) -> str:
-    browser = str(getattr(settings, "browser_engine", "") or "puppeteer").strip().lower()
+    browser = str(getattr(settings, "browser_engine", "") or "playwright").strip().lower()
     mcp_url = str(getattr(settings, "mcp_server_url", "") or "").strip()
     disabled_signature = json.dumps(
         {
@@ -315,6 +339,10 @@ def _track_run_task(run_id: str, task: asyncio.Task) -> asyncio.Task:
 
 
 async def _cancel_active_run_task(run_id: str) -> bool:
+    # Plan T28 / spike §D4 layer 4: tear down the run's streaming pool workers
+    # (sentinels + cancel) before unwinding the top-level task, so a hard
+    # teardown cannot leave orphaned workers holding browser sessions.
+    await cancel_run_pools(run_id)
     task = _active_run_tasks.get(run_id)
     if task is None or task.done():
         return False
@@ -381,7 +409,14 @@ async def _invoke_named_tool(
 
 
 def _cors_origins(settings: Settings) -> list[str]:
-    return [item.strip() for item in settings.ui_cors_origins.split(",") if item.strip()]
+    raw = [item.strip() for item in settings.ui_cors_origins.split(",") if item.strip()]
+    hardened = [origin for origin in raw if origin != "*"]
+    if len(hardened) != len(raw):
+        logger.warning(
+            "ui_cors_origins contained a wildcard '*' entry; rejected by CORS "
+            "hardening (plan T47). Configure explicit origins instead."
+        )
+    return hardened
 
 
 def _merged_pricing_config(settings: Settings, config: PricingConfig) -> dict[str, dict[str, Any]]:
@@ -511,7 +546,7 @@ def _provider_pricing_status_payload(session, settings: Settings) -> dict[str, d
             "configured": _provider_api_key_available(settings, provider_key),
             "model_count": len(provider_rows),
             "available": len(provider_rows) > 0,
-            "last_sync_at": updated_at.isoformat() if updated_at else "",
+            "last_sync_at": iso_z(updated_at),
         }
     return status
 
@@ -541,10 +576,72 @@ def _auto_sync_provider_pricing(settings: Settings) -> None:
         )
 
 
+def _sweep_process_restart_orphans(
+    session: Any,
+    repo: BackgroundJobRepository,
+    previous_running_run_ids: list[str],
+) -> int:
+    """Flip stale-recovered jobs to ``process_restart_orphan`` (plan T28 / §D5).
+
+    For every background job the stale sweep just recovered whose ``run_id`` is
+    absent from this fresh process's ``_active_run_tasks``, record the orphan
+    failure mode on the job row and append a synthetic ``pipeline_failed``
+    runtime event so the operator console shows truth instead of spinning.
+    """
+    from src.storage.models import BackgroundJobRecord
+
+    swept = 0
+    for run_id in previous_running_run_ids:
+        if not run_id or run_id in _active_run_tasks:
+            continue
+        row = (
+            session.query(BackgroundJobRecord)
+            .filter(BackgroundJobRecord.run_id == run_id)
+            .one_or_none()
+        )
+        if row is None or row.status not in {"retrying", "dead_letter"}:
+            # Either untouched by the stale sweep or already terminal.
+            continue
+        try:
+            repo.mark_failed(run_id, error_text="process_restart_orphan")
+        except Exception as exc:  # noqa: BLE001 — sweep must never crash startup
+            logger.warning("Failed to mark restart orphan %s: %s", run_id, exc)
+            continue
+        observer = None
+        trace = run_registry.get(run_id)
+        if trace is not None:
+            observer = run_registry.restore(trace)
+        if observer is not None:
+            try:
+                observer.emit(
+                    "pipeline_failed",
+                    "Run orphaned by a process restart; queue work was lost",
+                    status="error",
+                    details={"failure_mode": "process_restart_orphan"},
+                )
+                observer.finish(success=False, failure_mode="process_restart_orphan")
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Failed to finalize orphaned trace %s: %s", run_id, exc)
+        swept += 1
+    return swept
+
+
 def _recover_background_jobs() -> int:
     session = get_session()
     try:
-        return BackgroundJobRepository(session).recover_stale_running(stale_after_seconds=180)
+        from src.storage.models import BackgroundJobRecord
+
+        repo = BackgroundJobRepository(session)
+        previous_running = [
+            row.run_id
+            for row in session.query(BackgroundJobRecord.run_id)
+            .filter(BackgroundJobRecord.status == "running")
+            .all()
+        ]
+        recovered = repo.recover_stale_running(stale_after_seconds=180)
+        if recovered and previous_running:
+            _sweep_process_restart_orphans(session, repo, previous_running)
+        return recovered
     except Exception as exc:  # noqa: BLE001
         logger.debug("Skipping background job recovery: %s", exc)
         return 0
@@ -586,7 +683,7 @@ async def _execute_background_job(job: dict[str, Any]) -> dict[str, Any]:
     if job_type == "workflow":
         execution = await _track_run_task(
             run_id,
-            asyncio.create_task(_background_workflow(run_id, url)),
+            asyncio.create_task(_background_workflow(run_id, url, max_cost_usd=payload.get("max_cost_usd"))),
         )
     elif job_type == "agent":
         execution = await _track_run_task(
@@ -607,21 +704,23 @@ async def _execute_background_job(job: dict[str, Any]) -> dict[str, Any]:
     try:
         repo = BackgroundJobRepository(session)
         dataset_repo = DatasetRepository(session)
-        if execution.get("ok"):
-            repo.mark_succeeded(run_id, result_json=execution.get("result") or {})
-            result_payload = execution.get("result") or {}
-            dataset_repo.finalize_site_run(
-                run_id,
-                display_status=str(result_payload.get("final_status", "") or "success"),
-                result_json=result_payload,
-            )
-        elif execution.get("cancelled"):
+        trace = run_registry.get(run_id)
+        cancellation_requested = bool(trace is not None and trace.cancel_requested)
+        if execution.get("cancelled") or cancellation_requested:
             repo.mark_cancelled(run_id, reason=str(execution.get("error", "Cancelled")))
             dataset_repo.finalize_site_run(
                 run_id,
                 display_status="cancelled",
                 result_json=execution.get("result") or {},
                 error_text=str(execution.get("error", "Cancelled")),
+            )
+        elif execution.get("ok"):
+            repo.mark_succeeded(run_id, result_json=execution.get("result") or {})
+            result_payload = execution.get("result") or {}
+            dataset_repo.finalize_site_run(
+                run_id,
+                display_status=str(result_payload.get("final_status", "") or "success"),
+                result_json=result_payload,
             )
         else:
             failed_job = repo.mark_failed(
@@ -663,7 +762,11 @@ async def _background_worker_loop() -> None:
                 job = _claim_background_job()
                 if job is None:
                     break
-                task = asyncio.create_task(_execute_background_job(job))
+                run_id = str(job.get("run_id", "") or "")
+                task = _track_run_task(
+                    run_id,
+                    asyncio.create_task(_execute_background_job(job)),
+                )
                 running.add(task)
 
             if running:
@@ -674,10 +777,10 @@ async def _background_worker_loop() -> None:
                 )
                 running = set(pending)
                 for task in done:
+                    if task.cancelled():
+                        continue
                     try:
                         task.result()
-                    except asyncio.CancelledError:
-                        raise
                     except Exception as exc:  # noqa: BLE001
                         logger.exception("Background job task failed: %s", exc)
                 continue
@@ -705,21 +808,45 @@ async def lifespan(app: FastAPI):
     session = get_session()
     try:
         cleanup = RunRepository(session).cleanup_old_artifacts(
-            retention_days=settings.background_job_retention_days
+            retention_days=settings.background_job_retention_days,
+            days_by_table={
+                "runs": settings.retention_days_runs,
+                "run_snapshots": settings.retention_days_run_snapshots,
+                "llm_calls": settings.retention_days_llm_calls,
+                "tool_calls": settings.retention_days_tool_calls,
+                "agent_outputs": settings.retention_days_agent_outputs,
+            },
         )
     except Exception as exc:  # noqa: BLE001
         logger.debug("Skipping startup artifact cleanup: %s", exc)
     finally:
         session.close()
+    # Plan task 19: memory retention tick (expired site_hints + orphaned
+    # embeddings) runs on the same startup pass; counts surface in the log.
+    retention_counts = {"hints_pruned": 0, "embeddings_orphaned": 0}
+    try:
+        from src.memory.retention import run_retention_tick
+        from src.storage.repositories import SiteHintRepository
+
+        retention_session = get_session()
+        try:
+            retention_counts = run_retention_tick(
+                SiteHintRepository(retention_session), session=retention_session
+            )
+        finally:
+            retention_session.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Skipping startup memory retention tick: %s", exc)
     _refresh_pricing_from_db(settings)
     _auto_sync_provider_pricing(settings)
     _background_worker_task = asyncio.create_task(_background_worker_loop())
     logger.info(
-        "Open Web Catcher API started | orchestrator=%s | agents=%s | recovered_jobs=%d | cleanup=%s",
+        "Open Web Catcher API started | orchestrator=%s | agents=%s | recovered_jobs=%d | cleanup=%s | retention=%s",
         settings.orchestrator_model,
         settings.agent_model,
         recovered_jobs,
         cleanup,
+        retention_counts,
     )
     yield
     if _background_worker_task is not None:
@@ -741,6 +868,13 @@ app = FastAPI(
     ),
     version="0.2.0",
     lifespan=lifespan,
+    # F-2 (security review): default /docs, /redoc and /openapi.json are plain
+    # Starlette routes registered during __init__, so router-level dependencies
+    # never apply to them and they leaked the full API surface pre-auth.
+    # Defaults disabled here; gated replacements mounted after the guard below.
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 app.add_middleware(
     CORSMiddleware,
@@ -749,6 +883,49 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _security_headers_middleware(request: Request, call_next):
+    """Security response headers (plan T47 quick-wins)."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
+    return response
+
+# ── Auth foundation (plan T3) ────────────────────────────────────────────────
+# SECURITY-CRITICAL PLACEMENT: FastAPI snapshots router-level dependencies into
+# each route at registration time, so appending the global bearer guard here —
+# BEFORE any @app.* route below and before include_router calls — is what makes
+# EVERY route require a token. Do not move this block down the file.
+# Exemptions (POST /api/auth/login, POST /api/auth/bootstrap-admin, GET /health)
+# live in PUBLIC_ROUTES; ?token=<jwt> is also accepted because the console's SSE
+# consumers use native EventSource, which cannot send Authorization headers.
+from src.api.auth.dependencies import get_current_user
+from src.api.auth.router import router as auth_router
+
+app.include_router(auth_router)
+app.router.dependencies.append(Depends(get_current_user))
+
+# F-2: gated documentation replacements for the disabled defaults above.
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.responses import HTMLResponse, JSONResponse
+
+
+@app.get("/openapi.json", include_in_schema=False)
+def _gated_openapi_json(_: Any = Depends(get_current_user)) -> JSONResponse:
+    return JSONResponse(app.openapi())
+
+
+@app.get("/docs", include_in_schema=False)
+def _gated_swagger_ui(_: Any = Depends(get_current_user)) -> HTMLResponse:
+    return get_swagger_ui_html(openapi_url="/openapi.json", title=f"{app.title} - docs")
+
+
+@app.get("/redoc", include_in_schema=False)
+def _gated_redoc(_: Any = Depends(get_current_user)) -> HTMLResponse:
+    return get_redoc_html(openapi_url="/openapi.json", title=f"{app.title} - docs")
 
 
 def _active_trace_row(trace: Any) -> dict[str, Any]:
@@ -774,7 +951,7 @@ def _active_trace_row(trace: Any) -> dict[str, Any]:
         "event_count": len(trace.events),
         "completed": trace.completed,
         "cancel_requested": trace.cancel_requested,
-        "started_at": trace.started_at.isoformat(),
+        "started_at": iso_z(trace.started_at),
         "total_tokens_in": total_tokens_in,
         "total_tokens_out": total_tokens_out,
         "total_tokens": total_tokens_in + total_tokens_out,
@@ -997,9 +1174,9 @@ def _background_job_row(job: Any) -> dict[str, Any]:
         "estimated_total_cost_usd": summary["estimated_total_cost_usd"],
         "total_cost_usd": summary["estimated_total_cost_usd"],
         "total_messages": summary["total_messages"],
-        "created_at": created_at.isoformat() if created_at else "",
-        "started_at": started_at.isoformat() if started_at else "",
-        "finished_at": finished_at.isoformat() if finished_at else "",
+        "created_at": iso_z(created_at),
+        "started_at": iso_z(started_at),
+        "finished_at": iso_z(finished_at),
         "root_actor": job.actor,
         "job_type": job.job_type,
         "attempts": int(job.attempts or 0),
@@ -1030,18 +1207,10 @@ def _background_job_state(job: Any) -> dict[str, Any]:
         "attempts": int(getattr(job, "attempts", 0) or 0),
         "max_attempts": int(getattr(job, "max_attempts", 0) or 0),
         "error_text": str(getattr(job, "error_text", "") or ""),
-        "created_at": getattr(job, "created_at", None).isoformat()
-        if getattr(job, "created_at", None)
-        else "",
-        "started_at": getattr(job, "started_at", None).isoformat()
-        if getattr(job, "started_at", None)
-        else "",
-        "finished_at": getattr(job, "finished_at", None).isoformat()
-        if getattr(job, "finished_at", None)
-        else "",
-        "heartbeat_at": getattr(job, "heartbeat_at", None).isoformat()
-        if getattr(job, "heartbeat_at", None)
-        else "",
+        "created_at": iso_z(getattr(job, "created_at", None)),
+        "started_at": iso_z(getattr(job, "started_at", None)),
+        "finished_at": iso_z(getattr(job, "finished_at", None)),
+        "heartbeat_at": iso_z(getattr(job, "heartbeat_at", None)),
     }
 
 
@@ -1275,9 +1444,9 @@ def _build_trace_detail_payload(
         else 0.0,
         "total_cost_usd": float(metrics.estimated_total_cost_usd or 0.0) if metrics else 0.0,
         "total_messages": int(metrics.total_messages or 0) if metrics else 0,
-        "created_at": trace.started_at.isoformat(),
-        "started_at": trace.started_at.isoformat(),
-        "finished_at": trace.finished_at.isoformat() if trace.finished_at else "",
+        "created_at": iso_z(trace.started_at),
+        "started_at": iso_z(trace.started_at),
+        "finished_at": iso_z(trace.finished_at),
         "root_actor": trace.root_actor,
         "job_type": str(
             (job_state or {}).get("job_type")
@@ -1401,12 +1570,18 @@ def _persist_trace_snapshot(run_id: str, *, root_actor: str, url: str) -> None:
         return
     session = get_session()
     try:
-        RunRepository(session).save_trace_snapshot(
-            run_id=run_id, root_actor=root_actor, url=url, trace=trace
-        )
-        BackgroundJobRepository(session).heartbeat(run_id)
-    except SQLAlchemyError as exc:
-        logger.debug("Skipping trace snapshot persistence for run_id=%s: %s", run_id, exc)
+        try:
+            # Snapshot commits inside save_trace_snapshot; heartbeat stays independent.
+            RunRepository(session).save_trace_snapshot(
+                run_id=run_id, root_actor=root_actor, url=url, trace=trace
+            )
+        except SQLAlchemyError as exc:
+            logger.warning("Trace snapshot persistence failed for run_id=%s: %s", run_id, exc)
+            return
+        try:
+            BackgroundJobRepository(session).heartbeat(run_id)
+        except SQLAlchemyError as exc:
+            logger.warning("Heartbeat after trace snapshot failed for run_id=%s: %s", run_id, exc)
     finally:
         session.close()
 
@@ -1475,7 +1650,7 @@ async def _trace_persist_loop(
         logger.debug("Trace persistence loop failed for run_id=%s: %s", run_id, exc)
 
 
-async def _background_workflow(run_id: str, url: str) -> dict[str, Any]:
+async def _background_workflow(run_id: str, url: str, max_cost_usd: float | None = None) -> dict[str, Any]:
     from src.agents.orchestrator import run_pipeline as _run_pipeline
 
     settings = get_settings()
@@ -1485,11 +1660,15 @@ async def _background_workflow(run_id: str, url: str) -> dict[str, Any]:
         observability=get_observability_status(settings),
     )
     observer.set_url(url)
+    if max_cost_usd is not None:
+        observer.set_max_cost_usd(max_cost_usd)
     persist_task = asyncio.create_task(
         _trace_persist_loop(run_id, root_actor="orchestrator", url=url)
     )
     try:
         result = await _run_pipeline(url=url, settings=settings, observer=observer)
+        if observer.is_cancel_requested():
+            raise RunCancelledError(observer.cancel_reason())
         trace = run_registry.get(run_id)
         await _persist_pipeline_result(result)
         return {"ok": True, "result": _background_result_payload(result, trace)}
@@ -1549,6 +1728,8 @@ async def _background_agent(
             ),
             timeout=timeout_seconds,
         )
+        if observer.is_cancel_requested():
+            raise RunCancelledError(observer.cancel_reason())
         success = True
         failure_mode = ""
         if isinstance(result, ExtractionResult):
@@ -2009,6 +2190,25 @@ def _background_job_health() -> dict[str, Any]:
         session.close()
 
 
+_PLAN_EVENT_KINDS = frozenset({"run_plan_created", "plan_step_update"})
+
+
+def _load_run_plan_snapshot(run_id: str) -> dict[str, Any] | None:
+    """Read-only RunPlan artifact fetch for the SSE carrier (plan task 27).
+
+    Returns the plan document with live step statuses, or None when the run
+    has no plan artifact. Failures never break the stream.
+    """
+    session = get_session()
+    try:
+        return RunPlanRepository(session).get_plan(run_id)
+    except Exception:
+        logger.warning("Failed to load run plan snapshot", extra={"run_id": run_id})
+        return None
+    finally:
+        session.close()
+
+
 async def _stream_trace(run_id: str, request: Request | None = None):
     last_seq = 0
     first_tick = True
@@ -2091,9 +2291,9 @@ async def _stream_trace(run_id: str, request: Request | None = None):
                                             if display_status in {"success", "partial"}
                                             else "error",
                                             "message": str(job.error_text or "") or display_status,
-                                            "timestamp": (
+                                            "timestamp": iso_z(
                                                 job.finished_at or job.updated_at or job.created_at
-                                            ).isoformat(),
+                                            ),
                                             "details": {
                                                 "job_status": str(job.status or ""),
                                                 "display_status": display_status,
@@ -2149,6 +2349,16 @@ async def _stream_trace(run_id: str, request: Request | None = None):
                     "cancel_requested": trace.cancel_requested,
                     "cancel_reason": trace.cancel_reason,
                 }
+                # Plan task 27 SSE carrier: attach the RunPlan artifact (with
+                # live step statuses) on the first tick and whenever a plan
+                # event flows through. plan_step_update / run_plan_created
+                # events themselves ride `new_events` generically above.
+                if first_tick or any(
+                    event.get("kind") in _PLAN_EVENT_KINDS for event in new_events
+                ):
+                    plan_snapshot = _load_run_plan_snapshot(run_id)
+                    if plan_snapshot is not None:
+                        payload["plan"] = plan_snapshot
                 yield f"data: {json.dumps(payload, default=str)}\n\n"
                 first_tick = False
 
@@ -2203,6 +2413,36 @@ def health():
         "runtime_preflight": runtime["preflight"],
         "observability": get_observability_status(settings).model_dump(),
     }
+
+
+@app.get("/blobs/{key}")
+def read_blob_endpoint(key: str):
+    """Resolve a blobref payload (plan task 32 review fix #2).
+
+    The DB stores ``blobref:<16-hex>`` pointers for oversized payloads and
+    screenshots; this is the single production read path that turns a ref
+    back into bytes. Key is sanitized inside ``read_blob`` (alnum, <=16
+    chars), so no traversal is possible. Auth-gated via the router-level
+    dependency like every other route. 410 signals the backing file was
+    garbage-collected or never landed — callers treat it as missing data.
+
+    Screenshots (the dominant use) are PNGs; serve those with an image type
+    so <img src> works, everything else falls back to octet-stream.
+    """
+    from fastapi.responses import Response
+
+    from src.storage.blob_store import read_blob
+
+    data = read_blob(f"blobref:{key}")
+    if data is None:
+        raise HTTPException(status_code=410, detail="blob unavailable")
+    _PNG_MAGIC = b"\x89PNG\x0d\x0a\x1a\x0a"
+    media_type = "image/png" if data[:8] == _PNG_MAGIC else "application/octet-stream"
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
 
 
 @app.post("/classify", response_model=ClassificationResult)
@@ -2268,7 +2508,7 @@ def list_runs(limit: int = 50):
                 "message_count": ((r.result_json or {}).get("metrics") or {}).get(
                     "total_messages", 0
                 ),
-                "created_at": r.created_at.isoformat(),
+                "created_at": iso_z(r.created_at),
             }
             for r in records
         ]
@@ -2356,20 +2596,84 @@ def get_run_prompt_compilations(run_id: str):
 
 @app.get("/memory")
 def get_memory_entries(domain: str = "", page_type: str = "", limit: int = 50):
+    """Read the pgvector site_hints store (plan task 18 phase 2).
+
+    This used to read legacy per-run memory entries; it now serves the same
+    relational store the agents' ``memory_search`` tool reads.
+    """
+    from src.storage.repositories import SiteHintRepository
+
     session = get_session()
     try:
-        repo = RunRepository(session)
+        records = SiteHintRepository(session).get_hints(
+            domain=domain or None,
+            page_type=page_type or None,
+            limit=max(int(limit), 1),
+        )
         return {
             "domain": domain or None,
             "page_type": page_type or None,
-            "entries": repo.list_memory_entries(
-                domain=domain or None,
-                page_type=page_type or None,
-                limit=limit,
-            ),
+            "entries": [
+                {
+                    "domain": record.domain,
+                    "page_type": record.page_type,
+                    "summary_text": record.summary_text or "",
+                    "navigation_steps": list(record.navigation_steps or []),
+                    "selectors": list(record.selectors or []),
+                    "success_rate": float(record.success_rate or 0.0),
+                    "updated_at": iso_z(record.updated_at) if record.updated_at else "",
+                }
+                for record in records
+            ],
         }
     finally:
         session.close()
+
+
+@app.post("/memory/search")
+def search_memory(req: MemorySearchRequest):
+    """Backend search endpoint backing the agentic memory_search tool and the
+    Node-side proxies (plan task 18 phase 2)."""
+    from src.memory.hints_service import run_memory_search
+
+    return run_memory_search(
+        req.query,
+        domain=req.domain or None,
+        page_type=req.page_type,
+        limit=req.limit,
+    )
+
+
+@app.post("/memory/update")
+def update_memory(req: MemoryUpdateRequest):
+    """Write path for the Node memory_update proxy — distills the patch into a
+    site_hints row via write_site_hint (legacy JSON store is gone)."""
+    from src.memory.site_hint_writer import write_site_hint
+
+    raw_entry = {
+        "url": req.url,
+        "page_type": req.page_type,
+        "status": req.status,
+        "success": req.status in {"success", "partial"},
+        "short_memory_summary": req.refresh_reason,
+        "selectors": req.selectors,
+        "playbook_steps": [*req.playbook_steps, *req.navigation_steps],
+        "tool_steps": req.navigation_steps,
+    }
+    session = get_session()
+    try:
+        record = write_site_hint(
+            session, domain=req.url, page_type=req.page_type, raw_entry=raw_entry
+        )
+        return {
+            "ok": True,
+            "domain": record.domain,
+            "page_type": record.page_type,
+            "summary_text": record.summary_text,
+        }
+    finally:
+        session.close()
+
 
 
 @app.get("/runs/{run_id}/events")
@@ -2427,7 +2731,7 @@ def export_dataset(req: DatasetExportRequest):
                 logger.warning("Skipping run '%s' during dataset export: %s", record.run_id, exc)
         examples = build_dataset_examples(results)
         export_path = export_dataset_examples(
-            examples, settings=settings, dataset_name=req.dataset_name, path=req.path or None
+            examples, settings=settings, dataset_name=req.dataset_name
         )
         return {
             "dataset_name": req.dataset_name or settings.default_dataset_name,
@@ -2624,9 +2928,9 @@ def ui_run_detail(run_id: str):
                 events = [
                     {
                         "seq": 1,
-                        "timestamp": job.finished_at.isoformat()
+                        "timestamp": iso_z(job.finished_at)
                         if job.finished_at
-                        else (job.started_at.isoformat() if job.started_at else ""),
+                        else iso_z(job.started_at),
                         "actor": str(job.actor or ""),
                         "kind": "agent_finished",
                         "message": "Agent result loaded from background job result payload.",
@@ -2659,8 +2963,8 @@ def ui_run_detail(run_id: str):
                 "actor": str(job.actor or ""),
                 "agent_type": summary["agent_type"] or str(job.actor or ""),
                 "status": run_row["final_status"] or display_status,
-                "started_at": job.started_at.isoformat() if job.started_at else "",
-                "finished_at": job.finished_at.isoformat() if job.finished_at else "",
+                "started_at": iso_z(job.started_at),
+                "finished_at": iso_z(job.finished_at),
                 "duration_seconds": float(run_row.get("duration_seconds", 0.0) or 0.0),
                 "tool_calls": len(tool_rows) or summary["total_tool_calls"],
                 "tool_calls_made": len(tool_rows) or summary["total_tool_calls"],
@@ -3046,7 +3350,16 @@ def _enqueue_background_job(
             "Background job table unavailable; falling back to in-memory task execution: %s", exc
         )
         if job_type == "workflow":
-            _track_run_task(run_id, asyncio.create_task(_background_workflow(run_id, url)))
+            _track_run_task(
+                run_id,
+                asyncio.create_task(
+                    _background_workflow(
+                        run_id,
+                        url,
+                        max_cost_usd=(payload or {}).get("max_cost_usd"),
+                    )
+                ),
+            )
         else:
             _track_run_task(
                 run_id,
@@ -3083,7 +3396,7 @@ async def ui_workflow_run(req: WorkflowRunRequest):
         job_type="workflow",
         url=req.url,
         actor="orchestrator",
-        payload={"url": req.url},
+        payload={"url": req.url, "max_cost_usd": req.max_cost_usd},
         idempotency_key=key,
     )
 
@@ -3258,8 +3571,17 @@ class PricingSyncRequest(BaseModel):
 
 @app.get("/ui/config")
 def ui_get_config():
-    """Return current LLM provider/model config and API key status."""
-    return ui_config_payload(get_settings())
+    """Return current LLM provider/model config and API key status.
+
+    The payload additionally carries ``settings_sources``: every Settings
+    field as ``{"value": ..., "source_layer": ...}`` resolved through the
+    enforced precedence chain ``default < env < base_yaml < runtime_yaml``
+    (T36 settings reliability contract).
+    """
+    settings = get_settings()
+    payload = ui_config_payload(settings)
+    payload["settings_sources"] = read_settings_with_sources(settings)
+    return payload
 
 
 @app.get("/ui/providers/models")
@@ -3282,7 +3604,21 @@ def ui_provider_models(
 
 @app.put("/ui/config")
 def ui_update_config(body: ModelConfigRequest):
-    """Update active LLM provider/model at runtime and persist to settings.yaml."""
+    """Update active LLM provider/model at runtime and persist to settings.yaml.
+
+    The patch is validated server-side against the typed Settings field
+    models (T36): unknown or mistyped fields fail fast with 422 before any
+    state is mutated or persisted.
+    """
+    try:
+        # Typed validation only here: apply_ui_config_update owns mutation and
+        # persistence; this guard makes every settings PATCH contract-safe.
+        validate_settings_patch(body.model_dump(exclude_none=True))
+    except SettingsPatchError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "invalid settings update", "errors": exc.errors},
+        ) from exc
     return apply_ui_config_update(
         get_settings(),
         body,
@@ -3452,6 +3788,53 @@ def ui_estimate_costs(
     }
 
 
+@app.post("/api/workflows/estimate")
+def api_workflows_estimate(
+    url_count: int = Query(1, ge=1, description="Number of URLs to process"),
+    agent_set: str = Query("", description="Comma-separated agent names (optional filter)"),
+):
+    """Return a projected cost range (p50/p75) from historical run_model_usage stats.
+
+    This is a best-effort estimate based on completed runs already in the database.
+    When fewer than 5 historical data points exist the response still returns
+    whatever percentiles can be computed; callers should display them with a
+    low-confidence caveat.
+    """
+    session = get_session()
+    try:
+        repo = RunRepository(session)
+        agent_list = [a.strip() for a in agent_set.split(",") if a.strip()] if agent_set.strip() else None
+        stats = repo.cost_stats(agent_set=agent_list)
+    finally:
+        session.close()
+
+    p50 = stats.get("p50_usd")
+    p75 = stats.get("p75_usd")
+    count = int(stats.get("count") or 0)
+
+    if p50 is None:
+        return {
+            "url_count": url_count,
+            "agent_set": agent_list or [],
+            "historical_run_count": 0,
+            "p50_total_usd": None,
+            "p75_total_usd": None,
+            "note": "No historical cost data available; run at least one workflow to seed estimates.",
+        }
+
+    return {
+        "url_count": url_count,
+        "agent_set": agent_list or [],
+        "historical_run_count": count,
+        "p50_per_url_usd": round(float(p50), 6),
+        "p75_per_url_usd": round(float(p75), 6),
+        "p50_total_usd": round(float(p50) * url_count, 6),
+        "p75_total_usd": round(float(p75) * url_count, 6),
+        "min_observed_usd": stats.get("min_usd"),
+        "max_observed_usd": stats.get("max_usd"),
+    }
+
+
 @app.get("/ui/prompts")
 def ui_prompts():
     prompts: list[dict[str, Any]] = []
@@ -3551,7 +3934,7 @@ def ui_run_latest_screenshot(run_id: str):
                 "screenshot": candidate,
                 "screenshot_url": candidate,
                 "event_seq": event.seq,
-                "timestamp": event.timestamp.isoformat(),
+                "timestamp": iso_z(event.timestamp),
                 "source": "active_trace",
             }
     return _empty_screenshot_payload(run_id, source="active_trace")
@@ -3643,3 +4026,9 @@ def ui_database_table(
 from src.api.datasets import router as datasets_router
 
 app.include_router(datasets_router)
+
+# Admin APIs (plan T35): role-gated /api/admin/* routes (users CRUD, model
+# performance metrics, prompt-version rollback, agent-tests, cost deltas).
+from src.api.admin import router as admin_router
+
+app.include_router(admin_router)

@@ -7,6 +7,7 @@ import {
   filterElements,
   getMediaSummary,
   readElementDetail,
+  resolveElementTarget,
   withBrowserSession,
 } from '../shared/tool-runtime.js';
 
@@ -297,6 +298,211 @@ function tokenFallbackMatches(elements, {
   });
 }
 
+// ── Scoped queries (ported from puppeteer context-tools.js:325-406, [TOOL-P2],
+// plan T20-c). Behavior identical to the puppeteer originals. ─────────────────
+
+export function hasSpecificQuery({
+  text_contains = "",
+  text_regex = "",
+  href_contains = "",
+  href_regex = "",
+  attr = null,
+  attr_name = "",
+  attr_value_contains = "",
+  attr_value_regex = "",
+  scope_node_id = "",
+  scope_element_ref = "",
+  scope_selector = "",
+  scope_xpath = "",
+  scope_text = "",
+} = {}) {
+  const hasAttr = Boolean(
+    attr?.name ||
+      attr_name ||
+      attr?.value_contains ||
+      attr_value_contains ||
+      attr?.value_regex ||
+      attr_value_regex,
+  );
+  const hasScope = Boolean(
+    scope_node_id || scope_element_ref || scope_selector || scope_xpath || scope_text,
+  );
+  return Boolean(
+    text_contains ||
+      text_regex ||
+      href_contains ||
+      href_regex ||
+      hasAttr ||
+      hasScope,
+  );
+}
+
+export function querySpecificity(args = {}) {
+  let score = 0;
+  for (const key of [
+    "text_contains",
+    "text_regex",
+    "href_contains",
+    "href_regex",
+    "attr_name",
+    "attr_value_contains",
+    "attr_value_regex",
+  ]) {
+    if (String(args[key] || "").trim()) score += 1;
+  }
+  if (args.attr?.name) score += 1;
+  if (args.attr?.value_contains || args.attr?.value_regex) score += 1;
+  for (const key of [
+    "scope_node_id",
+    "scope_element_ref",
+    "scope_selector",
+    "scope_xpath",
+    "scope_text",
+  ]) {
+    if (String(args[key] || "").trim()) score += 2;
+  }
+  return score;
+}
+
+function scopeLocator({ scope_element_ref, scope_selector, scope_xpath, scope_text } = {}) {
+  return {
+    element_ref: scope_element_ref || "",
+    selector: scope_selector || "",
+    xpath: scope_xpath || "",
+    text: scope_text || "",
+  };
+}
+
+export function matchesScopeXpath(element, scopeXpath) {
+  const elementXpath = String(element.xpath || "");
+  const normalizedScope = String(scopeXpath || "").replace(/\/$/, "");
+  return Boolean(
+    normalizedScope &&
+      (elementXpath === normalizedScope || elementXpath.startsWith(`${normalizedScope}/`)),
+  );
+}
+
+async function collectElementsUnderHandle(handle, framePath = "root") {
+  return handle.evaluate((root, { framePathValue }) => {
+    const isVisible = (node) => {
+      const style = window.getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.visibility !== "hidden" &&
+        style.display !== "none" &&
+        style.opacity !== "0"
+      );
+    };
+
+    const getXpath = (node) => {
+      const parts = [];
+      let current = node;
+      while (current && current.nodeType === 1) {
+        let idx = 1;
+        let sibling = current.previousElementSibling;
+        while (sibling) {
+          if (sibling.tagName === current.tagName) idx += 1;
+          sibling = sibling.previousElementSibling;
+        }
+        parts.unshift(`${current.tagName.toLowerCase()}[${idx}]`);
+        current = current.parentElement;
+      }
+      return `//${parts.join("/")}`;
+    };
+
+    const inferKind = (node) => {
+      const tag = node.tagName.toLowerCase();
+      const type = (node.getAttribute("type") || "").toLowerCase();
+      const role = (node.getAttribute("role") || "").toLowerCase();
+      const classes = (node.className || "").toString().toLowerCase();
+      if (tag === "iframe") return "iframe";
+      if (tag === "video") return "video";
+      if (tag === "form") return "form";
+      if (tag === "select") return "select";
+      if (type === "checkbox") return "checkbox";
+      if (type === "radio") return "radio";
+      if (tag === "input" || tag === "textarea") return "input";
+      if (role === "tab" || classes.includes("tab")) return "tab";
+      if (classes.includes("overlay") || classes.includes("modal") || classes.includes("popup")) return "overlay";
+      if (tag === "a" && node.getAttribute("href")) return "link";
+      if (tag === "button" || role === "button" || node.getAttribute("onclick")) return "button";
+      return "element";
+    };
+
+    const getSelector = (node, index) => {
+      if (node.id) return `#${node.id}`;
+      const name = node.getAttribute("name");
+      if (name) return `[name="${name}"]`;
+      const classes = (node.className || "").toString().trim().split(/\s+/).filter(Boolean);
+      if (classes.length > 0) return `.${classes.slice(0, 2).join(".")}`;
+      return `${node.tagName.toLowerCase()}:nth-of-type(${index + 1})`;
+    };
+
+    const selector =
+      'a[href],button,input,textarea,select,video,iframe,form,[role="button"],[role="tab"],[onclick],[class*="tab"],[class*="overlay"],[class*="modal"],[class*="popup"]';
+    const nodes = [
+      ...(root.matches?.(selector) ? [root] : []),
+      ...Array.from(root.querySelectorAll(selector)),
+    ];
+
+    return nodes.map((node, index) => {
+      const rect = node.getBoundingClientRect();
+      const attrs = {};
+      for (const attr of [
+        "href",
+        "src",
+        "name",
+        "placeholder",
+        "type",
+        "role",
+        "value",
+        "aria-label",
+        "data-server",
+        "data-source",
+      ]) {
+        const value = node.getAttribute(attr);
+        if (value) attrs[attr] = value;
+      }
+      const text = (node.innerText || node.textContent || node.value || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 200);
+      return {
+        kind: inferKind(node),
+        tag: node.tagName.toLowerCase(),
+        type: (node.getAttribute("type") || "").toLowerCase(),
+        role: (node.getAttribute("role") || "").toLowerCase(),
+        text,
+        href: node.getAttribute("href") || "",
+        src: node.getAttribute("src") || "",
+        selector: getSelector(node, index),
+        xpath: getXpath(node),
+        attrs,
+        visible: isVisible(node),
+        checked: Boolean(node.checked),
+        disabled: Boolean(node.disabled),
+        selected: Boolean(node.selected),
+        value: (node.value || "").slice(0, 200),
+        frame_path: framePathValue,
+        geometry: {
+          x: Math.round(rect.x),
+          y: Math.round(rect.y),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          center_x: Math.round(rect.x + rect.width / 2),
+          center_y: Math.round(rect.y + rect.height / 2),
+        },
+        nearby_text: (node.parentElement?.innerText || "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 220),
+      };
+    });
+  }, { framePathValue: framePath });
+}
+
 export async function getPageContext({
   frame_path = 'root',
   browserWsEndpoint,
@@ -377,6 +583,11 @@ export async function queryElements({
   attr_name = '',
   attr_value_contains = '',
   attr_value_regex = '',
+  scope_node_id = '',
+  scope_element_ref = '',
+  scope_selector = '',
+  scope_xpath = '',
+  scope_text = '',
   visible_only = true,
   limit = 20,
   browserWsEndpoint,
@@ -392,7 +603,7 @@ export async function queryElements({
     }
 
     const rawElements = await collectElements(frameState.frame, frame_path);
-    const elements = augmentElements(rawElements, frameState);
+    let elements = augmentElements(rawElements, frameState);
     const normalizedLimit = normalizeLimit(limit);
     const normalizedAttr = attr
       || (attr_name ? { name: attr_name, value_contains: attr_value_contains, value_regex: attr_value_regex } : null);
@@ -401,6 +612,188 @@ export async function queryElements({
     const effectiveAttrValueRegex = String(normalizedAttr?.value_regex || attr_value_regex || '');
     const allLimit = Math.max(elements.length, 1);
     const fallback_notes = [];
+    const specificity = querySpecificity({
+      text_contains,
+      text_regex,
+      href_contains,
+      href_regex,
+      attr,
+      attr_name,
+      attr_value_contains,
+      attr_value_regex,
+      scope_node_id,
+      scope_element_ref,
+      scope_selector,
+      scope_xpath,
+      scope_text,
+    });
+    const specificQuery = hasSpecificQuery({
+      text_contains,
+      text_regex,
+      href_contains,
+      href_regex,
+      attr,
+      attr_name,
+      attr_value_contains,
+      attr_value_regex,
+      scope_node_id,
+      scope_element_ref,
+      scope_selector,
+      scope_xpath,
+      scope_text,
+    });
+    const scopeRequested = Boolean(
+      scope_node_id || scope_element_ref || scope_selector || scope_xpath || scope_text,
+    );
+    let scopeApplied = false;
+    let scopeMetadata = {};
+
+    if (scope_element_ref || scope_selector || scope_xpath || scope_text) {
+      const resolvedScope = await resolveElementTarget(page, {
+        frame_path,
+        ...scopeLocator({ scope_element_ref, scope_selector, scope_xpath, scope_text }),
+      });
+      if (resolvedScope.ok) {
+        const scopedState = await buildFrameState(page, resolvedScope.frame_path);
+        const scopedRawElements = await collectElementsUnderHandle(
+          resolvedScope.handle,
+          resolvedScope.frame_path,
+        );
+        await resolvedScope.handle.dispose().catch(() => {});
+        elements = augmentElements(scopedRawElements, scopedState);
+        scopeApplied = true;
+        scopeMetadata = {
+          frame_path: resolvedScope.frame_path,
+          locator_used: resolvedScope.locator_used || {},
+          frame_relocated: Boolean(resolvedScope.frame_relocated),
+        };
+      } else {
+        fallback_notes.push(`Scope could not be resolved: ${resolvedScope.error}`);
+        scopeMetadata = {
+          error: resolvedScope.error,
+          error_code: resolvedScope.code || 'scope_resolution_failed',
+        };
+      }
+    } else if (scope_node_id) {
+      fallback_notes.push(
+        'scope_node_id requires a current context-tree node handle; use scope_element_ref, scope_selector, or scope_xpath when possible.',
+      );
+      scopeMetadata = { node_id: scope_node_id, supported: false };
+    }
+
+    if (scope_xpath && !scopeApplied) {
+      const scopedByXpath = elements.filter((element) => matchesScopeXpath(element, scope_xpath));
+      if (scopedByXpath.length) {
+        elements = scopedByXpath;
+        scopeApplied = true;
+        scopeMetadata = { xpath: scope_xpath, matched_by: 'element_xpath_prefix' };
+      }
+    }
+
+    if (scope_node_id && !scopeApplied && !scope_element_ref && !scope_selector && !scope_xpath && !scope_text) {
+      return buildEnvelope(page, {
+        frame_path,
+        warnings: [
+          'query_elements could not apply scope_node_id by itself; pass the node\'s element_ref, selector, or xpath for subtree scoping.',
+        ],
+        data: {
+          query: {
+            kind,
+            text_contains,
+            text_regex,
+            href_contains,
+            href_regex,
+            attr: normalizedAttr,
+            attr_name: effectiveAttrName,
+            attr_value_contains: effectiveAttrValueContains,
+            attr_value_regex: effectiveAttrValueRegex,
+            scope_node_id,
+            scope_element_ref,
+            scope_selector,
+            scope_xpath,
+            scope_text,
+            visible_only,
+            limit: normalizedLimit,
+          },
+          search_strategy: 'scope_unresolved',
+          query_specificity: specificity,
+          scope_requested: scopeRequested,
+          scope_applied: false,
+          scope: scopeMetadata,
+          total_matches: 0,
+          returned_matches: 0,
+          fallback_notes,
+          available_counts: {
+            total_elements: elements.length,
+            by_kind: summarizeKinds(elements),
+          },
+          matches: [],
+          suggestions: [],
+          recommended_next_tool:
+            "get_element_detail with the context node element_ref, or query_elements with scope_element_ref/scope_selector/scope_xpath",
+        },
+      });
+    }
+
+    if (!specificQuery) {
+      const suggestions = compactElements(
+        rankMatches(
+          dedupeByElementRef(
+            elements.filter((element) => !kind || element.kind === kind),
+          ),
+          { kind },
+        ),
+        Math.min(12, normalizedLimit),
+      );
+
+      return buildEnvelope(page, {
+        frame_path,
+        warnings: [
+          'query_elements was underspecified; provide text/href/attr predicates or a scope before using it as a precision tool.',
+        ],
+        data: {
+          query: {
+            kind,
+            text_contains,
+            text_regex,
+            href_contains,
+            href_regex,
+            attr: normalizedAttr,
+            attr_name: effectiveAttrName,
+            attr_value_contains: effectiveAttrValueContains,
+            attr_value_regex: effectiveAttrValueRegex,
+            scope_node_id,
+            scope_element_ref,
+            scope_selector,
+            scope_xpath,
+            scope_text,
+            visible_only,
+            limit: normalizedLimit,
+          },
+          search_strategy: 'underspecified',
+          query_specificity: specificity,
+          scope_requested: scopeRequested,
+          scope_applied: scopeApplied,
+          scope: scopeMetadata,
+          total_matches: 0,
+          returned_matches: 0,
+          fallback_notes: [
+            ...fallback_notes,
+            'Bare kind/limit queries duplicate broad context; use inspect_landing or get_page_context for broad reads.',
+          ],
+          available_counts: {
+            total_elements: elements.length,
+            by_kind: summarizeKinds(elements),
+          },
+          matches: [],
+          suggestions,
+          recommended_next_tool:
+            suggestions.length > 0
+              ? 'get_element_detail with a suggested element_ref, or query_elements again with text/href/scope predicates'
+              : 'inspect_landing or get_page_context',
+        },
+      });
+    }
 
     const textRegex = toSafeRegex(text_regex);
     if (text_regex && !textRegex) {
@@ -513,8 +906,17 @@ export async function queryElements({
           visible_only,
           limit: normalizedLimit,
           attr_value_regex: effectiveAttrValueRegex,
+          scope_node_id,
+          scope_element_ref,
+          scope_selector,
+          scope_xpath,
+          scope_text,
         },
         search_strategy: strategy,
+        query_specificity: specificity,
+        scope_requested: scopeRequested,
+        scope_applied: scopeApplied,
+        scope: scopeMetadata,
         total_matches: rankedMatches.length,
         returned_matches: returnedMatches.length,
         fallback_notes,
@@ -524,6 +926,9 @@ export async function queryElements({
         },
         matches: compactElements(returnedMatches, normalizedLimit),
         suggestions: rankedMatches.length ? [] : suggestions,
+        recommended_next_tool: rankedMatches.length
+          ? 'interact, navigate, or get_element_detail using the returned element_ref/selector/xpath'
+          : 'get_page_context, inspect_landing, or a more specific query_elements call',
       },
     });
   });

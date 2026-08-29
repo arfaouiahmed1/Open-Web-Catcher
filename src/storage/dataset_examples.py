@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +11,15 @@ from pydantic import BaseModel, Field
 
 from src.models.schemas import PipelineResult
 from src.utils.config import Settings
-from src.utils.instrumentation import resolve_dataset_dir, resolve_default_dataset_name
+from src.utils.instrumentation import resolve_default_dataset_name
+
+EXPORTS_ROOT = Path("data") / "exports"
+
+
+def _safe_dataset_slug(name: str, fallback: str) -> str:
+    """Neutralize path separators and traversal sequences in a caller-supplied name."""
+    cleaned = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in name.strip())
+    return cleaned or fallback
 
 
 class DatasetExample(BaseModel):
@@ -48,7 +56,7 @@ def pipeline_result_to_dataset_example(result: PipelineResult) -> DatasetExample
             "email_count": len(result.takedown_emails),
             "agents_invoked": [agent.value for agent in (metrics.agents_invoked if metrics else [])],
             "model_usage": [entry.model_dump(mode="json") for entry in (metrics.model_usage if metrics else [])],
-            "collected_at": datetime.utcnow().isoformat(),
+            "collected_at": datetime.now(UTC).isoformat(),
         },
     )
 
@@ -64,14 +72,22 @@ def export_dataset_examples(
     dataset_name: str = "",
     path: str | Path | None = None,
 ) -> Path:
-    resolved_dataset_name = dataset_name or resolve_default_dataset_name(settings)
-    if path is None:
-        export_dir = resolve_dataset_dir(settings)
-        timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-        path = export_dir / f"{resolved_dataset_name}-{timestamp}.jsonl"
+    """Write ``examples`` to a server-controlled location and return its path.
 
-    export_path = Path(path)
-    export_path.parent.mkdir(parents=True, exist_ok=True)
+    The destination is always derived internally as
+    ``data/exports/<utc-timestamp>/<dataset-slug>-<utc-timestamp>.jsonl``.
+    ``path`` is accepted for backward compatibility but IGNORED: caller input
+    must never steer where exports are written (arbitrary-file-write fix).
+    """
+    del path
+    resolved_dataset_name = _safe_dataset_slug(
+        dataset_name, resolve_default_dataset_name(settings)
+    )
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    export_dir = EXPORTS_ROOT / timestamp
+    export_dir.mkdir(parents=True, exist_ok=True)
+    export_path = export_dir / f"{resolved_dataset_name}-{timestamp}.jsonl"
+
     with open(export_path, "w", encoding="utf-8") as f:
         for example in examples:
             f.write(example.model_dump_json())

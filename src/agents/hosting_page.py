@@ -122,11 +122,6 @@ class HostingPageAgent:
                         url=url,
                         page_type=AgentType.HOSTING_PAGE.value,
                         run_goal="Extract streams directly from the hosting page or identify the embedded player handoff.",
-                        extras={
-                            "orchestrator_handoff": orchestrator_handoff[:600]
-                            if orchestrator_handoff
-                            else "",
-                        },
                     ),
                     memory_context=memory_context,
                     working_state=short_memory.working_state(
@@ -160,7 +155,9 @@ class HostingPageAgent:
                         f"{orchestrator_handoff}\n"
                         "Use this context as guidance and verify findings from live page evidence."
                     )
-                async with agent_tools("hosting", self.settings, observer=observer) as tools:
+                async with agent_tools(
+                    "hosting", self.settings, observer=observer, target_url=url
+                ) as tools:
                     result = await run_agent_loop(
                         settings=self.settings,
                         llm=self.llm,
@@ -235,7 +232,7 @@ class HostingPageAgent:
                     ExtractionStatus.SUCCESS
                     if streams
                     else ExtractionStatus.PARTIAL
-                    if decision in ("needs_embed_agent", "partial_success_needs_embed")
+                    if decision in ("activation_failed", "no_networking", "judge_validation_request")
                     else ExtractionStatus.FAILED
                 )
 
@@ -505,7 +502,7 @@ def _normalize_server_entry(server: dict[str, Any], index: int) -> dict[str, Any
         status = (
             "success"
             if stream_urls
-            else ("needs_embed_agent" if (embedded_url or player_iframe_url) else "failed")
+            else ("activation_failed" if (embedded_url or player_iframe_url) else "failed")
         )
 
     server_up_value = server.get("server_up")
@@ -763,7 +760,7 @@ def _merge_run_memory_into_hosting_output(
                 "primary_stream": memory_streams[0] if memory_streams else "",
                 "status": "success"
                 if memory_streams
-                else ("needs_embed_agent" if iframe else "failed"),
+                else ("activation_failed" if iframe else "failed"),
                 "extraction_method": "short_term_memory",
                 "player_state": "unknown",
                 "visual_confirmation": "tool evidence recovered from short-term memory",
@@ -802,7 +799,9 @@ def _normalize_hosting_output(output: dict[str, Any]) -> dict[str, Any]:
         if server.get("status") in {"success", "partial"} or server.get("server_up")
     )
     failed_servers_count = sum(
-        1 for server in servers if server.get("status") in {"failed", "needs_embed_agent"}
+        1
+        for server in servers
+        if server.get("status") in {"failed", "needs_embed_agent", "activation_failed"}
     )
     down_servers_count = sum(
         1
@@ -824,12 +823,18 @@ def _normalize_hosting_output(output: dict[str, Any]) -> dict[str, Any]:
     )
     decision = str(normalized.get("decision") or "").strip().lower()
     if not decision:
+        # Embedded trigger vocabulary (plan T28 / spike §D2.3):
+        # activation_failed  — player activation failed but an embedded/player
+        #                      URL exists;
+        # no_networking      — no network-extracted stream and no player
+        #                      activation; the embedded layer is all that's left;
+        # judge_validation_request — reserved for the ValidatorAgent seam.
         if normalized["streaming_urls"] and normalized["servers_needing_embed"]:
-            decision = "partial_success_needs_embed"
+            decision = "activation_failed"
         elif normalized["streaming_urls"]:
             decision = "safe_exit"
         elif normalized["servers_needing_embed"]:
-            decision = "needs_embed_agent"
+            decision = "no_networking"
         else:
             decision = "no_stream_found"
     normalized["decision"] = decision

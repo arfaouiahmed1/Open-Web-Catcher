@@ -1,6 +1,5 @@
 const PERSISTENT_FINGERPRINT_HEADERS = new Set([
   'accept-language',
-  'dnt',
   'sec-ch-ua',
   'sec-ch-ua-arch',
   'sec-ch-ua-bitness',

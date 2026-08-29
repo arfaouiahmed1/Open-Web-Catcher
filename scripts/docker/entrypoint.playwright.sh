@@ -35,7 +35,9 @@ start_shared_chrome() {
     local port="${REMOTE_DEBUGGING_PORT:-9223}"
     local extension_dir="${OWC_UBOL_EXTENSION_DIR:-/app/tools/playwright/extensions/ubol}"
     local enable_ubol="${OWC_UBOL_ENABLED:-true}"
+    local headless="${OWC_BROWSER_HEADLESS:-true}"
     local extension_args=()
+    local chrome_cmd=()
 
     if [[ ! -x "${chrome_bin}" ]]; then
         log "Chrome executable not found at ${chrome_bin}."
@@ -56,14 +58,23 @@ start_shared_chrome() {
             ;;
     esac
 
+    case "$(printf '%s' "${headless}" | tr '[:upper:]' '[:lower:]')" in
+        1|true|yes|on)
+            chrome_cmd=("${chrome_bin}" "--headless=new")
+            ;;
+        *)
+            log "Headed Chrome requested; launching under Xvfb."
+            chrome_cmd=(xvfb-run -a --server-args="-screen 0 ${OWC_XVFB_SCREEN:-1280x800x24}" "${chrome_bin}")
+            ;;
+    esac
+
     log "Starting shared Chrome on port ${port}."
-    "${chrome_bin}" \
-        --headless=new \
+    "${chrome_cmd[@]}" \
         --no-sandbox \
         --disable-dev-shm-usage \
         --disable-gpu \
         --remote-debugging-port="${port}" \
-        --remote-debugging-address=0.0.0.0 \
+        --remote-debugging-address=127.0.0.1 \
         --user-data-dir=/tmp/chrome-profile-pw \
         "${extension_args[@]}" \
         about:blank &

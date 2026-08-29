@@ -11,17 +11,13 @@ from typing import TYPE_CHECKING, Annotated, Any, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
 from src.agents import cache as cache_helpers
-from src.agents.cache import (
-    GeminiCacheManager,
-    ToolResultCache,
-    _create_gemini_cached_content_resource,
-)
+from src.agents.cache import ToolResultCache
 from src.agents.errors import BudgetExceededError, RunCancelledError
+from src.llm.provider import ChatLiteLLM
 from src.utils.config import Settings, resolve_agent_runtime_config
 from src.utils.instrumentation import (
     observability_span,
@@ -269,7 +265,6 @@ def _extract_thinking_tokens(usage: Any, response_metadata: Any = None) -> int:
     val = usage_dict.get("thought_token_count") or usage_dict.get("thinking_token_count")
     if val:
         return _to_int(val)
-    # Fallback: check response_metadata
     if response_metadata:
         meta = (
             response_metadata
@@ -392,58 +387,6 @@ def _extract_cache_metrics(usage: Any, response: AIMessage | None = None) -> dic
         "cache_read_input_tokens": cache_read_input_tokens,
         "cache_creation_input_tokens": cache_creation_input_tokens,
     }
-
-
-def _build_provider_cache_invoke_kwargs(
-    settings: Settings,
-    *,
-    provider: str,
-    prompt_metadata: dict[str, Any],
-    allow_google_explicit_cache: bool = True,
-) -> dict[str, Any]:
-    if provider != "google_genai":
-        return {}
-    if not settings.provider_cache_enabled or not settings.prompt_cache_enabled:
-        return {}
-    if not bool(prompt_metadata.get("provider_cache_eligible", False)):
-        return {}
-
-    cache_mode = str(prompt_metadata.get("cache_mode", "") or "").strip().lower()
-    if cache_mode not in {"provider_hook", "provider_active"}:
-        return {}
-    if not allow_google_explicit_cache:
-        return {}
-
-    cache_key = str(prompt_metadata.get("provider_cache_key", "") or "").strip()
-    cached_content = str(prompt_metadata.get("gemini_cached_content", "") or "").strip()
-    if not cached_content and cache_key.startswith("cachedContents/"):
-        cached_content = cache_key
-    if cached_content:
-        return {"cached_content": cached_content}
-    return {}
-
-
-def _provider_cache_active_for_run(
-    settings: Settings,
-    *,
-    provider: str,
-    prompt_metadata: dict[str, Any],
-    provider_cache_invoke_kwargs: dict[str, Any],
-) -> bool:
-    if provider != "google_genai":
-        return False
-    if not settings.provider_cache_enabled or not settings.prompt_cache_enabled:
-        return False
-    if not bool(prompt_metadata.get("provider_cache_eligible", False)):
-        return False
-
-    cache_mode = str(prompt_metadata.get("cache_mode", "") or "").strip().lower()
-    if cache_mode not in {"provider_hook", "provider_active"}:
-        return False
-
-    # Gemini 2.5+ implicit caching is provider-managed and active by default
-    # for sufficiently large shared prefixes.
-    return True
 
 
 def _extract_retry_seconds(error_text: str) -> int | None:
@@ -589,87 +532,6 @@ async def _invoke_tool(tool: BaseTool, tool_args: dict[str, Any]) -> Any:
         return await asyncio.to_thread(tool.invoke, tool_args)
 
 
-_gemini_cache_manager = GeminiCacheManager()
-
-
-def _clear_managed_gemini_cache_registry_for_tests() -> None:
-    _gemini_cache_manager.clear_registry_for_tests()
-
-
-async def _resolve_managed_gemini_cached_content(
-    settings: Settings,
-    *,
-    prompt_metadata: dict[str, Any],
-    system_prompt: str,
-    model_name: str,
-    now_epoch: float | None = None,
-) -> tuple[str, str]:
-    cached_content = str(prompt_metadata.get("gemini_cached_content", "") or "").strip()
-    if cached_content:
-        return cached_content, "manual"
-
-    provider_cache_key = str(prompt_metadata.get("provider_cache_key", "") or "").strip()
-    if provider_cache_key.startswith("cachedContents/"):
-        return provider_cache_key, "provider_key"
-
-    if not cache_helpers._is_gemini_explicit_cache_enabled(settings, prompt_metadata):
-        return "", "disabled"
-
-    seed_text = cache_helpers._extract_gemini_cache_seed_text(system_prompt)
-    min_chars = max(int(settings.prompt_cache_min_chars or 0), 0)
-    if len(seed_text) < min_chars:
-        return "", "seed_too_small"
-
-    now = float(now_epoch if now_epoch is not None else time.time())
-    ttl_seconds = cache_helpers._gemini_ttl_seconds(settings, prompt_metadata)
-    refresh_lead = cache_helpers._gemini_refresh_lead_seconds(
-        settings, prompt_metadata, ttl_seconds
-    )
-    cache_key = cache_helpers._registry_key(prompt_metadata, seed_text, model_name)
-
-    with cache_helpers._REGISTRY_LOCK:
-        entry = cache_helpers._REGISTRY.get(cache_key)
-        if entry is not None:
-            entry_name = str(entry.get("cached_content", "") or "").strip()
-            expires_at = float(entry.get("expires_at", 0) or 0)
-            if entry_name and (expires_at - now) > refresh_lead:
-                return entry_name, "registry_hit"
-
-    try:
-        created_name, expires_at = await _create_gemini_cached_content_resource(
-            api_key=settings.google_api_key,
-            model_name=model_name,
-            cache_key=cache_key,
-            seed_text=seed_text,
-            ttl_seconds=ttl_seconds,
-            timeout_seconds=max(int(settings.tool_timeout_seconds or 30), 5),
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Gemini explicit cache create/refresh failed for %s: %s", cache_key, exc)
-        with cache_helpers._REGISTRY_LOCK:
-            fallback = cache_helpers._REGISTRY.get(cache_key)
-            if fallback is not None:
-                fallback_name = str(fallback.get("cached_content", "") or "").strip()
-                fallback_expires = float(fallback.get("expires_at", 0) or 0)
-                if fallback_name and fallback_expires > now:
-                    return fallback_name, "fallback_after_error"
-        return "", "create_failed"
-
-    if not created_name:
-        return "", "empty_resource"
-
-    with cache_helpers._REGISTRY_LOCK:
-        prior = cache_helpers._REGISTRY.get(cache_key)
-        cache_helpers._REGISTRY[cache_key] = {
-            "cached_content": created_name,
-            "expires_at": expires_at,
-            "created_at": now,
-            "ttl_seconds": ttl_seconds,
-        }
-        cache_helpers._evict_registry(now)
-        return created_name, "created" if prior is None else "refreshed"
-
-
 def build_llm(
     settings: Settings,
     temperature: float | None = None,
@@ -677,27 +539,20 @@ def build_llm(
     provider_override: str | None = None,
     agent_id: str | None = None,
 ):
-    """Build the Gemini LLM used by all agents.
+    """Build the LiteLLM-backed chat model used by all agents.
 
-    The runtime is intentionally Gemini-only. Legacy provider settings may still
-    exist in persisted config for compatibility, but agents never instantiate
-    OpenAI/Anthropic/OpenRouter/NVIDIA clients.
+    Model traffic routes through src/llm/provider.py; agents keep their
+    LangChain call-sites. Legacy bare model names are prefixed for litellm
+    routing at request time.
     """
     selection = resolve_agent_model_selection(settings, agent_id or "")
-    provider = (
-        (provider_override or selection.get("provider") or settings.llm_provider or "google")
+    provider_hint = (
+        (provider_override or selection.get("provider") or settings.llm_provider or "litellm")
         .strip()
         .lower()
     )
-    provider_is_supported = provider in {"google", "gemini", "google_genai"}
-    if not provider_is_supported:
-        logger.warning(
-            "Ignoring unsupported LLM provider '%s'; Gemini is the only supported runtime.",
-            provider,
-        )
-        provider = "google"
 
-    selection_model = selection.get("model") if provider_is_supported else ""
+    selection_model = selection.get("model") or ""
     model_name = model_override or selection_model or settings.agent_model
     if not is_google_genai_model_id(str(model_name or "")):
         fallback_model = str(settings.agent_model or "").strip()
@@ -721,28 +576,35 @@ def build_llm(
         model_id=model_name,
         provider="google",
     )
-    temp = (
-        temperature
-        if temperature is not None
-        else tuning.pop("temperature", settings.gemini_temperature)
-    )
+    tuned_temperature = tuning.pop("temperature", None)
+    if temperature is not None:
+        temp = temperature
+    elif tuned_temperature is not None:
+        temp = tuned_temperature
+    else:
+        temp = settings.gemini_temperature
 
-    gemini_kwargs: dict[str, Any] = _filter_llm_kwargs(
+    llm_kwargs: dict[str, Any] = _filter_llm_kwargs(
         tuning, set(model_runtime_profile.get("allowed_tuning_keys") or {"top_p", "top_k", "max_output_tokens"})
     )
-    if "max_output_tokens" in gemini_kwargs:
-        gemini_kwargs["max_tokens"] = gemini_kwargs.pop("max_output_tokens")
-    if settings.thinking_enabled and model_runtime_profile.get("supports_thinking_controls"):
-        gemini_kwargs["thinking_budget"] = settings.thinking_budget_tokens
+    if "max_output_tokens" in llm_kwargs:
+        llm_kwargs["max_tokens"] = llm_kwargs.pop("max_output_tokens")
+    thinking_budget = (
+        settings.thinking_budget_tokens
+        if settings.thinking_enabled and model_runtime_profile.get("supports_thinking_controls")
+        else None
+    )
 
-    google_api_key = str(settings.google_api_key or "").strip() or None
-    return ChatGoogleGenerativeAI(
+    api_key = str(settings.google_api_key or "").strip() or None
+    return ChatLiteLLM(
         model=model_name,
-        api_key=google_api_key,
+        provider_prefix=provider_hint,
+        api_key=api_key,
+        api_base=settings.llm_base_url or None,
         temperature=temp,
-        streaming=True,
-        **gemini_kwargs,
-        convert_system_message_to_human=True,
+        caching=bool(settings.prompt_cache_enabled),
+        thinking_budget_tokens=thinking_budget,
+        **llm_kwargs,
     )
 
 
@@ -776,10 +638,10 @@ async def run_agent_loop(
     # Gemini-only runtime. Keep canonical provider stable for metrics/caching.
     model_name = getattr(llm, "model", None) or getattr(llm, "model_name", None) or ""
     model_name = normalize_gemini_model_id(str(model_name or ""))
-    configured_provider = str(settings.llm_provider or "google").strip().lower()
-    if configured_provider not in {"google", "gemini", "google_genai"}:
+    configured_provider = str(settings.llm_provider or "litellm").strip().lower()
+    if configured_provider not in {"google", "gemini", "google_genai", "litellm"}:
         logger.warning(
-            "Ignoring unsupported LLM provider '%s'; Gemini is the only supported runtime.",
+            "Ignoring unsupported LLM provider '%s'; routing through LiteLLM.",
             configured_provider,
         )
     provider = "google_genai"
@@ -800,40 +662,11 @@ async def run_agent_loop(
         0.95,
     )
     max_continuations = max(0, int(getattr(settings, "context_continuation_max", 4) or 0))
-    google_explicit_cache_compatible = True
-    gemini_cached_content_source = "none"
-    if provider == "google_genai":
-        if tools:
-            # Gemini cached_content cannot be combined with tool-enabled GenerateContent requests.
-            google_explicit_cache_compatible = False
-            gemini_cached_content_source = "disabled_with_tools"
-            prompt_meta.pop("gemini_cached_content", None)
-        else:
-            (
-                managed_cached_content,
-                gemini_cached_content_source,
-            ) = await _resolve_managed_gemini_cached_content(
-                settings,
-                prompt_metadata=prompt_meta,
-                system_prompt=system_prompt,
-                model_name=model_name,
-            )
-            if managed_cached_content:
-                prompt_meta["gemini_cached_content"] = managed_cached_content
+    # LiteLLM response caching replaces the managed Gemini explicit-cache flow.
+    provider_cache_active = bool(settings.prompt_cache_enabled)
+    gemini_cached_content_source = "litellm" if provider_cache_active else "disabled"
 
     pricing = resolve_model_pricing(settings, model_name=model_name, provider=provider)
-    provider_cache_invoke_kwargs = _build_provider_cache_invoke_kwargs(
-        settings,
-        provider=provider,
-        prompt_metadata=prompt_meta,
-        allow_google_explicit_cache=google_explicit_cache_compatible,
-    )
-    provider_cache_active = _provider_cache_active_for_run(
-        settings,
-        provider=provider,
-        prompt_metadata=prompt_meta,
-        provider_cache_invoke_kwargs=provider_cache_invoke_kwargs,
-    )
     tool_timeout_seconds = max(1, int(runtime_settings["tool_timeout_seconds"]))
     llm_timeout_seconds = max(5, int(runtime_settings["llm_turn_timeout_seconds"]))
     agent_timeout_seconds = max(30, int(runtime_settings["agent_timeout_seconds"]))
@@ -967,23 +800,58 @@ async def run_agent_loop(
 
         return status, result_content
 
-    if bootstrap_url and bootstrap_memory_lookup_first and "memory_lookup" in tool_map:
-        memory_lookup_args: dict[str, Any] = {"url": bootstrap_url}
+    if (
+        bootstrap_url
+        and bootstrap_memory_lookup_first
+        and getattr(settings, "memory_enabled", True)
+    ):
+        # Plan task 18 phase 2 — hints are injected ONCE here at run start,
+        # read straight from the pgvector site_hints store (this file is the
+        # minimal-touch injection point; orchestrator.py stays untouched).
+        # The legacy per-agent memory_lookup round-trip remains only as a
+        # fallback when the store has nothing for this domain yet.
         resolved_bootstrap_page_type = str(bootstrap_memory_page_type or "").strip()
-        if resolved_bootstrap_page_type:
-            memory_lookup_args["page_type"] = resolved_bootstrap_page_type
+        run_start_hints = ""
+        try:
+            from src.memory.hints_service import build_run_start_hint_context
 
-        status_mem, result_mem = await _run_bootstrap_tool("memory_lookup", memory_lookup_args)
-        summarized_memory = _summarize_memory_lookup_payload(result_mem)
-        bootstrap_messages.append(
-            HumanMessage(
-                content=(
-                    "BOOTSTRAP RESULT (memory_lookup):\n"
-                    f"status={status_mem}\n"
-                    f"payload={summarized_memory[:4000]}"
+            run_start_hints = build_run_start_hint_context(
+                bootstrap_url, resolved_bootstrap_page_type
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Run-start hint injection failed for %s: %s", bootstrap_url, exc)
+
+        if run_start_hints:
+            if observer is not None:
+                observer.emit(
+                    "run_start_hints_injected",
+                    "Injected remembered site hints at run start",
+                    details={
+                        "url": bootstrap_url,
+                        "page_type": resolved_bootstrap_page_type,
+                        "hint_preview": run_start_hints[:600],
+                        "source": "site_hints",
+                    },
+                )
+            bootstrap_messages.append(
+                HumanMessage(content=f"RUN-START SITE HINTS:\n{run_start_hints[:4000]}")
+            )
+        elif "memory_lookup" in tool_map:
+            memory_lookup_args: dict[str, Any] = {"url": bootstrap_url}
+            if resolved_bootstrap_page_type:
+                memory_lookup_args["page_type"] = resolved_bootstrap_page_type
+
+            status_mem, result_mem = await _run_bootstrap_tool("memory_lookup", memory_lookup_args)
+            summarized_memory = _summarize_memory_lookup_payload(result_mem)
+            bootstrap_messages.append(
+                HumanMessage(
+                    content=(
+                        "BOOTSTRAP RESULT (memory_lookup):\n"
+                        f"status={status_mem}\n"
+                        f"payload={summarized_memory[:4000]}"
+                    )
                 )
             )
-        )
 
     if bootstrap_url:
         nav_tool_name = "navigate" if "navigate" in tool_map else "open_url"
@@ -1241,7 +1109,6 @@ async def run_agent_loop(
                     lambda: llm_with_tools.ainvoke(
                         invocation_messages,
                         config={"run_name": run_name},
-                        **provider_cache_invoke_kwargs,
                     ),
                     phase="llm_turn",
                     message_count=message_count,
@@ -1479,6 +1346,7 @@ async def run_agent_loop(
         )
 
         for tc in allowed_tool_calls:
+            _assert_not_cancelled(observer, "tool dispatch")
             tool_name = str(tc.get("name", ""))
             raw_tool_args = tc.get("args", {})
             tool_args: dict[str, Any] = (
@@ -1870,7 +1738,6 @@ async def run_agent_loop(
                     lambda: llm.ainvoke(
                         [*state["messages"], budget_message],
                         config={"run_name": f"{run_name}_final"},
-                        **provider_cache_invoke_kwargs,
                     ),
                     phase="budget_exhausted_final_answer",
                     message_count=len(state["messages"]) + 1,

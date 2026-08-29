@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 import re
+from statistics import median
 from typing import Any
 
 from sqlalchemy import case, func
@@ -50,6 +51,7 @@ from src.utils.console_state import (
     normalize_job_display_status,
     normalize_run_display_status,
 )
+from src.utils.timefmt import to_utc
 
 WORKING_WEBSITE_STATUSES = ("success", "partial")
 NO_STREAM_OR_HOSTING_STATUSES = ("no_streams", "no_hosting_pages")
@@ -84,7 +86,7 @@ def _max_concurrency(items: list[dict[str, Any]]) -> int:
         if isinstance(finished_at, datetime):
             timeline.append((finished_at, -1))
         elif status in {"running", "queued"}:
-            timeline.append((datetime.utcnow(), -1))
+            timeline.append((datetime.now(UTC), -1))
     active = 0
     peak = 0
     for _, delta in sorted(timeline, key=lambda entry: (entry[0], -entry[1])):
@@ -558,7 +560,7 @@ class OperatorConsoleRepository:
         failed_window_count = int(
             self._session.query(func.count(PipelineRunRecord.id))
             .filter(PipelineRunRecord.final_status.in_(RUN_FAILURE_STATUSES))
-            .filter(PipelineRunRecord.created_at >= datetime.utcnow() - timedelta(hours=24))
+            .filter(PipelineRunRecord.created_at >= datetime.now(UTC) - timedelta(hours=24))
             .scalar()
             or 0
         )
@@ -805,31 +807,32 @@ class OperatorConsoleRepository:
         root_actor_map: dict[int, str] = {}
         max_parallelism_map: dict[int, int] = {}
         if run_ids:
-            max_calls_sq = (
-                self._session.query(
-                    RunModelUsageRecord.pipeline_run_id,
-                    func.max(RunModelUsageRecord.llm_calls).label("max_calls"),
-                )
-                .filter(RunModelUsageRecord.pipeline_run_id.in_(run_ids))
-                .group_by(RunModelUsageRecord.pipeline_run_id)
-                .subquery()
-            )
-            dominant = (
+            # T35 SUM-not-max fix: the dominant model per run is selected by
+            # ordering per-(run, provider, model) usage rows by total call
+            # volume (uq_run_model_usage guarantees one row per triple, so the
+            # first row per run carries the largest SUM contribution) instead
+            # of a MAX(llm_calls) subquery join that broke ties arbitrarily
+            # across models and mis-attributed the primary model.
+            usage_rows = (
                 self._session.query(
                     RunModelUsageRecord.pipeline_run_id,
                     RunModelUsageRecord.provider,
                     RunModelUsageRecord.model_name,
+                    RunModelUsageRecord.llm_calls,
+                    RunModelUsageRecord.id,
                 )
-                .join(
-                    max_calls_sq,
-                    (RunModelUsageRecord.pipeline_run_id == max_calls_sq.c.pipeline_run_id)
-                    & (RunModelUsageRecord.llm_calls == max_calls_sq.c.max_calls),
+                .filter(RunModelUsageRecord.pipeline_run_id.in_(run_ids))
+                .order_by(
+                    RunModelUsageRecord.pipeline_run_id.asc(),
+                    RunModelUsageRecord.llm_calls.desc(),
+                    RunModelUsageRecord.id.asc(),
                 )
                 .all()
             )
-            for d in dominant:
-                if d.pipeline_run_id not in model_map:
-                    model_map[d.pipeline_run_id] = (d.provider, d.model_name)
+            for row in usage_rows:
+                pipeline_key = int(row.pipeline_run_id)
+                if pipeline_key not in model_map:
+                    model_map[pipeline_key] = (row.provider, row.model_name)
 
             agent_rows = (
                 self._session.query(
@@ -2251,7 +2254,7 @@ class OperatorConsoleRepository:
         }
 
     def _daily_trend(self, *, window_days: int = 7) -> list[dict[str, Any]]:
-        start_date = datetime.utcnow().date() - timedelta(days=max(window_days - 1, 0))
+        start_date = datetime.now(UTC).date() - timedelta(days=max(window_days - 1, 0))
         buckets = {
             (start_date + timedelta(days=index)).strftime("%Y-%m-%d"): {
                 "date": (start_date + timedelta(days=index)).strftime("%Y-%m-%d"),
@@ -2298,7 +2301,9 @@ class OperatorConsoleRepository:
                 func.coalesce(func.avg(PipelineRunRecord.duration_seconds), 0.0),
             )
             .filter(
-                PipelineRunRecord.created_at >= datetime.combine(start_date, datetime.min.time())
+                # TZDateTime columns are tz-aware; bind the day boundary as UTC
+                # so non-UTC Postgres session TZs don't shift day buckets (T33 review).
+                PipelineRunRecord.created_at >= to_utc(datetime.combine(start_date, datetime.min.time()))
             )
             .group_by(func.date(PipelineRunRecord.created_at))
             .all()
@@ -2334,3 +2339,316 @@ class OperatorConsoleRepository:
         if isinstance(row_date, date):
             return row_date.isoformat()
         return str(row_date)
+
+    # ── Admin APIs (plan T35) ────────────────────────────────────────────
+    # Query helpers backing the role-gated /api/admin/* router in
+    # src/api/admin.py. All aggregations use SUM(...) — never MAX() — so
+    # per-model totals reflect every recorded call/token/cost.
+
+    def admin_model_performance_metrics(self, *, limit: int = 50) -> dict[str, Any]:
+        """Per-model performance rollup: SUM'd calls/tokens/costs, cache-hit
+        rate, and p50 latency (from agent_runs durations per provider/model).
+
+        run_model_usage carries one row per (run, provider, model) via
+        uq_run_model_usage, so SUM across runs is the true total.
+        """
+        usage_rows = (
+            self._session.query(
+                RunModelUsageRecord.provider,
+                RunModelUsageRecord.model_name,
+                func.coalesce(func.sum(RunModelUsageRecord.llm_calls), 0),
+                func.coalesce(func.sum(RunModelUsageRecord.cache_hit_calls), 0),
+                func.coalesce(func.sum(RunModelUsageRecord.input_tokens), 0),
+                func.coalesce(func.sum(RunModelUsageRecord.cached_input_tokens), 0),
+                func.coalesce(func.sum(RunModelUsageRecord.new_input_tokens), 0),
+                func.coalesce(func.sum(RunModelUsageRecord.output_tokens), 0),
+                func.coalesce(func.sum(RunModelUsageRecord.estimated_input_cost_usd), 0.0),
+                func.coalesce(func.sum(RunModelUsageRecord.estimated_cached_input_cost_usd), 0.0),
+                func.coalesce(func.sum(RunModelUsageRecord.estimated_cache_write_cost_usd), 0.0),
+                func.coalesce(func.sum(RunModelUsageRecord.estimated_output_cost_usd), 0.0),
+                func.coalesce(func.sum(RunModelUsageRecord.estimated_total_cost_usd), 0.0),
+            )
+            .group_by(RunModelUsageRecord.provider, RunModelUsageRecord.model_name)
+            .all()
+        )
+
+        duration_rows = (
+            self._session.query(
+                AgentRunRecord.provider,
+                AgentRunRecord.model_name,
+                AgentRunRecord.duration_seconds,
+            )
+            .all()
+        )
+        durations: dict[tuple[str, str], list[float]] = defaultdict(list)
+        for provider, model_name, duration in duration_rows:
+            key = ((str(provider or "").strip(), str(model_name or "").strip()))
+            if not key[0] and not key[1]:
+                continue
+            try:
+                durations[key].append(float(duration or 0.0))
+            except (TypeError, ValueError):
+                continue
+
+        models: list[dict[str, Any]] = []
+        for (
+            provider,
+            model_name,
+            calls,
+            cache_hit_calls,
+            input_tokens,
+            cached_input_tokens,
+            new_input_tokens,
+            output_tokens,
+            input_cost,
+            cached_input_cost,
+            cache_write_cost,
+            output_cost,
+            total_cost,
+        ) in usage_rows:
+            provider_key = str(provider or "unknown")
+            model_key = str(model_name or "unknown")
+            call_count = int(calls or 0)
+            hit_count = int(cache_hit_calls or 0)
+            duration_list = sorted(durations.get((provider_key, model_key), []))
+            p50_latency = (
+                round(median(duration_list), 3) if duration_list else None
+            )
+            models.append(
+                {
+                    "provider": provider_key,
+                    "model_name": model_key,
+                    "calls": call_count,
+                    "cache_hit_calls": hit_count,
+                    "cache_hit_rate": round(hit_count / call_count, 4) if call_count else 0.0,
+                    "input_tokens": int(input_tokens or 0),
+                    "cached_input_tokens": int(cached_input_tokens or 0),
+                    "new_input_tokens": int(new_input_tokens or 0),
+                    "output_tokens": int(output_tokens or 0),
+                    "total_tokens": int(input_tokens or 0) + int(output_tokens or 0),
+                    "input_cost_usd": round(float(input_cost or 0.0), 6),
+                    "cached_input_cost_usd": round(float(cached_input_cost or 0.0), 6),
+                    "cache_write_cost_usd": round(float(cache_write_cost or 0.0), 6),
+                    "output_cost_usd": round(float(output_cost or 0.0), 6),
+                    "cost_usd": round(float(total_cost or 0.0), 6),
+                    "p50_latency_seconds": p50_latency,
+                    "latency_samples": len(duration_list),
+                }
+            )
+
+        models.sort(
+            key=lambda item: (-float(item["cost_usd"]), -int(item["calls"]), item["model_name"])
+        )
+        return {"models": models[: max(limit, 1)], "count": len(models)}
+
+    @staticmethod
+    def _prompt_version_row(
+        record: PromptVersionRecord, *, include_text: bool = False
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "id": int(record.id or 0),
+            "agent_id": str(record.agent_id or ""),
+            "semantic_version": str(record.semantic_version or ""),
+            "source_path": str(record.source_path or ""),
+            "content_hash": str(record.content_hash or ""),
+            "active": bool(record.active),
+            "created_at": _json_ready(record.created_at),
+            "prompt_chars": len(str(record.prompt_text or "")),
+        }
+        if include_text:
+            payload["prompt_text"] = str(record.prompt_text or "")
+        return payload
+
+    def admin_list_prompt_versions(
+        self, *, agent_id: str = "", limit: int = 100
+    ) -> dict[str, Any]:
+        query_obj = self._session.query(PromptVersionRecord)
+        normalized_agent = str(agent_id or "").strip()
+        if normalized_agent:
+            query_obj = query_obj.filter(PromptVersionRecord.agent_id == normalized_agent)
+        rows = (
+            query_obj.order_by(
+                PromptVersionRecord.agent_id.asc(),
+                PromptVersionRecord.created_at.desc(),
+                PromptVersionRecord.id.desc(),
+            )
+            .limit(max(1, min(limit, 500)))
+            .all()
+        )
+        return {
+            "versions": [self._prompt_version_row(row) for row in rows],
+            "total": len(rows),
+        }
+
+    def admin_get_prompt_version(self, version_id: int) -> dict[str, Any] | None:
+        record = self._session.query(PromptVersionRecord).filter_by(id=version_id).first()
+        if record is None:
+            return None
+        return self._prompt_version_row(record, include_text=True)
+
+    def admin_activate_prompt_version(self, version_id: int) -> dict[str, Any] | None:
+        """Flip the active prompt version for the record's agent (rollback).
+
+        Deactivates every other version of the same agent so exactly one row
+        per agent is active; returns the freshly activated record or None if
+        the id is unknown.
+        """
+        record = self._session.query(PromptVersionRecord).filter_by(id=version_id).first()
+        if record is None:
+            return None
+        self._session.query(PromptVersionRecord).filter(
+            PromptVersionRecord.agent_id == record.agent_id,
+            PromptVersionRecord.id != record.id,
+        ).update({"active": False})
+        record.active = True
+        self._session.commit()
+        self._session.refresh(record)
+        return self._prompt_version_row(record)
+
+    def admin_list_agent_tests(self, *, limit: int = 50) -> dict[str, Any]:
+        """Recent recorded agent-test background jobs plus their results."""
+        rows = (
+            self._session.query(BackgroundJobRecord)
+            .filter(BackgroundJobRecord.job_type == "agent")
+            .order_by(BackgroundJobRecord.created_at.desc(), BackgroundJobRecord.id.desc())
+            .limit(max(1, min(limit, 500)))
+            .all()
+        )
+        results = [
+            {
+                "job_id": str(row.job_id or ""),
+                "run_id": str(row.run_id or ""),
+                "status": str(row.status or ""),
+                "url": str(row.url or ""),
+                "actor": str(row.actor or ""),
+                "payload": dict(row.payload_json or {}),
+                "error": str(row.error_text or ""),
+                "attempts": int(row.attempts or 0),
+                "result_summary": str((row.result_json or {}).get("summary", "") or ""),
+                "created_at": _json_ready(row.created_at),
+                "started_at": _json_ready(row.started_at),
+                "finished_at": _json_ready(row.finished_at),
+            }
+            for row in rows
+        ]
+        return {"tests": results, "total": len(results)}
+
+    def admin_cost_deltas(self, *, window_days: int = 30, limit: int = 100) -> dict[str, Any]:
+        """Actuals-vs-estimate cost deltas (COST proposal).
+
+        ``recorded`` is what llm_calls booked at call time;
+        ``expected`` recomputes the same tokens against the *current*
+        pricing_configs rates. A non-zero delta exposes pricing drift or
+        mis-booked calls. Aggregation is SUM-based end to end.
+        """
+        since = datetime.now(UTC) - timedelta(days=max(window_days, 1))
+        usage_rows = (
+            self._session.query(
+                LLMCallRecord.provider,
+                LLMCallRecord.model_name,
+                func.count(LLMCallRecord.id),
+                func.coalesce(func.sum(LLMCallRecord.cached_input_tokens), 0),
+                func.coalesce(func.sum(LLMCallRecord.input_tokens), 0),
+                func.coalesce(func.sum(LLMCallRecord.output_tokens), 0),
+                func.coalesce(func.sum(LLMCallRecord.estimated_input_cost_usd), 0.0),
+                func.coalesce(func.sum(LLMCallRecord.estimated_cached_input_cost_usd), 0.0),
+                func.coalesce(func.sum(LLMCallRecord.estimated_cache_write_cost_usd), 0.0),
+                func.coalesce(func.sum(LLMCallRecord.estimated_output_cost_usd), 0.0),
+                func.coalesce(func.sum(LLMCallRecord.estimated_total_cost_usd), 0.0),
+            )
+            .filter(LLMCallRecord.created_at >= since)
+            .group_by(LLMCallRecord.provider, LLMCallRecord.model_name)
+            .all()
+        )
+
+        rate_by_key: dict[tuple[str, str], dict[str, float]] = {}
+        for config in self._session.query(PricingConfigRecord).all():
+            provider_key = str(config.provider or "").strip().lower()
+            model_key = str(config.model_name or "").strip().lower()
+            rates = {
+                "input_per_million": float(config.input_per_million or 0.0),
+                "cached_input_per_million": float(config.cached_input_per_million or 0.0),
+                "output_per_million": float(config.output_per_million or 0.0),
+            }
+            rate_by_key[(provider_key, model_key)] = rates
+            if provider_key:
+                rate_by_key.setdefault(("", model_key), rates)
+
+        models: list[dict[str, Any]] = []
+        totals = {
+            "calls": 0,
+            "recorded_cost_usd": 0.0,
+            "expected_cost_usd": 0.0,
+            "delta_usd": 0.0,
+        }
+        for (
+            provider,
+            model_name,
+            calls,
+            cached_tokens,
+            input_tokens,
+            output_tokens,
+            input_cost,
+            cached_input_cost,
+            cache_write_cost,
+            output_cost,
+            total_cost,
+        ) in usage_rows:
+            provider_key = str(provider or "").strip().lower()
+            model_key = str(model_name or "").strip().lower()
+            cached_int = int(cached_tokens or 0)
+            input_int = int(input_tokens or 0)
+            output_int = int(output_tokens or 0)
+            new_int = max(input_int - cached_int, 0)
+            rates = rate_by_key.get((provider_key, model_key))
+            expected = 0.0
+            priced = False
+            if rates is not None:
+                priced = True
+                expected = (
+                    new_int * rates["input_per_million"]
+                    + cached_int * rates["cached_input_per_million"]
+                    + output_int * rates["output_per_million"]
+                ) / 1_000_000.0
+            recorded = float(total_cost or 0.0)
+            delta = recorded - expected
+            models.append(
+                {
+                    "provider": str(provider or "unknown"),
+                    "model_name": str(model_name or "unknown"),
+                    "calls": int(calls or 0),
+                    "input_tokens": input_int,
+                    "cached_input_tokens": cached_int,
+                    "new_input_tokens": new_int,
+                    "output_tokens": output_int,
+                    "recorded_cost_usd": round(recorded, 6),
+                    "recorded_components_usd": {
+                        "input": round(float(input_cost or 0.0), 6),
+                        "cached_input": round(float(cached_input_cost or 0.0), 6),
+                        "cache_write": round(float(cache_write_cost or 0.0), 6),
+                        "output": round(float(output_cost or 0.0), 6),
+                    },
+                    "priced": priced,
+                    "expected_cost_usd": round(expected, 6),
+                    "delta_usd": round(delta, 6),
+                    "delta_pct": round(delta / expected, 4) if expected > 1e-12 else None,
+                }
+            )
+            totals["calls"] += int(calls or 0)
+            totals["recorded_cost_usd"] += recorded
+            totals["expected_cost_usd"] += expected
+            totals["delta_usd"] += delta
+
+        models.sort(key=lambda item: (-abs(item["delta_usd"]), item["model_name"]))
+        totals.update(
+            {
+                "recorded_cost_usd": round(totals["recorded_cost_usd"], 6),
+                "expected_cost_usd": round(totals["expected_cost_usd"], 6),
+                "delta_usd": round(totals["delta_usd"], 6),
+            }
+        )
+        return {
+            "window_days": max(window_days, 1),
+            "models": models[: max(limit, 1)],
+            "totals": totals,
+        }

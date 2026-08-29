@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "description": "Seed channel labels for OCR/logo detection. Token-matched against screenshot OCR text; the W4 logo embedding index extends this with visual matches.",
+  "channels": [
+    { "name": "beIN Sports 1", "aliases": ["bein sports 1", "bein 1", "beinsports1"] },
+    { "name": "beIN Sports 2", "aliases": ["bein sports 2", "bein 2", "beinsports2"] },
+    { "name": "SSC Sport", "aliases": ["ssc sport", "ssc 1", "ssc 2", "ssc sport hd"] },
+    { "name": "Sky Sports Main Event", "aliases": ["sky sports main event", "sky sports"] },
+    { "name": "Sky Sports Football", "aliases": ["sky sports football"] },
+    { "name": "TNT Sports 1", "aliases": ["tnt sports 1", "bt sport 1", "bt sports"] },
+    { "name": "Eurosport 1", "aliases": ["eurosport", "eurosport 1"] },
+    { "name": "Canal+ Sport", "aliases": ["canal+ sport", "canal plus sport", "canalsport"] },
+    { "name": "RMC Sport 1", "aliases": ["rmc sport 1", "rmc sport"] },
+    { "name": "DAZN", "aliases": ["dazn"] },
+    { "name": "ESPN", "aliases": ["espn", "espn usa"] },
+    { "name": "Fox Sports 1", "aliases": ["fox sports 1", "fs1", "fox sports"] }
+  ]
+}

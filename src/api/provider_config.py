@@ -79,7 +79,6 @@ def ui_config_payload(
         "thinking_budget_tokens": getattr(settings, "thinking_budget_tokens", 8000),
         "browser_engine": settings.browser_engine,
         "max_parallel_hosting_pages": getattr(settings, "max_parallel_hosting_pages", 5),
-        "mcp_server_url_puppeteer": settings.mcp_server_url_puppeteer,
         "mcp_server_url_playwright": settings.mcp_server_url_playwright,
         "disabled_tools_by_profile": settings.disabled_tools_by_profile,
         "disabled_tools_by_browser_profile": normalize_disabled_tools_by_browser_profile(
@@ -166,13 +165,10 @@ def apply_ui_config_update(
         )
     if body.max_parallel_hosting_pages is not None:
         settings.max_parallel_hosting_pages = max(1, int(body.max_parallel_hosting_pages))
-    if body.browser_engine in ("puppeteer", "playwright"):
+    if body.browser_engine == "playwright":
+        # Playwright-only since ADR-003; other engine values are ignored.
         settings.browser_engine = body.browser_engine
-        settings.mcp_server_url = (
-            settings.mcp_server_url_playwright
-            if body.browser_engine == "playwright"
-            else settings.mcp_server_url_puppeteer
-        )
+        settings.mcp_server_url = settings.mcp_server_url_playwright
     if body.disabled_tools_by_profile is not None:
         settings.disabled_tools_by_profile = body.disabled_tools_by_profile
     if body.disabled_tools_by_browser_profile is not None:

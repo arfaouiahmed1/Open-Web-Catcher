@@ -575,7 +575,13 @@ def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[st
             for item in page_dict["server_hints"]
             if isinstance(item, dict)
         ]
-        page_dict.setdefault("confidence", 85)
+        if "confidence" not in page_dict:
+            page_dict["confidence"] = 85
+            fallback_metadata = page_dict.get("metadata")
+            if not isinstance(fallback_metadata, dict):
+                fallback_metadata = {}
+                page_dict["metadata"] = fallback_metadata
+            fallback_metadata.setdefault("confidence_source", "heuristic_default")
         page_dict.setdefault("route", "stream_extractor")
         if str(page_dict.get("route") or "").strip().lower() == "embed_agent":
             page_dict["route"] = "stream_extractor"
@@ -699,6 +705,7 @@ def _augment_landing_output(
                 "selector": str(record.get("selector") or ""),
                 "xpath": str(record.get("xpath") or ""),
                 "recovered_from": "short_memory_candidate_ledger",
+                "confidence_source": "heuristic_default",
             },
         }
         if _is_explicit_non_live_candidate(page_dict):
@@ -825,6 +832,7 @@ def _augment_landing_output(
                 "patterns": {
                     "url_pattern": candidate_pattern,
                 },
+                "metadata": {"confidence_source": "heuristic_default"},
             }
         )
 
@@ -1018,11 +1026,6 @@ class LandingPageAgent:
                         url=url,
                         page_type=AgentType.LANDING_PAGE.value,
                         run_goal="Explore the landing page and identify hosting-page URLs that should be passed downstream.",
-                        extras={
-                            "orchestrator_handoff": orchestrator_handoff[:600]
-                            if orchestrator_handoff
-                            else "",
-                        },
                     ),
                     memory_context=memory_context,
                     working_state=short_memory.working_state(
@@ -1050,7 +1053,9 @@ class LandingPageAgent:
                         f"{orchestrator_handoff}\n"
                         "Use this context as guidance and verify all findings with live tool evidence."
                     )
-                async with agent_tools("landing", self.settings, observer=observer) as tools:
+                async with agent_tools(
+                    "landing", self.settings, observer=observer, target_url=url
+                ) as tools:
                     result = await run_agent_loop(
                         settings=self.settings,
                         llm=self.llm,

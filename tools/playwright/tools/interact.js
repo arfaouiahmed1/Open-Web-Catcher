@@ -6,6 +6,7 @@
 import { connectBrowser, getPage } from '../shared/browser.js';
 import { screenshotViewport } from '../shared/screenshot.js';
 import { resolveElementTarget, trackNewTabs } from '../shared/tool-runtime.js';
+import { activatePlayback } from '../shared/media-activation.js';
 
 const delay = (min = 80, max = 300) =>
   new Promise(r => setTimeout(r, min + Math.random() * (max - min)));
@@ -96,6 +97,7 @@ export async function interact({
   let point_after = null;
   let fallback_used = '';
   let element_resolution = null;
+  let play_activation = null;
 
   try {
     const frameResolution = await _resolveFrame(page, frame_path, frame_url_contains);
@@ -149,7 +151,6 @@ export async function interact({
       }
 
       case 'play': {
-        let playedViaElement = false;
         if (element_ref || selector || xpath || text) {
           try {
             const resolved = await _resolveActionTarget(page, resolvedFrame, resolvedFramePath, {
@@ -170,35 +171,43 @@ export async function interact({
             };
             before_state = await _captureState(page, resolvedFrame);
             target_before = await _snapshotElement(elementHandle);
-            await delay(50, 150);
-            await elementHandle.click();
-            playedViaElement = true;
           } catch (resolveError) {
-            if (fallback_to_coordinates && Number.isFinite(x) && Number.isFinite(y)) {
-              point_before = await _elementAtPoint(page, x, y);
-              await _performCoordinateClick(page, x, y);
-              point_after = await _elementAtPoint(page, x, y);
-              locator_used = { kind: 'coordinates_fallback' };
-              fallback_used = 'coordinates';
-              playedViaElement = true;
-            } else {
+            if (!(fallback_to_coordinates && Number.isFinite(x) && Number.isFinite(y))) {
               throw resolveError;
             }
+            locator_used = { kind: 'coordinates_fallback' };
+            fallback_used = 'coordinates';
           }
+        } else {
+          before_state = await _captureState(page, resolvedFrame);
         }
 
-        const playAttempted = await resolvedFrame.evaluate(() => {
-          const video = document.querySelector('video');
-          if (!video) return false;
-          video.muted = true;
-          const maybePromise = video.play?.();
-          if (maybePromise && typeof maybePromise.catch === 'function') {
-            maybePromise.catch(() => {});
-          }
-          return true;
-        }).catch(() => false);
+        if (!before_state) {
+          before_state = await _captureState(page, resolvedFrame);
+        }
 
-        executed = playedViaElement || playAttempted;
+        // Full activation pipeline shared with puppeteer ([TOOL-P3], plan T20-b):
+        // frame scoring/relocation, blocker preflight, handle click, in-frame
+        // candidate clicks + video.play(), muted retries with backoff, and
+        // media-probe verification. Element click happens INSIDE the pipeline
+        // (attempt 0), unlike the old playwright-local click+play() stub.
+        play_activation = await activatePlayback({
+          page,
+          frame: resolvedFrame,
+          handle: elementHandle,
+          framePath: resolvedFramePath,
+          waitMs: wait_ms,
+          browserId: 'playwright',
+          preferredCoordinates: Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null,
+          allowCandidateClick: false,
+          allowPreflightClick: false,
+        });
+        executed = Boolean(
+          play_activation?.preflight?.clicked
+          || (play_activation?.strategies_attempted || []).length
+          || elementHandle
+          || fallback_used === 'coordinates',
+        );
         break;
       }
 
@@ -396,24 +405,36 @@ export async function interact({
       target_after = await _snapshotElement(elementHandle);
     }
 
-    const verification = _verifyInteraction({
-      mode,
-      value,
-      option_text,
-      option_value,
-      checked,
-      before_state,
-      after_state,
-      target_before,
-      target_after,
-      point_before,
-      point_after,
-      new_tab_urls,
-    });
+    if (mode === 'play' && play_activation) {
+      frame_info = {
+        frame_path: play_activation.frame_path || resolvedFramePath,
+        frame_url: play_activation.frame_url || resolvedFrame.url(),
+      };
+      verified = Boolean(play_activation.playback_started);
+      verification_reason = verified
+        ? `playback confirmed via ${play_activation.verification_signal || 'media probe'}`
+        : (play_activation.final_error || 'play action had no observable playback signal');
+      success = executed && verified;
+    } else {
+      const verification = _verifyInteraction({
+        mode,
+        value,
+        option_text,
+        option_value,
+        checked,
+        before_state,
+        after_state,
+        target_before,
+        target_after,
+        point_before,
+        point_after,
+        new_tab_urls,
+      });
 
-    verified = verification.verified;
-    verification_reason = verification.reason;
-    success = executed && verified;
+      verified = verification.verified;
+      verification_reason = verification.reason;
+      success = executed && verified;
+    }
   } catch (e) {
     error = e?.message || String(e);
     success = false;
@@ -465,6 +486,7 @@ export async function interact({
       fallback_used,
       element_resolution,
     },
+    playback_activation: play_activation,
     before_state,
     after_state,
     target_before,
