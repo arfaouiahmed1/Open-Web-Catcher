@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import React, { memo, useEffect, useRef, useMemo } from "react";
 import { MetricCard } from "@/components/library/MetricCard";
 import { StatusBadge } from "@/components/library/StatusBadge";
+import { VirtualizedList } from "@/components/library/VirtualizedList";
 
 export interface HistoryTabProps {
   rows: Array<Record<string, unknown>>;
@@ -26,6 +27,17 @@ function statusTone(status: string): "neutral" | "info" | "success" | "warning" 
   if (["partial"].includes(s)) return "warning";
   return "neutral";
 }
+
+const HistoryRow = memo(function HistoryRow({ row }: { row: Record<string, unknown> }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40" style={{ borderColor: "var(--line)" }}>
+      <span className="min-w-0 flex-1 truncate font-mono text-xs">{String(row.run_id || row.id || "—").slice(0, 16)}…</span>
+      <StatusBadge label={String(row.final_status || row.status || "—")} tone={statusTone(String(row.final_status || row.status || ""))} />
+      <span className="rounded-full border px-2 py-0.5 text-xs">{String(row.stream_count || 0)} streams</span>
+      <span className="font-mono text-xs text-muted-foreground">{String(row.total_cost_usd ?? "—").slice(0, 10)}</span>
+    </div>
+  );
+});
 
 /**
  * HistoryTab — virtualized via CSS `content-visibility` + windowed slice.
@@ -84,15 +96,19 @@ export function HistoryTab({
           {isLoading ? (
             <div className="px-4 py-10 text-center text-sm text-muted-foreground">Loading history…</div>
           ) : rows.length ? (
-            <div ref={listRef} className="divide-y" style={{ containIntrinsicSize: "auto 400px", contentVisibility: "auto" } as React.CSSProperties}>
-              {rows.slice(0, pageSize).map((row) => (
-                <div key={String(row.run_id || row.id || Math.random())} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40" style={{ borderColor: "var(--line)" }}>
-                  <span className="min-w-0 flex-1 truncate font-mono text-xs">{String(row.run_id || row.id || "—").slice(0, 16)}…</span>
-                  <StatusBadge label={String(row.final_status || row.status || "—")} tone={statusTone(String(row.final_status || row.status || ""))} />
-                  <span className="rounded-full border px-2 py-0.5 text-xs">{String(row.stream_count || 0)} streams</span>
-                  <span className="font-mono text-xs text-muted-foreground">{String(row.total_cost_usd ?? "—").slice(0, 10)}</span>
-                </div>
-              ))}
+            <div ref={listRef} className="divide-y">
+              {rows.length > 50 ? (
+                <VirtualizedList
+                  items={rows.slice(0, pageSize)}
+                  height={320}
+                  itemSize={48}
+                  renderItem={(row) => <HistoryRow row={row as Record<string, unknown>} />}
+                />
+              ) : (
+                rows.slice(0, pageSize).map((row) => (
+                  <HistoryRow key={String(row.run_id || row.id || Math.random())} row={row} />
+                ))
+              )}
             </div>
           ) : (
             <div className="px-4 py-10 text-center text-sm text-muted-foreground">No runs match filters.</div>

@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { memo, useMemo } from "react";
 import { EventFeedItem } from "@/components/library/EventFeedItem";
 import { ScreenshotCard } from "@/components/library/ScreenshotCard";
 import type { FeedEvent } from "@/components/library/types";
+import { VirtualizedList } from "@/components/library/VirtualizedList";
 import { collectScreenshotUrls } from "@/lib/run-trace";
 
 export interface RunEventFeedTabProps {
@@ -77,11 +78,64 @@ function extractScreenshotSources(raw: Record<string, unknown>): string[] {
   return Array.from(set);
 }
 
+const EventRow = memo(function EventRow({
+  raw,
+  feed,
+  screenshots,
+  isTypedKind,
+}: {
+  raw: Record<string, unknown>;
+  feed: FeedEvent;
+  screenshots: string[];
+  isTypedKind: boolean;
+}) {
+  return (
+    <div
+      data-event-id={feed.id}
+      data-kind={feed.kind}
+      data-typed={isTypedKind ? "true" : "false"}
+      className="space-y-2 p-2"
+      style={{ containIntrinsicSize: "0 120px", contentVisibility: "auto" } as React.CSSProperties}
+    >
+      <EventFeedItem event={feed} />
+      {screenshots.length > 0 ? (
+        <div className="grid gap-2 pl-2 sm:grid-cols-2" data-role="inline-screenshots">
+          {screenshots.slice(0, 2).map((src, sIdx) => (
+            <ScreenshotCard
+              key={`${feed.id}-shot-${sIdx}`}
+              src={src}
+              alt={`${feed.kind} screenshot ${sIdx + 1}`}
+              caption={`${feed.kind} · ${String((raw as { actor?: string })?.actor || "").slice(0, 32)} · seq ${feed.id}`}
+            />
+          ))}
+        </div>
+      ) : null}
+      {isTypedKind && screenshots.length === 0 ? (
+        <div className="pl-2" data-role="typed-badge">
+          <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide" style={{ borderColor: "var(--line)", color: "var(--muted-foreground)" }}>
+            typed: {feed.kind}
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+});
+
 export function RunEventFeedTab({ events, title = "Event feed", maxItems = 120 }: RunEventFeedTabProps) {
   const list = useMemo(() => (Array.isArray(events) ? events : []), [events]);
   const visible = useMemo(() => (maxItems && list.length > maxItems ? list.slice(-maxItems) : list), [list, maxItems]);
   const hasEvents = visible.length > 0;
   const omitted = list.length - visible.length;
+  const enriched = useMemo(
+    () =>
+      visible.map((raw, idx) => {
+        const feed = toFeedEvent(raw as Record<string, unknown>, idx);
+        const screenshots = extractScreenshotSources(raw as Record<string, unknown>);
+        const isTypedKind = ["server_activated", "stream_extracted", "hosting_page_discovered", "player_failed", "queue_enqueued", "hosting_item_started", "hosting_item_finished", "pool_drained", "plan_step_update", "cost_threshold_exceeded"].includes(feed.kind);
+        return { raw: raw as Record<string, unknown>, feed, screenshots, isTypedKind, key: `${feed.id}-${idx}` };
+      }),
+    [visible]
+  );
 
   return (
     <div className="overflow-hidden rounded-xl border bg-card shadow-card" data-testid="run-event-feed-tab">
@@ -102,42 +156,17 @@ export function RunEventFeedTab({ events, title = "Event feed", maxItems = 120 }
           </div>
         ) : (
           <div className="divide-y divide-border/50" data-role="feed-list">
-            {visible.map((raw, idx) => {
-              const feed = toFeedEvent(raw as Record<string, unknown>, idx);
-              const screenshots = extractScreenshotSources(raw as Record<string, unknown>);
-              const isTypedKind = ["server_activated", "stream_extracted", "hosting_page_discovered", "player_failed", "queue_enqueued", "hosting_item_started", "hosting_item_finished", "pool_drained", "plan_step_update", "cost_threshold_exceeded"].includes(feed.kind);
-              return (
-                <div
-                  key={feed.id + "-" + idx}
-                  data-event-id={feed.id}
-                  data-kind={feed.kind}
-                  data-typed={isTypedKind ? "true" : "false"}
-                  className="space-y-2 p-2"
-                >
-                  <EventFeedItem event={feed} />
-                  {screenshots.length > 0 ? (
-                    <div className="grid gap-2 pl-2 sm:grid-cols-2" data-role="inline-screenshots">
-                      {screenshots.slice(0, 2).map((src, sIdx) => (
-                        <ScreenshotCard
-                          key={`${feed.id}-shot-${sIdx}`}
-                          src={src}
-                          alt={`${feed.kind} screenshot ${sIdx + 1}`}
-                          caption={`${feed.kind} · ${String((raw as { actor?: string })?.actor || "").slice(0, 32)} · seq ${feed.id}`}
-                        />
-                      ))}
-                    </div>
-                  ) : null}
-                  {/* Typed-kind inline badge for visual verification even without screenshot */}
-                  {isTypedKind && screenshots.length === 0 ? (
-                    <div className="pl-2" data-role="typed-badge">
-                      <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide" style={{ borderColor: "var(--line)", color: "var(--muted-foreground)" }}>
-                        typed: {feed.kind}
-                      </span>
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
+            {enriched.length > 80 ? (
+              <VirtualizedList
+                items={enriched}
+                height={Math.min(600, enriched.length * 96)}
+                itemSize={128}
+                overscanCount={8}
+                renderItem={(item) => <EventRow raw={item.raw} feed={item.feed} screenshots={item.screenshots} isTypedKind={item.isTypedKind} />}
+              />
+            ) : (
+              enriched.map((item) => <EventRow key={item.key} raw={item.raw} feed={item.feed} screenshots={item.screenshots} isTypedKind={item.isTypedKind} />)
+            )}
           </div>
         )}
       </div>
