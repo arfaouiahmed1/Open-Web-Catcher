@@ -13,6 +13,9 @@ import { statusLabel } from "@/lib/run-status";
 import { KpiCard } from "@/components/kpi-card";
 import { DashboardPersistencePanel } from "@/components/dashboard";
 import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
+import { OverviewKpisTab } from "./tabs/overview-kpis-tab";
+import { CostsTab } from "./tabs/costs-tab";
+import { TokensTab } from "./tabs/tokens-tab";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1751,27 +1754,7 @@ function OverviewPageContent() {
       ════════════════════════════════════════════════════════════════════ */}
       {tab === "overview" && (
         <div className="space-y-6">
-          {/* 3 rows × 4 KPIs */}
-          <div className="space-y-3">
-            <SectionLabel>Core metrics</SectionLabel>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {overviewKpisRow1.map((kpi) => (
-                <KpiCard key={kpi.label} {...kpi} />
-              ))}
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {overviewKpisRow2.map((kpi) => (
-              <KpiCard key={kpi.label} {...kpi} />
-            ))}
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {overviewKpisRow3.map((kpi) => (
-              <KpiCard key={kpi.label} {...kpi} />
-            ))}
-          </div>
+          <OverviewKpisTab overview={overview} state={overview ? "success" : error ? "error" : "loading"} />
 
           {/* Live status strip */}
           <StatusStrip summary={summary} />
@@ -1956,11 +1939,7 @@ function OverviewPageContent() {
       ════════════════════════════════════════════════════════════════════ */}
       {tab === "costs" && (
         <div className="space-y-6">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {costsKpis.map((kpi) => (
-              <KpiCard key={kpi.label} {...kpi} />
-            ))}
-          </div>
+          <CostsTab overview={overview} state={overview ? "success" : error ? "error" : "loading"} />
 
           <div className="grid gap-5 xl:grid-cols-2">
             {/* Provider cost donut */}
@@ -2164,11 +2143,7 @@ function OverviewPageContent() {
       ════════════════════════════════════════════════════════════════════ */}
       {tab === "tokens" && (
         <div className="space-y-6">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {tokensKpis.map((kpi) => (
-              <KpiCard key={kpi.label} {...kpi} />
-            ))}
-          </div>
+          <TokensTab overview={overview} state={overview ? "success" : error ? "error" : "loading"} />
 
           <div className="grid gap-5 xl:grid-cols-2">
             {/* Token type donut */}
