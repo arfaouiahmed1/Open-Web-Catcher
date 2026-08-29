@@ -6,14 +6,34 @@ import asyncio
 import json
 import re
 import uuid
+from collections.abc import Callable
 from functools import partial
 from typing import Any, TypedDict, cast
 from urllib.parse import urlparse
 
 from langgraph.graph import END, START, StateGraph
 
+from src.agents.errors import (
+    RunCancelledError,
+    WorkflowBudgetExceededError,
+    WorkflowTimeoutError,
+)
+from src.agents.pools import (
+    EMBEDDED_ROLE,
+    HOSTING_ROLE,
+    RunPools,
+    register_run_pools,
+)
 from src.memory.long_term import LongTermMemory
-from src.models.enums import AgentType, Confidence, ExtractionStatus, PageType
+from src.models.common import PipelineModel
+from src.models.enums import (
+    AgentType,
+    Confidence,
+    ExtractionStatus,
+    FailureKind,
+    PageType,
+)
+from src.models.judge import ValidationReport
 from src.models.schemas import (
     ClassificationResult,
     ExtractionResult,
@@ -23,7 +43,21 @@ from src.models.schemas import (
     StreamURL,
     TakedownEmail,
 )
-from src.tools.email_tool import EmailTool
+from src.orchestrator.emailing import TakedownEmailRenderInput, render_takedown_emails
+from src.orchestrator.run_plan import emit_run_plan, transition_run_step
+from src.storage.database import get_session
+
+#: Canonical RunPlan artifact (plan T27). Step ids mirror the LangGraph node
+#: names so the SSE timeline reflects the actual execution graph; each node
+#: emits in_progress on entry and a terminal status on exit via the helpers in
+#: src/orchestrator/run_plan.py.
+_RUN_PLAN_STEPS = [
+    {"id": "classify", "title": "Classify page", "criteria": "page_type assigned with confidence"},
+    {"id": "landing_page", "title": "Extract landing streams", "criteria": ">= 0 candidate streams"},
+    {"id": "analyze_providers", "title": "Extract hosting/embedded streams", "criteria": "provider analysis rows populated"},
+    {"id": "validate_evidence", "title": "Validator evidence pass", "criteria": "validator verdict recorded OR bypassed on empty queue"},
+    {"id": "generate_takedown_emails", "title": "Render takedown emails", "criteria": ">= 0 emails generated"},
+]
 from src.tools.ipinfo_tool import IPInfoTool
 from src.utils.config import Settings
 from src.utils.instrumentation import (
@@ -293,7 +327,15 @@ class PipelineState(TypedDict):
     pending_embedded_urls: list[str]
     provider_analysis: list[ProviderInfo]
     takedown_emails: list[TakedownEmail]
+    # Stage-parse safety (plan T15): malformed items skipped during stage
+    # payload construction, each as {"stage", "reason", "item_preview"}.
+    invalid_items: list[dict[str, Any]]
+    # Evidence-validation gate (plan T24 / VAL-C2): typed report from the
+    # validate_evidence node plus the per-stage replan budget spent so far.
+    validation_report: ValidationReport | None
+    validator_replan_attempts: int
     error: str
+    gate_no_target: bool
 
 
 def _dedupe_urls(urls: list[str]) -> list[str]:
@@ -304,6 +346,144 @@ def _dedupe_urls(urls: list[str]) -> list[str]:
             seen.add(url)
             result.append(url)
     return result
+
+
+def classify_failure_kind(exc: BaseException) -> FailureKind:
+    """Map a pipeline exception onto the typed failure taxonomy (T30/AGT-H3).
+
+    Typed exceptions win; legacy string matching remains only as a fallback
+    for third-party exceptions that carry timeout text.
+    """
+    if isinstance(exc, RunCancelledError):
+        return FailureKind.CANCELLED
+    if isinstance(exc, WorkflowBudgetExceededError):
+        return FailureKind.BUDGET_EXCEEDED
+    if isinstance(exc, WorkflowTimeoutError):
+        return FailureKind.WORKFLOW_TIMEOUT
+    if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
+        return FailureKind.TIMEOUT
+    text = str(exc or "").lower()
+    if "timed out" in text or "timeout" in text:
+        return FailureKind.TIMEOUT
+    if _PAGE_INACCESSIBLE_RE.search(str(exc or "")):
+        return FailureKind.SITE_INACCESSIBLE
+    return FailureKind.AGENT_ERROR
+
+
+def _failed_extraction(
+    target_url: str,
+    page_type: PageType,
+    agent_type: AgentType,
+    exc: BaseException,
+) -> ExtractionResult:
+    error_text = str(exc)
+    kind = classify_failure_kind(exc)
+    return ExtractionResult(
+        url=target_url,
+        page_type=page_type,
+        status=ExtractionStatus.TIMEOUT
+        if kind in {FailureKind.TIMEOUT, FailureKind.WORKFLOW_TIMEOUT}
+        else ExtractionStatus.FAILED,
+        agent_type=agent_type,
+        error_message=error_text,
+        metadata={
+            "orchestrator_error": type(exc).__name__,
+            "failure_kind": kind.value,
+        },
+    )
+
+
+class _WorkflowGovernor:
+    """Between-stage token/cost budget checks for a pipeline run (T30/AGT-M7/M8).
+
+    Reads live totals from the RunObserver's RunMetrics, which the base agent
+    updates after every LLM call, so no extra instrumentation is needed.
+    Budgets of ``<= 0`` disable the corresponding check.
+    """
+
+    def __init__(
+        self,
+        observer: RunObserver | None,
+        *,
+        max_cost_usd: float = 0.0,
+        max_tokens: int = 0,
+    ) -> None:
+        self._observer = observer
+        self._max_cost_usd = max(0.0, float(max_cost_usd or 0.0))
+        self._max_tokens = max(0, int(max_tokens or 0))
+        self.exceeded: FailureKind | None = None
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self._observer is not None) and (self._max_cost_usd > 0 or self._max_tokens > 0)
+
+    def _observer_metrics(self) -> Any | None:
+        observer = self._observer
+        if observer is None:
+            return None
+        # Some observer implementations expose ``metrics`` directly; this
+        # repo's RunObserver serves it from the underlying run state via
+        # ``trace()``.
+        metrics = getattr(observer, "metrics", None)
+        if metrics is not None:
+            return metrics
+        try:
+            return observer.trace().metrics
+        except Exception:  # noqa: BLE001 — budget checks must never crash the run
+            return None
+
+    def check(self, stage: str) -> None:
+        if not self.enabled or self.exceeded is not None:
+            return
+        metrics = self._observer_metrics()
+        if metrics is None:
+            return
+        total_tokens = int(
+            getattr(metrics, "total_tokens_in", 0) or 0
+        ) + int(getattr(metrics, "total_tokens_out", 0) or 0)
+        total_cost = float(getattr(metrics, "estimated_total_cost_usd", 0.0) or 0.0)
+
+        over_tokens = self._max_tokens > 0 and total_tokens > self._max_tokens
+        over_cost = self._max_cost_usd > 0 and total_cost > self._max_cost_usd
+        if not (over_tokens or over_cost):
+            return
+        self.exceeded = FailureKind.BUDGET_EXCEEDED
+        _emit_orchestrator_decision(
+            self._observer,
+            f"Workflow budget exhausted before {stage}",
+            status="warning",
+            details={
+                "stage": stage,
+                "budget_max_cost_usd": self._max_cost_usd,
+                "budget_max_tokens": self._max_tokens,
+                "observed_total_cost_usd": round(total_cost, 6),
+                "observed_total_tokens": total_tokens,
+                "over_cost": over_cost,
+                "over_tokens": over_tokens,
+            },
+        )
+        raise WorkflowBudgetExceededError(
+            f"Workflow budget exceeded before stage '{stage}': "
+            f"tokens={total_tokens}/{self._max_tokens or 'inf'} "
+            f"cost_usd={total_cost:.4f}/{self._max_cost_usd or 'inf'}"
+        )
+
+
+def make_workflow_governor(
+    settings: Settings,
+    observer: RunObserver | None = None,
+) -> Callable[[str], None]:
+    """Return a callable enforcing the configured per-run budget (T30).
+
+    Usage inside a pipeline node: ``check_budget("hosting_page")`` before the
+    stage body. With no budget configured this is a zero-cost no-op.
+    """
+    governor = _WorkflowGovernor(
+        observer,
+        max_cost_usd=getattr(settings, "workflow_max_cost_usd", 0.0),
+        max_tokens=getattr(settings, "workflow_max_tokens", 0),
+    )
+    return governor.check
 
 
 def _emit_orchestrator_decision(
@@ -470,16 +650,6 @@ def _looks_like_direct_embed_url(url: str) -> bool:
     return bool(re.search(r"(^|[?&])(embed|player|iframe)=", query))
 
 
-def _normalize_landing_route(route: str) -> str:
-    return (
-        "embed_agent" if str(route or "").strip().lower() == "embed_agent" else "stream_extractor"
-    )
-
-
-def _resolve_landing_match_route(match: MatchInfo, *, root_url: str) -> str:
-    return "stream_extractor"
-
-
 def _split_landing_match_handoff_targets(match: MatchInfo) -> tuple[list[str], list[str]]:
     embedded_targets: list[str] = []
     direct_streams: list[str] = []
@@ -602,20 +772,35 @@ def _latest_hosting_context_for_embedded(
     return None
 
 
+# Embedded trigger vocabulary (plan T28 / streaming role contracts spike §D2.3).
+# The hosting agent emits exactly these ``metadata.decision`` values when it
+# wants the embedded pool woken; every other decision (clean success included)
+# enqueues nothing. This REPLACES the old fan-out that also matched the legacy
+# ``needs_embed_agent`` / ``partial_success_needs_embed`` decision strings and
+# server-level statuses — those are retained as server STATUS labels only and
+# no longer wake the embedded pool.
+_EMBEDDED_TRIGGER_DECISIONS = frozenset(
+    {"activation_failed", "no_networking", "judge_validation_request"}
+)
+
+
 def _requires_embedded_followup(extraction: ExtractionResult) -> bool:
+    """True only on an explicit embedded trigger (spike §D2.3).
+
+    Embedded work is invoked ONLY on one of the three trigger decisions
+    (``activation_failed`` / ``no_networking`` / ``judge_validation_request``).
+    Server-level statuses and legacy decision strings no longer fan out.
+    """
     decision = str(extraction.metadata.get("decision", "") or "").strip().lower()
-    embedded_candidates = _collect_embedded_urls(extraction)
-    if decision in {"needs_embed_agent", "partial_success_needs_embed"}:
-        return True
-    for server in extraction.servers:
-        if str(server.status or "").strip().lower() == "needs_embed_agent":
-            return bool(embedded_candidates)
-    for server in extraction.metadata.get("servers", []):
-        if not isinstance(server, dict):
-            continue
-        if str(server.get("status") or "").strip().lower() == "needs_embed_agent":
-            return bool(embedded_candidates)
-    return not extraction.streams and bool(embedded_candidates)
+    return decision in _EMBEDDED_TRIGGER_DECISIONS
+
+
+def _page_type_for_role(role: str) -> PageType:
+    return PageType.EMBEDDED if role == EMBEDDED_ROLE else PageType.HOSTING
+
+
+def _agent_type_for_role(role: str) -> AgentType:
+    return AgentType.EMBEDDED_PAGE if role == EMBEDDED_ROLE else AgentType.HOSTING_PAGE
 
 
 def _embedded_target_allowed(state: PipelineState, target_url: str) -> bool:
@@ -720,37 +905,136 @@ def _build_embedded_handoff(
     return render_handoff(ctx)
 
 
+_CONFIDENCE_SCORE_BY_LEVEL = {
+    Confidence.LOW: 33,
+    Confidence.MEDIUM: 66,
+    Confidence.HIGH: 100,
+}
+
+_CONFIDENCE_SOURCE_PARSED = "parsed"
+_CONFIDENCE_SOURCE_FALLBACK = "fallback"
+_CONFIDENCE_SOURCE_HEURISTIC_DEFAULT = "heuristic_default"
+
+_CLASSIFICATION_TIEBREAK_INSTRUCTION = (
+    "RECLASSIFICATION RE-CHECK (judge tiebreak): your previous verdict was low-confidence "
+    "or could not be parsed. Re-examine the live page evidence you already gathered and "
+    "decide strictly between landing_page, host_page, embed_video_page, or other. Focus on "
+    "concrete player/list signals versus generic site navigation, then answer using the exact "
+    "Output Format. Do not extract streams."
+)
+
+
+def _confidence_gate_thresholds(settings: Settings | None) -> tuple[int, int]:
+    low, high = 40, 70
+    if settings is not None:
+        low = int(getattr(settings, "classification_confidence_gate_low", low))
+        high = int(getattr(settings, "classification_confidence_gate_high", high))
+    return low, max(low, high)
+
+
+def _confidence_gate_blocks(
+    classification: ClassificationResult,
+    *,
+    settings: Settings | None = None,
+) -> bool:
+    """True when the confidence gate rejects this classification.
+
+    Heuristic-default confidences (fabricated fallback values, e.g. landing-page
+    memory/pattern candidates) are excluded from gating. A parse-failure marker
+    (confidence_source="fallback") on an UNKNOWN page type is an unparseable
+    verdict rather than a genuine UNKNOWN judgment, so it is gated too.
+    """
+    source = str(getattr(classification, "confidence_source", "") or _CONFIDENCE_SOURCE_PARSED)
+    if source == _CONFIDENCE_SOURCE_HEURISTIC_DEFAULT:
+        return False
+    low, _high = _confidence_gate_thresholds(settings)
+    score = _CONFIDENCE_SCORE_BY_LEVEL[classification.confidence]
+    unparseable_unknown = (
+        classification.page_type == PageType.UNKNOWN and source == _CONFIDENCE_SOURCE_FALLBACK
+    )
+    return unparseable_unknown or score < low
+
+
+async def _invoke_classification_agent(
+    settings: Settings,
+    url: str,
+    observer: RunObserver | None,
+    *,
+    instruction_override: str | None = None,
+) -> ClassificationResult:
+    from src.agents.classification import ClassificationAgent
+
+    try:
+        return await ClassificationAgent(settings).run(
+            url=url, observer=observer, instruction_override=instruction_override
+        )
+    except RunCancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Classification agent failed for %s: %s", url, exc)
+        return ClassificationResult(
+            url=url,
+            page_type=PageType.UNKNOWN,
+            confidence=Confidence.LOW,
+            reasoning=f"Classification failed: {type(exc).__name__}: {str(exc)[:500]}",
+            confidence_source=_CONFIDENCE_SOURCE_FALLBACK,
+        )
+
+
 async def classify_node(
     state: PipelineState,
     *,
     settings: Settings,
     observer: RunObserver | None = None,
 ) -> dict[str, Any]:
-    from src.agents.classification import ClassificationAgent
-
     child = observer.child("classification", AgentType.CLASSIFICATION) if observer else None
     _emit_orchestrator_decision(
         observer,
         "Calling classification agent",
         details={"url": state["url"], "reason": "recheck page type before routing"},
     )
-    try:
-        result = await ClassificationAgent(settings).run(url=state["url"], observer=child)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Classification agent failed for %s: %s", state["url"], exc)
-        result = ClassificationResult(
-            url=state["url"],
-            page_type=PageType.UNKNOWN,
-            confidence=Confidence.LOW,
-            reasoning=f"Classification failed: {type(exc).__name__}: {str(exc)[:500]}",
+    result = await _invoke_classification_agent(settings, state["url"], child)
+    if _confidence_gate_blocks(result, settings=settings):
+        _emit_orchestrator_decision(
+            observer,
+            "Classification confidence below gate — judge tiebreak re-check",
+            status="warning",
+            details={
+                "url": state["url"],
+                "page_type": result.page_type.value,
+                "confidence": result.confidence.value,
+                "confidence_source": getattr(
+                    result, "confidence_source", _CONFIDENCE_SOURCE_PARSED
+                ),
+                "policy": "single reclassify attempt before terminal no_target",
+            },
         )
-    next_node = route_after_classification({**state, "classification": result})
+        result = await _invoke_classification_agent(
+            settings,
+            state["url"],
+            child,
+            instruction_override=_CLASSIFICATION_TIEBREAK_INSTRUCTION,
+        )
+    if settings.ocr_enabled:
+        screenshots = _collect_all_screenshots(list(state.get("extraction_results", [])))
+        if screenshots:
+            try:
+                from src.agents.ocr_agent import OcrAgent
+
+                ocr_result = await OcrAgent(settings).run(screenshots[0], observer=child)
+                result.metadata["ocr"] = ocr_result.model_dump(mode="json")
+            except RunCancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — enrichment must never break routing
+                logger.warning("OCR enrichment failed for %s: %s", state["url"], exc)
+    next_node = route_after_classification({**state, "classification": result}, settings=settings)
     _emit_orchestrator_decision(
         observer,
         "Classification route selected",
         details={
             "page_type": result.page_type.value,
             "confidence": result.confidence.value,
+            "confidence_source": getattr(result, "confidence_source", _CONFIDENCE_SOURCE_PARSED),
             "next_node": next_node,
             "reasoning_preview": _truncate(result.reasoning, max_chars=900),
         },
@@ -790,8 +1074,19 @@ async def landing_page_node(
     settings: Settings,
     observer: RunObserver | None = None,
     memory: LongTermMemory | None = None,
+    pools_box: list[RunPools | None] | None = None,
 ) -> dict[str, Any]:
     from src.agents.landing_page import LandingPageAgent
+
+    pools = pools_box[0] if pools_box else None
+    if pools is not None:
+        # Seed the pool's handoff context so workers can build rich handoffs
+        # for targets discovered while the landing agent is still running.
+        pools.set_handoff_context(
+            url=state["url"],
+            classification=state.get("classification"),
+            matches=list(state.get("matches") or []),
+        )
 
     landing_child = observer.child("landing", AgentType.LANDING_PAGE) if observer else None
 
@@ -801,6 +1096,21 @@ async def landing_page_node(
         page_type=AgentType.LANDING_PAGE.value,
     )
     landing_handoff = _build_landing_handoff(state, memory_hint_text=landing_memory_hint)
+    if settings.static_prepass_enabled:
+        from src.tools.static_prepass import collect_static_candidate_links
+
+        try:
+            static_candidates = await asyncio.to_thread(
+                collect_static_candidate_links,
+                state["url"],
+            )
+        except Exception as exc:
+            logger.warning("Static landing pre-pass failed for %s: %s", state["url"], exc)
+            static_candidates = []
+        if static_candidates:
+            landing_handoff += "\n\nSTATIC PRE-PASS CANDIDATE LINKS\n" + "\n".join(
+                f"- {candidate}" for candidate in static_candidates
+            )
     _emit_orchestrator_decision(
         observer,
         "Landing handoff prepared",
@@ -828,18 +1138,12 @@ async def landing_page_node(
                     for url in landing_match_urls
                     if str(url or "").strip()
                 ]
+    except RunCancelledError:
+        raise
     except Exception as exc:
         logger.warning("Landing page agent failed for %s: %s", state["url"], exc)
-        error_text = str(exc)
-        landing_outcome = ExtractionResult(
-            url=state["url"],
-            page_type=PageType.LANDING,
-            status=ExtractionStatus.TIMEOUT
-            if "timed out" in error_text.lower()
-            else ExtractionStatus.FAILED,
-            agent_type=AgentType.LANDING_PAGE,
-            error_message=error_text,
-            metadata={"orchestrator_error": type(exc).__name__},
+        landing_outcome = _failed_extraction(
+            state["url"], PageType.LANDING, AgentType.LANDING_PAGE, exc
         )
     if landing_outcome is not None:
         extraction_results.append(landing_outcome)
@@ -859,16 +1163,20 @@ async def landing_page_node(
     normalized_matches: list[MatchInfo] = []
 
     for match in matches:
-        resolved_route = _resolve_landing_match_route(match, root_url=state["url"])
         normalized_match = (
-            match.model_copy(update={"route": resolved_route})
-            if match.route != resolved_route
+            match.model_copy(update={"route": "stream_extractor"})
+            if match.route != "stream_extractor"
             else match
         )
         normalized_matches.append(normalized_match)
-        _landing_player_hints, direct_streams = _split_landing_match_handoff_targets(
-            normalized_match
-        )
+        # Streaming handoff (plan T28 / spike §D2.1): each hosting target is
+        # enqueued the moment it is classified, so pool workers start while
+        # later matches are still being normalized. The pending list is kept
+        # for PipelineState/routing compatibility (informational).
+        if pools is not None and not _looks_like_provider_stream_url(normalized_match.url):
+            pools.register_match(normalized_match)
+            pools.enqueue(HOSTING_ROLE, normalized_match.url, source="landing")
+        _, direct_streams = _split_landing_match_handoff_targets(normalized_match)
         landing_direct_streams.extend(direct_streams)
         if _looks_like_provider_stream_url(normalized_match.url):
             landing_direct_streams.append(normalized_match.url)
@@ -940,11 +1248,34 @@ async def hosting_page_node(
     settings: Settings,
     observer: RunObserver | None = None,
     memory: LongTermMemory | None = None,
+    pools_box: list[RunPools | None] | None = None,
 ) -> dict[str, Any]:
-    from src.agents.hosting_page import HostingPageAgent
+    """Drainer node for the hosting pool (plan T28 / spike §D1).
 
-    if not state["pending_hosting_urls"]:
+    Producers (landing normalization, frontier discoveries) enqueue while
+    other stages run; this node closes the producer side, waits until the
+    hosting queue drains with no in-flight item, and folds the worker-appended
+    results into the graph state. Replaces the former up-front task list +
+    ``asyncio.gather(..., return_exceptions=True)`` barrier.
+    """
+    pools = pools_box[0] if pools_box else None
+    ephemeral_pools = False
+    if pools is None:
+        # Direct node invocation (tests/tools) without a run-scoped pool.
+        pools = RunPools(
+            run_id=str(state.get("run_id", "")),
+            settings=settings,
+            observer=observer,
+            memory=memory,
+        )
+        ephemeral_pools = True
+
+    if not state["pending_hosting_urls"] and not pools.has_pending_work(HOSTING_ROLE):
+        if ephemeral_pools:
+            await pools.aclose()
         return {}
+
+    make_workflow_governor(settings, observer)("hosting_page")
 
     target_urls = _dedupe_urls(state["pending_hosting_urls"])
     total_targets = len(target_urls)
@@ -954,109 +1285,61 @@ async def hosting_page_node(
         details={"target_count": total_targets, "target_urls": target_urls[:20]},
     )
 
-    # Derive pattern context from landing matches site_patterns
-    matches = state.get("matches", [])
-    site_url_pattern = ""
-    for m in matches:
-        if hasattr(m, "patterns") and isinstance(m.patterns, dict):
-            site_url_pattern = str(m.patterns.get("url_pattern") or "").strip()
-            if site_url_pattern:
-                break
+    try:
+        pools.open_cycle(HOSTING_ROLE)
+        matches = state.get("matches", [])
+        site_url_pattern = ""
+        for m in matches:
+            if hasattr(m, "patterns") and isinstance(m.patterns, dict):
+                site_url_pattern = str(m.patterns.get("url_pattern") or "").strip()
+                if site_url_pattern:
+                    break
 
-    parallel_limit = max(1, int(settings.max_parallel_hosting_pages or 1))
-    sem = asyncio.Semaphore(parallel_limit)
-
-    async def _guarded(coro: Any) -> Any:
-        async with sem:
-            return await coro
-
-    tasks = []
-    for idx, target_url in enumerate(target_urls):
-        child = observer.child("hosting", AgentType.HOSTING_PAGE) if observer else None
-        hosting_memory_hint = _memory_hint(
-            memory,
-            url=target_url,
-            page_type=AgentType.HOSTING_PAGE.value,
-        )
-        pattern_context = (
-            f"{idx + 1} of {total_targets} from pattern {site_url_pattern}"
-            if site_url_pattern
-            else f"{idx + 1} of {total_targets}"
-        )
-        handoff = _build_hosting_handoff(
-            state,
-            target_url=target_url,
-            memory_hint_text=hosting_memory_hint,
-            pattern_context=pattern_context,
-        )
-        _emit_orchestrator_decision(
-            observer,
-            "Hosting handoff prepared",
-            details={
-                "target_url": target_url,
-                "target_index": idx + 1,
-                "target_count": total_targets,
-                "handoff_preview": _truncate(handoff, max_chars=900),
-                "memory_hint_found": bool(hosting_memory_hint),
-            },
-        )
-        tasks.append(
-            _guarded(
-                HostingPageAgent(settings).run(
-                    url=target_url,
-                    observer=child,
-                    orchestrator_handoff=handoff,
-                )
-            )
-        )
-
-    outcomes = await asyncio.gather(*tasks, return_exceptions=True)
-
-    extraction_results = list(state["extraction_results"])
-    pending_embedded_urls = list(state["pending_embedded_urls"])
-
-    for target_url, outcome in zip(target_urls, outcomes, strict=False):
-        if isinstance(outcome, BaseException):
-            logger.warning("Hosting page agent failed for %s: %s", target_url, outcome)
-            error_text = str(outcome)
-            extraction = ExtractionResult(
+        for idx, target_url in enumerate(target_urls):
+            hosting_memory_hint = _memory_hint(
+                memory,
                 url=target_url,
-                page_type=PageType.HOSTING,
-                status=ExtractionStatus.TIMEOUT
-                if "timed out" in error_text.lower()
-                else ExtractionStatus.FAILED,
-                agent_type=AgentType.HOSTING_PAGE,
-                error_message=error_text,
-                metadata={"orchestrator_error": type(outcome).__name__},
+                page_type=AgentType.HOSTING_PAGE.value,
             )
-        else:
-            extraction = cast(ExtractionResult, outcome)
-
-        extraction_results.append(extraction)
-
-        embedded_candidates = _collect_embedded_urls(extraction)
-        needs_embed_followup = _requires_embedded_followup(extraction)
-        if needs_embed_followup and embedded_candidates:
-            pending_embedded_urls = _dedupe_urls([*pending_embedded_urls, *embedded_candidates])
-        elif needs_embed_followup:
-            logger.warning(
-                "Hosting result for %s requested embedded follow-up but returned no embedded/player URL",
-                target_url,
+            pattern_context = (
+                f"{idx + 1} of {total_targets} from pattern {site_url_pattern}"
+                if site_url_pattern
+                else f"{idx + 1} of {total_targets}"
             )
-            if observer is not None:
-                observer.emit(
-                    "embedded_handoff_missing",
-                    "Hosting result requested embedded follow-up without an explicit embedded target",
-                    status="warning",
-                    details={
-                        "hosting_url": target_url,
-                        "decision": str(extraction.metadata.get("decision", "") or "").strip(),
-                    },
-                )
+            handoff = _build_hosting_handoff(
+                state,
+                target_url=target_url,
+                memory_hint_text=hosting_memory_hint,
+                pattern_context=pattern_context,
+            )
+            newly_queued = pools.enqueue(
+                HOSTING_ROLE, target_url, source="graph_state", handoff=handoff
+            )
+            _emit_orchestrator_decision(
+                observer,
+                "Hosting handoff prepared",
+                details={
+                    "target_url": target_url,
+                    "target_index": idx + 1,
+                    "target_count": total_targets,
+                    "newly_queued": newly_queued,
+                    "duplicate_suppressed": not newly_queued,
+                    "memory_hint_found": bool(hosting_memory_hint),
+                },
+            )
 
+        await pools.wait_until_drained(HOSTING_ROLE)
+        new_results = pools.consume_results(HOSTING_ROLE)
+    finally:
+        if ephemeral_pools:
+            await pools.aclose()
+
+    extraction_results = [*state["extraction_results"], *new_results]
     return {
         "pending_hosting_urls": [],
-        "pending_embedded_urls": pending_embedded_urls,
+        "pending_embedded_urls": _dedupe_urls(
+            [*state["pending_embedded_urls"], *pools.embedded_enqueued_urls]
+        ),
         "extraction_results": extraction_results,
     }
 
@@ -1067,11 +1350,32 @@ async def embedded_page_node(
     settings: Settings,
     observer: RunObserver | None = None,
     memory: LongTermMemory | None = None,
+    pools_box: list[RunPools | None] | None = None,
 ) -> dict[str, Any]:
-    from src.agents.embedded_page import EmbeddedPageAgent
+    """Drainer node for the embedded pool (plan T28 / spike §D1).
 
-    if not state["pending_embedded_urls"]:
+    Embedded work reaches the queue only via explicit hosting triggers
+    (``activation_failed`` / ``no_networking`` / ``judge_validation_request``)
+    or root-URL routing; this node drains it, replacing the former
+    ``asyncio.gather(..., return_exceptions=True)`` barrier.
+    """
+    pools = pools_box[0] if pools_box else None
+    ephemeral_pools = False
+    if pools is None:
+        pools = RunPools(
+            run_id=str(state.get("run_id", "")),
+            settings=settings,
+            observer=observer,
+            memory=memory,
+        )
+        ephemeral_pools = True
+
+    if not state["pending_embedded_urls"] and not pools.has_pending_work(EMBEDDED_ROLE):
+        if ephemeral_pools:
+            await pools.aclose()
         return {}
+
+    make_workflow_governor(settings, observer)("embedded_page")
 
     original_target_urls = _dedupe_urls(state["pending_embedded_urls"])
     target_urls = [
@@ -1087,80 +1391,140 @@ async def embedded_page_node(
             status="warning",
             details={"target_urls": skipped_targets[:20]},
         )
-    if not target_urls:
-        return {"pending_embedded_urls": []}
-    total_targets = len(target_urls)
-    _emit_orchestrator_decision(
-        observer,
-        "Embedded agent targets queued",
-        details={"target_count": total_targets, "target_urls": target_urls[:20]},
-    )
-    tasks = []
-    parallel_limit = max(1, int(settings.max_parallel_hosting_pages or 1))
-    sem = asyncio.Semaphore(parallel_limit)
 
-    async def _guarded(coro: Any) -> Any:
-        async with sem:
-            return await coro
-
-    for idx, target_url in enumerate(target_urls):
-        child = observer.child("embedded", AgentType.EMBEDDED_PAGE) if observer else None
-        embedded_memory_hint = _memory_hint(
-            memory,
-            url=target_url,
-            page_type=AgentType.EMBEDDED_PAGE.value,
-        )
-        handoff = _build_embedded_handoff(
-            state,
-            target_url=target_url,
-            memory_hint_text=embedded_memory_hint,
-        )
-        _emit_orchestrator_decision(
-            observer,
-            "Embedded handoff prepared",
-            details={
-                "target_url": target_url,
-                "target_index": idx + 1,
-                "target_count": total_targets,
-                "handoff_preview": _truncate(handoff, max_chars=900),
-                "memory_hint_found": bool(embedded_memory_hint),
-            },
-        )
-        tasks.append(
-            _guarded(
-                EmbeddedPageAgent(settings).run(
-                    url=target_url,
-                    observer=child,
-                    orchestrator_handoff=handoff,
-                )
+    try:
+        pools.open_cycle(EMBEDDED_ROLE)
+        total_targets = len(target_urls)
+        if total_targets:
+            _emit_orchestrator_decision(
+                observer,
+                "Embedded agent targets queued",
+                details={"target_count": total_targets, "target_urls": target_urls[:20]},
             )
-        )
-
-    outcomes = await asyncio.gather(*tasks, return_exceptions=True)
-
-    extraction_results = list(state["extraction_results"])
-    for target_url, outcome in zip(target_urls, outcomes, strict=False):
-        if isinstance(outcome, BaseException):
-            logger.warning("Embedded page agent failed for %s: %s", target_url, outcome)
-            error_text = str(outcome)
-            extraction = ExtractionResult(
+        for idx, target_url in enumerate(target_urls):
+            embedded_memory_hint = _memory_hint(
+                memory,
                 url=target_url,
-                page_type=PageType.EMBEDDED,
-                status=ExtractionStatus.TIMEOUT
-                if "timed out" in error_text.lower()
-                else ExtractionStatus.FAILED,
-                agent_type=AgentType.EMBEDDED_PAGE,
-                error_message=error_text,
-                metadata={"orchestrator_error": type(outcome).__name__},
+                page_type=AgentType.EMBEDDED_PAGE.value,
             )
-        else:
-            extraction = cast(ExtractionResult, outcome)
-        extraction_results.append(extraction)
+            handoff = _build_embedded_handoff(
+                state,
+                target_url=target_url,
+                memory_hint_text=embedded_memory_hint,
+            )
+            newly_queued = pools.enqueue(
+                EMBEDDED_ROLE, target_url, source="graph_state", handoff=handoff
+            )
+            _emit_orchestrator_decision(
+                observer,
+                "Embedded handoff prepared",
+                details={
+                    "target_url": target_url,
+                    "target_index": idx + 1,
+                    "target_count": total_targets,
+                    "newly_queued": newly_queued,
+                    "duplicate_suppressed": not newly_queued,
+                    "memory_hint_found": bool(embedded_memory_hint),
+                },
+            )
 
+        await pools.wait_until_drained(EMBEDDED_ROLE)
+        new_results = pools.consume_results(EMBEDDED_ROLE)
+    finally:
+        if ephemeral_pools:
+            await pools.aclose()
+
+    extraction_results = [*state["extraction_results"], *new_results]
     return {
         "pending_embedded_urls": [],
         "extraction_results": extraction_results,
     }
+
+
+def repair_malformed_payload(raw_text: str) -> list[dict[str, Any]] | None:
+    """Repair seam for malformed stage payloads (plan T15; judge wiring in T24).
+
+    Contract: given raw stage-payload text that failed ``json.loads``, attempt
+    to repair it into a list of item dicts. Return the repaired items on
+    success, or ``None`` when no repairer is available.
+
+    Today this seam intentionally returns ``None`` — no LLM judging happens
+    here. Task 24 (validator agent) will wire a judge-based repairer behind
+    this function; callers already treat ``None`` as "repair unavailable"
+    and record a structured skip instead of crashing.
+    """
+    _ = raw_text
+    return None
+
+
+def _safe_build_stage_items(
+    parsed: Any,
+    model_cls: type[PipelineModel],
+    *,
+    stage: str,
+) -> tuple[list[PipelineModel], list[dict[str, Any]]]:
+    """Build stage models per item, skipping poisoned entries instead of crashing.
+
+    Returns ``(valid_items, invalid_items)`` where each invalid entry records
+    the stage, a reason, and a truncated preview of the offending payload.
+    """
+    valid: list[PipelineModel] = []
+    invalid: list[dict[str, Any]] = []
+    if not isinstance(parsed, list):
+        return valid, [
+            {
+                "stage": stage,
+                "reason": f"expected a JSON array, got {type(parsed).__name__}",
+                "item_preview": str(parsed)[:300],
+            }
+        ]
+    for index, item in enumerate(parsed):
+        try:
+            if not isinstance(item, dict):
+                raise TypeError(f"expected object, got {type(item).__name__}")
+            valid.append(model_cls(**item))
+        except Exception as exc:  # noqa: BLE001 — one bad item must not kill the stage
+            invalid.append(
+                {
+                    "stage": stage,
+                    "reason": f"{type(exc).__name__}: {exc}",
+                    "item_index": index,
+                    "item_preview": str(item)[:300],
+                }
+            )
+    return valid, invalid
+
+
+def _invalid_item_event_details(invalid_items: list[dict[str, Any]]) -> dict[str, Any]:
+    """Shape skipped-item previews for an orchestrator_decision event."""
+    return {
+        "skipped_count": len(invalid_items),
+        "skipped_item_previews": [
+            {
+                "stage": entry.get("stage", ""),
+                "reason": str(entry.get("reason", ""))[:200],
+                "item_preview": str(entry.get("item_preview", ""))[:200],
+            }
+            for entry in invalid_items[:5]
+        ],
+    }
+
+
+def _emit_invalid_items_event(
+    observer: RunObserver | None,
+    *,
+    invalid_items: list[dict[str, Any]],
+) -> None:
+    if not invalid_items:
+        return
+    details = _invalid_item_event_details(invalid_items)
+    stages = sorted({str(entry.get("stage", "")) for entry in invalid_items})
+    _emit_orchestrator_decision(
+        observer,
+        "Stage parse skipped malformed items",
+        status="warning",
+        details={**details, "stages": stages},
+    )
 
 
 async def analyze_providers_node(
@@ -1169,6 +1533,7 @@ async def analyze_providers_node(
     settings: Settings,
     observer: RunObserver | None = None,
 ) -> dict[str, Any]:
+    make_workflow_governor(settings, observer)("analyze_providers")
     stream_urls = [stream.url for stream in _collect_all_streams(state["extraction_results"])]
     evidence_overview = _extraction_evidence_overview(state["extraction_results"])
     if not stream_urls:
@@ -1191,11 +1556,33 @@ async def analyze_providers_node(
         },
     )
     payload = await IPInfoTool(ipinfo_token=settings.ipinfo_token)._arun(stream_urls=stream_urls)
+    invalid_items: list[dict[str, Any]] = list(state.get("invalid_items") or [])
     try:
         parsed = json.loads(payload)
-    except json.JSONDecodeError:
-        parsed = []
-    providers = [ProviderInfo(**item) for item in parsed if isinstance(item, dict)]
+    except json.JSONDecodeError as exc:
+        # Malformed JSON (plan T15): one repair attempt via the judge seam
+        # (wired in task 24); until then, record a skip instead of crashing.
+        repaired = repair_malformed_payload(str(payload))
+        if repaired is None:
+            invalid_items.append(
+                {
+                    "stage": "analyze_providers",
+                    "reason": (
+                        f"payload is not valid JSON ({type(exc).__name__}); repair unavailable"
+                    ),
+                    "item_preview": str(payload)[:300],
+                }
+            )
+            parsed = []
+        else:
+            parsed = repaired
+    providers, stage_invalid = _safe_build_stage_items(
+        parsed,
+        ProviderInfo,
+        stage="analyze_providers",
+    )
+    invalid_items.extend(stage_invalid)
+    _emit_invalid_items_event(observer, invalid_items=invalid_items)
     _emit_orchestrator_decision(
         observer,
         "Provider analysis completed",
@@ -1205,14 +1592,172 @@ async def analyze_providers_node(
             "provider_count": len(providers),
         },
     )
-    return {"provider_analysis": providers}
+    return {"provider_analysis": providers, "invalid_items": invalid_items}
+
+
+# ── Evidence-validation gate (plan T24 / VAL-C1/C2, U10, D14) ────────────────
+
+
+def _filter_dropped_streams(
+    extraction_results: list[ExtractionResult],
+    dropped_urls: set[str],
+) -> list[ExtractionResult]:
+    """Return extraction results with dropped stream URLs removed from evidence."""
+    if not dropped_urls:
+        return list(extraction_results)
+    filtered: list[ExtractionResult] = []
+    for result in extraction_results:
+        kept = [stream for stream in result.streams if stream.url not in dropped_urls]
+        if len(kept) == len(result.streams):
+            filtered.append(result)
+        else:
+            filtered.append(result.model_copy(update={"streams": kept}))
+    return filtered
+
+
+async def validate_evidence_node(
+    state: PipelineState,
+    *,
+    settings: Settings,
+    observer: RunObserver | None = None,
+) -> dict[str, Any]:
+    """Gate between the extraction fan-in and ``analyze_providers`` (plan T24).
+
+    Mandatory reachability probe first (VAL-C2): every candidate stream URL
+    gets a HEAD/short-GET probe via httpx and unreachable URLs are dropped
+    before they can enter the evidence set. The surviving inventory is then
+    scored by an LLM-as-judge into a typed ``JudgeVerdict``; URLs the judge
+    flags as suspected-hallucinated are dropped too. Below threshold → one
+    bounded replan (max 1 per stage): re-queue the affected target pages back
+    through ``hosting_page``; once the budget is spent the run degrades
+    gracefully and proceeds with whatever evidence survived.
+    """
+    make_workflow_governor(settings, observer)("validate_evidence")
+    from src.agents.validator import MAX_REPLANS_PER_STAGE, ValidatorAgent
+
+    validator = ValidatorAgent(settings)
+    extraction_results = list(state["extraction_results"])
+    streams = _collect_all_streams(extraction_results)
+    stream_urls = [stream.url for stream in streams]
+    screenshot_count = len(_collect_all_screenshots(extraction_results))
+    attempts = int(state.get("validator_replan_attempts") or 0)
+
+    # 1. Mandatory reachability probe — before any URL enters the evidence set.
+    probes = await validator.probe_reachability(stream_urls) if stream_urls else []
+    probe_by_url = {probe.url: probe for probe in probes}
+    unreachable = [probe.url for probe in probes if not probe.reachable]
+
+    # 2. LLM-as-judge over the probed inventory.
+    verdict = await validator.score_evidence(
+        infringing_url=state["url"],
+        stream_records=[stream.model_dump() for stream in streams],
+        screenshot_count=screenshot_count,
+        probe_outcomes={url: probe.reachable for url, probe in probe_by_url.items()},
+    )
+    flagged = [url for url in verdict.flagged_urls if url in set(stream_urls)]
+
+    # 3. Drop unreachable + judge-flagged URLs from the evidence set.
+    dropped = sorted({*unreachable, *flagged})
+    kept = [url for url in stream_urls if url not in set(dropped)]
+    filtered_results = _filter_dropped_streams(extraction_results, set(dropped))
+
+    threshold = float(getattr(settings, "validator_evidence_threshold", 0.6))
+    issues: list[str] = [
+        *(f"unreachable stream dropped: {url}" for url in unreachable),
+        *(f"judge-flagged stream dropped: {url}" for url in flagged),
+    ]
+    sufficient = bool(kept) and verdict.verdict != "fail" and verdict.evidence_score >= threshold
+
+    # 4. Bounded replan (max 1 per stage): re-queue affected targets.
+    replan = None
+    if not sufficient:
+        replan = validator.request_replan(
+            stage="validate_evidence",
+            reason=verdict.reasoning or "evidence below sufficiency threshold",
+            attempt=attempts,
+        )
+    # ``passed`` reflects judge sufficiency only; a queued replan loops back
+    # via ``route_after_validate_evidence`` without marking the gate as passed.
+    passed = sufficient
+
+    report = ValidationReport(
+        passed=passed,
+        issues=issues,
+        probes=probes,
+        dropped_streams=dropped,
+        kept_streams=kept,
+        verdict=verdict,
+        replan=replan,
+    )
+
+    if not sufficient and replan is not None:
+        affected = [
+            result.url
+            for result in extraction_results
+            if any(stream.url in set(dropped) for stream in result.streams)
+        ] or [result.url for result in extraction_results]
+        _emit_orchestrator_decision(
+            observer,
+            "Evidence validation failed; bounded replan queued",
+            status="warning",
+            details={
+                "stage": "validate_evidence",
+                "replan_attempt": replan.attempt,
+                "max_replans_per_stage": MAX_REPLANS_PER_STAGE,
+                "requeued_targets": affected,
+                "dropped_stream_count": len(dropped),
+                "evidence_score": verdict.evidence_score,
+            },
+        )
+        return {
+            "extraction_results": filtered_results,
+            "validation_report": report,
+            "validator_replan_attempts": attempts + 1,
+            "pending_hosting_urls": affected,
+        }
+
+    _emit_orchestrator_decision(
+        observer,
+        "Evidence validation completed",
+        status="success" if sufficient else "warning",
+        details={
+            "passed": passed,
+            "evidence_score": verdict.evidence_score,
+            "verdict": verdict.verdict,
+            "kept_stream_count": len(kept),
+            "dropped_stream_count": len(dropped),
+            "replan_budget_spent": attempts,
+        },
+    )
+    return {
+        "extraction_results": filtered_results,
+        "validation_report": report,
+        "validator_replan_attempts": attempts,
+        "pending_hosting_urls": [],
+    }
+
+
+def route_after_validate_evidence(state: PipelineState) -> str:
+    """Deterministic post-validation router.
+
+    A pending bounded replan loops back to ``hosting_page`` with the re-queued
+    targets; everything else (pass, or replan budget exhausted → graceful
+    degrade) proceeds to ``analyze_providers``.
+    """
+    report = state.get("validation_report")
+    if report is not None and report.replan is not None:
+        return "hosting_page"
+    return "analyze_providers"
 
 
 async def generate_takedown_emails_node(
     state: PipelineState,
     *,
+    settings: Settings | None = None,
     observer: RunObserver | None = None,
 ) -> dict[str, Any]:
+    if settings is not None:
+        make_workflow_governor(settings, observer)("generate_takedown_emails")
     evidence_overview = _extraction_evidence_overview(state["extraction_results"])
     if not _collect_all_streams(state["extraction_results"]):
         _emit_orchestrator_decision(
@@ -1233,20 +1778,39 @@ async def generate_takedown_emails_node(
             "provider_analysis_count": len(state["provider_analysis"]),
         },
     )
-    payload = await EmailTool()._arun(
-        infringing_url=state["url"],
-        provider_analysis=[
-            provider.model_dump(mode="json") for provider in state["provider_analysis"]
-        ],
-        extraction_results=[
-            result.model_dump(mode="json") for result in state["extraction_results"]
-        ],
-    )
+    invalid_items: list[dict[str, Any]] = list(state.get("invalid_items") or [])
+    render_invalid: list[dict[str, Any]] = []
     try:
-        parsed = json.loads(payload)
-    except json.JSONDecodeError:
-        parsed = []
-    emails = [TakedownEmail(**item) for item in parsed if isinstance(item, dict)]
+        emails = render_takedown_emails(
+            TakedownEmailRenderInput(
+                infringing_url=state["url"],
+                extraction_results=list(state["extraction_results"]),
+                provider_analysis=list(state["provider_analysis"]),
+            ),
+            invalid_sink=render_invalid,
+        )
+    except Exception as exc:  # noqa: BLE001 — final stage must never crash the run (T15)
+        invalid_items.append(
+            {
+                "stage": "generate_takedown_emails",
+                "reason": f"{type(exc).__name__}: {exc}",
+                "item_preview": str(state["url"])[:300],
+            }
+        )
+        _emit_orchestrator_decision(
+            observer,
+            "Takedown draft generation failed; run continues",
+            status="warning",
+            details={
+                **evidence_overview,
+                "email_count": 0,
+                **_invalid_item_event_details(invalid_items),
+            },
+        )
+        return {"takedown_emails": [], "invalid_items": invalid_items}
+    if render_invalid:
+        invalid_items.extend(render_invalid)
+        _emit_invalid_items_event(observer, invalid_items=invalid_items)
     _emit_orchestrator_decision(
         observer,
         "Takedown draft generation completed",
@@ -1256,7 +1820,7 @@ async def generate_takedown_emails_node(
             "email_count": len(emails),
         },
     )
-    return {"takedown_emails": emails}
+    return {"takedown_emails": emails, "invalid_items": invalid_items}
 
 
 _EMBEDDED_CLASSIFICATION_SITE_SHELL_SIGNALS = (
@@ -1327,10 +1891,35 @@ def _embedded_classification_needs_hosting_fallback(
     return not has_player_signal
 
 
-def route_after_classification(state: PipelineState) -> str:
+def route_after_classification(state: PipelineState, *, settings: Settings | None = None) -> str:
+    """Deterministic post-classification router, gated by classification confidence.
+
+    Transition table (evaluated top to bottom; ``score`` maps
+    low/medium/high → 33/66/100 and thresholds default to low=40, high=70):
+
+    | classification            | confidence_source        | verdict                | next node            |
+    |---------------------------|--------------------------|------------------------|----------------------|
+    | missing                   | —                        | legacy guard           | analyze_providers    |
+    | landing/hosting/embedded  | heuristic_default        | excluded from gate     | normal page route*   |
+    | landing/hosting/embedded  | parsed or fallback       | score >= low           | normal page route*   |
+    | landing/hosting/embedded  | parsed or fallback       | score < low            | no_target (terminal) |
+    | UNKNOWN                   | parsed (genuine)         | any                    | analyze_providers    |
+    | UNKNOWN                   | fallback (parse failure) | any                    | no_target (terminal) |
+
+    * normal page routes: landing_page / queue_root_hosting / queue_root_embedded,
+      where embedded keeps its site-shell → hosting fallback check.
+
+    The single LOW-confidence reclassify attempt happens inside classify_node before
+    this router runs, so a result that still fails the gate here has already exhausted
+    its retry and terminates at no_target instead of the analyze_providers dead end.
+    ``settings`` is bound via functools.partial in build_graph; direct callers may omit
+    it (defaults 40/70 apply).
+    """
     classification = state["classification"]
     if classification is None:
         return "analyze_providers"
+    if _confidence_gate_blocks(classification, settings=settings):
+        return "no_target"
     if classification.page_type == PageType.LANDING:
         return "landing_page"
     if classification.page_type == PageType.HOSTING:
@@ -1340,6 +1929,30 @@ def route_after_classification(state: PipelineState) -> str:
             return "queue_root_hosting"
         return "queue_root_embedded"
     return "analyze_providers"
+
+
+async def no_target_node(
+    state: PipelineState,
+    *,
+    observer: RunObserver | None = None,
+) -> dict[str, Any]:
+    """Terminal stop-path for targets rejected by the confidence gate."""
+    classification = state.get("classification")
+    _emit_orchestrator_decision(
+        observer,
+        "Pipeline stopped: confidence gate rejected target",
+        status="warning",
+        details={
+            "reason": (
+                "classification stayed below the confidence gate after one "
+                "reclassify attempt, or the verdict was unparseable"
+            ),
+            "page_type": classification.page_type.value if classification else "",
+            "confidence": classification.confidence.value if classification else "",
+            "confidence_source": str(getattr(classification, "confidence_source", "") or ""),
+        },
+    )
+    return {"gate_no_target": True}
 
 
 def route_after_landing(state: PipelineState) -> str:
@@ -1362,41 +1975,123 @@ def route_after_embedded(state: PipelineState) -> str:
     return "analyze_providers"
 
 
-def build_graph(settings: Settings, observer: RunObserver | None = None):
-    """Build the deterministic LangGraph orchestration graph."""
+def _wrap_plan_step(step_id: str, node_fn, observer: RunObserver | None = None):
+    """Wrap a pipeline node so it emits RunPlan SSE transitions (plan T27).
+
+    Emits ``in_progress`` on entry and a terminal status on exit. Persisting
+    transitions are best-effort: a DB error during transition must never abort
+    a pipeline stage that already produced correct evidence.
+    """
+
+    async def _wrapped(state: PipelineState) -> dict[str, Any]:
+        run_id = state.get("run_id", "")
+        if observer is not None:
+            _safe_transition(observer, run_id, step_id, "in_progress")
+        try:
+            result = await node_fn(state)
+        except Exception:
+            if observer is not None:
+                _safe_transition(observer, run_id, step_id, "failed")
+            raise
+        if observer is not None:
+            _safe_transition(observer, run_id, step_id, "done")
+        return result
+
+    return _wrapped
+
+
+def _safe_transition(observer: RunObserver, run_id: str, step_id: str, status: str) -> None:
+    """Persist one plan step transition; swallow errors so pipeline progress wins."""
+    try:
+        transition_run_step(observer, get_session(), run_id, step_id, status)
+    except ValueError:
+        # Unknown step id for this run — plan not yet emitted or step mismatch.
+        # Not an error for the pipeline; the SSE plan just carries fewer ticks.
+        logger.debug(
+            "RunPlan step %r not transitioned (%s) for run %s",
+            step_id,
+            status,
+            run_id,
+            exc_info=True,
+        )
+    except Exception:
+        logger.debug(
+            "RunPlan step %r transition to %s failed for run %s",
+            step_id,
+            status,
+            run_id,
+            exc_info=True,
+        )
+
+
+def build_graph(
+    settings: Settings,
+    observer: RunObserver | None = None,
+    pools_box: list[RunPools | None] | None = None,
+):
+    """Build the deterministic LangGraph orchestration graph.
+
+    ``pools_box`` is a one-slot mutable holder filled by
+    :meth:`OrchestratorAgent.run` with the run-scoped :class:`RunPools`, so the
+    graph (built once per agent) can hand the current run's pools to nodes.
+    """
     memory = LongTermMemory(settings.memory_db_path) if settings.memory_enabled else None
+    box: list[RunPools | None] = pools_box if pools_box is not None else [None]
     graph = StateGraph(PipelineState)
-    graph.add_node("classify", partial(classify_node, settings=settings, observer=observer))
-    graph.add_node("queue_root_hosting", partial(queue_root_hosting_node, observer=observer))
-    graph.add_node("queue_root_embedded", partial(queue_root_embedded_node, observer=observer))
+    graph.add_node("classify", _wrap_plan_step("classify", partial(classify_node, settings=settings, observer=observer), observer))
+    graph.add_node("queue_root_hosting", _wrap_plan_step("queue_root_hosting", partial(queue_root_hosting_node, observer=observer), observer))
+    graph.add_node("queue_root_embedded", _wrap_plan_step("queue_root_embedded", partial(queue_root_embedded_node, observer=observer), observer))
     graph.add_node(
         "landing_page",
-        partial(landing_page_node, settings=settings, observer=observer, memory=memory),
+        _wrap_plan_step(
+            "landing_page",
+            partial(landing_page_node, settings=settings, observer=observer, memory=memory, pools_box=box),
+            observer,
+        ),
     )
     graph.add_node(
         "hosting_page",
-        partial(hosting_page_node, settings=settings, observer=observer, memory=memory),
+        _wrap_plan_step(
+            "hosting_page",
+            partial(hosting_page_node, settings=settings, observer=observer, memory=memory, pools_box=box),
+            observer,
+        ),
     )
     graph.add_node(
         "embedded_page",
-        partial(embedded_page_node, settings=settings, observer=observer, memory=memory),
+        _wrap_plan_step(
+            "embedded_page",
+            partial(embedded_page_node, settings=settings, observer=observer, memory=memory, pools_box=box),
+            observer,
+        ),
     )
     graph.add_node(
-        "analyze_providers", partial(analyze_providers_node, settings=settings, observer=observer)
+        "validate_evidence",
+        _wrap_plan_step("validate_evidence", partial(validate_evidence_node, settings=settings, observer=observer), observer),
     )
     graph.add_node(
-        "generate_takedown_emails", partial(generate_takedown_emails_node, observer=observer)
+        "analyze_providers",
+        _wrap_plan_step("analyze_providers", partial(analyze_providers_node, settings=settings, observer=observer), observer),
     )
+    graph.add_node(
+        "generate_takedown_emails",
+        _wrap_plan_step("generate_takedown_emails", partial(generate_takedown_emails_node, settings=settings, observer=observer), observer),
+    )
+    graph.add_node("no_target", partial(no_target_node, observer=observer))
 
     graph.add_edge(START, "classify")
+    # Plan T24: every extraction fan-in route into the provider stage now goes
+    # through the validate_evidence gate. Route functions still return
+    # "analyze_providers"; only the mapping destination changed.
     graph.add_conditional_edges(
         "classify",
-        route_after_classification,
+        partial(route_after_classification, settings=settings),
         {
             "landing_page": "landing_page",
             "queue_root_hosting": "queue_root_hosting",
             "queue_root_embedded": "queue_root_embedded",
-            "analyze_providers": "analyze_providers",
+            "analyze_providers": "validate_evidence",
+            "no_target": "no_target",
         },
     )
     graph.add_conditional_edges(
@@ -1405,7 +2100,7 @@ def build_graph(settings: Settings, observer: RunObserver | None = None):
         {
             "hosting_page": "hosting_page",
             "embedded_page": "embedded_page",
-            "analyze_providers": "analyze_providers",
+            "analyze_providers": "validate_evidence",
         },
     )
     graph.add_edge("queue_root_hosting", "hosting_page")
@@ -1415,17 +2110,23 @@ def build_graph(settings: Settings, observer: RunObserver | None = None):
         {
             "hosting_page": "hosting_page",
             "embedded_page": "embedded_page",
-            "analyze_providers": "analyze_providers",
+            "analyze_providers": "validate_evidence",
         },
     )
     graph.add_edge("queue_root_embedded", "embedded_page")
     graph.add_conditional_edges(
         "embedded_page",
         route_after_embedded,
-        {"embedded_page": "embedded_page", "analyze_providers": "analyze_providers"},
+        {"embedded_page": "embedded_page", "analyze_providers": "validate_evidence"},
+    )
+    graph.add_conditional_edges(
+        "validate_evidence",
+        route_after_validate_evidence,
+        {"analyze_providers": "analyze_providers", "hosting_page": "hosting_page"},
     )
     graph.add_edge("analyze_providers", "generate_takedown_emails")
     graph.add_edge("generate_takedown_emails", END)
+    graph.add_edge("no_target", END)
     return graph.compile()
 
 
@@ -1435,7 +2136,34 @@ class OrchestratorAgent:
     def __init__(self, settings: Settings, observer: RunObserver | None = None) -> None:
         self.settings = settings
         self.observer = observer
-        self.graph = build_graph(settings, observer=observer)
+        # One-slot holder for the current run's streaming pools (plan T28):
+        # the graph is compiled once but pools are per-run.
+        self._pools_box: list[RunPools | None] = [None]
+        self.graph = build_graph(settings, observer=observer, pools_box=self._pools_box)
+
+    async def _aclose_pools(self) -> None:
+        """Tear down the run's pools on every graceful exit path."""
+        pools = self._pools_box[0]
+        if pools is None:
+            return
+        self._pools_box[0] = None
+        await pools.aclose()
+
+    async def _consume_graph_stream(
+        self,
+        initial_state: PipelineState,
+        sink: dict[str, Any],
+    ) -> None:
+        """Drive ``graph.astream`` merging each node's output into ``sink``.
+
+        Merged state survives cancellation, so a workflow-deadline abort still
+        leaves every completed node's outputs available for the graceful
+        partial-completion path (plan T30 / AGT-H3/H4).
+        """
+        async for chunk in self.graph.astream(initial_state):
+            for delta in chunk.values():
+                if isinstance(delta, dict):
+                    sink.update(delta)
 
     async def run(self, url: str) -> PipelineResult:
         run_id = self.observer.run_id if self.observer is not None else str(uuid.uuid4())
@@ -1492,9 +2220,24 @@ class OrchestratorAgent:
             "pending_embedded_urls": [],
             "provider_analysis": [],
             "takedown_emails": [],
+            "invalid_items": [],
+            "validation_report": None,
+            "validator_replan_attempts": 0,
             "error": "",
+            "gate_no_target": False,
         }
 
+        # Run-scoped streaming pools (plan T28 / spike §D1): created per run,
+        # registered in the module map for hard teardown (spike §D4.4), and
+        # reaped once the graph stream finishes (see the finally below).
+        pools_box = getattr(self, "_pools_box", None)
+        if pools_box is None:  # instance built via object.__new__ in tests
+            pools_box = self._pools_box = [None]
+        run_pools = RunPools(run_id=run_id, settings=self.settings, observer=self.observer)
+        register_run_pools(run_id, run_pools)
+        pools_box[0] = run_pools
+
+        live_state: PipelineState | None = None
         try:
             with using_observability_context(
                 session_id=self.observer.run_id if self.observer is not None else "",
@@ -1510,7 +2253,38 @@ class OrchestratorAgent:
                         "owc.runtime": "langgraph",
                     },
                 ) as span:
-                    final_state = cast(PipelineState, await self.graph.ainvoke(initial_state))
+                    live_state: PipelineState = dict(initial_state)
+                    # Plan T27: emit the RunPlan artifact once per run so the
+                    # SSE timeline (plan_step_update events) reflects the
+                    # canonical execution graph.
+                    if self.observer is not None:
+                        emit_run_plan(
+                            self.observer,
+                            get_session(),
+                            run_id,
+                            "sequential",
+                            _RUN_PLAN_STEPS,
+                        )
+                    workflow_deadline = max(
+                        1,
+                        int(getattr(self.settings, "workflow_timeout_seconds", 3600) or 3600),
+                    )
+                    try:
+                        await asyncio.wait_for(
+                            self._consume_graph_stream(initial_state, live_state),
+                            timeout=workflow_deadline,
+                        )
+                    except TimeoutError as exc:
+                        raise WorkflowTimeoutError(
+                            f"Workflow exceeded global timeout after {workflow_deadline}s"
+                        ) from exc
+                    finally:
+                        # Drainers have joined their workers once the graph
+                        # stream ends, so pools are idle here on every exit
+                        # path (hard task cancellation falls back to the
+                        # app-level cancel hook / spike §D4.4).
+                        await self._aclose_pools()
+                    final_state = cast(PipelineState, live_state)
                     result = _build_pipeline_result(
                         final_state,
                         self.observer.trace().metrics if self.observer else None,
@@ -1557,6 +2331,40 @@ class OrchestratorAgent:
                 len(result.all_streams),
                 len(result.takedown_emails),
             )
+            return result
+        except RunCancelledError:
+            raise
+        except (WorkflowTimeoutError, WorkflowBudgetExceededError) as exc:
+            # Graceful partial completion (T30/AGT-H4/M8): return whatever the
+            # completed stages produced instead of surfacing an opaque crash.
+            kind = classify_failure_kind(exc)
+            partial_state = live_state if live_state is not None else dict(initial_state)
+            result = _build_pipeline_result(
+                partial_state,
+                self.observer.trace().metrics if self.observer else None,
+            )
+            result.failure_kind = kind.value
+            logger.warning(
+                "Pipeline halted (%s): run_id=%s status=%s streams=%d",
+                kind.value,
+                run_id,
+                result.final_status,
+                len(result.all_streams),
+            )
+            if self.observer is not None:
+                self.observer.emit(
+                    "pipeline_halted",
+                    f"Pipeline halted by {kind.value}; returning partial results",
+                    status="warning",
+                    details={
+                        "failure_kind": kind.value,
+                        "final_status": result.final_status.value,
+                        "streams_found": len(result.all_streams),
+                        "emails_generated": len(result.takedown_emails),
+                    },
+                )
+                self.observer.finish(success=False, failure_mode=kind.value)
+                result.metrics = self.observer.trace().metrics
             return result
         except Exception as exc:
             if self.observer is not None:
@@ -1760,6 +2568,8 @@ def _build_pipeline_result(state: PipelineState, metrics: Any | None = None) -> 
 
     if all_streams:
         final_status = ExtractionStatus.SUCCESS
+    elif state.get("gate_no_target"):
+        final_status = ExtractionStatus.NO_TARGET
     elif has_timeout:
         final_status = ExtractionStatus.TIMEOUT
     elif any(_result_page_inaccessible(result) for result in extraction_results):
