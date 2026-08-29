@@ -40,6 +40,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { apiFetch, apiUrl } from "@/lib/api";
+import { BrowserTab } from "./tabs/browser-tab";
 import {
   BROWSER_RUNTIME_KEYS,
   buildServerConfigDraft,
@@ -2831,8 +2832,10 @@ export function SettingsPage() {
 
           {activeTab === "browser" ? (
             <section className="space-y-4">
-              <SectionHeader>Engine Selection</SectionHeader>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <BrowserTab config={config} dirty={Boolean(getDirtyTabs(savedConfigSnapshot, serverDraft)?.browser)} onSave={() => saveConfig("browser")} saving={loading} />
+              <SectionHeader>Engine Selection — Removed (Playwright-only per D15)</SectionHeader>
+              <div className="rounded-lg border border-amber-300/50 bg-amber-50 px-3 py-2 text-xs text-amber-900">Engine selector removed — the console is now Playwright-only (persona spec D15). Server retains internal overrides; UI has no runtime knob.</div>
+              <div className="grid gap-3 sm:grid-cols-2" style={{ display: "none" }}>
                 {BROWSER_OPTIONS.map((engine) => {
                   const isActive = browserEngine === engine.id;
                   return (
