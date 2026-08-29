@@ -53,20 +53,21 @@ export const TOKEN_STORAGE_KEY = "owc_token";
 let cachedApiBase: string | null = null;
 
 /**
- * Resolve the API base URL from NEXT_PUBLIC_API_BASE_URL.
+ * Resolve the API base URL from the explicitly configured origin.
  *
  * There is deliberately no localhost fallback: the variable is required at
- * build time. `next.config.mjs` asserts it before a build/dev server starts,
- * and this function re-asserts at request time with the same clear error.
+ * build time. Browser requests use NEXT_PUBLIC_API_BASE_URL; server-side
+ * rendering and tests retain the legacy API_BASE_URL override so an internal
+ * backend origin is not accidentally exposed to the browser bundle.
  */
 export function resolveApiBase(): string {
   if (cachedApiBase) return cachedApiBase;
-  const raw = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const raw = typeof window === "undefined"
+    ? process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL
+    : process.env.NEXT_PUBLIC_API_BASE_URL;
   if (!raw || !raw.trim()) {
     throw new Error(
-      "[api-client] NEXT_PUBLIC_API_BASE_URL is not set. Add it to web/.env.local "
-        + "(e.g. NEXT_PUBLIC_API_BASE_URL=http://localhost:8000) or pass it in the "
-        + "build environment. The localhost fallback was removed in plan task 38.",
+      "NEXT_PUBLIC_API_BASE_URL is required; the localhost API fallback was removed.",
     );
   }
   cachedApiBase = raw.trim().replace(/\/+$/, "");

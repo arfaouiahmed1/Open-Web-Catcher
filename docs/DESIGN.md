@@ -1,7 +1,7 @@
 # Open Web Catcher (OWC) Operator Console — Design System
 
 > Extraction, not invention. Every token, scale, and pattern below is traced 1:1 from the
-> existing codebase (`web/app/globals.css`, `web/tailwind.config.mjs`, `web/components/ui/*`,
+> existing codebase (`web/app/globals.css`, `web/tailwind.config.ts`, `web/components/ui/*`,
 > `web/components/console/*`). Line references like `(globals.css:L31)` point at
 > `web/app/globals.css`. Downstream workers on plan tasks 37 (component library) and 40-43
 > (page rebuilds) MUST reference tokens from this document instead of raw values.
@@ -96,7 +96,7 @@ Tailwind zinc values for shadcn parity.
 ### Chart palette — globals.css:L77-L81 (dark), L155-L159 (light)
 
 `--chart-1..5` = signal, mint, violet, sky, rose (same five OKLCH accents; wired through
-Tailwind as `chart.1..5` in tailwind.config.mjs).
+Tailwind as `chart.1..5` in tailwind.config.ts).
 
 ### Atmosphere, scrollbar, shadows — globals.css:L84-L103 (dark), L161-L180 (light)
 
@@ -114,7 +114,7 @@ Tailwind as `chart.1..5` in tailwind.config.mjs).
   agent/model=violet. Never use an accent decoratively.
 - Tint recipe for status fills/borders: background `color-mix(accent 8-15%, transparent)`,
   border `color-mix(accent 24-40%, transparent)`, text full accent. See `.owc-pill`
-  (globals.css:L509-L558), Badge variants (`ui/badge.js`).
+  (globals.css:L509-L558), Badge variants (`ui/badge.tsx`).
 - Never introduce a color outside this table. Extend the table first.
 - **Explicit format note:** accents/status/charts are OKLCH; surfaces/text/lines are hex
   zinc literals; shadows use rgba black; all tints go through `color-mix(in oklch ...)`.
@@ -124,7 +124,7 @@ Tailwind as `chart.1..5` in tailwind.config.mjs).
 
 ## 3. Typography
 
-### Font stack — app/layout.js:L1-L4,26; globals.css:L199, L223-L230
+### Font stack — app/layout.tsx:L1-L4,26; globals.css:L199, L223-L230
 
 - Sans: **Geist Sans** (`next/font` via `geist/font/sans`, exposed as `--font-geist-sans`;
   Tailwind `font-sans`). Body fallback `ui-sans-serif, system-ui, sans-serif`.
@@ -156,7 +156,7 @@ micro-type ramp of arbitrary Tailwind sizes:
 | `text-sm` (=14px) | 132 | Primitive defaults, form text |
 | `text-base` / `text-lg` / `text-xl` / `text-2xl` / `text-3xl` | 12 / 5 / 3 / 7 / 1 | Dialog titles (lg), CardTitle (2xl), rare page numbers |
 
-Display sizes in components: KPI numbers `text-[26px]` (`kpi-card.js:L166`); isolated
+Display sizes in components: KPI numbers `text-[26px]` (`kpi-card.tsx:L166`); isolated
 `text-[30px]`/`text-[31px]` page figures elsewhere.
 
 ### Tracking + case pattern (the console's signature label)
@@ -164,7 +164,7 @@ Display sizes in components: KPI numbers `text-[26px]` (`kpi-card.js:L166`); iso
 Uppercase micro-label: `text-[10px] font-semibold uppercase tracking-[0.12em]` — 53 hits of
 `tracking-[0.12em]`, plus `[0.14em]` x16, `[0.18em]` x4 (`.owc-eyebrow`), `tracking-widest`
 x5, `tracking-tight` x9 (large numerals/titles), table heads `tracking-[0.1em]`
-(`ui/table.js` TableHead).
+(`ui/table.tsx` TableHead).
 
 `.owc-eyebrow` (globals.css:L492-L507): 10px / 600 / 0.18em uppercase, `--signal` colored,
 18px dash rendered via `::before`.
@@ -185,17 +185,17 @@ No custom spacing tokens exist; spacing uses the **Tailwind default 4px-base sca
 
 Observed conventions:
 
-- Card padding: primitives use `p-6` (`ui/card.js`); dense console cards override to
-  `p-4` or `p-3` (`kpi-card.js:L149`, feed rows `px-3 py-3`).
+- Card padding: primitives use `p-6` (`ui/card.tsx`); dense console cards override to
+  `p-4` or `p-3` (`kpi-card.tsx:L149`, feed rows `px-3 py-3`).
 - Form blocks: label-above-input with `space-y-2`; input height `h-10`, padding
-  `px-3.5 py-2.5` (`ui/input.js`, `ui/select.js`, `ui/textarea.js`).
+  `px-3.5 py-2.5` (`ui/input.tsx`, `ui/select.tsx`, `ui/textarea.tsx`).
 - Progress bars: `h-[3px]`/`h-1` rounded-full tracks (`.owc-bar` is 4px, L561-L573).
 - Icon tiles in feeds: 32px (`h-8 w-8`) squares or 24px circles.
 
 ### Grid & shell
 
 - App shell: fixed left sidebar `16rem` desktop / `18rem` mobile sheet
-  (`ui/sidebar.js` SIDEBAR_WIDTH constants), content in `SidebarInset`
+  (`ui/sidebar.tsx` SIDEBAR_WIDTH constants), content in `SidebarInset`
   (`min-h-svh flex-1 flex-col`).
 - Breakpoints: Tailwind defaults sm 640 / md 768 / lg 1024 / xl 1280 / 2xl 1536.
   Usage counts: `sm:` x76, `xl:` x54, `lg:` x19, `md:` x12, `2xl:` x4.
@@ -213,36 +213,36 @@ Observed conventions:
 
 ### 5.1 Primitives — `web/components/ui/` (25 files, exact inventory)
 
-All are shadcn-style function components (JS, no TypeScript), Radix-based where noted,
+All are shadcn-style TypeScript function components (`.tsx`), Radix-based where noted,
 styled with Tailwind + CSS variables, composed via `cn()` (`@/lib/utils`).
 
 | # | File | Variants / states as implemented |
 |---|---|---|
-| 1 | `alert-dialog.js` | Radix AlertDialog. Content: centered modal, `rounded-xl border bg-background p-6 shadow-lg`, open anim `animate-fade-in-soft`. Cancel = button outline variant; Action = buttonVariants (default danger). Overlay `bg-black/70 backdrop-blur-sm z-50`. |
-| 2 | `badge.js` | cva `tone`: `default` (secondary bg), `success` (mint tint), `warning` (signal tint), `danger` (rose tint), `signal` (signal tint), `violet`, `live` (violet alias). Base: `rounded-full border px-2.5 py-0.5 font-mono text-[10.5px] font-medium transition-colors focus-visible ring-1 ring-ring`. Tints via arbitrary `color-mix(in_oklch ...)` classes. |
-| 3 | `breadcrumb.js` | Nav `aria-label="Breadcrumb"`, list `gap-1.5 text-sm text-muted-foreground`, page `aria-current="page" font-medium text-foreground`, separator `aria-hidden` ChevronRight `size-3.5`. |
-| 4 | `button.js` | cva `variant`: `default` (bg-background border-input), `accent` (bg-primary), `success` (bg mint, text `#0d0a04`), `ghost`, `danger` (destructive), `secondary`, `outline`, `link`. cva `size`: `default h-9 px-4`, `sm h-8 px-3 text-xs`, `lg h-10 px-6`, `icon h-9 w-9`, `icon-sm h-8 w-8`. States: hover variants per tone, `focus-visible:ring-1 ring-ring ring-offset-2`, `disabled:opacity-50 pointer-events-none`. `asChild` via Radix Slot. |
-| 5 | `card.js` | Card `rounded-xl border bg-card text-card-foreground shadow-sm`; Header `p-6 space-y-1.5`; Title `text-2xl font-semibold leading-none tracking-tight`; Description `text-sm text-muted-foreground`; Content/Footer `p-6 pt-0`. |
-| 6 | `chart.js` | Recharts wrapper. ChartContainer `aspect-video text-xs` with recharts selector overrides (axis ticks fill-muted-foreground, grid stroke-border/50); config-driven `--color-*` vars injected per theme; ChartTooltipContent `rounded-lg border-border/50 bg-background text-xs shadow-xl`, values `font-mono tabular-nums`. |
-| 7 | `checkbox.js` | Radix. `h-4 w-4 rounded-[4px] border-input bg-background shadow-sm`, checked: border/bg primary, Check icon `h-3.5 w-3.5`; focus ring-1; disabled opacity-50. |
-| 8 | `command.js` | cmdk. Root `rounded-md bg-popover`; Input row `h-10 border-b px-3` with Search icon; List `max-h-[300px] overflow-y-auto`; Item `rounded-sm px-2 py-1.5 text-sm`, selected `bg-accent text-accent-foreground`, disabled opacity-50; Shortcut `ml-auto text-xs tracking-widest`. |
-| 9 | `dialog.js` | Radix Dialog. Overlay `bg-black/70 backdrop-blur-sm`; Content centered `w-[calc(100vw-1.5rem)] max-h-[calc(100vh-1.5rem)] max-w-lg rounded-xl border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-fade-in-soft overflow-y-auto`; optional close button with `sr-only` label. Title `text-lg font-semibold`; Description `text-sm muted`. Footer `flex-col-reverse gap-2 sm:flex-row sm:justify-end`. |
-| 10 | `input.js` | Wrapper pattern: optional bold `label` above + `description` below (`space-y-2`). Field `h-10 rounded-lg border-border bg-background px-3.5 py-2.5 text-sm font-medium`, `hover:border-input`, `focus-visible:ring-1 ring-ring`, disabled opacity-50. |
-| 11 | `label.js` | Radix LabelPrimitive. `text-sm font-medium leading-none`, peer-disabled styles. |
-| 12 | `popover.js` | Radix Popover. Content `w-72 rounded-md border bg-popover p-4 shadow-md`, `sideOffset=8`, open anim `animate-fade-in-soft`. |
-| 13 | `scroll-area.js` | Radix ScrollArea. Viewport `h-full w-full rounded-[inherit]`; ScrollBar vertical `w-2.5` / horizontal `h-2.5`, thumb `rounded-full bg-border`. |
-| 14 | `select.js` | Custom high-level Select (label, options with label/description/meta, emptyMessage). Trigger = Input-like `h-10 rounded-lg px-3.5 py-2.5 text-sm font-medium` + ChevronDown; Content popper `max-h-96 min-w-[8rem] rounded-md border bg-popover shadow-md`, viewport `p-1.5`; items `py-2.5 pl-9 pr-3 rounded-md` with check indicator `text-primary`, meta line `font-mono text-[11px]`; empty state `px-3 py-8 text-center text-sm`. Empty-string values normalized via sentinel. |
-| 15 | `separator.js` | Radix Separator. `h-px w-full` (or vertical) `bg-border`, decorative by default. |
-| 16 | `sheet.js` | Radix Dialog side panel. Sides: top/bottom full-width; left/right `w-3/4 sm:max-w-sm` with border. Content `bg-background p-6 shadow-lg data-[state=open]:animate-fade-in-soft`; overlay same as dialog. Title/Description/Footer mirror dialog. |
-| 17 | `sidebar.js` | Full shadcn sidebar kit. Widths 16rem/18rem; cookie persistence `owc:sidebar:open` (7 days); toggle Ctrl/Cmd+B; mobile < 767px renders inside Sheet; desktop rail `hidden md:block` fixed with `transition-[width,left,right] duration-200 ease-linear`; MenuButton cva sizes `default h-8 text-sm / sm h-7 text-xs / lg h-12`, active `bg-sidebar-accent font-medium`; MenuBadge `h-5 min-w-5 rounded-md text-xs tabular-nums`. |
-| 18 | `skeleton.js` | `animate-pulse rounded-md bg-muted`. |
-| 19 | `slider.js` | High-level: Label + mono value chip (`font-mono text-xs font-semibold tabular-nums`, bordered, minWidth 44px), track `h-1.5 rounded-full bg-secondary`, range filled with configurable color (default `var(--signal)`), thumb `h-4 w-4` ring-2 focus, min/max labels `font-mono text-[9px]`, optional description. |
-| 20 | `spinner.js` | Lucide Loader2, `role="status" aria-label="Loading"`, `animate-spin text-muted-foreground`; sizes sm h-3 / default h-4 / lg h-6 / xl h-8. (CSS twin: `.owc-spinner` border-spinner, sm/lg, 600ms linear.) |
-| 21 | `switch.js` | Radix Switch. `h-5 w-9 rounded-full border-2 border-transparent bg-input`, checked `bg-primary`, unchecked `bg-muted`; thumb `h-4 w-4 translate-x-4` checked; ring-1 focus; disabled opacity-50. |
-| 22 | `table.js` | Table wrapper `overflow-auto text-sm`; Head `h-10 px-4 text-left text-[10.5px] font-medium uppercase tracking-[0.1em] text-muted-foreground`; Cell `p-4 align-middle`; Row `border-b border-border transition-colors hover:bg-accent/50 data-[state=selected]:bg-muted`; Footer `bg-muted/50 font-medium`. |
-| 23 | `tabs.js` | Radix Tabs. List `h-9 rounded-lg border bg-muted p-1`; Trigger `rounded-md px-3 py-1.5 text-sm font-medium`, active `bg-background text-foreground shadow-sm`; ring-2 focus-visible; Content `mt-4`. |
-| 24 | `textarea.js` | Same wrapper pattern as Input (+`mono` prop switching to `font-mono`); field `min-h-[120px] rounded-lg px-3.5 py-2.5 text-sm`. |
-| 25 | `tooltip.js` | Radix Tooltip. Provider delayDuration 150; Content `rounded-md border bg-popover px-3 py-1.5 text-sm shadow-md`, sideOffset 6, maxWidth 260. Includes `HelpIcon` help-button pattern (`h-4 w-4 rounded-full border bg-muted text-[9px] font-bold`, aria-label Help). |
+| 1 | `alert-dialog.tsx` | Radix AlertDialog. Content: centered modal, `rounded-xl border bg-background p-6 shadow-lg`, open anim `animate-fade-in-soft`. Cancel = button outline variant; Action = buttonVariants (default danger). Overlay `bg-black/70 backdrop-blur-sm z-50`. |
+| 2 | `badge.tsx` | cva `tone`: `default` (secondary bg), `success` (mint tint), `warning` (signal tint), `danger` (rose tint), `signal` (signal tint), `violet`, `live` (violet alias). Base: `rounded-full border px-2.5 py-0.5 font-mono text-[10.5px] font-medium transition-colors focus-visible ring-1 ring-ring`. Tints via arbitrary `color-mix(in_oklch ...)` classes. |
+| 3 | `breadcrumb.tsx` | Nav `aria-label="Breadcrumb"`, list `gap-1.5 text-sm text-muted-foreground`, page `aria-current="page" font-medium text-foreground`, separator `aria-hidden` ChevronRight `size-3.5`. |
+| 4 | `button.tsx` | cva `variant`: `default` (bg-background border-input), `accent` (bg-primary), `success` (bg mint, text `#0d0a04`), `ghost`, `danger` (destructive), `secondary`, `outline`, `link`. cva `size`: `default h-9 px-4`, `sm h-8 px-3 text-xs`, `lg h-10 px-6`, `icon h-9 w-9`, `icon-sm h-8 w-8`. States: hover variants per tone, `focus-visible:ring-1 ring-ring ring-offset-2`, `disabled:opacity-50 pointer-events-none`. `asChild` via Radix Slot. |
+| 5 | `card.tsx` | Card `rounded-xl border bg-card text-card-foreground shadow-sm`; Header `p-6 space-y-1.5`; Title `text-2xl font-semibold leading-none tracking-tight`; Description `text-sm text-muted-foreground`; Content/Footer `p-6 pt-0`. |
+| 6 | `chart.tsx` | Recharts wrapper. ChartContainer `aspect-video text-xs` with recharts selector overrides (axis ticks fill-muted-foreground, grid stroke-border/50); config-driven `--color-*` vars injected per theme; ChartTooltipContent `rounded-lg border-border/50 bg-background text-xs shadow-xl`, values `font-mono tabular-nums`. |
+| 7 | `checkbox.tsx` | Radix. `h-4 w-4 rounded-[4px] border-input bg-background shadow-sm`, checked: border/bg primary, Check icon `h-3.5 w-3.5`; focus ring-1; disabled opacity-50. |
+| 8 | `command.tsx` | cmdk. Root `rounded-md bg-popover`; Input row `h-10 border-b px-3` with Search icon; List `max-h-[300px] overflow-y-auto`; Item `rounded-sm px-2 py-1.5 text-sm`, selected `bg-accent text-accent-foreground`, disabled opacity-50; Shortcut `ml-auto text-xs tracking-widest`. |
+| 9 | `dialog.tsx` | Radix Dialog. Overlay `bg-black/70 backdrop-blur-sm`; Content centered `w-[calc(100vw-1.5rem)] max-h-[calc(100vh-1.5rem)] max-w-lg rounded-xl border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-fade-in-soft overflow-y-auto`; optional close button with `sr-only` label. Title `text-lg font-semibold`; Description `text-sm muted`. Footer `flex-col-reverse gap-2 sm:flex-row sm:justify-end`. |
+| 10 | `input.tsx` | Wrapper pattern: optional bold `label` above + `description` below (`space-y-2`). Field `h-10 rounded-lg border-border bg-background px-3.5 py-2.5 text-sm font-medium`, `hover:border-input`, `focus-visible:ring-1 ring-ring`, disabled opacity-50. |
+| 11 | `label.tsx` | Radix LabelPrimitive. `text-sm font-medium leading-none`, peer-disabled styles. |
+| 12 | `popover.tsx` | Radix Popover. Content `w-72 rounded-md border bg-popover p-4 shadow-md`, `sideOffset=8`, open anim `animate-fade-in-soft`. |
+| 13 | `scroll-area.tsx` | Radix ScrollArea. Viewport `h-full w-full rounded-[inherit]`; ScrollBar vertical `w-2.5` / horizontal `h-2.5`, thumb `rounded-full bg-border`. |
+| 14 | `select.tsx` | Custom high-level Select (label, options with label/description/meta, emptyMessage). Trigger = Input-like `h-10 rounded-lg px-3.5 py-2.5 text-sm font-medium` + ChevronDown; Content popper `max-h-96 min-w-[8rem] rounded-md border bg-popover shadow-md`, viewport `p-1.5`; items `py-2.5 pl-9 pr-3 rounded-md` with check indicator `text-primary`, meta line `font-mono text-[11px]`; empty state `px-3 py-8 text-center text-sm`. Empty-string values normalized via sentinel. |
+| 15 | `separator.tsx` | Radix Separator. `h-px w-full` (or vertical) `bg-border`, decorative by default. |
+| 16 | `sheet.tsx` | Radix Dialog side panel. Sides: top/bottom full-width; left/right `w-3/4 sm:max-w-sm` with border. Content `bg-background p-6 shadow-lg data-[state=open]:animate-fade-in-soft`; overlay same as dialog. Title/Description/Footer mirror dialog. |
+| 17 | `sidebar.tsx` | Full shadcn sidebar kit. Widths 16rem/18rem; cookie persistence `owc:sidebar:open` (7 days); toggle Ctrl/Cmd+B; mobile < 767px renders inside Sheet; desktop rail `hidden md:block` fixed with `transition-[width,left,right] duration-200 ease-linear`; MenuButton cva sizes `default h-8 text-sm / sm h-7 text-xs / lg h-12`, active `bg-sidebar-accent font-medium`; MenuBadge `h-5 min-w-5 rounded-md text-xs tabular-nums`. |
+| 18 | `skeleton.tsx` | `animate-pulse rounded-md bg-muted`. |
+| 19 | `slider.tsx` | High-level: Label + mono value chip (`font-mono text-xs font-semibold tabular-nums`, bordered, minWidth 44px), track `h-1.5 rounded-full bg-secondary`, range filled with configurable color (default `var(--signal)`), thumb `h-4 w-4` ring-2 focus, min/max labels `font-mono text-[9px]`, optional description. |
+| 20 | `spinner.tsx` | Lucide Loader2, `role="status" aria-label="Loading"`, `animate-spin text-muted-foreground`; sizes sm h-3 / default h-4 / lg h-6 / xl h-8. (CSS twin: `.owc-spinner` border-spinner, sm/lg, 600ms linear.) |
+| 21 | `switch.tsx` | Radix Switch. `h-5 w-9 rounded-full border-2 border-transparent bg-input`, checked `bg-primary`, unchecked `bg-muted`; thumb `h-4 w-4 translate-x-4` checked; ring-1 focus; disabled opacity-50. |
+| 22 | `table.tsx` | Table wrapper `overflow-auto text-sm`; Head `h-10 px-4 text-left text-[10.5px] font-medium uppercase tracking-[0.1em] text-muted-foreground`; Cell `p-4 align-middle`; Row `border-b border-border transition-colors hover:bg-accent/50 data-[state=selected]:bg-muted`; Footer `bg-muted/50 font-medium`. |
+| 23 | `tabs.tsx` | Radix Tabs. List `h-9 rounded-lg border bg-muted p-1`; Trigger `rounded-md px-3 py-1.5 text-sm font-medium`, active `bg-background text-foreground shadow-sm`; ring-2 focus-visible; Content `mt-4`. |
+| 24 | `textarea.tsx` | Same wrapper pattern as Input (+`mono` prop switching to `font-mono`); field `min-h-[120px] rounded-lg px-3.5 py-2.5 text-sm`. |
+| 25 | `tooltip.tsx` | Radix Tooltip. Provider delayDuration 150; Content `rounded-md border bg-popover px-3 py-1.5 text-sm shadow-md`, sideOffset 6, maxWidth 260. Includes `HelpIcon` help-button pattern (`h-4 w-4 rounded-full border bg-muted text-[9px] font-bold`, aria-label Help). |
 
 ### 5.2 Console composite patterns (project-level primitives worth naming)
 
@@ -250,38 +250,38 @@ These repeat across pages and MUST be reused (not re-styled) during W10 rebuilds
 
 - **StatusBadge semantics** — no component named StatusBadge exists; the semantics live in
   two places that must stay in sync:
-  - `web/lib/run-status.js` `statusTone()` / `statusLabel()`: run statuses map to Badge
+  - `web/lib/run-status.ts` `statusTone()` / `statusLabel()`: run statuses map to Badge
     tones — queued→sky, running→signal, success→success(mint), cancelled/partial/
     no_hosting_pages/no_streams/llm_rate_limited/llm_api_down→warning(signal),
     page_inaccessible/site_dead/timeout/failed/unknown→danger(rose).
-  - `web/components/ui/badge.js` tone variants render the visual.
-  - Event-kind mapping precedent: `runtime-events-panel.js` `statusTone(status, kind)`
+  - `web/components/ui/badge.tsx` tone variants render the visual.
+  - Event-kind mapping precedent: `runtime-events-panel.tsx` `statusTone(status, kind)`
     (`*_finished`→success, `*_failed`→danger, `*_started`→signal, llm→violet) and
     `actorTone()` (orchestrator→warning, classification→signal, landing→violet,
     hosting→success).
-- **Event feed rows** — `orchestrator-decision-feed.js` DecisionCard: `rounded-lg border
+- **Event feed rows** — `orchestrator-decision-feed.tsx` DecisionCard: `rounded-lg border
   border-border/60 bg-card px-3.5 py-3` with 2px left accent border colored by event kind
   (`decisionMeta()`), 24px circular icon chip on `color-mix(accent 15%)` fill, relative
   timestamp, expandable details, new-row entry animation `animate-agent-arrive`.
-  `tool-call-feed.js` ToolCallRow: Card with tone-tinted border/background
+  `tool-call-feed.tsx` ToolCallRow: Card with tone-tinted border/background
   (`toneForStatus()`: color-mix 24% border / 8% bg), 32px icon tile, stage eyebrow label,
   actor Badge, mono tool-name pill, screenshot thumbnail strip, expand-to-details.
-- **Metric cards** — `kpi-card.js` KpiCard: Card + `p-4`; eyebrow label
+- **Metric cards** — `kpi-card.tsx` KpiCard: Card + `p-4`; eyebrow label
   (`text-[10px] uppercase tracking-[0.15em]`); count-up number via rAF eased hook rendered
   in `.owc-stat-num text-[26px]`; optional SVG sparkline (72x28, gradient area fill);
   optional animated progress bar (width transition 700ms); delta arrow row
   (`font-mono text-[10.5px]`, up=emerald/down=rose); live dot using `breathe` keyframe;
   value-change replay of `count-pop`.
-- **Pipeline timeline/graph** — `workflow-canvas.js` (React Flow): edges styled by
+- **Pipeline timeline/graph** — `workflow-canvas.tsx` (React Flow): edges styled by
   `.pipeline-edge` classes (globals.css:L718-L733) — running edges get
   `stroke-dasharray: 8 4` + `edge-flow` dash animation; success=mint, failed=rose.
-  `agent-activity-board.js` stage colors: classification→sky, landing→violet,
+  `agent-activity-board.tsx` stage colors: classification→sky, landing→violet,
   hosting→mint, embedded→signal, orchestrator→ink; threshold tones `metricTone()`:
   >=0.85 rose, >=0.6 signal, else mint.
-- **Console chrome** — `components/console/common/`: `page-header.js`,
-  `section-panel.js`, `empty-state.js`, `loading-view.js`, `confirm-action.js`;
-  layout in `console/layout/app-shell.js` + `console-topbar.js` +
-  `navigation-config.js`. Rebuilds must compose these rather than re-implementing shells.
+- **Console chrome** — `components/console/common/`: `page-header.tsx`,
+  `section-panel.tsx`, `empty-state.tsx`, `loading-view.tsx`, `confirm-action.tsx`;
+  layout in `console/layout/app-shell.tsx` + `console-topbar.tsx` +
+  `navigation-config.tsx`. Rebuilds must compose these rather than re-implementing shells.
 - **Pills/chips (CSS utilities)** — `.owc-pill` with `ok/warn/err/live` modifiers and
   breathing dot (globals.css:L509-L558), `.model-badge` (violet, L688-L700),
   `.tool-chip` (sky, L703-L715), `.live-badge` (rose, L741-L759),
@@ -291,7 +291,7 @@ These repeat across pages and MUST be reused (not re-styled) during W10 rebuilds
 
 ## 6. Motion & Interaction
 
-### Existing catalog (globals.css keyframes L298-L492 + utility classes L635-L665 + tailwind.config.mjs duplicates)
+### Existing catalog (globals.css keyframes L298-L492 + utility classes L635-L665 + tailwind.config.ts duplicates)
 
 | Animation | Duration/easing | Usage |
 |---|---|---|
@@ -319,7 +319,7 @@ Entry animations cluster at 180-260ms; ambient loops at 1.2-2.4s. Easing vocabul
 
 - GPU-composited properties only: animate `transform` and `opacity`. Never animate layout
   properties (`top/left/width/height`). Legacy exceptions that exist but must not spread:
-  `tput`/`wave` (height), `AnimBar` width transition (`kpi-card.js`), box-shadow glows.
+  `tput`/`wave` (height), `AnimBar` width transition (`kpi-card.tsx`), box-shadow glows.
 - Motion serves meaning: every animation maps to a real state change (new evidence arrived,
   run started/failed, value changed). No decorative loops on static content; slop
   animation is prohibited.
@@ -337,7 +337,7 @@ Strategy: **mixed — borders-first with tonal shift, shadows as quiet reinforce
   their 1px `--line` border; elevation is communicated by `--panel-2`/`--card-hi` tonal
   steps when needed (globals.css comment L34: "card = bg, border defines").
 - `--shadow-card` adds a 1px ring + soft black drop for floating cards
-  (`tool-call-feed.js` uses `shadow-card` explicitly).
+  (`tool-call-feed.tsx` uses `shadow-card` explicitly).
 - Overlays (dialog/sheet) darken with `bg-black/70 backdrop-blur-sm`.
 - `.owc-glass` (L783-L787): `color-mix(panel 85%, transparent)` + `backdrop-filter:
   blur(12px)` + line border — the one glass material, used sparingly.
@@ -376,11 +376,11 @@ Required for all new work (W10 waves):
 
 | Item | Location | Why accepted | Owner / Exit |
 |---|---|---|---|
-| (a) Inline-style legacy pages pending W10 rebuild (T43) | 303 inline `style={{}}` blocks across web/app + web/components. Worst offenders: `console/overview/overview-page.js` (50), `console/run-detail/agent-activity-board.js` (37), `notification-provider.js` (25), `console/settings/settings-page.js` (24), `console/run-detail/run-detail-page.js` (25), `browser-live-view.js` (23), `cost-estimate-card.js` (21), `context-window-meter.js` (15), `run-detail-live.js` (17). Pre-console-refactor root-level components (`kpi-card`, `tool-call-feed`, `llm-output-panel`, etc.) coexist with `components/console/*`. | Rebuild waves 40-43 own the migration; restyling now would conflict with parallel workers. | Tasks 40-43; rebuilt pages must consume DESIGN.md tokens only. |
-| (b) React Dev Tooling Gate PENDING | `web/package.json` — react-grab / react-scan / react-doctor NOT installed. | Another worker owns web/package.json + tsconfig; single-file scope avoids merge conflicts. | MUST be installed before the next UI implementation wave (task 37 kickoff at latest). |
-| (c) Token drift — raw hexes outside globals.css | 20 occurrences in 7 files (59 total minus 39 inside globals.css). Worst: `app/login/page.js` (10 — fallback hexes `#0b0e14`, `#12161f`, `#232a38`, `#e6e9f0`, `#7a8399`, `#0f131c`, `#f87171` that do NOT match real token values), `workflow-canvas.js` (3 — `#94a3b8`, `#75a9ff` x2 off-palette blue), `context-window-meter.js` (1 — `#f59e0b` fallback for `--amber`, a token that is NEVER DEFINED in globals.css), `browser-live-view.js` (1 — `#050508`), `notification-provider.js` (1 — `#fff`), `ui/button.js` (1 — `#0d0a04` success-button text), `ui/chart.js` (1 — benign recharts selector string). | Login page predates token consolidation; workflow-canvas needs React Flow edge props which take literal colors. | Login rebuilt in W10; define `--amber` or remap to `--signal`; move canvas edge colors to tokens. |
+| (a) Inline-style pages retained after T43 | 303 inline `style={{}}` blocks across web/app + web/components. Worst offenders: `console/overview/overview-page.tsx` (50), `console/run-detail/agent-activity-board.tsx` (37), `notification-provider.tsx` (25), `console/settings/settings-page.tsx` (24), `console/run-detail/run-detail-page.tsx` (25), `browser-live-view.tsx` (23), `cost-estimate-card.tsx` (21), `context-window-meter.tsx` (15), `run-detail-live.tsx` (17). Pre-console-refactor root-level components (`kpi-card`, `tool-call-feed`, `llm-output-panel`, etc.) coexist with `components/console/*`. | The source-preserving TypeScript migration avoids a visual regression; T44 owns targeted performance and UI follow-up. | Preserve DESIGN.md tokens and keep new UI work in the shared library. |
+| (b) React Dev Tooling Gate PENDING | `web/package.json` — react-grab / react-scan / react-doctor NOT installed. | Another worker owns web/package.json + tsconfig; single-file scope avoids merge conflicts. | Reassess before the next standalone UI implementation wave. |
+| (c) Token drift — raw hexes outside globals.css | 20 occurrences in 7 files (59 total minus 39 inside globals.css). Worst: `app/login/page.tsx` (10 — fallback hexes `#0b0e14`, `#12161f`, `#232a38`, `#e6e9f0`, `#7a8399`, `#0f131c`, `#f87171` that do NOT match real token values), `workflow-canvas.tsx` (3 — `#94a3b8`, `#75a9ff` x2 off-palette blue), `context-window-meter.tsx` (1 — `#f59e0b` fallback for `--amber`, a token that is NEVER DEFINED in globals.css), `browser-live-view.tsx` (1 — `#050508`), `notification-provider.tsx` (1 — `#fff`), `ui/button.tsx` (1 — `#0d0a04` success-button text), `ui/chart.tsx` (1 — benign recharts selector string). | Login page predates token consolidation; workflow-canvas needs React Flow edge props which take literal colors. | Login rebuilt in W10; define `--amber` or remap to `--signal`; move canvas edge colors to tokens. |
 | Ad-hoc type ramp | 20 distinct arbitrary `text-[Npx]` sizes (9-31px), see Section 3. | Density console evolved organically; consolidation is a task-37 decision, not extraction. | Task 37 may name a canonical subset; until then reuse existing sizes. |
-| Duplicated motion definitions | Keyframes/animations defined in BOTH globals.css and tailwind.config.mjs (drift risk: config `glow-pulse` differs slightly from CSS version). | Historical; harmless while values match closely. | Consolidate to one source during task 37. |
+| Duplicated motion definitions | Keyframes/animations defined in BOTH globals.css and tailwind.config.ts (drift risk: config `glow-pulse` differs slightly from CSS version). | Historical; harmless while values match closely. | Consolidate to one source during task 37. |
 | Duplicate light-mode patch blocks | globals.css:L254-L296 and L789-L843 both patch `.light .text-white` etc. with slightly different rules. | Compatibility shim for legacy white/slate utility usage; removal would break legacy pages before rebuild. | Delete after tasks 40-43 remove white/slate utilities. |
 | No `prefers-reduced-motion` handling | Entire web app (grep: zero matches). | Not yet implemented anywhere. | Required in every W10 rebuilt page; add global media query in task 37. |
 | `.owc-pill`/`.model-badge`/`.tool-chip` hardcode JetBrains Mono | globals.css:L513, L692, L707 | Pre-Geist-Mono legacy. | Swap to `var(--font-geist-mono)` during task 37. |
@@ -391,6 +391,6 @@ Required for all new work (W10 waves):
   the long tail (9, 9.5, 11.5, 12.5, 13.5px) toward it.
 - Define `--amber` or replace its single consumer with `--signal`.
 - Extract StatusBadge into a real shared component once run-status/event-kind mappings
-  converge (three mapping tables currently exist: run-status.js, runtime-events-panel.js,
-  orchestrator-decision-feed.js).
+  converge (three mapping tables currently exist: run-status.tsx, runtime-events-panel.tsx,
+  orchestrator-decision-feed.tsx).
 - Consider `@media (prefers-reduced-transparency)` fallback for `.owc-glass`.

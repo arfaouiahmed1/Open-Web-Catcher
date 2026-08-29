@@ -1,6 +1,6 @@
 # Open Web Catcher Documentation
 
-> **Navigation:** [Docs Home](./README.md) | [Target Architecture](./architecture/target-design.md) | [ADRs](./adr/) | [System](./system/README.md) | [Workflow](./workflow/README.md) | [Agents](./agents/README.md) | [API](./api/README.md) | [Tools](./tools/README.md) | [Operations](./operations/README.md)
+> **Navigation:** [Docs Home](./README.md) | [Target Architecture](./architecture/target-design.md) | [ADRs](./adr/) | [System](./system/README.md) | [Workflow](./workflow/README.md) | [Agents](./agents/README.md) | [API](./api/README.md) | [Tools](./tools/README.md) | [Frontend](./frontend/README.md) | [Operations](./operations/README.md)
 
 Open Web Catcher is a multi-agent evidence collection system for investigating unauthorized streaming pages. The operator submits a URL, the backend classifies the page, specialist agents inspect it through browser tools, provider analysis resolves infrastructure, and a Next.js console shows both results and failure paths.
 
@@ -44,7 +44,8 @@ Deeper pages by area:
 3. [Agents](./agents/README.md): orchestrator, classification, landing, hosting, embedded, provider, email responsibilities.
 4. [API Contracts](./api/README.md): FastAPI routes and operator-console payloads.
 5. [MCP And Browser Tools](./tools/README.md): browser automation tools and MCP profiles.
-6. [Operations](./operations/README.md): Docker, configuration, validation, troubleshooting, key rotation, migration safety.
+6. [Frontend Console](./frontend/README.md): TypeScript source invariant, UI module map, API-origin rules, and frontend validation commands.
+7. [Operations](./operations/README.md): Docker, configuration, validation, troubleshooting, key rotation, migration safety.
 
 Historical notes live under [docs/archive/README.md](./archive/README.md). They are not the active implementation contract.
 
@@ -52,9 +53,9 @@ Historical notes live under [docs/archive/README.md](./archive/README.md). They 
 
 Facts about what landed versus what is planned are marked where they matter:
 
-- Landed: LiteLLM adapter (`src/llm/provider.py`), confidence gating in classification routing, OCR skeleton behind `ocr_enabled`, real Alembic migrations, atomic job claims, hardened Dockerfiles, pytest tiers.
-- In progress under plan task 3; not yet verified: auth (`src/api/auth/`, see [ADR-005](./adr/ADR-005-auth-model.md)).
-- Planned: Redis run store, pgvector tables, puppeteer deletion, validator node, RunPlan artifact, SSE-only frontend, admin APIs. Track them in `.omo/plans/full-audit.md`.
+- Landed: LiteLLM adapter (`src/llm/provider.py`), auth (`src/api/auth/`), Redis run state, pgvector-backed site hints, Playwright-only browser tooling, validator and RunPlan artifacts, SSE-first console updates, real Alembic migrations, hardened Dockerfiles, pytest tiers, and the TypeScript console source invariant.
+- In progress: T44 frontend performance closure (high-cardinality virtualization, lazy visualization chunks, request cancellation, bundle evidence) and the source-preserving typing of remaining legacy page internals.
+- Remaining before final verification: dependency/security pass T47, deterministic replay E2E T51, and final F1–F8 evidence. Track all work in `.omo/plans/full-audit.md`.
 
 When you change code, update the matching diagram in `target-design.md` in the same change set (conformance rule 2), and touch the module doc for the area you changed.
 
@@ -104,6 +105,10 @@ When you change code, update the matching diagram in `target-design.md` in the s
 - [Tools Index](./tools/README.md)
 - [MCP Browser Tools](./tools/mcp-browser-tools.md)
 
+### Frontend
+
+- [Frontend Console](./frontend/README.md)
+
 ### Operations
 
 - [Operations Index](./operations/README.md)
@@ -125,7 +130,7 @@ When you change code, update the matching diagram in `target-design.md` in the s
 | Memory | `src/memory/short_term.py`, `src/memory/long_term.py` |
 | Runtime schemas and enums | `src/models/schemas.py`, `src/models/enums.py` |
 | Persistence | `src/storage/models.py`, `src/storage/repositories.py`, `src/storage/ui_repository.py`, `src/storage/dataset_repository.py` |
-| MCP and provider tools | `src/tools/mcp_client.py`, `src/tools/ipinfo_tool.py`, `src/tools/email_tool.py`, `tools/puppeteer/`, `tools/playwright/` |
-| Active frontend routes | `web/app/page.js`, `web/app/live/page.js`, `web/app/runs/page.js`, `web/app/runs/[runId]/page.js`, `web/app/providers/page.js`, `web/app/settings/page.js`, `web/app/agents/page.js` |
-| Frontend navigation and run detail | `web/components/console/layout/navigation-config.js`, `web/components/console/run-detail/`, `web/lib/run-trace.js`, `web/lib/api.js` |
+| MCP and provider tools | `src/tools/mcp_client.py`, `src/tools/ipinfo_tool.py`, `src/tools/email_tool.py`, `tools/playwright/` |
+| Active frontend routes | `web/app/page.tsx`, `web/app/live/page.tsx`, `web/app/runs/page.tsx`, `web/app/runs/[runId]/page.tsx`, `web/app/providers/page.tsx`, `web/app/settings/page.tsx`, `web/app/agents/page.tsx` |
+| Frontend navigation and run detail | `web/components/console/layout/navigation-config.tsx`, `web/components/console/run-detail/`, `web/lib/run-trace.ts`, `web/lib/api-client.ts` |
 | Docker stack | `docker-compose.yml`, `Dockerfile`, `Dockerfile.web`, `Dockerfile.tools`, `Dockerfile.tools.playwright` |

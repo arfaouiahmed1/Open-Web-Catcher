@@ -39,8 +39,8 @@ function VirtualizedListInner<T>({
     const item = items[index];
     return <div style={style}>{renderItem(item, index)}</div>;
   });
-  // react-window v2 API: FixedSizeList with rowComponent prop alternative — keep v1 compat by using children-as-function.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // react-window v1 accepts the render-prop child; the type assertion bridges
+  // its React 18 declaration to this React 19 application.
   const AnyList = List as unknown as React.ComponentType<any>;
   return (
     <AnyList
