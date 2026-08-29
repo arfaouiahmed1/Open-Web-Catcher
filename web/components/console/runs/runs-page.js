@@ -28,6 +28,9 @@ import {
 } from "lucide-react";
 
 import { apiFetch, apiUrl, eventSourceUrl } from "@/lib/api";
+import { SitesTab } from "./tabs/sites-tab";
+import { BatchesTab } from "./tabs/batches-tab";
+import { HistoryTab } from "./tabs/history-tab";
 import {
   datasetRunStatus,
   estimateRunCostFromApi,
@@ -1770,6 +1773,22 @@ export function RunsPage() {
           </TabsList>
 
           <TabsContent value="sites" className="space-y-4">
+            <SitesTab
+              sites={sites}
+              siteTotal={siteTotal}
+              selectedSiteIds={selectedSiteIds}
+              onSelectSiteIds={setSelectedSiteIds}
+              query={query}
+              onQueryChange={setQuery}
+              language={language}
+              label={label}
+              isLoading={isLoading}
+              actionError={actionError}
+              onOpenCreate={() => setSiteDialogOpen(true)}
+              onOpenDetail={openSiteDetail}
+              onRunBatch={(site) => createBatch({ site })}
+              healthMap={siteHealthMap}
+            />
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2017,6 +2036,13 @@ export function RunsPage() {
           </TabsContent>
 
           <TabsContent value="batches" className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+            <BatchesTab
+              batches={batches}
+              selectedBatchId={selectedBatchId}
+              onSelect={setSelectedBatchId}
+              detail={batchDetail}
+              isLoading={isBatchLoading}
+            />
             <Card className="overflow-hidden">
               <CardHeader className="border-b px-4 py-3">
                 <CardTitle className="text-base">Batch runs</CardTitle>
@@ -2222,6 +2248,19 @@ export function RunsPage() {
           </TabsContent>
 
           <TabsContent value="history">
+            <HistoryTab
+              rows={runHistory}
+              total={runHistoryTotal}
+              status={historyStatus}
+              onStatusChange={setHistoryStatusFilter}
+              query={historyQuery}
+              onQueryChange={setHistorySearch}
+              page={historyPage}
+              onPageChange={setHistoryPageIndex}
+              pageSize={HISTORY_PAGE_SIZE}
+              isLoading={isHistoryLoading}
+              onRefresh={() => setRefreshTick((v) => v + 1)}
+            />
             <Card className="overflow-hidden">
               <CardHeader className="border-b px-4 py-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
