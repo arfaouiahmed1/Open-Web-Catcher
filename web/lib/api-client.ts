@@ -1,0 +1,547 @@
+/**
+ * Typed API client for the operator console (plan task 38).
+ *
+ * All request/response shapes come from the generated bindings at
+ * `src/types/api.d.ts`, which is produced from the committed backend
+ * OpenAPI schema (`openapi.json` at the repo root) via `npm run types:gen`.
+ *
+ * Resource groups: `runsApi`, `datasetsApi`, `memoryApi`, `settingsApi`,
+ * `adminApi`, `observabilityApi`, `workflowsApi`. Legacy JS pages keep working
+ * through the thin delegates in `lib/api.js`.
+ */
+import type { components, operations, paths } from "@/src/types/api";
+
+export type ApiSchemas = components["schemas"];
+export type OperationName = keyof operations;
+export type ApiPath = keyof paths;
+
+/** Extract a generated response type for each requested numeric status code. */
+type ResponseForStatus<Responses, Status extends number> = Status extends unknown
+  ? Responses extends Record<Status, infer Response>
+    ? Response
+    : never
+  : never;
+
+type JsonResponseBody<Response> = [Response] extends [never]
+  ? never
+  : Response extends {
+        content: { "application/json": infer Body };
+      }
+    ? Body
+    : unknown;
+
+/** The JSON payload of a success response for a generated operation. */
+export type ApiSuccess<
+  Op extends OperationName,
+  Status extends number = 200,
+> = JsonResponseBody<ResponseForStatus<operations[Op]["responses"], Status>>;
+
+/** The JSON request body type for a generated operation (never when none). */
+export type ApiBody<Op extends OperationName> =
+  operations[Op]["requestBody"] extends {
+    content: { "application/json": infer Body };
+  }
+    ? Body
+    : never;
+
+/** Query-parameter object type for a generated operation. */
+export type ApiQuery<Op extends OperationName> =
+  operations[Op]["parameters"] extends { query?: infer Q } ? Q : never;
+
+export const TOKEN_STORAGE_KEY = "owc_token";
+
+let cachedApiBase: string | null = null;
+
+/**
+ * Resolve the API base URL from NEXT_PUBLIC_API_BASE_URL.
+ *
+ * There is deliberately no localhost fallback: the variable is required at
+ * build time. `next.config.mjs` asserts it before a build/dev server starts,
+ * and this function re-asserts at request time with the same clear error.
+ */
+export function resolveApiBase(): string {
+  if (cachedApiBase) return cachedApiBase;
+  const raw = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (!raw || !raw.trim()) {
+    throw new Error(
+      "[api-client] NEXT_PUBLIC_API_BASE_URL is not set. Add it to web/.env.local "
+        + "(e.g. NEXT_PUBLIC_API_BASE_URL=http://localhost:8000) or pass it in the "
+        + "build environment. The localhost fallback was removed in plan task 38.",
+    );
+  }
+  cachedApiBase = raw.trim().replace(/\/+$/, "");
+  return cachedApiBase;
+}
+
+/** Test/SSR helper: forget any memoized base URL. @visibleForTesting */
+export function resetApiBaseCache(): void {
+  cachedApiBase = null;
+}
+
+export function apiUrl(path: string): string {
+  const base = resolveApiBase();
+  return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+export function getToken(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem(TOKEN_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function eventSourceUrl(path: string): string {
+  const url = new URL(apiUrl(path));
+  const token = getToken();
+  if (token) url.searchParams.set("token", token);
+  return url.toString();
+}
+
+export interface ApiFetchOptions extends RequestInit {
+  /** Query parameters appended to `path`; null/undefined values are skipped. */
+  query?: Record<string, string | number | boolean | null | undefined>;
+}
+
+/**
+ * Untyped-path fetch used by the legacy JS surface and as the transport for
+ * every typed wrapper below. Throws on non-2xx with the response body text
+ * and redirects to /login on 401.
+ */
+export async function apiFetch<T = unknown>(
+  path: string,
+  options: ApiFetchOptions = {},
+): Promise<T> {
+  const { query, ...init } = options;
+  const url = withQuery(path, query);
+  const token = getToken();
+  const response = await fetch(apiUrl(url), {
+    ...init,
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init.headers || {}),
+    },
+  });
+
+  if (response.status === 401 && typeof window !== "undefined") {
+    const returnPath = encodeURIComponent(
+      window.location.pathname + window.location.search,
+    );
+    window.location.href = `/login?next=${returnPath}`;
+    throw new Error("Unauthorized");
+  }
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Request failed with ${response.status}`);
+  }
+
+  return (await response.json()) as T;
+}
+
+function withQuery(
+  path: string,
+  query?: ApiFetchOptions["query"],
+): string {
+  if (!query) return path;
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value === null || value === undefined) continue;
+    params.set(key, String(value));
+  }
+  const qs = params.toString();
+  if (!qs) return path;
+  return `${path}${path.includes("?") ? "&" : "?"}${qs}`;
+}
+
+const enc = encodeURIComponent;
+
+/* ------------------------------------------------------------------ */
+/* Runs (console overview, run detail, decisions, tasks)               */
+/* ------------------------------------------------------------------ */
+
+export const runsApi = {
+  overview: () =>
+    apiFetch<ApiSuccess<"ui_overview_ui_overview_get">>("/ui/overview"),
+
+  recentEvents: (limit?: number) =>
+    apiFetch<ApiSuccess<"ui_recent_runtime_events_ui_events_recent_get">>(
+      "/ui/events/recent",
+      { query: { limit } },
+    ),
+
+  listRuns: (query?: ApiQuery<"ui_runs_ui_runs_get">) =>
+    apiFetch<ApiSuccess<"ui_runs_ui_runs_get">>("/ui/runs", { query }),
+
+  getRun: (runId: string) =>
+    apiFetch<ApiSuccess<"ui_run_detail_ui_runs__run_id__get">>(
+      `/ui/runs/${enc(runId)}`,
+    ),
+
+  deleteRun: (runId: string) =>
+    apiFetch<ApiSuccess<"ui_delete_run_ui_runs__run_id__delete">>(
+      `/ui/runs/${enc(runId)}`,
+      { method: "DELETE" },
+    ),
+
+  cancelRun: (runId: string) =>
+    apiFetch<ApiSuccess<"ui_cancel_run_ui_runs__run_id__cancel_post">>(
+      `/ui/runs/${enc(runId)}/cancel`,
+      { method: "POST" },
+    ),
+
+  cancelActiveRuns: () =>
+    apiFetch<ApiSuccess<"ui_cancel_active_runs_ui_runs_cancel_active_post">>(
+      "/ui/runs/cancel-active",
+      { method: "POST" },
+    ),
+
+  syncLogs: (runId: string, body?: ApiBody<"ui_sync_run_logs_ui_runs__run_id__sync_logs_post">) =>
+    apiFetch<ApiSuccess<"ui_sync_run_logs_ui_runs__run_id__sync_logs_post">>(
+      `/ui/runs/${enc(runId)}/sync-logs`,
+      { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) },
+    ),
+
+  listDecisions: (runId: string) =>
+    apiFetch<ApiSuccess<"ui_run_decisions_ui_runs__run_id__decisions_get">>(
+      `/ui/runs/${enc(runId)}/decisions`,
+    ),
+
+  createDecision: (
+    runId: string,
+    body: ApiBody<"ui_create_run_decision_ui_runs__run_id__decisions_post">,
+  ) =>
+    apiFetch<ApiSuccess<"ui_create_run_decision_ui_runs__run_id__decisions_post">>(
+      `/ui/runs/${enc(runId)}/decisions`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  updateDecision: (
+    runId: string,
+    decisionId: string,
+    body: ApiBody<"ui_update_run_decision_ui_runs__run_id__decisions__decision_id__patch">,
+  ) =>
+    apiFetch<ApiSuccess<"ui_update_run_decision_ui_runs__run_id__decisions__decision_id__patch">>(
+      `/ui/runs/${enc(runId)}/decisions/${enc(decisionId)}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+
+  deleteDecision: (runId: string, decisionId: string) =>
+    apiFetch<ApiSuccess<"ui_delete_run_decision_ui_runs__run_id__decisions__decision_id__delete">>(
+      `/ui/runs/${enc(runId)}/decisions/${enc(decisionId)}`,
+      { method: "DELETE" },
+    ),
+
+  listTasks: (runId: string) =>
+    apiFetch<ApiSuccess<"ui_run_tasks_ui_runs__run_id__tasks_get">>(
+      `/ui/runs/${enc(runId)}/tasks`,
+    ),
+
+  createTask: (
+    runId: string,
+    body: ApiBody<"ui_create_run_task_ui_runs__run_id__tasks_post">,
+  ) =>
+    apiFetch<ApiSuccess<"ui_create_run_task_ui_runs__run_id__tasks_post">>(
+      `/ui/runs/${enc(runId)}/tasks`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  updateTask: (
+    runId: string,
+    taskId: string,
+    body: ApiBody<"ui_update_run_task_ui_runs__run_id__tasks__task_id__patch">,
+  ) =>
+    apiFetch<ApiSuccess<"ui_update_run_task_ui_runs__run_id__tasks__task_id__patch">>(
+      `/ui/runs/${enc(runId)}/tasks/${enc(taskId)}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+
+  deleteTask: (runId: string, taskId: string) =>
+    apiFetch<ApiSuccess<"ui_delete_run_task_ui_runs__run_id__tasks__task_id__delete">>(
+      `/ui/runs/${enc(runId)}/tasks/${enc(taskId)}`,
+      { method: "DELETE" },
+    ),
+};
+
+/* ------------------------------------------------------------------ */
+/* Datasets (/api/datasets/*)                                          */
+/* ------------------------------------------------------------------ */
+
+export const datasetsApi = {
+  meta: () => apiFetch<ApiSuccess<"get_meta_api_datasets_meta_get">>("/api/datasets/meta"),
+
+  listSites: (query?: ApiQuery<"list_sites_api_datasets_sites_get">) =>
+    apiFetch<ApiSuccess<"list_sites_api_datasets_sites_get">>("/api/datasets/sites", { query }),
+
+  getSite: (siteId: string, query?: ApiQuery<"get_site_api_datasets_sites__site_id__get">) =>
+    apiFetch<ApiSuccess<"get_site_api_datasets_sites__site_id__get">>(
+      `/api/datasets/sites/${enc(siteId)}`,
+      { query },
+    ),
+
+  createSite: (body: ApiBody<"create_site_api_datasets_sites_post">) =>
+    apiFetch<ApiSuccess<"create_site_api_datasets_sites_post">>(
+      "/api/datasets/sites",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  updateSite: (
+    siteId: string,
+    body: ApiBody<"update_site_api_datasets_sites__site_id__patch">,
+  ) =>
+    apiFetch<ApiSuccess<"update_site_api_datasets_sites__site_id__patch">>(
+      `/api/datasets/sites/${enc(siteId)}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+
+  replaceSite: (
+    siteId: string,
+    body: ApiBody<"replace_site_api_datasets_sites__site_id__put">,
+  ) =>
+    apiFetch<ApiSuccess<"replace_site_api_datasets_sites__site_id__put">>(
+      `/api/datasets/sites/${enc(siteId)}`,
+      { method: "PUT", body: JSON.stringify(body) },
+    ),
+
+  deleteSite: (siteId: string) =>
+    apiFetch<ApiSuccess<"delete_site_api_datasets_sites__site_id__delete">>(
+      `/api/datasets/sites/${enc(siteId)}`,
+      { method: "DELETE" },
+    ),
+
+  siteStats: () =>
+    apiFetch<ApiSuccess<"get_stats_api_datasets_sites_stats_get">>(
+      "/api/datasets/sites/stats",
+    ),
+
+  bulkUpdateSites: (body: ApiBody<"bulk_update_api_datasets_sites_bulk_update_post">) =>
+    apiFetch<ApiSuccess<"bulk_update_api_datasets_sites_bulk_update_post">>(
+      "/api/datasets/sites/bulk-update",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  bulkDeleteSites: (body: ApiBody<"bulk_delete_api_datasets_sites_bulk_delete_post">) =>
+    apiFetch<ApiSuccess<"bulk_delete_api_datasets_sites_bulk_delete_post">>(
+      "/api/datasets/sites/bulk-delete",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  healthCheckSites: (body: ApiBody<"check_site_health_api_datasets_sites_health_check_post">) =>
+    apiFetch<ApiSuccess<"check_site_health_api_datasets_sites_health_check_post">>(
+      "/api/datasets/sites/health-check",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  results: (query?: ApiQuery<"get_results_api_datasets_results_get">) =>
+    apiFetch<ApiSuccess<"get_results_api_datasets_results_get">>(
+      "/api/datasets/results",
+      { query },
+    ),
+
+  recordResult: (body: ApiBody<"record_result_api_datasets_results_record_post">) =>
+    apiFetch<ApiSuccess<"record_result_api_datasets_results_record_post">>(
+      "/api/datasets/results/record",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  listBatches: (query?: ApiQuery<"list_batches_api_datasets_batches_get">) =>
+    apiFetch<ApiSuccess<"list_batches_api_datasets_batches_get">>(
+      "/api/datasets/batches",
+      { query },
+    ),
+
+  getBatch: (batchId: string, query?: ApiQuery<"get_batch_api_datasets_batches__batch_id__get">) =>
+    apiFetch<ApiSuccess<"get_batch_api_datasets_batches__batch_id__get">>(
+      `/api/datasets/batches/${enc(batchId)}`,
+      { query },
+    ),
+
+  createBatch: (body: ApiBody<"create_batch_api_datasets_batches_post">) =>
+    apiFetch<ApiSuccess<"create_batch_api_datasets_batches_post">>(
+      "/api/datasets/batches",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  cancelBatch: (batchId: string) =>
+    apiFetch<
+      ApiSuccess<"ui_cancel_dataset_batch_api_datasets_batches__batch_id__cancel_post">
+    >(`/api/datasets/batches/${enc(batchId)}/cancel`, { method: "POST" }),
+};
+
+/* ------------------------------------------------------------------ */
+/* Memory                                                              */
+/* ------------------------------------------------------------------ */
+
+export const memoryApi = {
+  entries: () => apiFetch<ApiSuccess<"get_memory_entries_memory_get">>("/memory"),
+
+  search: (body: ApiBody<"search_memory_memory_search_post">) =>
+    apiFetch<ApiSuccess<"search_memory_memory_search_post">>("/memory/search", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  update: (body: ApiBody<"update_memory_memory_update_post">) =>
+    apiFetch<ApiSuccess<"update_memory_memory_update_post">>("/memory/update", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+};
+
+/* ------------------------------------------------------------------ */
+/* Settings (config, pricing, providers, cost estimates)               */
+/* ------------------------------------------------------------------ */
+
+export const settingsApi = {
+  getConfig: () => apiFetch<ApiSuccess<"ui_get_config_ui_config_get">>("/ui/config"),
+
+  updateConfig: (body: ApiBody<"ui_update_config_ui_config_put">) =>
+    apiFetch<ApiSuccess<"ui_update_config_ui_config_put">>("/ui/config", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  getPricing: () => apiFetch<ApiSuccess<"ui_pricing_ui_pricing_get">>("/ui/pricing"),
+
+  updatePricing: (body: ApiBody<"ui_update_pricing_ui_pricing_put">) =>
+    apiFetch<ApiSuccess<"ui_update_pricing_ui_pricing_put">>("/ui/pricing", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  syncPricing: (body?: ApiBody<"ui_sync_pricing_ui_pricing_sync_post">) =>
+    apiFetch<ApiSuccess<"ui_sync_pricing_ui_pricing_sync_post">>(
+      "/ui/pricing/sync",
+      { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) },
+    ),
+
+  estimateCosts: (query?: ApiQuery<"ui_estimate_costs_ui_settings_estimate_costs_get">) =>
+    apiFetch<ApiSuccess<"ui_estimate_costs_ui_settings_estimate_costs_get">>(
+      "/ui/settings/estimate-costs",
+      { query },
+    ),
+
+  lookupProvider: (body: ApiBody<"ui_provider_lookup_ui_providers_lookup_post">) =>
+    apiFetch<ApiSuccess<"ui_provider_lookup_ui_providers_lookup_post">>(
+      "/ui/providers/lookup",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  providerHistory: (query?: ApiQuery<"ui_provider_history_ui_providers_history_get">) =>
+    apiFetch<ApiSuccess<"ui_provider_history_ui_providers_history_get">>(
+      "/ui/providers/history",
+      { query },
+    ),
+
+  providerModels: (query?: ApiQuery<"ui_provider_models_ui_providers_models_get">) =>
+    apiFetch<ApiSuccess<"ui_provider_models_ui_providers_models_get">>(
+      "/ui/providers/models",
+      { query },
+    ),
+};
+
+/* ------------------------------------------------------------------ */
+/* Admin (/api/admin/*)                                                */
+/* ------------------------------------------------------------------ */
+
+export const adminApi = {
+  listUsers: (query?: ApiQuery<"list_users_api_admin_users_get">) =>
+    apiFetch<ApiSuccess<"list_users_api_admin_users_get">>("/api/admin/users", { query }),
+
+  createUser: (body: ApiBody<"create_user_api_admin_users_post">) =>
+    apiFetch<ApiSuccess<"create_user_api_admin_users_post", 201>>(
+      "/api/admin/users",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  updateUser: (
+    userId: string,
+    body: ApiBody<"update_user_api_admin_users__user_id__patch">,
+  ) =>
+    apiFetch<ApiSuccess<"update_user_api_admin_users__user_id__patch">>(
+      `/api/admin/users/${enc(userId)}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+
+  deleteUser: (userId: string) =>
+    apiFetch<ApiSuccess<"delete_user_api_admin_users__user_id__delete">>(
+      `/api/admin/users/${enc(userId)}`,
+      { method: "DELETE" },
+    ),
+
+  modelPerformance: () =>
+    apiFetch<ApiSuccess<"model_performance_metrics_api_admin_metrics_model_performance_get">>(
+      "/api/admin/metrics/model-performance",
+    ),
+
+  listPromptVersions: (query?: ApiQuery<"list_prompt_versions_api_admin_prompt_versions_get">) =>
+    apiFetch<ApiSuccess<"list_prompt_versions_api_admin_prompt_versions_get">>(
+      "/api/admin/prompt-versions",
+      { query },
+    ),
+
+  diffPromptVersions: (query: ApiQuery<"diff_prompt_versions_api_admin_prompt_versions_diff_get">) =>
+    apiFetch<ApiSuccess<"diff_prompt_versions_api_admin_prompt_versions_diff_get">>(
+      "/api/admin/prompt-versions/diff",
+      { query },
+    ),
+
+  getPromptVersion: (versionId: string) =>
+    apiFetch<ApiSuccess<"get_prompt_version_api_admin_prompt_versions__version_id__get">>(
+      `/api/admin/prompt-versions/${enc(versionId)}`,
+    ),
+
+  activatePromptVersion: (versionId: string) =>
+    apiFetch<
+      ApiSuccess<"activate_prompt_version_api_admin_prompt_versions__version_id__activate_post">
+    >(`/api/admin/prompt-versions/${enc(versionId)}/activate`, { method: "POST" }),
+
+  listAgentTests: (query?: ApiQuery<"list_agent_tests_api_admin_agent_tests_get">) =>
+    apiFetch<ApiSuccess<"list_agent_tests_api_admin_agent_tests_get">>(
+      "/api/admin/agent-tests",
+      { query },
+    ),
+
+  launchAgentTest: (body: ApiBody<"launch_agent_test_api_admin_agent_tests_post">) =>
+    apiFetch<ApiSuccess<"launch_agent_test_api_admin_agent_tests_post", 202>>(
+      "/api/admin/agent-tests",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  getAgentTest: (runId: string) =>
+    apiFetch<ApiSuccess<"get_agent_test_api_admin_agent_tests__run_id__get">>(
+      `/api/admin/agent-tests/${enc(runId)}`,
+    ),
+
+  costs: () => apiFetch<ApiSuccess<"cost_deltas_api_admin_costs_get">>("/api/admin/costs"),
+};
+
+/* ------------------------------------------------------------------ */
+/* Observability                                                       */
+/* ------------------------------------------------------------------ */
+
+export const observabilityApi = {
+  snapshot: () =>
+    apiFetch<ApiSuccess<"observability_observability_get">>("/observability"),
+};
+
+/* ------------------------------------------------------------------ */
+/* Workflows                                                           */
+/* ------------------------------------------------------------------ */
+
+export const workflowsApi = {
+  estimate: (body: ApiBody<"api_workflows_estimate_api_workflows_estimate_post">) =>
+    apiFetch<ApiSuccess<"api_workflows_estimate_api_workflows_estimate_post">>(
+      "/api/workflows/estimate",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  run: (body: ApiBody<"ui_workflow_run_ui_workflows_run_post">) =>
+    apiFetch<ApiSuccess<"ui_workflow_run_ui_workflows_run_post">>(
+      "/ui/workflows/run",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+};

@@ -792,7 +792,8 @@ function ProviderWorkflowRow({ row }) {
    MAIN PAGE
 ═══════════════════════════════════════════════════════════════════════════ */
 
-const AGENT_POLL_MS = 30_000;
+// (AGENT_POLL_MS removed — plan task 42: agents tab refreshes on entry and
+    // tab focus, not on a timer.)
 
 function OverviewPageContent() {
   const searchParams = useSearchParams();
@@ -877,27 +878,35 @@ function OverviewPageContent() {
     };
   }, []);
 
-  // Poll agent data when on the agents tab
-  useEffect(() => {
-    if (tab !== "agents") { setAgentPolling(false); return; }
-    setAgentPolling(true);
-    let mounted = true;
-    function refreshAgents() {
-      Promise.allSettled([
-        apiFetch("/ui/database/agent_runs?limit=300"),
-        apiFetch("/ui/runs?status=failed&limit=12&offset=0"),
-        apiFetch("/ui/overview"),
-      ]).then(([agentRes, failedRes, overviewRes]) => {
-        if (!mounted) return;
-        if (agentRes.status === "fulfilled") setAgentRunsDb(agentRes.value);
-        if (failedRes.status === "fulfilled") setFailedData(failedRes.value);
-        if (overviewRes.status === "fulfilled") setOverview(overviewRes.value);
-      });
-    }
-    refreshAgents();
-    const timer = setInterval(refreshAgents, AGENT_POLL_MS);
-    return () => { mounted = false; clearInterval(timer); setAgentPolling(false); };
-  }, [tab]);
+  // Refresh agent data when on the agents tab.
+    // Plan task 42 (de-polling): no setInterval. Data refreshes on tab entry
+    // and on tab focus (visibilitychange) — the agents view tolerates slight
+    // staleness between focus events.
+    useEffect(() => {
+      if (tab !== "agents") { setAgentPolling(false); return undefined; }
+      setAgentPolling(true);
+      let mounted = true;
+      function refreshAgents() {
+        Promise.allSettled([
+          apiFetch("/ui/database/agent_runs?limit=300"),
+          apiFetch("/ui/runs?status=failed&limit=12&offset=0"),
+          apiFetch("/ui/overview"),
+        ]).then(([agentRes, failedRes, overviewRes]) => {
+          if (!mounted) return;
+          if (agentRes.status === "fulfilled") setAgentRunsDb(agentRes.value);
+          if (failedRes.status === "fulfilled") setFailedData(failedRes.value);
+          if (overviewRes.status === "fulfilled") setOverview(overviewRes.value);
+        });
+      }
+      function onVisibility() {
+        if (document.visibilityState === "visible") {
+          refreshAgents();
+        }
+      }
+      refreshAgents();
+      document.addEventListener("visibilitychange", onVisibility);
+      return () => { mounted = false; document.removeEventListener("visibilitychange", onVisibility); setAgentPolling(false); };
+    }, [tab]);
 
   function setTab(next) {
     const p = new URLSearchParams(searchParams.toString());

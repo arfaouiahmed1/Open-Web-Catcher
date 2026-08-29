@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { StructuredDataCard } from "@/components/structured-data-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { formatDate, formatTime, formatTimestamp, parseTimestamp } from "@/lib/datetime";
 
 const ORCHESTRATOR_KINDS = new Set([
   "pipeline_started",
@@ -66,7 +67,7 @@ function decisionMeta(event) {
 function relTime(ts) {
   if (!ts) return null;
   try {
-    const d = typeof ts === "number" ? new Date(ts * 1000) : new Date(ts);
+    const d = parseTimestamp(ts);
     return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   } catch {
     return null;

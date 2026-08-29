@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { AlertCircle, ExternalLink, RefreshCw, RotateCcw, Trash2, XCircle } from "lucide-react";
 
 import { apiFetch, apiUrl } from "@/lib/api";
+import { useRunStream } from "@/lib/use-run-stream";
 import { buildLlmRows } from "@/lib/llm-output-rows";
 import { estimateRunCost, getContextWindow, loadPricing, peakContextUsage, synthCallsFromModelUsage } from "@/lib/pricing";
 import { formatCurrency, formatNumber } from "@/lib/utils";
@@ -16,8 +17,13 @@ import {
   statusTone as runStatusTone,
 } from "@/lib/run-status";
 import { actorToStage, getRunTerminalState, normalizeTraceEvents, STAGE_LABELS } from "@/lib/run-trace";
-import { RunDetailLive } from "@/components/run-detail-live";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RunTimelineTab } from "@/components/console/run-detail/tabs/run-timeline-tab";
+import { RunEventFeedTab } from "@/components/console/run-detail/tabs/event-feed-tab";
+import { ReasoningTraceTab } from "@/components/console/run-detail/tabs/reasoning-trace-tab";
+import { CostMeterTab } from "@/components/console/run-detail/tabs/cost-meter-tab";
+import { ScreenshotGridTab } from "@/components/console/run-detail/tabs/screenshot-grid-tab";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -34,6 +40,7 @@ import {
   extractLlmResponses,
 } from "@/lib/run-trace";
 import { collectRunProviderUrls } from "@/lib/run-log-sync";
+import { formatDate, formatTime, formatTimestamp, parseTimestamp } from "@/lib/datetime";
 
 const EMPTY_OBJECT = {};
 const EMPTY_ARRAY = [];
@@ -56,7 +63,7 @@ function firstNonEmptyArray(...values) {
 function fmt(ts) {
   if (!ts) return "--";
   try {
-    return new Date(ts).toLocaleString();
+    return formatTimestamp(ts) || String(ts);
   } catch {
     return ts;
   }
@@ -500,29 +507,36 @@ export function RunDetailPage() {
     [activeTraceTerminalState.isTerminal, jobStatus, payload?.active_trace, runStatus],
   );
 
+  // Plan tasks 40+42: consume the stream's actual payload contract
+  // ({ events, metrics, completed, ...}) rather than expecting a trace
+  // snapshot that the SSE endpoint does not emit. `streamEnded` closes the
+  // EventSource once the terminal payload is received, preventing reconnects
+  // against an already-completed run.
+  const [streamEnded, setStreamEnded] = useState(false);
   useEffect(() => {
-    if (!shouldRefresh) return undefined;
-    const id = setInterval(() => {
-      apiFetch(`/ui/runs/${runId}`)
-        .then((next) => {
-          setPayload(next);
-          const nextJobStatus = String(next?.job_state?.status || next?.job?.status || next?.run?.job_state || "").toLowerCase();
-          const nextRunStatus = String(next?.run?.final_status || next?.run?.status || "").toLowerCase();
-          if (
-            !next?.active_trace &&
-            !["queued", "running", "retrying", "leased"].includes(nextJobStatus) &&
-            !["queued", "running", "retrying"].includes(nextRunStatus)
-          ) {
-            clearInterval(id);
-          }
-        })
-        .catch((nextError) => setActionError(nextError instanceof Error ? nextError.message : "Refresh failed"));
-    }, 5000);
-    return () => clearInterval(id);
-  }, [runId, shouldRefresh]); // eslint-disable-line react-hooks/exhaustive-deps
+    setStreamEnded(false);
+  }, [runId]);
+  const stream = useRunStream(runId, {
+    enabled: shouldRefresh && !streamEnded,
+    onPayload: (streamPayload) => {
+      if (streamPayload?.completed) setStreamEnded(true);
+    },
+  });
 
-  const isActiveTrace = Boolean(payload?.active_trace);
-  const trace = isActiveTrace ? payload.active_trace : null;
+  // (Polling removed — plan tasks 40+42: the useRunStream SSE subscription
+  // above delivers live trace updates; the terminal state arrives as the
+  // stream's final snapshot, so no interval refetch is needed.)
+
+  const streamedEvents = stream.events || EMPTY_ARRAY;
+  const isActiveTrace = Boolean(payload?.active_trace) || streamedEvents.length > 0;
+  const trace = isActiveTrace
+    ? {
+        ...(payload?.active_trace || EMPTY_OBJECT),
+        events: streamedEvents.length ? streamedEvents : payload?.active_trace?.events || EMPTY_ARRAY,
+        metrics: stream.metrics || payload?.active_trace?.metrics || EMPTY_OBJECT,
+        completed: Boolean(stream.completed || payload?.active_trace?.completed),
+      }
+    : null;
   const snapshot = payload?.snapshot ?? EMPTY_OBJECT;
   const persistedEventsRaw = payload?.events ?? EMPTY_ARRAY;
   const liveMetricsSafe = trace?.metrics || EMPTY_OBJECT;
@@ -577,67 +591,21 @@ export function RunDetailPage() {
     return Array.from(urls);
   }, [payload?.all_screenshots, payload?.screenshots, runEvents, snapshot]);
 
-  if (isLoading) {
-    return (
-      <div className="space-y-5">
-        <Card className="overflow-hidden shadow-card">
-          <CardHeader className="space-y-3 border-b px-4 py-4">
-            <Skeleton className="h-3 w-40" />
-            <Skeleton className="h-8 w-48" />
-            <Skeleton className="h-4 w-[32rem]" />
-          </CardHeader>
-          <CardContent className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
-            {Array.from({ length: 8 }).map((_, idx) => (
-              <Skeleton key={idx} className="h-24 rounded-xl" />
-            ))}
-          </CardContent>
-        </Card>
-        <Skeleton className="h-48 rounded-xl" />
-        <Skeleton className="h-64 rounded-xl" />
-      </div>
-    );
-  }
-
-  if (error || !payload) {
-    return (
-      <div className="space-y-4">
-        <div
-          role="alert"
-          className="flex items-start gap-3 rounded-xl border px-4 py-3 text-sm"
-          style={{
-            borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)",
-            background: "color-mix(in oklch, var(--rose) 8%, transparent)",
-            color: "var(--rose)",
-          }}
-        >
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <div className="flex-1">
-            <div className="font-medium">Run unavailable</div>
-            <div className="mt-0.5 text-[12.5px] opacity-90">{error || "Run not found"}</div>
-          </div>
-        </div>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/runs">Back to runs</Link>
-        </Button>
-      </div>
-    );
-  }
-
-  const run = payload.run || EMPTY_OBJECT;
-  const parallelism = payload.parallelism || {
+  const run = payload?.run || EMPTY_OBJECT;
+  const parallelism = payload?.parallelism || {
     current_parallel_agents: 0,
     max_parallel_agents: 0,
   };
-  const agentRollups = payload.agent_rollups || EMPTY_ARRAY;
-  const stageRollups = payload.stage_rollups || EMPTY_ARRAY;
-  const toolCalls = payload.tool_calls || EMPTY_ARRAY;
-  const jobState = payload.job_state || payload.job || null;
-  const datasetContext = payload.dataset_context || null;
-  const degradedFallback = payload.source === "background_job_result";
-  const telemetryStatus = String(payload.telemetry_status || run.telemetry_status || "").trim().toLowerCase();
+  const agentRollups = payload?.agent_rollups || EMPTY_ARRAY;
+  const stageRollups = payload?.stage_rollups || EMPTY_ARRAY;
+  const toolCalls = payload?.tool_calls || EMPTY_ARRAY;
+  const jobState = payload?.job_state || payload?.job || null;
+  const datasetContext = payload?.dataset_context || null;
+  const degradedFallback = payload?.source === "background_job_result";
+  const telemetryStatus = String(payload?.telemetry_status || run.telemetry_status || "").trim().toLowerCase();
   const telemetryMissing = degradedFallback && telemetryStatus === "missing";
   const allStreams = providerSnapshot.all_streams || EMPTY_ARRAY;
-  const modelUsage = payload.model_usage || snapshot?.metrics?.model_usage || EMPTY_ARRAY;
+  const modelUsage = payload?.model_usage || snapshot?.metrics?.model_usage || EMPTY_ARRAY;
 
   const effectiveCalls = llmCalls.length > 0 ? llmCalls : synthCallsFromModelUsage(modelUsage);
   const costTotals = estimateRunCost(effectiveCalls, pricingMap);
@@ -835,6 +803,125 @@ export function RunDetailPage() {
     { label: "Finished", value: fmt(run.finished_at) },
   ];
 
+  // T40 live-run: derive library-grade datasets directly from useRunStream SSE events.
+  // Zero polling — these memos recompute only when SSE delivers new payloads.
+  const planSteps = useMemo(() => {
+    const rawSteps =
+      (stream.plan && Array.isArray(stream.plan.steps) && stream.plan.steps) ||
+      (payload?.plan && Array.isArray(payload.plan.steps) && payload.plan.steps) ||
+      (payload?.active_trace?.plan && Array.isArray(payload.active_trace.plan.steps) && payload.active_trace.plan.steps) ||
+      (payload?.active_trace?.events ? [] : EMPTY_ARRAY);
+    if (Array.isArray(rawSteps) && rawSteps.length > 0) {
+      return rawSteps.map((s, idx) => {
+        const statusRaw = String(s.status || s.state || "pending").toLowerCase();
+        const canonical =
+          statusRaw === "completed" || statusRaw === "done" ? "done" :
+          statusRaw === "running" || statusRaw === "active" || statusRaw === "in_progress" ? "in_progress" :
+          statusRaw === "failed" || statusRaw === "error" ? "failed" :
+          statusRaw === "skipped" ? "skipped" : "pending";
+        return {
+          id: String(s.id || s.step_id || `step-${idx}`),
+          title: String(s.title || s.name || `Step ${idx + 1}`),
+          criteria: String(s.criteria || s.description || ""),
+          budget: s.budget != null ? s.budget : null,
+          status: canonical,
+        };
+      });
+    }
+    // Fallback: synthesize from plan_step_update SSE events
+    const fromEvents = new Map();
+    for (const ev of runEvents) {
+      if (ev?.kind !== "plan_step_update") continue;
+      const d = ev.details || {};
+      const id = String(d.step_id || d.id || ev.seq || "");
+      if (!id) continue;
+      const statusRaw = String(d.status || d.state || "in_progress").toLowerCase();
+      const canonical =
+        statusRaw === "completed" || statusRaw === "done" ? "done" :
+        statusRaw === "running" || statusRaw === "active" || statusRaw === "in_progress" ? "in_progress" :
+        statusRaw === "failed" || statusRaw === "error" ? "failed" :
+        statusRaw === "skipped" ? "skipped" : "pending";
+      fromEvents.set(id, {
+        id,
+        title: String(d.title || d.step_title || id),
+        criteria: String(d.criteria || ""),
+        budget: d.budget != null ? d.budget : null,
+        status: canonical,
+      });
+    }
+    if (fromEvents.size > 0) return Array.from(fromEvents.values());
+    return [];
+  }, [stream.plan, payload?.plan, payload?.active_trace?.plan, runEvents]);
+
+  const runCosts = useMemo(() => ({
+    estimated_input_cost_usd: Number(costTotals.input || 0),
+    estimated_cached_input_cost_usd: Number(costTotals.cached || 0),
+    estimated_cache_write_cost_usd: Number(costTotals.cacheWrite || 0),
+    estimated_output_cost_usd: Number(costTotals.output || 0),
+    estimated_total_cost_usd: Number(costTotals.total || 0),
+  }), [costTotals]);
+
+  const runTokens = useMemo(() => {
+    let tin = 0, tout = 0;
+    for (const call of effectiveCalls) {
+      tin += Number(call.input_tokens || call.usage_metadata_json?.input_tokens || 0);
+      tout += Number(call.output_tokens || call.usage_metadata_json?.output_tokens || 0);
+    }
+    // Fallback to liveMetricsSafe if calls are empty but metrics have aggregates
+    if (tin === 0 && tout === 0) {
+      tin = Number(liveMetricsSafe.total_tokens_in || payload?.metrics?.total_tokens_in || 0);
+      tout = Number(liveMetricsSafe.total_tokens_out || payload?.metrics?.total_tokens_out || 0);
+    }
+    return { total_tokens_in: tin, total_tokens_out: tout, total_llm_calls: costTotals.calls || llmAttemptCount };
+  }, [effectiveCalls, costTotals.calls, llmAttemptCount, liveMetricsSafe, payload?.metrics]);
+
+
+  if (isLoading) {
+    return (
+      <div className="space-y-5">
+        <Card className="overflow-hidden shadow-card">
+          <CardHeader className="space-y-3 border-b px-4 py-4">
+            <Skeleton className="h-3 w-40" />
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-4 w-[32rem]" />
+          </CardHeader>
+          <CardContent className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
+            {Array.from({ length: 8 }).map((_, idx) => (
+              <Skeleton key={idx} className="h-24 rounded-xl" />
+            ))}
+          </CardContent>
+        </Card>
+        <Skeleton className="h-48 rounded-xl" />
+        <Skeleton className="h-64 rounded-xl" />
+      </div>
+    );
+  }
+
+  if (error || !payload) {
+    return (
+      <div className="space-y-4">
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-xl border px-4 py-3 text-sm"
+          style={{
+            borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)",
+            background: "color-mix(in oklch, var(--rose) 8%, transparent)",
+            color: "var(--rose)",
+          }}
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="flex-1">
+            <div className="font-medium">Run unavailable</div>
+            <div className="mt-0.5 text-[12.5px] opacity-90">{error || "Run not found"}</div>
+          </div>
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/runs">Back to runs</Link>
+        </Button>
+      </div>
+    );
+  }
+
   async function cancelRun() {
     if (!runId || isCancelling) return;
     setIsCancelling(true);
@@ -991,26 +1078,33 @@ export function RunDetailPage() {
         onDelete={deleteRun}
       />
 
-      <RunDetailLive
-        runId={runId}
-        runUrl={run.url || ""}
-        providerUrls={providerUrls}
-        providerAnalysis={providerSnapshot.provider_analysis || EMPTY_ARRAY}
-        takedownEmails={providerSnapshot.takedown_emails || EMPTY_ARRAY}
-        extractionResults={providerSnapshot.extraction_results || EMPTY_ARRAY}
-        snapshotScreenshots={screenshots}
-        activeTrace={normalizedTrace}
-        persistedEvents={runEvents}
-        persistedToolCalls={toolCalls}
-        initialDecisions={payload?.decisions || EMPTY_ARRAY}
-        defaultStreaming={isActiveTrace && !runTerminalState.isTerminal}
-        rootActor={run.root_actor || normalizedTrace?.root_actor || ""}
-        agentRollups={agentRollups}
-        stageRollups={stageRollups}
-        parallelism={parallelism}
-        primaryProvider={primaryProvider}
-        primaryModel={primaryModel}
-      />
+      {/* T40/T41 live composition — SSE-first, library primitives, zero polling.
+          Replaces the former RunDetailLive monolith inline; each tab is a focused
+          library wrapper driven exclusively by useRunStream events. */}
+      <Tabs defaultValue="timeline" className="w-full">
+        <TabsList className="w-full justify-start overflow-x-auto">
+          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="events">Events</TabsTrigger>
+          <TabsTrigger value="reasoning">Reasoning</TabsTrigger>
+          <TabsTrigger value="costs">Costs</TabsTrigger>
+          <TabsTrigger value="screenshots">Screenshots</TabsTrigger>
+        </TabsList>
+        <TabsContent value="timeline">
+          <RunTimelineTab steps={planSteps} events={runEvents} streamStatus={stream.status} connected={stream.connected} />
+        </TabsContent>
+        <TabsContent value="events">
+          <RunEventFeedTab events={runEvents} />
+        </TabsContent>
+        <TabsContent value="reasoning">
+          <ReasoningTraceTab events={runEvents} />
+        </TabsContent>
+        <TabsContent value="costs">
+          <CostMeterTab costs={runCosts} tokens={runTokens} />
+        </TabsContent>
+        <TabsContent value="screenshots">
+          <ScreenshotGridTab events={runEvents} screenshots={screenshots} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

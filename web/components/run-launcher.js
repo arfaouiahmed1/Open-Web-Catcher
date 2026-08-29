@@ -36,8 +36,8 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
-const RECENT_POLL_MS = 8_000;
-const HEALTH_POLL_MS = 15_000;
+// (RECENT_POLL_MS / HEALTH_POLL_MS removed — plan task 42: launcher data
+    // refreshes on mount + tab focus, not on timers.)
 
 const MODE_OPTIONS = [
   {
@@ -177,7 +177,7 @@ export function RunLauncher({ defaultMode = "workflow" }) {
   const [runtimeError, setRuntimeError] = useState("");
   const lastLaunchedIds = useRef([]);
 
-  // Poll recent runs
+  // Refresh recent runs (plan task 42): on mount + tab focus, no interval.
   useEffect(() => {
     let cancelled = false;
     function refresh() {
@@ -187,9 +187,12 @@ export function RunLauncher({ defaultMode = "workflow" }) {
         })
         .catch(() => {});
     }
+    function onVisibility() {
+      if (document.visibilityState === "visible") refresh();
+    }
     refresh();
-    const t = setInterval(refresh, RECENT_POLL_MS);
-    return () => { cancelled = true; clearInterval(t); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => { cancelled = true; document.removeEventListener("visibilitychange", onVisibility); };
   }, []);
 
   useEffect(() => {
@@ -213,10 +216,14 @@ export function RunLauncher({ defaultMode = "workflow" }) {
     }
 
     refreshRuntimeStatus();
-    const t = setInterval(refreshRuntimeStatus, HEALTH_POLL_MS);
+    // Plan task 42 (de-polling): health check on mount + tab focus only.
+    function onHealthVisibility() {
+      if (document.visibilityState === "visible") refreshRuntimeStatus();
+    }
+    document.addEventListener("visibilitychange", onHealthVisibility);
     return () => {
       cancelled = true;
-      clearInterval(t);
+      document.removeEventListener("visibilitychange", onHealthVisibility);
     };
   }, []);
 

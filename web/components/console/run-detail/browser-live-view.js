@@ -30,6 +30,7 @@ import {
   ScrollBar,
 } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { formatDate, formatTime, formatTimestamp, parseTimestamp } from "@/lib/datetime";
 
 const EMPTY_ARRAY = [];
 
@@ -350,12 +351,23 @@ export function BrowserLiveView({
     }
 
     fetchScreenshot();
+    // Plan task 42 (de-polling): the screenshot refetch is driven by tab
+    // focus instead of a fixed interval — the browser-live view is watched,
+    // so background tabs don't need fresh frames. Manual refresh (refreshNonce)
+    // still works unchanged.
+    let visibilityHandler = null;
     if (autoRefresh) {
-      timer = window.setInterval(fetchScreenshot, 2500);
+      visibilityHandler = () => {
+        if (document.visibilityState === "visible") fetchScreenshot();
+      };
+      document.addEventListener("visibilitychange", visibilityHandler);
     }
     return () => {
       cancelled = true;
       if (timer) window.clearInterval(timer);
+      if (visibilityHandler) {
+        document.removeEventListener("visibilitychange", visibilityHandler);
+      }
     };
   }, [availableFrames.length, autoRefresh, refreshNonce, runId, standalone]);
 
@@ -659,9 +671,9 @@ export function BrowserLiveView({
         </Badge>
         <span className="font-mono text-[10px]" style={{ color: "var(--mute-3)" }}>
           {activeFrame?.timestamp
-            ? `Updated ${new Date(activeFrame.timestamp).toLocaleTimeString()}`
+            ? `Updated ${formatTime(activeFrame.timestamp)}`
             : fallbackTimestamp
-              ? `Updated ${new Date(fallbackTimestamp).toLocaleTimeString()}`
+              ? `Updated ${formatTime(fallbackTimestamp)}`
               : "Waiting"}
         </span>
         <Badge

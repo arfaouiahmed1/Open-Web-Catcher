@@ -188,7 +188,7 @@ export function AppShell({ children }) {
 
   useEffect(() => {
     let cancelled = false;
-    async function poll() {
+    async function refreshActiveRuns() {
       try {
         const res = await fetch(apiUrl("/ui/overview"), { cache: "no-store" });
         if (!res.ok || cancelled) {
@@ -206,9 +206,22 @@ export function AppShell({ children }) {
         if (!cancelled) setConnected(false);
       }
     }
-    poll();
-    const timer = setInterval(poll, ACTIVE_RUNS_POLL_MS);
-    return () => { cancelled = true; clearInterval(timer); };
+    // Plan task 42 (de-polling): refresh on tab focus / visibility instead of
+    // a fixed interval. The sidebar badge tolerates slight staleness; the
+    // per-run live views use SSE (useRunStream) for real-time data.
+    function onVisibility() {
+      if (document.visibilityState === "visible") {
+        refreshActiveRuns();
+      }
+    }
+    window.addEventListener("owc:run-state-changed", refreshActiveRuns);
+    document.addEventListener("visibilitychange", onVisibility);
+    refreshActiveRuns();
+    return () => {
+      cancelled = true;
+      window.removeEventListener("owc:run-state-changed", refreshActiveRuns);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   const currentSectionKey = pathname.split("/")[1] || "dashboard";

@@ -10,7 +10,8 @@ import {
 } from "react";
 import Link from "next/link";
 import { ArrowRight, Bell, Play, X, XCircle } from "lucide-react";
-import { apiUrl } from "@/lib/api";
+import { apiUrl, eventSourceUrl } from "@/lib/api";
+import { formatDate, formatTime, formatTimestamp, parseTimestamp } from "@/lib/datetime";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -27,6 +28,17 @@ const DEFAULT_PREFS = {
   pipeline_finished: true,
   pipeline_failed: true,
   run_cancelled: true,
+  // Typed notifications (plan T34 / T41) — specifics with inline evidence
+  server_activated: true,
+  stream_extracted: true,
+  hosting_page_discovered: true,
+  player_failed: true,
+  cost_threshold_exceeded: true,
+  queue_enqueued: true,
+  hosting_item_started: true,
+  hosting_item_finished: true,
+  pool_drained: true,
+  plan_step_update: true,
 };
 
 const TERMINAL_KINDS = new Set([
@@ -132,6 +144,102 @@ function toastMeta(event) {
         text: "Run cancelled",
         kind,
       };
+    // ── Typed notifications (T34/T41): specifics with inline evidence ──
+    case "server_activated": {
+      const label = d.server_label || d.server || d.url || "server";
+      const state = d.playback_confirmed === true ? "playback ✓" : d.server_up === true ? "up" : d.server_up === false ? "down" : "";
+      return {
+        color: "var(--mint)",
+        iconName: "check",
+        text: `Server activated${label ? `: ${String(label).slice(0, 60)}` : ""}${state ? ` — ${state}` : ""}`,
+        kind,
+      };
+    }
+    case "stream_extracted": {
+      const url = d.stream_url || d.url || "";
+      const proto = d.protocol ? ` ${d.protocol}` : "";
+      const qual = d.quality ? ` ${d.quality}` : "";
+      return {
+        color: "var(--signal)",
+        iconName: "play",
+        text: `Stream extracted${proto}${qual}${url ? ` — ${String(url).slice(0, 50)}` : ""}`,
+        kind,
+      };
+    }
+    case "hosting_page_discovered": {
+      const hUrl = d.url || d.hosting_url || msg || "";
+      return {
+        color: "var(--sky)",
+        iconName: "diamond",
+        text: `Hosting discovered${hUrl ? `: ${String(hUrl).slice(0, 60)}` : ""}`,
+        kind,
+      };
+    }
+    case "player_failed": {
+      const reason = d.reason || d.error || msg || "player failed";
+      return {
+        color: "var(--rose)",
+        iconName: "cross",
+        text: `Player failed — ${String(reason).slice(0, 60)}`,
+        kind,
+      };
+    }
+    case "cost_threshold_exceeded": {
+      const spent = d.spent_usd != null ? `$${Number(d.spent_usd).toFixed(2)}` : "";
+      return {
+        color: "var(--amber)",
+        iconName: "circle",
+        text: `Cost threshold exceeded${spent ? ` — ${spent}` : ""}`,
+        kind,
+      };
+    }
+    case "queue_enqueued": {
+      const qUrl = d.url || "";
+      return {
+        color: "var(--violet)",
+        iconName: "diamond",
+        text: `Queued${d.role ? ` ${d.role}` : ""}${qUrl ? `: ${String(qUrl).slice(0, 50)}` : ""}`,
+        kind,
+      };
+    }
+    case "hosting_item_started": {
+      const hiUrl = d.url || "";
+      return {
+        color: "var(--signal)",
+        iconName: "play",
+        text: `Hosting started${hiUrl ? `: ${String(hiUrl).slice(0, 50)}` : ""}`,
+        kind,
+      };
+    }
+    case "hosting_item_finished": {
+      const hfUrl = d.url || "";
+      const st = d.status ? ` — ${String(d.status)}` : "";
+      return {
+        color: d.status === "success" || d.status === "partial" ? "var(--mint)" : "var(--signal)",
+        iconName: d.status === "success" || d.status === "partial" ? "check" : "circle",
+        text: `Hosting finished${hfUrl ? `: ${String(hfUrl).slice(0, 50)}` : ""}${st}`,
+        kind,
+      };
+    }
+    case "pool_drained": {
+      const role = d.role || "pool";
+      return {
+        color: "var(--mute)",
+        iconName: "double-check",
+        text: `${role} pool drained${d.processed != null ? ` — ${d.processed} items` : ""}`,
+        kind,
+      };
+    }
+    case "plan_step_update": {
+      const step = d.step_id || d.title || msg || "plan step";
+      const s = d.status ? ` → ${String(d.status)}` : "";
+      return {
+        color: "var(--sky)",
+        iconName: "diamond",
+        text: `Plan: ${String(step).slice(0, 50)}${s}`,
+        kind,
+      };
+    }
     default:
       return null;
   }
@@ -226,12 +334,13 @@ function relativeTime(ts) {
     const h = Math.floor(diff / 3_600_000);
     return `${h}h ago`;
   }
-  return new Date(ts).toLocaleDateString();
+  return formatDate(ts);
 }
 
 /** Return true if timestamp is today (local calendar day). */
 function isToday(ts) {
-  const d = new Date(ts);
+  const d = parseTimestamp(ts);
+  if (!d) return false;
   const n = new Date();
   return (
     d.getFullYear() === n.getFullYear() &&
@@ -709,7 +818,7 @@ export function NotificationProvider({ children }) {
     if (streamRefs.current[runId]) return;
     if (Object.keys(streamRefs.current).length >= MAX_NOTIFICATION_STREAMS) return;
 
-    const es = new EventSource(apiUrl(`/ui/runs/${runId}/stream`));
+    const es = new EventSource(eventSourceUrl(`/ui/runs/${runId}/stream`));
     streamRefs.current[runId] = es;
 
     es.onmessage = (ev) => {
@@ -757,7 +866,12 @@ export function NotificationProvider({ children }) {
     };
   }
 
-  // Poll for active runs + listen for manual track events
+  // Poll for active runs + listen for manual track events.
+  // Plan task 42 (de-polling): no setInterval here. Discovery of active runs
+  // is event-driven instead: (a) manual "owc:track-run" events, (b) visibility
+  // changes (tab focus = cheap single refresh), (c) a slow safety-net refresh
+  // only while at least one run is actually being watched. Idle console =
+  // zero network chatter.
   useEffect(() => {
     let alive = true;
 
@@ -768,7 +882,8 @@ export function NotificationProvider({ children }) {
       watchRun(runId);
     }
 
-    async function poll() {
+    async function discoverActiveRuns() {
+      if (!alive) return;
       try {
         const res = await fetch(apiUrl("/ui/runs?limit=50&offset=0"));
         if (!res.ok || !alive) return;
@@ -796,14 +911,20 @@ export function NotificationProvider({ children }) {
       }
     }
 
+    function onVisibility() {
+      if (document.visibilityState === "visible") {
+        discoverActiveRuns();
+      }
+    }
+
     window.addEventListener("owc:track-run", onTrackRun);
-    poll();
-    const timer = setInterval(poll, 5_000);
+    document.addEventListener("visibilitychange", onVisibility);
+    discoverActiveRuns();
 
     return () => {
       alive = false;
-      clearInterval(timer);
       window.removeEventListener("owc:track-run", onTrackRun);
+      document.removeEventListener("visibilitychange", onVisibility);
       for (const es of Object.values(streamRefs.current)) {
         try {
           es.close();

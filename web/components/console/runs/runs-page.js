@@ -27,7 +27,7 @@ import {
   XCircle,
 } from "lucide-react";
 
-import { apiFetch, apiUrl } from "@/lib/api";
+import { apiFetch, apiUrl, eventSourceUrl } from "@/lib/api";
 import {
   datasetRunStatus,
   estimateRunCostFromApi,
@@ -81,6 +81,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { formatDate, formatTime, formatTimestamp, parseTimestamp } from "@/lib/datetime";
 import {
   Tooltip,
   TooltipContent,
@@ -88,7 +89,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-const AUTO_REFRESH_MS = 8000;
+// (AUTO_REFRESH_MS removed — plan task 42: dataset sync is SSE-primary with
+    // visibility-based fallback, not a timer.)
 const CUSTOM_LANGUAGE = "__custom__";
 const EMPTY_ARRAY = [];
 const EMPTY_OBJECT = {};
@@ -114,14 +116,7 @@ const FALLBACK_LANGUAGES = [
 
 const FALLBACK_LABELS = ["piracy", "sports", "news", "entertainment", "unknown"];
 
-function formatDate(value) {
-  if (!value) return "--";
-  try {
-    return new Date(value).toLocaleString();
-  } catch {
-    return String(value);
-  }
-}
+// formatDate/formatTime come from @/lib/datetime (plan task 33 Z-safe parsing).
 
 function formatDuration(seconds) {
   const value = Number(seconds || 0);
@@ -138,7 +133,8 @@ function pct(value, digits = 1) {
 
 function formatRelativeTime(value) {
   if (!value) return "never";
-  const ts = new Date(value).getTime();
+  const parsed = parseTimestamp(value);
+  const ts = parsed ? parsed.getTime() : NaN;
   if (!Number.isFinite(ts)) return "--";
   const deltaSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
   if (deltaSec < 5) return "just now";
@@ -1017,23 +1013,30 @@ export function RunsPage() {
 
     const stopFallback = () => {
       if (fallbackTimer) {
-        window.clearInterval(fallbackTimer);
+        document.removeEventListener("visibilitychange", fallbackTimer);
         fallbackTimer = null;
       }
     };
 
+    // Plan task 42 (de-polling): the SSE stream is the primary sync channel.
+    // When it is down we no longer run a background interval — instead the
+    // fallback refresh fires once on tab focus (visibilitychange) until the
+    // stream reconnects. Idle console = zero network chatter.
     const startFallback = () => {
       if (fallbackTimer) return;
       setSyncMode("fallback");
-      fallbackTimer = window.setInterval(
-        () => setRefreshTick((value) => value + 1),
-        hasActiveDatasetWork ? AUTO_REFRESH_MS : 15000,
-      );
+      const onVisible = () => {
+        if (document.visibilityState === "visible" && !closed) {
+          setRefreshTick((value) => value + 1);
+        }
+      };
+      document.addEventListener("visibilitychange", onVisible);
+      fallbackTimer = onVisible;
     };
 
     const connect = () => {
       if (closed) return;
-      source = new EventSource(apiUrl("/api/datasets/stream"));
+      source = new EventSource(eventSourceUrl("/api/datasets/stream"));
       source.onopen = () => {
         setSyncMode("stream");
         stopFallback();

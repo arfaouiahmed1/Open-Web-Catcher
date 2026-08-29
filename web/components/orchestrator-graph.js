@@ -18,6 +18,7 @@ import { buildStageView, getRunTerminalState, normalizeTraceEvents, STAGE_LABELS
 import { getContextWindow, loadPricing } from "@/lib/pricing";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { formatDate, formatTime, formatTimestamp, parseTimestamp } from "@/lib/datetime";
 import {
   Tooltip,
   TooltipContent,
@@ -177,7 +178,7 @@ function buildBoard(events, rootActor, agentRollups = [], pricingMap = null, pri
       status: pipelineStarted ? "done" : "idle",
       detail: cleanInlineText(pipelineStarted?.message, "Waiting for workflow start."),
       accent: "var(--sky)",
-      meta: pipelineStarted?.timestamp ? new Date(pipelineStarted.timestamp).toLocaleTimeString() : "",
+      meta: pipelineStarted?.timestamp ? formatTime(pipelineStarted.timestamp) : "",
     },
     {
       id: "runtime",
@@ -198,7 +199,7 @@ function buildBoard(events, rootActor, agentRollups = [], pricingMap = null, pri
         pipelineStarted ? "Runtime waiting for the first agent/model/tool event." : "Runtime has not started.",
       ),
       accent: "var(--signal)",
-      meta: runtimeReady?.timestamp ? new Date(runtimeReady.timestamp).toLocaleTimeString() : "",
+      meta: runtimeReady?.timestamp ? formatTime(runtimeReady.timestamp) : "",
     },
     {
       id: "orchestrator",

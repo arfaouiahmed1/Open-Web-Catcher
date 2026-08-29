@@ -41,6 +41,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { apiFetch, apiUrl } from "@/lib/api";
 import {
+  BROWSER_RUNTIME_KEYS,
   buildServerConfigDraft,
   getDirtyTabs,
   snapshotServerConfig,
@@ -216,86 +217,10 @@ const MCP_TOOL_META = {
 };
 
 const BROWSER_OPTIONS = [
-  { id: "puppeteer", name: "Puppeteer", note: "Default stack: direct browser websocket sessions, legacy CDP compatibility, page-level diagnostics" },
   {
     id: "playwright",
     name: "Playwright",
-    note: "Media stack: stronger context isolation, iframe recovery, persistent contexts, context-level proxy support",
-  },
-];
-
-const DEFAULT_PROXY_SOURCE_ORDER = [
-  "openproxylist-https",
-  "proxifly-http",
-  "monosans-http",
-  "speedx-http",
-  "openproxylist-socks5",
-  "proxifly-socks5",
-  "monosans-socks5",
-  "speedx-socks5",
-  "proxifly-socks4",
-];
-
-const BUILTIN_PROXY_SOURCE_OPTIONS = [
-  {
-    value: "openproxylist-https",
-    label: "OpenProxyList HTTPS",
-    description: "Tested public HTTPS proxies from openproxylist.com",
-  },
-  {
-    value: "openproxylist-socks4",
-    label: "OpenProxyList SOCKS4",
-    description: "SOCKS4 list from openproxylist.com",
-  },
-  {
-    value: "openproxylist-socks5",
-    label: "OpenProxyList SOCKS5",
-    description: "SOCKS5 list from openproxylist.com",
-  },
-  {
-    value: "speedx-http",
-    label: "TheSpeedX HTTP",
-    description: "Fast raw HTTP list from TheSpeedX/SOCKS-List",
-  },
-  {
-    value: "speedx-socks4",
-    label: "TheSpeedX SOCKS4",
-    description: "SOCKS4 raw list from TheSpeedX/SOCKS-List",
-  },
-  {
-    value: "speedx-socks5",
-    label: "TheSpeedX SOCKS5",
-    description: "SOCKS5 raw list from TheSpeedX/SOCKS-List",
-  },
-  {
-    value: "monosans-http",
-    label: "monosans HTTP",
-    description: "Raw HTTP proxy list from monosans/proxy-list",
-  },
-  {
-    value: "monosans-socks4",
-    label: "monosans SOCKS4",
-    description: "Raw SOCKS4 proxy list from monosans/proxy-list",
-  },
-  {
-    value: "monosans-socks5",
-    label: "monosans SOCKS5",
-    description: "Raw SOCKS5 proxy list from monosans/proxy-list",
-  },
-  {
-    value: "proxifly-http",
-    label: "Proxifly HTTP",
-    description: "HTTP list from proxifly/free-proxy-list",
-  },
-  {
-    value: "proxifly-socks4",
-    label: "Proxifly SOCKS4",
-    description: "SOCKS4 list from proxifly/free-proxy-list",
-  },
-  {
-    value: "proxifly-socks5",
-    label: "Proxifly SOCKS5",
-    description: "SOCKS5 list from proxifly/free-proxy-list",
+    note: "Default stack: stronger context isolation, iframe recovery, persistent contexts",
   },
 ];
 
@@ -328,7 +253,7 @@ const TAB_DETAILS = {
   browser: {
     title: "Browser Runtime",
     description:
-      "Choose the default engine and keep browsing realistic: stable fingerprints, real uBOL loading, careful proxy rotation, and reliable iframe/media recovery.",
+      "Choose the default engine and tune browsing behavior: blocker handling, popup control, iframe recovery, and reliable media capture.",
     storage: "server",
     saveLabel: "Save browser settings",
   },
@@ -409,101 +334,32 @@ const MODEL_WORKSPACE_VIEWS = [
   { id: "catalog", label: "Catalog & Costs" },
 ];
 
+const BROWSER_RUNTIME_DEFAULTS = {
+  launch_timeout_ms: 45000,
+  extra_launch_args: [],
+  adblock_allowlist_hosts: [],
+  streaming_safe_mode: "adaptive",
+  asset_diagnostics_enabled: true,
+  popup_blocking_enabled: true,
+  ubol_enabled: true,
+  iframe_sandbox_patch_enabled: true,
+  iframe_auto_recovery_enabled: true,
+  iframe_recovery_timeout_ms: 20000,
+  media_capture_timeout_ms: 45000,
+  media_cors_patch_enabled: false,
+  media_playback_verification_enabled: true,
+};
+
 const DEFAULT_BROWSER_RUNTIME = {
-  puppeteer: {
-    launch_timeout_ms: 45000,
-    extra_launch_args: [],
-    adblock_allowlist_hosts: [],
-    fingerprint_rotation_mode: "origin",
-    fingerprint_fallback_strategy: "profile",
-    fingerprint_rotation_interval_ms: 600000,
-    fingerprint_rotation_max_uses: 8,
-    fingerprint_recent_pool_size: 18,
-    proxy_enabled: false,
-    proxy_source_mode: "hybrid",
-    proxy_source_order: [...DEFAULT_PROXY_SOURCE_ORDER],
-    proxy_custom_list: [],
-    proxy_rotation_mode: "sticky",
-    proxy_selection_strategy: "ordered",
-    proxy_fallback_strategy: "direct",
-    proxy_fetch_timeout_ms: 8000,
-    proxy_validation_timeout_ms: 12000,
-    proxy_cache_ttl_ms: 600000,
-    proxy_max_candidates: 40,
-    proxy_test_url: "https://api.ipify.org?format=json",
-    streaming_safe_mode: "adaptive",
-    media_proxy_strategy: "direct_first",
-    asset_diagnostics_enabled: true,
-    popup_blocking_enabled: true,
-    ubol_enabled: true,
+  playwright: {
+    ...BROWSER_RUNTIME_DEFAULTS,
     stream_cors_patch_enabled: false,
     stream_cors_include_credentials: false,
-    iframe_sandbox_patch_enabled: true,
-    iframe_auto_recovery_enabled: true,
-    iframe_recovery_timeout_ms: 20000,
-    media_capture_timeout_ms: 45000,
-    media_retry_count: 4,
-    media_retry_backoff_ms: [1200, 2500, 5000, 8000],
-    media_cors_patch_enabled: false,
-    media_playback_verification_enabled: true,
-  },
-  playwright: {
-    launch_timeout_ms: 45000,
-    extra_launch_args: [],
-    adblock_allowlist_hosts: [],
-    fingerprint_rotation_mode: "origin",
-    fingerprint_fallback_strategy: "profile",
-    fingerprint_rotation_interval_ms: 600000,
-    fingerprint_rotation_max_uses: 8,
-    fingerprint_recent_pool_size: 18,
-    proxy_enabled: false,
-    proxy_source_mode: "hybrid",
-    proxy_source_order: [...DEFAULT_PROXY_SOURCE_ORDER],
-    proxy_custom_list: [],
-    proxy_rotation_mode: "sticky",
-    proxy_selection_strategy: "ordered",
-    proxy_fallback_strategy: "direct",
-    proxy_fetch_timeout_ms: 8000,
-    proxy_validation_timeout_ms: 12000,
-    proxy_cache_ttl_ms: 600000,
-    proxy_max_candidates: 40,
-    proxy_test_url: "https://api.ipify.org?format=json",
-    streaming_safe_mode: "adaptive",
-    media_proxy_strategy: "direct_first",
-    asset_diagnostics_enabled: true,
-    popup_blocking_enabled: true,
-    ubol_enabled: true,
-    iframe_sandbox_patch_enabled: true,
-    iframe_auto_recovery_enabled: true,
-    iframe_recovery_timeout_ms: 20000,
-    media_capture_timeout_ms: 45000,
-    media_retry_count: 4,
-    media_retry_backoff_ms: [1200, 2500, 5000, 8000],
-    media_cors_patch_enabled: false,
-    media_playback_verification_enabled: true,
   },
 };
 
 function cloneBrowserRuntime() {
   return {
-    puppeteer: {
-      ...DEFAULT_BROWSER_RUNTIME.puppeteer,
-      extra_launch_args: [
-        ...DEFAULT_BROWSER_RUNTIME.puppeteer.extra_launch_args,
-      ],
-      adblock_allowlist_hosts: [
-        ...DEFAULT_BROWSER_RUNTIME.puppeteer.adblock_allowlist_hosts,
-      ],
-      proxy_source_order: [
-        ...DEFAULT_BROWSER_RUNTIME.puppeteer.proxy_source_order,
-      ],
-      proxy_custom_list: [
-        ...DEFAULT_BROWSER_RUNTIME.puppeteer.proxy_custom_list,
-      ],
-      media_retry_backoff_ms: [
-        ...DEFAULT_BROWSER_RUNTIME.puppeteer.media_retry_backoff_ms,
-      ],
-    },
     playwright: {
       ...DEFAULT_BROWSER_RUNTIME.playwright,
       extra_launch_args: [
@@ -511,15 +367,6 @@ function cloneBrowserRuntime() {
       ],
       adblock_allowlist_hosts: [
         ...DEFAULT_BROWSER_RUNTIME.playwright.adblock_allowlist_hosts,
-      ],
-      proxy_source_order: [
-        ...DEFAULT_BROWSER_RUNTIME.playwright.proxy_source_order,
-      ],
-      proxy_custom_list: [
-        ...DEFAULT_BROWSER_RUNTIME.playwright.proxy_custom_list,
-      ],
-      media_retry_backoff_ms: [
-        ...DEFAULT_BROWSER_RUNTIME.playwright.media_retry_backoff_ms,
       ],
     },
   };
@@ -543,66 +390,6 @@ function normalizeStringList(value, fallback = []) {
     deduped.push(item);
   });
   return deduped;
-}
-
-function normalizeIntegerList(value, fallback = []) {
-  let rows = [];
-  if (Array.isArray(value)) rows = value;
-  else if (typeof value === "string")
-    rows = value.split(",").map((item) => item.trim());
-  else rows = fallback;
-
-  return rows
-    .map((item) => Number.parseInt(String(item ?? "").trim(), 10))
-    .filter((item) => Number.isFinite(item) && item >= 0);
-}
-
-function applyValidatedStickyProxyStrategy(runtime) {
-  return {
-    ...runtime,
-    proxy_rotation_mode: "sticky",
-    proxy_selection_strategy: "ordered",
-    proxy_fallback_strategy: "direct",
-  };
-}
-
-function isProxyCandidateEntry(value) {
-  const text = String(value || "").trim();
-  if (!text) return false;
-  try {
-    const parsed = new URL(text.includes("://") ? text : `http://${text}`);
-    return /^(\d{1,3}\.){3}\d{1,3}$/.test(parsed.hostname) && !!parsed.port;
-  } catch {
-    return /^(\d{1,3}\.){3}\d{1,3}:\d{2,5}$/.test(text);
-  }
-}
-
-function splitProxyCandidateInput(value) {
-  const rows = normalizeStringList(value);
-  if (!rows.length) {
-    return {
-      proxy_custom_list: [],
-      proxy_source_order: [...DEFAULT_PROXY_SOURCE_ORDER],
-      proxy_source_mode: "hybrid",
-    };
-  }
-  const proxyCustomList = [];
-  const proxySourceOrder = [];
-  rows.forEach((row) => {
-    if (isProxyCandidateEntry(row)) proxyCustomList.push(row);
-    else proxySourceOrder.push(row);
-  });
-  return {
-    proxy_custom_list: proxyCustomList,
-    proxy_source_order: proxySourceOrder.length
-      ? proxySourceOrder
-      : [...DEFAULT_PROXY_SOURCE_ORDER],
-    proxy_source_mode: proxySourceOrder.length && proxyCustomList.length
-      ? "hybrid"
-      : proxySourceOrder.length
-        ? "remote"
-        : "custom",
-  };
 }
 
 function normalizeTuning(tuning) {
@@ -675,30 +462,22 @@ function normalizeBrowserRuntime(value) {
   BROWSER_OPTIONS.forEach(({ id }) => {
     const current = value[id];
     if (!current || typeof current !== "object") return;
-    base[id] = applyValidatedStickyProxyStrategy({
+    const picked = {};
+    BROWSER_RUNTIME_KEYS.forEach((key) => {
+      if (current[key] !== undefined) picked[key] = current[key];
+    });
+    base[id] = {
       ...base[id],
-      ...current,
+      ...picked,
       extra_launch_args: normalizeStringList(
-        current.extra_launch_args,
+        picked.extra_launch_args,
         base[id].extra_launch_args,
       ),
       adblock_allowlist_hosts: normalizeStringList(
-        current.adblock_allowlist_hosts,
+        picked.adblock_allowlist_hosts,
         base[id].adblock_allowlist_hosts,
       ),
-      proxy_source_order: normalizeStringList(
-        current.proxy_source_order,
-        base[id].proxy_source_order,
-      ),
-      proxy_custom_list: normalizeStringList(
-        current.proxy_custom_list,
-        base[id].proxy_custom_list,
-      ),
-      media_retry_backoff_ms: normalizeIntegerList(
-        current.media_retry_backoff_ms,
-        base[id].media_retry_backoff_ms,
-      ),
-    });
+    };
   });
 
   return base;
@@ -1694,12 +1473,12 @@ export function SettingsPage() {
   const [thinkingEnabled, setThinkingEnabled] = useState(false);
   const [thinkingBudgetTokens, setThinkingBudgetTokens] = useState("8000");
   const [maxParallelHostingPages, setMaxParallelHostingPages] = useState("5");
-  const [browserEngine, setBrowserEngine] = useState("puppeteer");
-  const [browserSettingsTab, setBrowserSettingsTab] = useState("puppeteer");
+  const [browserEngine, setBrowserEngine] = useState("playwright");
+  const [browserSettingsTab, setBrowserSettingsTab] = useState("playwright");
   const [browserRuntime, setBrowserRuntime] = useState(cloneBrowserRuntime());
   const [disabledToolsByBrowserProfile, setDisabledToolsByBrowserProfile] =
     useState(normalizeDisabledToolsByBrowserProfile({}));
-  const [activeMcpBrowserTab, setActiveMcpBrowserTab] = useState("puppeteer");
+  const [activeMcpBrowserTab, setActiveMcpBrowserTab] = useState("playwright");
   const [activeProfileTab, setActiveProfileTab] = useState("classification");
   const [activeModelWorkspaceView, setActiveModelWorkspaceView] =
     useState("assignments");
@@ -1729,33 +1508,14 @@ export function SettingsPage() {
     disabledToolsByBrowserProfile[activeMcpBrowserTab]?.[activeProfileTab] ||
     [];
   const browserRuntimeSyncStatus = config?.browser_runtime_sync_status || null;
-  const proxySourceReference = BUILTIN_PROXY_SOURCE_OPTIONS.map(
-    (item) => `${item.value}: ${item.label}`,
-  ).join(" | ");
-  const activePolicyPreview = useMemo(() => {
-    const mode = String(activeBrowserRuntime.streaming_safe_mode || "adaptive");
-    if (mode === "always") return "Streaming-safe";
-    if (mode === "never") return "Standard";
-    return ["hosting", "embedded"].includes(activeProfileTab)
-      ? "Streaming-safe"
-      : "Standard";
-  }, [activeBrowserRuntime.streaming_safe_mode, activeProfileTab]);
   const safeStreamingDifferences = useMemo(() => {
     const diffs = [];
     if (activeBrowserRuntime.ubol_enabled)
       diffs.push("uBOL active on standard pages");
-    if (
-      browserSettingsTab === "puppeteer" &&
-      activeBrowserRuntime.stream_cors_patch_enabled
-    )
+    if (activeBrowserRuntime.stream_cors_patch_enabled)
       diffs.push("stream CORS patch enabled");
     if (activeBrowserRuntime.media_cors_patch_enabled)
       diffs.push("media CORS diagnostics patch enabled");
-    if (
-      activeBrowserRuntime.proxy_enabled &&
-      activeBrowserRuntime.media_proxy_strategy === "proxy_first"
-    )
-      diffs.push("proxy-first media strategy");
     return diffs;
   }, [activeBrowserRuntime, browserSettingsTab]);
   const filteredMcpTools = useMemo(() => {
@@ -2108,8 +1868,8 @@ export function SettingsPage() {
     setThinkingEnabled(Boolean(payload.thinking_enabled ?? false));
     setThinkingBudgetTokens(String(payload.thinking_budget_tokens ?? 8000));
     setMaxParallelHostingPages(String(payload.max_parallel_hosting_pages ?? 5));
-    setBrowserEngine(payload.browser_engine || "puppeteer");
-    setBrowserSettingsTab(payload.browser_engine || "puppeteer");
+    setBrowserEngine(payload.browser_engine || "playwright");
+    setBrowserSettingsTab(payload.browser_engine || "playwright");
     setBrowserRuntime(normalizeBrowserRuntime(payload.browser_runtime));
     setDisabledToolsByBrowserProfile(
       normalizeDisabledToolsByBrowserProfile(
@@ -2118,7 +1878,7 @@ export function SettingsPage() {
       ),
     );
     setModelConfigWarnings(payload.model_config_warnings || []);
-    setActiveMcpBrowserTab(payload.browser_engine || "puppeteer");
+    setActiveMcpBrowserTab(payload.browser_engine || "playwright");
     setSavedTab("");
 
     const providersToLoad = ["google"];
@@ -2241,30 +2001,15 @@ export function SettingsPage() {
   function updateBrowserRuntime(browserId, key, value) {
     setBrowserRuntime((current) => ({
       ...current,
-      [browserId]: applyValidatedStickyProxyStrategy({
+      [browserId]: {
         ...current[browserId],
         [key]: value,
-      }),
+      },
     }));
   }
 
   function updateBrowserRuntimeList(browserId, key, value) {
     updateBrowserRuntime(browserId, key, normalizeStringList(value));
-  }
-
-  function updateBrowserRuntimeIntegerList(browserId, key, value) {
-    updateBrowserRuntime(browserId, key, normalizeIntegerList(value));
-  }
-
-  function updateProxyCandidateInput(browserId, value) {
-    const parsed = splitProxyCandidateInput(value);
-    setBrowserRuntime((current) => ({
-      ...current,
-      [browserId]: applyValidatedStickyProxyStrategy({
-        ...current[browserId],
-        ...parsed,
-      }),
-    }));
   }
 
   function activeBrowserTools() {
@@ -2433,7 +2178,7 @@ export function SettingsPage() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <CompactStat label="Unsaved tabs" value={hasDirty ? `${Object.values(dirtyTabs).filter(Boolean).length}` : "0"} tone={hasDirty ? "primary" : "default"} />
-            <CompactStat label="Active engine" value={browserEngine === "playwright" ? "Playwright" : "Puppeteer"} />
+            <CompactStat label="Active engine" value="Playwright" />
             <CompactStat label="Catalog" value={activeCatalog?.available ? "Live" : activeCatalog ? "Offline fallback" : "Loading"} />
             <CompactStat label="MCP tools" value={`${enabledToolCount}/${(MCP_TOOLS_BY_PROFILE[activeProfileTab] || []).length} enabled`} />
           </div>
@@ -3159,95 +2904,57 @@ export function SettingsPage() {
                 }))}
               />
 
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <CompactStat label="Editing runtime" value={browserSettingsTab === "playwright" ? "Playwright" : "Puppeteer"} tone="primary" />
-                <CompactStat label="Proxy mode" value={activeBrowserRuntime.proxy_enabled ? "Validated sticky" : "Direct only"} />
-                <CompactStat label="Fingerprint" value={activeBrowserRuntime.fingerprint_rotation_mode || "origin"} />
-                <CompactStat label="Media retries" value={`${activeBrowserRuntime.media_retry_count || 0}`} />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <CompactStat label="Editing runtime" value="Playwright" tone="primary" />
+                <CompactStat label="Streaming-safe mode" value={String(activeBrowserRuntime.streaming_safe_mode || "adaptive")} />
               </div>
 
               <FieldGroup
                 title="Runtime Status"
-                description="Fingerprint policy and sync state for the active backend."
+                description="Bridge sync state for the active backend."
                 accent="var(--sky)"
               >
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div
-                    className="rounded-[12px] border p-4 text-[12px]"
-                    style={{
-                      borderColor: "var(--line)",
-                      background: "rgba(255,255,255,0.02)",
-                    }}
-                  >
-                    <div className="mb-2 flex items-center gap-2">
-                      <span
-                        className="h-1.5 w-1.5 rounded-full"
-                        style={{
-                          background: browserRuntimeSyncStatus?.stale
-                            ? "var(--signal)"
-                            : "var(--mint)",
-                        }}
-                      />
-                      <span
-                        className="font-semibold"
-                        style={{ color: "var(--ink)" }}
-                      >
-                        Sync status
-                      </span>
-                    </div>
-                    <p style={{ color: "var(--mute)" }}>
-                      {browserRuntimeSyncStatus?.stale
-                        ? "Bridge looks stale — regenerate before next session."
-                        : "Bridge aligned with API settings."}
-                    </p>
-                    <div
-                      className="mt-3 space-y-0.5 font-mono text-[10.5px]"
-                      style={{ color: "var(--mute-2)" }}
+                <div
+                  className="rounded-[12px] border p-4 text-[12px]"
+                  style={{
+                    borderColor: "var(--line)",
+                    background: "rgba(255,255,255,0.02)",
+                  }}
+                >
+                  <div className="mb-2 flex items-center gap-2">
+                    <span
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{
+                        background: browserRuntimeSyncStatus?.stale
+                          ? "var(--signal)"
+                          : "var(--mint)",
+                      }}
+                    />
+                    <span
+                      className="font-semibold"
+                      style={{ color: "var(--ink)" }}
                     >
-                      <div>
-                        source:{" "}
-                        {browserRuntimeSyncStatus?.active_runtime_source ||
-                          "unknown"}
-                      </div>
-                      <div>
-                        synced:{" "}
-                        {browserRuntimeSyncStatus?.synced_at || "not recorded"}
-                      </div>
-                    </div>
+                      Sync status
+                    </span>
                   </div>
+                  <p style={{ color: "var(--mute)" }}>
+                    {browserRuntimeSyncStatus?.stale
+                      ? "Bridge looks stale — regenerate before next session."
+                      : "Bridge aligned with API settings."}
+                  </p>
                   <div
-                    className="rounded-[12px] border p-4 text-[12px]"
-                    style={{
-                      borderColor: "var(--line)",
-                      background: "rgba(255,255,255,0.02)",
-                    }}
+                    className="mt-3 space-y-0.5 font-mono text-[10.5px]"
+                    style={{ color: "var(--mute-2)" }}
                   >
-                    <div className="mb-2 flex items-center gap-2">
-                      <span
-                        className="h-1.5 w-1.5 rounded-full"
-                        style={{ background: "var(--sky)" }}
-                      />
-                      <span
-                        className="font-semibold"
-                        style={{ color: "var(--ink)" }}
-                      >
-                        Policy preview
-                      </span>
+                    <div>
+                      source:{" "}
+                      {browserRuntimeSyncStatus?.active_runtime_source ||
+                        "unknown"}
                     </div>
-                    <p style={{ color: "var(--mute)" }}>
-                      Active profile mode:{" "}
-                      <span
-                        className="font-semibold"
-                        style={{ color: "var(--ink)" }}
-                      >
-                        {activePolicyPreview}
-                      </span>
-                    </p>
-                    <p className="mt-2" style={{ color: "var(--mute-2)" }}>
-                      {browserSettingsTab === "playwright"
-                        ? "Playwright fingerprints are Chrome-aligned — spoofing Firefox on Chromium is more detectable."
-                        : "Puppeteer fingerprints align to the actual launched Chrome version first."}
-                    </p>
+                    <div>
+                      synced:{" "}
+                      {browserRuntimeSyncStatus?.synced_at || "not recorded"}
+                    </div>
                   </div>
                 </div>
                 {safeStreamingDifferences.length ? (
@@ -3270,311 +2977,6 @@ export function SettingsPage() {
                     {safeStreamingDifferences.join(", ")}.
                   </div>
                 ) : null}
-              </FieldGroup>
-
-              <FieldGroup
-                title="Fingerprint"
-                description="Control how often the browser identity rotates and how it falls back."
-                accent="var(--violet)"
-              >
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <BrowserRuntimeInput
-                    label="Launch timeout (ms)"
-                    value={String(activeBrowserRuntime.launch_timeout_ms ?? "")}
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "launch_timeout_ms",
-                        Number.parseInt(value || "0", 10) || 0,
-                      )
-                    }
-                    type="number"
-                    min="1000"
-                    step="1000"
-                    description="How long the browser gets to launch before the session is abandoned."
-                  />
-                  <BrowserRuntimeSelect
-                    label="Rotation mode"
-                    value={
-                      activeBrowserRuntime.fingerprint_rotation_mode || "origin"
-                    }
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "fingerprint_rotation_mode",
-                        value,
-                      )
-                    }
-                    options={[
-                      {
-                        value: "origin",
-                        label: "Per origin",
-                        description: "Reuse until the site origin changes.",
-                      },
-                      {
-                        value: "page",
-                        label: "Per page",
-                        description: "Rotate before every page acquisition.",
-                      },
-                      {
-                        value: "interval",
-                        label: "Timed",
-                        description:
-                          "Rotate after configured time or max uses.",
-                      },
-                      {
-                        value: "never",
-                        label: "Disabled",
-                        description:
-                          "Keep the same fingerprint for the session.",
-                      },
-                    ]}
-                    placeholder="Select mode"
-                    description="When the runtime refreshes the fingerprint and user-agent bundle."
-                  />
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                  <BrowserRuntimeSelect
-                    label="Fallback strategy"
-                    value={
-                      activeBrowserRuntime.fingerprint_fallback_strategy ||
-                      "profile"
-                    }
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "fingerprint_fallback_strategy",
-                        value,
-                      )
-                    }
-                    options={[
-                      {
-                        value: "profile",
-                        label: "Coherent profile",
-                        description:
-                          "Fall back to a real Chrome header + JS profile.",
-                      },
-                      {
-                        value: "none",
-                        label: "Skip",
-                        description: "Do nothing extra if generator fails.",
-                      },
-                    ]}
-                    placeholder="Select fallback"
-                    description="What to do when the full injector path fails."
-                  />
-                  <BrowserRuntimeInput
-                    label="Rotation interval (ms)"
-                    value={String(
-                      activeBrowserRuntime.fingerprint_rotation_interval_ms ??
-                        "",
-                    )}
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "fingerprint_rotation_interval_ms",
-                        Number.parseInt(value || "0", 10) || 0,
-                      )
-                    }
-                    type="number"
-                    min="1000"
-                    step="1000"
-                    description="Upper bound on fingerprint lifetime in timed mode."
-                  />
-                  <BrowserRuntimeInput
-                    label="Max uses"
-                    value={String(
-                      activeBrowserRuntime.fingerprint_rotation_max_uses ?? "",
-                    )}
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "fingerprint_rotation_max_uses",
-                        Number.parseInt(value || "0", 10) || 0,
-                      )
-                    }
-                    type="number"
-                    min="1"
-                    step="1"
-                    description="Rotate once reused this many times."
-                  />
-                  <BrowserRuntimeInput
-                    label="Recent pool size"
-                    value={String(
-                      activeBrowserRuntime.fingerprint_recent_pool_size ?? "",
-                    )}
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "fingerprint_recent_pool_size",
-                        Number.parseInt(value || "0", 10) || 0,
-                      )
-                    }
-                    type="number"
-                    min="1"
-                    step="1"
-                    description="Avoid reusing fingerprints still in recent history."
-                  />
-                </div>
-              </FieldGroup>
-
-              <FieldGroup
-                title="Proxy Rotation"
-                description="One runtime strategy: validate candidates, keep the first healthy proxy per engine/profile, rotate only after failure, and fall back direct."
-                accent="var(--signal)"
-              >
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
-                  <ToggleRow
-                    label="Enable proxy pool"
-                    checked={!!activeBrowserRuntime.proxy_enabled}
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "proxy_enabled",
-                        value,
-                      )
-                    }
-                    description="When enabled, every isolated session validates candidates first. Bad proxies never reach browser tools."
-                  />
-                  <div
-                    className="rounded-[12px] border px-4 py-3 text-[11.5px]"
-                    style={{
-                      borderColor: "var(--line-hi)",
-                      background: "rgba(255,255,255,0.04)",
-                      color: "var(--mute)",
-                    }}
-                  >
-                    <div className="font-semibold" style={{ color: "var(--ink)" }}>
-                      Strategy: validated sticky
-                    </div>
-                    <div className="mt-1">
-                      Ordered candidates, sticky success, rotate on failure,
-                      direct fallback.
-                    </div>
-                  </div>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  <BrowserRuntimeInput
-                    label="Validation URL"
-                    value={String(activeBrowserRuntime.proxy_test_url ?? "")}
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "proxy_test_url",
-                        value,
-                      )
-                    }
-                    placeholder="https://api.ipify.org?format=json"
-                    description="Lightweight URL used to prove a proxy works before launch."
-                  />
-                  <BrowserRuntimeInput
-                    label="Validation timeout (ms)"
-                    value={String(
-                      activeBrowserRuntime.proxy_validation_timeout_ms ?? "",
-                    )}
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "proxy_validation_timeout_ms",
-                        Number.parseInt(value || "0", 10) || 0,
-                      )
-                    }
-                    type="number"
-                    min="1000"
-                    step="1000"
-                    description="Time before a candidate is marked bad."
-                  />
-                  <BrowserRuntimeInput
-                    label="Max candidates"
-                    value={String(
-                      activeBrowserRuntime.proxy_max_candidates ?? "",
-                    )}
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "proxy_max_candidates",
-                        Number.parseInt(value || "0", 10) || 0,
-                      )
-                    }
-                    type="number"
-                    min="1"
-                    step="1"
-                    description="Upper bound on the candidate pool."
-                  />
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <BrowserRuntimeInput
-                    label="Source fetch timeout (ms)"
-                    value={String(
-                      activeBrowserRuntime.proxy_fetch_timeout_ms ?? "",
-                    )}
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "proxy_fetch_timeout_ms",
-                        Number.parseInt(value || "0", 10) || 0,
-                      )
-                    }
-                    type="number"
-                    min="1000"
-                    step="1000"
-                    description="Budget for downloading remote source lists."
-                  />
-                  <BrowserRuntimeInput
-                    label="Source cache TTL (ms)"
-                    value={String(
-                      activeBrowserRuntime.proxy_cache_ttl_ms ?? "",
-                    )}
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "proxy_cache_ttl_ms",
-                        Number.parseInt(value || "0", 10) || 0,
-                      )
-                    }
-                    type="number"
-                    min="1000"
-                    step="1000"
-                    description="How long remote downloads stay cached."
-                  />
-                </div>
-                <BrowserRuntimeTextarea
-                  label="Proxy list / source input"
-                  value={[
-                    ...(activeBrowserRuntime.proxy_custom_list || []),
-                    ...(
-                      activeBrowserRuntime.proxy_source_order || []
-                    ).filter(
-                      (entry) => !DEFAULT_PROXY_SOURCE_ORDER.includes(entry),
-                    ),
-                  ].join(", ")}
-                  onChange={(value) =>
-                    updateProxyCandidateInput(browserSettingsTab, value)
-                  }
-                  placeholder="http://user:pass@1.2.3.4:8080, socks5://5.6.7.8:1080, https://example.com/proxies.txt"
-                  description="Paste proxy endpoints and optional source-list URLs/IDs. Empty source input uses the curated built-ins."
-                />
-                <div className="space-y-1.5">
-                    <div
-                      className="text-[11.5px] font-semibold"
-                      style={{ color: "var(--ink-dim)" }}
-                    >
-                      Built-in sources
-                    </div>
-                    <div
-                      className="rounded-[10px] border px-3.5 py-2.5 font-mono text-[11px]"
-                      style={{
-                        borderColor: "var(--line-hi)",
-                        background: "rgba(255,255,255,0.04)",
-                        color: "var(--mute)",
-                      }}
-                    >
-                      {proxySourceReference}
-                    </div>
-                    <p className="text-[11px]" style={{ color: "var(--mute)" }}>
-                      Curated built-ins are used when no source URL/ID is pasted. They are ordered and validated before use.
-                    </p>
-                </div>
               </FieldGroup>
 
               <FieldGroup
@@ -3618,42 +3020,6 @@ export function SettingsPage() {
                     placeholder="Select policy mode"
                     description="When to disable aggressive blockers and relax first-attempt media policy."
                   />
-                  <BrowserRuntimeSelect
-                    label="Media proxy strategy"
-                    value={
-                      activeBrowserRuntime.media_proxy_strategy ||
-                      "direct_first"
-                    }
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "media_proxy_strategy",
-                        value,
-                      )
-                    }
-                    options={[
-                      {
-                        value: "direct_first",
-                        label: "Direct first",
-                        description:
-                          "Try direct playback first, proxy retries on failure.",
-                      },
-                      {
-                        value: "proxy_first",
-                        label: "Proxy first",
-                        description:
-                          "Start media sessions on a validated proxy immediately.",
-                      },
-                      {
-                        value: "direct_only",
-                        label: "Direct only",
-                        description:
-                          "Never promote to proxy retry automatically.",
-                      },
-                    ]}
-                    placeholder="Select strategy"
-                    description="How sessions treat proxies on stream-like pages."
-                  />
                   <ToggleRow
                     label="Asset diagnostics"
                     checked={!!activeBrowserRuntime.asset_diagnostics_enabled}
@@ -3674,21 +3040,38 @@ export function SettingsPage() {
                 description="Keep the browser looking normal, load the real uBOL extension for standard pages, and leave stream-like targets untouched."
                 accent="var(--rose)"
               >
-                <BrowserRuntimeTextarea
-                  label="Extra launch args"
-                  value={(activeBrowserRuntime.extra_launch_args || []).join(
-                    ", ",
-                  )}
-                  onChange={(value) =>
-                    updateBrowserRuntimeList(
-                      browserSettingsTab,
-                      "extra_launch_args",
-                      value,
-                    )
-                  }
-                  placeholder="--disable-web-security, --lang=en-US"
-                  description="Extra Chromium flags appended at launch. Keep minimal so the browser looks normal."
-                />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <BrowserRuntimeInput
+                    label="Launch timeout (ms)"
+                    value={String(activeBrowserRuntime.launch_timeout_ms ?? "")}
+                    onChange={(value) =>
+                      updateBrowserRuntime(
+                        browserSettingsTab,
+                        "launch_timeout_ms",
+                        Number.parseInt(value || "0", 10) || 0,
+                      )
+                    }
+                    type="number"
+                    min="1000"
+                    step="1000"
+                    description="How long the browser gets to launch before the session is abandoned."
+                  />
+                  <BrowserRuntimeTextarea
+                    label="Extra launch args"
+                    value={(activeBrowserRuntime.extra_launch_args || []).join(
+                      ", ",
+                    )}
+                    onChange={(value) =>
+                      updateBrowserRuntimeList(
+                        browserSettingsTab,
+                        "extra_launch_args",
+                        value,
+                      )
+                    }
+                    placeholder="--disable-web-security, --lang=en-US"
+                    description="Extra Chromium flags appended at launch. Keep minimal so the browser looks normal."
+                  />
+                </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <ToggleRow
                     label="uBOL extension"
@@ -3745,39 +3128,34 @@ export function SettingsPage() {
                     }
                     description="Loosen player iframe sandbox restrictions that block playback."
                   />
-                  {browserSettingsTab === "puppeteer" ? (
-                    <ToggleRow
-                      label="Stream CORS patch"
-                      checked={
-                        !!browserRuntime.puppeteer?.stream_cors_patch_enabled
-                      }
-                      onChange={(value) =>
-                        updateBrowserRuntime(
-                          "puppeteer",
-                          "stream_cors_patch_enabled",
-                          value,
-                        )
-                      }
-                      description="Last-resort compatibility patch. Keep off unless diagnostics show a real stream-header issue."
-                    />
-                  ) : null}
-                  {browserSettingsTab === "puppeteer" ? (
-                    <ToggleRow
-                      label="Include stream credentials"
-                      checked={
-                        !!browserRuntime.puppeteer
-                          ?.stream_cors_include_credentials
-                      }
-                      onChange={(value) =>
-                        updateBrowserRuntime(
-                          "puppeteer",
-                          "stream_cors_include_credentials",
-                          value,
-                        )
-                      }
-                      description="Include credentials when the stream CORS patch is active."
-                    />
-                  ) : null}
+                  <ToggleRow
+                    label="Stream CORS patch"
+                    checked={
+                      !!browserRuntime.playwright?.stream_cors_patch_enabled
+                    }
+                    onChange={(value) =>
+                      updateBrowserRuntime(
+                        "playwright",
+                        "stream_cors_patch_enabled",
+                        value,
+                      )
+                    }
+                    description="Last-resort compatibility patch. Keep off unless diagnostics show a real stream-header issue."
+                  />
+                  <ToggleRow
+                    label="Include stream credentials"
+                    checked={
+                      !!browserRuntime.playwright?.stream_cors_include_credentials
+                    }
+                    onChange={(value) =>
+                      updateBrowserRuntime(
+                        "playwright",
+                        "stream_cors_include_credentials",
+                        value,
+                      )
+                    }
+                    description="Include credentials when the stream CORS patch is active."
+                  />
                 </div>
               </FieldGroup>
 
@@ -3825,7 +3203,6 @@ export function SettingsPage() {
                   ))}
                 </div>
                 <p className="text-[11.5px]" style={{ color: "var(--mute-2)" }}>
-                  Built-in retry backoff: 1000 ms → 2000 ms → 4000 ms → 8000 ms.
                   Wait strategy degrades from network idle → DOM loaded → full
                   load.
                 </p>
@@ -3882,38 +3259,7 @@ export function SettingsPage() {
                     step="1000"
                     description="How long the runtime listens for HLS, DASH, and direct media requests."
                   />
-                  <BrowserRuntimeInput
-                    label="Media retry count"
-                    value={String(activeBrowserRuntime.media_retry_count ?? "")}
-                    onChange={(value) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "media_retry_count",
-                        Number.parseInt(value || "0", 10) || 0,
-                      )
-                    }
-                    type="number"
-                    min="0"
-                    max="10"
-                    step="1"
-                    description="How many times play-media retries before surfacing the final failure."
-                  />
                 </div>
-                <BrowserRuntimeInput
-                  label="Media retry backoff (ms)"
-                  value={(
-                    activeBrowserRuntime.media_retry_backoff_ms || []
-                  ).join(", ")}
-                  onChange={(value) =>
-                    updateBrowserRuntimeIntegerList(
-                      browserSettingsTab,
-                      "media_retry_backoff_ms",
-                      value,
-                    )
-                  }
-                  placeholder="1000, 2000, 4000"
-                  description="Comma-separated per-attempt backoff delays between media playback retries."
-                />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <ToggleRow
                     label="Verify media playback"
@@ -3993,7 +3339,7 @@ export function SettingsPage() {
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <CompactStat label="Enabled" value={`${enabledToolCount}/${(MCP_TOOLS_BY_PROFILE[activeProfileTab] || []).length}`} tone="primary" />
                 <CompactStat label="Disabled" value={`${activeMcpDisabledTools.length}`} />
-                <CompactStat label="Backend" value={activeMcpBrowserTab === "playwright" ? "Playwright" : "Puppeteer"} />
+                <CompactStat label="Backend" value="Playwright" />
                 <CompactStat label="Profile" value={PROFILE_LABELS[activeProfileTab]} />
               </div>
 

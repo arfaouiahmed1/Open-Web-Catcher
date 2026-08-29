@@ -10,6 +10,7 @@ import { statusLabel, statusTone } from "@/lib/run-status";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatDate, formatTime, formatTimestamp, parseTimestamp } from "@/lib/datetime";
 import {
   Tooltip,
   TooltipContent,
@@ -611,7 +612,7 @@ export function AgentActivityBoard({
                     <div className="text-right text-[10px]" style={{ color: "var(--mute-3)" }}>
                       <div>last update</div>
                       <div className="mt-1 font-mono">
-                        {new Date(card.latestTimestamp).toLocaleTimeString()}
+                        {formatTime(card.latestTimestamp)}
                       </div>
                     </div>
                   ) : null}

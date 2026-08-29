@@ -6,6 +6,7 @@ import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 import "reactflow/dist/style.css";
 
 import { Card } from "@/components/ui/card";
+import { formatDate, formatTime, formatTimestamp, parseTimestamp } from "@/lib/datetime";
 
 const ROOT_X_OFFSET = 60;
 const ROOT_Y_OFFSET = 40;
@@ -16,8 +17,8 @@ const NODE_SPACING_Y = 220;
 
 function eventTime(event) {
   if (!event?.timestamp) return "";
-  const parsed = new Date(event.timestamp);
-  if (Number.isNaN(parsed.getTime())) return "";
+  const parsed = parseTimestamp(event.timestamp);
+  if (!parsed) return "";
   return parsed.toLocaleTimeString();
 }
 

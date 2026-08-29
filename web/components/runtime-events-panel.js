@@ -21,6 +21,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select } from "@/components/ui/select";
+import { formatDate, formatTime, formatTimestamp, parseTimestamp } from "@/lib/datetime";
 
 function statusTone(status, kind) {
   const s = String(status || "").trim().toLowerCase();
@@ -46,8 +47,8 @@ function actorTone(actor) {
 function fmtTimestamp(value) {
   if (!value) return "--";
   try {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return String(value);
+    const date = parseTimestamp(value);
+    if (!date) return String(value);
     return date.toLocaleString();
   } catch {
     return String(value);
@@ -56,7 +57,8 @@ function fmtTimestamp(value) {
 
 function fmtRelative(value) {
   if (!value) return "";
-  const date = new Date(value);
+  const date = parseTimestamp(value);
+  if (!date) return "";
   const ms = Date.now() - date.getTime();
   if (!Number.isFinite(ms) || ms < 0) return "";
   if (ms < 1000) return `${ms}ms ago`;

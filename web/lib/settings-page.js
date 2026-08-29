@@ -25,41 +25,39 @@ export const SERVER_TAB_FIELDS = {
   ],
 };
 
-const DEFAULT_PROXY_SOURCE_ORDER = [
-  "openproxylist-https",
-  "proxifly-http",
-  "monosans-http",
-  "speedx-http",
-  "openproxylist-socks5",
-  "proxifly-socks5",
-  "monosans-socks5",
-  "speedx-socks5",
-  "proxifly-socks4",
+// Allowlist of operator-editable browser runtime keys. Fingerprint, proxy,
+// and media-retry persona knobs are intentionally excluded so they are never
+// rendered or persisted from the UI; they remain server/environment managed.
+export const BROWSER_RUNTIME_KEYS = [
+  "launch_timeout_ms",
+  "extra_launch_args",
+  "adblock_allowlist_hosts",
+  "streaming_safe_mode",
+  "asset_diagnostics_enabled",
+  "popup_blocking_enabled",
+  "ubol_enabled",
+  "stream_cors_patch_enabled",
+  "stream_cors_include_credentials",
+  "iframe_sandbox_patch_enabled",
+  "iframe_auto_recovery_enabled",
+  "iframe_recovery_timeout_ms",
+  "media_capture_timeout_ms",
+  "media_cors_patch_enabled",
+  "media_playback_verification_enabled",
 ];
 
 function normalizeBrowserRuntimeForSave(value) {
   const runtime = value && typeof value === "object" ? value : {};
   return Object.fromEntries(
-    ["puppeteer", "playwright"].map((browser) => {
+    ["playwright"].map((browser) => {
       const current = runtime[browser] && typeof runtime[browser] === "object"
         ? runtime[browser]
         : {};
-      return [
-        browser,
-        {
-          ...current,
-          proxy_source_mode: current.proxy_source_mode || "hybrid",
-          proxy_source_order: Array.isArray(current.proxy_source_order)
-            ? current.proxy_source_order
-            : [...DEFAULT_PROXY_SOURCE_ORDER],
-          proxy_custom_list: Array.isArray(current.proxy_custom_list)
-            ? current.proxy_custom_list
-            : [],
-          proxy_rotation_mode: "sticky",
-          proxy_selection_strategy: "ordered",
-          proxy_fallback_strategy: "direct",
-        },
-      ];
+      const next = {};
+      BROWSER_RUNTIME_KEYS.forEach((key) => {
+        if (current[key] !== undefined) next[key] = current[key];
+      });
+      return [browser, next];
     }),
   );
 }
@@ -105,7 +103,7 @@ export function buildServerConfigDraft(state) {
     thinking_enabled: Boolean(state.thinkingEnabled ?? false),
     thinking_budget_tokens: Number(state.thinkingBudgetTokens || 8000),
     max_parallel_hosting_pages: Number(state.maxParallelHostingPages || 5),
-    browser_engine: state.browserEngine || "puppeteer",
+    browser_engine: state.browserEngine || "playwright",
     disabled_tools_by_browser_profile: state.disabledToolsByBrowserProfile || {},
     browser_runtime: normalizeBrowserRuntimeForSave(state.browserRuntime),
   };
@@ -134,7 +132,7 @@ export function snapshotServerConfig(payload) {
     thinking_enabled: Boolean(payload?.thinking_enabled ?? false),
     thinking_budget_tokens: Number(payload?.thinking_budget_tokens ?? 8000),
     max_parallel_hosting_pages: Number(payload?.max_parallel_hosting_pages ?? 5),
-    browser_engine: payload?.browser_engine || "puppeteer",
+    browser_engine: payload?.browser_engine || "playwright",
     disabled_tools_by_browser_profile: payload?.disabled_tools_by_browser_profile || {},
     browser_runtime: normalizeBrowserRuntimeForSave(payload?.browser_runtime),
   });

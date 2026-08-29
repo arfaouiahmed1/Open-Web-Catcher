@@ -11,7 +11,7 @@ import {
   XCircle,
 } from "lucide-react";
 
-import { apiFetch, apiUrl } from "@/lib/api";
+import { apiFetch, apiUrl, eventSourceUrl } from "@/lib/api";
 import { buildRunDetailFilterOptions } from "@/lib/run-detail-filters";
 import { buildRunDetailTabState } from "@/lib/run-detail-layout";
 import {
@@ -46,6 +46,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { formatDate, formatTime, formatTimestamp, parseTimestamp } from "@/lib/datetime";
 
 const STAGE_TONE = {
   done: "success",
@@ -158,7 +159,7 @@ function FailureDetailsCard({ failure }) {
             ) : null}
             {event?.timestamp ? (
               <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-                {new Date(event.timestamp).toLocaleString()}
+                {formatTimestamp(event.timestamp)}
               </span>
             ) : null}
           </div>
@@ -185,7 +186,7 @@ function FailureDetailsCard({ failure }) {
                     </div>
                     <DialogTitle className="mt-2 text-sm font-medium">{errorPreview}</DialogTitle>
                     <DialogDescription className="font-mono text-[11px]">
-                      {event?.timestamp ? new Date(event.timestamp).toLocaleString() : ""}
+                      {event?.timestamp ? formatTimestamp(event.timestamp) : ""}
                     </DialogDescription>
                   </DialogHeader>
                 </div>
@@ -396,7 +397,7 @@ export function RunDetailLive({
     setStreamError("");
     expectedCloseRef.current = false;
 
-    const source = new EventSource(apiUrl(`/ui/runs/${runId}/stream`));
+    const source = new EventSource(eventSourceUrl(`/ui/runs/${runId}/stream`));
     source.onmessage = (payload) => {
       try {
         setStreamError("");
