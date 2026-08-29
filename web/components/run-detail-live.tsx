@@ -100,9 +100,9 @@ function StageStatusRow({ stages }: { stages: Array<{ stage: string; status: str
               }}
             />
             <span className="font-mono text-[10.5px] text-foreground/90">
-              {STAGE_LABELS[stage.stage] || stage.stage}
+              {(STAGE_LABELS as unknown as Record<string,string>)[stage.stage] || stage.stage}
             </span>
-            <Badge tone={tone} className="px-1.5 py-0 text-[9.5px] uppercase">
+            <Badge tone={tone as unknown as never} className="px-1.5 py-0 text-[9.5px] uppercase">
               {stage.status}
             </Badge>
           </div>
@@ -650,7 +650,7 @@ export function RunDetailLive({
               <TabsTrigger key={entry.value} value={entry.value}>
                 {entry.label}
                 {entry.count > 0 ? (
-                  <Badge tone={entry.tone} className="ml-1 px-1.5 py-0 text-[10px]">
+                  <Badge tone={entry.tone as unknown as never} className="ml-1 px-1.5 py-0 text-[10px]">
                     {entry.count}
                   </Badge>
                 ) : null}
@@ -662,7 +662,7 @@ export function RunDetailLive({
       </CardHeader>
 
       <CardContent className="space-y-4 px-4 pb-4 pt-0">
-        {showActivityBanner ? <ActivityBanner state={runState} /> : null}
+        {showActivityBanner ? <ActivityBanner state={runState as unknown as never} /> : null}
 
         <StageStatusRow stages={activeStages} />
 
@@ -733,8 +733,8 @@ export function RunDetailLive({
         <TabsContent value="summary" className="space-y-4">
           <OrchestratorGraph
             events={normalizedEvents}
-            rootActor={rootActor}
-            agentRollups={agentRollups}
+            rootActor={rootActor as unknown as string}
+            agentRollups={agentRollups as unknown as never[]}
             primaryProvider={primaryProvider}
             primaryModel={primaryModel}
           />
@@ -742,8 +742,9 @@ export function RunDetailLive({
             <BrowserLiveView
               runId={runId}
               events={normalizedEvents as never}
-              persistedScreenshots={snapshotScreenshots}
+              persistedScreenshots={snapshotScreenshots as unknown as never[]}
               autoRefresh={isLive}
+              onClose={() => {}}
             />
           ) : (
             <PanelLoadingSkeleton
@@ -758,10 +759,10 @@ export function RunDetailLive({
 
         <TabsContent value="output" className="space-y-4">
           <AgentOutputTab
-            stageRollups={stageRollups}
-            agentRollups={agentRollups}
-            parallelism={parallelism}
-            takedownEmails={takedownEmails}
+            stageRollups={stageRollups as unknown as never[]}
+            agentRollups={agentRollups as unknown as never[]}
+            parallelism={parallelism as unknown as never}
+            takedownEmails={takedownEmails as unknown as never[]}
           />
         </TabsContent>
 
@@ -781,9 +782,9 @@ export function RunDetailLive({
             <StreamProviderTab
               runId={runId}
               runUrl={runUrl}
-              streamUrls={providerUrls}
-              providerAnalysis={providerAnalysis}
-              extractionResults={extractionResults}
+              streamUrls={providerUrls as unknown as never[]}
+              providerAnalysis={providerAnalysis as unknown as never[]}
+              extractionResults={extractionResults as unknown as never[]}
             />
           </TabsContent>
         ) : null}

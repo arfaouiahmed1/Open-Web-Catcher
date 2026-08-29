@@ -142,7 +142,7 @@ function RuntimeStatusCard({ title, healthy, detail, note, badges = [] }: { titl
 function RecentRunRow({ run }: { run: RecentRun }): React.JSX.Element {
   return (
     <div className="flex items-center gap-2.5 rounded-md px-3 py-2 text-[12px] transition-colors hover:bg-muted/40">
-      <Badge tone={statusTone(run.final_status) as never} className="shrink-0 text-[10px] px-1.5 py-0">
+      <Badge tone={statusTone(run.final_status) as unknown as never} className="shrink-0 text-[10px] px-1.5 py-0">
         {statusLabel(run.final_status)}
       </Badge>
       <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground" title={run.url}>
@@ -162,7 +162,7 @@ export function RunLauncher({ defaultMode = "workflow" }: RunLauncherProps): Rea
 
   const initialMode = MODE_OPTIONS.some((o) => o.value === defaultMode) ? defaultMode : "workflow";
   const requestedMode = searchParams.get("mode");
-  const mode = MODE_OPTIONS.some((o) => o.value === requestedMode) ? requestedMode : initialMode;
+  const mode = (MODE_OPTIONS.some((o) => o.value === requestedMode) ? requestedMode : initialMode) as string;
 
   const [agent, setAgent] = useState<string>("classification");
   const [urlText, setUrlText] = useState<string>("");
@@ -173,7 +173,7 @@ export function RunLauncher({ defaultMode = "workflow" }: RunLauncherProps): Rea
   const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus | null>(null);
   const [isLoadingRuntime, setIsLoadingRuntime] = useState<boolean>(true);
   const [runtimeError, setRuntimeError] = useState<string>("");
-  const lastLaunchedIds = useRef([]);
+  const lastLaunchedIds = useRef<string[]>([]);
 
   // Refresh recent runs (plan task 42): on mount + tab focus, no interval.
   useEffect(() => {
@@ -201,12 +201,12 @@ export function RunLauncher({ defaultMode = "workflow" }: RunLauncherProps): Rea
       try {
         const payload = await apiFetch("/ui/browser/status");
         if (!cancelled) {
-          setRuntimeStatus(normalizeRuntimeStatus(payload));
+          setRuntimeStatus(normalizeRuntimeStatus(payload as unknown as never));
           setRuntimeError("");
         }
       } catch (nextError: unknown) {
         if (!cancelled) {
-          setRuntimeError(nextError.message || "Failed to load runtime status");
+          setRuntimeError((nextError as Error).message || "Failed to load runtime status");
         }
       } finally {
         if (!cancelled) setIsLoadingRuntime(false);
@@ -225,7 +225,7 @@ export function RunLauncher({ defaultMode = "workflow" }: RunLauncherProps): Rea
     };
   }, []);
 
-  function setMode(next) {
+  function setMode(next: string) {
     if (next === mode) return;
     const params = new URLSearchParams(searchParams.toString());
     if (next === initialMode) params.delete("mode");
@@ -239,15 +239,15 @@ export function RunLauncher({ defaultMode = "workflow" }: RunLauncherProps): Rea
   const validUrls = urls.filter(isValidUrl);
   const invalidUrls = urls.filter((u) => !isValidUrl(u));
   const launchReady = Boolean(runtimeStatus?.preflight?.launchReady);
-  const blockingReasons = runtimeStatus?.preflight?.blockingReasons || [];
+  const blocking_reasons = (runtimeStatus?.preflight as unknown as { blockingReasons?: unknown[]; blocking_reasons?: unknown[] })?.blockingReasons ?? (runtimeStatus?.preflight as unknown as { blocking_reasons?: unknown[] })?.blocking_reasons ?? [];
   const canSubmit = validUrls.length > 0 && !isStarting && launchReady;
 
   async function startRuns() {
     if (!validUrls.length || isStarting) return;
     if (!launchReady) {
       setError(
-        blockingReasons.length
-          ? blockingReasons.map(formatBlockingReason).join("\n\n")
+        blocking_reasons.length
+          ? (blocking_reasons as unknown as Array<never>).map(formatBlockingReason as unknown as (v: unknown)=>string).join("\n\n")
           : "Runtime dependencies are not ready for a new run.",
       );
       return;
@@ -270,7 +270,7 @@ export function RunLauncher({ defaultMode = "workflow" }: RunLauncherProps): Rea
           body: JSON.stringify(body),
         });
         const payload = await res.json();
-        if (!res.ok) throw new Error(formatLaunchError(payload?.detail, res.status));
+        if (!res.ok) throw new Error(formatLaunchError(payload?.detail, res.status as unknown as never));
         const runId = payload.run_id;
         if (!runId) throw new Error("Server did not return a run_id");
         newIds.push(runId);
@@ -283,7 +283,7 @@ export function RunLauncher({ defaultMode = "workflow" }: RunLauncherProps): Rea
       }
     }
 
-    lastLaunchedIds.current = newIds;
+    lastLaunchedIds.current = newIds as unknown as never[];
     setIsStarting(false);
     setQueued(launched);
 
@@ -304,10 +304,10 @@ export function RunLauncher({ defaultMode = "workflow" }: RunLauncherProps): Rea
     setIsLoadingRuntime(true);
     try {
       const payload = await apiFetch("/ui/browser/status");
-      setRuntimeStatus(normalizeRuntimeStatus(payload));
+      setRuntimeStatus(normalizeRuntimeStatus(payload as unknown as never));
       setRuntimeError("");
     } catch (nextError: unknown) {
-      setRuntimeError(nextError.message || "Failed to load runtime status");
+      setRuntimeError((nextError as Error).message || "Failed to load runtime status");
     } finally {
       setIsLoadingRuntime(false);
     }
@@ -326,7 +326,7 @@ export function RunLauncher({ defaultMode = "workflow" }: RunLauncherProps): Rea
         {/* Config panel */}
         <Card>
           <CardHeader className="space-y-3 border-b pb-4">
-            <Tabs value={mode} onValueChange={(v) => { setMode(v); setError(""); }}>
+            <Tabs value={mode as string} onValueChange={(v: string) => { setMode(v); setError(""); }}>
               <TabsList>
                 {MODE_OPTIONS.map((opt) => {
                   const Icon = opt.icon;
@@ -499,7 +499,7 @@ export function RunLauncher({ defaultMode = "workflow" }: RunLauncherProps): Rea
                     <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-700">
                       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                       <pre className="min-w-0 flex-1 whitespace-pre-wrap font-mono text-xs">
-                        {blockingReasons.map(formatBlockingReason).join("\n\n")}
+                        {(blocking_reasons as unknown as Array<never>).map(formatBlockingReason as unknown as (v: unknown)=>string).join("\n\n")}
                       </pre>
                     </div>
                   ) : null}

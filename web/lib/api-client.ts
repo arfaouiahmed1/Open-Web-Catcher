@@ -102,12 +102,14 @@ export function eventSourceUrl(path: string): string {
 export interface ApiFetchOptions extends RequestInit {
   /** Query parameters appended to `path`; null/undefined values are skipped. */
   query?: Record<string, string | number | boolean | null | undefined>;
+  /** Abort signal for request cancellation (T44 perf hygiene). */
+  signal?: AbortSignal;
 }
 
 /**
  * Untyped-path fetch used by the legacy JS surface and as the transport for
  * every typed wrapper below. Throws on non-2xx with the response body text
- * and redirects to /login on 401.
+ * and redirects to /login on 401. Supports AbortSignal via options.signal (T44).
  */
 export async function apiFetch<T = unknown>(
   path: string,
