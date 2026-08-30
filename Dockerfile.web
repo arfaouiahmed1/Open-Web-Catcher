@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1.7
 
+# Base pinned to node 20 major on alpine.
+# Digest pin placeholder (resolve with: docker buildx imagetools inspect node:20-alpine
+# then append @sha256:<digest> to each FROM line below):
+#   node:20-alpine@sha256:<TO_FILL_AFTER_VERIFYING>
 FROM node:20-alpine AS deps
 
 ARG BUILDKIT_INLINE_CACHE=1
@@ -18,8 +22,10 @@ WORKDIR /app/web
 
 COPY --from=deps /app/web/node_modules ./node_modules
 COPY web/ ./
+COPY openapi.json /app/openapi.json
 
-ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 
 RUN npm run build
 
@@ -31,15 +37,32 @@ WORKDIR /app/web
 
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
-    PORT=3001
+    PORT=3001 \
+    HOSTNAME=0.0.0.0
 
-RUN mkdir -p /app/web/public
+# Non-root runtime user (busybox addgroup/adduser, alpine).
+# CVE hygiene (plan T47): upgrade OS packages in the final stage so the
+# published image ships patched openssl/zlib etc. (2C/40H were base-inherited).
+USER root
+RUN apk upgrade --no-cache \
+    # The npm-bundled tar@6.2.1 (CVE-2026-59873, critical) ships inside the
+    # node base image; this runner only executes `node server.js`, so npm and
+    # its vendored tree are dead weight - remove them outright.
+    && rm -rf /usr/local/lib/node_modules/npm \
+    && addgroup -S -g 10001 app \
+    && adduser -S -u 10001 -G app -h /home/app -s /sbin/nologin app
+USER app
 
-COPY --from=builder /app/web/.next ./.next
-COPY --from=builder /app/web/node_modules ./node_modules
-COPY --from=builder /app/web/package.json ./package.json
+# Next.js standalone output: server.js plus the minimal node_modules it needs.
+# .next/static is mounted back under .next/static; public/ is copied as-is.
+# Ownership of the standalone tree (including .next/) lets Next create and
+# populate .next/cache at runtime as the app user.
 COPY --from=builder /app/web/public ./public
+COPY --from=builder --chown=app:app /app/web/.next/standalone ./
+COPY --from=builder --chown=app:app /app/web/.next/static ./.next/static
+
+USER app
 
 EXPOSE 3001
 
-CMD ["npm", "run", "start"]
+CMD ["node", "server.js"]

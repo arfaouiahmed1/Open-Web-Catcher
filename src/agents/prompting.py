@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import re
+from pathlib import Path
 from threading import Lock
 from typing import Any
 
@@ -13,6 +15,21 @@ from src.utils.config import Settings
 _ALLOWED_CACHE_MODES = {"app_only", "provider_hook", "provider_active"}
 _STATIC_PROMPT_CACHE: dict[tuple[str, str, str, str, str], str] = {}
 _CACHE_LOCK = Lock()
+
+# {{include:...}} directives in prompt source resolve relative to this directory.
+_PROMPT_DIR = Path("configs/prompts")
+
+# Invariant: prompts carry {{budget}}, never literal numbers; resolved from these
+# Settings attrs at compile time so text cannot drift from enforced tool-call limits.
+_BUDGET_ATTR_BY_AGENT = {
+    "classification": "classification_max_tool_calls",
+    "landing_page": "landing_page_max_tool_calls",
+    "hosting_page": "hosting_page_max_tool_calls",
+    "embedded_page": "embedded_page_max_tool_calls",
+}
+
+_INCLUDE_RE = re.compile(r"\{\{include:([^}]+)\}\}")
+_BUDGET_RE = re.compile(r"\{\{budget\}\}")
 
 
 class CompiledPrompt(BaseModel):
@@ -33,6 +50,51 @@ class CompiledPrompt(BaseModel):
 def clear_prompt_cache() -> None:
     with _CACHE_LOCK:
         _STATIC_PROMPT_CACHE.clear()
+
+
+def expand_prompt_includes(
+    text: str,
+    *,
+    base_dir: Path | None = None,
+    _seen: frozenset[str] | None = None,
+) -> str:
+    """Expand ``{{include:name}}`` directives against ``base_dir`` (default _PROMPT_DIR).
+
+    Includes may nest. Raises ValueError on missing files or include cycles so a
+    broken prompt graph fails loudly at compile time instead of shipping stale text.
+    """
+    root = Path(base_dir) if base_dir is not None else _PROMPT_DIR
+    seen = _seen if _seen is not None else frozenset()
+
+    def _replace(match: re.Match[str]) -> str:
+        name = match.group(1).strip()
+        if name in seen:
+            chain = " -> ".join((*sorted(seen), name))
+            raise ValueError(f"prompt include cycle detected: {chain}")
+        path = root / name
+        if not path.is_file():
+            raise ValueError(f"prompt include not found: {name} (looked for {path})")
+        included = path.read_text(encoding="utf-8")
+        return expand_prompt_includes(included, base_dir=root, _seen=seen | {name})
+
+    return _INCLUDE_RE.sub(_replace, text)
+
+
+def interpolate_prompt_budget(text: str, *, settings: Settings, agent_id: str) -> str:
+    """Resolve {{budget}} placeholders from the per-agent Settings tool-call budget."""
+    if not _BUDGET_RE.search(text):
+        return text
+    attr = _BUDGET_ATTR_BY_AGENT.get(agent_id)
+    if attr is None:
+        raise ValueError(f"no budget setting mapped for agent_id '{agent_id}'")
+    budget = int(getattr(settings, attr))
+    return _BUDGET_RE.sub(str(budget), text)
+
+
+def prepare_prompt_source(*, text: str, settings: Settings, agent_id: str) -> str:
+    """Compile-time prompt-source preparation: budget interpolation then includes."""
+    prepared = interpolate_prompt_budget(text, settings=settings, agent_id=agent_id)
+    return expand_prompt_includes(prepared)
 
 
 def build_task_brief(
@@ -77,6 +139,10 @@ def compile_agent_prompt(
     runtime_context: str = "",
     output_contract_version: str = "v1",
 ) -> CompiledPrompt:
+    base_policy = prepare_prompt_source(text=base_policy, settings=settings, agent_id=agent_id)
+    agent_contract = prepare_prompt_source(
+        text=agent_contract, settings=settings, agent_id=agent_id
+    )
     normalized_base = _normalize_block(base_policy)
     normalized_contract = _normalize_block(agent_contract)
     normalized_task = _normalize_block(task_brief)

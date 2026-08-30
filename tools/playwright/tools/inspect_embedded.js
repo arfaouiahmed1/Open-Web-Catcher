@@ -1,5 +1,6 @@
 import { inspect } from './inspect.js';
 import { buildPlayerHandoffCandidates } from './player-handoff.js';
+import { DEFAULT_BUDGETS, buildRawCounts, commonReducers, fitPayloadToBudget } from './inspect-summaries.js';
 
 const SOURCE_PATTERN = /(server|source|mirror|backup|quality|audio|sub|embed|stream)/i;
 const PLAY_PATTERN = /(play|watch|start|resume|tap|stream)/i;
@@ -204,33 +205,67 @@ export async function inspectEmbedded(params = {}) {
     .slice(0, MAX_FRAME_FOCUS)
     .map(toFrameFocus);
 
-  return {
-    context_type: 'embedded',
-    url: data.url,
-    title: data.title,
-    screenshot_url: data.screenshot_url,
-    hosting_signals: data.hosting_signals,
-    videos: (data.videos || []).slice(0, 12),
-    popups: (data.popups || []).slice(0, 8),
-    source_controls,
-    player_targets,
-    activation_candidates: buildActivationCandidates(player_targets),
-    blocker_candidates: buildBlockerCandidates(data.popups),
-    player_handoff_candidates: buildPlayerHandoffCandidates(data),
-    frame_focus_order,
-    iframe_context: {
-      total_frames: (data.frame_tree || []).length,
-      max_depth: (data.frame_tree || []).reduce((max, frame) => Math.max(max, frame.depth || 0), 0),
-      frames_with_video: (data.frame_tree || []).filter((frame) => frame.video_count > 0).length,
-      frames_with_server_controls: (data.frame_tree || []).filter((frame) => frame.has_server_controls).length,
+  // Budget-first reduction (plan T20-d): MAX_* caps only pre-shape the payload;
+  // final size is governed by the per-profile byte budget with staged reducers.
+  const fitted = fitPayloadToBudget(
+    {
+      context_type: 'embedded',
+      url: data.url,
+      title: data.title,
+      screenshot_url: data.screenshot_url,
+      hosting_signals: data.hosting_signals,
+      videos: (data.videos || []).slice(0, 12),
+      popups: (data.popups || []).slice(0, 8),
+      source_controls,
+      player_targets,
+      activation_candidates: buildActivationCandidates(player_targets),
+      blocker_candidates: buildBlockerCandidates(data.popups),
+      player_handoff_candidates: buildPlayerHandoffCandidates(data),
+      frame_focus_order,
+      iframe_context: {
+        total_frames: (data.frame_tree || []).length,
+        max_depth: (data.frame_tree || []).reduce((max, frame) => Math.max(max, frame.depth || 0), 0),
+        frames_with_video: (data.frame_tree || []).filter((frame) => frame.video_count > 0).length,
+        frames_with_server_controls: (data.frame_tree || []).filter((frame) => frame.has_server_controls).length,
+      },
+      stats: {},
     },
-    stats: {
-      ...(data.stats || {}),
-      source_controls: source_controls.length,
-      player_targets: player_targets.length,
-      activation_candidates: Math.min(player_targets.length, 16),
-      blocker_candidates: Math.min((data.popups || []).length, 10),
-      frame_focus_candidates: frame_focus_order.length,
+    {
+      budgetTarget: DEFAULT_BUDGETS.embedded,
+      rawCounts: buildRawCounts(data),
+      reducers: commonReducers({
+        groupCollections: () => [],
+        primaryCandidateCollections: [
+          (result) => result.source_controls,
+          (result) => result.player_targets,
+          (result) => result.activation_candidates,
+          (result) => result.blocker_candidates,
+        ],
+        secondaryCandidateCollections: [],
+        frameCollections: [
+          (result) => result.videos,
+          (result) => result.frame_focus_order,
+        ],
+        groupDetailCollections: [
+          (result) => (result.frame_focus_order || []).map((frame) => frame.sample_buttons || []),
+          (result) => (result.frame_focus_order || []).map((frame) => frame.sample_links || []),
+          (result) => (result.frame_focus_order || []).map((frame) => frame.sample_videos || []),
+        ],
+        miscCollections: [
+          (result) => result.popups,
+          (result) => result.player_handoff_candidates,
+        ],
+      }),
     },
+  );
+
+  fitted.stats = {
+    ...(data.stats || {}),
+    source_controls: fitted.source_controls.length,
+    player_targets: fitted.player_targets.length,
+    activation_candidates: fitted.activation_candidates.length,
+    blocker_candidates: fitted.blocker_candidates.length,
+    frame_focus_candidates: fitted.frame_focus_order.length,
   };
+  return fitted;
 }

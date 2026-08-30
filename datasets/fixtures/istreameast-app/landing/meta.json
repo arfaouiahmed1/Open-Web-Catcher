@@ -1,0 +1,24 @@
+{
+  "url": "https://istreameast.app/",
+  "host": "istreameast.app",
+  "site_slug": "istreameast-app",
+  "page_slug": "landing",
+  "fixture_dir": "datasets/fixtures/istreameast-app/landing",
+  "captured_at": "2026-08-29T11:45:19.463269+00:00",
+  "playwright_available": false,
+  "synthetic": true,
+  "files": {
+    "index_html": "index.html",
+    "har_json": "har.json",
+    "storageState_json": "storageState.json"
+  },
+  "hashes": {
+    "index_html": "67a2c706e8142df2476afa513d734033d98d65d89b4b6b3d6941b98f419de8c2",
+    "har_json": "1138f33e7758207a1832d862ca2bed3d9e0a7f3e5c214e99f3eab941113af6cc",
+    "storageState": "5a2c2322f2f7edaf331702b0e997cce54f056dda735f2a3deac17aa45c85876e",
+    "fixture": "3de24b63793f05f0f1286d906e039c08667398c043bc54ab235e456c1650e1ea"
+  },
+  "schema_version": 1,
+  "harness": "T49",
+  "notes": "HAR 1.2 + storageState + meta.json per snapshot harness spec; synthetic fallback when browser unavailable."
+}

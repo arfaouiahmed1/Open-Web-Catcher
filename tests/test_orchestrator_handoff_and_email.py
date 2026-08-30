@@ -50,13 +50,15 @@ def test_hosting_output_promotes_partial_success_embed_decision() -> None:
         }
     )
 
-    assert payload["decision"] == "partial_success_needs_embed"
+    # Plan T28 / spike §D2.3: streams + embed handoff now maps onto the
+    # ``activation_failed`` trigger instead of ``partial_success_needs_embed``.
+    assert payload["decision"] == "activation_failed"
     assert payload["successful_servers"] == 1
     assert "https://embed.example.com/player/2" in payload["embedded_urls_for_processing"]
 
 
-def test_requires_embedded_followup_when_server_requests_it() -> None:
-    extraction = ExtractionResult(
+def test_requires_embedded_followup_uses_explicit_triggers_only() -> None:
+    base_kwargs = dict(
         url="https://host.example.com/watch/1",
         page_type=PageType.HOSTING,
         status=ExtractionStatus.SUCCESS,
@@ -83,10 +85,23 @@ def test_requires_embedded_followup_when_server_requests_it() -> None:
                 player_iframe_url="https://embed.example.com/player/2",
             ),
         ],
-        metadata={"decision": "safe_exit"},
     )
 
-    assert _requires_embedded_followup(extraction) is True
+    # Plan T28 / spike §D2.3: a server-level status alone no longer fans out
+    # into embedded work — the hosting agent must emit an explicit decision.
+    assert _requires_embedded_followup(ExtractionResult(metadata={"decision": "safe_exit"}, **base_kwargs)) is False
+    assert (
+        _requires_embedded_followup(
+            ExtractionResult(metadata={"decision": "activation_failed"}, **base_kwargs)
+        )
+        is True
+    )
+    assert (
+        _requires_embedded_followup(
+            ExtractionResult(metadata={"decision": "no_networking"}, **base_kwargs)
+        )
+        is True
+    )
 
 
 def test_embedded_classification_with_site_shell_video_falls_back_to_hosting() -> None:
@@ -320,7 +335,7 @@ async def test_hosting_page_node_filters_popup_ad_embedded_handoffs(monkeypatch)
                 ),
             ],
             metadata={
-                "decision": "needs_embed_agent",
+                "decision": "activation_failed",
                 "embedded_urls_for_processing": [
                     "https://doubleclick.example/ad/player",
                     "https://embed.example/player/ajax-groningen",

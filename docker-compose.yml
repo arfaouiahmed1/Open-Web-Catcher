@@ -1,15 +1,16 @@
-# Open Web Catcher app stack with separate Puppeteer/MCP tooling and Next.js operator console.
+# Open Web Catcher app stack with Playwright MCP tooling and Next.js operator console.
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: postgres
     restart: unless-stopped
     init: true
     stop_grace_period: 20s
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-owc}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-owc}
+      # Required, no weak default: compose fails fast when unset (set it in .env).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD_must_be_set_in_.env}
       POSTGRES_DB: ${POSTGRES_DB:-owc}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -26,53 +27,26 @@ services:
         reservations:
           memory: 256m
 
-  owc-tools:
-    image: ${OWC_TOOLS_IMAGE:-open-web-catcher-tools}:${OWC_TAG:-latest}
-    build:
-      context: .
-      dockerfile: Dockerfile.tools
-      args:
-        BUILDKIT_INLINE_CACHE: "1"
-      cache_to:
-        - type=inline
-    container_name: ${OWC_TOOLS_CONTAINER:-owc-tools}
+  redis:
+    image: redis:7-alpine
+    container_name: redis
     restart: unless-stopped
     init: true
-    stop_grace_period: 30s
-    shm_size: "2gb"
-    ports:
-      - "${OWC_TOOLS_HOST_PORT:-3001}:3000"
-      - "${OWC_TOOLS_DEBUG_HOST_PORT:-9222}:9222"
-    env_file:
-      - .env
-    environment:
-      PORT: 3000
-      MCP_BROWSER_MODE: ${MCP_BROWSER_MODE:-isolated}
-      BROWSER_WS_ENDPOINT: ws://127.0.0.1:9222
-      PUPPETEER_EXECUTABLE_PATH: /usr/local/bin/google-chrome-stable
-      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
-      OWC_UBOL_ENABLED: ${OWC_UBOL_ENABLED:-true}
-      OWC_UBOL_EXTENSION_DIR: ${OWC_UBOL_EXTENSION_DIR:-/app/tools/puppeteer/extensions/ubol}
-      OWC_UBOL_EXTENSION_ID: ${OWC_UBOL_EXTENSION_ID:-nkeimhogjdpnpccoofpliimaahmaaome}
-      OWC_UBOL_DEFAULT_FILTERING: ${OWC_UBOL_DEFAULT_FILTERING:-optimal}
-      OWC_ADBLOCK_ALLOWLIST_HOSTS: ${OWC_ADBLOCK_ALLOWLIST_HOSTS:-}
-      OWC_ENABLE_STREAM_CORS_PATCH: ${OWC_ENABLE_STREAM_CORS_PATCH:-false}
-      OWC_STREAM_CORS_INCLUDE_CREDENTIALS: ${OWC_STREAM_CORS_INCLUDE_CREDENTIALS:-false}
-    volumes:
-      - ./data:/app/data
+    stop_grace_period: 10s
+    # Run-state store only: internal network, never host-published (plan T17/ADR-002).
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     deploy:
       resources:
         limits:
-          memory: 4g
-          cpus: '3.0'
+          memory: 320m
+          cpus: '0.5'
         reservations:
-          memory: 1g
+          memory: 128m
 
   owc-tools-playwright:
     image: ${OWC_TOOLS_PW_IMAGE:-open-web-catcher-tools-playwright}:${OWC_TAG:-latest}
@@ -118,6 +92,57 @@ services:
         reservations:
           memory: 1g
 
+  # Opt-in headed Playwright tools under Xvfb: `docker compose --profile headed-playwright up`.
+  # Same image as owc-tools-playwright with OWC_BROWSER_HEADLESS=false; host
+  # ports offset (3012/9323) so the default headless service keeps 3002/9223.
+  owc-tools-playwright-headed:
+    image: ${OWC_TOOLS_PW_IMAGE:-open-web-catcher-tools-playwright}:${OWC_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.tools.playwright
+      args:
+        BUILDKIT_INLINE_CACHE: "1"
+      cache_to:
+        - type=inline
+    container_name: ${OWC_TOOLS_PW_HEADED_CONTAINER:-owc-tools-playwright-headed}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    shm_size: "2gb"
+    profiles:
+      - headed-playwright
+    ports:
+      - "${OWC_TOOLS_PW_HEADED_HOST_PORT:-3012}:3001"
+      - "${OWC_TOOLS_PW_HEADED_DEBUG_HOST_PORT:-9323}:9223"
+    env_file:
+      - .env
+    environment:
+      PORT: 3001
+      MCP_BROWSER_MODE: ${MCP_BROWSER_MODE:-isolated}
+      BROWSER_WS_ENDPOINT: ws://127.0.0.1:9223
+      OWC_BROWSER_HEADLESS: "false"
+      OWC_XVFB_SCREEN: ${OWC_XVFB_SCREEN:-1280x800x24}
+      OWC_UBOL_ENABLED: ${OWC_UBOL_ENABLED:-true}
+      OWC_UBOL_EXTENSION_DIR: ${OWC_UBOL_EXTENSION_DIR_PLAYWRIGHT:-/app/tools/playwright/extensions/ubol}
+      OWC_UBOL_EXTENSION_ID: ${OWC_UBOL_EXTENSION_ID:-nkeimhogjdpnpccoofpliimaahmaaome}
+      OWC_UBOL_DEFAULT_FILTERING: ${OWC_UBOL_DEFAULT_FILTERING:-optimal}
+      OWC_ADBLOCK_ALLOWLIST_HOSTS: ${OWC_ADBLOCK_ALLOWLIST_HOSTS:-}
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+          cpus: '3.0'
+        reservations:
+          memory: 1g
+
   owc:
     image: ${OWC_IMAGE:-open-web-catcher}:${OWC_TAG:-latest}
     build:
@@ -136,11 +161,11 @@ services:
     env_file:
       - .env
     environment:
-      BROWSER_WS_ENDPOINT: ws://owc-tools:9222
-      MCP_SERVER_URL: http://owc-tools:3000
-      MCP_SERVER_URL_PUPPETEER: http://owc-tools:3000
+      BROWSER_WS_ENDPOINT: ws://owc-tools-playwright:9223
+      MCP_SERVER_URL: http://owc-tools-playwright:3001
       MCP_SERVER_URL_PLAYWRIGHT: http://owc-tools-playwright:3001
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-owc}:${POSTGRES_PASSWORD:-owc}@postgres:5432/${POSTGRES_DB:-owc}
+      # Composed from the required POSTGRES_PASSWORD (no baked owc:owc creds).
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-owc}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD_must_be_set_in_.env}@postgres:5432/${POSTGRES_DB:-owc}
       OBSERVABILITY_ENABLED: ${OBSERVABILITY_ENABLED:-true}
       OBSERVABILITY_PROJECT_NAME: ${OBSERVABILITY_PROJECT_NAME:-open-web-catcher}
       OBSERVABILITY_DEFAULT_DATASET_NAME: ${OBSERVABILITY_DEFAULT_DATASET_NAME:-open-web-catcher-runs}
@@ -149,8 +174,6 @@ services:
       UI_CORS_ORIGINS: ${UI_CORS_ORIGINS:-http://localhost:${OWC_WEB_HOST_PORT:-3000},http://127.0.0.1:${OWC_WEB_HOST_PORT:-3000}}
     depends_on:
       postgres:
-        condition: service_healthy
-      owc-tools:
         condition: service_healthy
       owc-tools-playwright:
         condition: service_healthy

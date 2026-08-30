@@ -72,3 +72,44 @@ htmlcov/
 data/browser.runtime.json
 data/site_memory_profiles.json
 outputs/
+
+# Persistent browser state jars (T21)
+data/browser-state/
+
+# Repo hygiene (Task 2, full-audit W1) — thesis material is ignore-ruled only,
+# never untracked or deleted.
+Report.zip
+Report/
+tmp/
+data/settings.runtime.yaml
+/*.png
+
+# Agent orchestration state (oh-my-openagent / opencode lead session)
+.omo/
+
+# --- Cleanup: generated artifacts & local scratch (2026-08-29) ---
+# Build logs — now consolidated under logs/ (see logs/README.md)
+logs/*
+!logs/.gitkeep
+!logs/README.md
+build_log*.txt
+*.log
+!data/logs/.gitkeep
+
+# Temp / probe scratch
+tmp_probe/
+.codegraph/
+
+# Generated API artifacts
+openapi.json
+openapi.json.bak
+
+# Local blobs & runtime captures (content-addressed)
+data/blobs/*
+!data/blobs/.gitkeep
+
+# Misc local outputs already partially ignored — make explicit
+run-detail-email-output.png
+*.tmp.log
+*.out.log
+*.err.log

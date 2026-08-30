@@ -1,0 +1,36 @@
+Object: {{ object_id }}
+{{ contact_line }}
+To whom it may concern
+
+This letter constitutes a formal notification under the provisions of the Digital Millennium
+Copyright Act (DMCA), 17 U.S.C. § 512, to demand the immediate removal or disabling
+of access to infringing copyrighted material hosted on, or accessible through your servers,
+relating to the unauthorised retransmission of {{ channel_or_licensed }} audio-visual content and channel signals.
+
+I am the copyright owner or an agent authorized to act on behalf of the owner of the
+following copyrighted work(s): {{ works_reference }}.
+A representative list of our copyrighted works may also be provided upon request.
+
+The infringing materials are located at the following URLs and evidence links:
+Title(s): {{ title_line }}
+Abuse date: {{ generated_at_iso }}
+Infringing page: {{ infringing_url }}
+{% for row in evidence_rows %}- URL(s): {{ row.stream_url }}
+  Protocol: {{ row.protocol_display }}
+{% if row.server_label %}  Server/Source: {{ row.server_label }}
+{% endif %}{% if row.channel_name %}  Channel: {{ row.channel_name }}
+{% endif %}{% if row.provider_hostname %}  Hostname: {{ row.provider_hostname }}
+{% endif %}{% for shot in row.screenshots %}  Infringement Evidence: {{ shot }}
+{% endfor %}{% endfor %}
+
+I have a good faith belief that the use of the copyrighted material described above is not
+authorized by the copyright owner, its agent, or the law.
+I declare, under penalty of perjury, that the information in this notification is accurate
+and that I am authorized to act on behalf of the owner of an exclusive right that is allegedly infringed.
+
+We demand the immediate removal or disabling of access to the infringing material
+identified above and that the reported entity cease any further infringement.
+
+{% if contact_note %}{{ contact_note }}
+
+{% endif %}If you believe you have received this notice in error, you may submit a counter-notice in accordance with 17 U.S.C. § 512(g).

@@ -3,20 +3,27 @@
  *
  * Public API matches the Puppeteer version so tool files work unchanged:
  *   connectBrowser(wsEndpoint)       → { browser, context }
- *   launchEphemeralBrowser(sessionId) → { browser, context, userDataDir }
- *   closeEphemeralBrowser(session)
- *   getPage(session, { targetUrl, forceRotateFingerprint })  → Page
+ *   launchEphemeralBrowser(sessionId, { browserProfile, targetHost, targetUrl })
+ *                                    → { browser, context, stateDir, userDataDir }
+ *   closeEphemeralBrowser(session)    (never deletes the persistent state jar)
+ *   getPage(session, { targetUrl })  → Page
  *   getPageNetworkDiagnostics(page, { limit })
  *   getIframeDiagnostics(page, { limit })
  *   retryNavigationAfterAutoRecovery(page, { url, waitUntil, timeoutMs })
+ *   ensureStreamCorsInjection(contextOrPage, profile)  (opt-in, T20-a)
+ *   enforceWindowBounds(sessionOrBrowser, page)        (best-effort, T20-e)
+ *
+ * T21 persona contract (ADR-003): every launch pins ONE deterministic
+ * Windows 11 x64 persona (version-matched Chrome UA + client-hint brands,
+ * timezone/locale/Accept-Language bound to the proxy exit geo, no dnt) onto
+ * a persistent (profile,target-host) cookie jar under
+ * data/browser-state/<stable-hash>/ launched through launchPersistentContext.
+ * Fingerprint rotation is removed by design; the persona is pinned per jar.
  */
 
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
-import { FingerprintGenerator } from "fingerprint-generator";
-import { FingerprintInjector } from "fingerprint-injector";
 import { chromium } from "playwright-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import {
@@ -32,17 +39,18 @@ import {
   extractChromeNetErrorCode,
 } from "../../shared/error-codes.js";
 import { computeBrowserPolicy } from "../../shared/browser-policy.js";
-import { selectPersistentFingerprintHeaders } from "../../shared/fingerprint-headers.js";
 import { disableBlocking, enableBlocking } from "./adblocker.js";
+import { buildPersona, resolvePersonaGeo } from "./persona.js";
+import { resolveBrowserStateDir } from "./browser-state.js";
 import {
   getBrowserRuntimeSettings,
   getEffectiveRuntimeMetadata,
 } from "./runtime-config.js";
 
 const stealthPlugin = StealthPlugin();
-// fingerprint-injector controls userAgent — stealth's override contradicts it.
+// The pinned persona controls userAgent — stealth's override contradicts it.
 stealthPlugin.enabledEvasions.delete("user-agent-override");
-// fingerprint-injector handles navigator.plugins already.
+// Persona init patches own navigator.plugins behavior.
 stealthPlugin.enabledEvasions.delete("navigator.plugins");
 chromium.use(stealthPlugin);
 
@@ -62,9 +70,6 @@ const CHROME_VERSION_TIMEOUT_MS = Number.parseInt(
   10,
 );
 const FORCED_VIEWPORT = { width: 1920, height: 1080 };
-const FORCED_WINDOWS_PLATFORM = "Win32";
-const FORCED_WINDOWS_PLATFORM_VERSION = "10.0.0";
-const FORCED_LANGUAGE = "en-US,en;q=0.9";
 const UBOL_EXTENSION_DIR = String(
   process.env.OWC_UBOL_EXTENSION_DIR || "/app/tools/playwright/extensions/ubol",
 ).trim();
@@ -79,10 +84,11 @@ const DEFAULT_LAUNCH_ARGS = [
   "--force-device-scale-factor=2",
 
   // ── Anti-bot ────────────────────────────────────────────────────────────────
+  "--disable-blink-features=AutomationControlled",
 
   // ── GPU / video decode ───────────────────────────────────────────────────────
-  "--use-gl=swiftshader",
-  "--use-angle=swiftshader-webgl",
+  // Real GPU/renderer is preserved on purpose: no SwiftShader overrides that
+  // would contradict the persona's real-laptop claims (T21/ADR-003).
   "--enable-webgl",
 
   // ── Media / autoplay ────────────────────────────────────────────────────────
@@ -94,21 +100,21 @@ const DEFAULT_LAUNCH_ARGS = [
   // ── Stability ────────────────────────────────────────────────────────────────
   "--no-first-run",
   "--no-default-browser-check",
+  // Persist session cookies to disk so jar restarts keep the full cookie
+  // state ("continue where you left off" semantics; T21 returning-visitor jar).
+  "--restore-last-session",
   "--disable-background-timer-throttling",
   "--disable-backgrounding-occluded-windows",
   "--disable-renderer-backgrounding",
 ];
 
 // Per-page state stored in WeakMaps (garbage collected with the page)
-const pageFingerprintState = new WeakMap();
 const pageCdps = new WeakMap();
 const pageNetworkState = new WeakMap();
 const pagePolicyState = new WeakMap();
 const pageNetworkListeners = new WeakSet();
 const pagePopupGuardsInstalled = new WeakSet();
-const recentlyUsedFingerprintSignatures = [];
 let chromeVersionPromise = null;
-const fingerprintSuiteCache = new Map();
 const preparedContexts = new WeakSet();
 const activePageByContext = new WeakMap();
 
@@ -121,28 +127,6 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // ---------------------------------------------------------------------------
 // Utility helpers (identical to Puppeteer version)
 // ---------------------------------------------------------------------------
-
-function buildChromeBrands(majorVersion) {
-  return [
-    { brand: "Not.A/Brand", version: "99" },
-    { brand: "Chromium", version: majorVersion },
-    { brand: "Google Chrome", version: majorVersion },
-  ];
-}
-
-function buildSecChUa(brands) {
-  return brands
-    .map((entry) => `"${entry.brand}";v="${entry.version}"`)
-    .join(", ");
-}
-
-function getChromeMajorVersion(version) {
-  const major = Number.parseInt(String(version || "").split(".")[0] || "", 10);
-  if (Number.isFinite(major) && major > 0) {
-    return String(major);
-  }
-  return String(CHROME_VERSION_FALLBACK.split(".")[0] || "146");
-}
 
 async function fetchJson(url) {
   const timeoutMs = Number.isFinite(CHROME_VERSION_TIMEOUT_MS)
@@ -232,59 +216,6 @@ function getBrowserLaunchTimeoutMs() {
   );
 }
 
-function getFingerprintRotationMode() {
-  return String(
-    runtimeSetting("fingerprint_rotation_mode") ??
-      process.env.OWC_FINGERPRINT_ROTATION_MODE ??
-      "origin",
-  )
-    .trim()
-    .toLowerCase();
-}
-
-function getFingerprintRotationIntervalMs() {
-  return Number.parseInt(
-    String(
-      runtimeSetting("fingerprint_rotation_interval_ms") ??
-        process.env.OWC_FINGERPRINT_ROTATION_INTERVAL_MS ??
-        "180000",
-    ),
-    10,
-  );
-}
-
-function getFingerprintRotationMaxUses() {
-  return Number.parseInt(
-    String(
-      runtimeSetting("fingerprint_rotation_max_uses") ??
-        process.env.OWC_FINGERPRINT_ROTATION_MAX_USES ??
-        "6",
-    ),
-    10,
-  );
-}
-
-function getFingerprintRecentPoolSize() {
-  return Number.parseInt(
-    String(
-      runtimeSetting("fingerprint_recent_pool_size") ??
-        process.env.OWC_FINGERPRINT_RECENT_POOL_SIZE ??
-        "12",
-    ),
-    10,
-  );
-}
-
-function getFingerprintFallbackStrategy() {
-  return String(
-    runtimeSetting("fingerprint_fallback_strategy") ??
-      process.env.OWC_FINGERPRINT_FALLBACK_STRATEGY ??
-      "profile",
-  )
-    .trim()
-    .toLowerCase();
-}
-
 function getAdblockAutoRecoveryEnabled() {
   return parseBoolean(
     runtimeSetting("adblock_auto_recovery_enabled") ??
@@ -298,6 +229,23 @@ function getAdblockAutoRecoveryRetryEnabled() {
     runtimeSetting("adblock_auto_recovery_retry") ??
       process.env.OWC_ADBLOCK_AUTO_RECOVERY_RETRY,
     true,
+  );
+}
+
+// Ported from puppeteer browser.js:293-305 ([TOOL-P4], plan T20-a).
+function getStreamCorsPatchEnabled() {
+  return parseBoolean(
+    runtimeSetting("stream_cors_patch_enabled") ??
+      process.env.OWC_ENABLE_STREAM_CORS_PATCH,
+    false,
+  );
+}
+
+function getStreamCorsIncludeCredentials() {
+  return parseBoolean(
+    runtimeSetting("stream_cors_include_credentials") ??
+      process.env.OWC_STREAM_CORS_INCLUDE_CREDENTIALS,
+    false,
   );
 }
 
@@ -395,87 +343,11 @@ export function getPageEffectiveRuntime(page) {
   return state.effectiveRuntime || getEffectiveRuntimeMetadata("playwright");
 }
 
-function clampPositiveInteger(value, fallback) {
-  if (Number.isFinite(value) && value > 0) return Math.floor(value);
-  return fallback;
-}
-
-function normalizeRotationMode(mode) {
-  const normalized = String(mode || "")
-    .trim()
-    .toLowerCase();
-  if (["off", "none", "false", "0", "never"].includes(normalized))
-    return "never";
-  if (["page", "always"].includes(normalized)) return "page";
-  if (["origin", "domain", "site"].includes(normalized)) return "origin";
-  if (["interval", "time"].includes(normalized)) return "interval";
-  return "origin";
-}
-
-function getOriginFromUrl(urlLike) {
-  const input = String(urlLike || "").trim();
-  if (!input || input === "about:blank" || input === "about:newtab") return "";
-  try {
-    return new URL(input).origin;
-  } catch {
-    return "";
-  }
-}
-
-function getFingerprintSignature(bundle) {
-  const navigator = bundle?.fingerprint?.navigator || {};
-  const userAgentData = navigator.userAgentData || {};
-  const brandToken = Array.isArray(userAgentData.fullVersionList)
-    ? userAgentData.fullVersionList
-        .map((e) => `${e.brand}/${e.version}`)
-        .join("|")
-    : Array.isArray(userAgentData.brands)
-      ? userAgentData.brands.map((e) => `${e.brand}/${e.version}`).join("|")
-      : "";
-  return [
-    navigator.userAgent || "",
-    navigator.platform || "",
-    navigator.language || "",
-    brandToken,
-  ].join("::");
-}
-
-function rememberFingerprintSignature(signature) {
-  if (!signature) return;
-  recentlyUsedFingerprintSignatures.push(signature);
-  const poolSize = clampPositiveInteger(getFingerprintRecentPoolSize(), 12);
-  while (recentlyUsedFingerprintSignatures.length > poolSize) {
-    recentlyUsedFingerprintSignatures.shift();
-  }
-}
-
-function shouldRotateFingerprint(state, page, targetUrl, forceRotate) {
-  if (forceRotate || !state) return true;
-  const rotationMode = normalizeRotationMode(getFingerprintRotationMode());
-  if (rotationMode === "never") return false;
-  if (rotationMode === "page") return true;
-  const now = Date.now();
-  const maxUses = clampPositiveInteger(getFingerprintRotationMaxUses(), 6);
-  const intervalMs = clampPositiveInteger(
-    getFingerprintRotationIntervalMs(),
-    180000,
-  );
-  if (maxUses > 0 && state.useCount >= maxUses) return true;
-  if (intervalMs > 0 && now - state.appliedAt >= intervalMs) return true;
-  if (rotationMode === "origin") {
-    const expectedOrigin =
-      getOriginFromUrl(targetUrl) || getOriginFromUrl(page.url());
-    if (expectedOrigin && state.origin && expectedOrigin !== state.origin)
-      return true;
-  }
-  return false;
-}
-
-function toHeaderRecord(headers = {}) {
+function toCdpHeaderRecord(headers = {}) {
   const output = {};
-  for (const [key, value] of Object.entries(headers || {})) {
+  for (const [key, value] of Object.entries(headers)) {
     if (value == null) continue;
-    output[String(key)] = String(value);
+    output[String(key).toLowerCase()] = String(value);
   }
   return output;
 }
@@ -1022,258 +894,95 @@ export async function getPageCdp(page) {
 }
 
 // ---------------------------------------------------------------------------
-// Fingerprinting helpers
+// T21 deterministic persona plumbing (ADR-003)
+//
+// One atomic persona per (profile,target-host) jar: version-matched Chrome
+// UA/client hints from shared/persona.js, timezone/locale bound to the proxy
+// exit geo (resolved once per normalized proxy identity via resolvePersonaGeo,
+// fixed coherent fallback for direct/no-proxy), no fingerprint rotation.
 // ---------------------------------------------------------------------------
 
-function buildFingerprintConstraints(chromeMajorVersion) {
-  const browserConstraints = [];
-  if (chromeMajorVersion) {
-    const major = Number(chromeMajorVersion);
-    if (Number.isFinite(major) && major > 0) {
-      browserConstraints.push({
-        name: "chrome",
-        minVersion: major,
-        maxVersion: major,
-      });
-    }
-  }
-  if (!browserConstraints.length) browserConstraints.push({ name: "chrome" });
-  return {
-    browsers: browserConstraints,
-    devices: ["desktop"],
-    operatingSystems: ["windows"],
-    locales: ["en-US"],
-    screen: {
-      minWidth: FORCED_VIEWPORT.width,
-      maxWidth: FORCED_VIEWPORT.width,
-      minHeight: FORCED_VIEWPORT.height,
-      maxHeight: FORCED_VIEWPORT.height,
-    },
-  };
-}
-
-function buildFingerprintMajorCandidates(chromeMajorVersion) {
-  const parsedMajor = Number(chromeMajorVersion);
-  if (!Number.isFinite(parsedMajor) || parsedMajor <= 0) return [null];
-  const candidates = [parsedMajor];
-  for (let offset = 1; offset <= 12; offset += 1) {
-    const candidate = parsedMajor - offset;
-    if (candidate >= 120) candidates.push(candidate);
-  }
-  candidates.push(null);
-  return candidates;
-}
-
-function generateFingerprintBundle(generator, chromeMajorVersion) {
-  const majorCandidates = buildFingerprintMajorCandidates(chromeMajorVersion);
-  let lastError = null;
-  for (const majorCandidate of majorCandidates) {
-    try {
-      return generator.getFingerprint(
-        buildFingerprintConstraints(majorCandidate),
-      );
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  if (lastError) throw lastError;
-  throw new Error("Failed to generate a browser fingerprint.");
-}
-
-function synchronizeFingerprint(
-  fingerprintBundle,
-  chromeVersion,
-  chromeMajorVersion,
-) {
-  const synchronized = structuredClone(fingerprintBundle);
-  const navigator = synchronized?.fingerprint?.navigator;
-  if (!navigator) return synchronized;
-
-  const chromeVersionToken = `Chrome/${chromeVersion}`;
-  navigator.userAgent = String(navigator.userAgent || "")
-    .replace(/Chrome\/[\d.]+/gi, chromeVersionToken)
-    .replace(/\s+/g, " ")
-    .trim();
-  navigator.appVersion = String(navigator.appVersion || "")
-    .replace(/Chrome\/[\d.]+/gi, chromeVersionToken)
-    .replace(/\s+/g, " ")
-    .trim();
-  navigator.platform = FORCED_WINDOWS_PLATFORM;
-  navigator.language = "en-US";
-  navigator.languages = ["en-US", "en"];
-
-  if (navigator.userAgentData) {
-    const brands = buildChromeBrands(chromeMajorVersion);
-    navigator.userAgentData.brands = brands;
-    navigator.userAgentData.fullVersionList = brands.map((e) => ({
-      ...e,
-      version: chromeVersion,
-    }));
-    navigator.userAgentData.uaFullVersion = chromeVersion;
-    navigator.userAgentData.platform = "Windows";
-    navigator.userAgentData.platformVersion = FORCED_WINDOWS_PLATFORM_VERSION;
-    navigator.userAgentData.mobile = false;
-    navigator.userAgentData.architecture = "x86";
-    navigator.userAgentData.bitness = "64";
-    navigator.userAgentData.model = "";
-  }
-
-  synchronized.headers = {
-    ...toHeaderRecord(synchronized.headers),
-    "User-Agent": navigator.userAgent,
-    "Accept-Language": FORCED_LANGUAGE,
-  };
-  return synchronized;
-}
-
-function buildProfileFromFingerprint(
-  synchronizedBundle,
-  chromeVersion,
-  chromeMajorVersion,
-) {
-  const navigator = synchronizedBundle.fingerprint.navigator;
-  const userAgentMetadata = navigator.userAgentData || {};
-  const brands = Array.isArray(userAgentMetadata.brands)
-    ? userAgentMetadata.brands
-    : buildChromeBrands(chromeMajorVersion);
-  const fullVersionList = Array.isArray(userAgentMetadata.fullVersionList)
-    ? userAgentMetadata.fullVersionList
-    : brands.map((e) => ({ ...e, version: chromeVersion }));
-  const secChUa = buildSecChUa(brands);
-  const headers = selectPersistentFingerprintHeaders({
-    ...toHeaderRecord(synchronizedBundle.headers),
-    "User-Agent": navigator.userAgent,
-    "Accept-Language": FORCED_LANGUAGE,
-    "Sec-CH-UA": secChUa,
-    "Sec-CH-UA-Mobile": "?0",
-    "Sec-CH-UA-Platform": '"Windows"',
-    "Sec-CH-UA-Platform-Version": `"${FORCED_WINDOWS_PLATFORM_VERSION}"`,
-    "Sec-CH-UA-Full-Version": `"${chromeVersion}"`,
-  });
-  return {
-    userAgent: navigator.userAgent,
-    locale: "en-US",
-    language: FORCED_LANGUAGE,
-    secChUa,
-    chromeVersion,
-    chromeMajorVersion,
-    headers,
-    userAgentMetadata: {
-      brands,
-      fullVersion: chromeVersion,
-      fullVersionList,
-      platform: "Windows",
-      platformVersion: FORCED_WINDOWS_PLATFORM_VERSION,
-      architecture: userAgentMetadata.architecture || "x86",
-      model: userAgentMetadata.model || "",
-      mobile: false,
-      bitness: userAgentMetadata.bitness || "64",
-      wow64: false,
-    },
-  };
-}
-
-function generateRotatingFingerprintBundle(
-  generator,
-  chromeVersion,
-  chromeMajorVersion,
-) {
-  const attempts = Math.max(
-    4,
-    clampPositiveInteger(getFingerprintRecentPoolSize(), 12),
+function getHeadlessLaunchEnabled() {
+  return parseBoolean(
+    runtimeSetting("headless") ?? process.env.OWC_BROWSER_HEADLESS,
+    true,
   );
-  let selected = null;
-  let selectedSignature = "";
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const generated = generateFingerprintBundle(generator, chromeMajorVersion);
-    const synchronized = synchronizeFingerprint(
-      generated,
-      chromeVersion,
-      chromeMajorVersion,
-    );
-    const signature = getFingerprintSignature(synchronized);
-    if (!recentlyUsedFingerprintSignatures.includes(signature)) {
-      rememberFingerprintSignature(signature);
-      return synchronized;
-    }
-    if (!selected) {
-      selected = synchronized;
-      selectedSignature = signature;
-    }
-  }
-  if (selected) {
-    rememberFingerprintSignature(selectedSignature);
-    return selected;
-  }
-  const generated = generateFingerprintBundle(generator, chromeMajorVersion);
-  const synchronized = synchronizeFingerprint(
-    generated,
-    chromeVersion,
-    chromeMajorVersion,
-  );
-  rememberFingerprintSignature(getFingerprintSignature(synchronized));
-  return synchronized;
 }
 
-async function getFingerprintSuite(browser = null) {
-  const chromeVersion = await resolveEffectiveChromeVersion(browser);
-  const cacheKey = chromeVersion || CHROME_VERSION_FALLBACK;
+const PROXY_GEO_LOOKUP_URL = String(
+  process.env.OWC_PROXY_GEO_LOOKUP_URL || "https://ipapi.co/json/",
+).trim();
+const PROXY_GEO_LOOKUP_TIMEOUT_MS = Number.parseInt(
+  String(process.env.OWC_PROXY_GEO_LOOKUP_TIMEOUT_MS || "8000"),
+  10,
+);
 
-  if (!fingerprintSuiteCache.has(cacheKey)) {
-    fingerprintSuiteCache.set(cacheKey, {
-      chromeVersion: cacheKey,
-      chromeMajorVersion: getChromeMajorVersion(cacheKey),
-      fingerprintGenerator: new FingerprintGenerator(),
-      fingerprintInjector: new FingerprintInjector(),
+function normalizeProxyGeoKey(candidate) {
+  // candidate.key is the normalized scheme|host|port|user|pass identity from
+  // shared/proxy-pool.js; direct connections share one fixed key whose lookup
+  // short-circuits to the fixed fallback pair.
+  return candidate?.key
+    ? `playwright-proxy:${String(candidate.key).trim().toLowerCase()}`
+    : "playwright-direct";
+}
+
+function normalizeIpGeoPayload(payload) {
+  const source = payload && typeof payload === "object" ? payload : {};
+  const timezone =
+    source.timezone?.id ??
+    source.timezone_id ??
+    source.timezone ??
+    source.time_zone;
+  const country = String(source.country_code ?? source.countryCode ?? "").trim();
+  const primaryLanguage = String(source.languages ?? source.locale ?? "")
+    .split(",")[0]
+    .trim();
+  let locale = "";
+  if (primaryLanguage.includes("-")) {
+    locale = primaryLanguage;
+  } else if (primaryLanguage && country) {
+    locale = `${primaryLanguage}-${country.toUpperCase()}`;
+  } else {
+    locale = primaryLanguage;
+  }
+  return {
+    timezoneId: typeof timezone === "string" ? timezone.trim() : "",
+    locale,
+  };
+}
+
+/**
+ * Best-effort proxy exit-geo probe executed THROUGH the live proxied context
+ * so the geography matches the actual exit IP. Any failure resolves to null
+ * and resolvePersonaGeo() then caches the fixed coherent fallback pair for
+ * that proxy key.
+ */
+async function probeProxyExitGeo(context) {
+  if (
+    !PROXY_GEO_LOOKUP_URL ||
+    !context ||
+    typeof context.newPage !== "function"
+  ) {
+    return null;
+  }
+  let page = null;
+  try {
+    page = await context.newPage();
+    await page.goto(PROXY_GEO_LOOKUP_URL, {
+      waitUntil: "domcontentloaded",
+      timeout: Number.isFinite(PROXY_GEO_LOOKUP_TIMEOUT_MS)
+        ? PROXY_GEO_LOOKUP_TIMEOUT_MS
+        : 8000,
     });
+    const bodyText = await page
+      .evaluate(() => document.body?.innerText || "")
+      .catch(() => "");
+    return normalizeIpGeoPayload(JSON.parse(String(bodyText || "").trim()));
+  } catch {
+    return null;
+  } finally {
+    if (page) await page.close().catch(() => {});
   }
-
-  return fingerprintSuiteCache.get(cacheKey);
-}
-
-function buildFallbackFingerprintProfile(chromeVersion, chromeMajorVersion) {
-  const brands = buildChromeBrands(chromeMajorVersion);
-  const fullVersionList = brands.map((entry) => ({
-    ...entry,
-    version: chromeVersion,
-  }));
-  const userAgent = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "AppleWebKit/537.36 (KHTML, like Gecko)",
-    `Chrome/${chromeVersion}`,
-    "Safari/537.36",
-  ].join(" ");
-  const secChUa = buildSecChUa(brands);
-
-  return {
-    userAgent,
-    locale: "en-US",
-    language: FORCED_LANGUAGE,
-    secChUa,
-    chromeVersion,
-    chromeMajorVersion,
-    headers: selectPersistentFingerprintHeaders({
-      "User-Agent": userAgent,
-      "Accept-Language": FORCED_LANGUAGE,
-      "Sec-CH-UA": secChUa,
-      "Sec-CH-UA-Mobile": "?0",
-      "Sec-CH-UA-Platform": '"Windows"',
-      "Sec-CH-UA-Platform-Version": `"${FORCED_WINDOWS_PLATFORM_VERSION}"`,
-      "Sec-CH-UA-Full-Version": `"${chromeVersion}"`,
-    }),
-    userAgentMetadata: {
-      brands,
-      fullVersion: chromeVersion,
-      fullVersionList,
-      platform: "Windows",
-      platformVersion: FORCED_WINDOWS_PLATFORM_VERSION,
-      architecture: "x86",
-      model: "",
-      mobile: false,
-      bitness: "64",
-      wow64: false,
-    },
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1307,13 +1016,18 @@ const runtimeFingerprintPatchFn = (fingerprintProfile) => {
     configurable: true,
     get: () => "Win32",
   });
+  const personaLanguages =
+    Array.isArray(fingerprintProfile.languages) &&
+    fingerprintProfile.languages.length
+      ? fingerprintProfile.languages.slice()
+      : ["en-US", "en"];
   Object.defineProperty(Navigator.prototype, "language", {
     configurable: true,
-    get: () => "en-US",
+    get: () => personaLanguages[0],
   });
   Object.defineProperty(Navigator.prototype, "languages", {
     configurable: true,
-    get: () => ["en-US", "en"],
+    get: () => personaLanguages.slice(),
   });
   Object.defineProperty(Navigator.prototype, "userAgent", {
     configurable: true,
@@ -1537,58 +1251,289 @@ const patchIframeSandboxFn = () => {
 // Context-level fingerprint application (Playwright approach)
 // ---------------------------------------------------------------------------
 
-async function createFingerprintedContext(
-  browser,
-  profile,
-  synchronizedBundle = null,
-  { injectFingerprint = true } = {},
-) {
-  const context = await browser.newContext({
-    viewport: FORCED_VIEWPORT,
-    deviceScaleFactor: 2,
-    userAgent: profile.userAgent,
-    locale: profile.locale || "en-US",
-    extraHTTPHeaders: profile.headers,
-  });
+// ---------------------------------------------------------------------------
+// Stream-CORS injection suite (ported from puppeteer browser.js:1182-1318,
+// [TOOL-P4], plan T20-a) + window-bounds enforcement (puppeteer :1706-1725).
+//
+// Engine divergence vs puppeteer original:
+//  - Puppeteer injects per page via evaluateOnNewDocument inside
+//    applyFingerprintProfileToPage. Playwright fingerprints at CONTEXT level
+//    (covers cross-origin iframes), so the patch is installed via
+//    context.addInitScript and replayed onto already-open pages.
+//  - Sec-* headers are forbidden header names for JS fetch/XHR; the in-page
+//    patches stay best-effort exactly like the puppeteer original. When the
+//    opt-in flag is on we additionally pin the client-hint headers at the
+//    network layer through a cached CDP session (Network.setExtraHTTPHeaders)
+//    so stream requests carry them even when the JS patch cannot.
+// ---------------------------------------------------------------------------
 
-  // Apply fingerprint at context level (affects all pages including cross-origin iframes)
-  if (injectFingerprint && synchronizedBundle) {
+const streamCorsInitScript = (headerTemplate) => {
+  // Use a Symbol-based flag so there is no enumerable/string global that
+  // anti-bot scripts can scan for.
+  const flagKey = Symbol.for("__stream_cors_patched__");
+  const templateKey = Symbol.for("__stream_cors_template__");
+  globalThis[templateKey] = headerTemplate;
+
+  if (globalThis[flagKey]) {
+    return;
+  }
+  Object.defineProperty(globalThis, flagKey, { value: true, writable: false });
+
+  const streamPattern = /(\.m3u8|\.mpd|\.m4s|\.ts)(\?|$)|manifest|playlist|stream/i;
+  const isStreamUrl = (candidate) => {
+    if (!candidate) return false;
+    return streamPattern.test(String(candidate));
+  };
+
+  const getTemplate = () => globalThis[templateKey] || headerTemplate;
+
+  const computeFetchSite = (requestUrl, locationLike) => {
     try {
-      const suite = await getFingerprintSuite(browser);
-      await suite.fingerprintInjector.attachFingerprintToPlaywright(
-        context,
-        synchronizedBundle,
-      );
-    } catch (err) {
-      console.warn(
-        "[owc-pw] fingerprint injection skipped:",
-        err?.message || err,
-      );
+      const resolved = new URL(String(requestUrl || ""), locationLike.href);
+      return resolved.origin === locationLike.origin ? "same-origin" : "cross-site";
+    } catch {
+      return "cross-site";
     }
+  };
+
+  const patchHeaders = (headers, locationLike, requestUrl) => {
+    const activeTemplate = getTemplate();
+    if (!headers.has(activeTemplate.originHeader)) {
+      headers.set(activeTemplate.originHeader, locationLike.origin);
+    }
+    if (!headers.has(activeTemplate.refererHeader)) {
+      headers.set(activeTemplate.refererHeader, locationLike.href);
+    }
+
+    headers.set("Sec-Fetch-Dest", activeTemplate.secFetchDest);
+    headers.set("Sec-Fetch-Mode", activeTemplate.secFetchMode);
+    headers.set("Sec-Fetch-Site", computeFetchSite(requestUrl, locationLike));
+    headers.set("Sec-CH-UA", activeTemplate.secChUa);
+    headers.set("Sec-CH-UA-Mobile", activeTemplate.secChUaMobile);
+    headers.set("Sec-CH-UA-Platform", activeTemplate.secChUaPlatform);
+    headers.set("Sec-CH-UA-Full-Version", activeTemplate.secChUaFullVersion);
+    if (!headers.has("Accept")) {
+      headers.set("Accept", "*/*");
+    }
+    return headers;
+  };
+
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    const requestUrl = typeof input === "string" ? input : input?.url;
+    if (!isStreamUrl(requestUrl)) {
+      return originalFetch(input, init);
+    }
+
+    const baseHeaders = init?.headers || (input instanceof Request ? input.headers : undefined);
+    const activeTemplate = getTemplate();
+    const headers = patchHeaders(new Headers(baseHeaders), window.location, requestUrl);
+    return originalFetch(input, {
+      ...init,
+      mode: init?.mode || "cors",
+      credentials: init?.credentials || (activeTemplate.includeCredentials ? "include" : "same-origin"),
+      headers,
+    });
+  };
+
+  const originalOpen = XMLHttpRequest.prototype.open;
+  const originalSend = XMLHttpRequest.prototype.send;
+
+  XMLHttpRequest.prototype.open = function open(method, url, ...rest) {
+    this.__owcStreamUrl = String(url || "");
+    return originalOpen.call(this, method, url, ...rest);
+  };
+
+  XMLHttpRequest.prototype.send = function send(body) {
+    if (isStreamUrl(this.__owcStreamUrl)) {
+      try {
+        const activeTemplate = getTemplate();
+        this.withCredentials = Boolean(activeTemplate.includeCredentials);
+        this.setRequestHeader(activeTemplate.originHeader, window.location.origin);
+        this.setRequestHeader(activeTemplate.refererHeader, window.location.href);
+        this.setRequestHeader("Sec-Fetch-Dest", activeTemplate.secFetchDest);
+        this.setRequestHeader("Sec-Fetch-Mode", activeTemplate.secFetchMode);
+        this.setRequestHeader("Sec-Fetch-Site", computeFetchSite(this.__owcStreamUrl, window.location));
+        this.setRequestHeader("Sec-CH-UA", activeTemplate.secChUa);
+        this.setRequestHeader("Sec-CH-UA-Mobile", activeTemplate.secChUaMobile);
+        this.setRequestHeader("Sec-CH-UA-Platform", activeTemplate.secChUaPlatform);
+        this.setRequestHeader("Sec-CH-UA-Full-Version", activeTemplate.secChUaFullVersion);
+      } catch {
+        // Best effort: browsers can reject restricted request headers.
+      }
+    }
+
+    return originalSend.call(this, body);
+  };
+};
+
+/**
+ * Install the opt-in stream-CORS patch. `target` may be a BrowserContext
+ * (preferred: covers every future page incl. iframes) or a single Page.
+ */
+export async function ensureStreamCorsInjection(target, profile) {
+  // Stream CORS patching is OPT-IN because it forces credentials:include and
+  // mode:cors on any request containing .m3u8/.ts/stream/playlist/manifest.
+  // Most video CDNs reject credentialed CORS (no ACAO: * + ACAC: true) so the
+  // patch actively breaks playback on sites like FreeShot. Only turn it on
+  // for sites you know require it via OWC_ENABLE_STREAM_CORS_PATCH=true.
+  if (!target || !profile || !getStreamCorsPatchEnabled()) {
+    return;
   }
 
-  // Runtime JS patches via addInitScript (= evaluateOnNewDocument but context-scoped)
-  await context.addInitScript(runtimeFingerprintPatchFn, {
-    userAgent: profile.userAgent,
-    userAgentMetadata: profile.userAgentMetadata,
-    chromeVersion: profile.chromeVersion,
-    chromeMajorVersion: profile.chromeMajorVersion,
+  const streamHeaders = {
+    originHeader: "Origin",
+    refererHeader: "Referer",
+    secFetchDest: "empty",
+    secFetchMode: "cors",
+    secFetchSite: "cross-site",
+    includeCredentials: getStreamCorsIncludeCredentials(),
     secChUa: profile.secChUa,
-  });
+    secChUaMobile: "?0",
+    secChUaPlatform: '"Windows"',
+    secChUaFullVersion: `"${profile.chromeVersion}"`,
+  };
 
-  // Remove Playwright-specific globals that some sites check
-  await context.addInitScript(() => {
+  await target.addInitScript(streamCorsInitScript, streamHeaders);
+
+  const pages = typeof target.pages === "function" ? target.pages() : [target];
+  for (const page of pages) {
+    await page
+      .evaluate((headerTemplate) => {
+        const templateKey = Symbol.for("__stream_cors_template__");
+        globalThis[templateKey] = headerTemplate;
+      }, streamHeaders)
+      .catch(() => {});
+  }
+
+  // Network-layer pinning of the client-hint headers only (never Origin/
+  // Referer globally). Gated behind the same opt-in flag; best effort.
+  for (const page of pages) {
     try {
-      delete window.__playwright;
+      const cdp = await getPageCdp(page);
+      await cdp.send("Network.enable").catch(() => {});
+      await cdp.send("Network.setExtraHTTPHeaders", {
+        headers: toCdpHeaderRecord({
+          "Sec-CH-UA": profile.secChUa,
+          "Sec-CH-UA-Mobile": "?0",
+          "Sec-CH-UA-Platform": '"Windows"',
+          "Sec-CH-UA-Full-Version": `"${profile.chromeVersion}"`,
+        }),
+      });
     } catch {
-      /* ignore */
+      // Best effort: remote targets may refuse extra CDP sessions.
     }
-    try {
-      delete window.__pw_manual;
-    } catch {
-      /* ignore */
+  }
+}
+
+/**
+ * Best-effort window bounds enforcement via CDP Browser.setWindowBounds
+ * (puppeteer parity, plan T20-e). Accepts a session object or raw browser;
+ * silently no-ops when window management is unavailable (remote providers).
+ */
+export async function enforceWindowBounds(sessionOrBrowser, page) {
+  if (!page || typeof page.context?.newCDPSession !== "function") {
+    return;
+  }
+
+  try {
+    const cdp = await getPageCdp(page);
+    const { windowId } = await cdp.send("Browser.getWindowForTarget");
+    await cdp.send("Browser.setWindowBounds", {
+      windowId,
+      bounds: {
+        left: 0,
+        top: 0,
+        width: FORCED_VIEWPORT.width,
+        height: FORCED_VIEWPORT.height,
+        windowState: "normal",
+      },
+    });
+  } catch {
+    // Best effort: remote providers may not expose window management.
+  }
+}
+
+const removeAutomationGlobalsInitFn = () => {
+  try {
+    delete window.__playwright;
+  } catch {
+    /* ignore */
+  }
+  try {
+    delete window.__pw_manual;
+  } catch {
+    /* ignore */
+  }
+};
+
+const personaPatchedPages = new WeakSet();
+
+/**
+ * Persona timezone/locale via CDP emulation, per page: Playwright exposes no
+ * post-launch context-level timezone setter for persistent contexts.
+ */
+async function applyPersonaPageEmulation(page, persona) {
+  if (!page || personaPatchedPages.has(page)) return;
+  personaPatchedPages.add(page);
+  try {
+    const cdp = await getPageCdp(page);
+    if (persona.timezoneId) {
+      await cdp
+        .send("Emulation.setTimezoneOverride", {
+          timezoneId: persona.timezoneId,
+        })
+        .catch(() => {});
     }
-  });
+    if (persona.locale) {
+      await cdp
+        .send("Emulation.setLocaleOverride", {
+          locale: persona.locale,
+          acceptLanguage: persona.acceptLanguage,
+        })
+        .catch(() => {});
+    }
+  } catch {
+    // Best effort: contexts without CDP keep host defaults.
+  }
+}
+
+const personaPreparedContexts = new WeakSet();
+
+/**
+ * Pin ONE deterministic persona onto a context: navigator/locale init
+ * patches, network-layer headers, opt-in stream-CORS machinery (T20-a),
+ * popup guards, and CDP timezone emulation for existing + future pages.
+ */
+async function applyPersonaToContext(context, persona, chromeVersion) {
+  if (!context || personaPreparedContexts.has(context)) return context;
+  personaPreparedContexts.add(context);
+  preparedContexts.add(context);
+
+  await context
+    .addInitScript(runtimeFingerprintPatchFn, {
+      userAgent: persona.userAgent,
+      userAgentMetadata: persona.userAgentMetadata,
+      chromeVersion,
+      chromeMajorVersion: String(chromeVersion || "").split(".")[0] || "",
+      languages: persona.languages,
+      locale: persona.locale,
+    })
+    .catch(() => {});
+
+  await context.addInitScript(removeAutomationGlobalsInitFn).catch(() => {});
+
+  // Opt-in stream-CORS patch at context level so every future page (and
+  // cross-origin iframe) inherits it ([TOOL-P4], plan T20-a).
+  await ensureStreamCorsInjection(context, {
+    secChUa: String(persona.headers?.["sec-ch-ua"] || ""),
+    chromeVersion,
+  }).catch(() => {});
+
+  if (typeof context.setExtraHTTPHeaders === "function") {
+    await context.setExtraHTTPHeaders(persona.headers).catch(() => {});
+  }
+
   if (getPopupBlockingEnabled()) {
     await context.addInitScript(popupBlockerInitScript);
     context.on("page", async (page) => {
@@ -1600,9 +1545,27 @@ async function createFingerprintedContext(
     });
   }
 
-  preparedContexts.add(context);
+  context.on("page", (page) => {
+    applyPersonaPageEmulation(page, persona).catch(() => {});
+  });
+  for (const page of context.pages()) {
+    await applyPersonaPageEmulation(page, persona).catch(() => {});
+  }
 
   return context;
+}
+
+/** Fresh (non-persistent) persona context, e.g. for shared CDP browsers. */
+async function createPersonaContext(browser, persona, chromeVersion) {
+  const context = await browser.newContext({
+    viewport: FORCED_VIEWPORT,
+    deviceScaleFactor: 2,
+    userAgent: persona.userAgent,
+    locale: persona.locale,
+    timezoneId: persona.timezoneId,
+    extraHTTPHeaders: persona.headers,
+  });
+  return applyPersonaToContext(context, persona, chromeVersion);
 }
 
 async function prepareSharedContext(context) {
@@ -1610,18 +1573,7 @@ async function prepareSharedContext(context) {
     return context;
   }
 
-  await context.addInitScript(() => {
-    try {
-      delete window.__playwright;
-    } catch {
-      /* ignore */
-    }
-    try {
-      delete window.__pw_manual;
-    } catch {
-      /* ignore */
-    }
-  });
+  await context.addInitScript(removeAutomationGlobalsInitFn);
   if (getPopupBlockingEnabled()) {
     await context.addInitScript(popupBlockerInitScript);
     context.on("page", async (page) => {
@@ -1636,18 +1588,20 @@ async function prepareSharedContext(context) {
   return context;
 }
 
-async function launchBrowserAttempt({
+async function launchPersistentAttempt({
   launchTimeout,
   launchArgs,
   proxy = null,
-  userDataDir = "",
-  persistent = false,
-} = {}) {
-  const launchOptions = {
+  stateDir,
+}) {
+  const context = await chromium.launchPersistentContext(stateDir, {
     executablePath: EXECUTABLE_PATH,
-    headless: true,
+    headless: getHeadlessLaunchEnabled(),
     timeout: launchTimeout,
     args: launchArgs,
+    ignoreHTTPSErrors: true,
+    viewport: FORCED_VIEWPORT,
+    deviceScaleFactor: 2,
     proxy: proxy?.server
       ? {
           server: proxy.server,
@@ -1655,27 +1609,46 @@ async function launchBrowserAttempt({
           password: proxy.password || undefined,
         }
       : undefined,
-  };
+  });
+  return { browser: context.browser?.() ?? null, context };
+}
 
-  if (persistent) {
-    const context = await chromium.launchPersistentContext(userDataDir, {
-      ...launchOptions,
-      viewport: FORCED_VIEWPORT,
-      deviceScaleFactor: 2,
-    });
-    return {
-      browser: context.browser(),
-      context,
-      persistent: true,
-    };
+// One live browser session per persistent state jar. Concurrent acquisitions
+// for the same (profile,target-host) join the running browser instead of
+// fighting over Chromium's profile lock; the jar directory itself is never
+// deleted, so cookies survive complete close cycles (ADR-003).
+const jarSessions = new Map();
+
+function acquireJarSession(stateDir, launchFactory) {
+  let entry = jarSessions.get(stateDir);
+  if (!entry) {
+    entry = { refs: 0, session: null };
+    jarSessions.set(stateDir, entry);
+    entry.promise = launchFactory()
+      .then((session) => {
+        entry.session = session;
+        return session;
+      })
+      .catch((error) => {
+        if (jarSessions.get(stateDir) === entry) {
+          jarSessions.delete(stateDir);
+        }
+        throw error;
+      });
   }
+  entry.refs += 1;
+  return entry.promise;
+}
 
-  const browser = await chromium.launch(launchOptions);
-  return {
-    browser,
-    context: null,
-    persistent: false,
-  };
+/** Returns true when the jar session is still shared and must stay open. */
+function releaseJarSession(session) {
+  const stateDir = session?.stateDir;
+  const entry = stateDir ? jarSessions.get(stateDir) : null;
+  if (!entry || entry.session !== session) return false;
+  entry.refs -= 1;
+  if (entry.refs > 0) return true;
+  jarSessions.delete(stateDir);
+  return false;
 }
 
 async function validateProxyConnection(
@@ -1693,9 +1666,9 @@ async function validateProxyConnection(
       });
 
   const context = persistentContext || temporaryContext;
+  const validationPage = await context.newPage();
   try {
-    const page = context.pages()[0] || (await context.newPage());
-    const response = await page.goto(testUrl, {
+    const response = await validationPage.goto(testUrl, {
       waitUntil: "domcontentloaded",
       timeout: timeoutMs,
     });
@@ -1705,6 +1678,9 @@ async function validateProxyConnection(
   } finally {
     if (temporaryContext) {
       await temporaryContext.close().catch(() => {});
+    } else {
+      // Keep the persistent jar free of validation tabs.
+      await validationPage.close().catch(() => {});
     }
   }
 }
@@ -1740,42 +1716,20 @@ export async function connectBrowser(wsEndpoint = WS_ENDPOINT) {
   let context = null;
   let ownsContext = false;
   try {
-    const suite = await getFingerprintSuite(browser);
-    const synchronized = generateRotatingFingerprintBundle(
-      suite.fingerprintGenerator,
-      suite.chromeVersion,
-      suite.chromeMajorVersion,
-    );
-    const profile = buildProfileFromFingerprint(
-      synchronized,
-      suite.chromeVersion,
-      suite.chromeMajorVersion,
-    );
-    context = await createFingerprintedContext(browser, profile, synchronized);
+    // Shared fallback browsers have no proxy binding: the persona uses the
+    // fixed coherent fallback geo pair.
+    const chromeVersion = await resolveEffectiveChromeVersion(browser);
+    const persona = buildPersona({ chromeVersion, geo: null });
+    context = await createPersonaContext(browser, persona, chromeVersion);
     ownsContext = true;
   } catch (error) {
-    if (getFingerprintFallbackStrategy() === "profile") {
-      try {
-        const suite = await getFingerprintSuite(browser);
-        const profile = buildFallbackFingerprintProfile(
-          suite.chromeVersion,
-          suite.chromeMajorVersion,
-        );
-        context = await createFingerprintedContext(browser, profile, null, {
-          injectFingerprint: false,
-        });
-        ownsContext = true;
-      } catch {
-        context = browser.contexts()[0] || null;
-        if (context) {
-          await prepareSharedContext(context);
-        }
-      }
-    } else {
-      context = browser.contexts()[0] || null;
-      if (context) {
-        await prepareSharedContext(context);
-      }
+    console.warn(
+      "[owc-pw] persona context unavailable on shared browser:",
+      error?.message || error,
+    );
+    context = browser.contexts()[0] || null;
+    if (context) {
+      await prepareSharedContext(context);
     }
   }
 
@@ -1799,170 +1753,167 @@ export async function connectBrowser(wsEndpoint = WS_ENDPOINT) {
 }
 
 /**
- * Launch an isolated browser for one MCP session.
- * Returns { browser, context, userDataDir }.
+ * Launch an isolated browser for one MCP session on the persistent
+ * (profile,target-host) state jar (T21/ADR-003).
+ *
+ * Returns { browser, context, stateDir, userDataDir, ... } where stateDir ===
+ * userDataDir is the deterministic data/browser-state/<hash>/ jar shared by
+ * every session with the same profile and target host.
  */
 export async function launchEphemeralBrowser(
   sessionId,
-  { browserProfile = "" } = {},
+  { browserProfile = "", targetHost = "", targetUrl = "" } = {},
 ) {
-  const safeSessionId = String(sessionId || "session").replace(
-    /[^a-zA-Z0-9_-]/g,
-    "_",
-  );
-  const userDataDir = path.join(
-    os.tmpdir(),
-    `owc-pw-${safeSessionId}-${Date.now()}`,
-  );
-  const launchTimeoutMs = getBrowserLaunchTimeoutMs();
-  const launchTimeout = Number.isFinite(launchTimeoutMs)
-    ? Math.max(0, launchTimeoutMs)
-    : 45000;
-  const launchArgs = [...DEFAULT_LAUNCH_ARGS, ...getExtraLaunchArgs()];
-  const launchPolicy = buildEffectivePolicy({ browserProfile });
-
-  let launchPersistentContext = false;
-  if (launchPolicy.ubol_enabled && getUbolEnabled() && UBOL_EXTENSION_DIR) {
-    try {
-      await fs.access(path.join(UBOL_EXTENSION_DIR, "manifest.json"));
-      launchArgs.push(`--disable-extensions-except=${UBOL_EXTENSION_DIR}`);
-      launchArgs.push(`--load-extension=${UBOL_EXTENSION_DIR}`);
-      launchPersistentContext = true;
-    } catch {
-      console.warn(
-        `[owc-pw] uBOL extension not found at ${UBOL_EXTENSION_DIR}; continuing without extension.`,
-      );
-    }
-  }
-
-  const proxySelectionKey = `playwright:${
-    String(browserProfile || "default")
-      .trim()
-      .toLowerCase() || "default"
-  }`;
-  const proxyPlan = await getProxyCandidatePlan(
-    proxySelectionKey,
-    getProxyRuntimeConfig(),
-  );
-  const attemptedErrors = [];
-  let browser = null;
-  let context = null;
-  let persistentContext = false;
-  let selectedProxy = null;
-
-  if (proxyPlan.enabled && launchPolicy.use_proxy_on_first_attempt) {
-    for (const candidate of proxyPlan.candidates) {
+  const requestedHost =
+    String(targetHost || "").trim() ||
+    (() => {
       try {
-        const launchResult = await launchBrowserAttempt({
-          launchTimeout,
-          launchArgs,
-          proxy: candidate,
-          userDataDir,
-          persistent: launchPersistentContext,
-        });
-        await validateProxyConnection(launchResult, {
-          testUrl: proxyPlan.testUrl,
-          timeoutMs: proxyPlan.validationTimeoutMs,
-        });
-        browser = launchResult.browser;
-        context = launchResult.context;
-        persistentContext = launchResult.persistent;
-        markProxySuccess(proxySelectionKey, candidate);
-        selectedProxy = candidate;
-        break;
-      } catch (error) {
-        attemptedErrors.push(
-          `${candidate.server} (${candidate.sourceId}) -> ${error?.message || error}`,
+        return new URL(String(targetUrl || "").trim()).hostname || "";
+      } catch {
+        return "";
+      }
+    })();
+  const stateDir = resolveBrowserStateDir({
+    profile: browserProfile,
+    targetHost: requestedHost,
+  });
+
+  return acquireJarSession(stateDir, async () => {
+    const launchTimeoutMs = getBrowserLaunchTimeoutMs();
+    const launchTimeout = Number.isFinite(launchTimeoutMs)
+      ? Math.max(0, launchTimeoutMs)
+      : 45000;
+    const launchArgs = [...DEFAULT_LAUNCH_ARGS, ...getExtraLaunchArgs()];
+    const launchPolicy = buildEffectivePolicy({ browserProfile });
+
+    if (launchPolicy.ubol_enabled && getUbolEnabled() && UBOL_EXTENSION_DIR) {
+      try {
+        await fs.access(path.join(UBOL_EXTENSION_DIR, "manifest.json"));
+        launchArgs.push(`--disable-extensions-except=${UBOL_EXTENSION_DIR}`);
+        launchArgs.push(`--load-extension=${UBOL_EXTENSION_DIR}`);
+      } catch {
+        console.warn(
+          `[owc-pw] uBOL extension not found at ${UBOL_EXTENSION_DIR}; continuing without extension.`,
         );
-        markProxyFailure(proxySelectionKey, candidate);
-        if (context) {
-          await context.close().catch(() => {});
-          context = null;
-        } else if (browser) {
-          await browser.close().catch(() => {});
-          browser = null;
-        }
-        persistentContext = false;
       }
     }
-  }
 
-  if (!browser && (!proxyPlan.enabled || proxyPlan.allowDirectFallback)) {
-    const launchResult = await launchBrowserAttempt({
-      launchTimeout,
-      launchArgs,
-      proxy: null,
-      userDataDir,
-      persistent: launchPersistentContext,
-    });
-    browser = launchResult.browser;
-    context = launchResult.context;
-    persistentContext = launchResult.persistent;
-  }
-
-  if (!browser) {
-    throw new Error(
-      attemptedErrors.length
-        ? `No working proxy candidate was available. ${attemptedErrors.join(" | ")}`
-        : "No working proxy candidate was available.",
+    const proxySelectionKey = `playwright:${
+      String(browserProfile || "default")
+        .trim()
+        .toLowerCase() || "default"
+    }`;
+    const proxyPlan = await getProxyCandidatePlan(
+      proxySelectionKey,
+      getProxyRuntimeConfig(),
     );
-  }
+    const attemptedErrors = [];
+    let browser = null;
+    let context = null;
+    let selectedProxy = null;
 
-  if (!context) {
-    const suite = await getFingerprintSuite(browser);
-    try {
-      const synchronized = generateRotatingFingerprintBundle(
-        suite.fingerprintGenerator,
-        suite.chromeVersion,
-        suite.chromeMajorVersion,
-      );
-      const profile = buildProfileFromFingerprint(
-        synchronized,
-        suite.chromeVersion,
-        suite.chromeMajorVersion,
-      );
-      context = await createFingerprintedContext(
-        browser,
-        profile,
-        synchronized,
-      );
-    } catch (error) {
-      if (getFingerprintFallbackStrategy() !== "profile") {
-        await browser.close().catch(() => {});
-        throw error;
+    if (proxyPlan.enabled && launchPolicy.use_proxy_on_first_attempt) {
+      for (const candidate of proxyPlan.candidates) {
+        try {
+          const launchResult = await launchPersistentAttempt({
+            launchTimeout,
+            launchArgs,
+            proxy: candidate,
+            stateDir,
+          });
+          await validateProxyConnection(launchResult, {
+            testUrl: proxyPlan.testUrl,
+            timeoutMs: proxyPlan.validationTimeoutMs,
+          });
+          browser = launchResult.browser;
+          context = launchResult.context;
+          selectedProxy = candidate;
+          markProxySuccess(proxySelectionKey, candidate);
+          break;
+        } catch (error) {
+          attemptedErrors.push(
+            `${candidate.server} (${candidate.sourceId}) -> ${error?.message || error}`,
+          );
+          markProxyFailure(proxySelectionKey, candidate);
+          if (context) {
+            await context.close().catch(() => {});
+            context = null;
+          } else if (browser) {
+            await browser.close().catch(() => {});
+            browser = null;
+          }
+        }
       }
-      const profile = buildFallbackFingerprintProfile(
-        suite.chromeVersion,
-        suite.chromeMajorVersion,
-      );
-      context = await createFingerprintedContext(browser, profile, null, {
-        injectFingerprint: false,
-      });
     }
-  } else {
-    await prepareSharedContext(context);
-  }
 
-  return {
-    browser,
-    context,
-    userDataDir,
-    proxy: selectedProxy,
-    proxy_strategy: proxyPlan.strategy,
-    browserProfile,
-    launchPolicy,
-    sharedConnection: false,
-    ownsBrowser: !persistentContext,
-    ownsContext: true,
-    disconnect: async () => browser.close(),
-  };
+    if (!context && (!proxyPlan.enabled || proxyPlan.allowDirectFallback)) {
+      const launchResult = await launchPersistentAttempt({
+        launchTimeout,
+        launchArgs,
+        proxy: null,
+        stateDir,
+      });
+      browser = launchResult.browser;
+      context = launchResult.context;
+    }
+
+    if (!context) {
+      throw new Error(
+        attemptedErrors.length
+          ? `No working proxy candidate was available. ${attemptedErrors.join(" | ")}`
+          : "No working proxy candidate was available.",
+      );
+    }
+
+    const chromeVersion = await resolveEffectiveChromeVersion(browser);
+    const proxyKey = normalizeProxyGeoKey(selectedProxy);
+    const geo = await resolvePersonaGeo(proxyKey, async () =>
+      selectedProxy ? probeProxyExitGeo(context) : null,
+    );
+    const persona = buildPersona({ chromeVersion, geo });
+    await applyPersonaToContext(context, persona, chromeVersion);
+
+    return {
+      browser,
+      context,
+      userDataDir: stateDir,
+      stateDir,
+      targetHost: requestedHost,
+      proxy: selectedProxy,
+      proxy_strategy: proxyPlan.strategy,
+      browserProfile,
+      launchPolicy,
+      persona: {
+        userAgent: persona.userAgent,
+        locale: persona.locale,
+        timezoneId: persona.timezoneId,
+        acceptLanguage: persona.acceptLanguage,
+        proxy_key: proxyKey,
+        geo_source: selectedProxy ? "proxy_exit_probe" : "fixed_fallback",
+      },
+      sharedConnection: false,
+      ownsBrowser: false,
+      ownsContext: true,
+      disconnect: async () => {
+        if (browser) await browser.close().catch(() => {});
+        else await context.close().catch(() => {});
+      },
+    };
+  });
 }
 
 /**
- * Close an isolated browser and remove its temporary profile directory.
+ * Close an isolated browser session.
+ *
+ * The persistent state jar (stateDir/userDataDir under
+ * data/browser-state/<hash>/) is intentionally NEVER deleted: cookies and
+ * site state must survive across runs (T21/ADR-003). Jar sessions are
+ * ref-counted; the underlying browser closes only with the last holder.
  */
 export async function closeEphemeralBrowser(session) {
   if (!session) return;
+  if (releaseJarSession(session)) return;
+
   try {
     if (session.sharedConnection) {
       if (session.ownsContext && session.context?.close) {
@@ -1980,12 +1931,8 @@ export async function closeEphemeralBrowser(session) {
     if (session.browser && session.ownsBrowser !== false) {
       await session.browser.close();
     }
-  } finally {
-    if (session.userDataDir) {
-      await fs
-        .rm(session.userDataDir, { recursive: true, force: true })
-        .catch(() => {});
-    }
+  } catch {
+    // Close is best-effort; the persistent jar stays untouched regardless.
   }
 }
 
@@ -1995,7 +1942,7 @@ export async function closeEphemeralBrowser(session) {
  */
 export async function getPage(
   session,
-  { targetUrl = "", forceRotateFingerprint = false, browserProfile = "" } = {},
+  { targetUrl = "", browserProfile = "" } = {},
 ) {
   // Accept either a raw context or a { browser, context } session object
   const context = session?.context ?? session;
@@ -2031,6 +1978,8 @@ export async function getPage(
 
   // Enforce viewport (context setting may be overridden by some sites)
   await page.setViewportSize(FORCED_VIEWPORT);
+  // Best-effort OS-window bounds via CDP (puppeteer parity, plan T20-e).
+  await enforceWindowBounds(session, page);
   await installPopupGuards(page);
   attachNetworkDiagnostics(page);
   const effectivePolicy = buildEffectivePolicy({

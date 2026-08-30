@@ -1,24 +1,35 @@
 version: 2
 
 updates:
-  # GitHub Actions
-  - package-ecosystem: "github-actions"
+  # Python backend dependencies (pyproject.toml)
+  - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
     commit-message:
-      prefix: "ci"
+      prefix: "chore(python)"
     labels:
       - "dependencies"
-      - "ci"
+      - "python"
+    open-pull-requests-limit: 5
 
-  # Next.js web app
+  # Operator console (web/package.json)
   - package-ecosystem: "npm"
     directory: "/web"
     schedule:
       interval: "weekly"
       day: "monday"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
     commit-message:
       prefix: "chore(web)"
     labels:
@@ -34,12 +45,17 @@ updates:
       - dependency-name: "react-dom"
         update-types: ["version-update:semver-major"]
 
-  # Puppeteer MCP tools
+  # Playwright MCP browser tools (tools/playwright/package.json)
   - package-ecosystem: "npm"
-    directory: "/tools/puppeteer"
+    directory: "/tools/playwright"
     schedule:
       interval: "weekly"
       day: "monday"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
     commit-message:
       prefix: "chore(tools)"
     labels:
@@ -47,15 +63,35 @@ updates:
       - "javascript"
     open-pull-requests-limit: 5
 
-  # Python backend
-  - package-ecosystem: "pip"
+  # Puppeteer MCP tools (legacy stack, pending ADR-003 consolidation)
+  - package-ecosystem: "npm"
+    directory: "/tools/puppeteer"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "chore(tools)"
+    labels:
+      - "dependencies"
+      - "javascript"
+    open-pull-requests-limit: 5
+
+  # Docker base images
+  - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
-    commit-message:
-      prefix: "chore(python)"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
     labels:
       - "dependencies"
-      - "python"
-    open-pull-requests-limit: 5
+      - "docker"

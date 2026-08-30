@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -20,7 +20,7 @@ def _repo_session():
 def test_overview_returns_strict_status_and_trend_metrics_without_agent_success() -> None:
     repo, session = _repo_session()
     try:
-        now = datetime.utcnow().replace(hour=12, minute=0, second=0, microsecond=0)
+        now = datetime.now(UTC).replace(hour=12, minute=0, second=0, microsecond=0)
         rows = [
             PipelineRunRecord(
                 run_id="success-run",
@@ -83,7 +83,7 @@ def test_overview_returns_strict_status_and_trend_metrics_without_agent_success(
 def test_overview_exposes_llm_provider_blockers_without_changing_strict_rate() -> None:
     repo, session = _repo_session()
     try:
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         rate_limited = PipelineRunRecord(
             run_id="rate-limited-run",
             root_url="https://quota.example/live",
@@ -141,7 +141,7 @@ def test_overview_exposes_llm_provider_blockers_without_changing_strict_rate() -
 def test_overview_counts_distinct_working_sites_and_no_stream_hosting_runs() -> None:
     repo, session = _repo_session()
     try:
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         rows = [
             PipelineRunRecord(
                 run_id="duplicate-success-run",

@@ -5,6 +5,10 @@
 #  Processes: Chrome (shared fallback) + Node MCP server (port 3001)
 # =============================================================================
 
+# Base pinned to Playwright 1.60.0 on noble.
+# Digest pin placeholder (resolve with: docker buildx imagetools inspect mcr.microsoft.com/playwright:v1.60.0-noble
+# then append @sha256:<digest> to the FROM line below):
+#   mcr.microsoft.com/playwright:v1.60.0-noble@sha256:<TO_FILL_AFTER_VERIFYING>
 FROM mcr.microsoft.com/playwright:v1.60.0-noble
 
 ARG BUILDKIT_INLINE_CACHE=1
@@ -22,16 +26,24 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     MCP_BROWSER_MODE=isolated \
     BROWSER_WS_ENDPOINT=ws://127.0.0.1:9223 \
     REMOTE_DEBUGGING_PORT=9223 \
-    PORT=3001
+    PORT=3001 \
+    OWC_BROWSER_HEADLESS=true
+
+# Internal headless default stays true; only profile-gated deployments
+# (owc-tools-playwright-headed in docker-compose.yml) set it to false so the
+# entrypoint launches Chrome under Xvfb instead of --headless=new.
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl unzip \
+    && apt-get install -y --no-install-recommends curl unzip xvfb x11-utils \
     && rm -rf /var/lib/apt/lists/*
 
 COPY tools/playwright/package*.json tools/playwright/
 RUN --mount=type=cache,target=/root/.npm \
     cd tools/playwright \
     && npm ci --omit=dev --prefer-offline --no-audit --no-fund \
+    # CVE-2026-59873 (critical): npm tar <=7.5.18 resource exhaustion; forced
+    # to the patched release until upstream deps move (plan T47 audit pass).
+    && npm install --omit=dev --no-save --no-audit --no-fund tar@^7.5.19 \
     && CHROME_BIN="$(find /ms-playwright -type f \( -path '*/chrome-linux64/chrome' -o -path '*/chrome-linux/chrome' \) | head -n 1)" \
     && test -n "${CHROME_BIN}" \
     && ln -sf "${CHROME_BIN}" /usr/local/bin/google-chrome-stable \
@@ -50,12 +62,32 @@ COPY tools/playwright/ tools/playwright/
 COPY tools/shared/ tools/shared/
 COPY scripts/ scripts/
 
+# Non-root runtime user, created after every root-requiring step
+# (apt, npm ci with /root/.npm cache mount, /usr/local/bin Chrome symlinks,
+# uBOL download into tools/playwright/extensions/ubol).
+# CVE hygiene (plan T47): the distro npm bundles tar@7.5.11 (CVE-2026-59873,
+# critical). npm has finished all build-time work by this layer, so strip its
+# vendored vulnerable tree from the final image; runtime only needs node.
+RUN groupadd --system --gid 10001 app \
+    && rm -rf /usr/lib/node_modules/npm/node_modules/tar \
+    && useradd --system --uid 10001 --gid app --home-dir /home/app --create-home --shell /bin/bash app
+
+# Runtime-writable paths owned by app: data tree (logs under data/logs), the
+# Chrome managed-policy dirs written by prepare_ubol_policy() in the entrypoint.
+# Shared Chrome writes its temporary profile under /tmp; persistent Playwright
+# jars live under /app/data/browser-state. Browsers under
+# PLAYWRIGHT_BROWSERS_PATH=/ms-playwright are read-only at runtime (launch only).
 RUN mkdir -p data/logs \
-    && chmod +x scripts/docker/entrypoint.playwright.sh
+    && chmod +x scripts/docker/entrypoint.playwright.sh \
+    && mkdir -p /etc/opt/chrome/policies/managed /etc/chromium/policies/managed \
+    && chown -R app:app /etc/opt/chrome /etc/chromium \
+    && chown -R app:app /app/data
 
 EXPOSE 3001 9223
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
     CMD node -e "fetch('http://127.0.0.1:3001/health').then((r)=>{if(!r.ok)process.exit(1);return r.text();}).then((t)=>{if(!t.includes('\"status\":\"ok\"'))process.exit(1);}).catch(()=>process.exit(1))"
+
+USER app
 
 ENTRYPOINT ["scripts/docker/entrypoint.playwright.sh"]

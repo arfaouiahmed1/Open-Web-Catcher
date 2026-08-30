@@ -116,11 +116,6 @@ class EmbeddedPageAgent:
                         url=url,
                         page_type=AgentType.EMBEDDED_PAGE.value,
                         run_goal="Work inside the embedded player and recover stream URLs from live player activity.",
-                        extras={
-                            "orchestrator_handoff": orchestrator_handoff[:600]
-                            if orchestrator_handoff
-                            else "",
-                        },
                     ),
                     memory_context=memory_context,
                     working_state=short_memory.working_state(
@@ -156,7 +151,9 @@ class EmbeddedPageAgent:
                         f"{orchestrator_handoff}\n"
                         "Use this context as guidance and verify findings from live page evidence."
                     )
-                async with agent_tools("embedded", self.settings, observer=observer) as tools:
+                async with agent_tools(
+                    "embedded", self.settings, observer=observer, target_url=url
+                ) as tools:
                     result = await run_agent_loop(
                         settings=self.settings,
                         llm=self.llm,

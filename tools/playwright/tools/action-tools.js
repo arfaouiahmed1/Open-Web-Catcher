@@ -1,4 +1,4 @@
-import {
+﻿import {
   buildEnvelope,
   capturePageSnapshot,
   makeObservedChange,
@@ -8,7 +8,14 @@ import {
   withBrowserSession,
 } from '../shared/tool-runtime.js';
 import { getPageNetworkDiagnostics } from '../shared/browser.js';
-import { getBrowserRuntimeSettings } from '../shared/runtime-config.js';
+import {
+  getMediaRuntimeConfig,
+  invokeMediaPlayback,
+  primeMediaProbe,
+  readMediaProbe,
+  runPlaybackPreflight,
+  waitForPlayback,
+} from '../shared/media-activation.js';
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -281,124 +288,12 @@ export async function selectOption({
   });
 }
 
-function runtimeSetting(key) {
-  return getBrowserRuntimeSettings('playwright')?.[key];
-}
-
-function parseBoolean(value, fallback = false) {
-  if (value == null) return fallback;
-  const normalized = String(value).trim().toLowerCase();
-  if (!normalized) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(normalized);
-}
-
-function parseIntegerList(value, fallback = []) {
-  const rows = Array.isArray(value) ? value : fallback;
-  const normalized = rows
-    .map((item) => Number.parseInt(String(item ?? '').trim(), 10))
-    .filter((item) => Number.isFinite(item) && item >= 0);
-  return normalized.length ? normalized : fallback;
-}
-
-function getMediaRuntimeConfig() {
-  const configuredAttempts = Number.parseInt(String(runtimeSetting('media_retry_count') ?? '3'), 10);
-  return {
-    total_attempts: Math.max(1, Number.isFinite(configuredAttempts) ? configuredAttempts : 3),
-    retry_backoff_ms: parseIntegerList(runtimeSetting('media_retry_backoff_ms'), [1000, 2000, 4000]),
-    verify_playback: parseBoolean(runtimeSetting('media_playback_verification_enabled'), true),
-    verification_timeout_ms: 5000,
-  };
-}
-
-async function primeMediaProbe(frame, { mute = false } = {}) {
-  return frame.evaluate((shouldMute) => {
-    const stateKey = '__owc_media_probe__';
-    const state = globalThis[stateKey] || { events: [], media_error_code: null, media_error_message: '' };
-    globalThis[stateKey] = state;
-    const video = document.querySelector('video');
-    if (!video) {
-      state.has_video = false;
-      return { has_video: false };
-    }
-
-    if (!video.__owcMediaProbeAttached) {
-      Object.defineProperty(video, '__owcMediaProbeAttached', { value: true, configurable: true });
-      const push = (name) => {
-        state.events = Array.isArray(state.events) ? state.events : [];
-        state.events.push(name);
-        state.events = state.events.slice(-20);
-      };
-      ['play', 'playing', 'pause', 'waiting', 'stalled', 'loadedmetadata', 'canplay'].forEach((eventName) => {
-        video.addEventListener(eventName, () => push(eventName), { passive: true });
-      });
-      video.addEventListener('error', () => {
-        push('error');
-        state.media_error_code = video.error?.code ?? null;
-        state.media_error_message = video.error?.message || '';
-      }, { passive: true });
-    }
-
-    if (shouldMute) {
-      video.muted = true;
-    }
-    state.has_video = true;
-    state.media_error_code = video.error?.code ?? state.media_error_code ?? null;
-    state.media_error_message = video.error?.message || state.media_error_message || '';
-
-    return {
-      has_video: true,
-      paused: Boolean(video.paused),
-      ready_state: Number(video.readyState || 0),
-      current_time: Number(video.currentTime || 0),
-    };
-  }, mute).catch(() => ({ has_video: false }));
-}
-
-async function readMediaProbe(frame) {
-  return frame.evaluate(() => {
-    const state = globalThis.__owc_media_probe__ || {};
-    const video = document.querySelector('video');
-    return {
-      has_video: Boolean(video),
-      paused: video ? Boolean(video.paused) : null,
-      ready_state: Number(video?.readyState || 0),
-      current_time: Number(video?.currentTime || 0),
-      events: Array.isArray(state.events) ? [...state.events] : [],
-      media_error_code: state.media_error_code ?? video?.error?.code ?? null,
-      media_error_message: state.media_error_message || video?.error?.message || '',
-    };
-  }).catch(() => ({
-    has_video: false,
-    paused: null,
-    ready_state: 0,
-    current_time: 0,
-    events: [],
-    media_error_code: null,
-    media_error_message: '',
-  }));
-}
-
-function mediaProbeShowsPlayback(probe = {}) {
-  return Boolean(
-    (probe.events || []).includes('play')
-    || (probe.events || []).includes('playing')
-    || (probe.has_video && probe.paused === false && (probe.ready_state >= 2 || probe.current_time > 0)),
-  );
-}
-
-async function waitForPlayback(frame, timeoutMs) {
-  const startedAt = Date.now();
-  let probe = await readMediaProbe(frame);
-  while ((Date.now() - startedAt) < timeoutMs) {
-    if (mediaProbeShowsPlayback(probe)) {
-      return { started: true, probe };
-    }
-    await wait(250);
-    probe = await readMediaProbe(frame);
-  }
-  return { started: mediaProbeShowsPlayback(probe), probe };
-}
-
+// Media activation helpers: primeMediaProbe / readMediaProbe / waitForPlayback /
+// invokeMediaPlayback / runPlaybackPreflight / getMediaRuntimeConfig now live in
+// shared/media-activation.js ([TOOL-DUP] dedupe, plan T20-f). The former local
+// copies drifted from the puppeteer shared pipeline and were removed; the
+// single-video probe shape was replaced by the shared multi-video probe
+// (max_ready_state / max_current_time) which play_media below consumes.
 async function inspectActivationCandidates(frame, framePath = 'root', limit = 8) {
   return frame.evaluate(({ framePathValue, candidateLimit }) => {
     const normalize = (value, max = 140) =>
@@ -475,130 +370,6 @@ async function inspectActivationCandidates(frame, framePath = 'root', limit = 8)
   }));
 }
 
-async function invokeMediaPlayback(frame, handle, { mute = false } = {}) {
-  let clickSuccessful = false;
-  let clickError = null;
-
-  if (handle) {
-    try {
-      await handle.click();
-      clickSuccessful = true;
-    } catch (error) {
-      clickError = error?.message || String(error);
-    }
-  }
-
-  const playResult = await frame.evaluate(async ({ shouldMute, allowDeferred }) => {
-    const video = document.querySelector('video');
-    if (!video) {
-      return {
-        ok: Boolean(allowDeferred),
-        deferred: Boolean(allowDeferred),
-        error: allowDeferred ? '' : 'No video element found',
-      };
-    }
-    if (shouldMute) {
-      video.muted = true;
-    }
-    try {
-      const result = video.play?.();
-      if (result && typeof result.then === 'function') {
-        await result;
-      }
-      return { ok: true };
-    } catch (error) {
-      return {
-        ok: false,
-        error: error?.message || String(error),
-        name: error?.name || 'Error',
-      };
-    }
-  }, { shouldMute: mute, allowDeferred: clickSuccessful }).catch((error) => ({
-    ok: false,
-    error: error?.message || String(error),
-    name: error?.name || 'Error',
-  }));
-
-  return {
-    click_successful: clickSuccessful,
-    click_error: clickError,
-    play_result: playResult,
-  };
-}
-
-async function runPlaybackPreflight(frame, { clickBlockers = true } = {}) {
-  return frame.evaluate(({ shouldClick }) => {
-    const overlaySelectors = [
-      '[class*="cookie"]',
-      '[class*="consent"]',
-      '[class*="modal"]',
-      '[class*="overlay"]',
-      '[class*="popup"]',
-      '[class*="banner"]',
-      '[id*="cookie"]',
-      '[id*="consent"]',
-      '[role="dialog"]',
-    ];
-    const actionKeywords = ['accept', 'agree', 'continue', 'close', 'dismiss', 'skip', 'ok', 'allow', 'got it'];
-    const candidates = Array.from(document.querySelectorAll('button,[role="button"],a,input[type="button"],input[type="submit"]'));
-    const centerX = window.innerWidth / 2;
-    const centerY = window.innerHeight / 2;
-    const visible = (node) => {
-      const rect = node.getBoundingClientRect();
-      const style = window.getComputedStyle(node);
-      return rect.width > 0
-        && rect.height > 0
-        && style.display !== 'none'
-        && style.visibility !== 'hidden'
-        && style.opacity !== '0';
-    };
-    const overlays = Array.from(document.querySelectorAll(overlaySelectors.join(',')))
-      .filter(visible)
-      .slice(0, 12)
-      .map((node) => {
-        const rect = node.getBoundingClientRect();
-        return {
-          text: (node.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 160),
-          x: rect.x,
-          y: rect.y,
-          width: rect.width,
-          height: rect.height,
-          covers_center: rect.left <= centerX && rect.right >= centerX && rect.top <= centerY && rect.bottom >= centerY,
-        };
-      });
-    const actions = [];
-
-    for (const node of (shouldClick ? candidates : [])) {
-      if (!visible(node)) continue;
-      const label = `${node.innerText || node.textContent || node.getAttribute('aria-label') || node.value || ''}`.replace(/\s+/g, ' ').trim();
-      const normalized = label.toLowerCase();
-      if (!normalized || !actionKeywords.some((keyword) => normalized.includes(keyword))) continue;
-      const rect = node.getBoundingClientRect();
-      const overlapsCenter = rect.left <= centerX && rect.right >= centerX && rect.top <= centerY && rect.bottom >= centerY;
-      const nearOverlay = overlays.some((overlay) => overlay.covers_center);
-      if (!overlapsCenter && !nearOverlay) continue;
-      try {
-        node.click();
-        actions.push(label.slice(0, 120));
-      } catch {
-        // ignore
-      }
-      if (actions.length >= 4) break;
-    }
-
-    return {
-      overlays_detected: overlays.length,
-      overlays,
-      actions,
-      clicked: actions.length > 0,
-    };
-  }, { shouldClick: Boolean(clickBlockers) }).catch(() => ({
-    overlays_detected: 0,
-    overlays: [],
-    actions: [],
-    clicked: false,
-  }));
-}
 
 export async function playMedia({
   frame_path = 'root',
@@ -693,7 +464,7 @@ export async function playMedia({
       });
     }
 
-    const preflight = await runPlaybackPreflight(resolved.frame, { clickBlockers: false });
+    const preflight = await runPlaybackPreflight(resolved.frame, mediaRuntime, { clickBlockers: false });
     if (preflight.clicked) {
       await wait(350);
       const refreshed = await resolveElementTarget(page, { frame_path, element_ref, selector, xpath, text });
@@ -795,8 +566,8 @@ export async function playMedia({
         resolution_attempts: resolved.resolution_attempts || [],
         preflight,
         playback_started: playbackStarted,
-        playback_ready: Number(finalProbe.ready_state || 0) >= 2,
-        playback_current_time: Number(finalProbe.current_time || 0),
+        playback_ready: Number(finalProbe.max_ready_state || 0) >= 2,
+        playback_current_time: Number(finalProbe.max_current_time || 0),
         playback_events: finalProbe.events || [],
         attempts,
         media_error_code: finalProbe.media_error_code,

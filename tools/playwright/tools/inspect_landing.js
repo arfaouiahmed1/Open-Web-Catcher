@@ -1,5 +1,6 @@
 import { inspect } from './inspect.js';
 import { buildPlayerHandoffCandidates } from './player-handoff.js';
+import { DEFAULT_BUDGETS, buildRawCounts, commonReducers, fitPayloadToBudget } from './inspect-summaries.js';
 
 const MATCH_PATTERN = /(watch|live|stream|match|fixture|kickoff|vs|versus|channel|game|event|play|league|cup|sports?)/i;
 const NOISE_PATTERN = /(login|sign in|signup|register|privacy|terms|cookie|contact|about|help|faq|telegram|discord|twitter|facebook|instagram)/i;
@@ -180,32 +181,59 @@ export async function inspectLanding(params = {}) {
 
   const maxDepth = (data.frame_tree || []).reduce((max, frame) => Math.max(max, frame.depth || 0), 0);
 
-  return {
-    context_type: 'landing',
-    url: data.url,
-    title: data.title,
-    screenshot_url: data.screenshot_url,
-    hosting_signals: data.hosting_signals,
-    lazy_load_warmup: data.lazy_load_warmup,
-    pagination: data.pagination,
-    popups: (data.popups || []).slice(0, 8),
-    match_candidates,
-    navigation_links,
-    action_targets,
-    player_handoff_candidates: buildPlayerHandoffCandidates(data),
-    iframe_overview: {
-      total_frames: (data.frame_tree || []).length,
-      max_depth: maxDepth,
-      frames_with_video: (data.frame_tree || []).filter((frame) => frame.video_count > 0).length,
-      frames_with_links: (data.frame_tree || []).filter((frame) => frame.total_links > 0).length,
-      frames: iframeFrames,
+  // Budget-first reduction (plan T20-d): MAX_* caps only pre-shape the payload;
+  // final size is governed by the per-profile byte budget with staged reducers.
+  const fitted = fitPayloadToBudget(
+    {
+      context_type: 'landing',
+      url: data.url,
+      title: data.title,
+      screenshot_url: data.screenshot_url,
+      hosting_signals: data.hosting_signals,
+      lazy_load_warmup: data.lazy_load_warmup,
+      pagination: data.pagination,
+      popups: (data.popups || []).slice(0, 8),
+      match_candidates,
+      navigation_links,
+      action_targets,
+      player_handoff_candidates: buildPlayerHandoffCandidates(data),
+      iframe_overview: {
+        total_frames: (data.frame_tree || []).length,
+        max_depth: maxDepth,
+        frames_with_video: (data.frame_tree || []).filter((frame) => frame.video_count > 0).length,
+        frames_with_links: (data.frame_tree || []).filter((frame) => frame.total_links > 0).length,
+        frames: iframeFrames,
+      },
+      stats: {},
     },
-    stats: {
-      ...(data.stats || {}),
-      match_candidates: match_candidates.length,
-      navigation_links: navigation_links.length,
-      action_targets: action_targets.length,
-      iframe_frames_reported: iframeFrames.length,
+    {
+      budgetTarget: DEFAULT_BUDGETS.landing,
+      rawCounts: buildRawCounts(data),
+      reducers: commonReducers({
+        groupCollections: () => [],
+        primaryCandidateCollections: [
+          (result) => result.match_candidates,
+          (result) => result.action_targets,
+        ],
+        secondaryCandidateCollections: [(result) => result.navigation_links],
+        frameCollections: [(result) => result.iframe_overview.frames],
+        groupDetailCollections: [
+          (result) => (result.iframe_overview.frames || []).map((frame) => frame.sample_links || []),
+        ],
+        miscCollections: [
+          (result) => result.popups,
+          (result) => result.player_handoff_candidates,
+        ],
+      }),
     },
+  );
+
+  fitted.stats = {
+    ...(data.stats || {}),
+    match_candidates: fitted.match_candidates.length,
+    navigation_links: fitted.navigation_links.length,
+    action_targets: fitted.action_targets.length,
+    iframe_frames_reported: fitted.iframe_overview.frames.length,
   };
+  return fitted;
 }

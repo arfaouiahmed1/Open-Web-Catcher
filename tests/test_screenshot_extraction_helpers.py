@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime
+from datetime import UTC, datetime
 
 from src.api.app import _extract_screenshot_urls_from_value
 from src.storage.repositories import _collect_attributed_screenshots, _collect_screenshot_urls
@@ -67,7 +67,7 @@ class ScreenshotExtractionParityTests(unittest.TestCase):
         trace = RunTrace(
             run_id="run-1",
             root_actor="orchestrator",
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
             observability=ObservabilityStatus(enabled=False, project="", default_dataset_name=""),
             events=[
                 RuntimeEvent(

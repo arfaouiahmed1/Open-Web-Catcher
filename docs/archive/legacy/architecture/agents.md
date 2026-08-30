@@ -132,7 +132,7 @@ The embedded agent should use grouped source/player structure first and only use
 ## OrchestratorAgent
 
 **File:** [`src/agents/orchestrator.py`](../../src/agents/orchestrator.py)  
-**Prompt:** [`configs/prompts/orchestrator_v1.md`](../../configs/prompts/orchestrator_v1.md)
+**Prompt:** `configs/prompts/orchestrator_v1.md` (deleted; the orchestrator now compiles from the reasoning-first prompt contracts, see plan task 25 of `.omo/plans/full-audit.md`)
 
 ### Purpose
 

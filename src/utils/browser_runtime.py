@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-BROWSER_IDS = ("puppeteer", "playwright")
+BROWSER_IDS = ("playwright",)
 MCP_PROFILE_IDS = ("classification", "landing", "hosting", "embedded")
 DEFAULT_PROXY_SOURCE_ORDER = [
     "openproxylist-https",
@@ -20,47 +20,6 @@ DEFAULT_PROXY_SOURCE_ORDER = [
 ]
 
 DEFAULT_BROWSER_RUNTIME: dict[str, dict[str, Any]] = {
-    "puppeteer": {
-        "launch_timeout_ms": 45000,
-        "extra_launch_args": [],
-        "adblock_allowlist_hosts": [],
-        "fingerprint_rotation_mode": "origin",
-        "fingerprint_fallback_strategy": "profile",
-        "fingerprint_rotation_interval_ms": 600000,
-        "fingerprint_rotation_max_uses": 8,
-        "fingerprint_recent_pool_size": 18,
-        "proxy_enabled": False,
-        "proxy_source_mode": "hybrid",
-        "proxy_source_order": list(DEFAULT_PROXY_SOURCE_ORDER),
-        "proxy_custom_list": [],
-        "proxy_rotation_mode": "sticky",
-        "proxy_selection_strategy": "ordered",
-        "proxy_fallback_strategy": "direct",
-        "proxy_fetch_timeout_ms": 8000,
-        "proxy_validation_timeout_ms": 12000,
-        "proxy_cache_ttl_ms": 600000,
-        "proxy_max_candidates": 40,
-        "proxy_test_url": "https://api.ipify.org?format=json",
-        "streaming_safe_mode": "adaptive",
-        "media_proxy_strategy": "direct_first",
-        "asset_diagnostics_enabled": True,
-        "popup_blocking_enabled": True,
-        "ubol_enabled": True,
-        "stream_cors_patch_enabled": False,
-        "stream_cors_include_credentials": False,
-        "iframe_sandbox_patch_enabled": True,
-        "iframe_auto_recovery_enabled": True,
-        "iframe_recovery_timeout_ms": 20000,
-        "media_capture_timeout_ms": 45000,
-        "media_retry_count": 4,
-        "media_retry_backoff_ms": [1200, 2500, 5000, 8000],
-        "media_cors_patch_enabled": False,
-        "media_playback_verification_enabled": True,
-        "media_playback_verification_timeout_ms": 7000,
-        "media_activation_settle_ms": 1200,
-        "media_activation_candidate_limit": 8,
-        "media_preflight_action_limit": 4,
-    },
     "playwright": {
         "launch_timeout_ms": 45000,
         "extra_launch_args": [],
@@ -87,6 +46,10 @@ DEFAULT_BROWSER_RUNTIME: dict[str, dict[str, Any]] = {
         "asset_diagnostics_enabled": True,
         "popup_blocking_enabled": True,
         "ubol_enabled": True,
+        # Ported from the removed puppeteer stack ([TOOL-P4], plan T20-a);
+        # previously only defined there, which left the playwright feature inert.
+        "stream_cors_patch_enabled": False,
+        "stream_cors_include_credentials": False,
         "iframe_sandbox_patch_enabled": True,
         "iframe_auto_recovery_enabled": True,
         "iframe_recovery_timeout_ms": 20000,
@@ -262,15 +225,14 @@ def normalize_browser_runtime(value: Any) -> dict[str, dict[str, Any]]:
             current["media_preflight_action_limit"],
             minimum=1,
         )
-        if browser == "puppeteer":
-            current["stream_cors_patch_enabled"] = _coerce_bool(
-                raw.get("stream_cors_patch_enabled"),
-                current["stream_cors_patch_enabled"],
-            )
-            current["stream_cors_include_credentials"] = _coerce_bool(
-                raw.get("stream_cors_include_credentials"),
-                current["stream_cors_include_credentials"],
-            )
+        current["stream_cors_patch_enabled"] = _coerce_bool(
+            raw.get("stream_cors_patch_enabled"),
+            current["stream_cors_patch_enabled"],
+        )
+        current["stream_cors_include_credentials"] = _coerce_bool(
+            raw.get("stream_cors_include_credentials"),
+            current["stream_cors_include_credentials"],
+        )
 
     return normalized
 

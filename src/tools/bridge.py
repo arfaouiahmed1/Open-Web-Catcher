@@ -17,9 +17,10 @@ PROJECT_TOOLS_ROOT = Path(__file__).parent.parent.parent / "tools"
 
 
 def _resolve_tools_root(engine: str | None = None) -> Path:
-    resolved_engine = str(engine or os.getenv("BROWSER_ENGINE") or "puppeteer").strip().lower()
-    if resolved_engine not in {"puppeteer", "playwright"}:
-        resolved_engine = "puppeteer"
+    # Playwright-only since ADR-003: the puppeteer tool stack was removed.
+    resolved_engine = str(engine or os.getenv("BROWSER_ENGINE") or "playwright").strip().lower()
+    if resolved_engine != "playwright":
+        resolved_engine = "playwright"
     return PROJECT_TOOLS_ROOT / resolved_engine
 
 
@@ -31,7 +32,7 @@ class JSToolBridge:
     ) -> None:
         self.browser_ws_endpoint = browser_ws_endpoint
         self.timeout = timeout
-        self.engine = str(engine or os.getenv("BROWSER_ENGINE") or "puppeteer").strip().lower()
+        self.engine = str(engine or os.getenv("BROWSER_ENGINE") or "playwright").strip().lower()
 
     def call(self, tool_name: str, params: dict[str, Any]) -> dict[str, Any]:
         """Execute a JS tool and return its parsed JSON output.

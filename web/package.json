@@ -4,9 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "node ./scripts/next-build.mjs",
+    "build": "npm run types:check && npm run typecheck && node ./scripts/next-build.mjs",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint && node ../scripts/check-no-polling.mjs",
+    "check:no-polling": "node ../scripts/check-no-polling.mjs",
+    "types:gen": "node ./scripts/gen-api-types.mjs",
+    "types:check": "node ./scripts/check-api-types.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -32,15 +36,23 @@
     "next-themes": "^0.4.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-window": "^1.8.11",
     "reactflow": "^11.11.4",
     "recharts": "^3.8.1",
     "tailwind-merge": "^2.5.4"
   },
   "devDependencies": {
+    "@types/node": "26.3.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@types/react-window": "^1.8.8",
+    "@vitejs/plugin-react": "^6.1.0",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.17.0",
     "eslint-config-next": "^15.1.0",
+    "openapi-typescript": "^7.13.0",
     "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.17"
+    "tailwindcss": "^3.4.17",
+    "vitest": "^4.1.11"
   }
 }

@@ -20,7 +20,7 @@ function describeEngineStrengths(browserId) {
         'persistent contexts with extensions',
         'context-level proxy configuration',
       ],
-      fallback_role: 'Use when media or iframe behavior needs stronger context ownership than the default Puppeteer path.',
+      fallback_role: 'Use when media or iframe behavior needs stronger context ownership than the default browser path.',
     };
   }
   return {

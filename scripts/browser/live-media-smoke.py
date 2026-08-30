@@ -21,7 +21,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_API = "http://localhost:8000"
-BROWSERS = ("puppeteer", "playwright")
+BROWSERS = ("playwright",)
 PROFILES = ("classification", "landing", "hosting", "embedded")
 
 
@@ -168,7 +168,7 @@ def smoke_url(api_base: str, url: str, profile: str, capture_ms: int) -> dict[st
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run live MCP media smoke checks against dataset or pinned URLs.")
     parser.add_argument("--api", default=DEFAULT_API)
-    parser.add_argument("--engine", choices=["puppeteer", "playwright", "both"], default="both")
+    parser.add_argument("--engine", choices=["playwright"], default="playwright")
     parser.add_argument("--profile", choices=["hosting", "embedded"], default="hosting")
     parser.add_argument("--url", action="append", default=[])
     parser.add_argument("--url-file", default="")
@@ -191,7 +191,7 @@ def main() -> int:
         print(json.dumps({"ok": False, "error": "No live URLs available."}, indent=2))
         return 2
 
-    engines = ["puppeteer", "playwright"] if args.engine == "both" else [args.engine]
+    engines = [args.engine]
     original_config = request_json("GET", f"{args.api}/ui/config", timeout=30)
     summary = {"ok": True, "api": args.api, "engines": {}}
     try:
@@ -221,7 +221,7 @@ def main() -> int:
             "PUT",
             f"{args.api}/ui/config",
             {
-                "browser_engine": original_config.get("browser_engine") or "puppeteer",
+                "browser_engine": original_config.get("browser_engine") or "playwright",
                 "browser_runtime": original_config.get("browser_runtime") or {},
                 "disabled_tools_by_browser_profile": original_config.get(
                     "disabled_tools_by_browser_profile"

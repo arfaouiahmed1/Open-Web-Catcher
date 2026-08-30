@@ -1,36 +1,29 @@
-"""Shared enumerations used across the pipeline."""
+"""Shared enumerations used across the pipeline — COMPAT SHIM (plan task 14).
 
-from enum import StrEnum
+The canonical definitions moved to ``src.models.common`` in batch W3
+(plan task 14). This module is a pure re-export shim so existing
+``from src.models.enums import ...`` call sites keep working unchanged.
+"""
 
+from __future__ import annotations
 
-class PageType(StrEnum):
-    LANDING = "landing_page"
-    HOSTING = "hosting_page"
-    EMBEDDED = "embedded_page"
-    UNKNOWN = "unknown"
+from src.models.common import (
+    AgentType,
+    Confidence,
+    EventKind,
+    EventStatus,
+    ExtractionStatus,
+    FailureKind,
+    PageType,
+)
 
-
-class Confidence(StrEnum):
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
-
-
-class ExtractionStatus(StrEnum):
-    SUCCESS = "success"
-    PARTIAL = "partial"
-    FAILED = "failed"
-    TIMEOUT = "timeout"
-    SITE_DEAD = "site_dead"
-    REDIRECT = "redirect"
-    PAGE_INACCESSIBLE = "page_inaccessible"
-    NO_HOSTING_PAGES = "no_hosting_pages"
-    NO_STREAMS = "no_streams"
-
-
-class AgentType(StrEnum):
-    CLASSIFICATION = "classification"
-    LANDING_PAGE = "landing_page"
-    HOSTING_PAGE = "hosting_page"
-    EMBEDDED_PAGE = "embedded_page"
-    ORCHESTRATOR = "orchestrator"
+__all__ = [
+    "PageType",
+    "Confidence",
+    "ExtractionStatus",
+    "AgentType",
+    "FailureKind",
+    # Event schema v2 (plan T31 / SCH-M6/H5).
+    "EventKind",
+    "EventStatus",
+]

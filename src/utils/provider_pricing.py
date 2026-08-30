@@ -44,6 +44,8 @@ def _normalize_provider(value: str) -> str:
     normalized = (value or "").strip().lower()
     if normalized in {"google_genai", "google", "gemini"}:
         return "google"
+    if normalized == "nvidia_nim":
+        return "nvidia"
     return normalized
 
 
@@ -600,6 +602,10 @@ def fetch_provider_pricing(
 
     Sources:
     - Google Gemini: provider pricing documentation.
+    - OpenAI / Anthropic: provider pricing documentation.
+    - OpenRouter / NVIDIA: provider models APIs.
+    Unknown providers raise ``ValueError`` so callers surface the gap instead
+    of silently syncing nothing.
     """
     normalized = _normalize_provider(provider)
     effective_max_models = max(1, int(max_models))
@@ -611,6 +617,26 @@ def fetch_provider_pricing(
             timeout_seconds=effective_timeout,
             max_models=effective_max_models,
         )
-    raise NotImplementedError(
-        f"Provider pricing sync supports only Google Gemini (got '{normalized or 'unknown'}')."
-    )
+    if normalized == "openai":
+        return _fetch_openai_pricing(
+            timeout_seconds=effective_timeout,
+            max_models=effective_max_models,
+        )
+    if normalized == "anthropic":
+        return _fetch_anthropic_pricing(
+            timeout_seconds=effective_timeout,
+            max_models=effective_max_models,
+        )
+    if normalized == "openrouter":
+        return _fetch_openrouter_pricing(
+            settings,
+            timeout_seconds=effective_timeout,
+            max_models=effective_max_models,
+        )
+    if normalized == "nvidia":
+        return _fetch_nvidia_pricing(
+            settings,
+            timeout_seconds=effective_timeout,
+            max_models=effective_max_models,
+        )
+    raise ValueError(f"no parser for provider '{normalized or 'unknown'}'")

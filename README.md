@@ -105,10 +105,12 @@ The backend talks to browser tools through MCP service URLs, not direct frontend
 
 | Layer | Main technology |
 | --- | --- |
-| Agent runtime | Python 3.11, LangChain, LangGraph, Google GenAI / Gemini |
+| Agent runtime | Python 3.11, LangChain, LangGraph |
+| LLM layer | LiteLLM (multi-provider, one interface; see [ADR-001](docs/adr/ADR-001-litellm-provider.md)) |
 | API | FastAPI, Pydantic, SSE endpoints, background jobs |
 | Persistence | PostgreSQL, SQLAlchemy, Alembic |
-| Browser tools | MCP servers, Puppeteer, Playwright, Chrome, profile-scoped tool registries |
+| Memory | Redis run-state + Postgres pgvector (planned, see [ADR-002](docs/adr/ADR-002-redis-run-state.md); SQLite/JSON stores remain until migration) |
+| Browser tools | Playwright-only MCP (consolidation planned, see [ADR-003](docs/adr/ADR-003-playwright-only-persona.md); puppeteer stack still present) |
 | Frontend | Next.js 15, React 19, shadcn-style components, Radix UI, React Flow, Recharts |
 | Packaging | `uv`, Docker Compose, separate Dockerfiles for API, web, Puppeteer tools, and Playwright tools |
 | Runtime config | `.env`, `configs/settings.yaml`, `data/settings.runtime.yaml`, `data/browser.runtime.json` |
@@ -184,13 +186,19 @@ npm run dev
 
 ## Validation
 
+Before running anything, create `.env` from `.env.example`. `POSTGRES_PASSWORD` is required; docker-compose fails fast if it is unset and there is no default.
+
+```powershell
+Copy-Item .env.example .env
+```
+
 Useful checks:
 
 ```powershell
-python -m compileall src
-uv run pytest
+uv sync --extra dev
+uv run pytest -q
+uv run pytest -m unit
 cd web
-npm run lint
 npm run build
 ```
 

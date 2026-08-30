@@ -1,5 +1,6 @@
 import { inspect } from './inspect.js';
 import { buildPlayerHandoffCandidates } from './player-handoff.js';
+import { DEFAULT_BUDGETS, buildRawCounts, commonReducers, fitPayloadToBudget } from './inspect-summaries.js';
 
 const SERVER_PATTERN = /(server|source|mirror|backup|embed|stream|quality|cdn)/i;
 const PLAY_PATTERN = /(play|watch|start|resume|stream)/i;
@@ -201,33 +202,67 @@ export async function inspectHosting(params = {}) {
     .slice(0, MAX_IFRAME_FRAMES)
     .map(toFrameContext);
 
-  return {
-    context_type: 'hosting',
-    url: data.url,
-    title: data.title,
-    screenshot_url: data.screenshot_url,
-    hosting_signals: data.hosting_signals,
-    videos: (data.videos || []).slice(0, 12),
-    popups: (data.popups || []).slice(0, 8),
-    server_controls,
-    playback_targets,
-    activation_candidates: buildActivationCandidates(playback_targets),
-    blocker_candidates: buildBlockerCandidates(data.popups),
-    player_handoff_candidates: buildPlayerHandoffCandidates(data),
-    iframe_context: {
-      total_frames: (data.frame_tree || []).length,
-      max_depth: (data.frame_tree || []).reduce((max, frame) => Math.max(max, frame.depth || 0), 0),
-      frames_with_video: (data.frame_tree || []).filter((frame) => frame.video_count > 0).length,
-      frames_with_server_controls: (data.frame_tree || []).filter((frame) => frame.has_server_controls).length,
-      frames: iframe_context,
+  // Budget-first reduction (plan T20-d): MAX_* caps only pre-shape the payload;
+  // final size is governed by the per-profile byte budget with staged reducers.
+  const fitted = fitPayloadToBudget(
+    {
+      context_type: 'hosting',
+      url: data.url,
+      title: data.title,
+      screenshot_url: data.screenshot_url,
+      hosting_signals: data.hosting_signals,
+      videos: (data.videos || []).slice(0, 12),
+      popups: (data.popups || []).slice(0, 8),
+      server_controls,
+      playback_targets,
+      activation_candidates: buildActivationCandidates(playback_targets),
+      blocker_candidates: buildBlockerCandidates(data.popups),
+      player_handoff_candidates: buildPlayerHandoffCandidates(data),
+      iframe_context: {
+        total_frames: (data.frame_tree || []).length,
+        max_depth: (data.frame_tree || []).reduce((max, frame) => Math.max(max, frame.depth || 0), 0),
+        frames_with_video: (data.frame_tree || []).filter((frame) => frame.video_count > 0).length,
+        frames_with_server_controls: (data.frame_tree || []).filter((frame) => frame.has_server_controls).length,
+        frames: iframe_context,
+      },
+      stats: {},
     },
-    stats: {
-      ...(data.stats || {}),
-      server_controls: server_controls.length,
-      playback_targets: playback_targets.length,
-      activation_candidates: Math.min(playback_targets.length, 16),
-      blocker_candidates: Math.min((data.popups || []).length, 10),
-      iframe_frames_reported: iframe_context.length,
+    {
+      budgetTarget: DEFAULT_BUDGETS.hosting,
+      rawCounts: buildRawCounts(data),
+      reducers: commonReducers({
+        groupCollections: () => [],
+        primaryCandidateCollections: [
+          (result) => result.server_controls,
+          (result) => result.playback_targets,
+          (result) => result.activation_candidates,
+          (result) => result.blocker_candidates,
+        ],
+        secondaryCandidateCollections: [],
+        frameCollections: [
+          (result) => result.videos,
+          (result) => result.iframe_context.frames,
+        ],
+        groupDetailCollections: [
+          (result) => (result.iframe_context.frames || []).map((frame) => frame.sample_buttons || []),
+          (result) => (result.iframe_context.frames || []).map((frame) => frame.sample_links || []),
+          (result) => (result.iframe_context.frames || []).map((frame) => frame.sample_videos || []),
+        ],
+        miscCollections: [
+          (result) => result.popups,
+          (result) => result.player_handoff_candidates,
+        ],
+      }),
     },
+  );
+
+  fitted.stats = {
+    ...(data.stats || {}),
+    server_controls: fitted.server_controls.length,
+    playback_targets: fitted.playback_targets.length,
+    activation_candidates: fitted.activation_candidates.length,
+    blocker_candidates: fitted.blocker_candidates.length,
+    iframe_frames_reported: fitted.iframe_context.frames.length,
   };
+  return fitted;
 }

@@ -1,0 +1,90 @@
+"use client";
+
+import React, { useMemo } from "react";
+import { StepTimeline } from "@/components/library/StepTimeline";
+import type { PlanStep } from "@/components/library/types";
+
+export interface RunTimelineTabProps {
+  plan?: { steps?: PlanStep[] } | null;
+  steps?: PlanStep[] | null;
+  events?: Array<{ kind?: string; details?: Record<string, unknown>; seq?: number; message?: string }>;
+  title?: string;
+  isLive?: boolean;
+  streamStatus?: string;
+  connected?: boolean;
+}
+
+function deriveStepsFromPlan(plan: RunTimelineTabProps["plan"]): PlanStep[] {
+  if (!plan || !Array.isArray(plan.steps)) return [];
+  return (plan.steps as PlanStep[]).filter((s) => s && typeof s.id === "string");
+}
+
+function deriveStepsFromEvents(events: RunTimelineTabProps["events"]): PlanStep[] {
+  if (!Array.isArray(events) || events.length === 0) return [];
+  // Fallback: synthesize steps from plan_step_update events when plan payload absent
+  const latestById = new Map<string, PlanStep>();
+  for (const ev of events) {
+    if (ev?.kind !== "plan_step_update") continue;
+    const d = ev.details as Record<string, unknown> | undefined;
+    const id = String(d?.step_id || d?.id || ev?.message || "").trim();
+    if (!id) continue;
+    const status = String(d?.status || d?.state || "pending").trim() as PlanStep["status"];
+    const title = String(d?.title || d?.step_title || id);
+    const criteria = String(d?.criteria || "");
+    const budget = (d?.budget as PlanStep["budget"]) ?? null;
+    latestById.set(id, {
+      id,
+      title,
+      criteria,
+      budget,
+      status: (["pending","in_progress","done","failed","skipped"].includes(status) ? status : "pending") as PlanStep["status"],
+    });
+  }
+  return Array.from(latestById.values());
+}
+
+export function RunTimelineTab({ plan, steps: stepsProp, events, title = "Run plan", isLive = false, streamStatus, connected }: RunTimelineTabProps) {
+  const effectiveIsLive = typeof connected === "boolean" ? connected : isLive;
+  const steps = useMemo(() => {
+    if (Array.isArray(stepsProp) && stepsProp.length > 0) return stepsProp;
+    const fromPlan = deriveStepsFromPlan(plan);
+    if (fromPlan.length) return fromPlan;
+    return deriveStepsFromEvents(events);
+  }, [stepsProp, plan, events]);
+
+  const hasSteps = steps.length > 0;
+  const liveLabel = effectiveIsLive ? "live" : "persisted";
+
+  return (
+    <div className="overflow-hidden rounded-xl border bg-card shadow-card">
+      <div className="border-b px-4 py-3" style={{ borderColor: "var(--line)" }}>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold">{title}</h3>
+          <span
+            className="rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide"
+            style={{
+              borderColor: "var(--line)",
+              color: effectiveIsLive ? "var(--signal)" : "var(--mute-2)",
+              background: effectiveIsLive ? "color-mix(in oklch, var(--signal) 10%, transparent)" : "transparent",
+            }}
+            data-role="timeline-live-badge"
+            data-live={effectiveIsLive ? "true" : "false"}
+          >
+            {liveLabel}
+          </span>
+          <span className="ml-auto text-[11px] text-muted-foreground" data-role="timeline-count">
+            {hasSteps ? `${steps.length} steps` : "no steps yet"}
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">Live plan driven by SSE — zero polling. Steps update as plan_step_update events arrive.{streamStatus ? ` · ${streamStatus}` : ""}</p>
+      </div>
+      <div className="p-0">
+        <StepTimeline
+          steps={steps}
+          title={title}
+          emptyLabel={effectiveIsLive ? "Waiting for plan…" : "No plan recorded for this run."}
+        />
+      </div>
+    </div>
+  );
+}

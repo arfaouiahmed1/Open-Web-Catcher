@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 from src.agents.memory import build_memory_context, remember_agent_run
 from src.agents.prompting import build_runtime_context, build_task_brief, compile_agent_prompt
@@ -44,7 +45,13 @@ class ClassificationAgent:
             PROMPT_PATH.read_text(encoding="utf-8") if PROMPT_PATH.exists() else _DEFAULT_PROMPT
         )
 
-    async def run(self, url: str, observer: RunObserver | None = None) -> ClassificationResult:
+    async def run(
+        self,
+        url: str,
+        observer: RunObserver | None = None,
+        *,
+        instruction_override: str | None = None,
+    ) -> ClassificationResult:
         from src.agents.base import build_llm, run_agent_loop
         from src.tools.mcp_client import agent_tools
 
@@ -104,13 +111,19 @@ class ClassificationAgent:
                         "Compiled layered prompt for classification agent",
                         details=compiled_prompt.model_dump(exclude={"content"}),
                     )
-                async with agent_tools("classification", self.settings, observer=observer) as tools:
+                async with agent_tools(
+                    "classification", self.settings, observer=observer, target_url=url
+                ) as tools:
                     result = await run_agent_loop(
                         settings=self.settings,
                         llm=self.llm,
                         tools=tools,
                         system_prompt=compiled_prompt.content,
-                        initial_message=f"Classify this page: {url}",
+                        initial_message=(
+                            f"{instruction_override}\n\nPage: {url}"
+                            if instruction_override
+                            else f"Classify this page: {url}"
+                        ),
                         max_tool_calls=self.settings.classification_max_tool_calls,
                         budget_exhausted_message="Output your classification now using the exact Output Format.",
                         observer=observer,
@@ -175,18 +188,30 @@ _CONF_MAP = {"high": Confidence.HIGH, "medium": Confidence.MEDIUM, "low": Confid
 
 
 def _parse_output(text: str, url: str) -> ClassificationResult:
+    """Parse classification output: strict JSON contract first, plain-text fallback second.
+
+    Fields the ClassificationResult schema cannot carry (anomalies, next_steps,
+    evidence, tools_used) are surfaced into the reasoning text and logged so the
+    parser never silently drops them.
+
+    confidence_source is set honestly: "parsed" only when the strict JSON contract
+    succeeded, "fallback" for regex-recovered or unparseable output. The
+    orchestrator confidence gate treats "fallback" as an unverifiable verdict.
+    """
     from src.agents.base import parse_json_object
 
     payload, _parse_error = parse_json_object(text)
     if payload:
-        return ClassificationResult(
+        result = ClassificationResult(
             url=url,
             page_type=_PAGE_TYPE_MAP.get(
                 str(payload.get("page_type", "")).lower(), PageType.UNKNOWN
             ),
             confidence=_CONF_MAP.get(str(payload.get("confidence", "")).lower(), Confidence.LOW),
             reasoning=str(payload.get("reasoning", "") or text[:500]),
+            confidence_source="parsed",
         )
+        return _surface_structured_fields(result, payload)
 
     page_type = PageType.UNKNOWN
     confidence = Confidence.LOW
@@ -208,12 +233,39 @@ def _parse_output(text: str, url: str) -> ClassificationResult:
     if reasoning_match:
         reasoning = reasoning_match.group(1).strip()
 
-    return ClassificationResult(
+    result = ClassificationResult(
         url=url,
         page_type=page_type,
         confidence=confidence,
         reasoning=reasoning or text[:500],
+        confidence_source="fallback",
     )
+    return _surface_structured_fields(result, {})
+
+
+def _surface_structured_fields(
+    result: ClassificationResult, payload: dict[str, Any]
+) -> ClassificationResult:
+    """Fold JSON-contract fields absent from the schema into reasoning + logs."""
+    lines: list[str] = []
+    summary: dict[str, Any] = {}
+    for key in ("evidence", "anomalies", "next_steps", "tools_used"):
+        value = payload.get(key)
+        rendered = ""
+        if isinstance(value, list) and value:
+            separator = ", " if key == "tools_used" else "; "
+            rendered = separator.join(str(item) for item in value)
+        elif isinstance(value, str) and value.strip():
+            rendered = value.strip()
+        if rendered:
+            lines.append(f"{key.upper()}: {rendered}")
+            summary[key] = rendered
+    if not lines:
+        return result
+    logger.info("classification structured fields: %s", summary)
+    block = "\n".join(lines)
+    result.reasoning = f"{result.reasoning}\n\n{block}".strip()
+    return result
 
 
 _DEFAULT_PROMPT = """\

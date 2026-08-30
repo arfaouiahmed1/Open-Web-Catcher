@@ -7,66 +7,188 @@ on:
       - master
   pull_request:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  python-lint:
-    name: Python Lint
+  lint:
+    name: Lint (ruff + mypy)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.11"
+          enableCache: true
+      - run: uv sync --extra dev
+      - name: ruff check
+        run: uv run ruff check src tests
+      - name: ruff format --check
+        run: uv run ruff format --check src tests
+      - name: mypy (targeted)
+        run: uv run mypy src --ignore-missing-imports || true
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Cache uv virtualenv
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('uv.lock') }}
-          restore-keys: venv-${{ runner.os }}-py3.11-
-
-      - name: Install dependencies
-        run: uv sync --dev
-
-      - name: Lint (ruff)
-        run: uv run ruff check src/ --select E9
-
-  web-build:
-    name: Web Build
+  compileall:
+    name: CompileAll
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enableCache: true
+      - run: uv sync --extra dev
+      - run: uv run python -m compileall src
+
+  pytest-unit:
+    name: Pytest unit
+    runs-on: ubuntu-latest
+    needs: [compileall]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enableCache: true
+      - run: uv sync --extra dev
+      - name: pytest unit
+        run: uv run pytest -m unit -q
+
+  pytest-integration:
+    name: Pytest integration (SQLite)
+    runs-on: ubuntu-latest
+    needs: [pytest-unit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enableCache: true
+      - run: uv sync --extra dev
+      - name: pytest integration
+        run: uv run pytest -m integration -q
+
+  web:
+    name: Web (types + tsc + lint + build + vitest)
+    runs-on: ubuntu-latest
+    needs: [pytest-integration]
     defaults:
       run:
         working-directory: web
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: "22"
           cache: npm
           cache-dependency-path: web/package-lock.json
-
-      - name: Install dependencies
+      - name: Install (web)
         run: npm ci
+      - name: OpenAPI types drift check
+        run: |
+          npm run types:gen
+          git -C .. diff --exit-code web/src/types/api.d.ts || (echo "types drift: run npm run types:gen and commit"; exit 1)
+      - name: tsc --noEmit
+        run: npx tsc --noEmit
+      - name: ESLint + no-polling gate
+        run: npm run lint
+      - name: Next build
+        run: NEXT_PUBLIC_API_BASE_URL=https://api.test.invalid npm run build
+      - name: Vitest
+        run: npx vitest run
 
-      - name: Lint
-        run: CI=1 npm run lint
+  docker:
+    name: Docker build matrix
+    runs-on: ubuntu-latest
+    needs: [web]
+    strategy:
+      matrix:
+        image:
+          - { dockerfile: Dockerfile, tag: open-web-catcher }
+          - { dockerfile: Dockerfile.web, tag: open-web-catcher-web }
+          - { dockerfile: Dockerfile.tools.playwright, tag: open-web-catcher-tools-playwright }
+          - { dockerfile: Dockerfile.tools.playwright, tag: open-web-catcher-tools-playwright-headed }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ${{ matrix.image.tag }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.image.dockerfile }}
+          push: false
+          load: true
+          tags: ${{ matrix.image.tag }}:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Build
-        run: npm run build
+  migration-check:
+    name: Alembic migration check (postgres:16)
+    runs-on: ubuntu-latest
+    needs: [docker]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: owc
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: owc
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U owc"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enableCache: true
+      - run: uv sync --extra dev
+      - name: alembic upgrade head (x2 idempotent)
+        run: |
+          DATABASE_URL=postgresql+psycopg2://owc:test@localhost:5432/owc uv run alembic upgrade head
+          DATABASE_URL=postgresql+psycopg2://owc:test@localhost:5432/owc uv run alembic upgrade head
+      - name: downgrade -1 + upgrade
+        run: |
+          DATABASE_URL=postgresql+psycopg2://owc:test@localhost:5432/owc uv run alembic downgrade -1
+          DATABASE_URL=postgresql+psycopg2://owc:test@localhost:5432/owc uv run alembic upgrade head
+
+  security:
+    name: Security audits
+    runs-on: ubuntu-latest
+    needs: [migration-check]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enableCache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: uv sync --extra dev
+      - name: pip-audit
+        run: uv run pip-audit --desc || true
+      - name: npm audit (web)
+        run: |
+          cd web && npm audit --audit-level=high || true
+      - name: npm audit (playwright tools)
+        run: |
+          cd tools/playwright && npm audit --audit-level=high || true
+
+  required-statuses:
+    name: CI required statuses
+    runs-on: ubuntu-latest
+    needs: [lint, compileall, pytest-unit, pytest-integration, web, docker, migration-check, security]
+    if: always()
+    steps:
+      - name: Gate
+        run: |
+          echo "lint=${{ needs.lint.result }} compileall=${{ needs.compileall.result }} unit=${{ needs.pytest-unit.result }} integration=${{ needs.pytest-integration.result }} web=${{ needs.web.result }} docker=${{ needs.docker.result }} migration=${{ needs.migration-check.result }} security=${{ needs.security.result }}"
+          for r in "${{ needs.lint.result }}" "${{ needs.compileall.result }}" "${{ needs.pytest-unit.result }}" "${{ needs.pytest-integration.result }}" "${{ needs.web.result }}" "${{ needs.docker.result }}" "${{ needs.migration-check.result }}" "${{ needs.security.result }}"; do
+            if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then echo "Required job failed: $r"; exit 1; fi
+          done
+          echo "All required jobs passed"

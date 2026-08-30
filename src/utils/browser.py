@@ -39,7 +39,9 @@ def get_ws_endpoint(cdp_url: str = "http://localhost:9222") -> str:
 
 def launch_chrome(port: int = 9222) -> subprocess.Popen:
     """Launch a local headless Chrome process. Returns the Popen handle."""
-    chrome_binary = os.environ.get("PUPPETEER_EXECUTABLE_PATH", "google-chrome")
+    # Playwright-only stack: use a neutral Chrome binary env var
+    # (the old PUPPETEER_EXECUTABLE_PATH convention left with the puppeteer stack).
+    chrome_binary = os.environ.get("CHROME_EXECUTABLE_PATH", "google-chrome")
     cmd = [
         chrome_binary,
         "--headless",

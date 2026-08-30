@@ -1,0 +1,63 @@
+{
+  "log": {
+    "version": "1.2",
+    "creator": {
+      "name": "capture_fixture.py synthetic",
+      "version": "T49"
+    },
+    "pages": [
+      {
+        "startedDateTime": "2026-08-29T11:45:19.463269+00:00",
+        "id": "page_1",
+        "title": "istreameast.app",
+        "pageTimings": {
+          "onContentLoad": 120,
+          "onLoad": 180
+        }
+      }
+    ],
+    "entries": [
+      {
+        "startedDateTime": "2026-08-29T11:45:19.463269+00:00",
+        "time": 120,
+        "request": {
+          "method": "GET",
+          "url": "https://istreameast.app/",
+          "httpVersion": "HTTP/1.1",
+          "headers": [],
+          "queryString": [],
+          "cookies": [],
+          "headersSize": -1,
+          "bodySize": -1
+        },
+        "response": {
+          "status": 200,
+          "statusText": "OK",
+          "httpVersion": "HTTP/1.1",
+          "headers": [
+            {
+              "name": "content-type",
+              "value": "text/html"
+            }
+          ],
+          "cookies": [],
+          "content": {
+            "size": 1024,
+            "mimeType": "text/html"
+          },
+          "redirectURL": "",
+          "headersSize": -1,
+          "bodySize": -1
+        },
+        "cache": {},
+        "timings": {
+          "send": 5,
+          "wait": 80,
+          "receive": 35
+        },
+        "serverIPAddress": "127.0.0.1",
+        "pageref": "page_1"
+      }
+    ]
+  }
+}

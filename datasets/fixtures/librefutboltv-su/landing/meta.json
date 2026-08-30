@@ -1,0 +1,24 @@
+{
+  "url": "https://librefutboltv.su/",
+  "host": "librefutboltv.su",
+  "site_slug": "librefutboltv-su",
+  "page_slug": "landing",
+  "fixture_dir": "datasets/fixtures/librefutboltv-su/landing",
+  "captured_at": "2026-08-29T11:45:19.508321+00:00",
+  "playwright_available": false,
+  "synthetic": true,
+  "files": {
+    "index_html": "index.html",
+    "har_json": "har.json",
+    "storageState_json": "storageState.json"
+  },
+  "hashes": {
+    "index_html": "6850d038f55bae4b8dd20d43a968238608e85433af8c5dceb93f61cdea1b0f35",
+    "har_json": "557b1ec34f02e9b12fea29390ed0680537aa8eccea0d78d3369ac25516dbae8e",
+    "storageState": "5a2c2322f2f7edaf331702b0e997cce54f056dda735f2a3deac17aa45c85876e",
+    "fixture": "5cc1c24fabc22426a6f49a0d7484c3ffee5adca7e2fa826d03b9fa0eca3d6922"
+  },
+  "schema_version": 1,
+  "harness": "T49",
+  "notes": "HAR 1.2 + storageState + meta.json per snapshot harness spec; synthetic fallback when browser unavailable."
+}

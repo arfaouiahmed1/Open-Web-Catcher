@@ -3,17 +3,23 @@
 from __future__ import annotations
 
 import hashlib
+import logging
+import math
 import re
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from sqlalchemy import func, select, text, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from src.utils.timefmt import iso_z
 from src.memory.long_term import build_site_memory_entry
-from src.models.enums import AgentType, ExtractionStatus
+from src.models.enums import AgentType, EventKind, ExtractionStatus
 from src.models.schemas import PipelineResult
+from src.storage.blob_store import cap_or_overflow, data_uri_to_blob_ref
 from src.storage.models import (
     AgentOutputRecord,
     AgentRunRecord,
@@ -25,12 +31,15 @@ from src.storage.models import (
     PromptCompilationRecord,
     PromptVersionRecord,
     ProviderAnalysisRecord,
+    PlanStepRecord,
+    RunPlanRecord,
     RunModelUsageRecord,
     RunRecord,
     RunScreenshotRecord,
     RunSnapshotRecord,
     RunStreamRecord,
     RuntimeEventRecord,
+    SiteHintRecord,
     TakedownEmailRecord,
     ToolCallRecord,
 )
@@ -39,6 +48,8 @@ from src.utils.observability import RunTrace
 
 
 _SCREENSHOT_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg")
+
+logger = logging.getLogger(__name__)
 _SCREENSHOT_SINGLE_KEYS = ("screenshot_url", "screenshot")
 _SCREENSHOT_MULTI_KEYS = ("screenshot_urls", "screenshots", "all_screenshots")
 _SCREENSHOT_WRAPPER_KEYS = (
@@ -60,13 +71,62 @@ _EMBEDDED_SCREENSHOT_RE = re.compile(
     r'(?:\\?"(?:screenshot_url|screenshot)\\?"\s*:\s*\\?")(https?:\/\/[^"\\]+|data:image\/[^"\\]+)(?:\\?")'
 )
 
+# Event schema v2 (plan T31 / SCH-M6/H5): every persisted JSON blob (event
+# details, run snapshots, llm/tool row metadata dicts) carries an integer
+# schema_version so downstream consumers can detect payload shape.
+EVENT_SCHEMA_VERSION = 2
+
+
+def stamp_schema_version(blob: dict[str, Any] | None) -> dict[str, Any]:
+    """Return a copy of ``blob`` stamped with ``schema_version: 2``."""
+    data = dict(blob) if isinstance(blob, dict) else {}
+    data["schema_version"] = EVENT_SCHEMA_VERSION
+    return data
+
+
+def _is_dev_environment() -> bool:
+    """Resolve dev-vs-prod from Settings (``environment`` field; T31).
+
+    Defaults to prod on any resolution failure so persistence never crashes
+    because settings could not be constructed.
+    """
+    try:
+        from src.utils.config import Settings
+
+        return bool(Settings().is_dev)
+    except Exception:  # pragma: no cover - defensive; never break persistence
+        logger.warning("Could not resolve Settings for event validation; assuming prod")
+        return False
+
+
+def validate_runtime_event_kind(kind: Any, *, is_dev: bool) -> str:
+    """Validate a runtime-event kind against ``EventKind``.
+
+    Dev environments fail fast on unknown kinds; prod coerces them to
+    ``EventKind.UNKNOWN`` with a warning so historical/dynamic kinds never
+    break persistence.
+    """
+    value = str(kind or "")
+    try:
+        return str(EventKind(value))
+    except ValueError:
+        if is_dev:
+            raise ValueError(
+                f"unknown runtime event kind {kind!r}; allowed values are "
+                f"{[member.value for member in EventKind]}"
+            ) from None
+        logger.warning(
+            "Unknown runtime event kind %r; coercing to %r", kind, str(EventKind.UNKNOWN)
+        )
+        return str(EventKind.UNKNOWN)
+
 
 def serialize_runtime_event_record(row: RuntimeEventRecord) -> dict[str, Any]:
     """Normalize a RuntimeEventRecord into a UI/SSE-safe dict.
 
     Always emits `timestamp` (ISO) and `details` (object) plus legacy aliases.
     """
-    timestamp = row.created_at.isoformat() if row.created_at else ""
+    timestamp = iso_z(row.created_at)
     details = row.details_json if isinstance(row.details_json, dict) else {}
     return {
         "seq": int(row.seq or 0),
@@ -89,7 +149,7 @@ def normalize_runtime_event_payload(event: dict[str, Any] | None) -> dict[str, A
     payload = dict(event)
     timestamp = payload.get("timestamp") or payload.get("created_at") or ""
     if hasattr(timestamp, "isoformat"):
-        timestamp = timestamp.isoformat()  # type: ignore[assignment]
+        timestamp = iso_z(timestamp)  # type: ignore[assignment]
     payload["timestamp"] = str(timestamp or "")
     payload["created_at"] = payload.get("created_at") or payload["timestamp"]
     details = payload.get("details")
@@ -356,9 +416,26 @@ class RunRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
+    def _begin_own_transaction(self):
+        """Start an EXPLICIT top-level transaction owned by the calling method.
+
+        Durability contract ([DM-C1]): write methods commit their own work and
+        never depend on a caller's later ``commit()``/``heartbeat()``. The
+        previous ``begin_nested() if in_transaction()`` heuristic only released
+        SAVEPOINTs whenever any prior SELECT had autobegun a transaction, so
+        callers that closed their session without committing (e.g. the backfill
+        script) silently lost every row while reporting success.
+
+        Any ambient transaction is committed first so the per-call block below
+        is one atomic, self-committed unit; ambient state at every current call
+        site is read-only autobegin residue.
+        """
+        if self._session.in_transaction():
+            self._session.commit()
+        return self._session.begin()
+
     def save(self, result: PipelineResult, trace: RunTrace | None = None) -> RunRecord:
-        txn = self._session.begin_nested() if self._session.in_transaction() else self._session.begin()
-        with txn:
+        with self._begin_own_transaction():
             record = self._upsert_legacy_run(result)
             pipeline = self._upsert_pipeline_run(result)
             self._session.flush()
@@ -384,8 +461,8 @@ class RunRepository:
         url: str,
         trace: RunTrace,
     ) -> None:
-        txn = self._session.begin_nested() if self._session.in_transaction() else self._session.begin()
-        with txn:
+        # Durability invariant ([DM-C4]): snapshot commits HERE, never via heartbeat.
+        with self._begin_own_transaction():
             legacy = self.get_by_run_id(run_id)
             if legacy is None:
                 legacy = RunRecord(run_id=run_id)
@@ -501,15 +578,17 @@ class RunRepository:
                 self._session.add(snapshot)
                 self._session.flush()
             snapshot.pipeline_run_id = pipeline.id
-            snapshot.snapshot_json = {
-                **snapshot_json,
-                "run_id": run_id,
-                "url": url,
-                "status": legacy.status,
-                "metrics": metrics.model_dump(mode="json") if metrics else {},
-                "events": [event.model_dump(mode="json") for event in trace.events],
-                "all_screenshots": screenshot_urls,
-            }
+            snapshot.snapshot_json = stamp_schema_version(
+                {
+                    **snapshot_json,
+                    "run_id": run_id,
+                    "url": url,
+                    "status": legacy.status,
+                    "metrics": metrics.model_dump(mode="json") if metrics else {},
+                    "events": [event.model_dump(mode="json") for event in trace.events],
+                    "all_screenshots": screenshot_urls,
+                }
+            )
             self._replace_trace_children(pipeline.id)
             agent_runs = self._persist_trace_agent_runs(
                 pipeline.id,
@@ -527,32 +606,161 @@ class RunRepository:
                 agent_runs=agent_runs,
             )
 
-    def cleanup_old_artifacts(self, *, retention_days: int = 30) -> dict[str, int]:
-        threshold = datetime.utcnow() - timedelta(days=max(1, int(retention_days)))
-        old_pipeline_ids = [
-            int(row.id)
-            for row in self._session.query(PipelineRunRecord.id)
-            .filter(PipelineRunRecord.finished_at.is_not(None))
-            .filter(PipelineRunRecord.finished_at < threshold)
-            .all()
-        ]
-        if not old_pipeline_ids:
-            return {"runtime_events_deleted": 0, "run_screenshots_deleted": 0}
-        events_deleted = (
-            self._session.query(RuntimeEventRecord)
-            .filter(RuntimeEventRecord.pipeline_run_id.in_(old_pipeline_ids))
-            .delete(synchronize_session=False)
-        )
-        screenshots_deleted = (
-            self._session.query(RunScreenshotRecord)
-            .filter(RunScreenshotRecord.pipeline_run_id.in_(old_pipeline_ids))
-            .delete(synchronize_session=False)
-        )
-        self._session.commit()
-        return {
-            "runtime_events_deleted": int(events_deleted or 0),
-            "run_screenshots_deleted": int(screenshots_deleted or 0),
+    def cleanup_old_artifacts(
+        self,
+        *,
+        retention_days: int = 30,
+        days_by_table: dict[str, int] | None = None,
+    ) -> dict[str, int]:
+        """Delete artifacts older than their retention window (plan task 32).
+
+        Covers runtime_events, run_screenshots, run_snapshots, llm_calls,
+        tool_calls, agent_outputs and legacy runs. Per-table windows can be
+        overridden via ``days_by_table`` keyed by short table name
+        (e.g. ``{"llm_calls": 10}``); everything else uses ``retention_days``.
+        """
+        overrides = {
+            str(key): max(1, int(value)) for key, value in (days_by_table or {}).items()
         }
+
+        def _threshold(name: str) -> datetime:
+            days = overrides.get(name, max(1, int(retention_days)))
+            return datetime.now(UTC) - timedelta(days=days)
+
+        def _old_pipeline_ids(name: str) -> list[int]:
+            return [
+                int(row.id)
+                for row in self._session.query(PipelineRunRecord.id)
+                .filter(PipelineRunRecord.finished_at.is_not(None))
+                .filter(PipelineRunRecord.finished_at < _threshold(name))
+                .all()
+            ]
+
+        def _old_agent_run_ids(name: str) -> list[int]:
+            pipeline_ids = _old_pipeline_ids(name)
+            if not pipeline_ids:
+                return []
+            return [
+                int(row.id)
+                for row in self._session.query(AgentRunRecord.id)
+                .filter(AgentRunRecord.pipeline_run_id.in_(pipeline_ids))
+                .all()
+            ]
+
+        deleted = {
+            "runtime_events_deleted": 0,
+            "run_screenshots_deleted": 0,
+            "run_snapshots_deleted": 0,
+            "llm_calls_deleted": 0,
+            "tool_calls_deleted": 0,
+            "agent_outputs_deleted": 0,
+            "runs_deleted": 0,
+        }
+        with self._begin_own_transaction():
+            deleted["runtime_events_deleted"] = int(
+                self._session.query(RuntimeEventRecord)
+                .filter(RuntimeEventRecord.pipeline_run_id.in_(_old_pipeline_ids("runtime_events")))
+                .delete(synchronize_session=False)
+                or 0
+            )
+            deleted["run_screenshots_deleted"] = int(
+                self._session.query(RunScreenshotRecord)
+                .filter(RunScreenshotRecord.pipeline_run_id.in_(_old_pipeline_ids("run_screenshots")))
+                .delete(synchronize_session=False)
+                or 0
+            )
+            deleted["run_snapshots_deleted"] = int(
+                self._session.query(RunSnapshotRecord)
+                .filter(RunSnapshotRecord.pipeline_run_id.in_(_old_pipeline_ids("run_snapshots")))
+                .delete(synchronize_session=False)
+                or 0
+            )
+            deleted["llm_calls_deleted"] = int(
+                self._session.query(LLMCallRecord)
+                .filter(LLMCallRecord.agent_run_id.in_(_old_agent_run_ids("llm_calls")))
+                .delete(synchronize_session=False)
+                or 0
+            )
+            deleted["tool_calls_deleted"] = int(
+                self._session.query(ToolCallRecord)
+                .filter(ToolCallRecord.agent_run_id.in_(_old_agent_run_ids("tool_calls")))
+                .delete(synchronize_session=False)
+                or 0
+            )
+            deleted["agent_outputs_deleted"] = int(
+                self._session.query(AgentOutputRecord)
+                .filter(AgentOutputRecord.agent_run_id.in_(_old_agent_run_ids("agent_outputs")))
+                .delete(synchronize_session=False)
+                or 0
+            )
+            # Legacy runs table: window keyed on its own created_at column so
+            # rows are purged even when no matching pipeline_runs row exists.
+            deleted["runs_deleted"] = int(
+                self._session.query(RunRecord)
+                .filter(RunRecord.created_at < _threshold("runs"))
+                .delete(synchronize_session=False)
+                or 0
+            )
+            # Plan task 32: garbage-collect blob files whose only DB references
+            # were just purged. Blobrefs live in MULTIPLE places — the
+            # run_screenshots column plus JSON metadata columns on snapshots,
+            # events, llm rows, tool rows and agent outputs (nested
+            # result_full/content_full caps) — so scan them ALL before
+            # deleting any file; content-addressing dedupes, so a file shared
+            # with still-live rows must survive.
+            try:
+                from src.storage.blob_store import BLOB_REF_PREFIX, blob_dir
+
+                _BLOB_REF_SQL = [
+                    "SELECT screenshot_url AS ref FROM run_screenshots WHERE screenshot_url LIKE 'blobref:%'",
+                    "SELECT snapshot_json AS ref FROM run_snapshots",
+                    "SELECT details_json AS ref FROM runtime_events",
+                    "SELECT usage_metadata_json AS ref FROM llm_calls",
+                    "SELECT response_metadata_json AS ref FROM llm_calls",
+                    "SELECT details_json AS ref FROM tool_calls",
+                    "SELECT output_json AS ref FROM agent_outputs",
+                ]
+                live_keys: set[str] = set()
+
+                def _collect_refs(node: object) -> None:
+                    if isinstance(node, str):
+                        idx = 0
+                        while True:
+                            idx = node.find(BLOB_REF_PREFIX, idx)
+                            if idx < 0:
+                                break
+                            start = idx + len(BLOB_REF_PREFIX)
+                            chunk = "".join(
+                                ch for ch in node[start : start + 16] if ch.isalnum()
+                            )
+                            if chunk:
+                                live_keys.add(chunk[:16])
+                            idx = start
+                    elif isinstance(node, dict):
+                        for value in node.values():
+                            _collect_refs(value)
+                    elif isinstance(node, (list, tuple)):
+                        for value in node:
+                            _collect_refs(value)
+
+                for statement in _BLOB_REF_SQL:
+                    try:
+                        for row in self._session.execute(text(statement)):
+                            for cell in row:
+                                _collect_refs(cell)
+                    except Exception:  # noqa: BLE001 - table may not exist yet
+                        continue
+                directory = blob_dir()
+                if directory.exists():
+                    removed = 0
+                    for path in directory.glob("*.blob"):
+                        if path.stem not in live_keys:
+                            path.unlink(missing_ok=True)
+                            removed += 1
+                    deleted["blob_files_deleted"] = removed
+            except Exception:  # noqa: BLE001 - GC must never break retention
+                logger.debug("Skipping blob garbage collection", exc_info=True)
+        return deleted
 
     def hard_delete_run(self, run_id: str) -> dict[str, int]:
         deleted = {
@@ -574,8 +782,7 @@ class RunRepository:
             "background_jobs_deleted": 0,
         }
 
-        txn = self._session.begin_nested() if self._session.in_transaction() else self._session.begin()
-        with txn:
+        with self._begin_own_transaction():
             pipeline = self._session.query(PipelineRunRecord).filter_by(run_id=run_id).first()
             if pipeline is not None:
                 agent_run_ids = [
@@ -715,6 +922,39 @@ class RunRepository:
         successes = self._session.query(RunRecord).filter_by(success=True).count()
         return successes / total
 
+    def cost_stats(self, agent_set: list[str] | None = None) -> dict[str, Any]:
+        """Return p50/p75 cost statistics from historical run_model_usage rows.
+
+        ``agent_set`` is reserved for future per-agent filtering; it is not yet
+        wired because agent-level cost breakdowns live in agent_runs, not in
+        run_model_usage.  Callers may pass it for forward-compatibility.
+        """
+        rows = self._session.query(
+            RunModelUsageRecord.estimated_total_cost_usd
+        ).filter(
+            RunModelUsageRecord.estimated_total_cost_usd > 0
+        ).all()
+
+        costs = sorted(float(r[0]) for r in rows)
+        count = len(costs)
+        if count == 0:
+            return {"count": 0, "p50_usd": None, "p75_usd": None, "min_usd": None, "max_usd": None}
+
+        def _percentile(data: list[float], pct: float) -> float:
+            idx = (len(data) - 1) * pct / 100.0
+            lo = int(idx)
+            hi = min(lo + 1, len(data) - 1)
+            frac = idx - lo
+            return round(data[lo] + frac * (data[hi] - data[lo]), 6)
+
+        return {
+            "count": count,
+            "p50_usd": _percentile(costs, 50),
+            "p75_usd": _percentile(costs, 75),
+            "min_usd": round(costs[0], 6),
+            "max_usd": round(costs[-1], 6),
+        }
+
     def get_run_snapshot(self, run_id: str) -> dict[str, Any] | None:
         snapshot = self._session.query(RunSnapshotRecord).filter_by(run_id=run_id).first()
         if snapshot is not None:
@@ -756,7 +996,7 @@ class RunRepository:
                     "llm_calls": run.total_llm_calls,
                     "message_count": run.total_messages,
                     "duration_seconds": run.duration_seconds,
-                    "created_at": run.created_at.isoformat(),
+                    "created_at": iso_z(run.created_at),
                 }
                 for run in recent
             ],
@@ -784,8 +1024,8 @@ class RunRepository:
                 "tool_calls_made": row.tool_calls_made,
                 "llm_calls_made": row.llm_calls_made,
                 "memory_injected": row.memory_injected,
-                "started_at": row.started_at.isoformat(),
-                "finished_at": row.finished_at.isoformat() if row.finished_at else None,
+                "started_at": iso_z(row.started_at),
+                "finished_at": iso_z(row.finished_at) or None,
                 "duration_seconds": row.duration_seconds,
             }
             for row in rows
@@ -827,7 +1067,7 @@ class RunRepository:
                 "tool_calls_requested": row.tool_calls_requested,
                 "tools_requested": row.tools_requested,
                 "content_preview": row.content_preview,
-                "created_at": row.created_at.isoformat(),
+                "created_at": iso_z(row.created_at),
             }
             for row in rows
         ]
@@ -853,7 +1093,7 @@ class RunRepository:
                 "duration_seconds": row.duration_seconds,
                 "result_preview": row.result_preview,
                 "error_text": row.error_text,
-                "created_at": row.started_at.isoformat(),
+                "created_at": iso_z(row.started_at),
             }
             for row in rows
         ]
@@ -895,7 +1135,7 @@ class RunRepository:
                 "url": row.url,
                 "data": row.data_json,
                 "result_summary": row.result_summary,
-                "created_at": row.created_at.isoformat(),
+                "created_at": iso_z(row.created_at),
             }
             for row in rows
         ]
@@ -930,7 +1170,12 @@ class RunRepository:
             for compilation, prompt_version in rows
         ]
 
-    def backfill_normalized_from_legacy(self, limit: int | None = None) -> int:
+    def backfill_normalized_from_legacy(
+        self,
+        limit: int | None = None,
+        *,
+        progress_every: int = 25,
+    ) -> int:
         query = (
             self._session.query(RunRecord)
             .outerjoin(PipelineRunRecord, PipelineRunRecord.run_id == RunRecord.run_id)
@@ -949,7 +1194,11 @@ class RunRepository:
             except Exception:
                 continue
             self.save(result, trace=None)
+            # Durability invariant ([DM-C1]): reported count must be durable.
+            self._session.commit()
             count += 1
+            if progress_every > 0 and count % progress_every == 0:
+                logger.info("Backfill progress: %d run(s) normalized", count)
         return count
 
     def _upsert_legacy_run(self, result: PipelineResult) -> RunRecord:
@@ -1015,7 +1264,7 @@ class RunRepository:
             self._session.add(snapshot)
             self._session.flush()
         snapshot.pipeline_run_id = pipeline.id
-        snapshot.snapshot_json = result.model_dump(mode="json")
+        snapshot.snapshot_json = stamp_schema_version(result.model_dump(mode="json"))
 
     def _replace_normalized_children(self, pipeline_run_id: int) -> None:
         agent_run_ids = self._session.query(AgentRunRecord.id).filter(AgentRunRecord.pipeline_run_id == pipeline_run_id)
@@ -1078,7 +1327,7 @@ class RunRepository:
             self._session.add(agent_run)
             self._session.flush()
 
-            output_payload = _agent_output_payload(ctx, result)
+            output_payload = _cap_payload_fields(_agent_output_payload(ctx, result))
             self._session.add(
                 AgentOutputRecord(
                     agent_run_id=agent_run.id,
@@ -1106,7 +1355,7 @@ class RunRepository:
                         memory_injected=bool(prompt_details.get("memory_injected", False)),
                         output_contract_version=str(prompt_details.get("output_contract_version", "") or ""),
                         sections_json=prompt_details.get("sections", []) or [],
-                        metadata_json=prompt_details,
+                        metadata_json=stamp_schema_version(prompt_details),
                     )
                 )
 
@@ -1156,7 +1405,7 @@ class RunRepository:
             self._session.add(agent_run)
             self._session.flush()
 
-            output_payload = _trace_agent_output_payload(ctx)
+            output_payload = _cap_payload_fields(_trace_agent_output_payload(ctx))
             self._session.add(
                 AgentOutputRecord(
                     agent_run_id=agent_run.id,
@@ -1184,7 +1433,7 @@ class RunRepository:
                         memory_injected=bool(prompt_details.get("memory_injected", False)),
                         output_contract_version=str(prompt_details.get("output_contract_version", "") or ""),
                         sections_json=prompt_details.get("sections", []) or [],
-                        metadata_json=prompt_details,
+                        metadata_json=stamp_schema_version(prompt_details),
                     )
                 )
 
@@ -1240,20 +1489,25 @@ class RunRepository:
                     "estimated_total_cost_usd": estimated_total_cost_usd,
                 }
 
+            usage_metadata = stamp_schema_version(usage_metadata)
+
             response_metadata = details.get("response_metadata", {}) or {}
             if not isinstance(response_metadata, dict):
                 response_metadata = {"raw": response_metadata}
             response_metadata = {
                 **response_metadata,
-                "content_full": str(
-                    details.get("content_full", "")
-                    or details.get("content_preview", "")
-                    or ""
+                "content_full": cap_or_overflow(
+                    str(
+                        details.get("content_full", "")
+                        or details.get("content_preview", "")
+                        or ""
+                    )
                 ),
                 "thinking_content": str(details.get("thinking_content", "") or ""),
                 "thinking_tokens": int(details.get("thinking_tokens", 0) or 0),
                 "additional_kwargs": details.get("additional_kwargs", {}) or {},
             }
+            response_metadata = stamp_schema_version(response_metadata)
 
             self._session.add(
                 LLMCallRecord(
@@ -1332,6 +1586,7 @@ class RunRepository:
         for agent_run in agent_runs:
             for event in agent_run["events"]:
                 seq_to_agent_run_id[event.seq] = agent_run["id"]
+        is_dev = _is_dev_environment()
         for event in trace.events:
             self._session.add(
                 RuntimeEventRecord(
@@ -1339,10 +1594,10 @@ class RunRepository:
                     agent_run_id=seq_to_agent_run_id.get(event.seq),
                     actor=event.actor,
                     seq=event.seq,
-                    kind=event.kind,
+                    kind=validate_runtime_event_kind(event.kind, is_dev=is_dev),
                     status=event.status,
                     message=event.message,
-                    details_json=event.details or {},
+                    details_json=stamp_schema_version(event.details),
                     created_at=event.timestamp,
                 )
             )
@@ -1352,6 +1607,7 @@ class RunRepository:
         for agent_run in agent_runs:
             for event in agent_run["events"]:
                 seq_to_agent_run_id[event.seq] = agent_run["id"]
+        is_dev = _is_dev_environment()
         for event in trace.events:
             self._session.add(
                 RuntimeEventRecord(
@@ -1359,10 +1615,10 @@ class RunRepository:
                     agent_run_id=seq_to_agent_run_id.get(event.seq),
                     actor=event.actor,
                     seq=event.seq,
-                    kind=event.kind,
+                    kind=validate_runtime_event_kind(event.kind, is_dev=is_dev),
                     status=event.status,
                     message=event.message,
-                    details_json=event.details or {},
+                    details_json=stamp_schema_version(event.details),
                     created_at=event.timestamp,
                 )
             )
@@ -1448,6 +1704,9 @@ class RunRepository:
             screenshot_url = str(row.get("screenshot_url") or "").strip()
             if not screenshot_url:
                 continue
+            # Plan task 32: inline base64 screenshots land as file-backed
+            # blob refs instead of megabytes of base64 text in the DB.
+            screenshot_url = data_uri_to_blob_ref(screenshot_url)
             persisted.add(screenshot_url)
             self._session.add(
                 RunScreenshotRecord(
@@ -1465,12 +1724,15 @@ class RunRepository:
                 )
             )
         for screenshot in result.all_screenshots:
-            if screenshot in persisted:
+            # Dedupe on the RAW value: attributed rows above converted their
+            # data-URIs to blobrefs before adding to `persisted`, so comparing
+            # raw fallback entries against converted refs would double-persist.
+            if screenshot in persisted or data_uri_to_blob_ref(screenshot) in persisted:
                 continue
             self._session.add(
                 RunScreenshotRecord(
                     pipeline_run_id=pipeline_run_id,
-                    screenshot_url=screenshot,
+                    screenshot_url=data_uri_to_blob_ref(screenshot),
                     source_url=result.url,
                 )
             )
@@ -1493,6 +1755,9 @@ class RunRepository:
             screenshot_url = str(row.get("screenshot_url") or "").strip()
             if not screenshot_url:
                 continue
+            # Plan task 32: inline base64 screenshots land as file-backed
+            # blob refs instead of megabytes of base64 text in the DB.
+            screenshot_url = data_uri_to_blob_ref(screenshot_url)
             persisted.add(screenshot_url)
             self._session.add(
                 RunScreenshotRecord(
@@ -1512,12 +1777,14 @@ class RunRepository:
         for screenshot in screenshots:
             if not _is_screenshot_url(screenshot):
                 continue
-            if screenshot in persisted:
+            # Dedupe on the RAW value (see matching comment above): attributed
+            # rows stored converted blobrefs, so compare both forms.
+            if screenshot in persisted or data_uri_to_blob_ref(screenshot) in persisted:
                 continue
             self._session.add(
                 RunScreenshotRecord(
                     pipeline_run_id=pipeline_run_id,
-                    screenshot_url=screenshot,
+                    screenshot_url=data_uri_to_blob_ref(screenshot),
                     source_url=source_url,
                 )
             )
@@ -1681,7 +1948,7 @@ class BackgroundJobRepository:
             if existing is not None:
                 return existing
         record = BackgroundJobRecord(
-            job_id=_hash_text(f"{run_id}:{job_type}:{datetime.utcnow().isoformat()}"),
+            job_id=_hash_text(f"{run_id}:{job_type}:{datetime.now(UTC).isoformat()}"),
             run_id=run_id,
             job_type=job_type,
             status="queued",
@@ -1721,32 +1988,43 @@ class BackgroundJobRepository:
         *,
         lease_seconds: int = 90,
     ) -> BackgroundJobRecord | None:
-        now = datetime.utcnow()
-        candidate = (
-            self._session.query(BackgroundJobRecord)
-            .filter(
-                BackgroundJobRecord.status.in_(["queued", "retrying"]),
-            )
+        now = datetime.now(UTC)
+        dialect_name = self._session.get_bind().dialect.name
+        candidate_id = (
+            select(BackgroundJobRecord.id)
+            .where(BackgroundJobRecord.status.in_(["queued", "retrying"]))
             .order_by(BackgroundJobRecord.created_at.asc(), BackgroundJobRecord.id.asc())
-            .first()
+            .limit(1)
         )
-        if candidate is None:
-            return None
-        candidate.status = "running"
-        candidate.started_at = candidate.started_at or now
-        candidate.heartbeat_at = now
-        candidate.lease_expires_at = now + timedelta(seconds=max(5, int(lease_seconds)))
-        candidate.attempts = int(candidate.attempts or 0) + 1
-        candidate.error_text = ""
+        if dialect_name == "postgresql":
+            # Concurrency invariant: keep FOR UPDATE SKIP LOCKED or workers double-claim.
+            candidate_id = candidate_id.with_for_update(skip_locked=True)
+        # Concurrency invariant: claim must stay ONE atomic UPDATE (RETURNING),
+        # never SELECT-then-mutate, or concurrent workers double-claim.
+        claim_stmt = (
+            update(BackgroundJobRecord)
+            .where(BackgroundJobRecord.id == candidate_id.scalar_subquery())
+            .values(
+                status="running",
+                started_at=func.coalesce(BackgroundJobRecord.started_at, now),
+                heartbeat_at=now,
+                lease_expires_at=now + timedelta(seconds=max(5, int(lease_seconds))),
+                attempts=func.coalesce(BackgroundJobRecord.attempts, 0) + 1,
+                error_text="",
+            )
+            .returning(BackgroundJobRecord.id)
+        )
+        claimed_id = self._session.execute(claim_stmt).scalar_one_or_none()
         self._session.commit()
-        self._session.refresh(candidate)
-        return candidate
+        if claimed_id is None:
+            return None
+        return self._session.get(BackgroundJobRecord, claimed_id)
 
     def heartbeat(self, run_id: str, *, lease_seconds: int = 90) -> None:
         row = self.get_by_run_id(run_id)
         if row is None:
             return
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         row.heartbeat_at = now
         row.lease_expires_at = now + timedelta(seconds=max(5, int(lease_seconds)))
         self._session.commit()
@@ -1757,7 +2035,7 @@ class BackgroundJobRepository:
             return
         row.status = "cancelled"
         row.error_text = reason
-        row.finished_at = datetime.utcnow()
+        row.finished_at = datetime.now(UTC)
         self._session.commit()
 
     def mark_succeeded(self, run_id: str, result_json: dict[str, Any] | None = None) -> None:
@@ -1767,7 +2045,7 @@ class BackgroundJobRepository:
         row.status = "succeeded"
         row.result_json = result_json or {}
         row.error_text = ""
-        row.finished_at = datetime.utcnow()
+        row.finished_at = datetime.now(UTC)
         row.lease_expires_at = None
         self._session.commit()
 
@@ -1778,14 +2056,14 @@ class BackgroundJobRepository:
         exhausted = int(row.attempts or 0) >= int(row.max_attempts or 1)
         row.status = "dead_letter" if exhausted else "retrying"
         row.error_text = error_text
-        row.finished_at = datetime.utcnow() if exhausted else None
+        row.finished_at = datetime.now(UTC) if exhausted else None
         row.lease_expires_at = None
         self._session.commit()
         self._session.refresh(row)
         return row
 
     def recover_stale_running(self, *, stale_after_seconds: int = 180) -> int:
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         threshold = now - timedelta(seconds=max(5, int(stale_after_seconds)))
         rows = (
             self._session.query(BackgroundJobRecord)
@@ -1949,7 +2227,7 @@ def _agent_context_metrics(ctx: dict[str, Any]) -> dict[str, Any]:
 
 
 def _fallback_agent_contexts(result: PipelineResult) -> list[dict[str, Any]]:
-    started_at = result.metrics.started_at if result.metrics else datetime.utcnow()
+    started_at = result.metrics.started_at if result.metrics else datetime.now(UTC)
     finished_at = result.metrics.finished_at if result.metrics and result.metrics.finished_at else started_at
     contexts: list[dict[str, Any]] = [
         {
@@ -2359,5 +2637,392 @@ def _normalize_domain(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+def _hint_domain(domain_or_url: str) -> str:
+    """Normalize a full URL OR a bare domain ("example.tv") to a bare host."""
+    host = _normalize_domain(str(domain_or_url or ""))
+    return host or str(domain_or_url or "").lower().strip()
+
+
 def _hash_text(value: str) -> str:
     return hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
+
+
+#: Payload keys subject to the inline size cap (plan task 32).
+_CAPPED_PAYLOAD_KEYS = ("result_full", "content_full")
+
+
+def _cap_payload_fields(
+    payload: Any,
+    *,
+    cap_bytes: int | None = None,
+) -> Any:
+    """Recursively replace oversized ``result_full``/``content_full`` strings.
+
+    Values exceeding ``cap_bytes`` (Settings.payload_cap_bytes by default)
+    are overflowed to the blob store and swapped for a compact
+    ``blobref:<hash>`` pointer; everything else passes through unchanged.
+    """
+    if isinstance(payload, dict):
+        capped: dict[str, Any] = {}
+        for key, value in payload.items():
+            if isinstance(value, str) and key in _CAPPED_PAYLOAD_KEYS:
+                capped[key] = cap_or_overflow(value, cap_bytes=cap_bytes)
+            else:
+                capped[key] = _cap_payload_fields(value, cap_bytes=cap_bytes)
+        return capped
+    if isinstance(payload, (list, tuple)):
+        items = [_cap_payload_fields(item, cap_bytes=cap_bytes) for item in payload]
+        return items if isinstance(payload, list) else type(payload)(items)
+    return payload
+
+
+class SiteHintRepository:
+    """CRUD + hybrid retrieval for pgvector-backed site hints (plan task 18).
+
+    Semantic search uses pgvector's cosine distance operator ``<=>`` on
+    PostgreSQL. On other dialects (SQLite test runs) embeddings are JSON lists
+    and ranking falls back to Python-side cosine distance, so the repository
+    API is identical everywhere.
+    """
+
+    #: Exponential-moving-average weight applied to a NEW observation when
+    #: blending success_rate into an existing hint (0.5 = plain running mean).
+    SUCCESS_RATE_EMA_ALPHA = 0.5
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def _begin_own_transaction(self):
+        """Same durability contract as RunRepository ([DM-C1]): self-committing."""
+        if self._session.in_transaction():
+            self._session.commit()
+        return self._session.begin()
+
+    # ------------------------------------------------------------------ write
+
+    def upsert_hint(
+        self,
+        *,
+        domain: str,
+        page_type: str,
+        summary_text: str = "",
+        navigation_steps: list[str] | None = None,
+        selectors: list[str] | None = None,
+        success_rate: float | None = None,
+        embedding: list[float] | None = None,
+        ttl_expires_at: datetime | None = None,
+    ) -> SiteHintRecord:
+        """Create or refresh the (domain, page_type) hint; returns the row.
+
+        Race-safe ([DM-C1] durability contract): each attempt runs in its own
+        self-committing transaction. If two writers pass the existence check
+        simultaneously, the loser's INSERT hits the unique constraint and the
+        upsert retries once as an update instead of crashing.
+        """
+        normalized_domain = _hint_domain(domain)
+        last_exc: IntegrityError | None = None
+        for _attempt in range(2):
+            try:
+                with self._begin_own_transaction():
+                    record = (
+                        self._session.query(SiteHintRecord)
+                        .filter_by(domain=normalized_domain, page_type=page_type)
+                        .one_or_none()
+                    )
+                    if record is None:
+                        record = SiteHintRecord(
+                            domain=normalized_domain,
+                            page_type=page_type,
+                            summary_text=summary_text or "",
+                            navigation_steps=list(navigation_steps or []),
+                            selectors=list(selectors or []),
+                            embedding=list(embedding) if embedding is not None else None,
+                            ttl_expires_at=ttl_expires_at,
+                        )
+                        if success_rate is not None:
+                            record.success_rate = float(success_rate)
+                        self._session.add(record)
+                    else:
+                        if summary_text:
+                            record.summary_text = summary_text
+                        if navigation_steps:
+                            record.navigation_steps = list(navigation_steps)
+                        if selectors:
+                            record.selectors = list(selectors)
+                        if embedding is not None:
+                            record.embedding = list(embedding)
+                        if ttl_expires_at is not None:
+                            record.ttl_expires_at = ttl_expires_at
+                        if success_rate is not None:
+                            alpha = self.SUCCESS_RATE_EMA_ALPHA
+                            blended = (
+                                alpha * float(success_rate)
+                                + (1.0 - alpha) * float(record.success_rate)
+                            )
+                            record.success_rate = round(blended, 4)
+                    self._session.flush()
+                self._session.refresh(record)
+                return record
+            except IntegrityError as exc:
+                # Lost the insert race; the rolled-back transaction leaves a
+                # clean slate so the retry takes the UPDATE path.
+                last_exc = exc
+                self._session.rollback()
+        raise last_exc  # pragma: no cover - both attempts lost the race
+
+    def prune_expired(self, *, now: datetime | None = None) -> int:
+        """Delete hints whose TTL has elapsed; returns how many rows died."""
+        cutoff = now or datetime.now(UTC)
+        with self._begin_own_transaction():
+            doomed = (
+                self._session.query(SiteHintRecord)
+                .filter(
+                    SiteHintRecord.ttl_expires_at.isnot(None),
+                    SiteHintRecord.ttl_expires_at < cutoff,
+                )
+                .all()
+            )
+            count = len(doomed)
+            for record in doomed:
+                self._session.delete(record)
+            self._session.flush()
+        return count
+
+    # ------------------------------------------------------------------- read
+
+    def get_hints(
+        self,
+        *,
+        domain: str | None = None,
+        page_type: str | None = None,
+        limit: int = 10,
+    ) -> list[SiteHintRecord]:
+        """SQL-side hybrid filter, freshest first."""
+        query = self._session.query(SiteHintRecord)
+        if domain:
+            query = query.filter(SiteHintRecord.domain == _hint_domain(domain))
+        if page_type:
+            query = query.filter(SiteHintRecord.page_type == page_type)
+        return query.order_by(SiteHintRecord.updated_at.desc()).limit(max(int(limit), 1)).all()
+
+    def search_semantic(
+        self,
+        query_embedding: list[float],
+        *,
+        domain: str | None = None,
+        page_type: str | None = None,
+        limit: int = 10,
+    ) -> list[SiteHintRecord]:
+        """Rank hints by cosine distance to ``query_embedding``.
+
+        PostgreSQL path pushes ordering into pgvector's ``<=>`` operator;
+        every other dialect ranks in Python over SQL-filtered candidates.
+        Each returned record carries ``semantic_distance``
+        (0.0 = identical direction). Rows without embeddings never match.
+        """
+        query_vector = [float(item) for item in query_embedding]
+        filters = [SiteHintRecord.embedding.isnot(None)]
+        if domain:
+            filters.append(SiteHintRecord.domain == _hint_domain(domain))
+        if page_type:
+            filters.append(SiteHintRecord.page_type == page_type)
+
+        if self._pgvector_available():
+            distance = SiteHintRecord.embedding.cosine_distance(query_vector)
+            rows = (
+                self._session.query(SiteHintRecord, distance.label("semantic_distance"))
+                .filter(*filters)
+                .order_by(distance.asc())
+                .limit(max(int(limit), 1))
+                .all()
+            )
+            results = []
+            for record, dist in rows:
+                record.semantic_distance = float(dist)  # type: ignore[attr-defined]
+                results.append(record)
+            return results
+
+        candidates = (
+            self._session.query(SiteHintRecord)
+            .filter(*filters)
+            .order_by(SiteHintRecord.updated_at.desc())
+            .all()
+        )
+        ranked: list[tuple[float, SiteHintRecord]] = []
+        for record in candidates:
+            stored = [float(item) for item in (record.embedding or [])]
+            if not stored:
+                continue
+            ranked.append((_cosine_distance(query_vector, stored), record))
+        ranked.sort(key=lambda pair: pair[0])
+        results = []
+        for dist, record in ranked[: max(int(limit), 1)]:
+            record.semantic_distance = dist  # type: ignore[attr-defined]
+            results.append(record)
+        return results
+
+    # --------------------------------------------------------------- internal
+
+    def _pgvector_available(self) -> bool:
+        try:
+            from pgvector.sqlalchemy import Vector  # noqa: F401
+        except ImportError:
+            return False
+        return self._session.get_bind().dialect.name == "postgresql"
+
+
+def _cosine_distance(a: list[float], b: list[float]) -> float:
+    """Cosine distance (1 - cosine similarity); zero vectors sort last."""
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return float("inf")
+    similarity = max(-1.0, min(1.0, dot / (norm_a * norm_b)))
+    return 1.0 - similarity
+
+
+class RunPlanRepository:
+    """RunPlan artifact persistence (plan task 27).
+
+    Owns the ``run_plans`` declaration row and the live ``plan_steps`` status
+    rows. Designed to be callable from ANY lane: the orchestrator at run start
+    (via :mod:`src.orchestrator.run_plan`), node bodies in a later wave, or
+    app-level wrappers — without touching orchestrator.py.
+    """
+
+    #: Full lifecycle for a plan step; transitions outside this set are rejected.
+    PLAN_STEP_STATUSES = ("pending", "in_progress", "done", "failed", "skipped")
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def _begin_own_transaction(self):
+        """Same durability contract as RunRepository ([DM-C1]): self-committing."""
+        if self._session.in_transaction():
+            self._session.commit()
+        return self._session.begin()
+
+    # ------------------------------------------------------------------ write
+
+    def create_plan(
+        self,
+        run_id: str,
+        strategy: str,
+        steps: list[dict[str, Any]],
+    ) -> RunPlanRecord:
+        """Persist the declarative plan + one pending PlanStepRecord per step.
+
+        ``steps`` items accept ``id`` (required), plus optional ``title``,
+        ``criteria``, and ``budget`` (JSON-serializable). Re-calling with the
+        same run_id is idempotent: the existing declaration is returned
+        unchanged so a retried run start cannot duplicate rows.
+        """
+        normalized_steps = [
+            {
+                "id": str(step.get("id", "")).strip(),
+                "title": str(step.get("title", "")),
+                "criteria": str(step.get("criteria", "")),
+                "budget": step.get("budget"),
+            }
+            for step in steps
+        ]
+        missing = [i for i, step in enumerate(normalized_steps) if not step["id"]]
+        if missing:
+            raise ValueError(f"plan step(s) at index {missing} are missing an 'id'")
+
+        document = {
+            "strategy": str(strategy or ""),
+            "steps": [
+                {
+                    "id": step["id"],
+                    "title": step["title"],
+                    "criteria": step["criteria"],
+                    "budget": step["budget"],
+                }
+                for step in normalized_steps
+            ],
+        }
+
+        with self._begin_own_transaction():
+            existing = (
+                self._session.query(RunPlanRecord).filter_by(run_id=run_id).one_or_none()
+            )
+            if existing is not None:
+                return existing
+            record = RunPlanRecord(run_id=run_id, strategy=document["strategy"], plan=document)
+            self._session.add(record)
+            self._session.flush()
+            for position, step in enumerate(normalized_steps):
+                self._session.add(
+                    PlanStepRecord(
+                        run_id=run_id,
+                        step_id=step["id"],
+                        position=position,
+                        title=step["title"],
+                        criteria=step["criteria"],
+                        budget=step["budget"],
+                        status="pending",
+                    )
+                )
+            return record
+
+    def transition_step(self, run_id: str, step_id: str, status: str) -> PlanStepRecord:
+        """Move one plan step to ``status`` and stamp updated_at.
+
+        Raises ``ValueError`` on unknown statuses or unknown (run_id, step_id)
+        pairs so wiring mistakes surface loudly instead of silently no-opping.
+        """
+        normalized_status = str(status or "").strip().lower()
+        if normalized_status not in self.PLAN_STEP_STATUSES:
+            raise ValueError(
+                f"invalid plan step status {status!r}; expected one of "
+                f"{list(self.PLAN_STEP_STATUSES)}"
+            )
+
+        with self._begin_own_transaction():
+            record = (
+                self._session.query(PlanStepRecord)
+                .filter_by(run_id=run_id, step_id=str(step_id))
+                .one_or_none()
+            )
+            if record is None:
+                raise ValueError(f"no plan step {step_id!r} for run {run_id!r}")
+            record.status = normalized_status
+            record.updated_at = datetime.now(UTC)
+            return record
+
+    # ------------------------------------------------------------------- read
+
+    def get_plan(self, run_id: str) -> dict[str, Any] | None:
+        """Return ``{run_id, strategy, created_at, steps:[...live status]}``.
+
+        Steps come back in declared order with their current live status from
+        ``plan_steps`` merged in. ``None`` when the run has no plan artifact.
+        """
+        plan = self._session.query(RunPlanRecord).filter_by(run_id=run_id).one_or_none()
+        if plan is None:
+            return None
+        steps = (
+            self._session.query(PlanStepRecord)
+            .filter_by(run_id=run_id)
+            .order_by(PlanStepRecord.position.asc(), PlanStepRecord.id.asc())
+            .all()
+        )
+        return {
+            "run_id": plan.run_id,
+            "strategy": plan.strategy,
+            "created_at": iso_z(plan.created_at) if plan.created_at else None,
+            "steps": [
+                {
+                    "id": step.step_id,
+                    "position": int(step.position),
+                    "title": step.title,
+                    "criteria": step.criteria,
+                    "budget": step.budget,
+                    "status": step.status,
+                    "updated_at": iso_z(step.updated_at) if step.updated_at else None,
+                }
+                for step in steps
+            ],
+        }

@@ -1,0 +1,67 @@
+{
+  "browser_engine": "playwright",
+  "browser_runtime": {
+    "playwright": {
+      "launch_timeout_ms": 45000,
+      "extra_launch_args": [],
+      "adblock_allowlist_hosts": [],
+      "fingerprint_rotation_mode": "origin",
+      "fingerprint_fallback_strategy": "profile",
+      "fingerprint_rotation_interval_ms": 600000,
+      "fingerprint_rotation_max_uses": 8,
+      "fingerprint_recent_pool_size": 18,
+      "proxy_enabled": false,
+      "proxy_source_mode": "hybrid",
+      "proxy_source_order": [
+        "openproxylist-https",
+        "proxifly-http",
+        "monosans-http",
+        "speedx-http",
+        "openproxylist-socks5",
+        "proxifly-socks5",
+        "monosans-socks5",
+        "speedx-socks5",
+        "proxifly-socks4"
+      ],
+      "proxy_custom_list": [],
+      "proxy_rotation_mode": "sticky",
+      "proxy_selection_strategy": "ordered",
+      "proxy_fallback_strategy": "direct",
+      "proxy_fetch_timeout_ms": 8000,
+      "proxy_validation_timeout_ms": 12000,
+      "proxy_cache_ttl_ms": 600000,
+      "proxy_max_candidates": 40,
+      "proxy_test_url": "https://api.ipify.org?format=json",
+      "streaming_safe_mode": "adaptive",
+      "media_proxy_strategy": "direct_first",
+      "asset_diagnostics_enabled": true,
+      "popup_blocking_enabled": true,
+      "ubol_enabled": true,
+      "stream_cors_patch_enabled": false,
+      "stream_cors_include_credentials": false,
+      "iframe_sandbox_patch_enabled": true,
+      "iframe_auto_recovery_enabled": true,
+      "iframe_recovery_timeout_ms": 20000,
+      "media_capture_timeout_ms": 45000,
+      "media_retry_count": 4,
+      "media_retry_backoff_ms": [
+        1200,
+        2500,
+        5000,
+        8000
+      ],
+      "media_cors_patch_enabled": false,
+      "media_playback_verification_enabled": true,
+      "media_playback_verification_timeout_ms": 7000,
+      "media_activation_settle_ms": 1200,
+      "media_activation_candidate_limit": 8,
+      "media_preflight_action_limit": 4
+    }
+  },
+  "runtime_sync": {
+    "source_path": "C:\\Users\\ahmed\\Desktop\\PFE New Test\\web\\configs\\settings.yaml",
+    "bridge_path": "C:\\Users\\ahmed\\Desktop\\PFE New Test\\web\\data\\browser.runtime.json",
+    "synced_at": "2026-08-29T11:41:24.743834+00:00",
+    "active_runtime_source": "base_yaml"
+  }
+}

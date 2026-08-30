@@ -154,7 +154,16 @@ def _canonical_model_key(value: str) -> str:
     return f"{provider_text}::{compact}" if provider_text else compact
 
 
-def resolve_model_pricing(settings: Settings, model_name: str, provider: str = "") -> dict[str, Any]:
+def resolve_model_pricing(settings: Settings, model_name: str, provider: str = "") -> dict[str, Any] | None:
+    """Resolve catalog pricing for a model using exact matching only.
+
+    Resolution order: exact composite (``provider::model``) / bare key, then
+    punctuation-canonical equality, then the exact suffix of a routed name
+    (``gemini/gemini-2.5-flash`` -> ``gemini-2.5-flash``), then the canonical
+    alias table. Prefix/fuzzy matching is deliberately absent: it silently
+    bound ``gemini-2.5-flash-lite`` to flash rates (~4x overprice). Returns
+    ``None`` when nothing matches exactly; callers treat ``None`` as unpriced.
+    """
     pricing = resolve_model_pricing_config(settings)
     model_key = (model_name or "").strip().lower()
     provider_key = (provider or "").strip().lower()
@@ -180,43 +189,28 @@ def resolve_model_pricing(settings: Settings, model_name: str, provider: str = "
                     match = value
                     break
 
-    if not match and model_key:
-        candidates: list[str] = []
-        if "/" in model_key:
-            candidates.append(model_key.split("/", 1)[1].strip())
-        sanitized = model_key.replace(".", "-").rstrip("-")
-        candidates.append(sanitized)
-        candidates.append(sanitized.split("-20", 1)[0] if "-20" in sanitized else sanitized)
+    if not match and model_key and "/" in model_key:
+        # Exact native-name lookup for routed LiteLLM names — not prefix matching.
+        routed_suffix = model_key.split("/", 1)[1].strip()
+        if routed_suffix:
+            composite_suffix = f"{provider_key}::{routed_suffix}" if provider_key else ""
+            match = pricing.get(composite_suffix, {}) or pricing.get(routed_suffix, {})
 
-        seen: set[str] = set()
-        for candidate in candidates:
-            key = (candidate or "").strip().lower()
-            if not key or key in seen:
+    if not match and model_key:
+        alias_targets = [model_key]
+        if "/" in model_key:
+            alias_targets.append(model_key.split("/", 1)[1].strip())
+        for target in alias_targets:
+            alias_key = _MODEL_PRICING_ALIASES.get(target, "")
+            if not alias_key:
                 continue
-            seen.add(key)
-            if provider_key:
-                composite_candidate = f"{provider_key}::{key}"
-                match = pricing.get(composite_candidate, {})
-                if match:
-                    break
-            match = pricing.get(key, {})
+            composite_alias = f"{provider_key}::{alias_key}" if provider_key else ""
+            match = (pricing.get(composite_alias, {}) if composite_alias else {}) or pricing.get(alias_key, {})
             if match:
                 break
 
-        if not match:
-            model_candidates = [item for item in seen if item]
-            for key, value in pricing.items():
-                if provider_key and not key.startswith(f"{provider_key}::"):
-                    continue
-                normalized_key = key.split("::", 1)[1] if "::" in key else key
-                if any(model.startswith(normalized_key) or normalized_key.startswith(model) for model in model_candidates):
-                    match = value
-                    break
-
-    if not match and model_key in _MODEL_PRICING_ALIASES:
-        alias_key = _MODEL_PRICING_ALIASES[model_key]
-        composite_alias = f"{provider_key}::{alias_key}" if provider_key else ""
-        match = (pricing.get(composite_alias, {}) if composite_alias else {}) or pricing.get(alias_key, {})
+    if not match:
+        return None
 
     context_window = int(match.get("context_window", 0) or 0)
     if context_window <= 0:
@@ -238,21 +232,60 @@ def estimate_usage_cost(
     *,
     cached_input_tokens: int = 0,
     cache_write_input_tokens: int = 0,
+    thinking_tokens: int = 0,
     input_per_million: float = 0.0,
     output_per_million: float = 0.0,
     cached_input_per_million: float = 0.0,
     cache_write_per_million: float = 0.0,
+    cache_write_multiplier: float = 1.0,
+    cached_is_subset_of_input: bool = True,
+    thinking_billed_as_output: bool = True,
 ) -> dict[str, float]:
-    input_cost = (max(input_tokens, 0) / 1_000_000.0) * max(input_per_million, 0.0)
-    cached_input_cost = (max(cached_input_tokens, 0) / 1_000_000.0) * max(cached_input_per_million, 0.0)
-    cache_write_cost = (max(cache_write_input_tokens, 0) / 1_000_000.0) * max(cache_write_per_million, 0.0)
-    output_cost = (max(output_tokens, 0) / 1_000_000.0) * max(output_per_million, 0.0)
+    """Price one usage payload according to the row's cache semantics.
+
+    SUBSET (Gemini/OpenAI): ``input`` already contains cached/write tokens, so
+    the billable uncached input is what remains after removing both.
+    DISJOINT (Anthropic): ``input`` excludes cache read/write, so it is billed
+    whole while reads price at the cached rate and writes at
+    ``cached_rate * multiplier`` (explicit ``cache_write_per_million`` wins).
+    Thinking tokens bill at the output rate only when the row says so — OpenAI
+    and Anthropic already include reasoning in ``output``, Gemini does not.
+    """
+    input_tokens = max(int(input_tokens), 0)
+    output_tokens = max(int(output_tokens), 0)
+    cached_input_tokens = max(int(cached_input_tokens), 0)
+    cache_write_input_tokens = max(int(cache_write_input_tokens), 0)
+    thinking_tokens = max(int(thinking_tokens), 0)
+
+    input_rate = max(input_per_million, 0.0)
+    output_rate = max(output_per_million, 0.0)
+    cached_rate = max(cached_input_per_million, 0.0)
+    write_rate = (
+        max(cache_write_per_million, 0.0)
+        if cache_write_per_million > 0.0
+        else cached_rate * max(cache_write_multiplier, 0.0)
+    )
+
+    if cached_is_subset_of_input:
+        billable_input_tokens = max(input_tokens - cached_input_tokens - cache_write_input_tokens, 0)
+    else:
+        billable_input_tokens = input_tokens
+
+    input_cost = (billable_input_tokens / 1_000_000.0) * input_rate
+    cached_input_cost = (cached_input_tokens / 1_000_000.0) * cached_rate
+    cache_write_cost = (cache_write_input_tokens / 1_000_000.0) * write_rate
+    output_cost = (output_tokens / 1_000_000.0) * output_rate
+    thinking_cost = (thinking_tokens / 1_000_000.0) * output_rate if thinking_billed_as_output else 0.0
+
     return {
         "estimated_input_cost_usd": round(input_cost, 8),
         "estimated_cached_input_cost_usd": round(cached_input_cost, 8),
         "estimated_cache_write_cost_usd": round(cache_write_cost, 8),
         "estimated_output_cost_usd": round(output_cost, 8),
-        "estimated_total_cost_usd": round(input_cost + cached_input_cost + cache_write_cost + output_cost, 8),
+        "estimated_thinking_cost_usd": round(thinking_cost, 8),
+        "estimated_total_cost_usd": round(
+            input_cost + cached_input_cost + cache_write_cost + output_cost + thinking_cost, 8
+        ),
     }
 
 

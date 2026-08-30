@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -42,6 +43,11 @@ from src.storage.models import (
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/open_web_catcher.db")
 
+logger = logging.getLogger(__name__)
+
+# parents[2] = repo root (src/storage/ -> src/ -> root), where alembic.ini lives.
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 
 def _build_engine(database_url: str):
     is_sqlite = database_url.startswith("sqlite")
@@ -59,11 +65,8 @@ def get_session() -> Session:
 
 def run_migrations(database_url: str | None = None) -> None:
     url = database_url or DATABASE_URL
-    alembic_ini = Path("alembic.ini")
-    if not alembic_ini.exists():
-        return
-
-    config = Config(str(alembic_ini))
+    config = Config(str(_PROJECT_ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(_PROJECT_ROOT / "alembic"))
     config.set_main_option("sqlalchemy.url", url)
     command.upgrade(config, "head")
 
@@ -71,8 +74,10 @@ def run_migrations(database_url: str | None = None) -> None:
 def create_tables() -> None:
     """Initialize the database schema.
 
-    Production paths use Alembic. Lightweight SQLite test databases fall back to
-    metadata.create_all to keep unit tests fast and self-contained.
+    In-memory SQLite test databases use metadata.create_all to stay fast and
+    self-contained. Every other database runs the Alembic chain; a migration
+    failure is logged and re-raised instead of silently falling back to
+    create_all.
     """
 
     if DATABASE_URL == "sqlite:///:memory:":
@@ -82,7 +87,8 @@ def create_tables() -> None:
     try:
         run_migrations(DATABASE_URL)
     except Exception:
-        Base.metadata.create_all(bind=engine)
+        logger.exception("Database migration failed for %s", DATABASE_URL)
+        raise
 
 
 __all__ = [

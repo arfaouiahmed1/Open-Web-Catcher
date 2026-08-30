@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import re
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, urlunparse
@@ -32,6 +32,7 @@ from src.utils.console_state import (
     normalize_job_display_status,
     normalize_run_display_status,
 )
+from src.utils.timefmt import iso_z
 
 LANGUAGES = [
     "english",
@@ -88,12 +89,12 @@ def _serialize_model(row: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {}
     for column in row.__table__.columns:
         value = getattr(row, column.name)
-        payload[column.name] = value.isoformat() if isinstance(value, datetime) else value
+        payload[column.name] = iso_z(value) if isinstance(value, datetime) else value
     return payload
 
 
 def _serialize_datetime(value: Any) -> str:
-    return value.isoformat() if isinstance(value, datetime) else ""
+    return iso_z(value)
 
 
 def _terminal_site_status(value: str) -> str:
@@ -514,8 +515,8 @@ class DatasetRepository:
             passed_count=1 if success else 0,
             failed_count=0 if success else 1,
             urls_json=[url],
-            started_at=datetime.utcnow(),
-            finished_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
         )
         self._session.add(batch)
         self._session.flush()
@@ -530,8 +531,8 @@ class DatasetRepository:
             label=label,
             status="success" if success else "failed",
             final_status="success" if success else "failed",
-            started_at=datetime.utcnow(),
-            finished_at=datetime.utcnow(),
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
         )
         self._session.add(record)
         self._session.flush()
@@ -710,7 +711,7 @@ class DatasetRepository:
         row = self._session.query(DatasetSiteRunRecord).filter_by(run_id=run_id).first()
         if row is None:
             return
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         row.status = "running"
         row.started_at = row.started_at or now
         batch = self._session.query(DatasetBatchRecord).filter_by(id=row.batch_id).first()
@@ -723,7 +724,7 @@ class DatasetRepository:
         row = self._session.query(DatasetSiteRunRecord).filter_by(run_id=run_id).first()
         if row is None:
             return
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         row.status = "cancelled"
         row.final_status = "cancelled"
         row.error_text = str(reason or "")
@@ -745,7 +746,7 @@ class DatasetRepository:
             .order_by(DatasetSiteRunRecord.id.asc())
             .all()
         )
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         cancelled_run_ids: list[str] = []
         skipped_run_ids: list[str] = []
         for row in rows:
@@ -788,7 +789,7 @@ class DatasetRepository:
 
         status = str(display_status or "").strip().lower() or "failed"
         result_payload = result_json or {}
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         row.status = status
         row.final_status = str(result_payload.get("final_status", "") or status)
         row.error_text = error_text
@@ -1159,4 +1160,4 @@ class DatasetRepository:
             batch.started_at = min((row.started_at or row.created_at) for row in rows if row.started_at or row.created_at)
         if batch.completed_count == batch.requested_count and rows:
             finished_values = [row.finished_at or row.created_at for row in completed if row.finished_at or row.created_at]
-            batch.finished_at = max(finished_values) if finished_values else datetime.utcnow()
+            batch.finished_at = max(finished_values) if finished_values else datetime.now(UTC)
