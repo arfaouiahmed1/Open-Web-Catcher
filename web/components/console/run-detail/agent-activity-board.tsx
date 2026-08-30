@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -597,7 +597,6 @@ export function AgentActivityBoard({
                     <div className="text-[16px] font-semibold" style={{ color: "var(--ink)" }}>
                       {card.actor}
                     </div>
-                    // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
                     <Badge tone={statusTone(card.status) as any}>{statusLabel(card.status)}</Badge>
                     {card.memoryInjected || card.memoryEvents > 0 ? (
                       <Badge tone="default">

@@ -2428,7 +2428,6 @@ export function RunsPage() {
                               className="block max-w-[360px] break-all font-mono text-[11px] text-primary hover:underline"
                               title={(row as any).run_id}
                             >
-                              // @ts-expect-error -- strict migration
                               {(row as any).run_id}
                             </Link>
                             <div className="mt-0.5 max-w-[360px] truncate text-[11px] text-muted-foreground" title={(row as any).url}>
