@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 
 import { Mail, ShieldAlert } from "lucide-react";
@@ -14,9 +13,38 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-function EmailDraftCard({ email, index }) {
+interface EvidenceRow {
+  stream_url?: string;
+  protocol?: string;
+  server_label?: string;
+  channel_name?: string;
+  ocr_text?: string;
+  screenshot_urls?: string[];
+}
+
+interface EmailDraft {
+  provider?: string;
+  abuse_email?: string;
+  stream_urls?: string[];
+  stream_evidence?: EvidenceRow[];
+  screenshot_urls?: string[];
+  server_labels?: string[];
+  subject?: string;
+  body?: string;
+  provider_info?: unknown;
+  channel_name?: string;
+}
+
+interface EmailDraftCardProps {
+  email: EmailDraft;
+  index: number;
+}
+
+function EmailDraftCard({ email, index }: EmailDraftCardProps): React.JSX.Element {
   const streamCount = Array.isArray(email?.stream_urls) ? email.stream_urls.length : 0;
-  const evidenceRows = Array.isArray(email?.stream_evidence) ? email.stream_evidence : [];
+  const evidenceRows: EvidenceRow[] = Array.isArray(email?.stream_evidence)
+    ? (email.stream_evidence as EvidenceRow[])
+    : [];
   const screenshotCount = evidenceRows.length
     ? new Set(
         evidenceRows.flatMap((row) =>
@@ -157,18 +185,25 @@ function EmailDraftCard({ email, index }) {
   );
 }
 
+interface AgentOutputTabProps {
+  stageRollups?: unknown[];
+  agentRollups?: unknown[];
+  parallelism?: unknown;
+  takedownEmails?: EmailDraft[];
+}
+
 export function AgentOutputTab({
   stageRollups = [],
   agentRollups = [],
   parallelism = null,
   takedownEmails = [],
-}) {
+}: AgentOutputTabProps): React.JSX.Element {
   return (
     <div className="space-y-4">
       <AgentOutputPanel
-        stageRollups={stageRollups}
-        agentRollups={agentRollups}
-        parallelism={parallelism}
+        stageRollups={stageRollups as never}
+        agentRollups={agentRollups as never}
+        parallelism={parallelism as never}
         title="Agent outputs"
       />
 
