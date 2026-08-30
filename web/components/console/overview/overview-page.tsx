@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable @typescript-eslint/no-explicit-any */
 ﻿"use client";
 
 import Link from "next/link";
@@ -50,7 +50,7 @@ const TABS = [
 ];
 
 const EMPTY_OBJECT = {};
-const EMPTY_ARRAY = [];
+const EMPTY_ARRAY: any[] = [];
 const EXTERNAL_BLOCKER_STATUSES = new Set([
   "page_inaccessible",
   "site_dead",
@@ -66,7 +66,8 @@ const PALETTE = [
   "var(--rose)",
 ];
 
-async function apiFetch(path, options = {}) {
+async function apiFetch(path: any, options = {}) {
+  // @ts-expect-error -- strict migration
   const { timeoutMs = 10_000, ...fetchOptions } = options;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -89,23 +90,23 @@ async function apiFetch(path, options = {}) {
 ═══════════════════════════════════════════════════════════════════════════ */
 
 /** Smooth bezier area + line chart. `data` = array of numbers. */
-function AreaLine({ data = [], color = "var(--signal)", height = 72 }) {
+function AreaLine({ data = [], color = "var(--signal)", height = 72 }: any) {
   const gid = useRef(`al${Math.random().toString(36).slice(2)}`).current;
   if (!data || data.length < 2) return <div style={{ height }} />;
   const W = 480,
     H = height,
     pd = { t: 6, b: 6, l: 2, r: 2 };
-  const vals = data.map((v) => Number(v) || 0);
+  const vals = data.map((v: any) => Number(v) || 0);
   const mx = Math.max(...vals, 0.001);
   const mn = 0;
   const rng = mx - mn || 1;
   const cw = W - pd.l - pd.r;
   const ch = H - pd.t - pd.b;
-  const pts = vals.map((v, i) => [
+  const pts = vals.map((v: any, i: any) => [
     pd.l + (i / (vals.length - 1)) * cw,
     pd.t + ch - ((v - mn) / rng) * ch,
   ]);
-  const line = pts.reduce((acc, [x, y], i) => {
+  const line = pts.reduce((acc: any, [x, y]: any, i: any) => {
     if (i === 0) return `M${x.toFixed(1)},${y.toFixed(1)}`;
     const [px, py] = pts[i - 1];
     const cx1 = (px + x) / 2;
@@ -146,15 +147,15 @@ function TrendBars({
   rawValues,
   color = "var(--signal)",
   height = 56,
-}) {
+}: any) {
   const vals = rawValues
     ? rawValues
-    : data.map((d) => Number(d[valueKey] || 0));
+    : data.map((d: any) => Number(d[valueKey] || 0));
   if (!vals || vals.length < 2) return <div style={{ height }} />;
   const mx = Math.max(...vals, 0.001);
   return (
     <div className="flex items-end gap-[2px]" style={{ height }} aria-hidden>
-      {vals.map((v, i) => (
+      {vals.map((v: any, i: any) => (
         <div
           key={i}
           className="flex-1 min-w-[3px] rounded-t-[2px]"
@@ -176,17 +177,17 @@ function DonutChart({
   thickness = 18,
   label,
   sublabel,
-}) {
+}: any) {
   const r = (size - thickness) / 2;
   const cx = size / 2;
   const cy = size / 2;
   const circ = 2 * Math.PI * r;
-  const positiveSegments = segments.filter((seg) => Number(seg.value || 0) > 0);
-  const total = positiveSegments.reduce((s, g) => s + Math.max(0, Number(g.value || 0)), 0);
+  const positiveSegments = segments.filter((seg: any) => Number(seg.value || 0) > 0);
+  const total = positiveSegments.reduce((s: any, g: any) => s + Math.max(0, Number(g.value || 0)), 0);
   const gap = positiveSegments.length > 1 ? Math.min(4, circ * 0.012) : 0;
 
   let dashOffset = circ * 0.25; // start at top
-  const arcs = positiveSegments.map((seg) => {
+  const arcs = positiveSegments.map((seg: any) => {
     const pct = Math.max(0, Number(seg.value || 0)) / (total || 1);
     const dash = Math.max(0, pct * circ - gap);
     const arc = { ...seg, dash, gap: circ - dash, offset: -dashOffset };
@@ -216,7 +217,7 @@ function DonutChart({
           strokeWidth={thickness}
         />
         {/* segments */}
-        {arcs.map((arc, i) => (
+        {arcs.map((arc: any, i: any) => (
           <circle
             key={`${arc.label}-${i}`}
             cx={cx}
@@ -259,14 +260,14 @@ function RadialGauge({
   max = 100,
   color = "var(--signal)",
   size = 80,
-}) {
+}: any) {
   const sw = 10;
   const r = (size - sw) / 2;
   const cx = size / 2;
   const cy = size / 2;
   const pct = Math.min(1, Math.max(0, value / (max || 1)));
-  const toR = (deg) => (deg * Math.PI) / 180;
-  const arc = (cx, cy, r, a1, a2) => {
+  const toR = (deg: any) => (deg * Math.PI) / 180;
+  const arc = (cx: any, cy: any, r: any, a1: any, a2: any) => {
     const s = { x: cx + r * Math.cos(toR(a1)), y: cy + r * Math.sin(toR(a1)) };
     const e = { x: cx + r * Math.cos(toR(a2)), y: cy + r * Math.sin(toR(a2)) };
     return `M${s.x.toFixed(2)},${s.y.toFixed(2)} A${r},${r} 0 ${a2 - a1 > 180 ? 1 : 0} 1 ${e.x.toFixed(2)},${e.y.toFixed(2)}`;
@@ -299,7 +300,7 @@ function RadialGauge({
   );
 }
 
-function formatCompactNumber(value) {
+function formatCompactNumber(value: any) {
   const n = Number(value || 0);
   const abs = Math.abs(n);
   if (abs >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}b`;
@@ -309,9 +310,12 @@ function formatCompactNumber(value) {
 }
 
 function contextUsage(row = {}) {
+  // @ts-expect-error -- strict migration
   const contextWindow = Number(row.context_window || 0);
+  // @ts-expect-error -- strict migration
   const contextTokens = Number(row.context_tokens || 0);
   const contextPct =
+    // @ts-expect-error -- strict migration
     Number(row.context_usage_pct || 0) ||
     (contextWindow > 0 ? contextTokens / contextWindow : 0);
   return { contextWindow, contextTokens, contextPct };
@@ -328,8 +332,10 @@ function chartMax(data = [], series = []) {
   for (const row of data) {
     const stacks = {};
     for (const item of series) {
+      // @ts-expect-error -- strict migration
       const value = Number(row?.[item.key] || 0);
       max = Math.max(max, value);
+      // @ts-expect-error -- strict migration
       if (item.stackId) stacks[item.stackId] = (stacks[item.stackId] || 0) + value;
     }
     for (const value of Object.values(stacks)) max = Math.max(max, Number(value || 0));
@@ -337,9 +343,9 @@ function chartMax(data = [], series = []) {
   return max;
 }
 
-function AreaTrendCard({ title, description, data = [], series = [], height = 220 }) {
+function AreaTrendCard({ title, description, data = [], series = [], height = 220 }: any) {
   const config = Object.fromEntries(
-    series.map((item) => [item.key, { label: item.label, color: item.color }]),
+    series.map((item: any) => [item.key, { label: item.label, color: item.color }]),
   );
   const maxValue = chartMax(data, series);
 
@@ -353,7 +359,7 @@ function AreaTrendCard({ title, description, data = [], series = [], height = 22
         <ChartContainer config={config} className="w-full" style={{ height }}>
           <AreaChart data={data} margin={{ top: 6, right: 16, left: 8, bottom: 0 }}>
             <defs>
-              {series.map((item) => (
+              {series.map((item: any) => (
                 <linearGradient key={item.key} id={`fill-${item.key}`} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={`var(--color-${item.key})`} stopOpacity={0.35} />
                   <stop offset="95%" stopColor={`var(--color-${item.key})`} stopOpacity={0.04} />
@@ -372,7 +378,7 @@ function AreaTrendCard({ title, description, data = [], series = [], height = 22
             />
             <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
             <ChartLegend content={<ChartLegendContent />} />
-            {series.map((item) => (
+            {series.map((item: any) => (
               <Area
                 key={item.key}
                 dataKey={item.key}
@@ -390,9 +396,9 @@ function AreaTrendCard({ title, description, data = [], series = [], height = 22
   );
 }
 
-function BarTrendCard({ title, description, data = [], series = [], height = 220 }) {
+function BarTrendCard({ title, description, data = [], series = [], height = 220 }: any) {
   const config = Object.fromEntries(
-    series.map((item) => [item.key, { label: item.label, color: item.color }]),
+    series.map((item: any) => [item.key, { label: item.label, color: item.color }]),
   );
   const maxValue = chartMax(data, series);
 
@@ -417,7 +423,7 @@ function BarTrendCard({ title, description, data = [], series = [], height = 220
             />
             <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
             <ChartLegend content={<ChartLegendContent />} />
-            {series.map((item) => (
+            {series.map((item: any) => (
               <Bar
                 key={item.key}
                 dataKey={item.key}
@@ -433,8 +439,8 @@ function BarTrendCard({ title, description, data = [], series = [], height = 220
   );
 }
 
-function MiniPieChart({ data = [], size = 180 }) {
-  const positive = data.filter((entry) => Number(entry.value || 0) > 0);
+function MiniPieChart({ data = [], size = 180 }: any) {
+  const positive = data.filter((entry: any) => Number(entry.value || 0) > 0);
   if (!positive.length) {
     return (
       <div className="flex h-44 items-center justify-center text-[12px] text-muted-foreground/50">
@@ -454,7 +460,7 @@ function MiniPieChart({ data = [], size = 180 }) {
         outerRadius={Math.round(size * 0.43)}
         paddingAngle={3}
       >
-        {positive.map((entry, index) => (
+        {positive.map((entry: any, index: any) => (
           <Cell key={`${entry.label}-${index}`} fill={entry.color} />
         ))}
       </Pie>
@@ -466,7 +472,7 @@ function MiniPieChart({ data = [], size = 180 }) {
    LAYOUT PRIMITIVES
 ═══════════════════════════════════════════════════════════════════════════ */
 
-function Panel({ children, className = "" }) {
+function Panel({ children, className = "" }: any) {
   return (
     <Card className={`overflow-hidden ${className}`}>
       {children}
@@ -474,7 +480,7 @@ function Panel({ children, className = "" }) {
   );
 }
 
-function PanelHead({ title, sub, aside, accent = "var(--signal)" }) {
+function PanelHead({ title, sub, aside, accent = "var(--signal)" }: any) {
   return (
     <CardHeader className="flex-row items-center gap-3 space-y-0 border-b px-4 py-3">
       <span className="h-3 w-0.5 rounded-full shrink-0" style={{ background: accent }} />
@@ -488,11 +494,11 @@ function PanelHead({ title, sub, aside, accent = "var(--signal)" }) {
 }
 
 /** Shadcn tab bar with icons. */
-function TabBar({ active, onChange, agentPolling }) {
+function TabBar({ active, onChange, agentPolling }: any) {
   return (
     <Tabs value={active} onValueChange={onChange}>
       <TabsList className="h-auto w-full justify-start gap-1 p-1">
-        {TABS.map(({ id, label, Icon }) => (
+        {TABS.map(({ id, label, Icon }: any) => (
           <TabsTrigger
             key={id}
             value={id}
@@ -520,10 +526,10 @@ function TabBar({ active, onChange, agentPolling }) {
 }
 
 /** Legend row for a donut chart. */
-function DonutLegend({ segments }) {
+function DonutLegend({ segments }: any) {
   return (
     <div className="space-y-1.5">
-      {segments.map((seg) => (
+      {segments.map((seg: any) => (
         <div key={seg.label} className="flex items-center gap-2 text-[11px]">
           <span
             className="h-2 w-2 shrink-0 rounded-sm"
@@ -542,7 +548,7 @@ function DonutLegend({ segments }) {
 }
 
 /** Horizontal bar row used across tabs. */
-function HBarRow({ label, value, share, color, sub, rank }) {
+function HBarRow({ label, value, share, color, sub, rank }: any) {
   return (
     <div className="border-b px-4 py-2.5 last:border-0">
       <div className="flex items-center gap-2">
@@ -578,7 +584,7 @@ function HBarRow({ label, value, share, color, sub, rank }) {
 }
 
 /* Mini section label */
-function SectionLabel({ children }) {
+function SectionLabel({ children }: any) {
   return (
     <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] mb-3 text-muted-foreground/60">
       {children}
@@ -587,7 +593,7 @@ function SectionLabel({ children }) {
 }
 
 /** System live-status pills strip. */
-function StatusStrip({ summary }) {
+function StatusStrip({ summary }: any) {
   const workingWebsites = Number(summary.distinct_working_websites || 0);
   const noStreamOrHostingRuns = Number(summary.no_stream_or_hosting_runs || 0);
   const items = [
@@ -633,7 +639,7 @@ function StatusStrip({ summary }) {
   ];
   return (
     <div className="flex flex-wrap gap-2">
-      {items.map(({ label, value, color, live }) => (
+      {items.map(({ label, value, color, live }: any) => (
         <div
           key={label}
           className="flex items-center gap-2 rounded-lg border bg-card px-3 py-1.5"
@@ -659,7 +665,7 @@ function StatusStrip({ summary }) {
   );
 }
 
-function ActiveRunRow({ run }) {
+function ActiveRunRow({ run }: any) {
   return (
     <div className="grid items-center gap-3 border-b px-4 py-3 last:border-0"
       style={{ gridTemplateColumns: "1fr auto" }}>
@@ -688,7 +694,7 @@ function ActiveRunRow({ run }) {
   );
 }
 
-function FailedRunRow({ row }) {
+function FailedRunRow({ row }: any) {
   return (
     <div className="grid items-center gap-3 border-b px-4 py-2.5 last:border-0"
       style={{ gridTemplateColumns: "1fr auto auto" }}>
@@ -710,7 +716,7 @@ function FailedRunRow({ row }) {
   );
 }
 
-function ToolReliabilityRow({ row }) {
+function ToolReliabilityRow({ row }: any) {
   const rate = Number(row.success_rate || 0);
   const color =
     rate >= 0.9 ? "var(--mint)" : rate >= 0.7 ? "var(--signal)" : "var(--rose)";
@@ -746,7 +752,7 @@ function ToolReliabilityRow({ row }) {
   );
 }
 
-function urlHost(value) {
+function urlHost(value: any) {
   try {
     return new URL(String(value || "")).hostname;
   } catch {
@@ -754,7 +760,7 @@ function urlHost(value) {
   }
 }
 
-function ProviderWorkflowRow({ row }) {
+function ProviderWorkflowRow({ row }: any) {
   const url = row.url || row.stream_url || "";
   return (
     <TableRow>
@@ -805,13 +811,13 @@ function OverviewPageContent() {
   const pathname = usePathname();
   const tab = searchParams.get("tab") || "overview";
 
-  const [overview, setOverview] = useState(null);
-  const [toolRel, setToolRel] = useState(null);
-  const [agentRunsDb, setAgentRunsDb] = useState(null);
-  const [providerAnalysisDb, setProviderAnalysisDb] = useState(null);
-  const [runStreamsDb, setRunStreamsDb] = useState(null);
-  const [pricingMap, setPricingMap] = useState(null);
-  const [failedData, setFailedData] = useState(null);
+  const [overview, setOverview] = useState<any>(null);
+  const [toolRel, setToolRel] = useState<any>(null);
+  const [agentRunsDb, setAgentRunsDb] = useState<any>(null);
+  const [providerAnalysisDb, setProviderAnalysisDb] = useState<any>(null);
+  const [runStreamsDb, setRunStreamsDb] = useState<any>(null);
+  const [pricingMap, setPricingMap] = useState<any>(null);
+  const [failedData, setFailedData] = useState<any>(null);
   const [runtimeEvents, setRuntimeEvents] = useState([]);
   const [dbTables, setDbTables] = useState([]);
   const [error, setError] = useState("");
@@ -912,7 +918,7 @@ function OverviewPageContent() {
       return () => { mounted = false; document.removeEventListener("visibilitychange", onVisibility); setAgentPolling(false); };
     }, [tab]);
 
-  function setTab(next) {
+  function setTab(next: any) {
     const p = new URLSearchParams(searchParams.toString());
     p.set("tab", next);
     router.push(`${pathname}?${p.toString()}`, { scroll: false });
@@ -930,12 +936,12 @@ function OverviewPageContent() {
   const workflowStreamRows = runStreamsDb?.rows ?? EMPTY_ARRAY;
   const toolRows = toolRel?.rows ?? overview?.top_tools ?? EMPTY_ARRAY;
   const activeRuns = (overview?.active_runs ?? EMPTY_ARRAY).filter(
-    (r) => !r.completed,
+    (r: any) => !r.completed,
   );
   const recentRuns = overview?.recent_runs ?? EMPTY_ARRAY;
   const failedRuns = failedData?.rows ?? EMPTY_ARRAY;
   const blockerRuns = recentRuns
-    .filter((row) => EXTERNAL_BLOCKER_STATUSES.has(String(row.final_status || row.status || "").toLowerCase()))
+    .filter((row: any) => EXTERNAL_BLOCKER_STATUSES.has(String(row.final_status || row.status || "").toLowerCase()))
     .slice(0, 8);
 
   const modelRows = useMemo(() => {
@@ -947,7 +953,7 @@ function OverviewPageContent() {
       ]),
     );
     return rawModelRows
-      .map((row) => {
+      .map((row: any) => {
         const key = `${row.provider || ""}::${row.model_name || ""}`;
         const estimated = estimateCallCost(byKey.get(key) || row, pricingMap);
         const loggedTotal = Number(
@@ -980,7 +986,7 @@ function OverviewPageContent() {
           pricing_available: Boolean(estimated.pricing),
         };
       })
-      .sort((a, b) => {
+      .sort((a: any, b: any) => {
         const costDelta = Number(b.cost_usd || 0) - Number(a.cost_usd || 0);
         if (Math.abs(costDelta) > 0.000001) return costDelta;
         const tokenDelta = Number(b.tokens || 0) - Number(a.tokens || 0);
@@ -991,7 +997,7 @@ function OverviewPageContent() {
       });
   }, [rawModelRows, pricingMap]);
 
-  const computedModelCost = modelRows.reduce((s, r) => s + Number(r.cost_usd || 0), 0);
+  const computedModelCost = modelRows.reduce((s: any, r: any) => s + Number(r.cost_usd || 0), 0);
   const recordedTotalCost = Number(summary.total_cost_usd || 0);
   const effectiveTotalCost = recordedTotalCost > 0 ? recordedTotalCost : computedModelCost;
   const effectiveAvgCost =
@@ -1006,11 +1012,11 @@ function OverviewPageContent() {
         : "No pricing configured";
 
   const trend = useMemo(() => {
-    const totalTrendCost = rawTrend.reduce((s, r) => s + Number(r.cost_usd || 0), 0);
+    const totalTrendCost = rawTrend.reduce((s: any, r: any) => s + Number(r.cost_usd || 0), 0);
     if (totalTrendCost > 0 || effectiveTotalCost <= 0) return rawTrend;
-    const totalTrendTokens = rawTrend.reduce((s, r) => s + Number(r.tokens || 0), 0);
+    const totalTrendTokens = rawTrend.reduce((s: any, r: any) => s + Number(r.tokens || 0), 0);
     if (totalTrendTokens <= 0) return rawTrend;
-    return rawTrend.map((row) => ({
+    return rawTrend.map((row: any) => ({
       ...row,
       cost_usd: (effectiveTotalCost * Number(row.tokens || 0)) / totalTrendTokens,
     }));
@@ -1018,7 +1024,7 @@ function OverviewPageContent() {
 
   const tokenRows = useMemo(
     () =>
-      modelRows.map((row) => {
+      modelRows.map((row: any) => {
         const inp = Number(row.input_tokens || 0);
         const cached = Number(row.cached_input_tokens || 0);
         const newIn = Number(row.new_input_tokens || Math.max(inp - cached, 0));
@@ -1035,7 +1041,7 @@ function OverviewPageContent() {
     [modelRows],
   );
 
-  const totalModelCost = computedModelCost || modelRows.reduce((s, r) => s + Number(r.tokens || 0), 0) || 1;
+  const totalModelCost = computedModelCost || modelRows.reduce((s: any, r: any) => s + Number(r.tokens || 0), 0) || 1;
   const totalTokensAll = Number(summary.total_tokens || 0) || 1;
   const newInTotal = Number(summary.total_new_input_tokens || 0);
   const cachedInTotal = Number(summary.total_cached_input_tokens || 0);
@@ -1048,7 +1054,7 @@ function OverviewPageContent() {
   const providerCostRows = useMemo(
     () =>
       Object.values(
-        modelRows.reduce((acc, row) => {
+        modelRows.reduce((acc: any, row: any) => {
           const k = String(row.provider || "unknown");
           if (!acc[k])
             acc[k] = {
@@ -1069,15 +1075,20 @@ function OverviewPageContent() {
           return acc;
         }, {}),
       ).sort((a, b) => {
+        // @ts-expect-error -- strict migration
         const costDelta = b.cost_usd - a.cost_usd;
         if (Math.abs(costDelta) > 0.000001) return costDelta;
+        // @ts-expect-error -- strict migration
         return b.tokens - a.tokens;
       }),
     [modelRows],
   );
 
+  // @ts-expect-error -- strict migration
   const totalProviderCost = providerCostRows.reduce((s, r) => s + Number(r.cost_usd || 0), 0);
+  // @ts-expect-error -- strict migration
   const totalProviderTokens = providerCostRows.reduce((s, r) => s + Number(r.tokens || 0), 0);
+  // @ts-expect-error -- strict migration
   const providerDistributionMode = totalProviderCost > 0 ? "cost" : "tokens";
   const providerDistributionTotal =
     providerDistributionMode === "cost" ? totalProviderCost || 1 : totalProviderTokens || 1;
@@ -1125,7 +1136,7 @@ function OverviewPageContent() {
   }, [agentRows]);
 
   const totalAgentRuns = agentSummary.reduce((s, r) => s + r.total, 0);
-  const trackedAgentContextRuns = agentRows.filter((row) => contextUsage(row).contextWindow > 0).length;
+  const trackedAgentContextRuns = agentRows.filter((row: any) => contextUsage(row).contextWindow > 0).length;
 
   const agentStatusRows = useMemo(() => {
     const grouped = new Map();
@@ -1214,24 +1225,24 @@ function OverviewPageContent() {
       analysedLinks:
         analysedUrls.size
         || providerAnalysisRows.length
-        || overviewProviderRows.reduce((total, row) => total + Number(row.analysis_count || 0), 0),
+        || overviewProviderRows.reduce((total: any, row: any) => total + Number(row.analysis_count || 0), 0),
       streamLinks: workflowStreamRows.length,
       affectedRuns:
         runIds.size
-        || overviewProviderRows.reduce((total, row) => total + Number(row.affected_runs || 0), 0),
+        || overviewProviderRows.reduce((total: any, row: any) => total + Number(row.affected_runs || 0), 0),
       abuseContacts,
     };
   }, [overviewProviderRows, providerAnalysisRows, workflowStreamRows]);
 
   const workflowProviderLinkRows = useMemo(() => {
     if (providerAnalysisRows.length) {
-      return providerAnalysisRows.slice(0, 60).map((row) => ({
+      return providerAnalysisRows.slice(0, 60).map((row: any) => ({
         ...row,
         url: row.stream_url || "",
         source: "provider_analysis",
       }));
     }
-    return workflowStreamRows.slice(0, 60).map((row) => ({
+    return workflowStreamRows.slice(0, 60).map((row: any) => ({
       ...row,
       url: row.stream_url || "",
       provider: "",
@@ -1277,7 +1288,7 @@ function OverviewPageContent() {
       label: "Total runs",
       value: formatNumber(summary.total_runs || 0),
       description: "Persisted orchestrator runs",
-      sparkData: trend.map((r) => r.runs || 0),
+      sparkData: trend.map((r: any) => r.runs || 0),
     },
     {
       label: "Success rate",
@@ -1290,13 +1301,13 @@ function OverviewPageContent() {
       label: "Avg latency",
       value: `${Number(summary.avg_latency_seconds || 0).toFixed(1)}s`,
       description: "End-to-end wall-clock",
-      sparkData: trend.map((r) => r.avg_latency_seconds || 0),
+      sparkData: trend.map((r: any) => r.avg_latency_seconds || 0),
     },
     {
       label: "Total cost",
       value: formatCurrency(effectiveTotalCost),
       description: costSourceLabel,
-      sparkData: trend.map((r) => r.cost_usd || 0),
+      sparkData: trend.map((r: any) => r.cost_usd || 0),
       accent: "signal",
     },
   ];
@@ -1305,7 +1316,7 @@ function OverviewPageContent() {
       label: "Total tokens",
       value: formatNumber(summary.total_tokens || 0),
       description: "Input + output tokens",
-      sparkData: trend.map((r) => r.tokens || 0),
+      sparkData: trend.map((r: any) => r.tokens || 0),
       accent: "sky",
     },
     {
@@ -1364,7 +1375,7 @@ function OverviewPageContent() {
       label: "Total cost",
       value: formatCurrency(effectiveTotalCost),
       description: costSourceLabel,
-      sparkData: trend.map((r) => r.cost_usd || 0),
+      sparkData: trend.map((r: any) => r.cost_usd || 0),
       accent: "signal",
     },
     {
@@ -1412,7 +1423,7 @@ function OverviewPageContent() {
       label: "Total tokens",
       value: formatNumber(summary.total_tokens || 0),
       description: "Input + output all time",
-      sparkData: trend.map((r) => r.tokens || 0),
+      sparkData: trend.map((r: any) => r.tokens || 0),
       accent: "sky",
     },
     {
@@ -1576,24 +1587,31 @@ function OverviewPageContent() {
 
   /* ── donut segment builders ──────────────────────────────────────────── */
   const providerDonutSegs = providerCostRows.slice(0, 5).map((row, i) => ({
+    // @ts-expect-error -- strict migration
     label: row.provider,
     value:
       providerDistributionMode === "cost"
+        // @ts-expect-error -- strict migration
         ? Number(row.cost_usd || 0)
+        // @ts-expect-error -- strict migration
         : Number(row.tokens || 0),
     color: PALETTE[i % PALETTE.length],
     pct:
       (providerDistributionMode === "cost"
+        // @ts-expect-error -- strict migration
         ? Number(row.cost_usd || 0)
+        // @ts-expect-error -- strict migration
         : Number(row.tokens || 0)) / providerDistributionTotal,
     formatted:
       providerDistributionMode === "cost"
+        // @ts-expect-error -- strict migration
         ? formatCurrency(row.cost_usd || 0)
+        // @ts-expect-error -- strict migration
         : `${formatNumber(row.tokens || 0)} tok`,
   }));
 
   const costComponentTotals = modelRows.reduce(
-    (acc, row) => {
+    (acc: any, row: any) => {
       acc.input += Number(row.estimated_input_cost_usd || 0);
       acc.cached += Number(row.estimated_cached_input_cost_usd || 0);
       acc.cacheWrite += Number(row.estimated_cache_write_cost_usd || 0);
@@ -1770,6 +1788,7 @@ function OverviewPageContent() {
               />
               <div
                 className="grid gap-0 divide-x sm:grid-cols-3"
+                // @ts-expect-error -- strict migration
                 style={{ divideColor: "var(--line)" }}
               >
                 {[
@@ -1789,10 +1808,10 @@ function OverviewPageContent() {
                     key: "avg_latency_seconds",
                     label: "Latency",
                     color: "var(--violet)",
-                    fmt: (v) => `${Number(v || 0).toFixed(1)}s`,
+                    fmt: (v: any) => `${Number(v || 0).toFixed(1)}s`,
                   },
-                ].map(({ key, label, color, fmt }) => {
-                  const vals = trend.map((r) => Number(r[key] || 0));
+                ].map(({ key, label, color, fmt }: any) => {
+                  const vals = trend.map((r: any) => Number(r[key] || 0));
                   const last = vals.at(-1) ?? 0;
                   return (
                     <div key={key} className="p-4">
@@ -1816,7 +1835,7 @@ function OverviewPageContent() {
             <AreaTrendCard
               title="Run throughput and LLM load"
               description="Overlay of total runs and LLM calls across the same periods."
-              data={trend.map((r) => ({
+              data={trend.map((r: any) => ({
                 date: r.date || "",
                 runs: Number(r.runs || 0),
                 llm_calls: Number(r.llm_calls || 0),
@@ -1833,7 +1852,7 @@ function OverviewPageContent() {
             <BarTrendCard
               title="Run outcome mix"
               description="Stacked daily successes, partial/running runs, agent failures, and site/server blockers."
-              data={trend.map((r) => ({
+              data={trend.map((r: any) => ({
                 date: r.date || "",
                 successes: Number(r.successes || 0),
                 partials: Number(r.partials || 0),
@@ -1868,7 +1887,7 @@ function OverviewPageContent() {
               {activeRuns.length ? (
                 activeRuns
                   .slice(0, 6)
-                  .map((row) => <ActiveRunRow key={row.run_id} run={row} />)
+                  .map((row: any) => <ActiveRunRow key={row.run_id} run={row} />)
               ) : (
                 <div className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40">
                   No live traces
@@ -1894,7 +1913,7 @@ function OverviewPageContent() {
                 </TableHeader>
                 <TableBody>
                   {recentRuns.length ? (
-                    recentRuns.slice(0, 8).map((row) => (
+                    recentRuns.slice(0, 8).map((row: any) => (
                       <TableRow key={row.run_id}>
                         <TableCell className="px-4 py-2.5">
                           <Link href={`/runs/${row.run_id}`} className="font-mono text-[11px] text-primary hover:underline">
@@ -1985,7 +2004,7 @@ function OverviewPageContent() {
               {modelRows.length ? (
                 modelRows
                   .slice(0, 8)
-                  .map((row, i) => {
+                  .map((row: any, i: any) => {
                     const shareValue = computedModelCost > 0 ? Number(row.cost_usd || 0) : Number(row.tokens || 0);
                     return (
                       <HBarRow
@@ -2052,7 +2071,7 @@ function OverviewPageContent() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {modelRows.slice(0, 8).map((row) => (
+                    {modelRows.slice(0, 8).map((row: any) => (
                       <TableRow key={`${row.provider}-${row.model_name}-pricing`}>
                         <TableCell className="max-w-[260px] truncate px-4 py-2.5 font-mono text-[11px]" title={row.label || `${row.provider}::${row.model_name}`}>
                           {row.label || `${row.provider}::${row.model_name}`}
@@ -2081,7 +2100,7 @@ function OverviewPageContent() {
             <AreaTrendCard
               title="Cost trend"
               description="Daily cost over the last 7 periods."
-              data={trend.map((r) => ({
+              data={trend.map((r: any) => ({
                 date: r.date || "",
                 cost_usd: Number(r.cost_usd || 0),
               }))}
@@ -2110,7 +2129,7 @@ function OverviewPageContent() {
                   </div>
                 </div>
                 <AreaLine
-                  data={trend.map((r) => Number(r.cost_usd || 0))}
+                  data={trend.map((r: any) => Number(r.cost_usd || 0))}
                   color="var(--signal)"
                   height={96}
                 />
@@ -2128,7 +2147,7 @@ function OverviewPageContent() {
             <AreaTrendCard
               title="LLM calls over time"
               description="Volume of model invocations per period."
-              data={trend.map((r) => ({
+              data={trend.map((r: any) => ({
                 date: r.date || "",
                 llm_calls: Number(r.llm_calls || 0),
               }))}
@@ -2232,10 +2251,10 @@ function OverviewPageContent() {
                 }
               />
               {tokenRows.length ? (
-                tokenRows.map((row) => {
+                tokenRows.map((row: any) => {
                   const total = Math.max(row.newIn + row.cachedIn + row.out, 1);
                   const maxTotal = Math.max(
-                    ...tokenRows.map((r) => r.newIn + r.cachedIn + r.out),
+                    ...tokenRows.map((r: any) => r.newIn + r.cachedIn + r.out),
                     1,
                   );
                   const scaledWidth = Math.max((total / maxTotal) * 100, 2);
@@ -2341,7 +2360,7 @@ function OverviewPageContent() {
             <AreaTrendCard
               title="Token volume trend"
               description="Total tokens consumed per period."
-              data={trend.map((r) => ({
+              data={trend.map((r: any) => ({
                 date: r.date || "",
                 tokens: Number(r.tokens || 0),
               }))}
@@ -2466,7 +2485,7 @@ function OverviewPageContent() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {workflowProviderLinkRows.map((row, i) => (
+                      {workflowProviderLinkRows.map((row: any, i: any) => (
                         <ProviderWorkflowRow key={`${row.url || row.stream_url}-${i}`} row={row} />
                       ))}
                     </TableBody>
@@ -2566,7 +2585,7 @@ function OverviewPageContent() {
               {toolRows.length ? (
                 toolRows
                   .slice(0, 12)
-                  .map((row) => (
+                  .map((row: any) => (
                     <ToolReliabilityRow key={row.tool_name} row={row} />
                   ))
               ) : (
@@ -2589,7 +2608,7 @@ function OverviewPageContent() {
               />
               <div className="p-5">
                 <TrendBars
-                  rawValues={trend.map((r) => Number(r.tool_calls || 0))}
+                  rawValues={trend.map((r: any) => Number(r.tool_calls || 0))}
                   color="var(--sky)"
                   height={72}
                 />
@@ -2667,6 +2686,7 @@ function OverviewPageContent() {
                       </div>
                       <div
                         className="grid grid-cols-4 divide-x text-center"
+                        // @ts-expect-error -- strict migration
                         style={{ divideColor: "var(--line)" }}
                       >
                         {[
@@ -2690,7 +2710,7 @@ function OverviewPageContent() {
                             value: row.contextWindow > 0 ? formatPercent(row.peakContextPct) : "--",
                             color: contextTone,
                           },
-                        ].map(({ label, value, color }) => (
+                        ].map(({ label, value, color }: any) => (
                           <div key={label} className="min-w-0 px-1 py-3">
                             <div
                               className="truncate font-mono text-[13px] font-semibold"
@@ -2829,7 +2849,7 @@ function OverviewPageContent() {
                 accent="var(--rose)"
               />
               {failedRuns.length ? (
-                failedRuns.map((row) => (
+                failedRuns.map((row: any) => (
                   <FailedRunRow key={row.run_id} row={row} />
                 ))
               ) : (
@@ -2847,7 +2867,7 @@ function OverviewPageContent() {
                 accent="var(--chart-4)"
               />
               {blockerRuns.length ? (
-                blockerRuns.map((row) => (
+                blockerRuns.map((row: any) => (
                   <FailedRunRow key={row.run_id} row={row} />
                 ))
               ) : (

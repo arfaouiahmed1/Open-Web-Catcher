@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useMemo, useState } from "react";
@@ -14,7 +14,7 @@ import { StructuredDataCard } from "@/components/structured-data-card";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { normalizeTraceEvent } from "@/lib/run-trace";
 
-function extractText(content) {
+function extractText(content: any) {
   if (!content) return "";
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -31,7 +31,7 @@ function extractText(content) {
   return String(content);
 }
 
-function parseClassificationFromText(text) {
+function parseClassificationFromText(text: any) {
   if (!text) return null;
   const pageMatch =
     text.match(/CLASSIFICATION:\s*(\S+)/i) || text.match(/page_type['":\s]+([a-z_]+)/i);
@@ -66,14 +66,14 @@ const LLM_EVENT_KINDS = new Set([
   "llm_rate_limited",
 ]);
 
-function llmTone(kind) {
+function llmTone(kind: any) {
   if (kind === "llm_response") return "success";
   if (kind === "llm_rate_limited") return "warning";
   if (kind === "llm_timeout" || kind === "llm_error") return "danger";
   return "default";
 }
 
-function llmKindLabel(kind) {
+function llmKindLabel(kind: any) {
   if (kind === "llm_response") return "response";
   if (kind === "llm_timeout") return "timeout";
   if (kind === "llm_rate_limited") return "rate limited";
@@ -81,7 +81,7 @@ function llmKindLabel(kind) {
   return kind || "llm";
 }
 
-function ClassificationBadge({ text }) {
+function ClassificationBadge({  text  }: any) {
   const parsed = parseClassificationFromText(text);
   if (!parsed) return null;
   return (
@@ -90,8 +90,11 @@ function ClassificationBadge({ text }) {
         <span
           className="rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
           style={{
+            // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
             background: `color-mix(in oklch, ${TYPE_COLOR[parsed.page_type] || "var(--mute-2)"} 14%, transparent)`,
+            // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
             borderColor: `color-mix(in oklch, ${TYPE_COLOR[parsed.page_type] || "var(--mute-2)"} 28%, transparent)`,
+            // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
             color: TYPE_COLOR[parsed.page_type] || "var(--mute-2)",
           }}
         >
@@ -102,8 +105,11 @@ function ClassificationBadge({ text }) {
         <span
           className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
           style={{
+            // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
             background: `color-mix(in oklch, ${CONF_COLOR[parsed.confidence] || "var(--mute-2)"} 14%, transparent)`,
+            // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
             border: `1px solid color-mix(in oklch, ${CONF_COLOR[parsed.confidence] || "var(--mute-2)"} 28%, transparent)`,
+            // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
             color: CONF_COLOR[parsed.confidence] || "var(--mute-2)",
           }}
         >
@@ -114,11 +120,11 @@ function ClassificationBadge({ text }) {
   );
 }
 
-function toPlainObject(value) {
+function toPlainObject(value: any) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
-function buildUsageMetadata(details, providerCacheActive, costSource) {
+function buildUsageMetadata(details: any, providerCacheActive: any, costSource: any) {
   const raw = toPlainObject(details.usage_metadata_json);
   const fallback = toPlainObject(details.usage_metadata);
   return {
@@ -145,13 +151,13 @@ function buildUsageMetadata(details, providerCacheActive, costSource) {
   };
 }
 
-function buildResponseMetadata(details) {
+function buildResponseMetadata(details: any) {
   const raw = toPlainObject(details.response_metadata_json);
   const fallback = toPlainObject(details.response_metadata);
   return { ...raw, ...fallback };
 }
 
-function buildAdditionalKwargs(details) {
+function buildAdditionalKwargs(details: any) {
   const raw = toPlainObject(details.additional_kwargs_json);
   const fallback = toPlainObject(details.additional_kwargs);
   return { ...raw, ...fallback };
@@ -161,6 +167,7 @@ function buildLlmRows(events = []) {
   const list = [];
   for (const raw of Array.isArray(events) ? events : []) {
     const event = normalizeTraceEvent(raw);
+    // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
     if (!event || !LLM_EVENT_KINDS.has(event.kind)) continue;
     const details = toPlainObject(event.details);
     const kind = String(event.kind || "llm_response");
@@ -266,7 +273,7 @@ function buildLlmRows(events = []) {
   return list;
 }
 
-function buildTelemetryData(row) {
+function buildTelemetryData(row: any) {
   return {
     kind: row.kind,
     kind_label: row.kindLabel,
@@ -291,7 +298,7 @@ function buildTelemetryData(row) {
   };
 }
 
-function buildFailureData(row) {
+function buildFailureData(row: any) {
   return {
     kind: row.kind,
     kind_label: row.kindLabel,
@@ -305,7 +312,7 @@ function buildFailureData(row) {
   };
 }
 
-function LlmCallCard({ row, defaultExpanded = false }) {
+function LlmCallCard({  row, defaultExpanded = false  }: any) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const event = row.event;
   const isResponse = row.kind === "llm_response";
@@ -330,7 +337,7 @@ function LlmCallCard({ row, defaultExpanded = false }) {
     <div className="overflow-hidden rounded-[14px] border border-border bg-card">
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => setExpanded((v: any) => !v)}
         className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/30"
       >
         <span className="text-muted-foreground">
@@ -556,7 +563,7 @@ function LlmCallCard({ row, defaultExpanded = false }) {
   );
 }
 
-function StatTile({ icon: Icon, label, value, sub, accent = "default" }) {
+function StatTile({  icon: Icon, label, value, sub, accent = "default"  }: any) {
   const colorMap = {
     default: "var(--ink)",
     violet: "var(--violet)",
@@ -564,6 +571,7 @@ function StatTile({ icon: Icon, label, value, sub, accent = "default" }) {
     mint: "var(--mint)",
     sky: "var(--sky)",
   };
+  // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
   const color = colorMap[accent] || colorMap.default;
   return (
     <div className="flex items-start gap-3 rounded-xl border border-border bg-card p-3">
@@ -600,7 +608,7 @@ const SORT_OPTIONS = [
   { value: "time_asc", label: "Oldest" },
 ];
 
-function compareCalls(a, b, sort) {
+function compareCalls(a: any, b: any, sort: any) {
   const tokensA = a.inputTokens + a.outputTokens;
   const tokensB = b.inputTokens + b.outputTokens;
   switch (sort) {
@@ -624,11 +632,11 @@ function compareCalls(a, b, sort) {
   }
 }
 
-export function LlmOutputPanel({
+export function LlmOutputPanel({ 
   events = [],
   title = "LLM Output",
   emptyMessage = "No LLM calls recorded yet. Calls stream here as the model responds.",
-}) {
+ }: any) {
   const [sort, setSort] = useState("seq_desc");
   const [actorFilter, setActorFilter] = useState("");
   const [search, setSearch] = useState("");
@@ -781,8 +789,8 @@ export function LlmOutputPanel({
             >
               <option value="">All actors</option>
               {actors.map((a) => (
-                <option key={a} value={a}>
-                  {a}
+                <option key={String(a)} value={String(a)}>
+                  {String(a)}
                 </option>
               ))}
             </select>

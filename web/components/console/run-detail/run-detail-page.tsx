@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -44,7 +44,7 @@ import { collectRunProviderUrls } from "@/lib/run-log-sync";
 import { formatDate, formatTime, formatTimestamp, parseTimestamp } from "@/lib/datetime";
 
 const EMPTY_OBJECT = {};
-const EMPTY_ARRAY = [];
+const EMPTY_ARRAY: any[] = [];
 const FAILURE_EVENT_KINDS = new Set(["llm_error", "llm_timeout", "llm_rate_limited", "pipeline_failed"]);
 const FAILURE_STATUSES = new Set([
   "failed",
@@ -55,13 +55,13 @@ const FAILURE_STATUSES = new Set([
   "no_streams",
 ]);
 
-function firstNonEmptyArray(...values) {
+function firstNonEmptyArray(...values: any[]) {
   const nonEmpty = values.find((value) => Array.isArray(value) && value.length > 0);
   if (nonEmpty) return nonEmpty;
   return values.find((value) => Array.isArray(value)) || EMPTY_ARRAY;
 }
 
-function fmt(ts) {
+function fmt(ts: any) {
   if (!ts) return "--";
   try {
     return formatTimestamp(ts) || String(ts);
@@ -70,14 +70,14 @@ function fmt(ts) {
   }
 }
 
-function dur(seconds) {
+function dur(seconds: any) {
   const value = Number(seconds || 0);
   if (!value) return "--";
   if (value < 60) return `${value.toFixed(1)}s`;
   return `${Math.floor(value / 60)}m ${(value % 60).toFixed(0)}s`;
 }
 
-function normalizeRunDetailError(message) {
+function normalizeRunDetailError(message: any) {
   let text = String(message || "").trim();
   if (text.startsWith("{")) {
     try {
@@ -93,7 +93,7 @@ function normalizeRunDetailError(message) {
   return text;
 }
 
-function parseHostLabel(url) {
+function parseHostLabel(url: any) {
   const value = String(url || "").trim();
   if (!value) return "Run detail";
   try {
@@ -103,11 +103,11 @@ function parseHostLabel(url) {
   }
 }
 
-function cleanInlineText(value) {
+function cleanInlineText(value: any) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
-function normalizeFailurePreview(value) {
+function normalizeFailurePreview(value: any) {
   const raw = cleanInlineText(value);
   if (!raw) return "";
   if (/503\s+service\s+unavailable/i.test(raw) && /high demand/i.test(raw)) {
@@ -126,19 +126,20 @@ function normalizeFailurePreview(value) {
   return trimmed;
 }
 
-function stageLabel(stage) {
+function stageLabel(stage: any) {
+  // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
   return STAGE_LABELS[stage] || stage || "--";
 }
 
-function getRunMode(jobState) {
+function getRunMode(jobState: any) {
   return String(jobState?.job_type || "").toLowerCase() === "workflow" ? "workflow run" : "agent run";
 }
 
-function isFailureStatus(status) {
+function isFailureStatus(status: any) {
   return FAILURE_STATUSES.has(String(status || "").trim().toLowerCase());
 }
 
-function HeroMetric({ label, value, description, emphasis = "var(--ink)" }) {
+function HeroMetric({  label, value, description, emphasis = "var(--ink)"  }: any) {
   return (
     <div
       className="rounded-[16px] border px-3 py-3"
@@ -162,7 +163,7 @@ function HeroMetric({ label, value, description, emphasis = "var(--ink)" }) {
   );
 }
 
-function DiagnosticsGrid({ items = EMPTY_ARRAY }) {
+function DiagnosticsGrid({  items = EMPTY_ARRAY  }: any) {
   return (
     <Card className="overflow-hidden shadow-card">
       <CardHeader
@@ -178,7 +179,7 @@ function DiagnosticsGrid({ items = EMPTY_ARRAY }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3 p-4 sm:grid-cols-2 2xl:grid-cols-4">
-        {items.map((item) => (
+        {items.map((item: any) => (
           <div
             key={item.label}
             className="rounded-[14px] border px-3 py-2.5"
@@ -205,14 +206,14 @@ function DiagnosticsGrid({ items = EMPTY_ARRAY }) {
   );
 }
 
-function SecondaryActionsCard({
+function SecondaryActionsCard({ 
   run,
   canDelete,
   isDeleting,
   isRestarting,
   onRestart,
   onDelete,
-}) {
+ }: any) {
   if (!run?.url && !canDelete) return null;
   return (
     <Card className="overflow-hidden shadow-card">
@@ -256,7 +257,7 @@ function SecondaryActionsCard({
   );
 }
 
-function RunHeader({
+function RunHeader({ 
   runId,
   run,
   runMode,
@@ -265,7 +266,7 @@ function RunHeader({
   failureNarrative,
   primaryMetrics = EMPTY_ARRAY,
   actions = null,
-}) {
+ }: any) {
   const title = parseHostLabel(run?.url);
   const subtitle = cleanInlineText(run?.url || "");
   return (
@@ -304,6 +305,7 @@ function RunHeader({
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {run?.final_status ? (
+                // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
                 <Badge tone={runStatusTone(run.final_status)}>{statusLabel(run.final_status)}</Badge>
               ) : null}
               <span
@@ -405,7 +407,7 @@ function RunHeader({
       </CardHeader>
 
       <CardContent className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
-        {primaryMetrics.map((metric) => (
+        {primaryMetrics.map((metric: any) => (
           <HeroMetric key={metric.label} {...metric} />
         ))}
       </CardContent>
@@ -413,7 +415,7 @@ function RunHeader({
   );
 }
 
-function DatasetContextCard({ context }) {
+function DatasetContextCard({  context  }: any) {
   if (!context?.batch && !context?.site) return null;
   const batch = context.batch || {};
   const site = context.site || {};
@@ -450,7 +452,7 @@ function DatasetContextCard({ context }) {
 export function RunDetailPage() {
   const { runId } = useParams();
   const router = useRouter();
-  const [payload, setPayload] = useState(null);
+  const [payload, setPayload] = useState<any>(null);
   const [isLoading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [isCancelling, setIsCancelling] = useState(false);
@@ -458,7 +460,7 @@ export function RunDetailPage() {
   const [isRestarting, setIsRestarting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [actionError, setActionError] = useState("");
-  const [pricingMap, setPricingMap] = useState(null);
+  const [pricingMap, setPricingMap] = useState<any>(null);
 
   useEffect(() => {
     let alive = true;
@@ -477,7 +479,7 @@ export function RunDetailPage() {
     try {
       const next = await apiFetch(`/ui/runs/${runId}`);
       setPayload(next);
-    } catch (nextError) {
+    } catch (nextError: any) {
       setActionError(nextError instanceof Error ? nextError.message : "Refresh failed");
     } finally {
       setIsRefreshing(false);
@@ -517,6 +519,7 @@ export function RunDetailPage() {
   useEffect(() => {
     setStreamEnded(false);
   }, [runId]);
+  // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
   const stream = useRunStream(runId, {
     enabled: shouldRefresh && !streamEnded,
     onPayload: (streamPayload) => {
@@ -579,14 +582,18 @@ export function RunDetailPage() {
 
   const screenshots = useMemo(() => {
     const attributed = Array.isArray(payload?.screenshots)
-      ? payload.screenshots.filter((row) => row?.screenshot_url)
+      ? payload.screenshots.filter((row: any) => row?.screenshot_url)
       : EMPTY_ARRAY;
     if (attributed.length) return attributed;
     const urls = new Set();
+    // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
     collectScreenshotUrls(snapshot.all_screenshots || EMPTY_ARRAY, urls);
+    // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
     collectScreenshotUrls(payload?.all_screenshots || EMPTY_ARRAY, urls);
     for (const event of runEvents) {
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       collectScreenshotUrls(event?.details, urls);
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       collectScreenshotUrls(event?.details_json, urls);
     }
     return Array.from(urls);
@@ -643,6 +650,7 @@ export function RunDetailPage() {
   const contextPct = contextWindow > 0 ? Math.max(0, Math.min(1, contextTokens / contextWindow)) : 0;
 
   const failureEvent = (() => {
+    // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
     const explicitFailure = [...runEvents].reverse().find((event) => FAILURE_EVENT_KINDS.has(event?.kind));
     if (explicitFailure) return explicitFailure;
     return [...runEvents].reverse().find(
@@ -700,15 +708,15 @@ export function RunDetailPage() {
 
   const uniqueActors = new Set(
     [
-      ...agentRollups.map((row) => String(row?.actor || "").trim()),
+      ...agentRollups.map((row: any) => String(row?.actor || "").trim()),
       ...runEvents.map((event) => String(event?.actor || "").trim()),
     ].filter(Boolean),
   );
 
   const reachedStages = new Set(
     [
-      ...stageRollups.map((row) => actorToStage(row?.agent_type) || String(row?.agent_type || "").trim().toLowerCase()),
-      ...agentRollups.map((row) => actorToStage(row?.actor) || String(row?.agent_type || "").trim().toLowerCase()),
+      ...stageRollups.map((row: any) => actorToStage(row?.agent_type) || String(row?.agent_type || "").trim().toLowerCase()),
+      ...agentRollups.map((row: any) => actorToStage(row?.actor) || String(row?.agent_type || "").trim().toLowerCase()),
       ...runEvents.map((event) => actorToStage(event?.actor) || ""),
     ].filter(Boolean),
   );
@@ -936,7 +944,7 @@ export function RunDetailPage() {
         throw new Error(message || `Cancel failed (${response.status})`);
       }
       await refreshRun();
-    } catch (nextError) {
+    } catch (nextError: any) {
       setActionError(nextError instanceof Error ? nextError.message : "Cancel failed");
     } finally {
       setIsCancelling(false);
@@ -957,7 +965,7 @@ export function RunDetailPage() {
       }
       router.push("/runs");
       router.refresh();
-    } catch (nextError) {
+    } catch (nextError: any) {
       setActionError(nextError instanceof Error ? nextError.message : "Delete failed");
       setIsDeleting(false);
     }
@@ -980,9 +988,10 @@ export function RunDetailPage() {
         method: "POST",
         body: JSON.stringify(nextPayload),
       });
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       router.push(`/runs?batch=${encodeURIComponent(created.batch_id)}`);
       router.refresh();
-    } catch (nextError) {
+    } catch (nextError: any) {
       setActionError(nextError instanceof Error ? nextError.message : "Restart failed");
     } finally {
       setIsRestarting(false);
@@ -1100,7 +1109,7 @@ export function RunDetailPage() {
           <ReasoningTraceTab events={runEvents} />
         </TabsContent>
         <TabsContent value="costs">
-          <CostMeterTab costs={runCosts} tokens={runTokens} />
+                    <CostMeterTab costs={runCosts} metrics={runTokens as any} />
         </TabsContent>
         <TabsContent value="screenshots">
           <ScreenshotGridTab events={runEvents} screenshots={screenshots} />

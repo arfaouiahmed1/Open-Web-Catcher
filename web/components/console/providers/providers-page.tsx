@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useEffect, useState } from "react";
@@ -64,7 +64,7 @@ const CHART_COLORS = [
   "hsl(10 80% 58%)",
 ];
 
-function CustomBarTooltip({ active, payload, label }) {
+function CustomBarTooltip({  active, payload, label  }: any) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-lg border border-border bg-popover px-3 py-2 shadow-md text-[12px]">
@@ -74,7 +74,7 @@ function CustomBarTooltip({ active, payload, label }) {
   );
 }
 
-function CustomPieTooltip({ active, payload }) {
+function CustomPieTooltip({  active, payload  }: any) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-lg border border-border bg-popover px-3 py-2 shadow-md text-[12px]">
@@ -84,8 +84,8 @@ function CustomPieTooltip({ active, payload }) {
   );
 }
 
-function ProviderBarChart({ rows = [], color = "var(--signal)", maxBars = 12 }) {
-  const data = rows.slice(0, maxBars).map((r) => ({
+function ProviderBarChart({  rows = [], color = "var(--signal)", maxBars = 12  }: any) {
+  const data = rows.slice(0, maxBars).map((r: any) => ({
     name: r.provider || r.country || "--",
     count: Number(r.count || 0),
   }));
@@ -116,8 +116,8 @@ function ProviderBarChart({ rows = [], color = "var(--signal)", maxBars = 12 }) 
   );
 }
 
-function CountryPieChart({ rows = [] }) {
-  const data = rows.slice(0, 8).map((r, i) => ({
+function CountryPieChart({  rows = []  }: any) {
+  const data = rows.slice(0, 8).map((r: any, i: any) => ({
     name: `${r.flag || "🌐"} ${r.country_code || r.country || "--"}`,
     value: Number(r.count || 0),
     color: CHART_COLORS[i % CHART_COLORS.length],
@@ -142,7 +142,7 @@ function CountryPieChart({ rows = [] }) {
             paddingAngle={3}
             dataKey="value"
           >
-            {data.map((entry, i) => (
+            {data.map((entry: any, i: any) => (
               <Cell key={entry.name} fill={entry.color} />
             ))}
           </Pie>
@@ -150,7 +150,7 @@ function CountryPieChart({ rows = [] }) {
         </PieChart>
       </ResponsiveContainer>
       <div className="flex-1 space-y-1.5 min-w-0">
-        {data.map((entry) => (
+        {data.map((entry: any) => (
           <div key={entry.name} className="flex items-center gap-2 text-[12px]">
             <span
               className="h-2 w-2 shrink-0 rounded-full"
@@ -167,7 +167,7 @@ function CountryPieChart({ rows = [] }) {
   );
 }
 
-function LookupRow({ row }) {
+function LookupRow({  row  }: any) {
   return (
     <TableRow>
       <TableCell className="max-w-[200px] truncate px-4 py-2.5 font-mono text-[11px] text-sky-500" title={row.stream_url}>
@@ -197,7 +197,7 @@ function LookupRow({ row }) {
 
 export function ProvidersPage() {
   const [urlsText, setUrlsText] = useState(SAMPLE);
-  const [result, setResult] = useState(null);
+  const [result, setResult] = useState<any>(null);
   const [history, setHistory] = useState({
     rows: [],
     summary: {},
@@ -210,6 +210,7 @@ export function ProvidersPage() {
 
   async function loadHistory() {
     const payload = await apiFetch("/ui/providers/history?limit=50&offset=0");
+    // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
     setHistory(payload);
   }
 
@@ -234,7 +235,7 @@ export function ProvidersPage() {
       if (!response.ok) throw new Error(payload.detail || `Status ${response.status}`);
       setResult(payload);
       await loadHistory();
-    } catch (e) {
+    } catch (e: any) {
       setError(e.message || "Provider lookup failed");
       setResult(null);
     } finally {
@@ -393,7 +394,7 @@ export function ProvidersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {displayRows.map((row, i) => (
+                {displayRows.map((row: any, i: any) => (
                   <LookupRow key={`${row.stream_url}-${i}`} row={row} />
                 ))}
               </TableBody>

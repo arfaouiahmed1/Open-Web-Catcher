@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -19,9 +19,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-const EMPTY_ARRAY = [];
+const EMPTY_ARRAY: any[] = [];
 
-function stageColor(stage) {
+function stageColor(stage: any) {
   if (stage === "classification") return "var(--sky)";
   if (stage === "landing") return "var(--violet)";
   if (stage === "hosting") return "var(--mint)";
@@ -30,31 +30,31 @@ function stageColor(stage) {
   return "var(--mute-2)";
 }
 
-function compactDuration(seconds) {
+function compactDuration(seconds: any) {
   const value = Number(seconds || 0);
   if (!value) return "--";
   if (value < 60) return `${value.toFixed(1)}s`;
   return `${Math.floor(value / 60)}m ${(value % 60).toFixed(0)}s`;
 }
 
-function trimText(value, max = 180) {
+function trimText(value: any, max = 180) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (!text) return "";
   if (text.length <= max) return text;
   return `${text.slice(0, Math.max(0, max - 1)).trim()}...`;
 }
 
-function safeLower(value) {
+function safeLower(value: any) {
   return String(value || "").trim().toLowerCase();
 }
 
-function metricTone(value) {
+function metricTone(value: any) {
   if (value >= 0.85) return "var(--rose)";
   if (value >= 0.6) return "var(--signal)";
   return "var(--mint)";
 }
 
-function firstNumber(...values) {
+function firstNumber(...values: any[]) {
   for (const value of values) {
     const number = Number(value || 0);
     if (Number.isFinite(number) && number > 0) return number;
@@ -62,7 +62,7 @@ function firstNumber(...values) {
   return 0;
 }
 
-function firstText(...values) {
+function firstText(...values: any[]) {
   for (const value of values) {
     const text = String(value || "").trim();
     if (text) return text;
@@ -95,7 +95,7 @@ function latestEventContext(events = EMPTY_ARRAY) {
   };
 }
 
-function stringifyPreview(value, max = 900) {
+function stringifyPreview(value: any, max = 900) {
   if (!value) return "";
   try {
     return trimText(JSON.stringify(value, null, 2), max);
@@ -104,19 +104,19 @@ function stringifyPreview(value, max = 900) {
   }
 }
 
-function outputEvidence(rawOutput, agentType) {
+function outputEvidence(rawOutput: any, agentType: any) {
   const payload = rawOutput && typeof rawOutput === "object" ? rawOutput : {};
   const type = safeLower(agentType);
   if (type.includes("landing")) {
     return (Array.isArray(payload.hosting_pages) ? payload.hosting_pages : [])
-      .map((item) => (typeof item === "string" ? item : item?.url || ""))
+      .map((item: any) => (typeof item === "string" ? item : item?.url || ""))
       .filter(Boolean)
       .slice(0, 5);
   }
   if (type.includes("hosting") || type.includes("embedded")) {
     return (Array.isArray(payload.servers) ? payload.servers : [])
       .slice(0, 5)
-      .map((server, index) => {
+      .map((server: any, index: any) => {
         const label = server?.label || server?.name || `server ${index + 1}`;
         const state = server?.status || server?.player_state || (server?.server_up ? "up" : "unknown");
         const streamCount = [
@@ -131,7 +131,7 @@ function outputEvidence(rawOutput, agentType) {
   return [];
 }
 
-function summarizeAgentFocus(event, fallbackUrl = "") {
+function summarizeAgentFocus(event: any, fallbackUrl = "") {
   if (!event) {
     return {
       title: "Waiting for work",
@@ -239,7 +239,7 @@ function summarizeAgentFocus(event, fallbackUrl = "") {
   }
 }
 
-function eventSummaryLine(event) {
+function eventSummaryLine(event: any) {
   if (!event) return "";
   const details = event.details || {};
   if (event.kind === "prompt_compiled") {
@@ -264,7 +264,7 @@ function eventSummaryLine(event) {
   return trimText(event.message || event.kind || "", 80);
 }
 
-function ActorMetric({ label, value, tone = "var(--ink)" }) {
+function ActorMetric({  label, value, tone = "var(--ink)"  }: any) {
   return (
     <div
       className="rounded-[12px] border px-3 py-2.5"
@@ -283,7 +283,7 @@ function ActorMetric({ label, value, tone = "var(--ink)" }) {
   );
 }
 
-function DetailLine({ label, value }) {
+function DetailLine({  label, value  }: any) {
   if (value === "" || value === null || value === undefined) return null;
   return (
     <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-2">
@@ -293,7 +293,7 @@ function DetailLine({ label, value }) {
   );
 }
 
-function AgentDetailTooltip({ card, color }) {
+function AgentDetailTooltip({  card, color  }: any) {
   const outputPreview = stringifyPreview(card.rawOutput, 1000);
   return (
     <Tooltip>
@@ -342,7 +342,7 @@ function AgentDetailTooltip({ card, color }) {
               {card.outputSummary ? <div className="leading-relaxed text-muted-foreground">{card.outputSummary}</div> : null}
               {card.evidenceRows.length ? (
                 <div className="mt-2 grid gap-1">
-                  {card.evidenceRows.map((item, index) => (
+                  {card.evidenceRows.map((item: any, index: any) => (
                     <div key={`${item}-${index}`} className="truncate font-mono text-muted-foreground">
                       {item}
                     </div>
@@ -362,7 +362,7 @@ function AgentDetailTooltip({ card, color }) {
   );
 }
 
-function OutputTooltip({ card }) {
+function OutputTooltip({  card  }: any) {
   const preview = stringifyPreview(card.rawOutput, 1000);
   if (!card.outputSummary && !card.evidenceRows.length && !preview) return null;
   return (
@@ -378,7 +378,7 @@ function OutputTooltip({ card }) {
           {card.outputSummary ? <div className="leading-relaxed text-muted-foreground">{card.outputSummary}</div> : null}
           {card.evidenceRows.length ? (
             <div className="grid gap-1 rounded-md border border-border bg-background/70 p-2">
-              {card.evidenceRows.map((item, index) => (
+              {card.evidenceRows.map((item: any, index: any) => (
                 <div key={`${item}-${index}`} className="truncate font-mono text-muted-foreground">
                   {item}
                 </div>
@@ -396,14 +396,14 @@ function OutputTooltip({ card }) {
   );
 }
 
-export function AgentActivityBoard({
+export function AgentActivityBoard({ 
   agentRollups = EMPTY_ARRAY,
   events = EMPTY_ARRAY,
   runUrl = "",
   primaryModel = "",
   primaryProvider = "",
-}) {
-  const [pricingMap, setPricingMap] = useState(null);
+ }: any) {
+  const [pricingMap, setPricingMap] = useState<any>(null);
 
   useEffect(() => {
     let alive = true;
@@ -441,7 +441,7 @@ export function AgentActivityBoard({
         const invocationIndex = Number(row?.invocation_index || 0);
         const actorEvents =
           (agentRunId > 0 ? eventGroupsByAgentRunId.get(agentRunId) : null) ||
-          (eventGroups.get(actor) || EMPTY_ARRAY).filter((event) => {
+          (eventGroups.get(actor) || EMPTY_ARRAY).filter((event: any) => {
             const eventInvocation = Number(event?.invocation_index || event?.details?.invocation_index || 0);
             return !invocationIndex || !eventInvocation || eventInvocation === invocationIndex;
           });
@@ -463,19 +463,20 @@ export function AgentActivityBoard({
     ];
 
     return workItems
-      .map(({ key, actor, actorRollup, actorEvents }) => {
+      .map(({  key, actor, actorRollup, actorEvents  }: any) => {
         const actorLlmRows = llmRows.filter((row) => safeLower(row.actor) === safeLower(actor));
         const latestEvent = actorEvents[actorEvents.length - 1] || null;
         const recentEvents = actorEvents.slice(-3).reverse();
-        const memoryEvents = actorEvents.filter((event) => event.kind === "memory_loaded");
-        const promptEvents = actorEvents.filter((event) => event.kind === "prompt_compiled");
-        const memoryInjected = promptEvents.some((event) => Boolean(event.details?.memory_injected));
+        const memoryEvents = actorEvents.filter((event: any) => event.kind === "memory_loaded");
+        const promptEvents = actorEvents.filter((event: any) => event.kind === "prompt_compiled");
+        const memoryInjected = promptEvents.some((event: any) => Boolean(event.details?.memory_injected));
         const latestMemoryEvent = memoryEvents[memoryEvents.length - 1] || null;
         const eventContext = latestEventContext(actorEvents);
         const stage =
           actorToStage(actor) ||
           safeLower(actorRollup?.agent_type) ||
           safeLower(actor);
+        // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
         const stageIndex = STAGE_ORDER.indexOf(stage);
         const peak = peakContextUsage(actorLlmRows, pricingMap);
         const contextWindow =
@@ -500,6 +501,7 @@ export function AgentActivityBoard({
           actor,
           key,
           stage,
+          // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
           stageLabel: STAGE_LABELS[stage] || actorRollup?.agent_type || actor,
           stageIndex: stageIndex >= 0 ? stageIndex : STAGE_ORDER.length + 1,
           invocationIndex: Number(actorRollup?.invocation_index || 0),
@@ -595,7 +597,8 @@ export function AgentActivityBoard({
                     <div className="text-[16px] font-semibold" style={{ color: "var(--ink)" }}>
                       {card.actor}
                     </div>
-                    <Badge tone={statusTone(card.status)}>{statusLabel(card.status)}</Badge>
+                    // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
+                    <Badge tone={statusTone(card.status) as any}>{statusLabel(card.status)}</Badge>
                     {card.memoryInjected || card.memoryEvents > 0 ? (
                       <Badge tone="default">
                         {card.memoryEvents > 0 ? `memory ${formatNumber(card.memoryEvents)}` : "memory injected"}
@@ -733,7 +736,7 @@ export function AgentActivityBoard({
                     <Clock3 className="h-3.5 w-3.5" />
                     Recent milestones
                   </div>
-                  {card.recentEvents.map((event, index) => {
+                  {card.recentEvents.map((event: any, index: any) => {
                     const iconColor =
                       event.kind?.includes("llm")
                         ? "var(--violet)"
@@ -795,7 +798,7 @@ export function AgentActivityBoard({
                     {!card.outputSummary ? <OutputTooltip card={card} /> : null}
                   </div>
                   <div className="mt-2 grid gap-1.5">
-                    {card.evidenceRows.map((item, index) => (
+                    {card.evidenceRows.map((item: any, index: any) => (
                       <div key={`${item}-${index}`} className="truncate font-mono text-[11px]" style={{ color: "var(--mute)" }} title={item}>
                         {item}
                       </div>
@@ -811,4 +814,3 @@ export function AgentActivityBoard({
     </TooltipProvider>
   );
 }
-

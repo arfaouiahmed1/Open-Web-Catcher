@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable @typescript-eslint/no-explicit-any */
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -374,7 +374,7 @@ function cloneBrowserRuntime() {
   };
 }
 
-function normalizeStringList(value, fallback = []) {
+function normalizeStringList(value: any, fallback = []) {
   let rows = [];
   if (Array.isArray(value))
     rows = value.map((item) => String(item || "").trim());
@@ -383,7 +383,7 @@ function normalizeStringList(value, fallback = []) {
   else rows = fallback;
 
   const seen = new Set();
-  const deduped = [];
+  const deduped: any[] = [];
   rows.forEach((item) => {
     if (!item) return;
     const key = item.toLowerCase();
@@ -394,10 +394,10 @@ function normalizeStringList(value, fallback = []) {
   return deduped;
 }
 
-function normalizeTuning(tuning) {
+function normalizeTuning(tuning: any) {
   if (!tuning || typeof tuning !== "object") return { ...EMPTY_TUNING };
 
-  const providerDefaults = {};
+  const providerDefaults: Record<string, any> = {};
   Object.entries(tuning.provider_defaults || {}).forEach(
     ([provider, value]) => {
       if (value && typeof value === "object")
@@ -405,13 +405,13 @@ function normalizeTuning(tuning) {
     },
   );
 
-  const modelOverrides = {};
+  const modelOverrides: Record<string, any> = {};
   Object.entries(tuning.model_overrides || {}).forEach(([key, value]) => {
     if (value && typeof value === "object")
       modelOverrides[String(key).toLowerCase()] = { ...value };
   });
 
-  const agentOverrides = {};
+  const agentOverrides: Record<string, any> = {};
   Object.entries(tuning.agent_overrides || {}).forEach(([key, value]) => {
     if (value && typeof value === "object")
       agentOverrides[String(key).toLowerCase()] = { ...value };
@@ -425,7 +425,7 @@ function normalizeTuning(tuning) {
 }
 
 function normalizeAgentModelConfig(
-  config,
+  config: any,
   fallbackProvider = "google",
   fallbackAgentModel = "",
   fallbackOrchModel = "",
@@ -444,39 +444,49 @@ function normalizeAgentModelConfig(
   if (!config || typeof config !== "object") return defaults;
 
   const next = {};
-  AGENT_SLOTS.forEach(({ id }) => {
-    const row = config[id];
+  AGENT_SLOTS.forEach(({  id  }: any) => {
+    const row = (config as any)[id];
     const normalizedProvider = String(
+      // @ts-expect-error -- strict migration
       row?.provider || defaults[id].provider || fallbackProvider,
     ).toLowerCase();
+    // @ts-expect-error -- strict migration
     next[id] = {
       provider: normalizedProvider === "google" ? "google" : fallbackProvider,
+      // @ts-expect-error -- strict migration
       model: String(row?.model || defaults[id].model || ""),
     };
   });
   return next;
 }
 
-function normalizeBrowserRuntime(value) {
+function normalizeBrowserRuntime(value: any) {
   const base = cloneBrowserRuntime();
   if (!value || typeof value !== "object") return base;
 
-  BROWSER_OPTIONS.forEach(({ id }) => {
+  BROWSER_OPTIONS.forEach(({  id  }: any) => {
     const current = value[id];
     if (!current || typeof current !== "object") return;
     const picked = {};
     BROWSER_RUNTIME_KEYS.forEach((key) => {
+      // @ts-expect-error -- strict migration
       if (current[key] !== undefined) picked[key] = current[key];
     });
+    // @ts-expect-error -- strict migration
     base[id] = {
+      // @ts-expect-error -- strict migration
       ...base[id],
       ...picked,
       extra_launch_args: normalizeStringList(
+        // @ts-expect-error -- strict migration
         picked.extra_launch_args,
+        // @ts-expect-error -- strict migration
         base[id].extra_launch_args,
       ),
       adblock_allowlist_hosts: normalizeStringList(
+        // @ts-expect-error -- strict migration
         picked.adblock_allowlist_hosts,
+        // @ts-expect-error -- strict migration
         base[id].adblock_allowlist_hosts,
       ),
     };
@@ -485,13 +495,14 @@ function normalizeBrowserRuntime(value) {
   return base;
 }
 
-function normalizeDisabledToolsByBrowserProfile(value, legacy = {}) {
+function normalizeDisabledToolsByBrowserProfile(value: any, legacy = {}) {
   const next = Object.fromEntries(
-    BROWSER_OPTIONS.map(({ id }) => [
+    BROWSER_OPTIONS.map(({  id  }: any) => [
       id,
       Object.fromEntries(
         Object.keys(MCP_TOOLS_BY_PROFILE).map((profile) => [
           profile,
+          // @ts-expect-error -- strict migration
           normalizeStringList(legacy[profile] || []),
         ]),
       ),
@@ -502,13 +513,13 @@ function normalizeDisabledToolsByBrowserProfile(value, legacy = {}) {
 
   Object.keys(MCP_TOOLS_BY_PROFILE).forEach((profile) => {
     if (Array.isArray(value[profile])) {
-      BROWSER_OPTIONS.forEach(({ id }) => {
+      BROWSER_OPTIONS.forEach(({  id  }: any) => {
         next[id][profile] = normalizeStringList(value[profile]);
       });
     }
   });
 
-  BROWSER_OPTIONS.forEach(({ id }) => {
+  BROWSER_OPTIONS.forEach(({  id  }: any) => {
     const browserRows = value[id];
     if (!browserRows || typeof browserRows !== "object") return;
     Object.keys(MCP_TOOLS_BY_PROFILE).forEach((profile) => {
@@ -521,11 +532,11 @@ function normalizeDisabledToolsByBrowserProfile(value, legacy = {}) {
   return next;
 }
 
-function modelOverrideKey(provider, modelId) {
+function modelOverrideKey(provider: any, modelId: any) {
   return `${provider}::${modelId}`.toLowerCase();
 }
 
-function parseFieldValue(field, rawValue) {
+function parseFieldValue(field: any, rawValue: any) {
   if (rawValue === "") return "";
   if (field.type === "integer") {
     const next = Number.parseInt(rawValue, 10);
@@ -538,10 +549,10 @@ function parseFieldValue(field, rawValue) {
   return rawValue;
 }
 
-function fieldMatchesModel(field, modelId) {
+function fieldMatchesModel(field: any, modelId: any) {
   if (!field?.model_patterns?.length) return true;
   if (!modelId) return false;
-  return field.model_patterns.some((pattern) => {
+  return field.model_patterns.some((pattern: any) => {
     try {
       return new RegExp(pattern, "i").test(modelId);
     } catch {
@@ -550,15 +561,15 @@ function fieldMatchesModel(field, modelId) {
   });
 }
 
-function getModelDefaultValue(modelMeta, fieldKey) {
+function getModelDefaultValue(modelMeta: any, fieldKey: any) {
   return modelMeta?.default_parameters?.[fieldKey];
 }
 
-function getModelCapabilities(modelMeta) {
+function getModelCapabilities(modelMeta: any) {
   return modelMeta?.capabilities || {};
 }
 
-function formatParameterValue(value) {
+function formatParameterValue(value: any) {
   if (value === "" || value == null) return "Not set";
   if (typeof value === "number") {
     if (Number.isInteger(value)) return value.toLocaleString();
@@ -568,20 +579,20 @@ function formatParameterValue(value) {
   return String(value);
 }
 
-function formatTokenCount(value) {
+function formatTokenCount(value: any) {
   if (!Number.isFinite(Number(value))) return "Unknown";
   return Number(value).toLocaleString();
 }
 
-function releaseChannelTone(channel) {
+function releaseChannelTone(channel: any) {
   if (channel === "stable") return "success";
   if (channel === "preview") return "warning";
   return "default";
 }
 
-function ensureSelectedOption(options, value) {
+function ensureSelectedOption(options: any, value: any) {
   if (!value) return options;
-  if (options.some((option) => option.value === value)) return options;
+  if (options.some((option: any) => option.value === value)) return options;
   return [
     ...options,
     {
@@ -593,7 +604,7 @@ function ensureSelectedOption(options, value) {
   ];
 }
 
-function sourceTone(source) {
+function sourceTone(source: any) {
   if (source === "provider_api") return "ok";
   if (source === "saved_catalog") return "ok";
   if (source === "fallback_catalog") return "warn";
@@ -601,7 +612,7 @@ function sourceTone(source) {
   return "warn";
 }
 
-function sourceLabel(source) {
+function sourceLabel(source: any) {
   if (source === "provider_api") return "Live provider catalog";
   if (source === "saved_catalog") return "Saved Google snapshot";
   if (source === "fallback_catalog") return "Fallback catalog";
@@ -610,37 +621,37 @@ function sourceLabel(source) {
   return "Stored catalog";
 }
 
-function provenanceLabel(value) {
+function provenanceLabel(value: any) {
   const normalized = String(value || "").trim();
   if (!normalized) return "Unknown";
   return normalized;
 }
 
-function capabilityTone(status) {
+function capabilityTone(status: any) {
   if (status === "supported") return "success";
   if (status === "unsupported") return "warning";
   if (status === "unverified") return "default";
   return "default";
 }
 
-function capabilityStatusLabel(value, fallback = "Unavailable") {
+function capabilityStatusLabel(value: any, fallback = "Unavailable") {
   if (value === true || value === "supported") return "Supported";
   if (value === false || value === "unsupported") return fallback;
   if (value === "unverified") return "Unverified";
   return fallback;
 }
 
-function buildCompatibilityWarnings({
+function buildCompatibilityWarnings({ 
   thinkingEnabled,
   explicitCacheEnabled,
   selections,
   catalogModels,
-}) {
+ }: any) {
   const catalogMap = new Map(
-    (catalogModels || []).map((model) => [String(model.id || "").toLowerCase(), model]),
+    (catalogModels || []).map((model: any) => [String(model.id || "").toLowerCase(), model]),
   );
-  const warnings = [];
-  (selections || []).forEach((selection) => {
+  const warnings: any[] = [];
+  (selections || []).forEach((selection: any) => {
     const modelId = String(selection?.selection?.model || "").trim();
     if (!modelId) return;
     const modelMeta = catalogMap.get(modelId.toLowerCase()) || null;
@@ -677,14 +688,14 @@ function buildCompatibilityWarnings({
   return warnings;
 }
 
-function pricingStatusTone(status) {
+function pricingStatusTone(status: any) {
   if (!status) return "default";
   if (status.model_count > 0) return "success";
   if (status.api_key_set) return "warning";
   return "default";
 }
 
-function KeyStatus({ set }) {
+function KeyStatus({  set  }: any) {
   return (
     <Badge tone={set ? "success" : "default"} className="gap-1 text-[11px]">
       {set ? <CheckCircle2 className="size-3" /> : <AlertCircle className="size-3" />}
@@ -693,7 +704,7 @@ function KeyStatus({ set }) {
   );
 }
 
-function SectionHeader({ children }) {
+function SectionHeader({  children  }: any) {
   return (
     <div className="flex items-center gap-3">
       <h2 className="shrink-0 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground/80">
@@ -704,7 +715,7 @@ function SectionHeader({ children }) {
   );
 }
 
-function StatusPill({ tone = "neutral", children }) {
+function StatusPill({  tone = "neutral", children  }: any) {
   const mappedTone = tone === "success" ? "success" : tone === "warning" ? "warning" : tone === "info" ? "signal" : "default";
   return (
     <Badge tone={mappedTone} className="px-2.5 py-1 text-[11px] font-medium">
@@ -713,7 +724,7 @@ function StatusPill({ tone = "neutral", children }) {
   );
 }
 
-function ErrorNotice({ message }) {
+function ErrorNotice({  message  }: any) {
   if (!message) return null;
   return (
     <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-[13px] text-destructive">
@@ -723,11 +734,11 @@ function ErrorNotice({ message }) {
   );
 }
 
-function WarningNotice({ items = [] }) {
+function WarningNotice({  items = []  }: any) {
   if (!items.length) return null;
   return (
     <div className="space-y-2">
-      {items.map((item) => (
+      {items.map((item: any) => (
         <div
           key={item.id || item.message}
           className={cn(
@@ -745,17 +756,19 @@ function WarningNotice({ items = [] }) {
   );
 }
 
-function SettingsTabHero({
+function SettingsTabHero({ 
   tabId,
   dirty,
   saving,
   saved,
   onSave,
   otherDirtyCount = 0,
-}) {
+ }: any) {
+  // @ts-expect-error -- strict migration
   const meta = TAB_DETAILS[tabId] || TAB_DETAILS.models;
   const isServerTab = meta.storage === "server";
   const isBrowserTab = meta.storage === "browser";
+  // @ts-expect-error -- strict migration
   const Icon = SETTINGS_TAB_ICONS[tabId] || SlidersHorizontal;
 
   return (
@@ -822,7 +835,7 @@ function SettingsTabHero({
   );
 }
 
-function SettingsTabBar({ active, onChange, dirtyTabs = {}, mobile = false }) {
+function SettingsTabBar({ active, onChange, dirtyTabs = {}, mobile = false }: any) {
   return (
     <nav className={cn("gap-1.5", mobile ? "flex overflow-x-auto pb-1" : "flex flex-col")}>
       {mobile ? null : (
@@ -833,7 +846,9 @@ function SettingsTabBar({ active, onChange, dirtyTabs = {}, mobile = false }) {
       {SETTINGS_TABS.map((tab) => {
         const isActive = active === tab.id;
         const isDirty = dirtyTabs[tab.id];
+        // @ts-expect-error -- strict migration
         const Icon = SETTINGS_TAB_ICONS[tab.id];
+        // @ts-expect-error -- strict migration
         const meta = TAB_DETAILS[tab.id];
         return (
           <Button
@@ -875,7 +890,7 @@ function SettingsTabBar({ active, onChange, dirtyTabs = {}, mobile = false }) {
   );
 }
 
-function TuningFieldGrid({ fields, values, onChange }) {
+function TuningFieldGrid({  fields, values, onChange  }: any) {
   if (!fields.length) {
     return (
       <div
@@ -887,7 +902,7 @@ function TuningFieldGrid({ fields, values, onChange }) {
     );
   }
 
-  const shouldUseSlider = (field) => {
+  const shouldUseSlider = (field: any) => {
     // Use sliders for temperature, top_p, and similar fractional fields
     const sliderKeys = ["temperature", "top_p", "top_k"];
     return (
@@ -898,7 +913,7 @@ function TuningFieldGrid({ fields, values, onChange }) {
 
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      {fields.map((field) => {
+      {fields.map((field: any) => {
         const value = values?.[field.key] ?? "";
         if (field.type === "enum") {
           return (
@@ -907,7 +922,7 @@ function TuningFieldGrid({ fields, values, onChange }) {
               label={field.label}
               value={value}
               onChange={(next) => onChange(field, next)}
-              options={(field.options || []).map((option) => ({
+              options={(field.options || []).map((option: any) => ({
                 value: option,
                 label: option,
                 description: field.description,
@@ -954,7 +969,7 @@ function TuningFieldGrid({ fields, values, onChange }) {
   );
 }
 
-function TuningCard({
+function TuningCard({ 
   title,
   description,
   values,
@@ -962,7 +977,7 @@ function TuningCard({
   onChange,
   onClear,
   clearLabel,
-}) {
+ }: any) {
   return (
     <Card className="rounded-[12px] border">
       <CardContent className="flex flex-col gap-4 p-4">
@@ -989,7 +1004,7 @@ function TuningCard({
   );
 }
 
-function ModelFact({ label, value, tone = "default" }) {
+function ModelFact({  label, value, tone = "default"  }: any) {
   return (
     <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2.5">
       <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
@@ -1002,7 +1017,7 @@ function ModelFact({ label, value, tone = "default" }) {
   );
 }
 
-function ParameterSummaryCard({ title, icon: Icon, tone = "default", rows = [] }) {
+function ParameterSummaryCard({  title, icon: Icon, tone = "default", rows = []  }: any) {
   return (
     <Card className="rounded-[14px] border">
       <CardContent className="space-y-3 p-4">
@@ -1018,7 +1033,7 @@ function ParameterSummaryCard({ title, icon: Icon, tone = "default", rows = [] }
           <div className="text-[13px] font-semibold text-foreground">{title}</div>
         </div>
         <div className="space-y-2">
-          {rows.map((row) => (
+          {rows.map((row: any) => (
             <div key={row.label} className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/70 px-3 py-2">
               <div className="min-w-0">
                 <div className="text-[11px] font-medium text-foreground">{row.label}</div>
@@ -1035,10 +1050,10 @@ function ParameterSummaryCard({ title, icon: Icon, tone = "default", rows = [] }
   );
 }
 
-function MiniSegment({ options, active, onChange }) {
+function MiniSegment({  options, active, onChange  }: any) {
   return (
     <div className="flex w-full flex-wrap gap-1.5 rounded-[16px] border border-border/70 bg-muted/25 p-1.5">
-      {options.map((option) => {
+      {options.map((option: any) => {
         const isActive = option.id === active;
         return (
           <Button
@@ -1065,12 +1080,12 @@ function MiniSegment({ options, active, onChange }) {
   );
 }
 
-function FieldNote({ children }) {
+function FieldNote({  children  }: any) {
   if (!children) return null;
   return <p className="text-[11px] text-muted-foreground">{children}</p>;
 }
 
-function ToggleRow({ label, checked, onChange, description = "" }) {
+function ToggleRow({  label, checked, onChange, description = ""  }: any) {
   return (
     <div
       className={cn(
@@ -1093,12 +1108,12 @@ function ToggleRow({ label, checked, onChange, description = "" }) {
   );
 }
 
-function CostEstimator({ provider, model }) {
+function CostEstimator({  provider, model  }: any) {
   const [inputTokens, setInputTokens] = useState(1000);
   const [outputTokens, setOutputTokens] = useState(1000);
   const [cachedTokens, setCachedTokens] = useState(0);
   const [cacheWriteTokens, setCacheWriteTokens] = useState(0);
-  const [costs, setCosts] = useState(null);
+  const [costs, setCosts] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   const fetchCosts = useCallback(async () => {
@@ -1109,7 +1124,7 @@ function CostEstimator({ provider, model }) {
         `/ui/settings/estimate-costs?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}&input_tokens=${inputTokens}&output_tokens=${outputTokens}&cached_input_tokens=${cachedTokens}&cache_write_input_tokens=${cacheWriteTokens}`,
       );
       setCosts(response);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Cost estimation error:", error);
     } finally {
       setLoading(false);
@@ -1228,7 +1243,7 @@ function CostEstimator({ provider, model }) {
   );
 }
 
-function FieldGroup({ title, description, children, accent = null }) {
+function FieldGroup({  title, description, children, accent = null  }: any) {
   return (
     <Card className="overflow-hidden rounded-[18px] border border-border/70 bg-card/95 shadow-[0_18px_48px_-36px_rgba(0,0,0,0.55)]">
       <div
@@ -1249,7 +1264,7 @@ function FieldGroup({ title, description, children, accent = null }) {
   );
 }
 
-function CompactStat({ label, value, tone = "default" }) {
+function CompactStat({  label, value, tone = "default"  }: any) {
   return (
     <div
       className={cn(
@@ -1267,14 +1282,14 @@ function CompactStat({ label, value, tone = "default" }) {
   );
 }
 
-function SettingsWorkspaceCard({
+function SettingsWorkspaceCard({ 
   eyebrow = "",
   title,
   description = "",
   actions = null,
   className = "",
   children,
-}) {
+ }: any) {
   return (
     <Card className={cn("overflow-hidden rounded-[20px] border border-border/70 bg-card/95 shadow-[0_18px_48px_-36px_rgba(0,0,0,0.55)]", className)}>
       {(eyebrow || title || description || actions) ? (
@@ -1298,10 +1313,10 @@ function SettingsWorkspaceCard({
   );
 }
 
-function AgentAssignmentGrid({ assignments = [], selectedModelId = "", onSelectModel = null }) {
+function AgentAssignmentGrid({  assignments = [], selectedModelId = "", onSelectModel = null  }: any) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      {assignments.map((assignment) => {
+      {assignments.map((assignment: any) => {
         const modelId = assignment.selection?.model || "";
         const isSelected = selectedModelId && modelId === selectedModelId;
         return (
@@ -1349,7 +1364,7 @@ function AgentAssignmentGrid({ assignments = [], selectedModelId = "", onSelectM
   );
 }
 
-function BrowserRuntimeInput({
+function BrowserRuntimeInput({ 
   label,
   value,
   onChange,
@@ -1359,7 +1374,7 @@ function BrowserRuntimeInput({
   step,
   placeholder = "",
   description = "",
-}) {
+ }: any) {
   return (
     <Input
       label={label}
@@ -1376,13 +1391,13 @@ function BrowserRuntimeInput({
   );
 }
 
-function BrowserRuntimeTextarea({
+function BrowserRuntimeTextarea({ 
   label,
   value,
   onChange,
   placeholder,
   description = "",
-}) {
+ }: any) {
   return (
     <div className="space-y-1.5">
       <Textarea
@@ -1405,14 +1420,14 @@ function BrowserRuntimeTextarea({
   );
 }
 
-function BrowserRuntimeSelect({
+function BrowserRuntimeSelect({ 
   label,
   value,
   onChange,
   options,
   placeholder = "Select option",
   description = "",
-}) {
+ }: any) {
   return (
     <div className="space-y-1.5">
       <Select
@@ -1445,7 +1460,7 @@ export function SettingsPage() {
     ? requestedTab
     : "models";
 
-  function setActiveTab(nextTab) {
+  function setActiveTab(nextTab: any) {
     if (nextTab === activeTab) return;
 
     const params = new URLSearchParams(searchParams.toString());
@@ -1456,8 +1471,8 @@ export function SettingsPage() {
     router.push(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
   }
 
-  const [config, setConfig] = useState(null);
-  const [savedConfigSnapshot, setSavedConfigSnapshot] = useState(null);
+  const [config, setConfig] = useState<any>(null);
+  const [savedConfigSnapshot, setSavedConfigSnapshot] = useState<any>(null);
   const [provider, setProvider] = useState("google");
   const [fallbackTemperature, setFallbackTemperature] = useState("0");
   const [llmTuning, setLlmTuning] = useState({ ...EMPTY_TUNING });
@@ -1501,10 +1516,14 @@ export function SettingsPage() {
   const apiKeys = config?.api_keys || {};
   const activeProvider =
     PROVIDERS.find((item) => item.id === provider) || PROVIDERS[0];
+  // @ts-expect-error -- strict migration
   const activeCatalog = providerCatalogs[provider] || null;
+  // @ts-expect-error -- strict migration
   const activePricingStatus = pricingStatus[provider] || null;
   const activeBrowserRuntime =
+    // @ts-expect-error -- strict migration
     browserRuntime[browserSettingsTab] ||
+    // @ts-expect-error -- strict migration
     DEFAULT_BROWSER_RUNTIME[browserSettingsTab];
   const activeMcpDisabledTools =
     disabledToolsByBrowserProfile[activeMcpBrowserTab]?.[activeProfileTab] ||
@@ -1522,9 +1541,11 @@ export function SettingsPage() {
   }, [activeBrowserRuntime, browserSettingsTab]);
   const filteredMcpTools = useMemo(() => {
     const query = mcpToolQuery.trim().toLowerCase();
+    // @ts-expect-error -- strict migration
     const tools = MCP_TOOLS_BY_PROFILE[activeProfileTab] || [];
     if (!query) return tools;
-    return tools.filter((toolName) => {
+    return tools.filter((toolName: any) => {
+      // @ts-expect-error -- strict migration
       const meta = MCP_TOOL_META[toolName] || {};
       return [
         toolName,
@@ -1538,6 +1559,7 @@ export function SettingsPage() {
     });
   }, [activeProfileTab, mcpToolQuery]);
   const enabledToolCount =
+    // @ts-expect-error -- strict migration
     (MCP_TOOLS_BY_PROFILE[activeProfileTab] || []).length -
     activeMcpDisabledTools.length;
   const modelSelectionDetails = useMemo(
@@ -1547,7 +1569,8 @@ export function SettingsPage() {
 
   const modelOverrideTargets = useMemo(() => {
     const byModel = new Map();
-    AGENT_SLOTS.forEach(({ id, label }) => {
+    AGENT_SLOTS.forEach(({  id, label  }: any) => {
+      // @ts-expect-error -- strict migration
       const slot = agentModelConfig[id];
       if (!slot || slot.provider !== provider || !slot.model) return;
       const current = byModel.get(slot.model) || [];
@@ -1564,7 +1587,7 @@ export function SettingsPage() {
   const providerDefaultFields = useMemo(
     () =>
       (activeCatalog?.hyperparameters || []).filter(
-        (field) => !field.model_patterns?.length,
+        (field: any) => !field.model_patterns?.length,
       ),
     [activeCatalog],
   );
@@ -1573,7 +1596,7 @@ export function SettingsPage() {
   const filteredCatalogModels = useMemo(() => {
     const query = catalogQuery.trim().toLowerCase();
     if (!query) return catalogModels;
-    return catalogModels.filter((model) => {
+    return catalogModels.filter((model: any) => {
       const haystack = [
         model.id,
         model.label,
@@ -1592,26 +1615,27 @@ export function SettingsPage() {
       setSelectedCatalogModelId("");
       return;
     }
-    if (catalogModels.some((item) => item.id === selectedCatalogModelId)) return;
+    if (catalogModels.some((item: any) => item.id === selectedCatalogModelId)) return;
     const preferredModelId = modelOverrideTargets[0]?.id;
     const fallbackSelection =
-      catalogModels.find((item) => item.id === preferredModelId)?.id ||
+      catalogModels.find((item: any) => item.id === preferredModelId)?.id ||
       catalogModels[0]?.id ||
       "";
     setSelectedCatalogModelId(fallbackSelection);
   }, [catalogModels, modelOverrideTargets, selectedCatalogModelId]);
 
   const selectedCatalogModel =
-    catalogModels.find((item) => item.id === selectedCatalogModelId) || null;
+    catalogModels.find((item: any) => item.id === selectedCatalogModelId) || null;
   const selectedModelFields = useMemo(
     () =>
-      (activeCatalog?.hyperparameters || []).filter((field) =>
+      (activeCatalog?.hyperparameters || []).filter((field: any) =>
         fieldMatchesModel(field, selectedCatalogModel?.id),
       ),
     [activeCatalog, selectedCatalogModel],
   );
   const selectedModelOverrideValues = useMemo(
     () =>
+      // @ts-expect-error -- strict migration
       llmTuning.model_overrides[
         modelOverrideKey(provider, selectedCatalogModel?.id || "")
       ] || {},
@@ -1619,8 +1643,9 @@ export function SettingsPage() {
   );
   const selectedModelEffectiveRows = useMemo(
     () =>
-      selectedModelFields.map((field) => {
+      selectedModelFields.map((field: any) => {
         const liveDefault = getModelDefaultValue(selectedCatalogModel, field.key);
+        // @ts-expect-error -- strict migration
         const providerDefault = llmTuning.provider_defaults[provider]?.[field.key];
         const overrideValue = selectedModelOverrideValues[field.key];
         const effectiveValue =
@@ -1648,7 +1673,7 @@ export function SettingsPage() {
   );
   const selectedModelDefaultRows = useMemo(
     () =>
-      selectedModelFields.map((field) => ({
+      selectedModelFields.map((field: any) => ({
         label: field.label,
         value: formatParameterValue(getModelDefaultValue(selectedCatalogModel, field.key)),
         note: provenanceLabel(
@@ -1661,11 +1686,12 @@ export function SettingsPage() {
   const assignmentRows = useMemo(
     () =>
       AGENT_SLOTS.map((slot) => {
+        // @ts-expect-error -- strict migration
         const selection = agentModelConfig[slot.id] || { provider, model: "" };
         const detail = modelSelectionDetails[slot.id] || {};
         const modelMeta =
           catalogModels.find(
-            (item) =>
+            (item: any) =>
               String(item.id || "").toLowerCase() ===
               String(selection.model || "").toLowerCase(),
           ) || null;
@@ -1689,9 +1715,10 @@ export function SettingsPage() {
     [assignmentRows, catalogModels, geminiExplicitCacheEnabled, thinkingEnabled],
   );
   const mergedModelWarnings = useMemo(() => {
+    // @ts-expect-error -- strict migration
     const rows = [];
     const seen = new Set();
-    const pushUnique = (item) => {
+    const pushUnique = (item: any) => {
       const message = String(item?.message || "").trim();
       if (!message || seen.has(message)) return;
       seen.add(message);
@@ -1700,14 +1727,18 @@ export function SettingsPage() {
     draftCompatibilityWarnings.forEach(pushUnique);
     (modelConfigWarnings || []).forEach((item, index) =>
       pushUnique({
+        // @ts-expect-error -- strict migration
         id: `${item.type || "warning"}-${item.agent_id || index}`,
         tone:
+          // @ts-expect-error -- strict migration
           item.type?.includes("unavailable") || item.type?.includes("disabled")
             ? "warning"
             : "default",
+        // @ts-expect-error -- strict migration
         message: item.message || String(item),
       }),
     );
+    // @ts-expect-error -- strict migration
     return rows;
   }, [draftCompatibilityWarnings, modelConfigWarnings]);
 
@@ -1768,9 +1799,11 @@ export function SettingsPage() {
     if (savedTab && dirtyTabs[savedTab]) setSavedTab("");
   }, [dirtyTabs, savedTab]);
 
-  async function loadProviderCatalog(providerId, { force = false } = {}) {
+  async function loadProviderCatalog(providerId: any, { force = false } = {}) {
     if (!providerId) return null;
+    // @ts-expect-error -- strict migration
     if (!force && providerCatalogs[providerId])
+      // @ts-expect-error -- strict migration
       return providerCatalogs[providerId];
 
     setCatalogLoading(providerId);
@@ -1780,7 +1813,7 @@ export function SettingsPage() {
       );
       setProviderCatalogs((current) => ({ ...current, [providerId]: payload }));
       return payload;
-    } catch (error) {
+    } catch (error: any) {
       const providerMeta = PROVIDERS.find((item) => item.id === providerId);
       const fallback = providerMeta?.keyEnv
         ? `Live model catalog unavailable. Add ${providerMeta.keyEnv} or use a manual model ID.`
@@ -1803,9 +1836,10 @@ export function SettingsPage() {
   async function loadPricingStatus() {
     try {
       const payload = await apiFetch("/ui/pricing");
+      // @ts-expect-error -- strict migration
       setPricingStatus(payload?.provider_statuses || {});
       return payload;
-    } catch (error) {
+    } catch (error: any) {
       return null;
     }
   }
@@ -1828,14 +1862,14 @@ export function SettingsPage() {
         return payload;
       });
       await loadPricingStatus();
-    } catch (error) {
+    } catch (error: any) {
       setConfigErr(error.message || "Could not sync provider pricing.");
     } finally {
       setPricingSyncLoading("");
     }
   }
 
-  async function hydrateConfig(payload) {
+  async function hydrateConfig(payload: any) {
     const fallbackProvider = payload.llm_provider || "google";
     const fallbackAgentModel = payload.agent_model || "";
     const fallbackOrchestratorModel =
@@ -1896,7 +1930,7 @@ export function SettingsPage() {
     try {
       const payload = await apiFetch("/ui/config");
       await hydrateConfig(payload);
-    } catch (error) {
+    } catch (error: any) {
       setConfigErr(error.message || "Could not load settings.");
     }
   }
@@ -1906,19 +1940,21 @@ export function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function updateAgentModel(agentId, modelId) {
+  function updateAgentModel(agentId: any, modelId: any) {
     setAgentModelConfig((current) => ({
       ...current,
       [agentId]: {
+        // @ts-expect-error -- strict migration
         ...(current[agentId] || { provider, model: "" }),
         model: modelId,
       },
     }));
   }
 
-  function updateAgentProviderDefault(field, value) {
+  function updateAgentProviderDefault(field: any, value: any) {
     setLlmTuning((current) => {
       const next = normalizeTuning(current);
+      // @ts-expect-error -- strict migration
       const providerDefaults = { ...(next.provider_defaults[provider] || {}) };
       if (value === "") delete providerDefaults[field.key];
       else providerDefaults[field.key] = value;
@@ -1932,10 +1968,11 @@ export function SettingsPage() {
     });
   }
 
-  function updateModelOverride(modelId, field, value) {
+  function updateModelOverride(modelId: any, field: any, value: any) {
     const key = modelOverrideKey(provider, modelId);
     setLlmTuning((current) => {
       const next = normalizeTuning(current);
+      // @ts-expect-error -- strict migration
       const modelOverrides = { ...(next.model_overrides[key] || {}) };
       if (value === "") delete modelOverrides[field.key];
       else modelOverrides[field.key] = value;
@@ -1949,17 +1986,18 @@ export function SettingsPage() {
     });
   }
 
-  function clearModelOverride(modelId) {
+  function clearModelOverride(modelId: any) {
     const key = modelOverrideKey(provider, modelId);
     setLlmTuning((current) => {
       const next = normalizeTuning(current);
       const modelOverrides = { ...next.model_overrides };
+      // @ts-expect-error -- strict migration
       delete modelOverrides[key];
       return { ...next, model_overrides: modelOverrides };
     });
   }
 
-  function applyLiveDefaultsToModelOverride(modelMeta) {
+  function applyLiveDefaultsToModelOverride(modelMeta: any) {
     if (!modelMeta?.id) return;
     const key = modelOverrideKey(provider, modelMeta.id);
     const liveDefaults = modelMeta.default_parameters || {};
@@ -1975,9 +2013,10 @@ export function SettingsPage() {
     });
   }
 
-  function updateAgentOverride(agentId, field, value) {
+  function updateAgentOverride(agentId: any, field: any, value: any) {
     setLlmTuning((current) => {
       const next = normalizeTuning(current);
+      // @ts-expect-error -- strict migration
       const agentOverrides = { ...(next.agent_overrides[agentId] || {}) };
       if (value === "") delete agentOverrides[field.key];
       else agentOverrides[field.key] = value;
@@ -1991,26 +2030,28 @@ export function SettingsPage() {
     });
   }
 
-  function clearAgentOverride(agentId) {
+  function clearAgentOverride(agentId: any) {
     setLlmTuning((current) => {
       const next = normalizeTuning(current);
       const agentOverrides = { ...next.agent_overrides };
+      // @ts-expect-error -- strict migration
       delete agentOverrides[agentId];
       return { ...next, agent_overrides: agentOverrides };
     });
   }
 
-  function updateBrowserRuntime(browserId, key, value) {
+  function updateBrowserRuntime(browserId: any, key: any, value: any) {
     setBrowserRuntime((current) => ({
       ...current,
       [browserId]: {
+        // @ts-expect-error -- strict migration
         ...current[browserId],
         [key]: value,
       },
     }));
   }
 
-  function updateBrowserRuntimeList(browserId, key, value) {
+  function updateBrowserRuntimeList(browserId: any, key: any, value: any) {
     updateBrowserRuntime(browserId, key, normalizeStringList(value));
   }
 
@@ -2021,8 +2062,8 @@ export function SettingsPage() {
     );
   }
 
-  function setDisabledToolsForCurrentBrowserProfile(nextTools) {
-    setDisabledToolsByBrowserProfile((current) => ({
+  function setDisabledToolsForCurrentBrowserProfile(nextTools: any) {
+    setDisabledToolsByBrowserProfile((current: any) => ({
       ...current,
       [activeMcpBrowserTab]: {
         ...current[activeMcpBrowserTab],
@@ -2031,7 +2072,7 @@ export function SettingsPage() {
     }));
   }
 
-  function buildSavePayloadForTab(tabId) {
+  function buildSavePayloadForTab(tabId: any) {
     switch (tabId) {
       case "models":
         return {
@@ -2122,7 +2163,7 @@ export function SettingsPage() {
       setTimeout(() => {
         setSavedTab((current) => (current === tabId ? "" : current));
       }, 2500);
-    } catch (error) {
+    } catch (error: any) {
       setConfigErr(error.message || "Could not save config.");
     } finally {
       setSaving(false);
@@ -2132,10 +2173,13 @@ export function SettingsPage() {
   const currentTabSaved = savedTab === activeTab && !currentTabDirty;
   const showConfigError =
     Boolean(configErr) &&
+    // @ts-expect-error -- strict migration
     (!config || TAB_DETAILS[activeTab]?.storage === "server");
 
   const hasDirty = Object.values(dirtyTabs).some(Boolean);
+  // @ts-expect-error -- strict migration
   const activeGlobalModel = agentModelConfig?.classification?.model || "";
+  // @ts-expect-error -- strict migration
   const activeOrchestratorModel = agentModelConfig?.orchestrator?.model || "";
 
   function applySelectedCatalogModelAsGlobalDefault() {
@@ -2145,7 +2189,9 @@ export function SettingsPage() {
     setSaveMismatchWarning("");
     setAgentModelConfig((current) => {
       const next = { ...current };
+      // @ts-expect-error -- strict migration
       next.classification = { ...(next.classification || { provider, model: "" }), provider, model: modelId };
+      // @ts-expect-error -- strict migration
       next.orchestrator = { ...(next.orchestrator || { provider, model: "" }), provider, model: modelId };
       return next;
     });
@@ -2182,7 +2228,7 @@ export function SettingsPage() {
             <CompactStat label="Unsaved tabs" value={hasDirty ? `${Object.values(dirtyTabs).filter(Boolean).length}` : "0"} tone={hasDirty ? "primary" : "default"} />
             <CompactStat label="Active engine" value="Playwright" />
             <CompactStat label="Catalog" value={activeCatalog?.available ? "Live" : activeCatalog ? "Offline fallback" : "Loading"} />
-            <CompactStat label="MCP tools" value={`${enabledToolCount}/${(MCP_TOOLS_BY_PROFILE[activeProfileTab] || []).length} enabled`} />
+            <CompactStat label="MCP tools" value={`${enabledToolCount}/${((MCP_TOOLS_BY_PROFILE as any)[activeProfileTab] || []).length} enabled`} />
           </div>
           <div className="lg:hidden">
             <SettingsTabBar
@@ -2251,6 +2297,7 @@ export function SettingsPage() {
                       {currentTabDirty ? "Unsaved model changes" : "Saved to runtime config"}
                     </Badge>
                     <Badge
+                      // @ts-expect-error -- strict migration
                       tone={
                         sourceTone(activeCatalog?.source || "unavailable") === "ok"
                           ? "success"
@@ -2323,18 +2370,20 @@ export function SettingsPage() {
                   <div className="grid gap-4 lg:grid-cols-2">
                     {assignmentRows.map((slot) => {
                       const selection = slot.selection || { provider, model: "" };
+                      // @ts-expect-error -- strict migration
                       const slotCatalog = providerCatalogs[selection.provider] || null;
                       const slotOptions = ensureSelectedOption(
-                        (slotCatalog?.models || []).map((model) => ({
+                        (slotCatalog?.models || []).map((model: any) => ({
                           value: model.id,
                           label: model.label || model.id,
                         })),
                         selection.model,
                       );
                       const selectedModelMeta = slot.modelMeta;
-                      const slotFields = (slotCatalog?.hyperparameters || []).filter((field) =>
+                      const slotFields = (slotCatalog?.hyperparameters || []).filter((field: any) =>
                         fieldMatchesModel(field, selection.model),
                       );
+                      // @ts-expect-error -- strict migration
                       const slotOverrides = llmTuning.agent_overrides[slot.id] || {};
                       const slotDetail = slot.detail || {};
                       const slotCapabilities = getModelCapabilities(selectedModelMeta);
@@ -2362,6 +2411,7 @@ export function SettingsPage() {
                                 value={selection.model}
                                 onChange={(next) => updateAgentModel(slot.id, next)}
                                 options={slotOptions}
+                                // @ts-expect-error -- strict migration
                                 searchable
                                 placeholder="Select model"
                                 emptyMessage="No Google models available"
@@ -2415,7 +2465,7 @@ export function SettingsPage() {
                               description="Applied after provider defaults and model defaults."
                               values={slotOverrides}
                               fields={slotFields}
-                              onChange={(field, value) => updateAgentOverride(slot.id, field, value)}
+                              onChange={(field: any, value: any) => updateAgentOverride(slot.id, field, value)}
                               onClear={() => clearAgentOverride(slot.id)}
                               clearLabel="Clear override"
                             />
@@ -2444,6 +2494,7 @@ export function SettingsPage() {
                         </div>
                         <Slider
                           value={Number(fallbackTemperature) || 0}
+                          // @ts-expect-error -- strict migration
                           onChange={(next) => setFallbackTemperature(next)}
                           min={0}
                           max={2}
@@ -2460,6 +2511,7 @@ export function SettingsPage() {
                         </div>
                         <Slider
                           value={Number(toolCacheStable) || 1}
+                          // @ts-expect-error -- strict migration
                           onChange={(next) => setToolCacheStable(next)}
                           min={1}
                           max={10}
@@ -2556,6 +2608,7 @@ export function SettingsPage() {
                       <TuningCard
                         title={`${activeProvider.name} provider defaults`}
                         description="Applied before model-specific and agent-specific overrides."
+                        // @ts-expect-error -- strict migration
                         values={llmTuning.provider_defaults[provider] || {}}
                         fields={providerDefaultFields}
                         onChange={updateAgentProviderDefault}
@@ -2572,10 +2625,11 @@ export function SettingsPage() {
                           description="Caps simultaneous hosting-page and embedded-page executions."
                         />
                         {modelOverrideTargets.map((target) => {
-                          const fields = (activeCatalog?.hyperparameters || []).filter((field) =>
+                          const fields = (activeCatalog?.hyperparameters || []).filter((field: any) =>
                             fieldMatchesModel(field, target.id),
                           );
                           const values =
+                            // @ts-expect-error -- strict migration
                             llmTuning.model_overrides[modelOverrideKey(provider, target.id)] || {};
                           return (
                             <TuningCard
@@ -2584,7 +2638,7 @@ export function SettingsPage() {
                               description={target.description}
                               values={values}
                               fields={fields}
-                              onChange={(field, value) => updateModelOverride(target.id, field, value)}
+                              onChange={(field: any, value: any) => updateModelOverride(target.id, field, value)}
                               onClear={() => clearModelOverride(target.id)}
                               clearLabel="Clear override"
                             />
@@ -2680,7 +2734,7 @@ export function SettingsPage() {
                         </div>
                         <div className="space-y-2 rounded-2xl border border-border/70 bg-muted/15 p-2">
                           {filteredCatalogModels.length ? (
-                            filteredCatalogModels.map((model) => {
+                            filteredCatalogModels.map((model: any) => {
                               const isSelected = model.id === selectedCatalogModelId;
                               const capabilities = getModelCapabilities(model);
                               const isAssigned = modelOverrideTargets.some((target) => target.id === model.id);
@@ -2791,7 +2845,7 @@ export function SettingsPage() {
                                   </div>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-1.5">
-                                  {(selectedCatalogModel.supported_generation_methods || []).map((method) => (
+                                  {(selectedCatalogModel.supported_generation_methods || []).map((method: any) => (
                                     <Badge key={method} tone="default" className="px-1.5 py-0.5 text-[9px]">
                                       {method}
                                     </Badge>
@@ -2833,7 +2887,7 @@ export function SettingsPage() {
 
           {activeTab === "browser" ? (
             <section className="space-y-4">
-              <BrowserTab config={config} dirty={Boolean(getDirtyTabs(savedConfigSnapshot, serverDraft)?.browser)} onSave={() => saveConfig("browser")} saving={loading} />
+              <BrowserTab config={config} dirty={Boolean(getDirtyTabs(savedConfigSnapshot, serverDraft)?.browser)} onSave={() => saveConfig("browser")} saving={saving} />
               <SectionHeader>Engine Selection — Removed (Playwright-only per D15)</SectionHeader>
               <div className="rounded-lg border border-amber-300/50 bg-amber-50 px-3 py-2 text-xs text-amber-900">Engine selector removed — the console is now Playwright-only (persona spec D15). Server retains internal overrides; UI has no runtime knob.</div>
               <div className="grid gap-3 sm:grid-cols-2" style={{ display: "none" }}>
@@ -2994,7 +3048,7 @@ export function SettingsPage() {
                     value={
                       activeBrowserRuntime.streaming_safe_mode || "adaptive"
                     }
-                    onChange={(value) =>
+                    onChange={(value: any) =>
                       updateBrowserRuntime(
                         browserSettingsTab,
                         "streaming_safe_mode",
@@ -3027,7 +3081,7 @@ export function SettingsPage() {
                   <ToggleRow
                     label="Asset diagnostics"
                     checked={!!activeBrowserRuntime.asset_diagnostics_enabled}
-                    onChange={(value) =>
+                    onChange={(value: any) =>
                       updateBrowserRuntime(
                         browserSettingsTab,
                         "asset_diagnostics_enabled",
@@ -3048,7 +3102,7 @@ export function SettingsPage() {
                   <BrowserRuntimeInput
                     label="Launch timeout (ms)"
                     value={String(activeBrowserRuntime.launch_timeout_ms ?? "")}
-                    onChange={(value) =>
+                    onChange={(value: any) =>
                       updateBrowserRuntime(
                         browserSettingsTab,
                         "launch_timeout_ms",
@@ -3065,7 +3119,7 @@ export function SettingsPage() {
                     value={(activeBrowserRuntime.extra_launch_args || []).join(
                       ", ",
                     )}
-                    onChange={(value) =>
+                    onChange={(value: any) =>
                       updateBrowserRuntimeList(
                         browserSettingsTab,
                         "extra_launch_args",
@@ -3080,7 +3134,7 @@ export function SettingsPage() {
                   <ToggleRow
                     label="uBOL extension"
                     checked={!!activeBrowserRuntime.ubol_enabled}
-                    onChange={(value) =>
+                    onChange={(value: any) =>
                       updateBrowserRuntime(
                         browserSettingsTab,
                         "ubol_enabled",
@@ -3094,7 +3148,7 @@ export function SettingsPage() {
                     value={(
                       activeBrowserRuntime.adblock_allowlist_hosts || []
                     ).join(", ")}
-                    onChange={(value) =>
+                    onChange={(value: any) =>
                       updateBrowserRuntimeList(
                         browserSettingsTab,
                         "adblock_allowlist_hosts",
@@ -3109,7 +3163,7 @@ export function SettingsPage() {
                   <ToggleRow
                     label="Block popups"
                     checked={!!activeBrowserRuntime.popup_blocking_enabled}
-                    onChange={(value) =>
+                    onChange={(value: any) =>
                       updateBrowserRuntime(
                         browserSettingsTab,
                         "popup_blocking_enabled",
@@ -3123,7 +3177,7 @@ export function SettingsPage() {
                     checked={
                       !!activeBrowserRuntime.iframe_sandbox_patch_enabled
                     }
-                    onChange={(value) =>
+                    onChange={(value: any) =>
                       updateBrowserRuntime(
                         browserSettingsTab,
                         "iframe_sandbox_patch_enabled",
@@ -3137,7 +3191,7 @@ export function SettingsPage() {
                     checked={
                       !!browserRuntime.playwright?.stream_cors_patch_enabled
                     }
-                    onChange={(value) =>
+                    onChange={(value: any) =>
                       updateBrowserRuntime(
                         "playwright",
                         "stream_cors_patch_enabled",
@@ -3151,7 +3205,7 @@ export function SettingsPage() {
                     checked={
                       !!browserRuntime.playwright?.stream_cors_include_credentials
                     }
-                    onChange={(value) =>
+                    onChange={(value: any) =>
                       updateBrowserRuntime(
                         "playwright",
                         "stream_cors_include_credentials",
@@ -3182,7 +3236,7 @@ export function SettingsPage() {
                       label: "Permanent failures",
                       note: "ERR_BLOCKED_BY_CLIENT, certificate, and invalid-argument failures stop immediately.",
                     },
-                  ].map(({ label, note }) => (
+                  ].map(({  label, note  }: any) => (
                     <div
                       key={label}
                       className="rounded-[12px] border p-3.5"
@@ -3216,7 +3270,7 @@ export function SettingsPage() {
                     checked={
                       !!activeBrowserRuntime.iframe_auto_recovery_enabled
                     }
-                    onChange={(value) =>
+                    onChange={(value: any) =>
                       updateBrowserRuntime(
                         browserSettingsTab,
                         "iframe_auto_recovery_enabled",
@@ -3230,7 +3284,7 @@ export function SettingsPage() {
                     value={String(
                       activeBrowserRuntime.iframe_recovery_timeout_ms ?? "",
                     )}
-                    onChange={(value) =>
+                    onChange={(value: any) =>
                       updateBrowserRuntime(
                         browserSettingsTab,
                         "iframe_recovery_timeout_ms",
@@ -3250,7 +3304,7 @@ export function SettingsPage() {
                     value={String(
                       activeBrowserRuntime.media_capture_timeout_ms ?? "",
                     )}
-                    onChange={(value) =>
+                    onChange={(value: any) =>
                       updateBrowserRuntime(
                         browserSettingsTab,
                         "media_capture_timeout_ms",
@@ -3270,7 +3324,7 @@ export function SettingsPage() {
                     checked={
                       !!activeBrowserRuntime.media_playback_verification_enabled
                     }
-                    onChange={(value) =>
+                    onChange={(value: any) =>
                       updateBrowserRuntime(
                         browserSettingsTab,
                         "media_playback_verification_enabled",
@@ -3282,7 +3336,7 @@ export function SettingsPage() {
                   <ToggleRow
                     label="Detect media CORS errors"
                     checked={!!activeBrowserRuntime.media_cors_patch_enabled}
-                    onChange={(value) =>
+                    onChange={(value: any) =>
                       updateBrowserRuntime(
                         browserSettingsTab,
                         "media_cors_patch_enabled",
@@ -3330,6 +3384,7 @@ export function SettingsPage() {
                 onChange={setActiveProfileTab}
                 options={Object.keys(MCP_TOOLS_BY_PROFILE).map((profile) => ({
                   id: profile,
+                  // @ts-expect-error -- strict migration
                   label: PROFILE_LABELS[profile],
                   badge:
                     disabledToolsByBrowserProfile[activeMcpBrowserTab]?.[
@@ -3341,10 +3396,10 @@ export function SettingsPage() {
               />
 
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <CompactStat label="Enabled" value={`${enabledToolCount}/${(MCP_TOOLS_BY_PROFILE[activeProfileTab] || []).length}`} tone="primary" />
+                <CompactStat label="Enabled" value={`${enabledToolCount}/${((MCP_TOOLS_BY_PROFILE as any)[activeProfileTab] || []).length}`} tone="primary" />
                 <CompactStat label="Disabled" value={`${activeMcpDisabledTools.length}`} />
                 <CompactStat label="Backend" value="Playwright" />
-                <CompactStat label="Profile" value={PROFILE_LABELS[activeProfileTab]} />
+                <CompactStat label="Profile" value={(PROFILE_LABELS as any)[activeProfileTab]} />
               </div>
 
               <div
@@ -3357,12 +3412,13 @@ export function SettingsPage() {
                       <span className="text-[13px] font-semibold text-foreground">
                         {BROWSER_OPTIONS.find((item) => item.id === activeMcpBrowserTab)?.name}
                         {" · "}
+                        {/* @ts-expect-error -- strict migration */}
                         {PROFILE_LABELS[activeProfileTab]}
                       </span>
                       <Badge tone="default" className="font-mono text-[10px]">
                         {enabledToolCount}
                         {" / "}
-                        {(MCP_TOOLS_BY_PROFILE[activeProfileTab] || []).length} enabled
+                        {((MCP_TOOLS_BY_PROFILE as any)[activeProfileTab] || []).length} enabled
                       </Badge>
                     </div>
                     <p className="max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
@@ -3384,6 +3440,7 @@ export function SettingsPage() {
                       variant="outline"
                       size="sm"
                       className="h-7 px-2.5 text-[11px]"
+                      // @ts-expect-error -- strict migration
                       onClick={() => setDisabledToolsForCurrentBrowserProfile(MCP_TOOLS_BY_PROFILE[activeProfileTab])}
                     >
                       Disable all
@@ -3403,28 +3460,29 @@ export function SettingsPage() {
                   </div>
                   <div className="rounded-[14px] border border-border/70 bg-background/70 px-3.5 py-3 text-[12px] text-muted-foreground">
                     Showing <span className="font-semibold text-foreground">{filteredMcpTools.length}</span> of{" "}
+                    {/* @ts-expect-error -- strict migration */}
                     <span className="font-semibold text-foreground">{(MCP_TOOLS_BY_PROFILE[activeProfileTab] || []).length}</span> tools
                   </div>
                 </div>
 
                 {(() => {
-                  const categories = [...new Set(filteredMcpTools.map((t) => MCP_TOOL_META[t]?.category || "Other"))];
+                  const categories = [...new Set(filteredMcpTools.map((t: any) => (MCP_TOOL_META as any)[t]?.category || "Other"))];
                   return categories.map((cat) => {
-                    const catTools = filteredMcpTools.filter((t) => (MCP_TOOL_META[t]?.category || "Other") === cat);
+                    const catTools = filteredMcpTools.filter((t: any) => ((MCP_TOOL_META as any)[t]?.category || "Other") === cat);
                     return (
-                      <div key={cat} className="mb-4">
+                      <div key={String(cat)} className="mb-4">
                         <div className="mb-2 flex items-center justify-between gap-2">
                           <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
-                            {cat}
+                            {String(cat)}
                           </div>
                           <Badge tone="default" className="text-[9px] font-mono">
-                            {catTools.filter((toolName) => !activeBrowserTools().includes(toolName)).length}/{catTools.length} enabled
+                            {catTools.filter((toolName: any) => !activeBrowserTools().includes(toolName)).length}/{catTools.length} enabled
                           </Badge>
                         </div>
                         <div className="divide-y divide-border/40 rounded-[14px] border border-border/60 bg-background/65">
-                          {catTools.map((toolName) => {
+                          {catTools.map((toolName: any) => {
                             const isDisabled = activeBrowserTools().includes(toolName);
-                            const meta = MCP_TOOL_META[toolName];
+                            const meta = (MCP_TOOL_META as any)[toolName];
                             return (
                               <div
                                 key={toolName}
@@ -3435,7 +3493,7 @@ export function SettingsPage() {
                                   onCheckedChange={(checked) => {
                                     const currentDisabled = activeBrowserTools();
                                     const nextDisabled = checked
-                                      ? currentDisabled.filter((item) => item !== toolName)
+                                      ? currentDisabled.filter((item: any) => item !== toolName)
                                       : [...currentDisabled, toolName];
                                     setDisabledToolsForCurrentBrowserProfile(nextDisabled);
                                   }}
@@ -3544,12 +3602,13 @@ export function SettingsPage() {
                 </p>
               </div>
               <div className="space-y-2">
-                {NOTIF_EVENTS.map(({ key, label, note }) => (
+                {NOTIF_EVENTS.map(({  key, label, note  }: any) => (
                   <ToggleRow
                     key={key}
                     label={label}
+                    // @ts-expect-error -- strict migration
                     checked={!!notifPrefs[key]}
-                    onChange={(checked) => setNotifPrefs({ ...notifPrefs, [key]: checked })}
+                    onChange={(checked: any) => setNotifPrefs({ ...notifPrefs, [key]: checked })}
                     description={note}
                   />
                 ))}
@@ -3580,7 +3639,7 @@ function DisplaySettingsSection() {
         </p>
       </div>
 
-      <RunViewSettingsPanel settings={settings} update={update} reset={reset} />
+      <RunViewSettingsPanel settings={settings} update={update as any} reset={reset} />
       {/*
 
           {saved ? "✓ Saved to browser" : "Save display preferences"}

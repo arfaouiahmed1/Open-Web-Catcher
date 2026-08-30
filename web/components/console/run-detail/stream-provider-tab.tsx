@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -59,12 +59,12 @@ function dedupe(values = []) {
   return rows;
 }
 
-function normalizeCountryCode(value) {
+function normalizeCountryCode(value: any) {
   const text = String(value || "").trim().toUpperCase();
   return /^[A-Z]{2}$/.test(text) ? text : "";
 }
 
-function flagEmojiFromCountryCode(code) {
+function flagEmojiFromCountryCode(code: any) {
   const normalized = normalizeCountryCode(code);
   if (!normalized) return "";
   return Array.from(normalized)
@@ -75,18 +75,29 @@ function flagEmojiFromCountryCode(code) {
 function normalizeProviderRows(rows = []) {
   return (Array.isArray(rows) ? rows : []).map((row) => {
     const countryCode =
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       normalizeCountryCode(row?.country_code) || normalizeCountryCode(row?.country);
     return {
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       ...row,
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       stream_url: String(row?.stream_url || row?.url || "").trim(),
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       ip: String(row?.ip || "").trim(),
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       hostname: String(row?.hostname || "").trim(),
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       provider: String(row?.provider || "").trim(),
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       org: String(row?.org || "").trim(),
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       country: String(row?.country || "").trim(),
       country_code: countryCode,
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       flag: String(row?.flag || "").trim() || flagEmojiFromCountryCode(countryCode),
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       abuse_email: String(row?.abuse_email || "").trim(),
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       whois_raw: String(row?.whois_raw || "").trim(),
     };
   });
@@ -98,10 +109,12 @@ function buildProviderPayload(rows = [], source = "persisted") {
   const countryCounts = {};
   for (const row of normalizedRows) {
     if (row.provider) {
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       providerCounts[row.provider] = (providerCounts[row.provider] || 0) + 1;
     }
     if (row.country || row.country_code) {
       const key = row.country || row.country_code;
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       const entry = countryCounts[key] || {
         country: row.country || row.country_code,
         country_code: row.country_code,
@@ -109,6 +122,7 @@ function buildProviderPayload(rows = [], source = "persisted") {
         count: 0,
       };
       entry.count += 1;
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       countryCounts[key] = entry;
     }
   }
@@ -126,21 +140,28 @@ function buildProviderPayload(rows = [], source = "persisted") {
       unresolved_urls: normalizedRows.filter((row) => !row.ip).length,
     },
     top_providers: Object.entries(providerCounts)
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       .sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]))
       .slice(0, 8)
       .map(([provider, count]) => ({ provider, count })),
     top_countries: Object.values(countryCounts)
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       .sort((a, b) => (b.count - a.count) || String(a.country).localeCompare(String(b.country)))
       .slice(0, 8),
   };
 }
 
-function collectServerStreamUrls(server) {
+function collectServerStreamUrls(server: any) {
   return dedupe([
+    // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
     ...(Array.isArray(server?.stream_urls) ? server.stream_urls : []),
+    // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
     ...(Array.isArray(server?.m3u8_urls) ? server.m3u8_urls : []),
+    // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
     ...(Array.isArray(server?.mpd_urls) ? server.mpd_urls : []),
+    // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
     ...(Array.isArray(server?.mp4_urls) ? server.mp4_urls : []),
+    // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
     server?.primary_stream || "",
   ]);
 }
@@ -149,9 +170,10 @@ function summarizeExtractionResults(extractionResults = []) {
   return (Array.isArray(extractionResults) ? extractionResults : [])
     .filter((row) => row && typeof row === "object")
     .map((row, index) => {
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       const servers = (Array.isArray(row.servers) ? row.servers : [])
-        .filter((server) => server && typeof server === "object")
-        .map((server) => {
+        .filter((server: any) => server && typeof server === "object")
+        .map((server: any) => {
           const streamUrls = collectServerStreamUrls(server);
           return {
             label: String(server.label || `server_${index + 1}`).trim(),
@@ -177,37 +199,52 @@ function summarizeExtractionResults(extractionResults = []) {
             stream_urls: streamUrls,
           };
         });
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       const sampleStreams = dedupe([
-        ...(Array.isArray(row.streams) ? row.streams.map((stream) => stream?.url || "") : []),
-        ...servers.flatMap((server) => server.stream_urls),
+        // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
+        ...(Array.isArray(row.streams) ? row.streams.map((stream: any) => stream?.url || "") : []),
+        ...servers.flatMap((server: any) => server.stream_urls),
       ]);
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       const screenshots = dedupe([
+        // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
         ...(Array.isArray(row.screenshots) ? row.screenshots : []),
-        ...servers.map((server) => server.screenshot_url),
+        ...servers.map((server: any) => server.screenshot_url),
       ]);
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       const channelMetadata = row.channel_metadata && typeof row.channel_metadata === "object"
+        // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
         ? row.channel_metadata
         : {};
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       const detectedChannels = dedupe([
+        // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
         ...(Array.isArray(row.detected_channels) ? row.detected_channels : []),
         ...(Array.isArray(channelMetadata.channel_candidates) ? channelMetadata.channel_candidates : []),
-        ...servers.map((server) => server.detected_channel),
+        ...servers.map((server: any) => server.detected_channel),
       ]);
       const primaryChannel = String(
+        // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
         row.primary_channel || channelMetadata.primary_channel || detectedChannels[0] || "",
       ).trim();
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       const ocrTexts = dedupe([
         ...(Array.isArray(channelMetadata.ocr_texts) ? channelMetadata.ocr_texts : []),
-        ...servers.map((server) => server.ocr_text),
+        ...servers.map((server: any) => server.ocr_text),
       ]);
-      const firstChannelServer = servers.find((server) =>
+      const firstChannelServer = servers.find((server: any) =>
         server.channel_detection_method || server.channel_confidence,
       );
       return {
+        // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
         key: `${row.url || "extraction"}-${index}`,
+        // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
         url: String(row.url || "").trim(),
+        // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
         agent_type: String(row.agent_type || row.page_type || "agent").trim(),
+        // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
         page_type: String(row.page_type || "").trim(),
+        // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
         status: String(row.status || "unknown").trim(),
         primary_channel: primaryChannel,
         detected_channels: detectedChannels,
@@ -222,11 +259,11 @@ function summarizeExtractionResults(extractionResults = []) {
         stream_count: sampleStreams.length,
         screenshot_count: screenshots.length,
         network_diagnostics_count: servers.reduce(
-          (total, server) => total + Number(server.network_diagnostics_count || 0),
+          (total: any, server: any) => total + Number(server.network_diagnostics_count || 0),
           0,
         ),
         iframe_diagnostics_count: servers.reduce(
-          (total, server) => total + Number(server.iframe_diagnostics_count || 0),
+          (total: any, server: any) => total + Number(server.iframe_diagnostics_count || 0),
           0,
         ),
         sample_streams: sampleStreams.slice(0, 8),
@@ -236,7 +273,7 @@ function summarizeExtractionResults(extractionResults = []) {
     });
 }
 
-function BarTooltip({ active, payload, label }) {
+function BarTooltip({  active, payload, label  }: any) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-lg border border-border bg-popover px-3 py-2 text-[12px] shadow-md">
@@ -246,7 +283,7 @@ function BarTooltip({ active, payload, label }) {
   );
 }
 
-function PieTooltip({ active, payload }) {
+function PieTooltip({  active, payload  }: any) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-lg border border-border bg-popover px-3 py-2 text-[12px] shadow-md">
@@ -256,8 +293,8 @@ function PieTooltip({ active, payload }) {
   );
 }
 
-function ProviderBarChart({ rows = [], color = "var(--signal)" }) {
-  const data = rows.slice(0, 10).map((row) => ({
+function ProviderBarChart({  rows = [], color = "var(--signal)"  }: any) {
+  const data = rows.slice(0, 10).map((row: any) => ({
     name: row.provider || "--",
     count: Number(row.count || 0),
   }));
@@ -277,8 +314,8 @@ function ProviderBarChart({ rows = [], color = "var(--signal)" }) {
   );
 }
 
-function CountryPieChart({ rows = [] }) {
-  const data = rows.slice(0, 7).map((row, index) => ({
+function CountryPieChart({  rows = []  }: any) {
+  const data = rows.slice(0, 7).map((row: any, index: any) => ({
     name: `${row.flag || ""} ${row.country_code || row.country || "--"}`.trim(),
     value: Number(row.count || 0),
     color: CHART_COLORS[index % CHART_COLORS.length],
@@ -291,13 +328,13 @@ function CountryPieChart({ rows = [] }) {
       <ResponsiveContainer width={160} height={160}>
         <PieChart>
           <Pie data={data} cx="50%" cy="50%" innerRadius={44} outerRadius={72} paddingAngle={3} dataKey="value">
-            {data.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
+            {data.map((entry: any) => <Cell key={entry.name} fill={entry.color} />)}
           </Pie>
           <Tooltip content={<PieTooltip />} />
         </PieChart>
       </ResponsiveContainer>
       <div className="min-w-0 flex-1 space-y-1.5">
-        {data.map((entry) => (
+        {data.map((entry: any) => (
           <div key={entry.name} className="flex items-center gap-2 text-[12px]">
             <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: entry.color }} />
             <span className="truncate text-foreground">{entry.name}</span>
@@ -309,7 +346,7 @@ function CountryPieChart({ rows = [] }) {
   );
 }
 
-function StatCard({ label, value, color }) {
+function StatCard({  label, value, color  }: any) {
   return (
     <Card>
       <CardContent className="px-4 py-3">
@@ -320,14 +357,14 @@ function StatCard({ label, value, color }) {
   );
 }
 
-export function StreamProviderTab({
+export function StreamProviderTab({ 
   runId,
   runUrl,
   streamUrls = [],
   providerAnalysis = [],
   extractionResults = [],
-}) {
-  const [data, setData] = useState(null);
+ }: any) {
+  const [data, setData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [hasRun, setHasRun] = useState(false);
@@ -361,7 +398,7 @@ export function StreamProviderTab({
     [evidenceRows],
   );
 
-  async function runLookup(urls) {
+  async function runLookup(urls: any) {
     setIsLoading(true);
     setError("");
     try {
@@ -377,7 +414,7 @@ export function StreamProviderTab({
         rows: normalizeProviderRows(payload?.rows || []),
         source: "live_lookup",
       });
-    } catch (nextError) {
+    } catch (nextError: any) {
       setError(nextError.message || "Provider lookup failed");
     } finally {
       setIsLoading(false);
@@ -554,7 +591,7 @@ export function StreamProviderTab({
 
                 {row.servers.length ? (
                   <div className="mt-3 grid gap-2 lg:grid-cols-2">
-                    {row.servers.map((server) => (
+                    {row.servers.map((server: any) => (
                       <div key={`${row.key}-${server.label}`} className="rounded-lg border border-border bg-card px-3 py-2.5">
                         <div className="flex flex-wrap items-center gap-2">
                           <Server className="h-3.5 w-3.5 text-primary" />
@@ -696,7 +733,7 @@ export function StreamProviderTab({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row, index) => (
+                {rows.map((row: any, index: any) => (
                   <TableRow key={`${row.stream_url || row.url}-${index}`}>
                     <TableCell className="max-w-[220px] truncate px-4 py-2.5 font-mono text-[11px] text-sky-500" title={row.stream_url || row.url}>
                       {(row.stream_url || row.url || "--").replace(/^https?:\/\//, "")}

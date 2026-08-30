@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -33,9 +33,9 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDate, formatTime, formatTimestamp, parseTimestamp } from "@/lib/datetime";
 
-const EMPTY_ARRAY = [];
+const EMPTY_ARRAY: any[] = [];
 
-function BrokenShotState({ message = "No screenshot captured for this stage yet.", compact = false }) {
+function BrokenShotState({  message = "No screenshot captured for this stage yet.", compact = false  }: any) {
   return (
     <div
       className={`flex flex-col items-center justify-center px-4 text-center ${
@@ -51,7 +51,7 @@ function BrokenShotState({ message = "No screenshot captured for this stage yet.
   );
 }
 
-function ScreenshotImage({
+function ScreenshotImage({ 
   src,
   alt,
   className,
@@ -59,7 +59,7 @@ function ScreenshotImage({
   loading,
   fallbackMessage,
   compact = false,
-}) {
+ }: any) {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -82,7 +82,7 @@ function ScreenshotImage({
   );
 }
 
-function frameLabel(frame) {
+function frameLabel(frame: any) {
   if (!frame) return "";
   const invocation =
     frame.invocationIndex || frame.agentRunId
@@ -91,7 +91,7 @@ function frameLabel(frame) {
   return [invocation, frame.toolName, frame.target].filter(Boolean).join(" | ");
 }
 
-function stageTone(stage) {
+function stageTone(stage: any) {
   if (stage === "classification") return "var(--sky)";
   if (stage === "landing") return "var(--violet)";
   if (stage === "hosting") return "var(--mint)";
@@ -99,7 +99,7 @@ function stageTone(stage) {
   return "var(--mute)";
 }
 
-function phaseTone(phase) {
+function phaseTone(phase: any) {
   if (phase === "failed") return "danger";
   if (phase === "done") return "success";
   if (phase === "llm") return "violet";
@@ -107,7 +107,7 @@ function phaseTone(phase) {
   return "default";
 }
 
-function FrameOverlay({ frame, status }) {
+function FrameOverlay({  frame, status  }: any) {
   if (!frame) return null;
   const color = stageTone(frame.stage);
   return (
@@ -119,7 +119,7 @@ function FrameOverlay({ frame, status }) {
     >
       <div className="flex items-center gap-2">
         <span className="text-[11px] font-semibold" style={{ color }}>
-          {STAGE_LABELS[frame.stage]}
+          {(STAGE_LABELS as any)[frame.stage]}
         </span>
         <span
           className="rounded-full px-2 py-0.5 font-mono text-[10px]"
@@ -161,7 +161,7 @@ function FrameOverlay({ frame, status }) {
   );
 }
 
-function StageTrigger({ stage, active, autoSelected, count, status, phase }) {
+function StageTrigger({  stage, active, autoSelected, count, status, phase  }: any) {
   const color = stageTone(stage);
   return (
     <TabsTrigger
@@ -178,7 +178,7 @@ function StageTrigger({ stage, active, autoSelected, count, status, phase }) {
           className="h-2 w-2 shrink-0 rounded-full"
           style={{ background: color }}
         />
-        <span className="truncate font-medium">{STAGE_LABELS[stage]}</span>
+        <span className="truncate font-medium">{(STAGE_LABELS as any)[stage]}</span>
       </span>
       <span className="flex w-full items-center gap-1.5">
         <Badge tone={phaseTone(phase)} className="h-5 px-1.5 py-0 text-[9px]">
@@ -202,7 +202,7 @@ function StageTrigger({ stage, active, autoSelected, count, status, phase }) {
   );
 }
 
-function normalizePersistedScreenshotFrame(row, index, selectedStage) {
+function normalizePersistedScreenshotFrame(row: any, index: any, selectedStage: any) {
   if (typeof row === "string") {
     const url = row.trim();
     if (!url) return null;
@@ -246,14 +246,14 @@ function normalizePersistedScreenshotFrame(row, index, selectedStage) {
   };
 }
 
-export function BrowserLiveView({
+export function BrowserLiveView({ 
   runId,
   events = [],
   persistedScreenshots = [],
   autoRefresh = true,
   standalone = false,
   onClose,
-}) {
+ }: any) {
   const thumbnailStripRef = useRef(null);
   const [manualMode, setManualMode] = useState(false);
   const [manualStage, setManualStage] = useState("classification");
@@ -273,6 +273,7 @@ export function BrowserLiveView({
     [stages],
   );
   const selectedStage = manualMode ? manualStage : autoStage;
+  // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
   const selectedStageData = stageByName.get(selectedStage) || stages[0];
   const availableFrames = selectedStageData?.frames ?? EMPTY_ARRAY;
   const latestFrame = selectedStageData?.latestFrame || null;
@@ -312,6 +313,7 @@ export function BrowserLiveView({
     if (
       !manualMode ||
       !selectedFrameUrl ||
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
       !effectiveFrames.some((frame) => frame.url === selectedFrameUrl)
     ) {
       setSelectedFrameUrl(nextUrl || effectiveFrames[effectiveFrames.length - 1]?.url || "");
@@ -338,7 +340,7 @@ export function BrowserLiveView({
         setFallbackScreenshot(next);
         setFallbackTimestamp(payload?.timestamp || "");
         setFetchError(payload?.error ? String(payload.error) : "");
-      } catch (error) {
+      } catch (error: any) {
         if (!cancelled) {
           setFetchError(
             error instanceof Error
@@ -373,6 +375,7 @@ export function BrowserLiveView({
   }, [availableFrames.length, autoRefresh, refreshNonce, runId, standalone]);
 
   const activeFrame =
+    // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
     effectiveFrames.find((frame) => frame.url === selectedFrameUrl) ||
     latestFrame ||
     effectiveFrames[effectiveFrames.length - 1] ||
@@ -390,6 +393,7 @@ export function BrowserLiveView({
   useEffect(() => {
     if (manualMode || !autoRefresh) return;
     if (!thumbnailStripRef.current || activeThumbIndex < 0) return;
+    // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
     const target = thumbnailStripRef.current.querySelector(
       `[data-frame-index="${activeThumbIndex}"]`,
     );
@@ -402,7 +406,7 @@ export function BrowserLiveView({
     }
   }, [activeThumbIndex, autoRefresh, manualMode, thumbnailFrames.length]);
 
-  function handleStageChange(nextStage) {
+  function handleStageChange(nextStage: any) {
     const next = stageByName.get(nextStage);
     setManualMode(true);
     setManualStage(nextStage);
@@ -668,7 +672,7 @@ export function BrowserLiveView({
                 : "No frame"}
         </Badge>
         <Badge tone={phaseTone(selectedPhase)} className="px-2 py-0 text-[10px]">
-          {STAGE_LABELS[selectedStage]} / {statusLabel}
+          {(STAGE_LABELS as any)[selectedStage]} / {statusLabel}
         </Badge>
         <span className="font-mono text-[10px]" style={{ color: "var(--mute-3)" }}>
           {activeFrame?.timestamp
@@ -704,8 +708,8 @@ export function BrowserLiveView({
   );
 }
 
-export function ScreenshotGallery({ screenshots = [] }) {
-  const [selected, setSelected] = useState(null);
+export function ScreenshotGallery({  screenshots = []  }: any) {
+  const [selected, setSelected] = useState<any>(null);
   const [zoom, setZoom] = useState(false);
 
   if (!screenshots.length) {
@@ -764,7 +768,7 @@ export function ScreenshotGallery({ screenshots = [] }) {
           <ScrollArea className="w-full rounded-xl border border-border bg-muted/20">
             <ScrollAreaViewport className="w-full">
               <div className="flex gap-2 p-2 flex-nowrap overflow-x-auto">
-                {screenshots.map((src, index) => (
+                {screenshots.map((src: any, index: any) => (
                   <button
                     key={`${src}-${index}`}
                     type="button"
