@@ -24,6 +24,9 @@ const badgeVariants = cva(
           "border-[color-mix(in_oklch,var(--mint)_28%,transparent)] bg-[color-mix(in_oklch,var(--mint)_12%,transparent)] text-[var(--mint)]",
         rose:
           "border-[color-mix(in_oklch,var(--rose)_28%,transparent)] bg-[color-mix(in_oklch,var(--rose)_12%,transparent)] text-[var(--rose)]",
+        muted: "border-border bg-muted text-muted-foreground",
+        source:
+          "border-border bg-muted/60 text-muted-foreground font-sans text-[10px] tracking-wide uppercase",
       },
     },
     defaultVariants: {

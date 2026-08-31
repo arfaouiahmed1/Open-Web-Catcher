@@ -1,11 +1,24 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  variant?: "default" | "elevated" | "interactive" | "ghost";
+}
+
+export function Card({ className, variant = "default", ...props }: CardProps) {
+  const variantClass =
+    variant === "elevated"
+      ? "shadow-md border-border/60"
+      : variant === "interactive"
+        ? "shadow-sm hover:shadow-md hover:border-border/80 transition-shadow cursor-pointer"
+        : variant === "ghost"
+          ? "border-dashed bg-transparent shadow-none"
+          : "shadow-sm";
   return (
     <div
       className={cn(
-        "rounded-xl border bg-card text-card-foreground shadow-sm",
+        "rounded-xl border bg-card text-card-foreground",
+        variantClass,
         className
       )}
       {...props}
@@ -24,7 +37,7 @@ export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDiv
 
 export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
   return (
-    <h3 className={cn("text-2xl font-semibold leading-none tracking-tight", className)} {...props} />
+    <h3 className={cn("text-lg font-semibold leading-none tracking-tight", className)} {...props} />
   );
 }
 

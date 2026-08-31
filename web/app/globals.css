@@ -6,6 +6,22 @@
 :root {
     --radius: 0.5rem;
     --radius-lg: 0.75rem;
+    --radius-xl: 1rem;
+
+    /* layout tokens */
+    --content-max: 1400px;
+    --header-height: 3rem;
+    --space-xs: 0.5rem;
+    --space-sm: 0.75rem;
+    --space-md: 1rem;
+    --space-lg: 1.5rem;
+    --space-xl: 2rem;
+
+    /* motion */
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+    --duration-fast: 120ms;
+    --duration-normal: 220ms;
 
     /* accents stay consistent across themes */
     --signal: oklch(0.76 0.13 64);
@@ -190,6 +206,10 @@
     border-color: var(--border);
 }
 
+::selection {
+    background: color-mix(in oklch, var(--signal) 22%, transparent);
+}
+
 html,
 body {
     margin: 0;
@@ -249,6 +269,15 @@ samp {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
     border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
 }
 
 /* ── light-mode compatibility for existing utility classes ── */

@@ -3,10 +3,11 @@
 import * as React from "react";
 import * as LabelPrimitive from "@radix-ui/react-label";
 import { cn } from "@/lib/utils";
+export type LabelProps = React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root> & {
+  required?: boolean;
+};
 
-export type LabelProps = React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root>;
-
-export function Label({ className, ...props }: LabelProps) {
+export function Label({ className, required, children, ...props }: LabelProps) {
   return (
     <LabelPrimitive.Root
       className={cn(
@@ -14,6 +15,9 @@ export function Label({ className, ...props }: LabelProps) {
         className,
       )}
       {...props}
-    />
+    >
+      {children}
+      {required ? <span className="ml-1 text-destructive" aria-hidden>*</span> : null}
+    </LabelPrimitive.Root>
   );
 }
