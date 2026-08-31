@@ -1,7 +1,10 @@
 "use client";
 
 import React, { useMemo } from "react";
+import { ListOrdered, Radio } from "lucide-react";
 import { StepTimeline } from "@/components/library/StepTimeline";
+import { SectionPanel } from "@/components/console/common/section-panel";
+import { Badge } from "@/components/ui/badge";
 import type { PlanStep } from "@/components/library/types";
 
 export interface RunTimelineTabProps {
@@ -56,35 +59,29 @@ export function RunTimelineTab({ plan, steps: stepsProp, events, title = "Run pl
   const liveLabel = effectiveIsLive ? "live" : "persisted";
 
   return (
-    <div className="overflow-hidden rounded-xl border bg-card shadow-card">
-      <div className="border-b px-4 py-3" style={{ borderColor: "var(--line)" }}>
+    <SectionPanel
+      title={title}
+      description={`Live plan driven by SSE — zero polling. Steps update as plan_step_update events arrive.${streamStatus ? ` · ${streamStatus}` : ""}`}
+      icon={<ListOrdered className="h-3.5 w-3.5" />}
+      actions={
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold">{title}</h3>
-          <span
-            className="rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide"
-            style={{
-              borderColor: "var(--line)",
-              color: effectiveIsLive ? "var(--signal)" : "var(--mute-2)",
-              background: effectiveIsLive ? "color-mix(in oklch, var(--signal) 10%, transparent)" : "transparent",
-            }}
+          <Badge
+            tone={effectiveIsLive ? "live" : "muted"}
+            className="text-[10px] gap-1"
             data-role="timeline-live-badge"
             data-live={effectiveIsLive ? "true" : "false"}
           >
+            {effectiveIsLive ? <Radio className="h-3 w-3 animate-pulse" /> : null}
             {liveLabel}
-          </span>
-          <span className="ml-auto text-[11px] text-muted-foreground" data-role="timeline-count">
+          </Badge>
+          <span className="text-[11px] text-muted-foreground" data-role="timeline-count">
             {hasSteps ? `${steps.length} steps` : "no steps yet"}
           </span>
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">Live plan driven by SSE — zero polling. Steps update as plan_step_update events arrive.{streamStatus ? ` · ${streamStatus}` : ""}</p>
-      </div>
-      <div className="p-0">
-        <StepTimeline
-          steps={steps}
-          title={title}
-          emptyLabel={effectiveIsLive ? "Waiting for plan…" : "No plan recorded for this run."}
-        />
-      </div>
-    </div>
+      }
+      className="animate-fade-up"
+    >
+      <StepTimeline steps={steps} title={title} emptyLabel={effectiveIsLive ? "Waiting for plan…" : "No plan recorded for this run."} />
+    </SectionPanel>
   );
 }

@@ -1,8 +1,11 @@
 "use client";
 
 import React, { useMemo } from "react";
+import { Wallet, Coins } from "lucide-react";
 import { CostMeter } from "@/components/library/CostMeter";
 import { MetricCard } from "@/components/library/MetricCard";
+import { SectionPanel } from "@/components/console/common/section-panel";
+import { Badge } from "@/components/ui/badge";
 import type { RunCostFields } from "@/components/library/types";
 
 export interface CostMeterTabProps {
@@ -65,12 +68,8 @@ export function CostMeterTab({ metrics, costs, totalCostUsd, title = "Cost & tok
 
   const hasCost = !!normalizedCosts && Object.values(normalizedCosts).some((v) => typeof v === "number");
   return (
-    <div className="overflow-hidden rounded-xl border bg-card shadow-card" data-testid="cost-meter-tab">
-      <div className="border-b px-4 py-3" style={{ borderColor: "var(--line)" }}>
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <p className="mt-1 text-xs text-muted-foreground">Live cost accounting from SSE metrics — no polling. Mirrors backend CostAccounting.</p>
-      </div>
-      <div className="space-y-3 p-3">
+    <SectionPanel title={title} description="Live cost accounting from SSE metrics — no polling. Mirrors backend CostAccounting." icon={<Wallet className="h-3.5 w-3.5" />} actions={hasCost ? <Badge tone="success" className="font-mono text-[10px]">${(normalizedCosts?.estimated_total_cost_usd ?? 0).toFixed(4)}</Badge> : <Badge tone="muted" className="text-[10px]">no cost yet</Badge>} className="animate-fade-up">
+      <div className="space-y-3">
         <CostMeter costs={normalizedCosts} tokens={tokens} emptyLabel="No cost data yet — waiting for first LLM call." title="Estimated cost" />
         {tokens ? (
           <div className="grid gap-2 sm:grid-cols-3">
@@ -80,11 +79,11 @@ export function CostMeterTab({ metrics, costs, totalCostUsd, title = "Cost & tok
           </div>
         ) : null}
         {!hasCost && !tokens ? (
-          <div className="text-xs text-muted-foreground" data-role="cost-empty">
-            Cost ledger will populate as the run emits llm_response and pricing-missing warnings.
+          <div className="flex items-center gap-2 rounded-lg border border-dashed border-border/60 bg-muted/10 px-3 py-2.5 text-xs text-muted-foreground" data-role="cost-empty">
+            <Coins className="h-3.5 w-3.5" /> Cost ledger will populate as the run emits llm_response and pricing-missing warnings.
           </div>
         ) : null}
       </div>
-    </div>
+    </SectionPanel>
   );
 }

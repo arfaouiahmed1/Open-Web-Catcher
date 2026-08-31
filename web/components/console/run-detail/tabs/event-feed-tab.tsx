@@ -1,10 +1,13 @@
 "use client";
 
 import React, { memo, useMemo } from "react";
+import { Activity, Radio } from "lucide-react";
 import { EventFeedItem } from "@/components/library/EventFeedItem";
 import { ScreenshotCard } from "@/components/library/ScreenshotCard";
 import type { FeedEvent } from "@/components/library/types";
 import { VirtualizedList } from "@/components/library/VirtualizedList";
+import { SectionPanel } from "@/components/console/common/section-panel";
+import { Badge } from "@/components/ui/badge";
 import { collectScreenshotUrls } from "@/lib/run-trace";
 
 export interface RunEventFeedTabProps {
@@ -138,38 +141,41 @@ export function RunEventFeedTab({ events, title = "Event feed", maxItems = 120 }
   );
 
   return (
-    <div className="overflow-hidden rounded-xl border bg-card shadow-card" data-testid="run-event-feed-tab">
-      <div className="border-b px-4 py-3" style={{ borderColor: "var(--line)" }}>
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          SSE-live feed via useRunStream — no polling. Typed kinds (server_activated, stream_extracted, hosting_page_discovered, player_failed) show inline.
-        </p>
-        <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground" data-role="feed-meta">
-          <span data-role="feed-count">{list.length} events</span>
-          {omitted > 0 ? <span data-role="feed-omitted">+{omitted} earlier hidden</span> : null}
+    <SectionPanel
+      title={title}
+      description="SSE-live feed via useRunStream — no polling. Typed kinds show inline with VirtualizedList."
+      icon={<Activity className="h-3.5 w-3.5" />}
+      actions={
+        <div className="flex items-center gap-2">
+          <Badge tone={hasEvents ? "success" : "muted"} className="text-[10px] gap-1">
+            <Radio className="h-3 w-3 animate-pulse" />
+            <span data-role="feed-count">{list.length} events</span>
+          </Badge>
+          {omitted > 0 ? <span className="text-[11px] text-muted-foreground" data-role="feed-omitted">+{omitted} earlier</span> : null}
         </div>
-      </div>
-      <div className="space-y-2 p-0">
-        {!hasEvents ? (
-          <div className="p-4">
-            <EventFeedItem emptyLabel="No events yet — waiting for SSE." />
-          </div>
-        ) : (
-          <div className="divide-y divide-border/50" data-role="feed-list">
-            {enriched.length > 80 ? (
-              <VirtualizedList
-                items={enriched}
-                height={Math.min(600, enriched.length * 96)}
-                itemSize={128}
-                overscanCount={8}
-                renderItem={(item) => <EventRow raw={item.raw} feed={item.feed} screenshots={item.screenshots} isTypedKind={item.isTypedKind} />}
-              />
-            ) : (
-              enriched.map((item) => <EventRow key={item.key} raw={item.raw} feed={item.feed} screenshots={item.screenshots} isTypedKind={item.isTypedKind} />)
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+      }
+      className="animate-fade-up"
+      data-testid="run-event-feed-tab"
+    >
+      {!hasEvents ? (
+        <div className="py-2">
+          <EventFeedItem emptyLabel="No events yet — waiting for SSE." />
+        </div>
+      ) : (
+        <div className="divide-y divide-border/50 -mx-1" data-role="feed-list">
+          {enriched.length > 80 ? (
+            <VirtualizedList
+              items={enriched}
+              height={Math.min(600, enriched.length * 96)}
+              itemSize={128}
+              overscanCount={8}
+              renderItem={(item) => <EventRow raw={item.raw} feed={item.feed} screenshots={item.screenshots} isTypedKind={item.isTypedKind} />}
+            />
+          ) : (
+            enriched.map((item) => <EventRow key={item.key} raw={item.raw} feed={item.feed} screenshots={item.screenshots} isTypedKind={item.isTypedKind} />)
+          )}
+        </div>
+      )}
+    </SectionPanel>
   );
 }

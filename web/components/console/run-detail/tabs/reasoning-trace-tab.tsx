@@ -1,7 +1,10 @@
 "use client";
 
 import React, { useMemo } from "react";
+import { Brain, Sparkles } from "lucide-react";
 import { ReasoningTrace } from "@/components/library/ReasoningTrace";
+import { SectionPanel } from "@/components/console/common/section-panel";
+import { Badge } from "@/components/ui/badge";
 import type { ReasoningEntry } from "@/components/library/types";
 
 export interface ReasoningTraceTabProps {
@@ -48,17 +51,19 @@ export function ReasoningTraceTab({ events, entries: explicitEntries, title = "R
 
   const hasEntries = entries.length > 0;
   return (
-    <div className="overflow-hidden rounded-xl border bg-card shadow-card" data-testid="reasoning-trace-tab">
-      <div className="border-b px-4 py-3" style={{ borderColor: "var(--line)" }}>
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <p className="mt-1 text-xs text-muted-foreground">Derived live from SSE events — LLM reasoning + orchestrator decisions. Zero polling.</p>
-        <div className="text-[11px] text-muted-foreground" data-role="reasoning-count">
-          {hasEntries ? `${entries.length} entries` : "no reasoning yet"}
-        </div>
-      </div>
-      <div className="p-0">
-        <ReasoningTrace entries={entries} title={title} emptyLabel="No reasoning recorded yet — waiting for model turns." />
-      </div>
-    </div>
+    <SectionPanel
+      title={title}
+      description="Derived live from SSE events — LLM reasoning + orchestrator decisions. Zero polling."
+      icon={<Brain className="h-3.5 w-3.5" />}
+      actions={
+        <Badge tone={hasEntries ? "success" : "muted"} className="text-[10px]">
+          <Sparkles className="mr-1 h-3 w-3" />
+          <span data-role="reasoning-count">{hasEntries ? `${entries.length} entries` : "no reasoning yet"}</span>
+        </Badge>
+      }
+      className="animate-fade-up"
+    >
+      <ReasoningTrace entries={entries} title={title} emptyLabel="No reasoning recorded yet — waiting for model turns." />
+    </SectionPanel>
   );
 }
