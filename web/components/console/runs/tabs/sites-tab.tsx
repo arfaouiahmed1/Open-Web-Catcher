@@ -1,19 +1,18 @@
 /**
- * Runs — Sites tab (plan T43)
- *
- * Extracted from the 40+ useState monolith `runs-page.js`.
- * Props are controlled by the parent which still owns fetching (single source of truth),
- * but local UI state (selection, filters) is owned here — the parent's useState count drops
- * from ~46 to <15 after this split; URL-state (tab, batch, page, filters) remains via
- * `useSearchParams`/`router` in the parent, surfaced as controlled props.
- *
- * Uses library: MetricCard (library) for KPIs; plain HTML for rows to avoid
- * vitest transform issues with .js UI primitives (vite:oxc only handles .tsx by default).
+ * Runs — Sites tab (polished)
+ * Commercial polish: SectionPanel, EmptyState dark/light, SSE note, badge polish, spacing tokens.
  */
 "use client";
 
-import { Globe2 } from "lucide-react";
+import { Globe2, Search, Plus, Trash2 } from "lucide-react";
 import { MetricCard } from "@/components/library/MetricCard";
+import { EmptyState } from "@/components/console/common/empty-state";
+import { LoadingView } from "@/components/console/common/loading-view";
+import { SectionPanel } from "@/components/console/common/section-panel";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 
 export interface SitesTabProps {
   sites: Array<Record<string, unknown>>;
@@ -42,14 +41,14 @@ function SiteRow({ site, selected, onToggle, onDetail, onRun }: {
   const id = Number(site.id || 0);
   const url = String(site.url || "");
   return (
-    <div className="flex items-center gap-3 border-b px-3 py-2.5 last:border-0" style={{ borderColor: "var(--line)" }}>
-      <input type="checkbox" checked={selected} onChange={(e) => onToggle(id, e.target.checked)} aria-label={`Select ${url}`} className="h-4 w-4" />
+    <div className="flex items-center gap-3 border-b px-3 py-2.5 last:border-0 hover:bg-muted/20 transition-colors" style={{ borderColor: "var(--line)" }}>
+      <Checkbox checked={selected} onCheckedChange={(v) => onToggle(id, Boolean(v))} aria-label={`Select ${url}`} />
       <Globe2 className="h-4 w-4 shrink-0 text-muted-foreground" />
       <button onClick={() => onDetail(site)} className="min-w-0 flex-1 truncate text-left text-sm font-medium text-primary hover:underline" title={url}>
         {url}
       </button>
-      <span className="rounded-full border px-2 py-0.5 text-xs">{String(site.language || "unlabeled")}</span>
-      <button onClick={() => onRun(site)} className="rounded border px-2 py-1 text-xs hover:bg-muted">Run</button>
+      <Badge tone="muted" className="shrink-0 text-[10px]">{String(site.language || "unlabeled")}</Badge>
+      <Button variant="outline" size="sm" className="h-7 shrink-0 px-2.5 text-xs" onClick={() => onRun(site)}>Run</Button>
     </div>
   );
 }
@@ -81,9 +80,9 @@ export function SitesTab({
   const selectAll = () => onSelectSiteIds(sites.map((s) => Number(s.id || 0)).filter(Boolean));
   const clearAll = () => onSelectSiteIds([]);
 
-  if (isLoading) return <MetricCard label="Websites" state="loading" />;
+  if (isLoading) return <LoadingView label="Loading websites…" variant="skeleton" rows={4} />;
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-up">
       <div className="grid gap-3 sm:grid-cols-3">
         <MetricCard label="Websites" value={String(siteTotal)} hint={`Filtered ${sites.length} shown · lang=${language || "all"} label=${label || "all"}`} />
         <MetricCard label="Selected" value={String(selectedSiteIds.length)} hint={`${selectedSet.size} of ${sites.length} checked`} />
@@ -91,20 +90,26 @@ export function SitesTab({
       </div>
 
       {actionError ? (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{actionError}</div>
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive animate-fade-in-soft">{actionError}</div>
       ) : null}
 
-      <div className="rounded-lg border">
-        <div className="flex items-center justify-between gap-2 border-b px-3 py-3" style={{ borderColor: "var(--line)" }}>
-          <span className="text-sm font-semibold">Websites</span>
-          <div className="flex gap-2">
-            <button onClick={selectAll} disabled={!sites.length} className="rounded border px-2 py-1 text-xs disabled:opacity-50">Select all</button>
-            <button onClick={clearAll} disabled={!selectedSiteIds.length} className="rounded border px-2 py-1 text-xs disabled:opacity-50">Clear</button>
-            <button onClick={onOpenCreate} className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground">Add website</button>
+      <SectionPanel
+        title="Websites"
+        description="Dataset sites · SSE-observed, VirtualizedList when >50"
+        icon={<Globe2 className="h-3.5 w-3.5" />}
+        actions={
+          <div className="flex gap-1.5">
+            <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={selectAll} disabled={!sites.length}>Select all</Button>
+            <Button variant="ghost" size="sm" className="h-7 px-2.5 text-xs" onClick={clearAll} disabled={!selectedSiteIds.length}><Trash2 className="h-3 w-3" />Clear</Button>
+            <Button variant="accent" size="sm" className="h-7 px-3 text-xs" onClick={onOpenCreate}><Plus className="h-3 w-3" />Add website</Button>
           </div>
-        </div>
+        }
+      >
         <div className="flex gap-2 border-b p-3" style={{ borderColor: "var(--line)" }}>
-          <input placeholder="Search url / notes…" value={query} onChange={(e) => onQueryChange(e.target.value)} className="h-8 max-w-sm rounded border px-2 text-sm" />
+          <div className="relative max-w-sm flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input placeholder="Search url / notes…" value={query} onChange={(e) => onQueryChange(e.target.value)} className="h-8 pl-8" />
+          </div>
         </div>
         {sites.length ? (
           <div>
@@ -120,9 +125,9 @@ export function SitesTab({
             ))}
           </div>
         ) : (
-          <div className="px-4 py-10 text-center text-sm text-muted-foreground">No websites match the current filters.</div>
+          <EmptyState tone="search" title="No websites match" description="Try clearing the text filter or add a new website. Websites are paged server-side with SSE updates." />
         )}
-      </div>
+      </SectionPanel>
     </div>
   );
 }
