@@ -59,6 +59,13 @@ class ModelConfigRequest(BaseModel):
     payload_cap_bytes: int | None = None
     workflow_max_cost_usd: float | None = None
     workflow_max_tokens: int | None = None
+    # BYOK — provider keys via Settings UI (runtime yaml), not .env
+    google_api_key: str | None = None
+    google_vertex_api_key: str | None = None
+    openai_api_key: str | None = None
+    anthropic_api_key: str | None = None
+    openrouter_api_key: str | None = None
+    nvidia_api_key: str | None = None
 
 
 def ui_config_payload(
@@ -252,6 +259,12 @@ def apply_ui_config_update(
         settings.agent_runtime_config = normalize_agent_runtime_config(
             body.agent_runtime_config
         )
+    # BYOK: keys come from Settings UI; blank string = clear (remove from runtime yaml)
+    for _key_field in ("google_api_key", "google_vertex_api_key", "openai_api_key", "anthropic_api_key", "openrouter_api_key", "nvidia_api_key"):
+        _val = getattr(body, _key_field, None)
+        if _val is not None:
+            setattr(settings, _key_field, str(_val or "").strip())
+
     if body.agent_model_config is None:
         settings.agent_model_config = normalize_agent_model_config(
             settings, getattr(settings, "agent_model_config", {})
@@ -260,8 +273,33 @@ def apply_ui_config_update(
     persist_path = ""
     persist_error = ""
     config_persisted = True
+    # Ensure cleared keys are also removed from runtime yaml (save_yaml writes to base when writable)
+    # so a plain "" must not linger in data/settings.runtime.yaml and shadow the clear.
+    _clear_fields = []
+    for _k in ("google_api_key", "google_vertex_api_key", "openai_api_key", "anthropic_api_key", "openrouter_api_key", "nvidia_api_key"):
+        _v = getattr(body, _k, None)
+        if _v is not None and not str(_v).strip():
+            _clear_fields.append(_k)
     try:
         persist_path = str(settings.save_yaml())
+        if _clear_fields:
+            try:
+                from pathlib import Path as _P
+                import yaml as _yaml
+                from src.utils.config import is_blank_setting_value as _is_blank
+                _rt = _P("data/settings.runtime.yaml")
+                if _rt.exists():
+                    _data = _yaml.safe_load(_rt.read_text(encoding="utf-8")) or {}
+                    if isinstance(_data, dict):
+                        _changed = False
+                        for _k in _clear_fields:
+                            if _k in _data:
+                                _data.pop(_k, None)
+                                _changed = True
+                        if _changed:
+                            _rt.write_text(_yaml.safe_dump(_data, default_flow_style=False, allow_unicode=True), encoding="utf-8")
+            except Exception:
+                pass
         reset_settings_cache()
     except Exception as exc:  # noqa: BLE001
         config_persisted = False

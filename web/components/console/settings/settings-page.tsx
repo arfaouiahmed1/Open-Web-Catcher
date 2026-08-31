@@ -59,6 +59,34 @@ const PROVIDERS = [
     color: "var(--sky)",
     features: ["caching", "thinking", "grounding", "vision"],
   },
+  {
+    id: "openai",
+    name: "OpenAI",
+    keyEnv: "OPENAI_API_KEY",
+    color: "var(--mint)",
+    features: ["reasoning", "vision", "tools"],
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    keyEnv: "ANTHROPIC_API_KEY",
+    color: "var(--violet)",
+    features: ["thinking", "vision", "tools"],
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    keyEnv: "OPENROUTER_API_KEY",
+    color: "var(--signal)",
+    features: ["multi-provider", "routing"],
+  },
+  {
+    id: "nvidia",
+    name: "NVIDIA NIM",
+    keyEnv: "NVIDIA_API_KEY",
+    color: "var(--rose)",
+    features: ["inference", "hosted"],
+  },
 ];
 
 const AGENT_SLOTS = [
@@ -229,13 +257,13 @@ const BROWSER_OPTIONS = [
 ];
 
 const SETTINGS_TABS = [
-  { id: "models", label: "Google Models" },
+  { id: "models", label: "Models" },
+  { id: "api-keys", label: "Provider Keys" },
   { id: "browser", label: "Browser" },
-  { id: "display", label: "Display" },
-  { id: "api-keys", label: "API Keys" },
-  { id: "account", label: "Account" },
-  { id: "notifications", label: "Notifications" },
   { id: "mcp-tools", label: "MCP Tools" },
+  { id: "display", label: "Display" },
+  { id: "notifications", label: "Notifications" },
+  { id: "account", label: "Account" },
 ];
 
 const SETTINGS_TAB_ICONS = {
@@ -250,9 +278,9 @@ const SETTINGS_TAB_ICONS = {
 
 const TAB_DETAILS = {
   models: {
-    title: "Google Models",
+    title: "Models",
     description:
-      "Assign live Google models, inspect direct-from-Google defaults, and verify what the runtime actually applies.",
+      "Assign models per agent, inspect live provider defaults, and verify what the runtime actually applies. Keys are BYOK — set them in Provider Keys.",
     storage: "server",
     saveLabel: "Save model settings",
   },
@@ -270,10 +298,11 @@ const TAB_DETAILS = {
     storage: "browser",
   },
   "api-keys": {
-    title: "Gemini API Key",
+    title: "Provider Keys",
     description:
-      "See whether the Gemini API key is configured and ready for live model calls.",
-    storage: "readonly",
+      "BYOK — paste provider keys here. They are saved to runtime config (data/settings.runtime.yaml), masked in the UI, and never baked into images. Leave blank to keep existing, or clear to remove.",
+    storage: "server",
+    saveLabel: "Save provider keys",
   },
   account: {
     title: "Account",
@@ -461,9 +490,11 @@ function normalizeAgentModelConfig(
       // @ts-expect-error -- strict migration
       row?.provider || defaults[id].provider || fallbackProvider,
     ).toLowerCase();
+    const allowedProviders = new Set(["google", "openai", "anthropic", "openrouter", "nvidia", "google-vertex"]);
+    const finalProvider = allowedProviders.has(normalizedProvider) ? normalizedProvider : fallbackProvider;
     // @ts-expect-error -- strict migration
     next[id] = {
-      provider: normalizedProvider === "google" ? "google" : fallbackProvider,
+      provider: finalProvider,
       // @ts-expect-error -- strict migration
       model: String(row?.model || defaults[id].model || ""),
     };
@@ -625,7 +656,7 @@ function sourceTone(source: any) {
 
 function sourceLabel(source: any) {
   if (source === "provider_api") return "Live provider catalog";
-  if (source === "saved_catalog") return "Saved Google snapshot";
+  if (source === "saved_catalog") return "Saved provider snapshot";
   if (source === "fallback_catalog") return "Fallback catalog";
   if (source === "unverified_manual") return "Manual model ID";
   if (source === "unavailable") return "Catalog unavailable";
@@ -846,15 +877,16 @@ function SettingsTabHero({
   );
 }
 
-function SettingsTabBar({ active, onChange, dirtyTabs = {}, mobile = false }: any) {
+function SettingsTabBar({ active, onChange, dirtyTabs = {}, mobile = false, filterIds = null }: any) {
+  const visibleTabs = filterIds ? SETTINGS_TABS.filter((tab: any) => (filterIds as string[]).includes(tab.id)) : SETTINGS_TABS;
   return (
     <nav className={cn("gap-1.5", mobile ? "flex overflow-x-auto pb-1" : "flex flex-col")}>
-      {mobile ? null : (
+      {mobile || filterIds ? null : (
         <div className="mb-2 border-b px-2 pb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground/80">
           Configuration
         </div>
       )}
-      {SETTINGS_TABS.map((tab) => {
+      {visibleTabs.map((tab) => {
         const isActive = active === tab.id;
         const isDirty = dirtyTabs[tab.id];
         // @ts-expect-error -- strict migration
@@ -1519,6 +1551,9 @@ export function SettingsPage() {
   const [pricingStatus, setPricingStatus] = useState({});
   const [pricingSyncLoading, setPricingSyncLoading] = useState("");
   const [saving, setSaving] = useState(false);
+  const [keyEdits, setKeyEdits] = useState<Record<string, string | null>>({ google: null, openai: null, anthropic: null, openrouter: null, nvidia: null });
+  const [showKey, setShowKey] = useState<Record<string, boolean>>({});
+  const [keyTestState, setKeyTestState] = useState<Record<string, string>>({});
   const [savedTab, setSavedTab] = useState("");
   const [configErr, setConfigErr] = useState("");
   const [saveMismatchWarning, setSaveMismatchWarning] = useState("");
@@ -1665,7 +1700,7 @@ export function SettingsPage() {
             : providerDefault !== undefined && providerDefault !== ""
               ? providerDefault
               : liveDefault;
-        let source = "Google live default";
+        let source = "Provider live default";
         if (overrideValue !== undefined && overrideValue !== "") source = "Model override";
         else if (providerDefault !== undefined && providerDefault !== "") source = "Provider default";
         return {
@@ -1689,7 +1724,7 @@ export function SettingsPage() {
         value: formatParameterValue(getModelDefaultValue(selectedCatalogModel, field.key)),
         note: provenanceLabel(
           selectedCatalogModel?.default_parameter_provenance?.[field.key] ||
-            "Pulled from Google catalog",
+            "Pulled from provider catalog",
         ),
       })),
     [selectedCatalogModel, selectedModelFields],
@@ -1793,11 +1828,13 @@ export function SettingsPage() {
     ],
   );
 
-  const dirtyTabs = useMemo(
+  const _baseDirtyTabs = useMemo(
     () => getDirtyTabs(savedConfigSnapshot, serverDraft),
     [savedConfigSnapshot, serverDraft],
   );
-  const currentTabDirty = Boolean(dirtyTabs[activeTab]);
+  const apiKeysDirty = useMemo(() => Object.values(keyEdits).some((v) => v !== null), [keyEdits]);
+  const dirtyTabs = useMemo(() => ({ ..._baseDirtyTabs, "api-keys": apiKeysDirty }), [_baseDirtyTabs, apiKeysDirty]);
+  const currentTabDirty = Boolean((dirtyTabs as any)[activeTab]);
   const otherDirtyCount = useMemo(
     () =>
       Object.entries(dirtyTabs).filter(
@@ -1807,7 +1844,7 @@ export function SettingsPage() {
   );
 
   useEffect(() => {
-    if (savedTab && dirtyTabs[savedTab]) setSavedTab("");
+    if (savedTab && (dirtyTabs as any)[savedTab]) setSavedTab("");
   }, [dirtyTabs, savedTab]);
 
   async function loadProviderCatalog(providerId: any, { force = false } = {}) {
@@ -1926,9 +1963,10 @@ export function SettingsPage() {
     );
     setModelConfigWarnings(payload.model_config_warnings || []);
     setActiveMcpBrowserTab(payload.browser_engine || "playwright");
+    setKeyEdits({ google: null, openai: null, anthropic: null, openrouter: null, nvidia: null });
     setSavedTab("");
 
-    const providersToLoad = ["google"];
+    const providersToLoad = PROVIDERS.map((pr: any) => pr.id);
     await Promise.all(
       providersToLoad.map((providerId) =>
         loadProviderCatalog(providerId, { force: true }).catch(() => null),
@@ -1960,6 +1998,20 @@ export function SettingsPage() {
         model: modelId,
       },
     }));
+  }
+
+  function updateAgentProvider(agentId: any, nextProvider: any) {
+    const normalized = String(nextProvider || "google").toLowerCase();
+    setAgentModelConfig((current) => ({
+      ...current,
+      [agentId]: {
+        // @ts-expect-error -- strict migration
+        ...(current[agentId] || { provider: normalized, model: "" }),
+        provider: normalized,
+      },
+    }));
+    // preload catalog for the new provider if not already loaded
+    void loadProviderCatalog(normalized).catch(() => null);
   }
 
   function updateAgentProviderDefault(field: any, value: any) {
@@ -2117,6 +2169,15 @@ export function SettingsPage() {
           disabled_tools_by_browser_profile:
             serverDraft.disabled_tools_by_browser_profile,
         };
+      case "api-keys": {
+        const payload: Record<string, any> = {};
+        if (keyEdits.google !== null) payload.google_api_key = keyEdits.google;
+        if (keyEdits.openai !== null) payload.openai_api_key = keyEdits.openai;
+        if (keyEdits.anthropic !== null) payload.anthropic_api_key = keyEdits.anthropic;
+        if (keyEdits.openrouter !== null) payload.openrouter_api_key = keyEdits.openrouter;
+        if (keyEdits.nvidia !== null) payload.nvidia_api_key = keyEdits.nvidia;
+        return Object.keys(payload).length ? payload : null;
+      }
       default:
         return null;
     }
@@ -2222,61 +2283,57 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-[24px] border border-border/70 bg-gradient-to-br from-background via-background to-muted/15 p-5 shadow-[0_20px_60px_-36px_rgba(0,0,0,0.5)]">
-        <div className="flex flex-col gap-4">
-          <div className="space-y-1">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">
-              Operator console
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              Settings
-            </h1>
-            <p className="max-w-3xl text-sm text-muted-foreground">
-              Configure Gemini, browser runtime, local display behavior, and tool availability without losing tab-scoped save behavior.
+      <div className="flex flex-col gap-4 border-b border-border/60 pb-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-1.5">
+            <h1 className="text-[22px] font-semibold tracking-tight text-foreground">Settings</h1>
+            <p className="max-w-[640px] text-sm leading-relaxed text-muted-foreground">
+              Provider keys are BYOK in <span className="font-medium text-foreground">Provider Keys</span> — no .env needed for models. Browser, tools, and display stay separate.
             </p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <CompactStat label="Unsaved tabs" value={hasDirty ? `${Object.values(dirtyTabs).filter(Boolean).length}` : "0"} tone={hasDirty ? "primary" : "default"} />
-            <CompactStat label="Active engine" value="Playwright" />
-            <CompactStat label="Catalog" value={activeCatalog?.available ? "Live" : activeCatalog ? "Offline fallback" : "Loading"} />
-            <CompactStat label="MCP tools" value={`${enabledToolCount}/${((MCP_TOOLS_BY_PROFILE as any)[activeProfileTab] || []).length} enabled`} />
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Badge tone={hasDirty ? "warning" : "default"} className="px-2.5 py-1 text-[11px]">
+              {hasDirty ? `${Object.values(dirtyTabs).filter(Boolean).length} unsaved` : "All saved"}
+            </Badge>
+            <Badge tone={activeCatalog?.available ? "success" : "warning"} className="px-2.5 py-1 text-[11px]">
+              {activeCatalog?.available ? "Catalog live" : activeCatalog ? "Catalog offline" : "Loading catalog"}
+            </Badge>
           </div>
-          <div className="lg:hidden">
-            <SettingsTabBar
-              active={activeTab}
-              onChange={setActiveTab}
-              dirtyTabs={dirtyTabs}
-              mobile
-            />
-          </div>
+        </div>
+        <div className="lg:hidden">
+          <SettingsTabBar active={activeTab} onChange={setActiveTab} dirtyTabs={dirtyTabs} mobile />
         </div>
       </div>
       <div className="flex items-start gap-6">
-      {/* ── LEFT SIDEBAR NAV ───────────────────────────────────── */}
-      <Card className="sticky top-6 hidden w-64 shrink-0 self-start overflow-hidden rounded-[22px] border-border/70 bg-card/95 shadow-[0_24px_60px_-42px_rgba(0,0,0,0.6)] lg:block">
-        <CardContent className="px-3 pb-2 pt-3">
-          <SettingsTabBar
-            active={activeTab}
-            onChange={setActiveTab}
-            dirtyTabs={dirtyTabs}
-          />
-        </CardContent>
-        <div className="flex flex-col gap-2 border-t border-border/70 px-3 py-3">
-          <Badge tone={activeCatalog?.available ? "success" : activeCatalog ? "warning" : "default"} className="justify-center rounded-lg px-2.5 py-1.5 text-xs">
-            {activeCatalog?.available ? "Catalog ready" : activeCatalog ? "Catalog unavailable" : "Loading..."}
-          </Badge>
-          <Badge tone={pricingStatusTone(activePricingStatus)} className="justify-center rounded-lg px-2.5 py-1.5 text-xs">
-            {activePricingStatus?.model_count > 0
-              ? `${activePricingStatus.model_count} priced models`
-              : activePricingStatus?.api_key_set
-                ? "Pricing not synced"
-                : "Pricing unavailable"}
-          </Badge>
-          <Badge tone={hasDirty ? "warning" : "success"} className="justify-center rounded-lg px-2.5 py-1.5 text-xs">
-            {hasDirty ? "Unsaved changes" : "All synced"}
-          </Badge>
+      {/* ── LEFT NAV — grouped, minimal ─────────────────────────── */}
+      <div className="sticky top-6 hidden w-[220px] shrink-0 self-start lg:block">
+        <div className="space-y-5">
+          <div className="space-y-1">
+            <div className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/60">AI Configuration</div>
+            <SettingsTabBar active={activeTab} onChange={setActiveTab} dirtyTabs={dirtyTabs} filterIds={["models","api-keys"]} />
+          </div>
+          <div className="space-y-1">
+            <div className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/60">Runtime</div>
+            <SettingsTabBar active={activeTab} onChange={setActiveTab} dirtyTabs={dirtyTabs} filterIds={["browser","mcp-tools"]} />
+          </div>
+          <div className="space-y-1">
+            <div className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/60">Preferences</div>
+            <SettingsTabBar active={activeTab} onChange={setActiveTab} dirtyTabs={dirtyTabs} filterIds={["display","notifications"]} />
+          </div>
+          <div className="space-y-1">
+            <div className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/60">Security</div>
+            <SettingsTabBar active={activeTab} onChange={setActiveTab} dirtyTabs={dirtyTabs} filterIds={["account"]} />
+          </div>
+          <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-3">
+            <div className="text-[11px] font-medium text-foreground">Status</div>
+            <div className="mt-2 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Catalog</span><Badge tone={activeCatalog?.available ? "success" : "default"} className="px-1.5 py-0 text-[10px]">{activeCatalog?.available ? "Live" : "Offline"}</Badge></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Keys</span><Badge tone={Object.values(apiKeys).some(Boolean) ? "success" : "warning"} className="px-1.5 py-0 text-[10px]">{Object.values(apiKeys).filter(Boolean).length || 0}/{PROVIDERS.length} set</Badge></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Unsaved</span><span className={hasDirty ? "font-medium text-amber-600" : "text-muted-foreground"}>{hasDirty ? String(Object.values(dirtyTabs).filter(Boolean).length) : "—"}</span></div>
+            </div>
+          </div>
         </div>
-      </Card>
+      </div>
 
       {/* ── RIGHT CONTENT ─────────────────────────────────────── */}
       <div className="flex-1 min-w-0 space-y-6">
@@ -2299,9 +2356,9 @@ export function SettingsPage() {
           {activeTab === "models" ? (
             <section className="space-y-4">
               <SettingsWorkspaceCard
-                eyebrow="Live Google control plane"
+                eyebrow="Live provider control plane"
                 title="Model assignments that stay current"
-                description="Assignments is the operator view. Runtime Controls holds cache and reasoning knobs. Catalog & Costs pulls the live Google catalog so new models appear as soon as Google exposes them."
+                description="Assignments is the operator view. Runtime Controls holds cache and reasoning knobs. Catalog & Costs pulls the live provider catalog so new models appear as soon as Google exposes them."
                 actions={
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone={currentTabDirty ? "warning" : "success"}>
@@ -2405,7 +2462,7 @@ export function SettingsPage() {
                           key={slot.id}
                           eyebrow={slot.note}
                           title={slot.label}
-                          description="Per-agent model routing with direct Google catalog metadata when available."
+                          description="Per-agent model routing with direct provider catalog metadata when available."
                           actions={
                             <div className="flex flex-wrap items-center gap-2">
                               <Badge tone="default">{selection.provider || "google"}</Badge>
@@ -2416,25 +2473,37 @@ export function SettingsPage() {
                           }
                         >
                           <div className="space-y-4">
-                            <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="grid gap-3 sm:grid-cols-3">
                               <Select
-                                label="Live Google model"
+                                label="Provider"
+                                value={selection.provider}
+                                onChange={(next) => updateAgentProvider(slot.id, next)}
+                                options={PROVIDERS.map((pr) => ({ value: pr.id, label: pr.name }))}
+                                placeholder="Select provider"
+                              />
+                              <Select
+                                label="Live model"
                                 value={selection.model}
                                 onChange={(next) => updateAgentModel(slot.id, next)}
                                 options={slotOptions}
                                 // @ts-expect-error -- strict migration
                                 searchable
                                 placeholder="Select model"
-                                emptyMessage="No Google models available"
+                                emptyMessage="No models available"
                               />
                               <Input
                                 label="Manual model ID"
                                 value={selection.model}
                                 onChange={(event) => updateAgentModel(slot.id, event.target.value)}
-                                placeholder="Use a newly released or manual Google model ID"
+                                placeholder="Manual model ID"
                                 className="h-10 font-mono text-[12px]"
                               />
                             </div>
+                            {!(apiKeys as any)[selection.provider] ? (
+                              <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                                <span>No key for <span className="font-medium">{selection.provider}</span> — add it in <span className="font-mono">Provider Keys</span> to enable live catalog.</span>
+                              </div>
+                            ) : null}
 
                             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                               <ModelFact label="Selected model" value={selection.model || "Not set"} tone="primary" />
@@ -2457,7 +2526,7 @@ export function SettingsPage() {
                                   </Badge>
                                 </div>
                                 <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
-                                  {selectedModelMeta.description || "No Google description returned for this model."}
+                                  {selectedModelMeta.description || "No provider description returned for this model."}
                                 </p>
                                 <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
                                   <span className="font-mono">{formatTokenCount(selectedModelMeta.context_window)} ctx</span>
@@ -2467,7 +2536,7 @@ export function SettingsPage() {
                               </div>
                             ) : selection.model ? (
                               <div className="rounded-xl border border-border/70 bg-muted/15 p-4 text-[12px] text-muted-foreground">
-                                This model is not in the current Google catalog response yet. It can still be saved, but capabilities remain unverified until Google returns metadata for it.
+                                This model is not in the current provider catalog response yet. It can still be saved, but capabilities remain unverified until Google returns metadata for it.
                               </div>
                             ) : null}
 
@@ -2501,7 +2570,7 @@ export function SettingsPage() {
                           <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                             Fallback Temperature
                           </span>
-                          <HelpIcon tip="Used only when Google does not return a model-specific default and no override is set." />
+                          <HelpIcon tip="Used only when the provider does not return a model-specific default and no override is set." />
                         </div>
                         <Slider
                           value={Number(fallbackTemperature) || 0}
@@ -2510,7 +2579,7 @@ export function SettingsPage() {
                           min={0}
                           max={2}
                           step={0.1}
-                          description="Direct Google defaults still take precedence when present."
+                          description="Direct provider defaults still take precedence when present."
                         />
                       </div>
                       <div>
@@ -2537,7 +2606,7 @@ export function SettingsPage() {
                         label="Provider prompt caching"
                         checked={providerCacheEnabled}
                         onChange={setProviderCacheEnabled}
-                        description="Use Google-native cache hits for repeated shared prompt context."
+                        description="Use provider-native cache hits for repeated shared prompt context."
                       />
                       <ToggleRow
                         label="Deterministic tool result cache"
@@ -2551,7 +2620,7 @@ export function SettingsPage() {
                   <div className="grid gap-4 xl:grid-cols-2">
                     <FieldGroup
                       title="Explicit Cache"
-                      description="Server-side cached context for repeated Google model runs."
+                      description="Server-side cached context for repeated provider model runs."
                       accent="var(--violet)"
                     >
                       <ToggleRow
@@ -2591,7 +2660,7 @@ export function SettingsPage() {
                         label="Enable thinking"
                         checked={thinkingEnabled}
                         onChange={setThinkingEnabled}
-                        description="Only applied where the selected Google model supports it."
+                        description="Only applied where the selected model supports it."
                       />
                       {thinkingEnabled ? (
                         <div className="max-w-sm">
@@ -2612,7 +2681,7 @@ export function SettingsPage() {
 
                   <FieldGroup
                     title="Overrides and Parallelism"
-                    description="Use overrides sparingly. Google live defaults remain the base layer."
+                    description="Use overrides sparingly. Provider live defaults remain the base layer."
                     accent="var(--mint)"
                   >
                     <div className="grid gap-4 xl:grid-cols-2">
@@ -2664,7 +2733,7 @@ export function SettingsPage() {
               {activeModelWorkspaceView === "catalog" ? (
                 <div className="space-y-4">
                   <SettingsWorkspaceCard
-                    eyebrow="Direct from Google"
+                    eyebrow="Direct from provider"
                     title="Live catalog and defaults"
                     description="This view is fed by the Google models API first, then saved snapshot, then fallback catalog. If Google adds a model later today, it should show up here on load or refresh."
                     actions={
@@ -2739,7 +2808,7 @@ export function SettingsPage() {
                           <Input
                             value={catalogQuery}
                             onChange={(event) => setCatalogQuery(event.target.value)}
-                            placeholder="Search Google models"
+                            placeholder="Search models"
                             className="h-10 pl-9"
                           />
                         </div>
@@ -2775,7 +2844,7 @@ export function SettingsPage() {
                                     {isSelected ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" /> : null}
                                   </div>
                                   <div className="mt-2 line-clamp-2 text-[11.5px] leading-relaxed text-muted-foreground">
-                                    {model.description || "No Google description returned."}
+                                    {model.description || "No provider description returned."}
                                   </div>
                                   <div className="mt-3 flex flex-wrap items-center gap-1.5">
                                     <Badge tone="default" className="px-1.5 py-0.5 text-[9px]">{formatTokenCount(model.context_window)} ctx</Badge>
@@ -2789,7 +2858,7 @@ export function SettingsPage() {
                             })
                           ) : (
                             <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-                              No Google models match this search.
+                              No models match this search.
                             </div>
                           )}
                         </div>
@@ -2801,7 +2870,7 @@ export function SettingsPage() {
                             <SettingsWorkspaceCard
                               eyebrow="Selected model"
                               title={selectedCatalogModel.label || selectedCatalogModel.id}
-                              description={selectedCatalogModel.description || "No Google description returned for this model."}
+                              description={selectedCatalogModel.description || "No provider description returned for this model."}
                               actions={
                                 <div className="flex flex-wrap items-center gap-2">
                                   <Badge tone={releaseChannelTone(selectedCatalogModel.release_channel)}>
@@ -2851,7 +2920,7 @@ export function SettingsPage() {
                                       disabled={!selectedModelFields.length}
                                     >
                                       <Sparkles className="h-3.5 w-3.5" />
-                                      Copy Google defaults
+                                      Copy provider defaults
                                     </Button>
                                   </div>
                                 </div>
@@ -2867,7 +2936,7 @@ export function SettingsPage() {
 
                             <div className="grid gap-4 xl:grid-cols-2">
                               <ParameterSummaryCard
-                                title="Google defaults"
+                                title="Provider defaults"
                                 icon={Sparkles}
                                 tone="primary"
                                 rows={selectedModelDefaultRows}
@@ -2884,7 +2953,7 @@ export function SettingsPage() {
                         ) : (
                           <Card className="rounded-[16px] border border-dashed">
                             <CardContent className="px-5 py-10 text-center text-sm text-muted-foreground">
-                              Select a Google model to inspect live defaults, capability provenance, and estimated costs.
+                              Select a model to inspect live defaults, capability provenance, and estimated costs.
                             </CardContent>
                           </Card>
                         )}
@@ -3546,57 +3615,57 @@ export function SettingsPage() {
 
           {activeTab === "api-keys" ? (
             <section className="space-y-4">
-              <div>
-                <h2 className="text-base font-semibold text-foreground">Gemini API Key Status</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  The key is loaded from environment variables at server start. Add it to your{" "}
-                  <code className="rounded border bg-muted px-1 py-0.5 font-mono text-xs text-foreground">
-                    .env
-                  </code>{" "}
-                  file and rebuild to activate Gemini.
+              <div className="rounded-xl border border-border/60 bg-card p-4">
+                <h2 className="text-sm font-semibold text-foreground">Provider Keys — BYOK</h2>
+                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                  Keys are stored in <span className="font-mono text-xs">data/settings.runtime.yaml</span> (runtime layer, wins over <span className="font-mono text-xs">.env</span>), masked in the UI, and never baked into images. Leave blank to keep existing, or use <span className="font-medium">Clear</span> to remove.
                 </p>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-4">
                 {PROVIDERS.map((item) => {
                   const hasKey = !!apiKeys[item.id];
+                  const edited = (keyEdits as any)[item.id];
+                  const isEdited = edited !== null;
+                  const isCleared = edited === "";
                   return (
-                    <div
-                      key={item.id}
-                      className={cn(
-                        "flex items-start gap-3 rounded-lg border bg-card p-4 transition-colors",
-                        hasKey ? "border-mint/30" : ""
-                      )}
-                    >
-                      <span
-                        className="mt-1 h-2 w-2 shrink-0 rounded-full"
-                        style={{
-                          background: hasKey ? (item.color || "var(--mint)") : "var(--mute-3)",
-                        }}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-sm font-medium text-foreground">{item.name}</div>
-                          <KeyStatus set={hasKey} />
-                        </div>
-                        <div className="mt-0.5 font-mono text-[10px] text-muted-foreground/60">
-                          {item.keyEnv}
-                        </div>
-                        {item.features && item.features.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {item.features.map((feat) => (
-                              <span
-                                key={feat}
-                                className="rounded border bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground"
-                              >
-                                {feat}
-                              </span>
-                            ))}
+                    <div key={item.id} className={["rounded-xl border bg-card p-4", hasKey ? "border-border/60" : "border-border/60", isEdited && !isCleared ? "border-primary/30 bg-primary/[0.02]" : ""].join(" ")}>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: hasKey || (isEdited && !isCleared) ? (item.color || "var(--mint)") : "var(--mute-3)" }} />
+                            <span className="text-sm font-semibold text-foreground">{item.name}</span>
+                            <KeyStatus set={hasKey || (isEdited && !isCleared)} />
+                            {isEdited ? <Badge tone={isCleared ? "warning" : "signal"} className="px-1.5 py-0 text-[10px]">{isCleared ? "will clear" : "edited"}</Badge> : null}
                           </div>
-                        )}
+                          <div className="mt-1 font-mono text-[11px] text-muted-foreground">{item.keyEnv}</div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setShowKey((s: any) => ({ ...s, [item.id]: !(s as any)[item.id] }))}>{(showKey as any)[item.id] ? "Hide" : "Show"}</Button>
+                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setKeyEdits((s: any) => ({ ...s, [item.id]: "" }))}>Clear</Button>
+                          {isEdited ? <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setKeyEdits((s: any) => ({ ...s, [item.id]: null }))}>Undo</Button> : null}
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <Input
+                          value={isEdited ? (edited as string) : ""}
+                          onChange={(e) => setKeyEdits((s: any) => ({ ...s, [item.id]: e.target.value }))}
+                          placeholder={hasKey ? "•••••••••••••••• — enter new key to replace" : "Paste " + item.keyEnv}
+                          type={(showKey as any)[item.id] ? "text" : "password"}
+                          className="h-10 font-mono text-sm"
+                          autoComplete="off"
+                          spellCheck={false}
+                        />
+                        <p className="mt-1.5 text-[11px] text-muted-foreground">
+                          {hasKey ? "Key is set (masked). " : "No key set. "}
+                          {isEdited && !isCleared ? "New value will be saved on save." : isCleared ? "Save to remove this key from runtime config." : "Leave blank to keep current value."}
+                        </p>
                       </div>
                     </div>
                   );
                 })}
+              </div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
+                <span className="font-semibold">Heads up:</span> If you previously set keys in <span className="font-mono">.env</span>, runtime keys win (precedence: <span className="font-mono">default &lt; env &lt; base_yaml &lt; runtime_yaml</span>). Remove provider keys from <span className="font-mono">.env</span> after migrating to keep BYOK as single source.
               </div>
             </section>
           ) : null}

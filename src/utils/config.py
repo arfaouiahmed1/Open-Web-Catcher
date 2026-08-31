@@ -708,6 +708,13 @@ class Settings(BaseSettings):
         existing["payload_cap_bytes"] = self.payload_cap_bytes
         existing["workflow_max_cost_usd"] = self.workflow_max_cost_usd
         existing["workflow_max_tokens"] = self.workflow_max_tokens
+        # BYOK — provider keys via Settings UI (runtime yaml), not .env
+        existing["google_api_key"] = self.google_api_key
+        existing["google_vertex_api_key"] = self.google_vertex_api_key
+        existing["openai_api_key"] = self.openai_api_key
+        existing["anthropic_api_key"] = self.anthropic_api_key
+        existing["openrouter_api_key"] = self.openrouter_api_key
+        existing["nvidia_api_key"] = self.nvidia_api_key
 
         try:
             primary_path.parent.mkdir(parents=True, exist_ok=True)
