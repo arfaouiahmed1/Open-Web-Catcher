@@ -51,7 +51,7 @@ import {
   snapshotServerConfig,
 } from "@/lib/settings-page";
 
-const PROVIDERS = [
+const CORE_PROVIDERS = [
   { id: "google", name: "Google Gemini", keyEnv: "GOOGLE_API_KEY", color: "#4285F4", features: ["caching", "thinking", "vision"], category: "Frontier" },
   { id: "openai", name: "OpenAI", keyEnv: "OPENAI_API_KEY", color: "#10a37f", features: ["reasoning", "vision", "tools"], category: "Frontier" },
   { id: "anthropic", name: "Anthropic", keyEnv: "ANTHROPIC_API_KEY", color: "#d4a574", features: ["thinking", "vision", "tools"], category: "Frontier" },
@@ -69,6 +69,108 @@ const PROVIDERS = [
   { id: "azure", name: "Azure OpenAI", keyEnv: "AZURE_API_KEY", color: "#0078d4", features: ["enterprise", "azure"], category: "Gateway" },
   { id: "bedrock", name: "AWS Bedrock", keyEnv: "BEDROCK_API_KEY", color: "#ff9900", features: ["aws", "hosted"], category: "Gateway" },
 ];
+
+const DIRECTORY_PROVIDERS = [
+  ["opencode", "OpenCode Zen", "OPENCODE_API_KEY", "Gateway", "curated models", "reasoning"],
+  ["opencode-go", "OpenCode Go", "OPENCODE_API_KEY", "Gateway", "coding models", "subscription"],
+  ["litellm", "LiteLLM Gateway", "LITELLM_API_KEY", "Gateway", "unified gateway", "routing"],
+  ["litellm_proxy", "LiteLLM Proxy", "LITELLM_API_KEY", "Gateway", "OpenAI-compatible", "routing"],
+  ["openai_like", "OpenAI-compatible", "OPENAI_API_KEY", "Gateway", "custom endpoint", "bring your URL"],
+  ["custom-openai", "Custom OpenAI-compatible", "CUSTOM_OPENAI_API_KEY", "Gateway", "custom endpoint", "bring your URL"],
+  ["chatgpt", "ChatGPT Subscription", "CHATGPT_API_KEY", "Frontier", "subscription", "OpenAI"],
+  ["zai", "Z.AI", "ZAI_API_KEY", "Frontier", "GLM", "reasoning"],
+  ["minimax", "MiniMax", "MINIMAX_API_KEY", "Frontier", "M-series", "reasoning"],
+  ["moonshot", "Moonshot AI", "MOONSHOT_API_KEY", "Frontier", "Kimi", "reasoning"],
+  ["amazon_nova", "Amazon Nova", "AMAZON_NOVA_API_KEY", "Cloud", "AWS", "multimodal"],
+  ["ai21", "AI21 Labs", "AI21_API_KEY", "Cloud", "Jamba", "enterprise"],
+  ["cerebras", "Cerebras", "CEREBRAS_API_KEY", "Speed", "wafer-scale", "ultra-fast"],
+  ["sambanova", "SambaNova", "SAMBANOVA_API_KEY", "Speed", "DataScale", "inference"],
+  ["nebius", "Nebius AI Studio", "NEBIUS_API_KEY", "Speed", "EU cloud", "inference"],
+  ["hyperbolic", "Hyperbolic", "HYPERBOLIC_API_KEY", "Speed", "open models", "inference"],
+  ["deepinfra", "DeepInfra", "DEEPINFRA_API_KEY", "Speed", "open models", "inference"],
+  ["replicate", "Replicate", "REPLICATE_API_TOKEN", "Open", "open models", "community"],
+  ["huggingface", "Hugging Face", "HF_TOKEN", "Open", "open models", "inference"],
+  ["featherless_ai", "Featherless AI", "FEATHERLESS_AI_API_KEY", "Open", "open models", "serverless"],
+  ["friendliai", "FriendliAI", "FRIENDLI_TOKEN", "Speed", "inference", "fast"],
+  ["baseten", "Baseten", "BASETEN_API_KEY", "Speed", "deployments", "inference"],
+  ["databricks", "Databricks", "DATABRICKS_API_KEY", "Enterprise", "foundation models", "workspace"],
+  ["snowflake", "Snowflake Cortex", "SNOWFLAKE_API_KEY", "Enterprise", "Cortex", "warehouse"],
+  ["watsonx", "IBM watsonx", "WATSONX_API_KEY", "Enterprise", "Granite", "enterprise"],
+  ["azure_ai", "Azure AI Foundry", "AZURE_AI_API_KEY", "Enterprise", "Azure", "enterprise"],
+  ["sagemaker", "AWS SageMaker", "SAGEMAKER_API_KEY", "Enterprise", "JumpStart", "AWS"],
+  ["cloudflare", "Cloudflare AI", "CLOUDFLARE_API_TOKEN", "Gateway", "Workers AI", "edge"],
+  ["vercel_ai_gateway", "Vercel AI Gateway", "VERCEL_AI_GATEWAY_API_KEY", "Gateway", "unified gateway", "routing"],
+  ["portkey", "Portkey", "PORTKEY_API_KEY", "Gateway", "unified gateway", "routing"],
+  ["helicone", "Helicone", "HELICONE_API_KEY", "Gateway", "observability", "routing"],
+  ["ollama", "Ollama", "OLLAMA_API_KEY", "Local", "local models", "private"],
+  ["lmstudio", "LM Studio", "LMSTUDIO_API_KEY", "Local", "local models", "desktop"],
+  ["lm_studio", "LM Studio (legacy ID)", "LMSTUDIO_API_KEY", "Local", "local models", "desktop"],
+  ["vllm", "vLLM", "VLLM_API_KEY", "Local", "self-hosted", "OpenAI API"],
+  ["vllm-local", "vLLM (local)", "VLLM_API_KEY", "Local", "self-hosted", "private"],
+  ["hosted_vllm", "Hosted vLLM", "VLLM_API_KEY", "Local", "self-hosted", "OpenAI API"],
+  ["llamafile", "Llamafile", "LLAMAFILE_API_KEY", "Local", "local models", "single file"],
+  ["oobabooga", "Text Generation WebUI", "OOBABOOGA_API_KEY", "Local", "local models", "self-hosted"],
+  ["xinference", "Xinference", "XINFERENCE_API_KEY", "Local", "local models", "self-hosted"],
+  ["docker_model_runner", "Docker Model Runner", "DOCKER_MODEL_RUNNER_API_KEY", "Local", "local models", "Docker"],
+  ["nscale", "Nscale", "NSCALE_API_KEY", "Cloud", "EU sovereign", "inference"],
+  ["ovhcloud", "OVHcloud AI Endpoints", "OVHCLOUD_API_KEY", "Cloud", "EU cloud", "sovereign"],
+  ["scaleway", "Scaleway", "SCALEWAY_API_KEY", "Cloud", "EU cloud", "inference"],
+  ["lambda_ai", "Lambda AI", "LAMBDA_API_KEY", "Cloud", "GPU cloud", "inference"],
+  ["volcengine", "Volcano Engine", "VOLCENGINE_API_KEY", "Cloud", "Doubao", "inference"],
+  ["dashscope", "Alibaba DashScope", "DASHSCOPE_API_KEY", "Cloud", "Qwen", "inference"],
+  ["publicai", "PublicAI", "PUBLICAI_API_KEY", "Open", "open models", "inference"],
+  ["together_ai", "Together AI (LiteLLM ID)", "TOGETHER_API_KEY", "Speed", "open models", "inference"],
+  ["fireworks_ai", "Fireworks AI (LiteLLM ID)", "FIREWORKS_API_KEY", "Speed", "open models", "inference"],
+  ["codestral", "Codestral", "CODESTRAL_API_KEY", "Open", "code models", "Mistral"],
+  ["voyage", "Voyage AI", "VOYAGE_API_KEY", "Open", "embeddings", "retrieval"],
+  ["jina_ai", "Jina AI", "JINA_API_KEY", "Open", "embeddings", "retrieval"],
+  ["cohere_chat", "Cohere Chat", "COHERE_API_KEY", "Open", "Command", "chat"],
+  ["meta_llama", "Meta Llama API", "META_API_KEY", "Open", "Llama", "open models"],
+  ["morph", "Morph", "MORPH_API_KEY", "Open", "code models", "fast"],
+  ["synthetic", "Synthetic", "SYNTHETIC_API_KEY", "Open", "open models", "inference"],
+  ["poe", "Poe", "POE_API_KEY", "Gateway", "multi-model", "aggregation"],
+  ["chutes", "Chutes", "CHUTES_API_KEY", "Open", "open models", "inference"],
+  ["galadriel", "Galadriel", "GALADRIEL_API_KEY", "Open", "open models", "inference"],
+  ["cometapi", "CometAPI", "COMETAPI_API_KEY", "Gateway", "multi-model", "aggregation"],
+  ["aiml", "AI/ML API", "AIML_API_KEY", "Gateway", "multi-model", "aggregation"],
+  ["oci", "Oracle OCI Generative AI", "OCI_API_KEY", "Enterprise", "OCI", "enterprise"],
+  ["manus", "Manus", "MANUS_API_KEY", "Gateway", "agent API", "agents"],
+  ["wandb", "W&B Inference", "WANDB_API_KEY", "Gateway", "inference", "observability"],
+  ["lemonade", "Lemonade", "LEMONADE_API_KEY", "Local", "AMD local", "OpenAI API"],
+  ["xiaomi_mimo", "Xiaomi MiMo", "XIAOMI_MIMO_API_KEY", "Open", "MiMo", "multimodal"],
+  ["tensormesh", "TensorMesh", "TENSORMESH_API_KEY", "Open", "inference", "open models"],
+  ["apertis", "Apertis", "APERTIS_API_KEY", "Open", "open models", "inference"],
+  ["bytez", "Bytez", "BYTEZ_API_KEY", "Open", "open models", "inference"],
+  ["compactifai", "CompactifAI", "COMPACTIFAI_API_KEY", "Open", "inference", "optimization"],
+  ["custom", "Custom Provider", "CUSTOM_API_KEY", "Gateway", "custom endpoint", "bring your URL"],
+  ["datarobot", "DataRobot", "DATAROBOT_API_KEY", "Enterprise", "deployment", "enterprise"],
+  ["fal_ai", "fal.ai", "FAL_AI_API_KEY", "Open", "media models", "inference"],
+  ["gigachat", "GigaChat", "GIGACHAT_API_KEY", "Cloud", "chat", "inference"],
+  ["inception", "Inception", "INCEPTION_API_KEY", "Open", "reasoning", "inference"],
+  ["infinity", "Infinity", "INFINITY_API_KEY", "Local", "embeddings", "self-hosted"],
+  ["maritalk", "Maritaca AI", "MARITALK_API_KEY", "Open", "chat", "inference"],
+  ["modelscope", "ModelScope", "MODELSCOPE_API_KEY", "Open", "open models", "inference"],
+  ["nano-gpt", "NanoGPT", "NANO_GPT_API_KEY", "Gateway", "multi-model", "aggregation"],
+  ["nlp_cloud", "NLP Cloud", "NLP_CLOUD_API_KEY", "Cloud", "NLP", "inference"],
+  ["novita", "Novita AI", "NOVITA_API_KEY", "Cloud", "open models", "inference"],
+  ["nvidia_nim", "NVIDIA NIM (LiteLLM ID)", "NVIDIA_API_KEY", "Enterprise", "NIM", "inference"],
+  ["petals", "Petals", "PETALS_API_KEY", "Open", "distributed", "open models"],
+  ["predibase", "Predibase", "PREDIBASE_API_KEY", "Enterprise", "fine-tuning", "inference"],
+  ["recraft", "Recraft", "RECRAFT_API_KEY", "Open", "image models", "generation"],
+  ["sagemaker_chat", "AWS SageMaker Chat", "SAGEMAKER_API_KEY", "Enterprise", "JumpStart", "AWS"],
+  ["sagemaker_nova", "AWS SageMaker Nova", "SAGEMAKER_API_KEY", "Enterprise", "Nova", "AWS"],
+  ["sap", "SAP AI Core", "SAP_API_KEY", "Enterprise", "enterprise", "inference"],
+  ["stability", "Stability AI", "STABILITY_API_KEY", "Open", "image models", "generation"],
+  ["tencent", "Tencent Hunyuan", "TENCENT_API_KEY", "Cloud", "Hunyuan", "inference"],
+  ["topaz", "Topaz", "TOPAZ_API_KEY", "Open", "inference", "open models"],
+  ["vertex_ai", "Vertex AI", "VERTEX_AI_API_KEY", "Cloud", "Gemini", "Google Cloud"],
+  ["vertex_ai_beta", "Vertex AI (Beta)", "VERTEX_AI_API_KEY", "Cloud", "Gemini", "Google Cloud"],
+].map(([id, name, keyEnv, category, featureA, featureB]) => ({
+  id, name, keyEnv, category, features: [featureA, featureB], color: "var(--sky)",
+}));
+
+const PROVIDERS = [...CORE_PROVIDERS, ...DIRECTORY_PROVIDERS];
+const EMPTY_PROVIDER_KEYS = Object.fromEntries(PROVIDERS.map((provider) => [provider.id, null])) as Record<string, string | null>;
 
 const AGENT_SLOTS = [
   { id: "classification", label: "Classification", note: "Page typing" },
@@ -471,7 +573,7 @@ function normalizeAgentModelConfig(
       // @ts-expect-error -- strict migration
       row?.provider || defaults[id].provider || fallbackProvider,
     ).toLowerCase();
-    const allowedProviders = new Set(["google", "openai", "anthropic", "openrouter", "nvidia", "google-vertex"]);
+    const allowedProviders = new Set(PROVIDERS.map((providerOption: any) => providerOption.id));
     const finalProvider = allowedProviders.has(normalizedProvider) ? normalizedProvider : fallbackProvider;
     // @ts-expect-error -- strict migration
     next[id] = {
@@ -1531,7 +1633,8 @@ export function SettingsPage() {
   const [pricingStatus, setPricingStatus] = useState({});
   const [pricingSyncLoading, setPricingSyncLoading] = useState("");
   const [saving, setSaving] = useState(false);
-  const [keyEdits, setKeyEdits] = useState<Record<string, string | null>>({ google: null, openai: null, anthropic: null, openrouter: null, nvidia: null, mistral: null, cohere: null, groq: null, together: null, fireworks: null, perplexity: null, deepseek: null, xai: null, upstage: null, azure: null, bedrock: null });
+  const [keyEdits, setKeyEdits] = useState<Record<string, string | null>>(() => ({ ...EMPTY_PROVIDER_KEYS }));
+  const [baseUrlEdits, setBaseUrlEdits] = useState<Record<string, string | null>>({});
   const [showKey, setShowKey] = useState<Record<string, boolean>>({});
   const [keyTestState, setKeyTestState] = useState<Record<string, string>>({});
   const [providerKeyQuery, setProviderKeyQuery] = useState("");
@@ -1815,7 +1918,11 @@ export function SettingsPage() {
     () => getDirtyTabs(savedConfigSnapshot, serverDraft),
     [savedConfigSnapshot, serverDraft],
   );
-  const apiKeysDirty = useMemo(() => Object.values(keyEdits).some((v) => v !== null), [keyEdits]);
+  const apiKeysDirty = useMemo(
+    () => Object.values(keyEdits).some((value) => value !== null)
+      || Object.values(baseUrlEdits).some((value) => value !== null),
+    [baseUrlEdits, keyEdits],
+  );
   const dirtyTabs = useMemo(() => ({ ..._baseDirtyTabs, "api-keys": apiKeysDirty }), [_baseDirtyTabs, apiKeysDirty]);
   const currentTabDirty = Boolean((dirtyTabs as any)[activeTab]);
   const otherDirtyCount = useMemo(
@@ -1946,10 +2053,14 @@ export function SettingsPage() {
     );
     setModelConfigWarnings(payload.model_config_warnings || []);
     setActiveMcpBrowserTab(payload.browser_engine || "playwright");
-    setKeyEdits({ google: null, openai: null, anthropic: null, openrouter: null, nvidia: null, mistral: null, cohere: null, groq: null, together: null, fireworks: null, perplexity: null, deepseek: null, xai: null, upstage: null, azure: null, bedrock: null });
+    setKeyEdits({ ...EMPTY_PROVIDER_KEYS });
+    setBaseUrlEdits({});
     setSavedTab("");
 
-    const providersToLoad = PROVIDERS.map((pr: any) => pr.id);
+    const providersToLoad = [...new Set([
+      fallbackProvider,
+      ...Object.keys(payload.api_keys || {}).filter((providerId) => payload.api_keys[providerId]),
+    ])];
     await Promise.all(
       providersToLoad.map((providerId) =>
         loadProviderCatalog(providerId, { force: true }).catch(() => null),
@@ -2170,6 +2281,14 @@ export function SettingsPage() {
         if ((keyEdits as any).upstage !== null) payload.upstage_api_key = (keyEdits as any).upstage;
         if ((keyEdits as any).azure !== null) payload.azure_api_key = (keyEdits as any).azure;
         if ((keyEdits as any).bedrock !== null) payload.bedrock_api_key = (keyEdits as any).bedrock;
+        const providerApiKeys = Object.fromEntries(
+          Object.entries(keyEdits).filter(([, value]) => value !== null),
+        );
+        const providerBaseUrls = Object.fromEntries(
+          Object.entries(baseUrlEdits).filter(([, value]) => value !== null),
+        );
+        if (Object.keys(providerApiKeys).length) payload.provider_api_keys = providerApiKeys;
+        if (Object.keys(providerBaseUrls).length) payload.provider_base_urls = providerBaseUrls;
         return Object.keys(payload).length ? payload : null;
       }
       default:
@@ -2233,6 +2352,30 @@ export function SettingsPage() {
       setConfigErr(error.message || "Could not save config.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function testProvider(providerId: string) {
+    setKeyTestState((state) => ({ ...state, [providerId]: "testing" }));
+    try {
+      if ((keyEdits as any)[providerId] !== null || (baseUrlEdits as any)[providerId] !== null) {
+        await saveConfig("api-keys");
+      }
+      const result = await loadProviderCatalog(providerId, { force: true });
+      if (!result?.available && !result?.models?.length) throw new Error(result?.error || "No models returned");
+      setKeyTestState((state) => ({ ...state, [providerId]: "ok" }));
+      setTimeout(() => setKeyTestState((state) => {
+        const next = { ...state };
+        delete next[providerId];
+        return next;
+      }), 2500);
+    } catch {
+      setKeyTestState((state) => ({ ...state, [providerId]: "error" }));
+      setTimeout(() => setKeyTestState((state) => {
+        const next = { ...state };
+        delete next[providerId];
+        return next;
+      }), 2500);
     }
   }
 
@@ -2473,15 +2616,17 @@ export function SettingsPage() {
                                 label="Provider"
                                 value={selection.provider}
                                 onChange={(next) => updateAgentProvider(slot.id, next)}
-                                options={PROVIDERS.map((pr) => ({ value: pr.id, label: pr.name }))}
+                                options={PROVIDERS.map((pr) => ({ value: pr.id, label: pr.name, description: pr.category }))}
+                                searchable
+                                searchPlaceholder="Search providers…"
                                 placeholder="Select provider"
+                                emptyMessage="No providers match"
                               />
                               <Select
                                 label="Live model"
                                 value={selection.model}
                                 onChange={(next) => updateAgentModel(slot.id, next)}
                                 options={slotOptions}
-                                // @ts-expect-error -- strict migration
                                 searchable
                                 placeholder="Select model"
                                 emptyMessage="No models available"
@@ -3641,7 +3786,7 @@ export function SettingsPage() {
                       <button key={st} onClick={() => setProviderKeyStatus(st)} className={["inline-flex h-6 items-center rounded-full border px-2.5 text-[12px] font-[500] tracking-[-0.12px] transition-colors", providerKeyStatus === st ? "border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.06)] text-[#f7f8f8]" : "border-transparent text-[#8a8f98] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#d0d6e0]"].join(" ")}>{st}</button>
                     ))}
                     <span className="mx-1 h-4 w-px bg-[rgba(255,255,255,0.08)]" />
-                    {["All","Frontier","Speed","Open","Gateway"].map((cat) => (
+                    {["All","Frontier","Speed","Open","Cloud","Enterprise","Community","Local","Gateway"].map((cat) => (
                       <button key={cat} onClick={() => setProviderKeyCategory(cat)} className={["inline-flex h-6 items-center rounded-full border px-2.5 text-[12px] font-[500] tracking-[-0.12px] transition-colors", providerKeyCategory === cat ? "border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.06)] text-[#f7f8f8]" : "border-transparent text-[#8a8f98] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#d0d6e0]"].join(" ")}>{cat}</button>
                     ))}
                   </div>
@@ -3665,7 +3810,7 @@ export function SettingsPage() {
                     if (!groups[g]) groups[g] = [];
                     groups[g].push(pr);
                   });
-                  const order = ["Frontier","Speed","Open","Gateway"];
+                  const order = ["Frontier","Speed","Open","Cloud","Enterprise","Community","Local","Gateway"];
                   const sortedGroups = Object.keys(groups).sort((a,b) => order.indexOf(a) - order.indexOf(b));
                   if (filtered.length === 0) {
                     return (
@@ -3694,6 +3839,12 @@ export function SettingsPage() {
                           const show = !!(showKey as any)[item.id];
                           const testState = (keyTestState as any)[item.id] || "";
                           const isTesting = testState === "testing";
+                          const registryProvider = ((config as any)?.provider_registry || []).find((row: any) => row.id === item.id);
+                          const defaultBaseUrl = item.baseUrl || registryProvider?.base_url || "";
+                          const configuredBaseUrl = ((config as any)?.provider_base_urls || {})[item.id] || "";
+                          const editedBaseUrl = (baseUrlEdits as any)[item.id];
+                          const effectiveBaseUrl = editedBaseUrl !== null && editedBaseUrl !== undefined ? editedBaseUrl : configuredBaseUrl;
+                          const showEndpoint = !defaultBaseUrl || !!configuredBaseUrl || editedBaseUrl !== null && editedBaseUrl !== undefined;
                           return (
                             <div key={item.id} className={["group relative flex flex-col gap-3 px-4 py-4 transition-colors", idx !== 0 ? "border-t border-[rgba(255,255,255,0.06)]" : "", isEdited && !isCleared ? "bg-[rgba(94,106,210,0.04)]" : "hover:bg-[rgba(255,255,255,0.03)]"].join(" ")}>
                               <div className="flex items-start justify-between gap-4">
@@ -3715,10 +3866,7 @@ export function SettingsPage() {
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1">
                                   <button onClick={() => setShowKey((s: any) => ({ ...s, [item.id]: !(s as any)[item.id] }))} className="inline-flex h-7 items-center rounded-[6px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] px-2.5 text-[12px] font-[500] tracking-[-0.12px] text-[#8a8f98] hover:bg-[rgba(255,255,255,0.06)] hover:text-[#f7f8f8]">{show ? "Hide" : "Show"}</button>
-                                  <button onClick={async () => {
-                                    setKeyTestState((s: any) => ({ ...s, [item.id]: "testing" }));
-                                    try { await loadProviderCatalog(item.id, { force: true }); setKeyTestState((s: any) => ({ ...s, [item.id]: "ok" })); setTimeout(() => setKeyTestState((s: any) => { const n = { ...s }; delete n[item.id]; return n; }), 2500); } catch { setKeyTestState((s: any) => ({ ...s, [item.id]: "error" })); setTimeout(() => setKeyTestState((s: any) => { const n = { ...s }; delete n[item.id]; return n; }), 2500); }
-                                  }} disabled={isTesting} className="inline-flex h-7 items-center gap-1 rounded-[6px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] px-2.5 text-[12px] font-[500] tracking-[-0.12px] text-[#8a8f98] hover:bg-[rgba(255,255,255,0.06)] hover:text-[#f7f8f8] disabled:opacity-50">
+                                  <button onClick={() => testProvider(item.id)} disabled={isTesting} className="inline-flex h-7 items-center gap-1 rounded-[6px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] px-2.5 text-[12px] font-[500] tracking-[-0.12px] text-[#8a8f98] hover:bg-[rgba(255,255,255,0.06)] hover:text-[#f7f8f8] disabled:opacity-50">
                                     {isTesting ? <Loader2 className="size-3 animate-spin" /> : null} Test
                                   </button>
                                   <button onClick={() => setKeyEdits((s: any) => ({ ...s, [item.id]: "" }))} className="inline-flex h-7 items-center rounded-[6px] border border-transparent px-2.5 text-[12px] font-[500] tracking-[-0.12px] text-[#8a8f98] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#d0d6e0]">Clear</button>
@@ -3730,6 +3878,12 @@ export function SettingsPage() {
                                   <input value={isEdited ? (edited as string) : ""} onChange={(e) => setKeyEdits((s: any) => ({ ...s, [item.id]: e.target.value }))} placeholder={hasKey ? "•••••••••••••••• — paste new key to replace" : "Paste " + item.keyEnv} type={show ? "text" : "password"} className="h-8 w-full rounded-[6px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] px-3 font-mono text-[12px] tracking-[-0.08px] text-[#f7f8f8] placeholder:text-[#62666d] outline-none focus:border-[rgba(94,106,210,0.4)] focus:bg-[rgba(255,255,255,0.04)]" spellCheck={false} autoComplete="off" />
                                 </div>
                               </div>
+                              {showEndpoint ? (
+                                <div className="relative">
+                                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-[600] uppercase tracking-[0.08em] text-[#62666d]">URL</span>
+                                  <input value={effectiveBaseUrl} onChange={(e) => setBaseUrlEdits((s: any) => ({ ...s, [item.id]: e.target.value }))} placeholder={defaultBaseUrl || "https://your-endpoint.example.com/v1"} className="h-7 w-full rounded-[6px] border border-[rgba(255,255,255,0.06)] bg-transparent pl-12 pr-3 font-mono text-[11px] tracking-[-0.08px] text-[#8a8f98] placeholder:text-[#62666d] outline-none focus:border-[rgba(94,106,210,0.35)]" spellCheck={false} autoComplete="off" />
+                                </div>
+                              ) : null}
                               <div className="flex items-center justify-between">
                                 <p className="text-[11px] leading-[1.4] tracking-[-0.08px] text-[#62666d]">{hasKey ? "Key set — masked. " : "No key — "}{isEdited && !isCleared ? "Will save new value." : isCleared ? "Will remove from runtime on save." : "Leave blank to keep."}</p>
                               </div>

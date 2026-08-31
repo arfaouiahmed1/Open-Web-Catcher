@@ -489,6 +489,10 @@ class Settings(BaseSettings):
     azure_api_key: str = ""
     azure_api_base: str = ""
     bedrock_api_key: str = ""
+    # Extensible provider credentials and endpoints configured from Settings UI.
+    # Values are persisted only in the runtime YAML layer and never returned raw.
+    provider_api_keys: dict[str, str] = Field(default_factory=dict)
+    provider_base_urls: dict[str, str] = Field(default_factory=dict)
 
     observability_enabled: bool = Field(
         default=True,
@@ -739,6 +743,19 @@ class Settings(BaseSettings):
         existing["azure_api_key"] = self.azure_api_key
         existing["azure_api_base"] = self.azure_api_base
         existing["bedrock_api_key"] = self.bedrock_api_key
+        existing["provider_api_keys"] = {
+            key.strip().lower(): value
+            for key, value in self.provider_api_keys.items()
+            if isinstance(key, str) and key.strip() and not is_blank_setting_value(value)
+        }
+        existing["provider_base_urls"] = {
+            key.strip().lower(): value.strip()
+            for key, value in self.provider_base_urls.items()
+            if isinstance(key, str)
+            and key.strip()
+            and isinstance(value, str)
+            and value.strip()
+        }
 
         try:
             primary_path.parent.mkdir(parents=True, exist_ok=True)

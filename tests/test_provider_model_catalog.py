@@ -1,13 +1,19 @@
+from src.api.provider_config import ui_config_payload
+from src.utils import provider_models
 from src.utils.config import Settings
 from src.utils.provider_models import (
+    SUPPORTED_PROVIDERS,
     build_model_selection_details,
     collect_model_config_warnings,
     get_provider_model_catalog,
     is_google_genai_model_id,
     normalize_agent_model_config,
+    provider_base_url,
+    provider_api_key,
     resolve_google_model_runtime_profile,
     resolve_model_context_window,
 )
+from src.llm.provider import normalize_model_name
 
 
 def test_saved_catalog_is_used_before_static_fallback_when_key_missing() -> None:
@@ -79,7 +85,7 @@ def test_agent_model_config_normalizes_legacy_non_google_provider() -> None:
 
     normalized = normalize_agent_model_config(settings, raw)
 
-    assert normalized["classification"]["provider"] == "google"
+    assert normalized["classification"]["provider"] == "openai"
     assert normalized["orchestrator"]["provider"] == "google"
 
 
@@ -217,3 +223,56 @@ def test_model_selection_details_and_warnings_report_runtime_adjustments() -> No
     )
     assert details["classification"]["catalog_status"] == "verified"
     assert details["classification"]["warnings"]
+
+
+def test_litellm_directory_includes_opencode_and_local_gateways() -> None:
+    assert {"opencode", "opencode-go", "litellm", "ollama", "custom-openai"}.issubset(
+        SUPPORTED_PROVIDERS
+    )
+
+
+def test_dynamic_provider_credentials_and_endpoint_are_settings_owned() -> None:
+    settings = Settings(
+        provider_api_keys={"opencode": "[REDACTED]"},
+        provider_base_urls={"custom-openai": "http://gateway.test/v1"},
+    )
+
+    assert provider_base_url(settings, "opencode") == "https://opencode.ai/zen/v1"
+    assert provider_base_url(settings, "opencode-go") == "https://opencode.ai/zen/go/v1"
+    assert provider_base_url(settings, "custom-openai") == "http://gateway.test/v1"
+    assert provider_api_key(settings, "opencode") == "[REDACTED]"
+
+
+def test_openai_compatible_catalog_uses_registry_endpoint(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    def fake_request(url, *, headers=None, timeout_seconds=None, provider=None, **kwargs):
+        calls.update(url=url, headers=headers, provider=provider)
+        return {"data": [{"id": "deepseek-v4-pro"}, {"id": "deepseek-v4-flash"}]}
+
+    monkeypatch.setattr(provider_models, "_request_json", fake_request)
+    settings = Settings(provider_api_keys={"opencode": "[REDACTED]"})
+
+    payload = get_provider_model_catalog(settings, provider="opencode", max_models=20)
+
+    assert payload["source"] == "provider_api"
+    assert [row["id"] for row in payload["models"]] == ["deepseek-v4-flash", "deepseek-v4-pro"]
+    assert calls["url"] == "https://opencode.ai/zen/v1/models"
+    assert calls["provider"] == "opencode"
+
+
+def test_dynamic_provider_status_is_exposed_without_exposing_credentials() -> None:
+    settings = Settings(provider_api_keys={"opencode": "[REDACTED]"})
+
+    payload = ui_config_payload(settings)
+
+    assert payload["api_keys"]["opencode"] is True
+    assert "provider_api_keys" not in payload
+    assert "[REDACTED]" not in str(payload)
+
+
+def test_openai_compatible_provider_uses_openai_litellm_route() -> None:
+    assert normalize_model_name("opencode/gpt-5.6-luna", "opencode") == "openai/gpt-5.6-luna"
+    assert normalize_model_name("claude-opus-4-6", "opencode") == "anthropic/claude-opus-4-6"
+    assert normalize_model_name("gemini-3.7-flash", "opencode") == "gemini/gemini-3.7-flash"
+    assert normalize_model_name("qwen2.5-coder", "custom-openai") == "openai/qwen2.5-coder"

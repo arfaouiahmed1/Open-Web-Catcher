@@ -74,6 +74,7 @@ from src.utils.provider_models import (
     PROVIDER_METADATA,
     SUPPORTED_PROVIDERS,
     ProviderModelCatalogError,
+    provider_api_key,
 )
 from src.utils.provider_pricing import ProviderPricingSyncError, fetch_provider_pricing
 from src.utils.service_health import (
@@ -525,9 +526,7 @@ def _provider_api_key_available(settings: Settings, provider: str) -> bool:
     provider_key = str(provider or "").strip().lower()
     if provider_key in {"gemini", "google_genai"}:
         provider_key = "google"
-    return provider_key in PROVIDER_METADATA and bool(
-        str(getattr(settings, f"{provider_key}_api_key", "") or "").strip()
-    )
+    return provider_key in PROVIDER_METADATA and bool(provider_api_key(settings, provider_key))
 
 
 def _provider_pricing_status_payload(session, settings: Settings) -> dict[str, dict[str, Any]]:
@@ -3592,6 +3591,17 @@ def ui_get_config():
         if _k in raw_sources:
             _v = raw_sources[_k].get("value") if isinstance(raw_sources[_k], dict) else None
             raw_sources[_k] = {**raw_sources[_k], "value": "***" if _v else "", "masked": True} if isinstance(raw_sources[_k], dict) else raw_sources[_k]
+    if "provider_api_keys" in raw_sources:
+        _provider_key_values = raw_sources["provider_api_keys"]
+        raw_sources["provider_api_keys"] = {
+            **_provider_key_values,
+            "value": {
+                str(key): "***"
+                for key, value in dict(_provider_key_values.get("value") or {}).items()
+                if str(value or "").strip()
+            },
+            "masked": True,
+        }
     payload["settings_sources"] = raw_sources
     return payload
 

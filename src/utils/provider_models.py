@@ -97,6 +97,90 @@ PROVIDER_METADATA: dict[str, dict[str, str]] = {
     },
 }
 
+# LiteLLM's provider registry is intentionally broader than the curated direct
+# adapters above. These IDs use the generic OpenAI-compatible model catalog
+# path unless a provider-specific adapter exists, so adding a LiteLLM provider
+# does not require another hard-coded UI/API branch.
+LITELLM_PROVIDER_IDS: tuple[str, ...] = (
+    "chatgpt", "openai_like", "xai", "zai", "bytez", "replicate", "huggingface", "portkey", "cohere_chat",
+    "together_ai", "datarobot", "vertex_ai", "vertex_ai_beta", "ai21", "baseten",
+    "azure_ai", "sagemaker", "sagemaker_chat", "sagemaker_nova", "vllm", "nlp_cloud",
+    "petals", "oobabooga", "ollama", "deepinfra", "gigachat", "nvidia_nim",
+    "cerebras", "volcengine", "codestral", "dashscope", "modelscope", "moonshot", "jina_ai",
+    "publicai", "morph", "lambda_ai", "inception", "sambanova", "maritalk", "voyage",
+    "cloudflare", "xinference", "fireworks_ai", "friendliai", "featherless_ai",
+    "watsonx", "predibase", "databricks", "compactifai", "docker_model_runner",
+    "custom", "litellm_proxy", "hosted_vllm", "tencent", "llamafile", "lm_studio",
+    "galadriel", "nebius", "infinity", "novita", "topaz", "sap", "snowflake",
+    "meta_llama", "nscale", "helicone", "hyperbolic", "recraft", "fal_ai", "stability",
+    "aiml", "cometapi", "oci", "vercel_ai_gateway", "manus", "wandb", "ovhcloud",
+    "scaleway", "lemonade", "amazon_nova", "minimax", "synthetic", "apertis",
+    "nano-gpt", "poe", "chutes", "xiaomi_mimo", "tensormesh", "opencode", "opencode-go",
+    "litellm", "ollama", "lmstudio", "vllm-local", "custom-openai",
+)
+
+_PROVIDER_DISPLAY_NAMES: dict[str, str] = {
+    "chatgpt": "ChatGPT Subscription", "openai_like": "OpenAI-compatible", "zai": "Z.AI",
+    "vertex_ai": "Vertex AI", "vertex_ai_beta": "Vertex AI (Beta)", "together_ai": "Together AI",
+    "nvidia_nim": "NVIDIA NIM", "fireworks_ai": "Fireworks AI", "lm_studio": "LM Studio",
+    "lmstudio": "LM Studio", "litellm_proxy": "LiteLLM Proxy", "litellm": "LiteLLM Gateway",
+    "hosted_vllm": "Hosted vLLM", "vllm-local": "vLLM (local)", "custom-openai": "Custom OpenAI-compatible",
+    "opencode": "OpenCode Zen", "opencode-go": "OpenCode Go", "amazon_nova": "Amazon Nova",
+    "xiaomi_mimo": "Xiaomi MiMo", "nano-gpt": "NanoGPT", "vercel_ai_gateway": "Vercel AI Gateway",
+    "ovhcloud": "OVHcloud AI Endpoints", "nscale": "Nscale", "cloudflare": "Cloudflare AI",
+}
+
+_PROVIDER_BASE_URLS: dict[str, str] = {
+    "google": "https://generativelanguage.googleapis.com/v1beta",
+    "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "nvidia": "https://integrate.api.nvidia.com/v1",
+    "nvidia_nim": "https://integrate.api.nvidia.com/v1",
+    "azure": "",
+    "opencode": "https://opencode.ai/zen/v1",
+    "opencode-go": "https://opencode.ai/zen/go/v1",
+    "litellm": "http://localhost:4000/v1",
+    "litellm_proxy": "http://localhost:4000/v1",
+    "ollama": "http://localhost:11434/v1",
+    "lmstudio": "http://localhost:1234/v1",
+    "lm_studio": "http://localhost:1234/v1",
+    "vllm": "http://localhost:8001/v1",
+    "vllm-local": "http://localhost:8001/v1",
+    "llamafile": "http://localhost:8080/v1",
+    "portkey": "https://api.portkey.ai/v1",
+    "deepseek": "https://api.deepseek.com/v1",
+    "mistral": "https://api.mistral.ai/v1",
+    "groq": "https://api.groq.com/openai/v1",
+    "together": "https://api.together.xyz/v1",
+    "together_ai": "https://api.together.xyz/v1",
+    "fireworks": "https://api.fireworks.ai/inference/v1",
+    "fireworks_ai": "https://api.fireworks.ai/inference/v1",
+    "perplexity": "https://api.perplexity.ai",
+    "xai": "https://api.x.ai/v1",
+    "upstage": "https://api.upstage.ai/v1",
+    "cerebras": "https://api.cerebras.ai/v1",
+    "sambanova": "https://api.sambanova.ai/v1",
+    "nebius": "https://api.tokenfactory.nebius.com/v1",
+}
+
+for _provider_id in LITELLM_PROVIDER_IDS:
+    PROVIDER_METADATA.setdefault(
+        _provider_id,
+        {
+            "id": _provider_id,
+            "name": _PROVIDER_DISPLAY_NAMES.get(
+                _provider_id, _provider_id.replace("_", " ").replace("-", " ").title()
+            ),
+            "key_env": f"{_provider_id.replace('-', '_').upper()}_API_KEY",
+            "base_url": _PROVIDER_BASE_URLS.get(_provider_id, ""),
+        },
+    )
+
+for _provider_id, _base_url in _PROVIDER_BASE_URLS.items():
+    if _provider_id in PROVIDER_METADATA and _base_url:
+        PROVIDER_METADATA[_provider_id]["base_url"] = _base_url
+
 SUPPORTED_PROVIDERS: tuple[str, ...] = tuple(PROVIDER_METADATA)
 
 
@@ -185,6 +269,50 @@ FALLBACK_MODELS: dict[str, list[dict[str, Any]]] = {
     ],
 }
 
+FALLBACK_MODELS.update(
+    {
+        "opencode": [
+            {"id": "gpt-5.6-luna", "label": "GPT 5.6 Luna", "description": "OpenCode Zen model.", "context_window": 200_000},
+            {"id": "gpt-5.6-sol", "label": "GPT 5.6 Sol", "description": "OpenCode Zen model.", "context_window": 200_000},
+            {"id": "gpt-5.5", "label": "GPT 5.5", "description": "OpenCode Zen model.", "context_window": 200_000},
+            {"id": "claude-opus-4-6", "label": "Claude Opus 4.6", "description": "OpenCode Zen model.", "context_window": 200_000},
+            {"id": "kimi-k2.5", "label": "Kimi K2.5", "description": "OpenCode Zen model.", "context_window": 128_000},
+        ],
+        "opencode-go": [
+            {"id": "glm-5.3-flash", "label": "GLM 5.3 Flash", "description": "OpenCode Go model.", "context_window": 128_000},
+            {"id": "glm-5.3", "label": "GLM 5.3", "description": "OpenCode Go model.", "context_window": 128_000},
+            {"id": "kimi-k3", "label": "Kimi K3", "description": "OpenCode Go model.", "context_window": 128_000},
+            {"id": "longcat-2.0", "label": "LongCat 2.0", "description": "OpenCode Go model.", "context_window": 128_000},
+        ],
+        "litellm": [
+            {"id": "gpt-4o", "label": "GPT-4o", "description": "Model exposed by your LiteLLM gateway.", "context_window": 128_000},
+            {"id": "claude-sonnet-4", "label": "Claude Sonnet 4", "description": "Model exposed by your LiteLLM gateway.", "context_window": 200_000},
+            {"id": "deepseek-chat", "label": "DeepSeek Chat", "description": "Model exposed by your LiteLLM gateway.", "context_window": 64_000},
+        ],
+        "litellm_proxy": [
+            {"id": "gpt-4o", "label": "GPT-4o", "description": "Model exposed by your LiteLLM proxy.", "context_window": 128_000},
+        ],
+        "ollama": [
+            {"id": "llama3.2", "label": "Llama 3.2", "description": "Local Ollama model.", "context_window": 128_000},
+            {"id": "qwen2.5-coder", "label": "Qwen 2.5 Coder", "description": "Local Ollama model.", "context_window": 32_768},
+        ],
+        "lmstudio": [
+            {"id": "local-model", "label": "Local model", "description": "Model served by LM Studio.", "context_window": 32_768},
+        ],
+        "lm_studio": [
+            {"id": "local-model", "label": "Local model", "description": "Model served by LM Studio.", "context_window": 32_768},
+        ],
+        "vllm": [
+            {"id": "local-model", "label": "Local model", "description": "Model served by vLLM.", "context_window": 32_768},
+        ],
+        "vllm-local": [
+            {"id": "local-model", "label": "Local model", "description": "Model served by vLLM.", "context_window": 32_768},
+        ],
+        "custom-openai": [
+            {"id": "your-model", "label": "Your model", "description": "Model from a custom OpenAI-compatible endpoint.", "context_window": 32_768},
+        ],
+    }
+)
 
 GOOGLE_MODEL_TUNING_KEYS = ("temperature", "top_p", "top_k", "max_output_tokens")
 
@@ -961,7 +1089,21 @@ def get_provider_model_catalog(settings: Settings, provider: str, max_models: in
     api_key = _provider_api_key(settings, normalized_provider)
     saved_rows = _saved_catalog_rows(settings, normalized_provider, max_models)
     fallback_rows = _fallback_model_rows(normalized_provider, max_models)
-    if normalized_provider != "openrouter" and not api_key:
+    optional_key_provider = normalized_provider in {
+        "openrouter",
+        "ollama",
+        "lmstudio",
+        "lm_studio",
+        "vllm",
+        "vllm-local",
+        "llamafile",
+        "litellm",
+        "litellm_proxy",
+        "custom",
+        "custom-openai",
+        "openai_like",
+    }
+    if not optional_key_provider and not api_key:
         source = (
             "saved_catalog"
             if saved_rows
@@ -1021,9 +1163,56 @@ def fetch_provider_models(settings: Settings, provider: str, max_models: int = 2
         return _fetch_anthropic_models(settings, limit)
     if normalized_provider == "openrouter":
         return _fetch_openrouter_models(settings, limit)
-    if normalized_provider == "nvidia":
-        return _fetch_nvidia_models(settings, limit)
-    raise ProviderModelCatalogError(f"Unsupported provider '{provider}'.")
+    if normalized_provider in {"nvidia", "nvidia_nim"}:
+        return _fetch_nvidia_models(settings, limit, provider=normalized_provider)
+    return _fetch_openai_compatible_models(settings, normalized_provider, limit)
+
+
+def _fetch_openai_compatible_models(
+    settings: Settings, provider: str, max_models: int
+) -> list[dict[str, Any]]:
+    """Fetch ``GET /v1/models`` for LiteLLM/OpenAI-compatible providers."""
+    base_url = provider_base_url(settings, provider).rstrip("/")
+    if not base_url:
+        raise ProviderModelCatalogError(
+            f"{provider} has no model endpoint configured. Add a base URL in Provider Keys."
+        )
+    headers: dict[str, str] = {}
+    api_key = _provider_api_key(settings, provider)
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    payload = _request_json(
+        f"{base_url}/models",
+        headers=headers or None,
+        timeout_seconds=settings.provider_pricing_timeout_seconds,
+        provider=provider,
+    )
+    raw_models = payload.get("data") or payload.get("models") or []
+    rows: list[dict[str, Any]] = []
+    for item in raw_models:
+        if isinstance(item, str):
+            model_id = item.strip()
+            item = {}
+        elif isinstance(item, dict):
+            model_id = str(item.get("id") or item.get("name") or "").strip()
+        else:
+            continue
+        if not model_id:
+            continue
+        rows.append(
+            {
+                "id": model_id,
+                "label": str(item.get("name") or item.get("display_name") or model_id).strip(),
+                "description": str(item.get("owned_by") or item.get("description") or "").strip(),
+                "created": item.get("created"),
+                "context_window": item.get("context_length")
+                or item.get("context_window")
+                or resolve_model_context_window(model_id, provider),
+                "pricing": item.get("pricing"),
+            }
+        )
+    rows.sort(key=lambda row: (-int(row.get("created") or 0), row["id"]))
+    return _dedupe_models(rows[:max_models])
 
 
 def _fetch_google_models(settings: Settings, max_models: int) -> list[dict[str, Any]]:
@@ -1293,9 +1482,11 @@ def _fetch_openrouter_models(settings: Settings, max_models: int) -> list[dict[s
     return _dedupe_models(rows[:max_models])
 
 
-def _fetch_nvidia_models(settings: Settings, max_models: int) -> list[dict[str, Any]]:
-    api_key = (settings.nvidia_api_key or "").strip()
-    base_url = (settings.nvidia_base_url or "https://integrate.api.nvidia.com/v1").rstrip("/")
+def _fetch_nvidia_models(
+    settings: Settings, max_models: int, *, provider: str = "nvidia"
+) -> list[dict[str, Any]]:
+    api_key = _provider_api_key(settings, provider)
+    base_url = provider_base_url(settings, provider).rstrip("/")
     headers: dict[str, str] = {}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -1353,10 +1544,41 @@ def _request_json(
     return payload
 
 
+def provider_base_url(settings: Settings, provider: str) -> str:
+    """Resolve an operator-configured or registry-default model endpoint."""
+    normalized_provider = str(provider or "").strip().lower()
+    custom_urls = getattr(settings, "provider_base_urls", {}) or {}
+    if isinstance(custom_urls, dict):
+        configured = custom_urls.get(normalized_provider)
+        if isinstance(configured, str) and configured.strip():
+            return configured.strip()
+    if normalized_provider == "azure" and getattr(settings, "azure_api_base", ""):
+        return str(settings.azure_api_base).strip()
+    if normalized_provider in {"nvidia", "nvidia_nim"} and getattr(settings, "nvidia_base_url", ""):
+        return str(settings.nvidia_base_url).strip()
+    return str(_PROVIDER_BASE_URLS.get(normalized_provider, "") or "").strip()
+
+
 def _provider_api_key(settings: Settings, provider: str) -> str:
     normalized_provider = (provider or "").strip().lower()
+    provider_keys = getattr(settings, "provider_api_keys", {}) or {}
+    if isinstance(provider_keys, dict):
+        configured = provider_keys.get(normalized_provider)
+        if isinstance(configured, str) and configured.strip():
+            return configured.strip()
     if normalized_provider in {"google", "gemini", "google_genai"}:
         return str(settings.google_api_key or "").strip()
+    legacy_provider_aliases = {
+        "nvidia_nim": "nvidia",
+        "together_ai": "together",
+        "fireworks_ai": "fireworks",
+        "cohere_chat": "cohere",
+    }
+    legacy_provider = legacy_provider_aliases.get(normalized_provider, normalized_provider)
+    if legacy_provider != normalized_provider:
+        legacy_value = getattr(settings, f"{legacy_provider}_api_key", "")
+        if legacy_value:
+            return str(legacy_value).strip()
     if normalized_provider == "openai":
         return str(settings.openai_api_key or "").strip()
     if normalized_provider == "anthropic":
@@ -1389,6 +1611,11 @@ def _provider_api_key(settings: Settings, provider: str) -> str:
         return str(getattr(settings, "bedrock_api_key", "") or "").strip()
     if normalized_provider in {"vertex", "google-vertex"}:
         return str(getattr(settings, "google_vertex_api_key", "") or "").strip()
+    provider_keys = getattr(settings, "provider_api_keys", {}) or {}
+    if isinstance(provider_keys, dict):
+        configured = provider_keys.get(normalized_provider)
+        if isinstance(configured, str) and configured.strip():
+            return configured.strip()
     return ""
 
 

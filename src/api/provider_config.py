@@ -17,6 +17,7 @@ from src.utils.config import (
     normalize_agent_runtime_config,
 )
 from src.utils.provider_models import (
+    PROVIDER_METADATA,
     SUPPORTED_PROVIDERS,
     build_model_selection_details,
     collect_model_config_warnings,
@@ -78,6 +79,8 @@ class ModelConfigRequest(BaseModel):
     azure_api_key: str | None = None
     azure_api_base: str | None = None
     bedrock_api_key: str | None = None
+    provider_api_keys: dict[str, str] | None = None
+    provider_base_urls: dict[str, str] | None = None
 
 
 def ui_config_payload(
@@ -87,6 +90,31 @@ def ui_config_payload(
     config_persist_path: str = "",
     config_persist_error: str = "",
 ) -> dict[str, Any]:
+    provider_keys = getattr(settings, "provider_api_keys", {}) or {}
+    api_key_status = {
+        "google": bool(settings.google_api_key),
+        "openai": bool(settings.openai_api_key),
+        "anthropic": bool(settings.anthropic_api_key),
+        "openrouter": bool(settings.openrouter_api_key),
+        "nvidia": bool(settings.nvidia_api_key),
+        "mistral": bool(getattr(settings, "mistral_api_key", "")),
+        "cohere": bool(getattr(settings, "cohere_api_key", "")),
+        "groq": bool(getattr(settings, "groq_api_key", "")),
+        "together": bool(getattr(settings, "together_api_key", "")),
+        "fireworks": bool(getattr(settings, "fireworks_api_key", "")),
+        "perplexity": bool(getattr(settings, "perplexity_api_key", "")),
+        "deepseek": bool(getattr(settings, "deepseek_api_key", "")),
+        "xai": bool(getattr(settings, "xai_api_key", "")),
+        "upstage": bool(getattr(settings, "upstage_api_key", "")),
+        "azure": bool(getattr(settings, "azure_api_key", "")),
+        "bedrock": bool(getattr(settings, "bedrock_api_key", "")),
+    }
+    for provider_id in SUPPORTED_PROVIDERS:
+        api_key_status[provider_id] = bool(
+            api_key_status.get(provider_id)
+            or (isinstance(provider_keys, dict) and provider_keys.get(provider_id))
+        )
+
     payload = {
         "llm_provider": settings.llm_provider,
         "agent_model": settings.agent_model,
@@ -139,23 +167,19 @@ def ui_config_payload(
         "payload_cap_bytes": getattr(settings, "payload_cap_bytes", 8192),
         "workflow_max_cost_usd": getattr(settings, "workflow_max_cost_usd", 0.0),
         "workflow_max_tokens": getattr(settings, "workflow_max_tokens", 0),
-        "api_keys": {
-            "google": bool(settings.google_api_key),
-            "openai": bool(settings.openai_api_key),
-            "anthropic": bool(settings.anthropic_api_key),
-            "openrouter": bool(settings.openrouter_api_key),
-            "nvidia": bool(settings.nvidia_api_key),
-            "mistral": bool(getattr(settings, "mistral_api_key", "")),
-            "cohere": bool(getattr(settings, "cohere_api_key", "")),
-            "groq": bool(getattr(settings, "groq_api_key", "")),
-            "together": bool(getattr(settings, "together_api_key", "")),
-            "fireworks": bool(getattr(settings, "fireworks_api_key", "")),
-            "perplexity": bool(getattr(settings, "perplexity_api_key", "")),
-            "deepseek": bool(getattr(settings, "deepseek_api_key", "")),
-            "xai": bool(getattr(settings, "xai_api_key", "")),
-            "upstage": bool(getattr(settings, "upstage_api_key", "")),
-            "azure": bool(getattr(settings, "azure_api_key", "")),
-            "bedrock": bool(getattr(settings, "bedrock_api_key", "")),
+        "api_keys": api_key_status,
+        "provider_registry": [
+            {
+                "id": provider_id,
+                "name": str(PROVIDER_METADATA[provider_id].get("name") or provider_id),
+                "key_env": str(PROVIDER_METADATA[provider_id].get("key_env") or ""),
+                "base_url": str(PROVIDER_METADATA[provider_id].get("base_url") or ""),
+            }
+            for provider_id in SUPPORTED_PROVIDERS
+        ],
+        "provider_base_urls": {
+            **({"azure": settings.azure_api_base} if getattr(settings, "azure_api_base", "") else {}),
+            **dict(getattr(settings, "provider_base_urls", {}) or {}),
         },
         "model_selection_details": build_model_selection_details(settings),
         "model_config_warnings": collect_model_config_warnings(settings),
@@ -287,6 +311,32 @@ def apply_ui_config_update(
         _val = getattr(body, _key_field, None)
         if _val is not None:
             setattr(settings, _key_field, str(_val or "").strip())
+
+    if body.provider_api_keys is not None:
+        provider_keys = dict(getattr(settings, "provider_api_keys", {}) or {})
+        for _provider_id, _value in body.provider_api_keys.items():
+            _normalized_id = str(_provider_id or "").strip().lower()
+            if _normalized_id not in SUPPORTED_PROVIDERS:
+                raise HTTPException(status_code=400, detail=f"Unsupported provider '{_provider_id}'.")
+            _normalized_value = str(_value or "").strip()
+            if _normalized_value:
+                provider_keys[_normalized_id] = _normalized_value
+            else:
+                provider_keys.pop(_normalized_id, None)
+        settings.provider_api_keys = provider_keys
+
+    if body.provider_base_urls is not None:
+        provider_urls = dict(getattr(settings, "provider_base_urls", {}) or {})
+        for _provider_id, _value in body.provider_base_urls.items():
+            _normalized_id = str(_provider_id or "").strip().lower()
+            if _normalized_id not in SUPPORTED_PROVIDERS:
+                raise HTTPException(status_code=400, detail=f"Unsupported provider '{_provider_id}'.")
+            _normalized_value = str(_value or "").strip()
+            if _normalized_value:
+                provider_urls[_normalized_id] = _normalized_value
+            else:
+                provider_urls.pop(_normalized_id, None)
+        settings.provider_base_urls = provider_urls
 
     if body.agent_model_config is None:
         settings.agent_model_config = normalize_agent_model_config(

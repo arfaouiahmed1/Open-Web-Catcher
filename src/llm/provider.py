@@ -68,6 +68,46 @@ _PROVIDER_PREFIXES = {
     "anthropic": "anthropic",
     "openrouter": "openrouter",
     "nvidia": "nvidia_nim",
+    "nvidia_nim": "nvidia_nim",
+    "fireworks": "fireworks_ai",
+    "fireworks_ai": "fireworks_ai",
+    "together": "together_ai",
+    "together_ai": "together_ai",
+    "vertex": "vertex_ai",
+    "google-vertex": "vertex_ai",
+    "opencode": "openai",
+    "opencode-go": "openai",
+    "openai_like": "openai",
+    "custom": "openai",
+    "custom-openai": "openai",
+    "ollama": "ollama",
+    "lmstudio": "openai",
+    "lm_studio": "openai",
+    "vllm": "hosted_vllm",
+    "vllm-local": "hosted_vllm",
+    "llamafile": "llamafile",
+    "mistral": "mistral",
+    "cohere": "cohere_chat",
+    "cohere_chat": "cohere_chat",
+    "groq": "groq",
+    "perplexity": "perplexity",
+    "deepseek": "deepseek",
+    "xai": "xai",
+    "upstage": "upstage",
+    "zai": "zai",
+    "minimax": "minimax",
+    "moonshot": "moonshot",
+    "ai21": "ai21",
+    "cerebras": "cerebras",
+    "sambanova": "sambanova",
+    "nebius": "nebius",
+    "databricks": "databricks",
+    "replicate": "replicate",
+    "huggingface": "huggingface",
+    "cloudflare": "cloudflare",
+    "codestral": "codestral",
+    "volcengine": "volcengine",
+    "dashscope": "dashscope",
 }
 
 _FAMILY_PREFIX_PATTERNS = (
@@ -84,9 +124,28 @@ _FAMILY_PREFIX_PATTERNS = (
 def normalize_model_name(model_name: str, provider: str = "") -> str:
     """Map legacy bare model names to LiteLLM's ``provider/model`` format."""
     name = str(model_name or "").strip()
-    if not name or "/" in name:
+    normalized_provider = str(provider or "").strip().lower()
+    if not name:
         return name
-    prefix = _PROVIDER_PREFIXES.get(str(provider or "").strip().lower(), "")
+    if "/" in name:
+        if (
+            normalized_provider in {"opencode", "opencode-go"}
+            and name.lower().startswith("opencode/")
+        ):
+            name = name.split("/", 1)[1]
+        else:
+            return name
+    if normalized_provider in {"opencode", "opencode-go"}:
+        lowered = name.lower()
+        provider_prefix = (
+            "anthropic"
+            if lowered.startswith("claude-")
+            else "gemini"
+            if lowered.startswith("gemini-")
+            else "openai"
+        )
+        return f"{provider_prefix}/{name}"
+    prefix = _PROVIDER_PREFIXES.get(normalized_provider, "")
     if not prefix:
         lowered = name.lower()
         for pattern, family_prefix in _FAMILY_PREFIX_PATTERNS:

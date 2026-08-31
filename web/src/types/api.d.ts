@@ -1848,14 +1848,26 @@ export interface components {
             agent_runtime_config?: {
                 [key: string]: unknown;
             } | null;
+            /** Anthropic Api Key */
+            anthropic_api_key?: string | null;
+            /** Azure Api Base */
+            azure_api_base?: string | null;
+            /** Azure Api Key */
+            azure_api_key?: string | null;
             /** Background Job Retention Days */
             background_job_retention_days?: number | null;
+            /** Bedrock Api Key */
+            bedrock_api_key?: string | null;
             /** Browser Engine */
             browser_engine?: string | null;
             /** Browser Runtime */
             browser_runtime?: {
                 [key: string]: unknown;
             } | null;
+            /** Cohere Api Key */
+            cohere_api_key?: string | null;
+            /** Deepseek Api Key */
+            deepseek_api_key?: string | null;
             /** Disabled Tools By Browser Profile */
             disabled_tools_by_browser_profile?: {
                 [key: string]: unknown;
@@ -1864,6 +1876,8 @@ export interface components {
             disabled_tools_by_profile?: {
                 [key: string]: unknown;
             } | null;
+            /** Fireworks Api Key */
+            fireworks_api_key?: string | null;
             /** Gemini Explicit Cache Enabled */
             gemini_explicit_cache_enabled?: boolean | null;
             /** Gemini Explicit Cache Refresh Lead Seconds */
@@ -1872,6 +1886,12 @@ export interface components {
             gemini_explicit_cache_ttl_seconds?: number | null;
             /** Gemini Temperature */
             gemini_temperature?: number | null;
+            /** Google Api Key */
+            google_api_key?: string | null;
+            /** Google Vertex Api Key */
+            google_vertex_api_key?: string | null;
+            /** Groq Api Key */
+            groq_api_key?: string | null;
             /** Llm Provider */
             llm_provider?: string | null;
             /** Llm Tuning */
@@ -1880,12 +1900,30 @@ export interface components {
             } | null;
             /** Max Parallel Hosting Pages */
             max_parallel_hosting_pages?: number | null;
+            /** Mistral Api Key */
+            mistral_api_key?: string | null;
+            /** Nvidia Api Key */
+            nvidia_api_key?: string | null;
             /** Observability Enabled */
             observability_enabled?: boolean | null;
+            /** Openai Api Key */
+            openai_api_key?: string | null;
+            /** Openrouter Api Key */
+            openrouter_api_key?: string | null;
             /** Orchestrator Model */
             orchestrator_model?: string | null;
             /** Payload Cap Bytes */
             payload_cap_bytes?: number | null;
+            /** Perplexity Api Key */
+            perplexity_api_key?: string | null;
+            /** Provider Api Keys */
+            provider_api_keys?: {
+                [key: string]: string;
+            } | null;
+            /** Provider Base Urls */
+            provider_base_urls?: {
+                [key: string]: string;
+            } | null;
             /** Provider Cache Enabled */
             provider_cache_enabled?: boolean | null;
             /** Retention Days Agent Outputs */
@@ -1902,14 +1940,20 @@ export interface components {
             thinking_budget_tokens?: number | null;
             /** Thinking Enabled */
             thinking_enabled?: boolean | null;
+            /** Together Api Key */
+            together_api_key?: string | null;
             /** Tool Result Cache Enabled */
             tool_result_cache_enabled?: boolean | null;
             /** Tool Result Cache Min Identical Observations */
             tool_result_cache_min_identical_observations?: number | null;
+            /** Upstage Api Key */
+            upstage_api_key?: string | null;
             /** Workflow Max Cost Usd */
             workflow_max_cost_usd?: number | null;
             /** Workflow Max Tokens */
             workflow_max_tokens?: number | null;
+            /** Xai Api Key */
+            xai_api_key?: string | null;
         };
         /** ModelUsage */
         ModelUsage: {

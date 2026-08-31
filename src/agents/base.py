@@ -31,6 +31,7 @@ from src.utils.observability import RunObserver
 from src.utils.provider_models import (
     normalize_gemini_model_id,
     provider_api_key,
+    provider_base_url,
     resolve_google_model_runtime_profile,
     resolve_agent_model_selection,
     resolve_llm_tuning,
@@ -605,7 +606,8 @@ def build_llm(
     )
 
     api_key = provider_api_key(settings, provider_hint) or None
-    api_base = settings.llm_base_url or None
+    configured_provider_base = (getattr(settings, "provider_base_urls", {}) or {}).get(provider_hint, "")
+    api_base = configured_provider_base or settings.llm_base_url or provider_base_url(settings, provider_hint) or None
     if provider_hint == "openrouter" and settings.openrouter_base_url:
         api_base = settings.openrouter_base_url
     elif provider_hint == "nvidia" and settings.nvidia_base_url:
