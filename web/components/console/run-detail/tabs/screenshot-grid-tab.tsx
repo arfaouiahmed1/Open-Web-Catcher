@@ -67,7 +67,7 @@ export function ScreenshotGridTab({ events, screenshots: propShots, title = "Scr
       actions={
         <Badge tone={hasShots ? "success" : "muted"} className="text-[10px] gap-1">
           <Camera className="h-3 w-3" />
-          <span data-role="shot-count">{hasShots ? `${all.length} frame${all.length === 1 ? "" : "s"} — live` : "no screenshots yet"}</span>
+          <span data-role="shot-count">{hasShots ? `${all.length} evidence frame${all.length === 1 ? "" : "s"} — live` : "no screenshots yet"}</span>
         </Badge>
       }
       className="animate-fade-up"

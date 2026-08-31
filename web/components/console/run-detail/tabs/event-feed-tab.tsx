@@ -151,7 +151,7 @@ export function RunEventFeedTab({ events, title = "Event feed", maxItems = 120 }
             <Radio className="h-3 w-3 animate-pulse" />
             <span data-role="feed-count">{list.length} events</span>
           </Badge>
-          {omitted > 0 ? <span className="text-[11px] text-muted-foreground" data-role="feed-omitted">+{omitted} earlier</span> : null}
+          {omitted > 0 ? <span className="text-[11px] text-muted-foreground" data-role="feed-omitted">+{omitted} earlier hidden</span> : null}
         </div>
       }
       className="animate-fade-up"

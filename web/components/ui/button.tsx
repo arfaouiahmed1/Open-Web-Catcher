@@ -38,12 +38,39 @@ export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> &
   };
 
 export function Button({ className, variant, size, asChild = false, isLoading = false, loadingLabel, children, disabled, ...props }: ButtonProps) {
-  const Comp = asChild ? Slot : "button";
   const isDisabled = disabled || isLoading;
-  return (
-    <Comp className={cn(buttonVariants({ variant, size }), isLoading && "relative", className)} disabled={isDisabled} aria-busy={isLoading || undefined} {...props}>
+  const cls = cn(buttonVariants({ variant, size }), isLoading && "relative", className);
+  const content = (
+    <>
       {isLoading ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
       {isLoading && loadingLabel ? loadingLabel : children}
-    </Comp>
+    </>
+  );
+  if (asChild) {
+    // Slot requires single element child; fall back to button if multiple or non-element
+    const childCount = React.Children.count(children);
+    const first = React.Children.only as unknown as (c: React.ReactNode) => React.ReactElement;
+    try {
+      if (childCount === 1 && React.isValidElement(React.Children.toArray(children)[0])) {
+        return (
+          <Slot className={cls} aria-busy={isLoading || undefined} {...(props as unknown as Record<string, unknown>)}>
+            {children as React.ReactElement}
+          </Slot>
+        );
+      }
+    } catch {
+      // fall through to button
+    }
+    // If asChild requested but children invalid for Slot, render as button to avoid crash during prerender
+    return (
+      <button className={cls} disabled={isDisabled} aria-busy={isLoading || undefined} {...props}>
+        {content}
+      </button>
+    );
+  }
+  return (
+    <button className={cls} disabled={isDisabled} aria-busy={isLoading || undefined} {...props}>
+      {content}
+    </button>
   );
 }
