@@ -71,7 +71,7 @@ def bootstrap_admin(body: BootstrapAdminRequest) -> dict:
         result = session.execute(
             text(
                 "INSERT INTO users (email, password_hash, role, is_active, created_at) "
-                "SELECT :email, :password_hash, 'admin', 1, :created_at "
+                "SELECT :email, :password_hash, 'admin', TRUE, :created_at "
                 "WHERE NOT EXISTS (SELECT 1 FROM users)"
             ),
             {
