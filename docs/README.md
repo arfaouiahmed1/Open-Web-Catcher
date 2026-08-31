@@ -44,8 +44,8 @@ Deeper pages by area:
 3. [Agents](./agents/README.md): orchestrator, classification, landing, hosting, embedded, provider, email responsibilities.
 4. [API Contracts](./api/README.md): FastAPI routes and operator-console payloads.
 5. [MCP And Browser Tools](./tools/README.md): browser automation tools and MCP profiles.
-6. [Frontend Console](./frontend/README.md): TypeScript source invariant, UI module map, API-origin rules, and frontend validation commands.
-7. [Operations](./operations/README.md): Docker, configuration, validation, troubleshooting, key rotation, migration safety.
+6. [Frontend Console](./frontend/README.md): TypeScript source invariant, Settings UX, theme tokens, API-origin rules, and frontend validation commands.
+7. [Operations](./operations/README.md): Docker, provider directory, configuration, validation, troubleshooting, key rotation, migration safety.
 
 Historical notes live under [docs/archive/README.md](./archive/README.md). They are not the active implementation contract.
 
@@ -114,6 +114,7 @@ When you change code, update the matching diagram in `target-design.md` in the s
 - [Operations Index](./operations/README.md)
 - [Docker And Ports](./operations/docker.md)
 - [Configuration](./operations/configuration.md)
+- [Provider Directory](./operations/provider-directory.md)
 - [Validation](./operations/validation.md)
 - [Troubleshooting](./operations/troubleshooting.md)
 - [Key Rotation](./operations/key-rotation.md)

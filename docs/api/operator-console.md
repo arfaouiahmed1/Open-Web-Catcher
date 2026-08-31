@@ -13,7 +13,7 @@ flowchart LR
   Runs["/runs<br/>sites, batches, history"]
   RunDetail["/runs/[runId]<br/>failure-first run detail + Agent desk"]
   Providers["/providers<br/>provider lookup history and manual lookup"]
-  Settings["/settings<br/>models, browser, tools, pricing, keys"]
+  Settings["/settings<br/>models, provider keys, browser, tools, pricing"]
 
   Home --> Live
   Home --> Runs
@@ -75,19 +75,46 @@ The run detail Outputs tab is evidence-first. `web/components/agent-output-panel
 | Provider results | `/ui/providers/lookup`, `/ui/providers/history` |
 | Settings | `/ui/config`, `/ui/providers/models`, `/ui/pricing`, `/ui/pricing/sync` |
 
+## Settings And Provider UX
+
+The Settings surface is grouped as **AI Configuration**, **Runtime**, **Preferences**, and
+**Security**. The AI Configuration group contains:
+
+- **Models**, where each pipeline agent receives its own provider/model assignment;
+- **Provider Keys**, where the operator searches and configures the 110-provider directory.
+
+Provider Keys never renders a stored credential. It receives `api_keys` boolean status values,
+provider names, default endpoints, and masked source metadata. New credentials and endpoint
+overrides are sent as partial `PUT /ui/config` fields:
+
+```json
+{
+  "provider_api_keys": { "opencode": "<operator-entered-value>" },
+  "provider_base_urls": { "custom-openai": "https://gateway.example/v1" }
+}
+```
+
+The UI supports search, category/status filters, grouped rows, masked inputs, Clear/Undo, and a
+Test action. Test saves draft values before requesting the provider catalog. The Models provider
+selector is searchable so the expanded directory does not become an unmanageable native list.
+
+Both dark and light themes use semantic surface/text tokens. Settings must not introduce dark-only
+foreground colors or white-alpha borders; accent foregrounds use the readable theme variables in
+`web/app/globals.css`.
+
 ## Frontend Data Flow
 
 ```mermaid
 flowchart TD
-  ApiFetch["web/lib/api.js"]
-  RunTrace["web/lib/run-trace.js"]
-  Pricing["web/lib/pricing.js"]
-  Sync["web/lib/run-log-sync.js"]
-  Page["run-detail-page.js"]
-  Live["run-detail-live.js"]
-  Graph["orchestrator-graph.js"]
-  ProviderTab["stream-provider-tab.js"]
-  OutputTab["agent-output-tab.js"]
+  ApiFetch["web/lib/api.ts"]
+  RunTrace["web/lib/run-trace.ts"]
+  Pricing["web/lib/pricing.ts"]
+  Sync["web/lib/run-log-sync.ts"]
+  Page["run-detail-page.tsx"]
+  Live["run-detail-live.tsx"]
+  Graph["orchestrator-graph.tsx"]
+  ProviderTab["stream-provider-tab.tsx"]
+  OutputTab["agent-output-tab.tsx"]
 
   ApiFetch --> Page
   Page --> RunTrace

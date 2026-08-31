@@ -462,7 +462,15 @@ classDiagram
 
 ## 4. LLM Provider Layer
 
-All model traffic goes through one protocol. `LlmProvider` declares `async complete(messages, model_spec, tools)`; `LiteLLMProvider` implements it so family-specific SDKs stay behind one seam.
+All model traffic goes through one protocol. `LlmProvider` declares `async complete(messages, model_spec, tools)`; `LiteLLMProvider` implements it so family-specific SDKs stay behind one seam. Operator configuration exposes a broad LiteLLM-compatible provider directory rather than a Google-only selector.
+
+The provider directory includes direct cloud adapters, OpenCode Zen/Go, LiteLLM Gateway/Proxy,
+OpenAI-compatible custom endpoints, and local runtimes such as Ollama, LM Studio, and vLLM.
+Provider credentials and endpoint overrides are Settings-owned (`provider_api_keys` and
+`provider_base_urls`) and persist as runtime configuration. The `/ui/config` read contract returns
+provider metadata and boolean key status, never raw credentials. Provider model catalogs use a
+direct adapter where available and otherwise query the configured OpenAI-compatible `/models`
+resource, with saved/fallback rows marked non-live.
 
 `CostAccounting` normalizes usage with per-family cache semantics:
 
@@ -539,6 +547,13 @@ classDiagram
         +active : bool
     }
 
+    class ProviderDirectory {
+        +provider_ids : list~str~
+        +provider_api_keys : map~str,str~
+        +provider_base_urls : map~str,str~
+        +get_catalog(provider_id) list~Model~
+    }
+
     class CostRecord {
         +run_id : str
         +model_name : str
@@ -555,6 +570,7 @@ classDiagram
     CostAccounting ..> PricingCatalog : prices normalized usage
     CostAccounting ..> CostRecord : emits
     PricingCatalog ..> PricingConfig : exact name or alias
+    ProviderDirectory ..> LiteLLMProvider : supplies routing config
 ```
 
 ## 5. Frontend Module Map
@@ -645,6 +661,9 @@ classDiagram
 
     class Settings {
         <<validated forms plus source badges>>
+        +provider_keys : searchable grouped directory
+        +model_assignments : provider and model per agent
+        +theme_contract : light and dark semantic tokens
     }
 
     class LiveRun {
