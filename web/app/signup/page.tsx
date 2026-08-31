@@ -2,8 +2,8 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Eye, EyeOff, Loader2, ShieldCheck, Sparkles } from "lucide-react";
 import { apiUrl } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,11 +13,11 @@ import { AuthLayout } from "@/components/auth/auth-layout";
 
 const TOKEN_KEY = "owc_token";
 
-function LoginForm(): React.JSX.Element {
+function SignupForm(): React.JSX.Element {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
+  const [confirm, setConfirm] = useState<string>("");
   const [show, setShow] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -25,21 +25,51 @@ function LoginForm(): React.JSX.Element {
   async function onSubmit(e: React.FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault();
     setError("");
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+    if (password !== confirm) {
+      setError("Passwords do not match.");
+      return;
+    }
     setSubmitting(true);
     try {
+      // First user: bootstrap-admin is the only creation path (atomic INSERT WHERE NOT EXISTS)
+      const boot = await fetch(apiUrl("/api/auth/bootstrap-admin"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+      const bootData: { created?: boolean; email?: string } = (await boot.json().catch(() => ({}))) as {
+        created?: boolean;
+        email?: string;
+      };
+      if (!boot.ok) {
+        const msg = (bootData as unknown as { detail?: string })?.detail || `Signup failed (${boot.status}).`;
+        // If a user already exists, bootstrap returns {created:false} 200 — fall through to login
+        if (boot.status !== 200) {
+          setError(msg);
+          return;
+        }
+      }
+      if (bootData.created === false) {
+        setError("An account already exists. Please log in instead.");
+        return;
+      }
       const res = await fetch(apiUrl("/api/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim(), password }),
       });
       if (!res.ok) {
-        setError(res.status === 401 ? "Invalid email or password." : `Login failed (${res.status}).`);
+        setError("Account created — please log in.");
+        router.push("/login");
         return;
       }
       const data: { access_token: string } = (await res.json()) as { access_token: string };
       localStorage.setItem(TOKEN_KEY, data.access_token);
-      const next = searchParams.get("next");
-      router.push(next && next.startsWith("/") ? next : "/");
+      router.push("/");
     } catch {
       setError("Could not reach the API. Is the backend running on :8000?");
     } finally {
@@ -49,13 +79,16 @@ function LoginForm(): React.JSX.Element {
 
   return (
     <AuthLayout>
-      <Card className="w-full max-w-[420px] shadow-xl">
+      <Card className="w-full max-w-[460px] shadow-xl">
         <CardHeader className="space-y-2 pb-4">
           <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-            <ShieldCheck className="size-3.5 text-primary" /> Secure operator access
+            <Sparkles className="size-3.5 text-primary" /> First admin — single winner
           </div>
-          <CardTitle className="text-xl">Welcome back</CardTitle>
-          <CardDescription>Sign in to the operator console. BYOK — your provider keys stay in Settings.</CardDescription>
+          <CardTitle className="text-xl">Create account</CardTitle>
+          <CardDescription>
+            The first account becomes admin (atomic <span className="font-mono">bootstrap-admin</span>). After that, use log in. BYOK
+            — provider keys are set per-agent in Settings.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-4">
@@ -73,13 +106,8 @@ function LoginForm(): React.JSX.Element {
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
-                <button
-                  type="button"
-                  onClick={() => setShow((v) => !v)}
-                  className="text-[11px] text-muted-foreground hover:text-foreground"
-                  aria-label={show ? "Hide password" : "Show password"}
-                >
+                <Label htmlFor="password">Password (8+ chars)</Label>
+                <button type="button" onClick={() => setShow((v) => !v)} className="text-[11px] text-muted-foreground hover:text-foreground">
                   {show ? <EyeOff className="inline size-3" /> : <Eye className="inline size-3" />} {show ? "Hide" : "Show"}
                 </button>
               </div>
@@ -87,9 +115,21 @@ function LoginForm(): React.JSX.Element {
                 id="password"
                 type={show ? "text" : "password"}
                 required
-                autoComplete="current-password"
+                autoComplete="new-password"
                 value={password}
                 onChange={(ev) => setPassword(ev.target.value)}
+                placeholder="••••••••"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm">Confirm password</Label>
+              <Input
+                id="confirm"
+                type={show ? "text" : "password"}
+                required
+                autoComplete="new-password"
+                value={confirm}
+                onChange={(ev) => setConfirm(ev.target.value)}
                 placeholder="••••••••"
               />
             </div>
@@ -99,12 +139,12 @@ function LoginForm(): React.JSX.Element {
               </p>
             ) : null}
             <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? <Loader2 className="size-4 animate-spin" /> : null} {submitting ? "Signing in…" : "Sign in"}
+              {submitting ? <Loader2 className="size-4 animate-spin" /> : null} {submitting ? "Creating…" : "Create account"}
             </Button>
             <p className="text-center text-xs text-muted-foreground">
-              No account yet?{" "}
-              <Link href="/signup" className="font-medium text-primary hover:underline">
-                Create account
+              Already have an account?{" "}
+              <Link href="/login" className="font-medium text-primary hover:underline">
+                Log in
               </Link>
               {" · "}
               <Link href="/" className="hover:text-foreground">
@@ -114,18 +154,14 @@ function LoginForm(): React.JSX.Element {
           </form>
         </CardContent>
       </Card>
-      <p className="mt-4 max-w-[420px] text-center text-[11px] leading-relaxed text-muted-foreground">
-        First user? Use <span className="font-mono text-foreground">Create account</span> — it calls{" "}
-        <span className="font-mono">POST /api/auth/bootstrap-admin</span> atomically (single winner). No default credentials.
-      </p>
     </AuthLayout>
   );
 }
 
-export default function LoginPage(): React.JSX.Element {
+export default function SignupPage(): React.JSX.Element {
   return (
     <Suspense fallback={null}>
-      <LoginForm />
+      <SignupForm />
     </Suspense>
   );
 }

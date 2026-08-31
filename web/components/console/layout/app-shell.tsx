@@ -150,10 +150,24 @@ export interface AppShellProps {
   children: React.ReactNode;
 }
 
+const STANDALONE_PREFIXES = ["/login", "/signup"];
+
 export function AppShell({ children }: AppShellProps): React.JSX.Element {
   const pathname = usePathname();
   const [activeRuns, setActiveRuns] = React.useState(0);
   const [connected, setConnected] = React.useState(true);
+  const [isLanding, setIsLanding] = React.useState(false);
+  React.useEffect(() => {
+    if (pathname === "/") {
+      try {
+        setIsLanding(!localStorage.getItem("owc_token"));
+      } catch {
+        setIsLanding(false);
+      }
+    } else {
+      setIsLanding(false);
+    }
+  }, [pathname]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -185,6 +199,10 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
+
+  const isStandalone =
+    STANDALONE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`)) || isLanding;
+  if (isStandalone) return <>{children}</>;
 
   const currentSectionKey = pathname.split("/")[1] || "dashboard";
   const currentSection: string =

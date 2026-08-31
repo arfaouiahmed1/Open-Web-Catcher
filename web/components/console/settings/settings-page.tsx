@@ -18,6 +18,7 @@ import {
   Search,
   RefreshCw,
   Save,
+  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Wrench,
@@ -42,6 +43,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { apiFetch, apiUrl } from "@/lib/api";
 import { BrowserTab } from "./tabs/browser-tab";
+import { AccountTab } from "./tabs/account-tab";
 import {
   BROWSER_RUNTIME_KEYS,
   buildServerConfigDraft,
@@ -231,6 +233,7 @@ const SETTINGS_TABS = [
   { id: "browser", label: "Browser" },
   { id: "display", label: "Display" },
   { id: "api-keys", label: "API Keys" },
+  { id: "account", label: "Account" },
   { id: "notifications", label: "Notifications" },
   { id: "mcp-tools", label: "MCP Tools" },
 ];
@@ -240,6 +243,7 @@ const SETTINGS_TAB_ICONS = {
   browser: Globe,
   display: Monitor,
   "api-keys": Key,
+  account: ShieldCheck,
   notifications: Bell,
   "mcp-tools": Layers,
 };
@@ -270,6 +274,13 @@ const TAB_DETAILS = {
     description:
       "See whether the Gemini API key is configured and ready for live model calls.",
     storage: "readonly",
+  },
+  account: {
+    title: "Account",
+    description:
+      "Manage password, 2FA (TOTP), and passkeys. BYOK provider keys live in API Keys — this is console login.",
+    storage: "server",
+    saveLabel: "Save account settings",
   },
   notifications: {
     title: "Notifications",
@@ -3591,6 +3602,16 @@ export function SettingsPage() {
           ) : null}
 
           {activeTab === "display" ? <DisplaySettingsSection /> : null}
+
+          {activeTab === "account" ? (
+            <section className="space-y-4">
+              <div>
+                <h2 className="text-base font-semibold text-foreground">Account</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Passwords, 2FA, and passkeys for the console login.</p>
+              </div>
+              <AccountTab />
+            </section>
+          ) : null}
 
           {activeTab === "notifications" ? (
             <section className="space-y-4">
