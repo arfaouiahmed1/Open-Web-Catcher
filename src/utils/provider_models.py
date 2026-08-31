@@ -40,6 +40,61 @@ PROVIDER_METADATA: dict[str, dict[str, str]] = {
         "name": "NVIDIA NIM",
         "key_env": "NVIDIA_API_KEY",
     },
+    "mistral": {
+        "id": "mistral",
+        "name": "Mistral AI",
+        "key_env": "MISTRAL_API_KEY",
+    },
+    "cohere": {
+        "id": "cohere",
+        "name": "Cohere",
+        "key_env": "COHERE_API_KEY",
+    },
+    "groq": {
+        "id": "groq",
+        "name": "Groq",
+        "key_env": "GROQ_API_KEY",
+    },
+    "together": {
+        "id": "together",
+        "name": "Together AI",
+        "key_env": "TOGETHER_API_KEY",
+    },
+    "fireworks": {
+        "id": "fireworks",
+        "name": "Fireworks AI",
+        "key_env": "FIREWORKS_API_KEY",
+    },
+    "perplexity": {
+        "id": "perplexity",
+        "name": "Perplexity",
+        "key_env": "PERPLEXITY_API_KEY",
+    },
+    "deepseek": {
+        "id": "deepseek",
+        "name": "DeepSeek",
+        "key_env": "DEEPSEEK_API_KEY",
+    },
+    "xai": {
+        "id": "xai",
+        "name": "xAI",
+        "key_env": "XAI_API_KEY",
+    },
+    "upstage": {
+        "id": "upstage",
+        "name": "Upstage",
+        "key_env": "UPSTAGE_API_KEY",
+    },
+    "azure": {
+        "id": "azure",
+        "name": "Azure OpenAI",
+        "key_env": "AZURE_API_KEY",
+    },
+    "bedrock": {
+        "id": "bedrock",
+        "name": "AWS Bedrock",
+        "key_env": "BEDROCK_API_KEY",
+    },
 }
 
 SUPPORTED_PROVIDERS: tuple[str, ...] = tuple(PROVIDER_METADATA)
@@ -74,6 +129,59 @@ FALLBACK_MODELS: dict[str, list[dict[str, Any]]] = {
     "nvidia": [
         {"id": "meta/llama-3.3-70b-instruct", "label": "Llama 3.3 70B Instruct", "description": "General-purpose NIM model.", "context_window": 128_000},
         {"id": "nvidia/llama-3.1-nemotron-70b-instruct", "label": "Llama 3.1 Nemotron 70B", "description": "NVIDIA-tuned instruct model.", "context_window": 128_000},
+    ],
+    "mistral": [
+        {"id": "mistral-large-latest", "label": "Mistral Large", "description": "Flagship Mistral reasoning.", "context_window": 128_000},
+        {"id": "mistral-small-latest", "label": "Mistral Small", "description": "Fast, cost-effective.", "context_window": 128_000},
+        {"id": "mistral-nemo", "label": "Mistral Nemo", "description": "Small, efficient.", "context_window": 128_000},
+        {"id": "codestral-latest", "label": "Codestral", "description": "Code generation.", "context_window": 256_000},
+    ],
+    "cohere": [
+        {"id": "command-r-plus", "label": "Command R+", "description": "Most capable Cohere.", "context_window": 128_000},
+        {"id": "command-r", "label": "Command R", "description": "Balanced.", "context_window": 128_000},
+        {"id": "command-r7b-12-2024", "label": "Command R7B", "description": "Small, fast.", "context_window": 128_000},
+    ],
+    "groq": [
+        {"id": "llama-3.3-70b-versatile", "label": "Llama 3.3 70B Versatile", "description": "Groq ultra-fast 70B.", "context_window": 128_000},
+        {"id": "llama-3.1-8b-instant", "label": "Llama 3.1 8B Instant", "description": "Fast 8B via LPU.", "context_window": 128_000},
+        {"id": "mixtral-8x7b-32768", "label": "Mixtral 8x7B", "description": "Mixture-of-experts.", "context_window": 32_768},
+    ],
+    "together": [
+        {"id": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", "label": "Llama 3.1 70B Turbo", "description": "Together fast 70B.", "context_window": 128_000},
+        {"id": "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo", "label": "Llama 3.1 8B Turbo", "description": "Fast 8B.", "context_window": 128_000},
+        {"id": "mistralai/Mixtral-8x7B-Instruct-v0.1", "label": "Mixtral 8x7B", "description": "Open MoE.", "context_window": 32_768},
+    ],
+    "fireworks": [
+        {"id": "accounts/fireworks/models/llama-v3p3-70b-instruct", "label": "Llama 3.3 70B", "description": "Fireworks hosted.", "context_window": 128_000},
+        {"id": "accounts/fireworks/models/mixtral-8x7b-instruct", "label": "Mixtral 8x7B", "description": "Fireworks MoE.", "context_window": 32_768},
+    ],
+    "perplexity": [
+        {"id": "sonar-pro", "label": "Sonar Pro", "description": "Search-augmented large.", "context_window": 200_000},
+        {"id": "sonar", "label": "Sonar", "description": "Fast search-augmented.", "context_window": 128_000},
+        {"id": "sonar-reasoning", "label": "Sonar Reasoning", "description": "Reasoning + search.", "context_window": 128_000},
+    ],
+    "deepseek": [
+        {"id": "deepseek-chat", "label": "DeepSeek Chat", "description": "General chat.", "context_window": 64_000},
+        {"id": "deepseek-reasoner", "label": "DeepSeek Reasoner", "description": "Reasoning model.", "context_window": 64_000},
+        {"id": "deepseek-coder", "label": "DeepSeek Coder", "description": "Code generation.", "context_window": 64_000},
+    ],
+    "xai": [
+        {"id": "grok-3", "label": "Grok 3", "description": "Flagship Grok.", "context_window": 131_072},
+        {"id": "grok-3-mini", "label": "Grok 3 Mini", "description": "Fast Grok.", "context_window": 131_072},
+        {"id": "grok-2-vision-1212", "label": "Grok 2 Vision", "description": "Vision-capable.", "context_window": 32_768},
+    ],
+    "upstage": [
+        {"id": "solar-pro", "label": "Solar Pro", "description": "Flagship Solar.", "context_window": 32_768},
+        {"id": "solar-mini", "label": "Solar Mini", "description": "Efficient Solar.", "context_window": 32_768},
+    ],
+    "azure": [
+        {"id": "gpt-4o", "label": "GPT-4o (Azure)", "description": "OpenAI via Azure.", "context_window": 128_000},
+        {"id": "gpt-4o-mini", "label": "GPT-4o Mini (Azure)", "description": "Fast Azure OpenAI.", "context_window": 128_000},
+        {"id": "gpt-35-turbo", "label": "GPT-3.5 Turbo (Azure)", "description": "Legacy Azure.", "context_window": 16_385},
+    ],
+    "bedrock": [
+        {"id": "anthropic.claude-3-5-sonnet-20241022-v2:0", "label": "Claude 3.5 Sonnet (Bedrock)", "description": "Via AWS Bedrock.", "context_window": 200_000},
+        {"id": "meta.llama3-70b-instruct-v1:0", "label": "Llama 3 70B (Bedrock)", "description": "Via Bedrock.", "context_window": 8_192},
     ],
 }
 
@@ -451,6 +559,61 @@ PROVIDER_TUNING_FIELDS: dict[str, list[dict[str, Any]]] = {
             "description": "Strip the thinking trace from the final response.",
             "model_patterns": ["^z-ai/glm"],
         },
+    ],
+    "mistral": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "cohere": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "p", "label": "P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "groq": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "together": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "fireworks": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "perplexity": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "deepseek": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "xai": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "upstage": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "azure": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "bedrock": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
     ],
 }
 
@@ -1202,6 +1365,30 @@ def _provider_api_key(settings: Settings, provider: str) -> str:
         return str(settings.openrouter_api_key or "").strip()
     if normalized_provider == "nvidia":
         return str(settings.nvidia_api_key or "").strip()
+    if normalized_provider == "mistral":
+        return str(getattr(settings, "mistral_api_key", "") or "").strip()
+    if normalized_provider == "cohere":
+        return str(getattr(settings, "cohere_api_key", "") or "").strip()
+    if normalized_provider == "groq":
+        return str(getattr(settings, "groq_api_key", "") or "").strip()
+    if normalized_provider == "together":
+        return str(getattr(settings, "together_api_key", "") or "").strip()
+    if normalized_provider == "fireworks":
+        return str(getattr(settings, "fireworks_api_key", "") or "").strip()
+    if normalized_provider == "perplexity":
+        return str(getattr(settings, "perplexity_api_key", "") or "").strip()
+    if normalized_provider == "deepseek":
+        return str(getattr(settings, "deepseek_api_key", "") or "").strip()
+    if normalized_provider == "xai":
+        return str(getattr(settings, "xai_api_key", "") or "").strip()
+    if normalized_provider == "upstage":
+        return str(getattr(settings, "upstage_api_key", "") or "").strip()
+    if normalized_provider == "azure":
+        return str(getattr(settings, "azure_api_key", "") or "").strip()
+    if normalized_provider == "bedrock":
+        return str(getattr(settings, "bedrock_api_key", "") or "").strip()
+    if normalized_provider in {"vertex", "google-vertex"}:
+        return str(getattr(settings, "google_vertex_api_key", "") or "").strip()
     return ""
 
 

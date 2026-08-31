@@ -52,41 +52,22 @@ import {
 } from "@/lib/settings-page";
 
 const PROVIDERS = [
-  {
-    id: "google",
-    name: "Google Gemini",
-    keyEnv: "GOOGLE_API_KEY",
-    color: "var(--sky)",
-    features: ["caching", "thinking", "grounding", "vision"],
-  },
-  {
-    id: "openai",
-    name: "OpenAI",
-    keyEnv: "OPENAI_API_KEY",
-    color: "var(--mint)",
-    features: ["reasoning", "vision", "tools"],
-  },
-  {
-    id: "anthropic",
-    name: "Anthropic",
-    keyEnv: "ANTHROPIC_API_KEY",
-    color: "var(--violet)",
-    features: ["thinking", "vision", "tools"],
-  },
-  {
-    id: "openrouter",
-    name: "OpenRouter",
-    keyEnv: "OPENROUTER_API_KEY",
-    color: "var(--signal)",
-    features: ["multi-provider", "routing"],
-  },
-  {
-    id: "nvidia",
-    name: "NVIDIA NIM",
-    keyEnv: "NVIDIA_API_KEY",
-    color: "var(--rose)",
-    features: ["inference", "hosted"],
-  },
+  { id: "google", name: "Google Gemini", keyEnv: "GOOGLE_API_KEY", color: "#4285F4", features: ["caching", "thinking", "vision"], category: "Frontier" },
+  { id: "openai", name: "OpenAI", keyEnv: "OPENAI_API_KEY", color: "#10a37f", features: ["reasoning", "vision", "tools"], category: "Frontier" },
+  { id: "anthropic", name: "Anthropic", keyEnv: "ANTHROPIC_API_KEY", color: "#d4a574", features: ["thinking", "vision", "tools"], category: "Frontier" },
+  { id: "xai", name: "xAI", keyEnv: "XAI_API_KEY", color: "#000000", features: ["grok", "reasoning"], category: "Frontier" },
+  { id: "deepseek", name: "DeepSeek", keyEnv: "DEEPSEEK_API_KEY", color: "#4d6bfe", features: ["reasoning", "coder"], category: "Frontier" },
+  { id: "upstage", name: "Upstage", keyEnv: "UPSTAGE_API_KEY", color: "#ff6b35", features: ["solar", "reasoning"], category: "Frontier" },
+  { id: "groq", name: "Groq", keyEnv: "GROQ_API_KEY", color: "#f55036", features: ["LPU", "ultra-fast"], category: "Speed" },
+  { id: "together", name: "Together AI", keyEnv: "TOGETHER_API_KEY", color: "#00b4d8", features: ["fast", "open"], category: "Speed" },
+  { id: "fireworks", name: "Fireworks AI", keyEnv: "FIREWORKS_API_KEY", color: "#ff3b30", features: ["fast", "inference"], category: "Speed" },
+  { id: "nvidia", name: "NVIDIA NIM", keyEnv: "NVIDIA_API_KEY", color: "#76b900", features: ["inference", "hosted"], category: "Speed" },
+  { id: "mistral", name: "Mistral AI", keyEnv: "MISTRAL_API_KEY", color: "#ff7000", features: ["open", "european"], category: "Open" },
+  { id: "cohere", name: "Cohere", keyEnv: "COHERE_API_KEY", color: "#39594e", features: ["command", "embed"], category: "Open" },
+  { id: "perplexity", name: "Perplexity", keyEnv: "PERPLEXITY_API_KEY", color: "#1ea2a6", features: ["sonar", "search"], category: "Open" },
+  { id: "openrouter", name: "OpenRouter", keyEnv: "OPENROUTER_API_KEY", color: "var(--signal)", features: ["aggregator", "routing"], category: "Gateway" },
+  { id: "azure", name: "Azure OpenAI", keyEnv: "AZURE_API_KEY", color: "#0078d4", features: ["enterprise", "azure"], category: "Gateway" },
+  { id: "bedrock", name: "AWS Bedrock", keyEnv: "BEDROCK_API_KEY", color: "#ff9900", features: ["aws", "hosted"], category: "Gateway" },
 ];
 
 const AGENT_SLOTS = [
@@ -1551,9 +1532,12 @@ export function SettingsPage() {
   const [pricingStatus, setPricingStatus] = useState({});
   const [pricingSyncLoading, setPricingSyncLoading] = useState("");
   const [saving, setSaving] = useState(false);
-  const [keyEdits, setKeyEdits] = useState<Record<string, string | null>>({ google: null, openai: null, anthropic: null, openrouter: null, nvidia: null });
+  const [keyEdits, setKeyEdits] = useState<Record<string, string | null>>({ google: null, openai: null, anthropic: null, openrouter: null, nvidia: null, mistral: null, cohere: null, groq: null, together: null, fireworks: null, perplexity: null, deepseek: null, xai: null, upstage: null, azure: null, bedrock: null });
   const [showKey, setShowKey] = useState<Record<string, boolean>>({});
   const [keyTestState, setKeyTestState] = useState<Record<string, string>>({});
+  const [providerKeyQuery, setProviderKeyQuery] = useState("");
+  const [providerKeyCategory, setProviderKeyCategory] = useState<string>("All");
+  const [providerKeyStatus, setProviderKeyStatus] = useState<string>("All");
   const [savedTab, setSavedTab] = useState("");
   const [configErr, setConfigErr] = useState("");
   const [saveMismatchWarning, setSaveMismatchWarning] = useState("");
@@ -1963,7 +1947,7 @@ export function SettingsPage() {
     );
     setModelConfigWarnings(payload.model_config_warnings || []);
     setActiveMcpBrowserTab(payload.browser_engine || "playwright");
-    setKeyEdits({ google: null, openai: null, anthropic: null, openrouter: null, nvidia: null });
+    setKeyEdits({ google: null, openai: null, anthropic: null, openrouter: null, nvidia: null, mistral: null, cohere: null, groq: null, together: null, fireworks: null, perplexity: null, deepseek: null, xai: null, upstage: null, azure: null, bedrock: null });
     setSavedTab("");
 
     const providersToLoad = PROVIDERS.map((pr: any) => pr.id);
@@ -2176,6 +2160,17 @@ export function SettingsPage() {
         if (keyEdits.anthropic !== null) payload.anthropic_api_key = keyEdits.anthropic;
         if (keyEdits.openrouter !== null) payload.openrouter_api_key = keyEdits.openrouter;
         if (keyEdits.nvidia !== null) payload.nvidia_api_key = keyEdits.nvidia;
+        if ((keyEdits as any).mistral !== null) payload.mistral_api_key = (keyEdits as any).mistral;
+        if ((keyEdits as any).cohere !== null) payload.cohere_api_key = (keyEdits as any).cohere;
+        if ((keyEdits as any).groq !== null) payload.groq_api_key = (keyEdits as any).groq;
+        if ((keyEdits as any).together !== null) payload.together_api_key = (keyEdits as any).together;
+        if ((keyEdits as any).fireworks !== null) payload.fireworks_api_key = (keyEdits as any).fireworks;
+        if ((keyEdits as any).perplexity !== null) payload.perplexity_api_key = (keyEdits as any).perplexity;
+        if ((keyEdits as any).deepseek !== null) payload.deepseek_api_key = (keyEdits as any).deepseek;
+        if ((keyEdits as any).xai !== null) payload.xai_api_key = (keyEdits as any).xai;
+        if ((keyEdits as any).upstage !== null) payload.upstage_api_key = (keyEdits as any).upstage;
+        if ((keyEdits as any).azure !== null) payload.azure_api_key = (keyEdits as any).azure;
+        if ((keyEdits as any).bedrock !== null) payload.bedrock_api_key = (keyEdits as any).bedrock;
         return Object.keys(payload).length ? payload : null;
       }
       default:
@@ -3613,34 +3608,102 @@ export function SettingsPage() {
             </section>
           ) : null}
 
-          {activeTab === "api-keys" ? (
-            <section className="space-y-4">
-              <div className="rounded-xl border border-border/60 bg-card p-4">
-                <h2 className="text-sm font-semibold text-foreground">Provider Keys — BYOK</h2>
-                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                  Keys are stored in <span className="font-mono text-xs">data/settings.runtime.yaml</span> (runtime layer, wins over <span className="font-mono text-xs">.env</span>), masked in the UI, and never baked into images. Leave blank to keep existing, or use <span className="font-medium">Clear</span> to remove.
-                </p>
+                    {activeTab === "api-keys" ? (
+            <section className="space-y-5">
+              {/* Header + stats */}
+              <div className="rounded-2xl border border-border/60 bg-card p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="max-w-[620px] space-y-1.5">
+                    <h2 className="text-[16px] font-semibold tracking-tight text-foreground">Provider Keys — BYOK</h2>
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      Paste keys per provider. Stored in <span className="font-mono text-xs rounded bg-muted px-1 py-0.5">data/settings.runtime.yaml</span> (runtime wins over <span className="font-mono text-xs">.env</span>), masked, never baked into images. Leave blank to keep, <span className="font-medium text-foreground">Clear</span> to remove.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={Object.values(apiKeys).filter(Boolean).length ? "success" : "default"} className="px-2.5 py-1 text-xs font-medium">
+                      {Object.values(apiKeys).filter(Boolean).length} / {PROVIDERS.length} configured
+                    </Badge>
+                    <Badge tone="default" className="px-2.5 py-1 text-xs">{PROVIDERS.filter((pr: any) => pr.category === "Frontier").length} frontier · {PROVIDERS.filter((pr: any) => pr.category === "Speed").length} speed · {PROVIDERS.filter((pr: any) => pr.category === "Gateway").length} gateway</Badge>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5">
+                    <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Configured</div>
+                    <div className="mt-1 flex items-baseline gap-2"><span className="text-xl font-semibold text-foreground">{Object.values(apiKeys).filter(Boolean).length}</span><span className="text-xs text-muted-foreground">/ {PROVIDERS.length} providers</span></div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.round((Object.values(apiKeys).filter(Boolean).length / PROVIDERS.length) * 100)}%` }} /></div>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5">
+                    <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Missing</div>
+                    <div className="mt-1 text-xl font-semibold text-foreground">{PROVIDERS.length - Object.values(apiKeys).filter(Boolean).length}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">Add keys to enable live catalogs and runs</div>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5">
+                    <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Security</div>
+                    <div className="mt-1 text-sm font-medium text-foreground">Masked &amp; runtime-only</div>
+                    <div className="mt-1 text-xs text-muted-foreground">Never committed, never in image layers</div>
+                  </div>
+                </div>
               </div>
-              <div className="grid gap-4">
-                {PROVIDERS.map((item) => {
-                  const hasKey = !!apiKeys[item.id];
+
+              {/* Controls: search + category + status */}
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                <div className="relative min-w-[260px] flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input value={providerKeyQuery} onChange={(e) => setProviderKeyQuery(e.target.value)} placeholder="Search providers, env vars, features..." className="h-10 pl-9" />
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {["All", "Frontier", "Speed", "Open", "Gateway"].map((cat) => (
+                    <Button key={cat} variant={providerKeyCategory === cat ? "secondary" : "ghost"} size="sm" className="h-7 px-2.5 text-xs rounded-full" onClick={() => setProviderKeyCategory(cat)}>{cat}</Button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {["All", "Configured", "Missing"].map((st) => (
+                    <Button key={st} variant={providerKeyStatus === st ? "secondary" : "ghost"} size="sm" className="h-7 px-2.5 text-xs rounded-full" onClick={() => setProviderKeyStatus(st)}>{st}</Button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Grid */}
+              <div className="grid gap-4 md:grid-cols-2">
+                {PROVIDERS.filter((pr: any) => {
+                  const q = providerKeyQuery.trim().toLowerCase();
+                  const matchesSearch = !q || [pr.name, pr.keyEnv, pr.id, (pr.features || []).join(" "), pr.category].join(" ").toLowerCase().includes(q);
+                  const matchesCat = providerKeyCategory === "All" || pr.category === providerKeyCategory;
+                  const hasKey = !!(apiKeys as any)[pr.id];
+                  const matchesStatus = providerKeyStatus === "All" || (providerKeyStatus === "Configured" ? hasKey : !hasKey);
+                  return matchesSearch && matchesCat && matchesStatus;
+                }).map((item: any) => {
+                  const hasKey = !!(apiKeys as any)[item.id];
                   const edited = (keyEdits as any)[item.id];
                   const isEdited = edited !== null;
                   const isCleared = edited === "";
+                  const show = !!(showKey as any)[item.id];
+                  const testState = (keyTestState as any)[item.id] || "";
+                  const isTesting = testState === "testing";
                   return (
-                    <div key={item.id} className={["rounded-xl border bg-card p-4", hasKey ? "border-border/60" : "border-border/60", isEdited && !isCleared ? "border-primary/30 bg-primary/[0.02]" : ""].join(" ")}>
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: hasKey || (isEdited && !isCleared) ? (item.color || "var(--mint)") : "var(--mute-3)" }} />
+                    <div key={item.id} className={["group relative overflow-hidden rounded-2xl border bg-card p-4 transition-all", hasKey ? "border-border/60" : "border-border/60", isEdited && !isCleared ? "border-primary/30 shadow-[0_8px_24px_-16px_rgba(0,0,0,0.2)] bg-primary/[0.015]" : "hover:border-border/80 hover:shadow-sm"].join(" ")} style={{ borderLeftWidth: 3, borderLeftColor: item.color || "var(--border)" }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="flex size-2.5 shrink-0 rounded-full" style={{ background: hasKey || (isEdited && !isCleared) ? item.color : "var(--mute-3)" }} />
                             <span className="text-sm font-semibold text-foreground">{item.name}</span>
+                            <Badge tone="default" className="px-1.5 py-0 text-[10px] font-medium">{item.category}</Badge>
                             <KeyStatus set={hasKey || (isEdited && !isCleared)} />
                             {isEdited ? <Badge tone={isCleared ? "warning" : "signal"} className="px-1.5 py-0 text-[10px]">{isCleared ? "will clear" : "edited"}</Badge> : null}
+                            {testState === "ok" ? <Badge tone="success" className="px-1.5 py-0 text-[10px]">verified</Badge> : testState === "error" ? <Badge tone="danger" className="px-1.5 py-0 text-[10px]">failed</Badge> : null}
                           </div>
-                          <div className="mt-1 font-mono text-[11px] text-muted-foreground">{item.keyEnv}</div>
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-[11px] text-muted-foreground">{item.keyEnv}</span>
+                            <span className="hidden sm:inline text-[11px] text-muted-foreground/60">•</span>
+                            <span className="text-[11px] text-muted-foreground">{(item.features || []).slice(0, 3).join(" • ")}</span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setShowKey((s: any) => ({ ...s, [item.id]: !(s as any)[item.id] }))}>{(showKey as any)[item.id] ? "Hide" : "Show"}</Button>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setShowKey((s: any) => ({ ...s, [item.id]: !(s as any)[item.id] }))}>{show ? "Hide" : "Show"}</Button>
+                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={async () => {
+                            setKeyTestState((s: any) => ({ ...s, [item.id]: "testing" }));
+                            try { await loadProviderCatalog(item.id, { force: true }); setKeyTestState((s: any) => ({ ...s, [item.id]: "ok" })); setTimeout(() => setKeyTestState((s: any) => { const n = { ...s }; delete n[item.id]; return n; }), 3000); } catch { setKeyTestState((s: any) => ({ ...s, [item.id]: "error" })); setTimeout(() => setKeyTestState((s: any) => { const n = { ...s }; delete n[item.id]; return n; }), 3000); }
+                          }} disabled={isTesting}>{isTesting ? <Loader2 className="size-3 animate-spin" /> : "Test"}</Button>
                           <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setKeyEdits((s: any) => ({ ...s, [item.id]: "" }))}>Clear</Button>
                           {isEdited ? <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setKeyEdits((s: any) => ({ ...s, [item.id]: null }))}>Undo</Button> : null}
                         </div>
@@ -3649,28 +3712,46 @@ export function SettingsPage() {
                         <Input
                           value={isEdited ? (edited as string) : ""}
                           onChange={(e) => setKeyEdits((s: any) => ({ ...s, [item.id]: e.target.value }))}
-                          placeholder={hasKey ? "•••••••••••••••• — enter new key to replace" : "Paste " + item.keyEnv}
-                          type={(showKey as any)[item.id] ? "text" : "password"}
+                          placeholder={hasKey ? "•••••••••••••••• — paste new key to replace" : "Paste " + item.keyEnv}
+                          type={show ? "text" : "password"}
                           className="h-10 font-mono text-sm"
                           autoComplete="off"
                           spellCheck={false}
                         />
-                        <p className="mt-1.5 text-[11px] text-muted-foreground">
-                          {hasKey ? "Key is set (masked). " : "No key set. "}
-                          {isEdited && !isCleared ? "New value will be saved on save." : isCleared ? "Save to remove this key from runtime config." : "Leave blank to keep current value."}
-                        </p>
+                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-[11px] leading-relaxed text-muted-foreground">
+                            {hasKey ? "Key set (masked). " : "No key set — "}{isEdited && !isCleared ? "New value will be saved." : isCleared ? "Will remove from runtime config on save." : "Leave blank to keep existing."}
+                          </p>
+                          {hasKey ? <span className="text-[11px] font-mono text-muted-foreground/70">source: {(config as any)?.settings_sources?.[item.keyEnv.toLowerCase()]?.source_layer || ((config as any)?.settings_sources?.[item.id + "_api_key"]?.source_layer) || "env/runtime"}</span> : null}
+                        </div>
                       </div>
                     </div>
                   );
                 })}
               </div>
+              {PROVIDERS.filter((pr: any) => {
+                const q = providerKeyQuery.trim().toLowerCase();
+                const matchesSearch = !q || [pr.name, pr.keyEnv, pr.id, (pr.features || []).join(" "), pr.category].join(" ").toLowerCase().includes(q);
+                const matchesCat = providerKeyCategory === "All" || pr.category === providerKeyCategory;
+                const hasKey = !!(apiKeys as any)[pr.id];
+                const matchesStatus = providerKeyStatus === "All" || (providerKeyStatus === "Configured" ? hasKey : !hasKey);
+                return matchesSearch && matchesCat && matchesStatus;
+              }).length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border/60 bg-muted/10 px-6 py-10 text-center">
+                  <div className="mx-auto max-w-sm space-y-2">
+                    <div className="text-sm font-medium text-foreground">No providers match</div>
+                    <p className="text-sm text-muted-foreground">Try a different search or filter. Showing {PROVIDERS.length} total providers.</p>
+                    <Button variant="ghost" size="sm" onClick={() => { setProviderKeyQuery(""); setProviderKeyCategory("All"); setProviderKeyStatus("All"); }}>Clear filters</Button>
+                  </div>
+                </div>
+              ) : null}
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
-                <span className="font-semibold">Heads up:</span> If you previously set keys in <span className="font-mono">.env</span>, runtime keys win (precedence: <span className="font-mono">default &lt; env &lt; base_yaml &lt; runtime_yaml</span>). Remove provider keys from <span className="font-mono">.env</span> after migrating to keep BYOK as single source.
+                <div className="flex gap-2"><span className="mt-0.5 shrink-0">⚡</span><span><span className="font-semibold">Heads up:</span> Runtime keys win over <span className="font-mono">.env</span> (precedence: <span className="font-mono">default &lt; env &lt; base_yaml &lt; runtime_yaml</span>). After migrating, remove provider keys from <span className="font-mono">.env</span> and keep <span className="font-mono">POSTGRES_PASSWORD</span> / <span className="font-mono">AUTH_JWT_SECRET</span> there. Keys are never committed or baked into <span className="font-mono">open-web-catcher-web</span> images (<span className="font-mono">.dockerignore</span> + gitignored <span className="font-mono">data/</span>).</span></div>
               </div>
             </section>
           ) : null}
 
-          {activeTab === "display" ? <DisplaySettingsSection /> : null}
+{activeTab === "display" ? <DisplaySettingsSection /> : null}
 
           {activeTab === "account" ? (
             <section className="space-y-4">

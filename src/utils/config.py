@@ -477,6 +477,18 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     nvidia_api_key: str = ""
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
+    mistral_api_key: str = ""
+    cohere_api_key: str = ""
+    groq_api_key: str = ""
+    together_api_key: str = ""
+    fireworks_api_key: str = ""
+    perplexity_api_key: str = ""
+    deepseek_api_key: str = ""
+    xai_api_key: str = ""
+    upstage_api_key: str = ""
+    azure_api_key: str = ""
+    azure_api_base: str = ""
+    bedrock_api_key: str = ""
 
     observability_enabled: bool = Field(
         default=True,
@@ -715,6 +727,18 @@ class Settings(BaseSettings):
         existing["anthropic_api_key"] = self.anthropic_api_key
         existing["openrouter_api_key"] = self.openrouter_api_key
         existing["nvidia_api_key"] = self.nvidia_api_key
+        existing["mistral_api_key"] = self.mistral_api_key
+        existing["cohere_api_key"] = self.cohere_api_key
+        existing["groq_api_key"] = self.groq_api_key
+        existing["together_api_key"] = self.together_api_key
+        existing["fireworks_api_key"] = self.fireworks_api_key
+        existing["perplexity_api_key"] = self.perplexity_api_key
+        existing["deepseek_api_key"] = self.deepseek_api_key
+        existing["xai_api_key"] = self.xai_api_key
+        existing["upstage_api_key"] = self.upstage_api_key
+        existing["azure_api_key"] = self.azure_api_key
+        existing["azure_api_base"] = self.azure_api_base
+        existing["bedrock_api_key"] = self.bedrock_api_key
 
         try:
             primary_path.parent.mkdir(parents=True, exist_ok=True)

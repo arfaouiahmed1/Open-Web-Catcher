@@ -3588,7 +3588,7 @@ def ui_get_config():
     payload = ui_config_payload(settings)
     raw_sources = read_settings_with_sources(settings)
     # Mask provider keys in provenance payload — never ship raw secrets to the browser
-    for _k in ("google_api_key", "google_vertex_api_key", "openai_api_key", "anthropic_api_key", "openrouter_api_key", "nvidia_api_key", "cloudinary_api_secret", "auth_jwt_secret"):
+    for _k in ("google_api_key", "google_vertex_api_key", "openai_api_key", "anthropic_api_key", "openrouter_api_key", "nvidia_api_key", "mistral_api_key", "cohere_api_key", "groq_api_key", "together_api_key", "fireworks_api_key", "perplexity_api_key", "deepseek_api_key", "xai_api_key", "upstage_api_key", "azure_api_key", "azure_api_base", "bedrock_api_key", "cloudinary_api_secret", "auth_jwt_secret"):
         if _k in raw_sources:
             _v = raw_sources[_k].get("value") if isinstance(raw_sources[_k], dict) else None
             raw_sources[_k] = {**raw_sources[_k], "value": "***" if _v else "", "masked": True} if isinstance(raw_sources[_k], dict) else raw_sources[_k]

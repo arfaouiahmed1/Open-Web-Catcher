@@ -66,6 +66,18 @@ class ModelConfigRequest(BaseModel):
     anthropic_api_key: str | None = None
     openrouter_api_key: str | None = None
     nvidia_api_key: str | None = None
+    mistral_api_key: str | None = None
+    cohere_api_key: str | None = None
+    groq_api_key: str | None = None
+    together_api_key: str | None = None
+    fireworks_api_key: str | None = None
+    perplexity_api_key: str | None = None
+    deepseek_api_key: str | None = None
+    xai_api_key: str | None = None
+    upstage_api_key: str | None = None
+    azure_api_key: str | None = None
+    azure_api_base: str | None = None
+    bedrock_api_key: str | None = None
 
 
 def ui_config_payload(
@@ -133,6 +145,17 @@ def ui_config_payload(
             "anthropic": bool(settings.anthropic_api_key),
             "openrouter": bool(settings.openrouter_api_key),
             "nvidia": bool(settings.nvidia_api_key),
+            "mistral": bool(getattr(settings, "mistral_api_key", "")),
+            "cohere": bool(getattr(settings, "cohere_api_key", "")),
+            "groq": bool(getattr(settings, "groq_api_key", "")),
+            "together": bool(getattr(settings, "together_api_key", "")),
+            "fireworks": bool(getattr(settings, "fireworks_api_key", "")),
+            "perplexity": bool(getattr(settings, "perplexity_api_key", "")),
+            "deepseek": bool(getattr(settings, "deepseek_api_key", "")),
+            "xai": bool(getattr(settings, "xai_api_key", "")),
+            "upstage": bool(getattr(settings, "upstage_api_key", "")),
+            "azure": bool(getattr(settings, "azure_api_key", "")),
+            "bedrock": bool(getattr(settings, "bedrock_api_key", "")),
         },
         "model_selection_details": build_model_selection_details(settings),
         "model_config_warnings": collect_model_config_warnings(settings),
@@ -260,7 +283,7 @@ def apply_ui_config_update(
             body.agent_runtime_config
         )
     # BYOK: keys come from Settings UI; blank string = clear (remove from runtime yaml)
-    for _key_field in ("google_api_key", "google_vertex_api_key", "openai_api_key", "anthropic_api_key", "openrouter_api_key", "nvidia_api_key"):
+    for _key_field in ("google_api_key", "google_vertex_api_key", "openai_api_key", "anthropic_api_key", "openrouter_api_key", "nvidia_api_key", "mistral_api_key", "cohere_api_key", "groq_api_key", "together_api_key", "fireworks_api_key", "perplexity_api_key", "deepseek_api_key", "xai_api_key", "upstage_api_key", "azure_api_key", "azure_api_base", "bedrock_api_key"):
         _val = getattr(body, _key_field, None)
         if _val is not None:
             setattr(settings, _key_field, str(_val or "").strip())
@@ -276,7 +299,7 @@ def apply_ui_config_update(
     # Ensure cleared keys are also removed from runtime yaml (save_yaml writes to base when writable)
     # so a plain "" must not linger in data/settings.runtime.yaml and shadow the clear.
     _clear_fields = []
-    for _k in ("google_api_key", "google_vertex_api_key", "openai_api_key", "anthropic_api_key", "openrouter_api_key", "nvidia_api_key"):
+    for _k in ("google_api_key", "google_vertex_api_key", "openai_api_key", "anthropic_api_key", "openrouter_api_key", "nvidia_api_key", "mistral_api_key", "cohere_api_key", "groq_api_key", "together_api_key", "fireworks_api_key", "perplexity_api_key", "deepseek_api_key", "xai_api_key", "upstage_api_key", "azure_api_key", "azure_api_base", "bedrock_api_key"):
         _v = getattr(body, _k, None)
         if _v is not None and not str(_v).strip():
             _clear_fields.append(_k)
