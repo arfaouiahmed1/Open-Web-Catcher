@@ -73,6 +73,9 @@ services:
       # http://owc-tools-playwright:3001 over the compose network.
       PORT: 3001
       HOST: 0.0.0.0
+      # Chrome CDP must be reachable by owc over the compose network; local runs
+      # still default to 127.0.0.1 in the entrypoint when this is unset.
+      REMOTE_DEBUGGING_ADDRESS: 0.0.0.0
       MCP_BROWSER_MODE: ${MCP_BROWSER_MODE:-isolated}
       BROWSER_WS_ENDPOINT: ws://127.0.0.1:9223
       # uBOL adblock options (OWC_UBOL_*) are baked into the image ENV; override
@@ -120,6 +123,9 @@ services:
     environment:
       PORT: 3001
       HOST: 0.0.0.0
+      # Chrome CDP must be reachable by owc over the compose network; local runs
+      # still default to 127.0.0.1 in the entrypoint when this is unset.
+      REMOTE_DEBUGGING_ADDRESS: 0.0.0.0
       MCP_BROWSER_MODE: ${MCP_BROWSER_MODE:-isolated}
       BROWSER_WS_ENDPOINT: ws://127.0.0.1:9223
       OWC_BROWSER_HEADLESS: "false"

@@ -74,7 +74,7 @@ start_shared_chrome() {
         --disable-dev-shm-usage \
         --disable-gpu \
         --remote-debugging-port="${port}" \
-        --remote-debugging-address=127.0.0.1 \
+        --remote-debugging-address="${REMOTE_DEBUGGING_ADDRESS:-127.0.0.1}" \
         --user-data-dir=/tmp/chrome-profile-pw \
         "${extension_args[@]}" \
         about:blank &
