@@ -861,9 +861,9 @@ function SettingsTabHero({
 function SettingsTabBar({ active, onChange, dirtyTabs = {}, mobile = false, filterIds = null }: any) {
   const visibleTabs = filterIds ? SETTINGS_TABS.filter((tab: any) => (filterIds as string[]).includes(tab.id)) : SETTINGS_TABS;
   return (
-    <nav className={cn("gap-1.5", mobile ? "flex overflow-x-auto pb-1" : "flex flex-col")}>
+    <nav className={cn("gap-1", mobile ? "flex overflow-x-auto pb-1" : "flex flex-col")}>
       {mobile || filterIds ? null : (
-        <div className="mb-2 border-b px-2 pb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground/80">
+        <div className="mb-2 border-b border-[rgba(255,255,255,0.06)] px-2 pb-3 text-[11px] font-[600] uppercase tracking-[0.08em] text-[#62666d]">
           Configuration
         </div>
       )}
@@ -879,27 +879,26 @@ function SettingsTabBar({ active, onChange, dirtyTabs = {}, mobile = false, filt
             key={tab.id}
             type="button"
             onClick={() => onChange(tab.id)}
-            variant={isActive ? "secondary" : "ghost"}
+            variant="ghost"
             className={cn(
-              mobile
-                ? "h-auto shrink-0 rounded-[14px] border px-3.5 py-2.5 text-left"
-                : "h-auto w-full justify-between rounded-[14px] px-3 py-3 text-left",
+              "h-auto w-full justify-between rounded-[6px] border text-left transition-colors",
+              mobile ? "shrink-0 px-3 py-2.5" : "px-2.5 py-2",
               isActive
-                ? "border-border bg-background text-foreground shadow-sm"
-                : "border-transparent text-muted-foreground hover:border-border/70 hover:bg-muted/30",
+                ? "border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.06)] text-[#f7f8f8]"
+                : "border-transparent text-[#8a8f98] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#d0d6e0]",
             )}
           >
             <span className={cn("flex gap-2.5", mobile ? "items-center" : "items-start")}>
               {Icon ? <Icon className="mt-0.5 size-[14px] shrink-0" /> : null}
               <span className="min-w-0">
-                <span className="block text-[13px] font-medium leading-none">{tab.label}</span>
+                <span className="block text-[13px] font-[510] tracking-[-0.12px] leading-none" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>{tab.label}</span>
                 {mobile ? null : (
-                  <span className="mt-1 block text-[11px] font-normal leading-snug text-muted-foreground/80">
+                  <span className="mt-1 block text-[11px] font-[400] leading-snug tracking-[-0.12px] text-[#62666d]">
                     {meta?.storage === "server"
-                      ? "Saved to runtime config"
+                      ? "Runtime config"
                       : meta?.storage === "browser"
-                        ? "Local browser preference"
-                        : "Status only"}
+                        ? "Browser only"
+                        : "Status"}
                   </span>
                 )}
               </span>
@@ -2277,22 +2276,22 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 border-b border-border/60 pb-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="space-y-6" style={{ fontFeatureSettings: '"cv01","ss03"' }}>
+      <div className="flex flex-col gap-4 border-b border-[rgba(255,255,255,0.06)] pb-6">
+        <div className="flex flex-wrap items-baseline justify-between gap-4">
           <div className="space-y-1.5">
-            <h1 className="text-[22px] font-semibold tracking-tight text-foreground">Settings</h1>
-            <p className="max-w-[640px] text-sm leading-relaxed text-muted-foreground">
-              Provider keys are BYOK in <span className="font-medium text-foreground">Provider Keys</span> — no .env needed for models. Browser, tools, and display stay separate.
-            </p>
+            <h1 className="text-[20px] font-[590] tracking-[-0.24px] text-[#f7f8f8]" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>Settings</h1>
+            <p className="max-w-[560px] text-[13px] leading-[1.6] tracking-[-0.12px] text-[#8a8f98]">Provider keys are BYOK in <span className="font-[500] text-[#d0d6e0]">Provider Keys</span> — no <span className="font-mono text-[12px] text-[#d0d6e0]">.env</span> for models. Browser, tools, and display stay separate.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <Badge tone={hasDirty ? "warning" : "default"} className="px-2.5 py-1 text-[11px]">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={["inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-[500] tracking-[-0.12px]", hasDirty ? "border-[rgba(245,158,11,0.2)] bg-[rgba(245,158,11,0.12)] text-[#f59e0b]" : "border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] text-[#8a8f98]"].join(" ")}>
+              <span className={["size-1.5 rounded-full", hasDirty ? "bg-[#f59e0b]" : "bg-[#10b981]"].join(" ")} />
               {hasDirty ? `${Object.values(dirtyTabs).filter(Boolean).length} unsaved` : "All saved"}
-            </Badge>
-            <Badge tone={activeCatalog?.available ? "success" : "warning"} className="px-2.5 py-1 text-[11px]">
+            </span>
+            <span className={["inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-[500] tracking-[-0.12px]", activeCatalog?.available ? "border-[rgba(16,185,129,0.2)] bg-[rgba(16,185,129,0.10)] text-[#10b981]" : "border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] text-[#8a8f98]"].join(" ")}>
+              <span className={["size-1.5 rounded-full", activeCatalog?.available ? "bg-[#10b981]" : "bg-[#62666d]"].join(" ")} />
               {activeCatalog?.available ? "Catalog live" : activeCatalog ? "Catalog offline" : "Loading catalog"}
-            </Badge>
+            </span>
           </div>
         </div>
         <div className="lg:hidden">
@@ -2303,28 +2302,29 @@ export function SettingsPage() {
       {/* ── LEFT NAV — grouped, minimal ─────────────────────────── */}
       <div className="sticky top-6 hidden w-[220px] shrink-0 self-start lg:block">
         <div className="space-y-5">
-          <div className="space-y-1">
-            <div className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/60">AI Configuration</div>
+          <div className="space-y-1.5">
+            <div className="px-2 text-[11px] font-[600] uppercase tracking-[0.08em] text-[#62666d]">AI Configuration</div>
             <SettingsTabBar active={activeTab} onChange={setActiveTab} dirtyTabs={dirtyTabs} filterIds={["models","api-keys"]} />
           </div>
-          <div className="space-y-1">
-            <div className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/60">Runtime</div>
+          <div className="space-y-1.5">
+            <div className="px-2 text-[11px] font-[600] uppercase tracking-[0.08em] text-[#62666d]">Runtime</div>
             <SettingsTabBar active={activeTab} onChange={setActiveTab} dirtyTabs={dirtyTabs} filterIds={["browser","mcp-tools"]} />
           </div>
-          <div className="space-y-1">
-            <div className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/60">Preferences</div>
+          <div className="space-y-1.5">
+            <div className="px-2 text-[11px] font-[600] uppercase tracking-[0.08em] text-[#62666d]">Preferences</div>
             <SettingsTabBar active={activeTab} onChange={setActiveTab} dirtyTabs={dirtyTabs} filterIds={["display","notifications"]} />
           </div>
-          <div className="space-y-1">
-            <div className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/60">Security</div>
+          <div className="space-y-1.5">
+            <div className="px-2 text-[11px] font-[600] uppercase tracking-[0.08em] text-[#62666d]">Security</div>
             <SettingsTabBar active={activeTab} onChange={setActiveTab} dirtyTabs={dirtyTabs} filterIds={["account"]} />
           </div>
-          <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-3">
-            <div className="text-[11px] font-medium text-foreground">Status</div>
-            <div className="mt-2 space-y-1.5 text-xs">
-              <div className="flex items-center justify-between"><span className="text-muted-foreground">Catalog</span><Badge tone={activeCatalog?.available ? "success" : "default"} className="px-1.5 py-0 text-[10px]">{activeCatalog?.available ? "Live" : "Offline"}</Badge></div>
-              <div className="flex items-center justify-between"><span className="text-muted-foreground">Keys</span><Badge tone={Object.values(apiKeys).some(Boolean) ? "success" : "warning"} className="px-1.5 py-0 text-[10px]">{Object.values(apiKeys).filter(Boolean).length || 0}/{PROVIDERS.length} set</Badge></div>
-              <div className="flex items-center justify-between"><span className="text-muted-foreground">Unsaved</span><span className={hasDirty ? "font-medium text-amber-600" : "text-muted-foreground"}>{hasDirty ? String(Object.values(dirtyTabs).filter(Boolean).length) : "—"}</span></div>
+          <div className="rounded-[8px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] px-3 py-3">
+            <div className="text-[11px] font-[600] uppercase tracking-[0.06em] text-[#8a8f98]">Status</div>
+            <div className="mt-3 space-y-2.5">
+              <div className="flex items-center justify-between text-[12px]"><span className="tracking-[-0.12px] text-[#8a8f98]">Catalog</span><span className={["inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-[500]", activeCatalog?.available ? "bg-[rgba(16,185,129,0.12)] text-[#10b981]" : "bg-[rgba(255,255,255,0.06)] text-[#62666d]"].join(" ")}><span className={["size-1 rounded-full", activeCatalog?.available ? "bg-[#10b981]" : "bg-[#62666d]"].join(" ")} />{activeCatalog?.available ? "Live" : "Offline"}</span></div>
+              <div className="flex items-center justify-between text-[12px]"><span className="tracking-[-0.12px] text-[#8a8f98]">Keys</span><span className="font-[500] tracking-[-0.12px] text-[#f7f8f8]">{Object.values(apiKeys).filter(Boolean).length || 0} / {PROVIDERS.length}</span></div>
+              <div className="h-px bg-[rgba(255,255,255,0.06)]" />
+              <div className="flex items-center justify-between text-[12px]"><span className="tracking-[-0.12px] text-[#8a8f98]">Unsaved</span><span className={["text-[12px] font-[500] tracking-[-0.12px]", hasDirty ? "text-[#f59e0b]" : "text-[#62666d]"].join(" ")}>{hasDirty ? String(Object.values(dirtyTabs).filter(Boolean).length) : "—"}</span></div>
             </div>
           </div>
         </div>
@@ -3608,145 +3608,142 @@ export function SettingsPage() {
             </section>
           ) : null}
 
-                    {activeTab === "api-keys" ? (
-            <section className="space-y-5">
-              {/* Header + stats */}
-              <div className="rounded-2xl border border-border/60 bg-card p-5">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="max-w-[620px] space-y-1.5">
-                    <h2 className="text-[16px] font-semibold tracking-tight text-foreground">Provider Keys — BYOK</h2>
-                    <p className="text-sm leading-relaxed text-muted-foreground">
-                      Paste keys per provider. Stored in <span className="font-mono text-xs rounded bg-muted px-1 py-0.5">data/settings.runtime.yaml</span> (runtime wins over <span className="font-mono text-xs">.env</span>), masked, never baked into images. Leave blank to keep, <span className="font-medium text-foreground">Clear</span> to remove.
-                    </p>
+                              {activeTab === "api-keys" ? (
+            <section className="space-y-6" style={{ fontFeatureSettings: '"cv01","ss03"' }}>
+              {/* Header — Linear style: tight, subtle */}
+              <div className="border-b border-[rgba(255,255,255,0.06)] pb-6">
+                <div className="flex flex-wrap items-baseline justify-between gap-3">
+                  <div>
+                    <h2 className="text-[20px] font-[590] tracking-[-0.24px] text-[#f7f8f8]" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>Provider keys</h2>
+                    <p className="mt-2 max-w-[560px] text-[14px] leading-[1.6] tracking-[-0.13px] text-[#8a8f98]">BYOK — keys live in <span className="font-mono text-[12px] text-[#d0d6e0]">data/settings.runtime.yaml</span>. Never baked into images, never committed. Runtime layer wins over <span className="font-mono text-[12px] text-[#d0d6e0]">.env</span>.</p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone={Object.values(apiKeys).filter(Boolean).length ? "success" : "default"} className="px-2.5 py-1 text-xs font-medium">
-                      {Object.values(apiKeys).filter(Boolean).length} / {PROVIDERS.length} configured
-                    </Badge>
-                    <Badge tone="default" className="px-2.5 py-1 text-xs">{PROVIDERS.filter((pr: any) => pr.category === "Frontier").length} frontier · {PROVIDERS.filter((pr: any) => pr.category === "Speed").length} speed · {PROVIDERS.filter((pr: any) => pr.category === "Gateway").length} gateway</Badge>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-2 rounded-full border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-3 py-1.5 text-[12px] font-[500] tracking-[-0.12px] text-[#d0d6e0]">
+                      <span className="size-2 rounded-full bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
+                      {Object.values(apiKeys).filter(Boolean).length} / {PROVIDERS.length} live
+                    </span>
                   </div>
                 </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5">
-                    <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Configured</div>
-                    <div className="mt-1 flex items-baseline gap-2"><span className="text-xl font-semibold text-foreground">{Object.values(apiKeys).filter(Boolean).length}</span><span className="text-xs text-muted-foreground">/ {PROVIDERS.length} providers</span></div>
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.round((Object.values(apiKeys).filter(Boolean).length / PROVIDERS.length) * 100)}%` }} /></div>
+                <div className="mt-5 h-1 w-full overflow-hidden rounded-full bg-[rgba(255,255,255,0.06)]">
+                  <div className="h-full rounded-full bg-[#5e6ad2] transition-all duration-500" style={{ width: `${Math.round((Object.values(apiKeys).filter(Boolean).length / PROVIDERS.length) * 100)}%` }} />
+                </div>
+              </div>
+
+              {/* Controls — Linear: ghost pills + subtle search */}
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="relative min-w-[260px] flex-1 max-w-[360px]">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#62666d]" />
+                    <input value={providerKeyQuery} onChange={(e) => setProviderKeyQuery(e.target.value)} placeholder="Search providers, env, features…" className="h-8 w-full rounded-[6px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] pl-9 pr-3 text-[13px] font-[400] tracking-[-0.12px] text-[#f7f8f8] placeholder:text-[#62666d] outline-none focus:border-[rgba(255,255,255,0.14)] focus:bg-[rgba(255,255,255,0.04)]" style={{ fontFamily: 'Inter, system-ui, sans-serif' }} />
                   </div>
-                  <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5">
-                    <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Missing</div>
-                    <div className="mt-1 text-xl font-semibold text-foreground">{PROVIDERS.length - Object.values(apiKeys).filter(Boolean).length}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">Add keys to enable live catalogs and runs</div>
-                  </div>
-                  <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5">
-                    <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Security</div>
-                    <div className="mt-1 text-sm font-medium text-foreground">Masked &amp; runtime-only</div>
-                    <div className="mt-1 text-xs text-muted-foreground">Never committed, never in image layers</div>
+                  <div className="flex flex-wrap items-center gap-1">
+                    {["All","Configured","Missing"].map((st) => (
+                      <button key={st} onClick={() => setProviderKeyStatus(st)} className={["inline-flex h-6 items-center rounded-full border px-2.5 text-[12px] font-[500] tracking-[-0.12px] transition-colors", providerKeyStatus === st ? "border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.06)] text-[#f7f8f8]" : "border-transparent text-[#8a8f98] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#d0d6e0]"].join(" ")}>{st}</button>
+                    ))}
+                    <span className="mx-1 h-4 w-px bg-[rgba(255,255,255,0.08)]" />
+                    {["All","Frontier","Speed","Open","Gateway"].map((cat) => (
+                      <button key={cat} onClick={() => setProviderKeyCategory(cat)} className={["inline-flex h-6 items-center rounded-full border px-2.5 text-[12px] font-[500] tracking-[-0.12px] transition-colors", providerKeyCategory === cat ? "border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.06)] text-[#f7f8f8]" : "border-transparent text-[#8a8f98] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#d0d6e0]"].join(" ")}>{cat}</button>
+                    ))}
                   </div>
                 </div>
               </div>
 
-              {/* Controls: search + category + status */}
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-                <div className="relative min-w-[260px] flex-1">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input value={providerKeyQuery} onChange={(e) => setProviderKeyQuery(e.target.value)} placeholder="Search providers, env vars, features..." className="h-10 pl-9" />
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {["All", "Frontier", "Speed", "Open", "Gateway"].map((cat) => (
-                    <Button key={cat} variant={providerKeyCategory === cat ? "secondary" : "ghost"} size="sm" className="h-7 px-2.5 text-xs rounded-full" onClick={() => setProviderKeyCategory(cat)}>{cat}</Button>
-                  ))}
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {["All", "Configured", "Missing"].map((st) => (
-                    <Button key={st} variant={providerKeyStatus === st ? "secondary" : "ghost"} size="sm" className="h-7 px-2.5 text-xs rounded-full" onClick={() => setProviderKeyStatus(st)}>{st}</Button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Grid */}
-              <div className="grid gap-4 md:grid-cols-2">
-                {PROVIDERS.filter((pr: any) => {
-                  const q = providerKeyQuery.trim().toLowerCase();
-                  const matchesSearch = !q || [pr.name, pr.keyEnv, pr.id, (pr.features || []).join(" "), pr.category].join(" ").toLowerCase().includes(q);
-                  const matchesCat = providerKeyCategory === "All" || pr.category === providerKeyCategory;
-                  const hasKey = !!(apiKeys as any)[pr.id];
-                  const matchesStatus = providerKeyStatus === "All" || (providerKeyStatus === "Configured" ? hasKey : !hasKey);
-                  return matchesSearch && matchesCat && matchesStatus;
-                }).map((item: any) => {
-                  const hasKey = !!(apiKeys as any)[item.id];
-                  const edited = (keyEdits as any)[item.id];
-                  const isEdited = edited !== null;
-                  const isCleared = edited === "";
-                  const show = !!(showKey as any)[item.id];
-                  const testState = (keyTestState as any)[item.id] || "";
-                  const isTesting = testState === "testing";
-                  return (
-                    <div key={item.id} className={["group relative overflow-hidden rounded-2xl border bg-card p-4 transition-all", hasKey ? "border-border/60" : "border-border/60", isEdited && !isCleared ? "border-primary/30 shadow-[0_8px_24px_-16px_rgba(0,0,0,0.2)] bg-primary/[0.015]" : "hover:border-border/80 hover:shadow-sm"].join(" ")} style={{ borderLeftWidth: 3, borderLeftColor: item.color || "var(--border)" }}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="flex size-2.5 shrink-0 rounded-full" style={{ background: hasKey || (isEdited && !isCleared) ? item.color : "var(--mute-3)" }} />
-                            <span className="text-sm font-semibold text-foreground">{item.name}</span>
-                            <Badge tone="default" className="px-1.5 py-0 text-[10px] font-medium">{item.category}</Badge>
-                            <KeyStatus set={hasKey || (isEdited && !isCleared)} />
-                            {isEdited ? <Badge tone={isCleared ? "warning" : "signal"} className="px-1.5 py-0 text-[10px]">{isCleared ? "will clear" : "edited"}</Badge> : null}
-                            {testState === "ok" ? <Badge tone="success" className="px-1.5 py-0 text-[10px]">verified</Badge> : testState === "error" ? <Badge tone="danger" className="px-1.5 py-0 text-[10px]">failed</Badge> : null}
-                          </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-2">
-                            <span className="font-mono text-[11px] text-muted-foreground">{item.keyEnv}</span>
-                            <span className="hidden sm:inline text-[11px] text-muted-foreground/60">•</span>
-                            <span className="text-[11px] text-muted-foreground">{(item.features || []).slice(0, 3).join(" • ")}</span>
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1">
-                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setShowKey((s: any) => ({ ...s, [item.id]: !(s as any)[item.id] }))}>{show ? "Hide" : "Show"}</Button>
-                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={async () => {
-                            setKeyTestState((s: any) => ({ ...s, [item.id]: "testing" }));
-                            try { await loadProviderCatalog(item.id, { force: true }); setKeyTestState((s: any) => ({ ...s, [item.id]: "ok" })); setTimeout(() => setKeyTestState((s: any) => { const n = { ...s }; delete n[item.id]; return n; }), 3000); } catch { setKeyTestState((s: any) => ({ ...s, [item.id]: "error" })); setTimeout(() => setKeyTestState((s: any) => { const n = { ...s }; delete n[item.id]; return n; }), 3000); }
-                          }} disabled={isTesting}>{isTesting ? <Loader2 className="size-3 animate-spin" /> : "Test"}</Button>
-                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setKeyEdits((s: any) => ({ ...s, [item.id]: "" }))}>Clear</Button>
-                          {isEdited ? <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setKeyEdits((s: any) => ({ ...s, [item.id]: null }))}>Undo</Button> : null}
+              {/* Provider list — grouped, Linear: subtle rows, not cards */}
+              <div className="space-y-8">
+                {(() => {
+                  const filtered = PROVIDERS.filter((pr: any) => {
+                    const q = providerKeyQuery.trim().toLowerCase();
+                    const matchesSearch = !q || [pr.name, pr.keyEnv, pr.id, (pr.features || []).join(" "), pr.category].join(" ").toLowerCase().includes(q);
+                    const matchesCat = providerKeyCategory === "All" || pr.category === providerKeyCategory;
+                    const hasKey = !!(apiKeys as any)[pr.id];
+                    const matchesStatus = providerKeyStatus === "All" || (providerKeyStatus === "Configured" ? hasKey : !hasKey);
+                    return matchesSearch && matchesCat && matchesStatus;
+                  });
+                  const groups: Record<string, any[]> = {};
+                  filtered.forEach((pr: any) => {
+                    const g = pr.category || "Other";
+                    if (!groups[g]) groups[g] = [];
+                    groups[g].push(pr);
+                  });
+                  const order = ["Frontier","Speed","Open","Gateway"];
+                  const sortedGroups = Object.keys(groups).sort((a,b) => order.indexOf(a) - order.indexOf(b));
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="rounded-[8px] border border-dashed border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] px-6 py-12 text-center">
+                        <div className="mx-auto max-w-sm">
+                          <div className="text-[13px] font-[510] tracking-[-0.12px] text-[#f7f8f8]">No providers match</div>
+                          <p className="mt-1 text-[13px] leading-[1.5] text-[#8a8f98]">Try a different search or filter. {PROVIDERS.length} total providers available.</p>
+                          <button onClick={() => { setProviderKeyQuery(""); setProviderKeyCategory("All"); setProviderKeyStatus("All"); }} className="mt-4 inline-flex h-7 items-center rounded-[6px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-3 text-[12px] font-[500] text-[#d0d6e0] hover:bg-[rgba(255,255,255,0.06)]">Clear filters</button>
                         </div>
                       </div>
-                      <div className="mt-3">
-                        <Input
-                          value={isEdited ? (edited as string) : ""}
-                          onChange={(e) => setKeyEdits((s: any) => ({ ...s, [item.id]: e.target.value }))}
-                          placeholder={hasKey ? "•••••••••••••••• — paste new key to replace" : "Paste " + item.keyEnv}
-                          type={show ? "text" : "password"}
-                          className="h-10 font-mono text-sm"
-                          autoComplete="off"
-                          spellCheck={false}
-                        />
-                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-[11px] leading-relaxed text-muted-foreground">
-                            {hasKey ? "Key set (masked). " : "No key set — "}{isEdited && !isCleared ? "New value will be saved." : isCleared ? "Will remove from runtime config on save." : "Leave blank to keep existing."}
-                          </p>
-                          {hasKey ? <span className="text-[11px] font-mono text-muted-foreground/70">source: {(config as any)?.settings_sources?.[item.keyEnv.toLowerCase()]?.source_layer || ((config as any)?.settings_sources?.[item.id + "_api_key"]?.source_layer) || "env/runtime"}</span> : null}
-                        </div>
+                    );
+                  }
+                  return sortedGroups.map((group) => (
+                    <div key={group} className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="text-[11px] font-[600] uppercase tracking-[0.08em] text-[#8a8f98]">{group}</div>
+                        <div className="h-px flex-1 bg-[rgba(255,255,255,0.06)]" />
+                        <div className="text-[11px] font-[400] tracking-[-0.12px] text-[#62666d]">{groups[group].length} providers</div>
+                      </div>
+                      <div className="overflow-hidden rounded-[8px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)]">
+                        {groups[group].map((item: any, idx: number) => {
+                          const hasKey = !!(apiKeys as any)[item.id];
+                          const edited = (keyEdits as any)[item.id];
+                          const isEdited = edited !== null;
+                          const isCleared = edited === "";
+                          const show = !!(showKey as any)[item.id];
+                          const testState = (keyTestState as any)[item.id] || "";
+                          const isTesting = testState === "testing";
+                          return (
+                            <div key={item.id} className={["group relative flex flex-col gap-3 px-4 py-4 transition-colors", idx !== 0 ? "border-t border-[rgba(255,255,255,0.06)]" : "", isEdited && !isCleared ? "bg-[rgba(94,106,210,0.04)]" : "hover:bg-[rgba(255,255,255,0.03)]"].join(" ")}>
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex min-w-0 flex-1 items-start gap-3">
+                                  <span className="mt-1.5 size-2 shrink-0 rounded-full" style={{ background: hasKey || (isEdited && !isCleared) ? item.color : "#3f3f46", boxShadow: hasKey ? `0 0 8px ${item.color}40` : "none" }} />
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="text-[13px] font-[510] tracking-[-0.12px] text-[#f7f8f8]">{item.name}</span>
+                                      <span className="inline-flex items-center rounded-[4px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-1.5 py-0.5 font-mono text-[10px] font-[500] tracking-[-0.08px] text-[#8a8f98]">{item.keyEnv}</span>
+                                      {isEdited ? <span className={["inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-[600] tracking-[-0.08px]", isCleared ? "bg-[rgba(245,158,11,0.12)] text-[#f59e0b] border border-[rgba(245,158,11,0.2)]" : "bg-[rgba(94,106,210,0.12)] text-[#828fff] border border-[rgba(94,106,210,0.2)]"].join(" ")}>{isCleared ? "will clear" : "edited"}</span> : hasKey ? <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(16,185,129,0.10)] px-2 py-0.5 text-[10px] font-[600] tracking-[-0.08px] text-[#10b981]"><span className="size-1 rounded-full bg-[#10b981]" /> live</span> : <span className="inline-flex items-center rounded-full border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] px-2 py-0.5 text-[10px] font-[500] tracking-[-0.08px] text-[#62666d]">no key</span>}
+                                      {testState === "ok" ? <span className="inline-flex items-center rounded-full bg-[rgba(16,185,129,0.12)] px-2 py-0.5 text-[10px] font-[600] text-[#10b981]">verified</span> : testState === "error" ? <span className="inline-flex items-center rounded-full bg-[rgba(239,68,68,0.12)] px-2 py-0.5 text-[10px] font-[600] text-[#ef4444]">failed</span> : null}
+                                    </div>
+                                    <div className="mt-1 flex flex-wrap gap-1">
+                                      {(item.features || []).slice(0,3).map((f: string) => (
+                                        <span key={f} className="rounded-[4px] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 text-[10px] font-[400] tracking-[-0.08px] text-[#8a8f98]">{f}</span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-1">
+                                  <button onClick={() => setShowKey((s: any) => ({ ...s, [item.id]: !(s as any)[item.id] }))} className="inline-flex h-7 items-center rounded-[6px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] px-2.5 text-[12px] font-[500] tracking-[-0.12px] text-[#8a8f98] hover:bg-[rgba(255,255,255,0.06)] hover:text-[#f7f8f8]">{show ? "Hide" : "Show"}</button>
+                                  <button onClick={async () => {
+                                    setKeyTestState((s: any) => ({ ...s, [item.id]: "testing" }));
+                                    try { await loadProviderCatalog(item.id, { force: true }); setKeyTestState((s: any) => ({ ...s, [item.id]: "ok" })); setTimeout(() => setKeyTestState((s: any) => { const n = { ...s }; delete n[item.id]; return n; }), 2500); } catch { setKeyTestState((s: any) => ({ ...s, [item.id]: "error" })); setTimeout(() => setKeyTestState((s: any) => { const n = { ...s }; delete n[item.id]; return n; }), 2500); }
+                                  }} disabled={isTesting} className="inline-flex h-7 items-center gap-1 rounded-[6px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] px-2.5 text-[12px] font-[500] tracking-[-0.12px] text-[#8a8f98] hover:bg-[rgba(255,255,255,0.06)] hover:text-[#f7f8f8] disabled:opacity-50">
+                                    {isTesting ? <Loader2 className="size-3 animate-spin" /> : null} Test
+                                  </button>
+                                  <button onClick={() => setKeyEdits((s: any) => ({ ...s, [item.id]: "" }))} className="inline-flex h-7 items-center rounded-[6px] border border-transparent px-2.5 text-[12px] font-[500] tracking-[-0.12px] text-[#8a8f98] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#d0d6e0]">Clear</button>
+                                  {isEdited ? <button onClick={() => setKeyEdits((s: any) => ({ ...s, [item.id]: null }))} className="inline-flex h-7 items-center rounded-[6px] bg-[#5e6ad2] px-2.5 text-[12px] font-[500] tracking-[-0.12px] text-white hover:bg-[#828fff]">Undo</button> : null}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="relative flex-1">
+                                  <input value={isEdited ? (edited as string) : ""} onChange={(e) => setKeyEdits((s: any) => ({ ...s, [item.id]: e.target.value }))} placeholder={hasKey ? "•••••••••••••••• — paste new key to replace" : "Paste " + item.keyEnv} type={show ? "text" : "password"} className="h-8 w-full rounded-[6px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.02)] px-3 font-mono text-[12px] tracking-[-0.08px] text-[#f7f8f8] placeholder:text-[#62666d] outline-none focus:border-[rgba(94,106,210,0.4)] focus:bg-[rgba(255,255,255,0.04)]" spellCheck={false} autoComplete="off" />
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <p className="text-[11px] leading-[1.4] tracking-[-0.08px] text-[#62666d]">{hasKey ? "Key set — masked. " : "No key — "}{isEdited && !isCleared ? "Will save new value." : isCleared ? "Will remove from runtime on save." : "Leave blank to keep."}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                  );
-                })}
+                  ));
+                })()}
               </div>
-              {PROVIDERS.filter((pr: any) => {
-                const q = providerKeyQuery.trim().toLowerCase();
-                const matchesSearch = !q || [pr.name, pr.keyEnv, pr.id, (pr.features || []).join(" "), pr.category].join(" ").toLowerCase().includes(q);
-                const matchesCat = providerKeyCategory === "All" || pr.category === providerKeyCategory;
-                const hasKey = !!(apiKeys as any)[pr.id];
-                const matchesStatus = providerKeyStatus === "All" || (providerKeyStatus === "Configured" ? hasKey : !hasKey);
-                return matchesSearch && matchesCat && matchesStatus;
-              }).length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border/60 bg-muted/10 px-6 py-10 text-center">
-                  <div className="mx-auto max-w-sm space-y-2">
-                    <div className="text-sm font-medium text-foreground">No providers match</div>
-                    <p className="text-sm text-muted-foreground">Try a different search or filter. Showing {PROVIDERS.length} total providers.</p>
-                    <Button variant="ghost" size="sm" onClick={() => { setProviderKeyQuery(""); setProviderKeyCategory("All"); setProviderKeyStatus("All"); }}>Clear filters</Button>
-                  </div>
-                </div>
-              ) : null}
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
-                <div className="flex gap-2"><span className="mt-0.5 shrink-0">⚡</span><span><span className="font-semibold">Heads up:</span> Runtime keys win over <span className="font-mono">.env</span> (precedence: <span className="font-mono">default &lt; env &lt; base_yaml &lt; runtime_yaml</span>). After migrating, remove provider keys from <span className="font-mono">.env</span> and keep <span className="font-mono">POSTGRES_PASSWORD</span> / <span className="font-mono">AUTH_JWT_SECRET</span> there. Keys are never committed or baked into <span className="font-mono">open-web-catcher-web</span> images (<span className="font-mono">.dockerignore</span> + gitignored <span className="font-mono">data/</span>).</span></div>
+
+              <div className="rounded-[8px] border border-[rgba(245,158,11,0.18)] bg-[rgba(245,158,11,0.06)] px-4 py-3">
+                <p className="text-[12px] leading-[1.6] tracking-[-0.12px] text-[#d0d6e0]"><span className="font-[600] text-[#f7f8f8]">Heads up</span> — Runtime keys win over <span className="font-mono text-[11px] text-[#f7f8f8]">.env</span> (<span className="font-mono text-[11px]">default &lt; env &lt; base_yaml &lt; runtime_yaml</span>). After migrating, remove provider keys from <span className="font-mono text-[11px]">.env</span> and keep only <span className="font-mono text-[11px]">POSTGRES_PASSWORD</span> / <span className="font-mono text-[11px]">AUTH_JWT_SECRET</span> there.</p>
               </div>
             </section>
           ) : null}
