@@ -1,7 +1,9 @@
 "use client";
 
+import { CircleDollarSign, TrendingUp, Layers } from "lucide-react";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { MetricCard } from "@/components/library/MetricCard";
+import { SectionPanel } from "@/components/console/common/section-panel";
 
 export interface CostsTabProps {
   overview: Record<string, unknown> | null;
@@ -27,10 +29,18 @@ export function CostsTab({ overview, state }: CostsTabProps) {
     { label: "Avg LLM / run", value: formatNumber(Math.round(Number(summary.total_llm_calls || 0) / Math.max(Number(summary.total_runs || 1), 1))), hint: "total_llm_calls / total_runs" },
   ];
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {kpis.map((kpi) => (
-        <MetricCard key={kpi.label} label={kpi.label} value={kpi.value} hint={kpi.hint} />
-      ))}
+    <div className="space-y-4 animate-fade-up">
+      <SectionPanel title="Costs" description="Single-endpoint cost rollups (SUM, not MAX — T35 fix)" icon={<CircleDollarSign className="h-3.5 w-3.5" />}>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {kpis.map((kpi) => (
+            <MetricCard key={kpi.label} label={kpi.label} value={kpi.value} hint={kpi.hint} />
+          ))}
+        </div>
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+          <TrendingUp className="h-3 w-3" /> Total cost is SUM across pipeline_runs; per-model breakdowns use SUM GROUP BY (provider, model_name).
+          <span className="ml-auto hidden sm:inline-flex items-center gap-1"><Layers className="h-3 w-3" /> T35: MAX→SUM</span>
+        </div>
+      </SectionPanel>
     </div>
   );
 }
