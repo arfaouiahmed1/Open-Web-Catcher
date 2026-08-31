@@ -29,8 +29,8 @@ from src.utils.instrumentation import (
 from src.utils.logging import get_logger
 from src.utils.observability import RunObserver
 from src.utils.provider_models import (
-    is_google_genai_model_id,
     normalize_gemini_model_id,
+    provider_api_key,
     resolve_google_model_runtime_profile,
     resolve_agent_model_selection,
     resolve_llm_tuning,
@@ -551,31 +551,40 @@ def build_llm(
         .strip()
         .lower()
     )
+    if provider_hint in {"gemini", "google_genai"}:
+        provider_hint = "google"
 
     selection_model = selection.get("model") or ""
     model_name = model_override or selection_model or settings.agent_model
-    if not is_google_genai_model_id(str(model_name or "")):
-        fallback_model = str(settings.agent_model or "").strip()
-        if not is_google_genai_model_id(fallback_model):
-            fallback_model = str(settings.gemini_model or "").strip()
-        logger.warning(
-            "Ignoring non-Google model '%s'; using '%s'.",
-            model_name,
-            fallback_model,
-        )
-        model_name = fallback_model
+    if not model_name:
+        # Last-resort fallback chain (legacy default + gemini_model).
+        model_name = str(settings.agent_model or settings.gemini_model or "").strip()
     model_name = normalize_gemini_model_id(model_name)
     tuning = resolve_llm_tuning(
         settings,
-        provider="google",
+        provider=provider_hint,
         model_name=model_name,
         agent_id=agent_id or "",
     )
-    model_runtime_profile = resolve_google_model_runtime_profile(
-        settings,
-        model_id=model_name,
-        provider="google",
-    )
+    is_google = provider_hint == "google"
+    if is_google:
+        model_runtime_profile = resolve_google_model_runtime_profile(
+            settings,
+            model_id=model_name,
+            provider="google",
+        )
+        allowed_tuning_keys = set(
+            model_runtime_profile.get("allowed_tuning_keys")
+            or {"top_p", "top_k", "max_output_tokens"}
+        )
+    else:
+        model_runtime_profile = {
+            "model_id": model_name,
+            "resolved_from_catalog": False,
+            "catalog_source": "non_google",
+            "capabilities": {},
+        }
+        allowed_tuning_keys = {"temperature", "top_p", "max_tokens"}
     tuned_temperature = tuning.pop("temperature", None)
     if temperature is not None:
         temp = temperature
@@ -584,23 +593,28 @@ def build_llm(
     else:
         temp = settings.gemini_temperature
 
-    llm_kwargs: dict[str, Any] = _filter_llm_kwargs(
-        tuning, set(model_runtime_profile.get("allowed_tuning_keys") or {"top_p", "top_k", "max_output_tokens"})
-    )
+    llm_kwargs: dict[str, Any] = _filter_llm_kwargs(tuning, allowed_tuning_keys)
     if "max_output_tokens" in llm_kwargs:
         llm_kwargs["max_tokens"] = llm_kwargs.pop("max_output_tokens")
     thinking_budget = (
         settings.thinking_budget_tokens
-        if settings.thinking_enabled and model_runtime_profile.get("supports_thinking_controls")
+        if settings.thinking_enabled
+        and is_google
+        and model_runtime_profile.get("supports_thinking_controls")
         else None
     )
 
-    api_key = str(settings.google_api_key or "").strip() or None
+    api_key = provider_api_key(settings, provider_hint) or None
+    api_base = settings.llm_base_url or None
+    if provider_hint == "openrouter" and settings.openrouter_base_url:
+        api_base = settings.openrouter_base_url
+    elif provider_hint == "nvidia" and settings.nvidia_base_url:
+        api_base = settings.nvidia_base_url
     return ChatLiteLLM(
         model=model_name,
         provider_prefix=provider_hint,
         api_key=api_key,
-        api_base=settings.llm_base_url or None,
+        api_base=api_base,
         temperature=temp,
         caching=bool(settings.prompt_cache_enabled),
         thinking_budget_tokens=thinking_budget,

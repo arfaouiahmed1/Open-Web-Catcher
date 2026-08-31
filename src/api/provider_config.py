@@ -17,6 +17,7 @@ from src.utils.config import (
     normalize_agent_runtime_config,
 )
 from src.utils.provider_models import (
+    SUPPORTED_PROVIDERS,
     build_model_selection_details,
     collect_model_config_warnings,
     get_provider_model_catalog,
@@ -47,6 +48,17 @@ class ModelConfigRequest(BaseModel):
     disabled_tools_by_browser_profile: dict | None = None
     browser_runtime: dict | None = None
     agent_runtime_config: dict | None = None
+    # Operations / retention / budgets (task 4).
+    observability_enabled: bool | None = None
+    background_job_retention_days: int | None = None
+    retention_days_runs: int | None = None
+    retention_days_run_snapshots: int | None = None
+    retention_days_llm_calls: int | None = None
+    retention_days_tool_calls: int | None = None
+    retention_days_agent_outputs: int | None = None
+    payload_cap_bytes: int | None = None
+    workflow_max_cost_usd: float | None = None
+    workflow_max_tokens: int | None = None
 
 
 def ui_config_payload(
@@ -92,8 +104,28 @@ def ui_config_payload(
         "agent_runtime_config": normalize_agent_runtime_config(
             getattr(settings, "agent_runtime_config", {})
         ),
+        "observability_enabled": getattr(settings, "observability_enabled", True),
+        "background_job_retention_days": getattr(
+            settings, "background_job_retention_days", 30
+        ),
+        "retention_days_runs": getattr(settings, "retention_days_runs", 30),
+        "retention_days_run_snapshots": getattr(
+            settings, "retention_days_run_snapshots", 30
+        ),
+        "retention_days_llm_calls": getattr(settings, "retention_days_llm_calls", 30),
+        "retention_days_tool_calls": getattr(settings, "retention_days_tool_calls", 30),
+        "retention_days_agent_outputs": getattr(
+            settings, "retention_days_agent_outputs", 30
+        ),
+        "payload_cap_bytes": getattr(settings, "payload_cap_bytes", 8192),
+        "workflow_max_cost_usd": getattr(settings, "workflow_max_cost_usd", 0.0),
+        "workflow_max_tokens": getattr(settings, "workflow_max_tokens", 0),
         "api_keys": {
             "google": bool(settings.google_api_key),
+            "openai": bool(settings.openai_api_key),
+            "anthropic": bool(settings.anthropic_api_key),
+            "openrouter": bool(settings.openrouter_api_key),
+            "nvidia": bool(settings.nvidia_api_key),
         },
         "model_selection_details": build_model_selection_details(settings),
         "model_config_warnings": collect_model_config_warnings(settings),
@@ -114,11 +146,18 @@ def apply_ui_config_update(
     logger: Any,
 ) -> dict[str, Any]:
     if body.llm_provider:
-        if str(body.llm_provider).strip().lower() != "google":
+        normalized_provider = str(body.llm_provider).strip().lower()
+        if normalized_provider in {"gemini", "google_genai"}:
+            normalized_provider = "google"
+        if normalized_provider not in SUPPORTED_PROVIDERS:
             raise HTTPException(
-                status_code=400, detail="Only the Google Gemini provider is supported."
+                status_code=400,
+                detail=(
+                    f"Unsupported provider '{body.llm_provider}'. "
+                    f"Supported: {', '.join(SUPPORTED_PROVIDERS)}."
+                ),
             )
-        settings.llm_provider = body.llm_provider
+        settings.llm_provider = normalized_provider
     if body.agent_model:
         settings.agent_model = body.agent_model
     if body.orchestrator_model:
@@ -165,6 +204,26 @@ def apply_ui_config_update(
         )
     if body.max_parallel_hosting_pages is not None:
         settings.max_parallel_hosting_pages = max(1, int(body.max_parallel_hosting_pages))
+    if body.observability_enabled is not None:
+        settings.observability_enabled = body.observability_enabled
+    if body.background_job_retention_days is not None:
+        settings.background_job_retention_days = max(1, int(body.background_job_retention_days))
+    for _retention_field in (
+        "retention_days_runs",
+        "retention_days_run_snapshots",
+        "retention_days_llm_calls",
+        "retention_days_tool_calls",
+        "retention_days_agent_outputs",
+    ):
+        _retention_value = getattr(body, _retention_field)
+        if _retention_value is not None:
+            setattr(settings, _retention_field, max(1, int(_retention_value)))
+    if body.payload_cap_bytes is not None:
+        settings.payload_cap_bytes = max(1024, int(body.payload_cap_bytes))
+    if body.workflow_max_cost_usd is not None:
+        settings.workflow_max_cost_usd = max(0.0, float(body.workflow_max_cost_usd))
+    if body.workflow_max_tokens is not None:
+        settings.workflow_max_tokens = max(0, int(body.workflow_max_tokens))
     if body.browser_engine == "playwright":
         # Playwright-only since ADR-003; other engine values are ignored.
         settings.browser_engine = body.browser_engine
@@ -240,9 +299,15 @@ def get_ui_provider_models(
     logger: Any,
 ) -> dict[str, Any]:
     normalized_provider = str(provider or "").strip().lower()
-    if normalized_provider != "google":
+    if normalized_provider in {"gemini", "google_genai"}:
+        normalized_provider = "google"
+    if normalized_provider not in SUPPORTED_PROVIDERS:
         raise HTTPException(
-            status_code=400, detail="Only the Google Gemini provider is supported."
+            status_code=400,
+            detail=(
+                f"Unsupported provider '{provider}'. "
+                f"Supported: {', '.join(SUPPORTED_PROVIDERS)}."
+            ),
         )
 
     payload = get_provider_model_catalog(

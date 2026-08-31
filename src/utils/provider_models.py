@@ -20,7 +20,30 @@ PROVIDER_METADATA: dict[str, dict[str, str]] = {
         "name": "Google Gemini",
         "key_env": "GOOGLE_API_KEY",
     },
+    "openai": {
+        "id": "openai",
+        "name": "OpenAI",
+        "key_env": "OPENAI_API_KEY",
+    },
+    "anthropic": {
+        "id": "anthropic",
+        "name": "Anthropic",
+        "key_env": "ANTHROPIC_API_KEY",
+    },
+    "openrouter": {
+        "id": "openrouter",
+        "name": "OpenRouter",
+        "key_env": "OPENROUTER_API_KEY",
+    },
+    "nvidia": {
+        "id": "nvidia",
+        "name": "NVIDIA NIM",
+        "key_env": "NVIDIA_API_KEY",
+    },
 }
+
+SUPPORTED_PROVIDERS: tuple[str, ...] = tuple(PROVIDER_METADATA)
+
 
 
 FALLBACK_MODELS: dict[str, list[dict[str, Any]]] = {
@@ -30,6 +53,27 @@ FALLBACK_MODELS: dict[str, list[dict[str, Any]]] = {
         {"id": "gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash-Lite", "description": "Lower-cost Gemini option.", "context_window": 1_048_576},
         {"id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash-Lite", "description": "Lower-cost Gemini 3.1 option.", "context_window": 1_048_576},
         {"id": "gemini-2.0-flash", "label": "Gemini 2.0 Flash", "description": "Fast Gemini model.", "context_window": 1_048_576},
+    ],
+    "openai": [
+        {"id": "gpt-5", "label": "GPT-5", "description": "Most capable OpenAI model.", "context_window": 1_047_576},
+        {"id": "gpt-5-mini", "label": "GPT-5 Mini", "description": "Lower-cost GPT-5 option.", "context_window": 1_047_576},
+        {"id": "gpt-4.1", "label": "GPT-4.1", "description": "Balanced quality and speed.", "context_window": 1_047_576},
+        {"id": "gpt-4.1-mini", "label": "GPT-4.1 Mini", "description": "Lower-cost GPT-4.1 option.", "context_window": 1_047_576},
+        {"id": "gpt-4o-mini", "label": "GPT-4o Mini", "description": "Fast, economical option.", "context_window": 128_000},
+    ],
+    "anthropic": [
+        {"id": "claude-opus-4", "label": "Claude Opus 4", "description": "Most capable Claude model.", "context_window": 200_000},
+        {"id": "claude-sonnet-4", "label": "Claude Sonnet 4", "description": "Balanced quality and speed.", "context_window": 200_000},
+        {"id": "claude-3-5-haiku-latest", "label": "Claude 3.5 Haiku", "description": "Fast, economical option.", "context_window": 200_000},
+    ],
+    "openrouter": [
+        {"id": "openai/gpt-4o-mini", "label": "GPT-4o Mini (OpenRouter)", "description": "Economical OpenRouter pick.", "context_window": 128_000},
+        {"id": "anthropic/claude-sonnet-4", "label": "Claude Sonnet 4 (OpenRouter)", "description": "Balanced OpenRouter pick.", "context_window": 200_000},
+        {"id": "google/gemini-2.5-flash", "label": "Gemini 2.5 Flash (OpenRouter)", "description": "Fast OpenRouter pick.", "context_window": 1_048_576},
+    ],
+    "nvidia": [
+        {"id": "meta/llama-3.3-70b-instruct", "label": "Llama 3.3 70B Instruct", "description": "General-purpose NIM model.", "context_window": 128_000},
+        {"id": "nvidia/llama-3.1-nemotron-70b-instruct", "label": "Llama 3.1 Nemotron 70B", "description": "NVIDIA-tuned instruct model.", "context_window": 128_000},
     ],
 }
 
@@ -533,7 +577,9 @@ def normalize_agent_model_config(settings: Settings, value: Any) -> dict[str, di
         provider = str(raw_config.get("provider") or normalized[agent_id]["provider"] or base_provider).strip().lower()
         if provider in {"gemini", "google_genai"}:
             provider = "google"
-        if provider != "google":
+        # Any catalog-supported provider is allowed per agent; unknown values
+        # fall back to the base provider instead of being silently coerced.
+        if provider not in SUPPORTED_PROVIDERS:
             provider = base_provider
         model = str(raw_config.get("model") or normalized[agent_id]["model"] or "").strip()
         normalized[agent_id] = {
@@ -806,9 +852,15 @@ def fetch_provider_models(settings: Settings, provider: str, max_models: int = 2
 
     if normalized_provider == "google":
         return _fetch_google_models(settings, limit)
-    raise ProviderModelCatalogError(
-        f"Unsupported provider '{provider}'. Only Google Gemini is supported."
-    )
+    if normalized_provider == "openai":
+        return _fetch_openai_models(settings, limit)
+    if normalized_provider == "anthropic":
+        return _fetch_anthropic_models(settings, limit)
+    if normalized_provider == "openrouter":
+        return _fetch_openrouter_models(settings, limit)
+    if normalized_provider == "nvidia":
+        return _fetch_nvidia_models(settings, limit)
+    raise ProviderModelCatalogError(f"Unsupported provider '{provider}'.")
 
 
 def _fetch_google_models(settings: Settings, max_models: int) -> list[dict[str, Any]]:
@@ -1140,9 +1192,21 @@ def _request_json(
 
 def _provider_api_key(settings: Settings, provider: str) -> str:
     normalized_provider = (provider or "").strip().lower()
-    if normalized_provider == "google":
+    if normalized_provider in {"google", "gemini", "google_genai"}:
         return str(settings.google_api_key or "").strip()
+    if normalized_provider == "openai":
+        return str(settings.openai_api_key or "").strip()
+    if normalized_provider == "anthropic":
+        return str(settings.anthropic_api_key or "").strip()
+    if normalized_provider == "openrouter":
+        return str(settings.openrouter_api_key or "").strip()
+    if normalized_provider == "nvidia":
+        return str(settings.nvidia_api_key or "").strip()
     return ""
+
+
+# Public alias used by src/agents/base.py (runtime key resolution).
+provider_api_key = _provider_api_key
 
 # Hardcoded context window fallbacks for providers whose APIs don't expose it.
 # Values in tokens. Updated periodically; live catalog takes precedence when available.

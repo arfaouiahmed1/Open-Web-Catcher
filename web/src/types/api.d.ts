@@ -1848,6 +1848,8 @@ export interface components {
             agent_runtime_config?: {
                 [key: string]: unknown;
             } | null;
+            /** Background Job Retention Days */
+            background_job_retention_days?: number | null;
             /** Browser Engine */
             browser_engine?: string | null;
             /** Browser Runtime */
@@ -1878,10 +1880,24 @@ export interface components {
             } | null;
             /** Max Parallel Hosting Pages */
             max_parallel_hosting_pages?: number | null;
+            /** Observability Enabled */
+            observability_enabled?: boolean | null;
             /** Orchestrator Model */
             orchestrator_model?: string | null;
+            /** Payload Cap Bytes */
+            payload_cap_bytes?: number | null;
             /** Provider Cache Enabled */
             provider_cache_enabled?: boolean | null;
+            /** Retention Days Agent Outputs */
+            retention_days_agent_outputs?: number | null;
+            /** Retention Days Llm Calls */
+            retention_days_llm_calls?: number | null;
+            /** Retention Days Run Snapshots */
+            retention_days_run_snapshots?: number | null;
+            /** Retention Days Runs */
+            retention_days_runs?: number | null;
+            /** Retention Days Tool Calls */
+            retention_days_tool_calls?: number | null;
             /** Thinking Budget Tokens */
             thinking_budget_tokens?: number | null;
             /** Thinking Enabled */
@@ -1890,6 +1906,10 @@ export interface components {
             tool_result_cache_enabled?: boolean | null;
             /** Tool Result Cache Min Identical Observations */
             tool_result_cache_min_identical_observations?: number | null;
+            /** Workflow Max Cost Usd */
+            workflow_max_cost_usd?: number | null;
+            /** Workflow Max Tokens */
+            workflow_max_tokens?: number | null;
         };
         /** ModelUsage */
         ModelUsage: {

@@ -70,7 +70,11 @@ from src.utils.console_state import (
 from src.utils.ipinfo import lookup_multiple
 from src.utils.logging import get_logger, setup_logging
 from src.utils.observability import RunTrace, get_observability_status, run_registry
-from src.utils.provider_models import ProviderModelCatalogError
+from src.utils.provider_models import (
+    PROVIDER_METADATA,
+    SUPPORTED_PROVIDERS,
+    ProviderModelCatalogError,
+)
 from src.utils.provider_pricing import ProviderPricingSyncError, fetch_provider_pricing
 from src.utils.service_health import (
     build_runtime_preflight,
@@ -514,14 +518,16 @@ def _sync_provider_pricing_to_db(
 
 
 def _pricing_sync_provider_ids() -> list[str]:
-    return ["google"]
+    return list(SUPPORTED_PROVIDERS)
 
 
 def _provider_api_key_available(settings: Settings, provider: str) -> bool:
     provider_key = str(provider or "").strip().lower()
-    if provider_key in {"google", "gemini", "google_genai"}:
-        return bool(str(settings.google_api_key or "").strip())
-    return False
+    if provider_key in {"gemini", "google_genai"}:
+        provider_key = "google"
+    return provider_key in PROVIDER_METADATA and bool(
+        str(getattr(settings, f"{provider_key}_api_key", "") or "").strip()
+    )
 
 
 def _provider_pricing_status_payload(session, settings: Settings) -> dict[str, dict[str, Any]]:
@@ -3667,12 +3673,16 @@ def ui_update_pricing(config: PricingConfig):
 def ui_sync_pricing(req: PricingSyncRequest):
     settings = get_settings()
     provider = (req.provider or settings.llm_provider or "google").strip().lower()
-    if provider not in {"", "all", "google", "gemini", "google_genai"}:
-        raise HTTPException(
-            status_code=400, detail="Provider pricing sync supports Google Gemini only."
-        )
     if provider in {"gemini", "google_genai"}:
         provider = "google"
+    if provider not in {"", "all", *SUPPORTED_PROVIDERS}:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unsupported pricing-sync provider '{req.provider}'. "
+                f"Supported: {', '.join(SUPPORTED_PROVIDERS)}."
+            ),
+        )
     max_models = req.max_models
 
     try:

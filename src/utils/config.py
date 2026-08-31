@@ -698,6 +698,16 @@ class Settings(BaseSettings):
         existing["background_job_concurrency"] = self.background_job_concurrency
         existing["thinking_enabled"] = self.thinking_enabled
         existing["thinking_budget_tokens"] = self.thinking_budget_tokens
+        existing["observability_enabled"] = self.observability_enabled
+        existing["background_job_retention_days"] = self.background_job_retention_days
+        existing["retention_days_runs"] = self.retention_days_runs
+        existing["retention_days_run_snapshots"] = self.retention_days_run_snapshots
+        existing["retention_days_llm_calls"] = self.retention_days_llm_calls
+        existing["retention_days_tool_calls"] = self.retention_days_tool_calls
+        existing["retention_days_agent_outputs"] = self.retention_days_agent_outputs
+        existing["payload_cap_bytes"] = self.payload_cap_bytes
+        existing["workflow_max_cost_usd"] = self.workflow_max_cost_usd
+        existing["workflow_max_tokens"] = self.workflow_max_tokens
 
         try:
             primary_path.parent.mkdir(parents=True, exist_ok=True)

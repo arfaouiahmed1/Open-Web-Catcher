@@ -68,14 +68,15 @@ services:
     env_file:
       - .env
     environment:
+      # HOST=0.0.0.0 is required for cross-container reachability: the MCP server
+      # defaults to 127.0.0.1 (safe for host runs), but owc probes
+      # http://owc-tools-playwright:3001 over the compose network.
       PORT: 3001
+      HOST: 0.0.0.0
       MCP_BROWSER_MODE: ${MCP_BROWSER_MODE:-isolated}
       BROWSER_WS_ENDPOINT: ws://127.0.0.1:9223
-      OWC_UBOL_ENABLED: ${OWC_UBOL_ENABLED:-true}
-      OWC_UBOL_EXTENSION_DIR: ${OWC_UBOL_EXTENSION_DIR_PLAYWRIGHT:-/app/tools/playwright/extensions/ubol}
-      OWC_UBOL_EXTENSION_ID: ${OWC_UBOL_EXTENSION_ID:-nkeimhogjdpnpccoofpliimaahmaaome}
-      OWC_UBOL_DEFAULT_FILTERING: ${OWC_UBOL_DEFAULT_FILTERING:-optimal}
-      OWC_ADBLOCK_ALLOWLIST_HOSTS: ${OWC_ADBLOCK_ALLOWLIST_HOSTS:-}
+      # uBOL adblock options (OWC_UBOL_*) are baked into the image ENV; override
+      # them here only if needed.
     volumes:
       - ./data:/app/data
     healthcheck:
@@ -118,15 +119,11 @@ services:
       - .env
     environment:
       PORT: 3001
+      HOST: 0.0.0.0
       MCP_BROWSER_MODE: ${MCP_BROWSER_MODE:-isolated}
       BROWSER_WS_ENDPOINT: ws://127.0.0.1:9223
       OWC_BROWSER_HEADLESS: "false"
       OWC_XVFB_SCREEN: ${OWC_XVFB_SCREEN:-1280x800x24}
-      OWC_UBOL_ENABLED: ${OWC_UBOL_ENABLED:-true}
-      OWC_UBOL_EXTENSION_DIR: ${OWC_UBOL_EXTENSION_DIR_PLAYWRIGHT:-/app/tools/playwright/extensions/ubol}
-      OWC_UBOL_EXTENSION_ID: ${OWC_UBOL_EXTENSION_ID:-nkeimhogjdpnpccoofpliimaahmaaome}
-      OWC_UBOL_DEFAULT_FILTERING: ${OWC_UBOL_DEFAULT_FILTERING:-optimal}
-      OWC_ADBLOCK_ALLOWLIST_HOSTS: ${OWC_ADBLOCK_ALLOWLIST_HOSTS:-}
     volumes:
       - ./data:/app/data
     healthcheck:
@@ -217,6 +214,13 @@ services:
     depends_on:
       owc:
         condition: service_healthy
+    healthcheck:
+      # /api/health is proxied by next.config rewrites to the backend /health.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
     deploy:
       resources:
         limits:
