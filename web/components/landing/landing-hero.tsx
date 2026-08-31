@@ -1,192 +1,131 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Bot, Globe2, Eye, Activity, KeyRound, ShieldCheck, Sparkles, Play, Zap, Lock, BarChart3, Search, Cpu, Layers } from "lucide-react";
+import { ArrowRight, Check, Eye, KeyRound, Play, Search, ShieldCheck, Sparkles } from "lucide-react";
+import { LogoMark } from "@/components/console/layout/navigation-config";
+
+const STAGES = [
+  { code: "01", title: "Classify", note: "Detect the page type", color: "var(--signal)" },
+  { code: "02", title: "Discover", note: "Trace landing and hosts", color: "var(--sky)" },
+  { code: "03", title: "Inspect", note: "Probe player contexts", color: "var(--violet)" },
+  { code: "04", title: "Evidence", note: "Verify streams and capture", color: "var(--mint)" },
+];
 
 export function LandingHero(): React.JSX.Element {
   return (
-    <div className="w-full" style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif", fontFeatureSettings: '"cv01","ss03"' }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;510;590&family=JetBrains+Mono:wght@400;500&display=swap');`}</style>
-
-      {/* Hero — Linear canvas #08090a */}
-      <section className="relative overflow-hidden" style={{ background: "#08090a" }}>
-        <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(800px 400px at 70% -10%, rgba(94,106,210,0.12), transparent 60%), radial-gradient(600px 300px at 10% 20%, rgba(113,112,255,0.07), transparent 60%)" }} />
-        <div className="relative mx-auto max-w-[1200px] px-6 py-16 sm:py-20">
-          <div className="mx-auto max-w-[720px] text-center">
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#d0d6e0" }}>
-              <span className="size-1.5 rounded-full" style={{ background: "#5e6ad2", boxShadow: "0 0 8px rgba(94,106,210,0.6)" }} />
-              Operator Console — BYOK · SSE · no polling
-              <span className="hidden rounded-full bg-white/10 px-2 py-0.5 text-[10px] tracking-wide sm:inline" style={{ color: "#8a8f98" }}>v0.1.0</span>
+    <div className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
+      <div className="mx-auto max-w-[var(--content-max)] px-5 sm:px-6">
+        <section className="grid min-h-[min(720px,calc(100vh-3.5rem))] items-center gap-10 py-12 lg:grid-cols-[minmax(0,1.08fr)_minmax(420px,.92fr)] lg:py-16">
+          {/* Decide/Learn: asymmetric editorial story, not a dashboard-card grid. */}
+          <div className="max-w-[660px]">
+            <div className="mb-7 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--mute)]">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-[color-mix(in_oklch,var(--signal)_12%,transparent)] text-[var(--signal)] ring-1 ring-[color-mix(in_oklch,var(--signal)_25%,transparent)]">
+                <LogoMark className="size-4" />
+              </span>
+              Open Web Catcher <span className="text-[var(--mute-3)]">/</span> operator console
             </div>
-            <h1 className="text-4xl font-[510] leading-[0.98] tracking-[-1.056px] sm:text-[48px]" style={{ color: "#f7f8f8", fontFeatureSettings: '"cv01","ss03"' }}>
-              Research any page.
-              <br />
-              <span style={{ color: "#8a8f98" }}>Evidence you can audit.</span>
+            <p className="mb-4 font-mono text-[11px] tracking-[0.08em] text-[var(--signal)]">AUTONOMOUS WEB RESEARCH · EVIDENCE FIRST</p>
+            <h1 className="max-w-[620px] text-balance text-5xl font-semibold leading-[.96] tracking-[-0.055em] text-[var(--ink)] sm:text-6xl lg:text-7xl">
+              Follow the page.
+              <span className="block text-[var(--mute)]">Keep the proof.</span>
             </h1>
-            <p className="mx-auto mt-5 max-w-[560px] text-[18px] leading-[1.6] tracking-[-0.165px]" style={{ color: "#8a8f98", fontWeight: 400 }}>
-              Open Web Catcher runs an isolated Playwright pipeline — classify → landing → hosting → embedded. Every finding ships with screenshots, HLS streams & provider intel. Your keys stay in Settings.
+            <p className="mt-6 max-w-[550px] text-pretty text-base leading-7 text-[var(--mute)] sm:text-lg">
+              OWC drives an isolated browser through the web&apos;s dead ends — classifying pages, tracing embeds, and collecting the screenshots, streams, and provider evidence that explain every result.
             </p>
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-              <Link
-                href="/signup"
-                className="inline-flex items-center gap-2 rounded-[6px] px-5 py-2.5 text-sm font-[510] text-white transition-colors"
-                style={{ background: "#5e6ad2" }}
-              >
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link href="/signup" className="inline-flex h-11 items-center gap-2 rounded-lg bg-[var(--signal)] px-5 text-sm font-semibold text-[var(--bg)] transition-transform hover:-translate-y-0.5 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--signal)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]">
                 Create account <ArrowRight className="size-4" />
               </Link>
-              <Link
-                href="/login"
-                className="inline-flex items-center gap-2 rounded-[6px] px-5 py-2.5 text-sm font-[510] transition-colors"
-                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#f7f8f8" }}
-              >
+              <Link href="/login" className="inline-flex h-11 items-center rounded-lg border border-[var(--line-hi)] bg-[var(--card)] px-5 text-sm font-medium text-[var(--ink)] transition-colors hover:bg-[var(--card-hi)]">
                 Log in
               </Link>
-              <a
-                href="#demo"
-                className="inline-flex items-center gap-2 rounded-[6px] px-4 py-2.5 text-sm font-[510]"
-                style={{ color: "#8a8f98" }}
-              >
-                <Play className="size-3.5" /> See pipeline
-              </a>
             </div>
-            <p className="mt-3 text-xs" style={{ color: "#62666d" }}>
-              First account is admin via <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#d0d6e0" }}>bootstrap-admin</span> (single winner). No default credentials.
-            </p>
+            <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-xs text-[var(--mute-2)]">
+              <span className="inline-flex items-center gap-1.5"><ShieldCheck className="size-3.5 text-[var(--mint)]" /> Isolated browser</span>
+              <span className="inline-flex items-center gap-1.5"><KeyRound className="size-3.5 text-[var(--signal)]" /> Bring your own key</span>
+              <span className="inline-flex items-center gap-1.5"><Eye className="size-3.5 text-[var(--sky)]" /> Auditable output</span>
+            </div>
           </div>
 
-          {/* Pipeline visual — 4 stages */}
-          <div id="demo" className="mx-auto mt-14 grid max-w-[960px] gap-3 sm:grid-cols-4">
-            {[
-              { icon: Bot, label: "Classify", sub: "What page?", accent: "#5e6ad2" },
-              { icon: Globe2, label: "Landing", sub: "Discover hosts", accent: "#7170ff" },
-              { icon: Eye, label: "Hosting", sub: "Probe players", accent: "#8a8f98" },
-              { icon: Activity, label: "Embedded", sub: "Extract HLS", accent: "#27a644" },
-            ].map((s) => (
-              <div
-                key={s.label}
-                className="rounded-[8px] p-4 text-center"
-                style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.08)" }}
-              >
-                <s.icon className="mx-auto size-5" style={{ color: s.accent }} />
-                <div className="mt-2 text-sm font-[590] tracking-[-0.24px]" style={{ color: "#f7f8f8" }}>
-                  {s.label}
+          {/* The product metaphor: a single vertical evidence trace. */}
+          <div className="relative mx-auto w-full max-w-[510px]">
+            <div className="absolute -inset-5 rounded-[32px] bg-[radial-gradient(circle_at_50%_30%,color-mix(in_oklch,var(--signal)_12%,transparent),transparent_62%)] blur-2xl" />
+            <div className="relative overflow-hidden rounded-2xl border border-[var(--line-hi)] bg-[var(--panel)] shadow-[0_24px_70px_rgba(0,0,0,.28)]">
+              <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <span className="size-2 rounded-full bg-[var(--rose)]" />
+                  <span className="size-2 rounded-full bg-[var(--signal)]" />
+                  <span className="size-2 rounded-full bg-[var(--mint)]" />
+                  <span className="ml-2 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--mute-2)]">run / trace_01</span>
                 </div>
-                <div className="text-xs" style={{ color: "#8a8f98" }}>
-                  {s.sub}
+                <span className="rounded-full bg-[color-mix(in_oklch,var(--mint)_12%,transparent)] px-2 py-1 font-mono text-[10px] text-[var(--mint)]">LIVE</span>
+              </div>
+              <div className="p-4 sm:p-5">
+                <div className="rounded-lg border border-[var(--line)] bg-[var(--bg)] p-3">
+                  <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--mute-2)]"><Search className="size-3" /> Target URL</div>
+                  <div className="mt-1.5 truncate font-mono text-xs text-[var(--ink-dim)]">https://example.com/event/player</div>
+                </div>
+                <div className="relative my-3 ml-4 border-l border-dashed border-[var(--line-hi)]">
+                  {STAGES.map((stage, index) => (
+                    <div key={stage.code} className="relative pb-4 pl-7 last:pb-0">
+                      <span className="absolute -left-[5px] top-1 size-2.5 rounded-full ring-4 ring-[var(--panel)]" style={{ background: stage.color }} />
+                      <div className="flex items-baseline justify-between gap-3">
+                        <div className="text-sm font-semibold text-[var(--ink)]"><span className="mr-2 font-mono text-[10px] text-[var(--mute-2)]">{stage.code}</span>{stage.title}</div>
+                        <span className="font-mono text-[10px] text-[var(--mute-2)]">{index === 3 ? "00:24" : "done"}</span>
+                      </div>
+                      <div className="mt-0.5 text-xs text-[var(--mute)]">{stage.note}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--line)]">
+                  {["3 streams", "4 captures", "2 hosts"].map((item) => (
+                    <div key={item} className="bg-[var(--card)] px-2 py-3 text-center font-mono text-[10px] text-[var(--mute)]">{item}</div>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
-
-          {/* Live URL demo */}
-          <div
-            className="mx-auto mt-6 max-w-[640px] rounded-[8px] p-4"
-            style={{ background: "#191a1b", border: "1px solid rgba(255,255,255,0.08)" }}
-          >
-            <div className="flex items-center justify-between text-xs" style={{ color: "#62666d", fontFamily: "'JetBrains Mono', monospace" }}>
-              <span>Input</span>
-              <span className="rounded-full px-2 py-0.5 text-[10px] font-[510]" style={{ background: "rgba(39,166,68,0.12)", color: "#27a644" }}>isolated</span>
-            </div>
-            <div className="mt-1 truncate font-mono text-sm" style={{ color: "#d0d6e0" }}>
-              https://example.com/match/live/123
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs" style={{ color: "#8a8f98" }}>
-              <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.05)" }}>
-                <span className="size-1.5 rounded-full" style={{ background: "#27a644" }} /> 3 streams
-              </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.05)" }}>
-                4 screenshots
-              </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.05)" }}>
-                Cloudinary evidence
-              </span>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Features — Level 3 surface #191a1b cards */}
-      <section className="border-t" style={{ background: "#0f1011", borderColor: "rgba(255,255,255,0.05)" }}>
-        <div className="mx-auto max-w-[1200px] px-6 py-12">
-          <div className="grid gap-4 sm:grid-cols-3">
-            {[
-              { icon: ShieldCheck, title: "Isolated browser", desc: "Playwright + uBOL, popup control, iframe recovery. No host pollution." },
-              { icon: KeyRound, title: "BYOK per-agent", desc: "google | openai | anthropic | openrouter | nvidia | litellm — masked, runtime yaml." },
-              { icon: BarChart3, title: "Full observability", desc: "Live pipeline, costs/tokens, provider lookups, SSE — no polling." },
-              { icon: Search, title: "Memory + dedup", desc: "Site memory, stream dedup, abuse contacts. 1200+ sites profiled." },
-              { icon: Layers, title: "Evidence first", desc: "Screenshots, stream URLs, HAR — every run is auditable." },
-              { icon: Cpu, title: "Tuned runtimes", desc: "Per-agent timeouts, retries, context budgets. Thinking controls." },
-            ].map((f) => (
-              <div
-                key={f.title}
-                className="rounded-[8px] p-5"
-                style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.08)" }}
-              >
-                <f.icon className="size-5" style={{ color: "#5e6ad2" }} />
-                <div className="mt-3 text-sm font-[590] tracking-[-0.24px]" style={{ color: "#f7f8f8" }}>
-                  {f.title}
-                </div>
-                <div className="mt-1 text-[15px] leading-[1.6] tracking-[-0.165px]" style={{ color: "#8a8f98" }}>
-                  {f.desc}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* BYOK callout */}
-      <section className="border-y" style={{ background: "#08090a", borderColor: "rgba(255,255,255,0.05)" }}>
-        <div className="mx-auto flex max-w-[1200px] flex-col gap-4 px-6 py-8 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <span className="flex size-8 items-center justify-center rounded-full" style={{ background: "rgba(94,106,210,0.12)", border: "1px solid rgba(94,106,210,0.2)" }}>
-              <KeyRound className="size-4" style={{ color: "#828fff" }} />
-            </span>
+        <section className="border-y border-[var(--line)] py-8 sm:py-10">
+          <div className="grid gap-7 lg:grid-cols-[.8fr_1.2fr] lg:gap-12">
             <div>
-              <div className="text-sm font-[590]" style={{ color: "#f7f8f8" }}>
-                Set your provider keys (BYOK)
-              </div>
-              <div className="text-xs" style={{ color: "#8a8f98" }}>
-                No key = no LLM calls. Add per-agent <span style={{ color: "#d0d6e0", fontWeight: 510 }}>provider/model</span> in Settings — never baked into images.
-              </div>
+              <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-[var(--signal)]">Your key. Your routing.</p>
+              <h2 className="mt-3 text-2xl font-semibold tracking-[-0.035em] text-[var(--ink)] sm:text-3xl">Configure a model for each agent — not one global black box.</h2>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <p className="text-sm leading-6 text-[var(--mute)]">Choose a provider and model for classification, landing, hosting, embedded, and orchestration. Keys are masked in the console and persisted to the local runtime configuration.</p>
+              <Link href="/settings?tab=api-keys" className="group rounded-xl border border-[var(--line-hi)] bg-[var(--card)] p-4 transition-colors hover:bg-[var(--card-hi)]">
+                <span className="inline-flex size-8 items-center justify-center rounded-lg bg-[color-mix(in_oklch,var(--violet)_12%,transparent)] text-[var(--violet)]"><KeyRound className="size-4" /></span>
+                <div className="mt-3 text-sm font-semibold text-[var(--ink)]">Set up BYOK <ArrowRight className="ml-1 inline size-3 transition-transform group-hover:translate-x-0.5" /></div>
+                <p className="mt-1 text-xs text-[var(--mute)]">No provider key is baked into an image.</p>
+              </Link>
             </div>
           </div>
-          <div className="flex gap-2">
-            <Link href="/settings?tab=api-keys" className="rounded-[6px] px-4 py-2 text-sm font-[510] text-white" style={{ background: "#5e6ad2" }}>
-              Open Settings
-            </Link>
-            <Link href="/login" className="rounded-[6px] px-4 py-2 text-sm font-[510]" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#d0d6e0" }}>
-              I have keys
-            </Link>
-          </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Footer CTA */}
-      <section className="py-10 text-center" style={{ background: "#0f1011" }}>
-        <div className="mx-auto max-w-[720px] px-6">
-          <div className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-[510] tracking-wide" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.05)", color: "#62666d" }}>
-            <Zap className="size-3" /> Ready to run?
+        <section className="grid gap-0 py-10 sm:grid-cols-3 sm:py-14">
+          {[
+            ["Observe", "Live SSE activity, runs, costs, context windows, and tool reliability without polling."],
+            ["Operate", "Launch a workflow or inspect one agent. Cancel safely, then follow the evidence trail."],
+            ["Review", "Compare results and capture exact streams, screenshots, and provider lookup history."],
+          ].map(([title, copy], index) => (
+            <div key={title} className="border-[var(--line)] py-5 sm:px-6 sm:first:pl-0 sm:not-last:border-r sm:last:pr-0">
+              <span className="font-mono text-[11px] text-[var(--mute-2)]">0{index + 1}</span>
+              <h3 className="mt-3 text-lg font-semibold text-[var(--ink)]">{title}</h3>
+              <p className="mt-2 text-sm leading-6 text-[var(--mute)]">{copy}</p>
+            </div>
+          ))}
+        </section>
+
+        <footer className="flex flex-col gap-4 border-t border-[var(--line)] py-7 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 text-[var(--mute)]"><Sparkles className="size-4 text-[var(--signal)]" /> Start with a provider key, then run your first trace.</div>
+          <div className="flex gap-4">
+            <Link href="/signup" className="font-medium text-[var(--ink)] hover:text-[var(--signal)]">Create account</Link>
+            <Link href="/login" className="font-medium text-[var(--mute)] hover:text-[var(--ink)]">Log in</Link>
           </div>
-          <h2 className="mt-4 text-2xl font-[510] tracking-[-0.704px]" style={{ color: "#f7f8f8" }}>
-            Start in 30 seconds.
-          </h2>
-          <p className="mx-auto mt-2 max-w-[520px] text-sm leading-relaxed" style={{ color: "#8a8f98" }}>
-            Create the first admin, add your provider key in Settings, paste a URL in Live Pipeline. Evidence in minutes.
-          </p>
-          <div className="mt-6 flex justify-center gap-3">
-            <Link href="/signup" className="rounded-[6px] px-5 py-2.5 text-sm font-[510] text-white" style={{ background: "#5e6ad2" }}>
-              Create account
-            </Link>
-            <Link href="/login" className="rounded-[6px] px-5 py-2.5 text-sm font-[510]" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#f7f8f8" }}>
-              Log in
-            </Link>
-          </div>
-          <div className="mt-6 flex items-center justify-center gap-2 text-xs" style={{ color: "#62666d" }}>
-            <Lock className="size-3" /> No default credentials · <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>bootstrap-admin</span> is audited
-          </div>
-        </div>
-      </section>
+        </footer>
+      </div>
     </div>
   );
 }

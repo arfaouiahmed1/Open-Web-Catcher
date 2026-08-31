@@ -141,7 +141,7 @@ export function DashboardIntro(): React.JSX.Element | null {
                 <Link href="/settings?tab=api-keys">Set your BYOK keys</Link>
               </Button>
               <Button variant="ghost" onClick={dismissIntro}>
-                Got it — don&apos;t show again
+                Continue to dashboard
               </Button>
             </div>
             <p className="text-[11px] text-muted-foreground">
