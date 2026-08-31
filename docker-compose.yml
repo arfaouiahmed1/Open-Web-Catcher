@@ -178,7 +178,10 @@ services:
       OBSERVABILITY_DEFAULT_DATASET_NAME: ${OBSERVABILITY_DEFAULT_DATASET_NAME:-open-web-catcher-runs}
       OBSERVABILITY_DATASET_DIR: ${OBSERVABILITY_DATASET_DIR:-data/datasets}
       MODEL_PRICING_JSON: ${MODEL_PRICING_JSON:-{}}
-      UI_CORS_ORIGINS: ${UI_CORS_ORIGINS:-http://localhost:${OWC_WEB_HOST_PORT:-3000},http://127.0.0.1:${OWC_WEB_HOST_PORT:-3000}}
+      # Support the Docker console port and the standard Next dev port. Keeping
+      # the list explicit prevents wildcard CORS while avoiding a misleading
+      # browser-level "Could not reach API" when a developer opens :3000.
+      UI_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:${OWC_WEB_HOST_PORT:-3000},http://127.0.0.1:${OWC_WEB_HOST_PORT:-3000}
     depends_on:
       postgres:
         condition: service_healthy

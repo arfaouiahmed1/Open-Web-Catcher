@@ -80,8 +80,13 @@ export function resetApiBaseCache(): void {
 }
 
 export function apiUrl(path: string): string {
-  const base = resolveApiBase();
-  return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  // Browser requests stay same-origin through the Next runtime proxy. This
+  // removes host/port and CORS ambiguity between the Docker console (:3005),
+  // a local Next dev server (:3000), and the API (:8000). Server code keeps
+  // the explicitly configured internal/public base URL.
+  if (typeof window !== "undefined") return `/api/proxy${normalizedPath}`;
+  return `${resolveApiBase()}${normalizedPath}`;
 }
 
 export function getToken(): string {
@@ -94,7 +99,8 @@ export function getToken(): string {
 }
 
 export function eventSourceUrl(path: string): string {
-  const url = new URL(apiUrl(path));
+  const rawUrl = apiUrl(path);
+  const url = new URL(rawUrl, typeof window !== "undefined" ? window.location.origin : resolveApiBase());
   const token = getToken();
   if (token) url.searchParams.set("token", token);
   return url.toString();
