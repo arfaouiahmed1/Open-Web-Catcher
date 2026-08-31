@@ -64,7 +64,9 @@ services:
     shm_size: "2gb"
     ports:
       - "${OWC_TOOLS_PW_HOST_PORT:-3002}:3001"
-      - "${OWC_TOOLS_PW_DEBUG_HOST_PORT:-9223}:9223"
+      # Map host debug port to the sidecar's network-visible CDP proxy. Chrome
+      # itself intentionally remains bound to its private loopback 9223.
+      - "${OWC_TOOLS_PW_DEBUG_HOST_PORT:-9223}:9224"
     env_file:
       - .env
     environment:
@@ -117,7 +119,7 @@ services:
       - headed-playwright
     ports:
       - "${OWC_TOOLS_PW_HEADED_HOST_PORT:-3012}:3001"
-      - "${OWC_TOOLS_PW_HEADED_DEBUG_HOST_PORT:-9323}:9223"
+      - "${OWC_TOOLS_PW_HEADED_DEBUG_HOST_PORT:-9323}:9224"
     env_file:
       - .env
     environment:
@@ -165,7 +167,8 @@ services:
     env_file:
       - .env
     environment:
-      BROWSER_WS_ENDPOINT: ws://owc-tools-playwright:9223
+      # The sidecar forwards its private Chrome CDP on 9224 for compose peers.
+      BROWSER_WS_ENDPOINT: ws://owc-tools-playwright:9224
       MCP_SERVER_URL: http://owc-tools-playwright:3001
       MCP_SERVER_URL_PLAYWRIGHT: http://owc-tools-playwright:3001
       # Composed from the required POSTGRES_PASSWORD (no baked owc:owc creds).
