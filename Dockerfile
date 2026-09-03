@@ -10,7 +10,7 @@
 # Digest pin placeholder (resolve with: docker buildx imagetools inspect python:3.11-slim-bookworm
 # then append @sha256:<digest> to the FROM line below):
 #   python:3.11-slim-bookworm@sha256:<TO_FILL_AFTER_VERIFYING>
-FROM python:3.11-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 ARG BUILDKIT_INLINE_CACHE=1
 
