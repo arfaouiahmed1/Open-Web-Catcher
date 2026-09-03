@@ -11,17 +11,21 @@
   "scripts": {
     "start": "node mcp-server.js",
     "dev": "node --watch mcp-server.js",
-    "test": "node --test \"tests/*.test.js\""
+    "test": "node --test \"tests/*.test.js\"",
+    "test:live": "OWC_LIVE_SITE_TESTS=1 node --test \"tests/live/*.test.js\"",
+    "test:stealth": "OWC_LIVE_STEALTH_TESTS=1 node --test \"tests/live/stealth-audit.test.js\"",
+    "capture:fixture": "node scripts/capture-fixture.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.10.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "cloudinary": "^2.0.0",
     "express": "^4.19.0",
-    "fingerprint-generator": "^2.1.82",
-    "fingerprint-injector": "^2.1.82",
-    "playwright": "^1.60.0",
-    "playwright-extra": "^4.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "zod": "^3.23.0"
+    "fingerprint-generator": "2.1.88",
+    "fingerprint-injector": "2.1.88",
+    "fast-xml-parser": "5.11.1",
+    "m3u8-parser": "7.2.0",
+    "playwright": "1.62.1",
+    "patchright": "1.62.3",
+    "zod": "3.25.76"
   }
 }

@@ -11,51 +11,25 @@ from src.memory.long_term import LongTermMemory
 from src.memory.short_term import ShortTermMemory
 from src.models.enums import AgentType, ExtractionStatus, PageType
 from src.models.schemas import ExtractionResult, ServerResult, StreamURL
-from src.utils.channel_detection import best_channel_match, collect_channel_text_fragments, normalize_channel_name
+from src.utils.channel_detection import (
+    best_channel_match,
+    collect_channel_text_fragments,
+    normalize_channel_name,
+)
 from src.utils.config import Settings
-from src.utils.language_detection import best_language_match, detect_language_candidates
 from src.utils.instrumentation import (
     observability_span,
     set_span_output,
     using_observability_context,
 )
+from src.utils.language_detection import best_language_match, detect_language_candidates
 from src.utils.logging import get_logger
 from src.utils.observability import RunObserver
 
 logger = get_logger(__name__)
 
-PROMPT_PATH = Path("configs/prompts/hosting_page_v1.md")
-_AGENT_CONTRACT = """\
-- extract verified stream URLs from the hosting page when possible
-- if the host page clearly exposes an iframe src or embedded player URL, return that embedded URL only after trying accessible iframe-local activation evidence instead of guessing streams
-- respect the base policy's final JSON/output contract
-- use site memory only as hints and re-check everything on the live page
-- stay anchored to the assigned hosting content and recover from off-target drift
-- preserve screenshot, iframe/embed, network, and player-state evidence per server when available
-- return detected channel/broadcast metadata per server only when a known broadcaster name is visible or strongly evidenced
-- crawl visible JS-driven player/server/source/language controls before falling back to URL-only evidence
-- preserve source language labels when they are shown as flags, country emoji, audio labels, captions, or short codes
-- work across any language or script; verify channel/source labels from player evidence instead of English-only terms
-- detect source/server switches from multilingual rows, cards, provider groups, dropdown options, quality chips, language labels, and repeated stream/link/option patterns, not only English server buttons
-- use `inspect_hosting.server_frontier[]` as the initial source queue when present, then merge landing handoff hints and scoped source-list reads
-- build a server_frontier from landing handoff hints plus visible provider groups/source rows, then open, activate/play, screenshot, harvest, and record every same-content source; do not stop after the first successful server
-- treat same-event child routes such as provider/index watch URLs as server sources for the current event, using navigate for each real route and rejecting other event slugs
-- preserve source_group, source_index, source_url, route_pattern, and current_marker for every attempted source when visible or inferable
-- activate/play the default player and every switched server before harvest, capture the post-activation screenshot, then harvest that server
-- treat ad redirects, news/article detours, fake downloads, VPN/DNS utility pages, and unrelated provider pages as drift, then recover once unless popup telemetry exposes decoded same-content player URLs
-- choose player activation targets from activation_candidates, top_playback_targets, exact scoped evidence, or coordinates; bare play_media is only candidate discovery and is not an activation attempt
-- when inspect_hosting exposes iframe-local sample_buttons, sample_links, or sample_videos, choose exact frame_path targets and try play_media or interact before embedded handoff
-- treat opened_targets, blocked_popup_attempts, selected_target, target_decision, active_page_url, extracted_player_urls, and blocked_by_client as popup/window/uBlock evidence; record popup_window_diagnostics per server/source
-- when selected_target.extracted_player_urls or opened_targets[].extracted_player_urls appears after a Play/Watch click, add those decoded URLs to the current server_frontier and try the most direct player URL before declaring no streams
-- do not trust same hostname alone for a new tab/window; compare URL, title, screenshot/layout, assigned content, and media/frame signals before adopting it
-- after every Play/Watch overlay click, check whether server/source controls or iframe/player evidence loaded before failing
-- after any interaction, react to newly displayed server/source controls by merging them into the current server_frontier and processing them before final JSON or embedded handoff
-- remove anything that blocks the assigned player view or whole viewport, including popups, modals, overlays, consent walls, anti-adblock notices, sticky ads, transparent click shields, and full-screen interstitials, using inspect popup close selectors/xpaths, blocker_candidates, or exact close controls before activation, screenshots, harvest, embedded handoff, or failure
-- if a click only dismisses a blocker, do not count it as activation; verify the player is visible and continue activation from the revealed state
-- switch only same-content server/source controls; never navigate to other matches, channels, listings, articles, or homepages
-- if playback does not start, try distinct activation strategies instead of repeating the same click
-- if playback fails or no streams are recovered, return an embedded fallback only when the current hosting page exposes an explicit iframe src or embedded/player URL and iframe-local activation was tried or inaccessible; otherwise stop with failure evidence and no fabricated next target
-"""
+PROMPT_PATH = Path("configs/prompts/hosting_page_v2.md")
+_AGENT_CONTRACT = ""
 
 
 class HostingPageAgent:
@@ -75,8 +49,8 @@ class HostingPageAgent:
         observer: RunObserver | None = None,
         orchestrator_handoff: str = "",
     ) -> ExtractionResult:
-        from src.agents.base import build_llm, run_agent_loop
-        from src.tools.mcp_client import agent_tools
+        from src.agents.runtime import build_llm, run_agent_loop
+        from src.tools.mcp_client import agent_tools, derive_browser_scope_id
 
         if self.llm is None:
             self.llm = build_llm(self.settings, agent_id="hosting")
@@ -117,7 +91,6 @@ class HostingPageAgent:
                     settings=self.settings,
                     agent_id=AgentType.HOSTING_PAGE.value,
                     base_policy=self._system_prompt,
-                    agent_contract=_AGENT_CONTRACT,
                     task_brief=build_task_brief(
                         url=url,
                         page_type=AgentType.HOSTING_PAGE.value,
@@ -155,8 +128,9 @@ class HostingPageAgent:
                         f"{orchestrator_handoff}\n"
                         "Use this context as guidance and verify findings from live page evidence."
                     )
+                scope_id = derive_browser_scope_id("hosting", url)
                 async with agent_tools(
-                    "hosting", self.settings, observer=observer, target_url=url
+                    "hosting", self.settings, observer=observer, target_url=url, browser_scope_id=scope_id
                 ) as tools:
                     result = await run_agent_loop(
                         settings=self.settings,
@@ -936,7 +910,9 @@ def _build_server_results(servers: list[dict[str, Any]]) -> list[ServerResult]:
 def _collect_streams(output: dict[str, Any]) -> list[StreamURL]:
     seen: set[str] = set()
     streams: list[StreamURL] = []
-    for entry in output.get("streaming_urls", []):
+    for entry in output.get("streams", []) + output.get("streaming_urls", []):
+        if not isinstance(entry, dict):
+            continue
         url = str(entry.get("url") or "").strip()
         if url and url not in seen:
             seen.add(url)
@@ -946,8 +922,14 @@ def _collect_streams(output: dict[str, Any]) -> list[StreamURL]:
                     protocol=str(
                         entry.get("type") or entry.get("protocol") or _protocol_from_url(url)
                     ),
-                    source_layer=str(entry.get("source") or ""),
+                    quality=str(entry.get("quality") or ""),
+                    source_layer=str(entry.get("source") or entry.get("source_layer") or ""),
+                    source_layers=list(entry.get("source_layers") or []),
                     channel_name=str(output.get("primary_channel") or ""),
+                    verified=bool(entry.get("verified", False)),
+                    http_status=entry.get("http_status"),
+                    content_type=entry.get("content_type"),
+                    frame_url=entry.get("frame_url"),
                 )
             )
     for server in output.get("servers", []):

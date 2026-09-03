@@ -201,3 +201,71 @@ export function classifyIframeFailure({
   }
   return { detection_reason: '', recoverable: false, error_code: effectiveCode || null, error_category: chromeError.error_category };
 }
+// ---------------------------------------------------------------------------
+// Tool-layer error codes (owc.browser-tool.v2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Stable tool-layer error codes for the v2 envelope. These are distinct from
+ * Chrome network error codes and are always retryable=false unless noted.
+ */
+export const TOOL_ERROR_CODES = Object.freeze({
+  /** Input failed schema validation before any browser action was taken. */
+  ERR_INVALID_TOOL_INPUT: 'ERR_INVALID_TOOL_INPUT',
+
+  /**
+   * A candidate_id or element ref was resolved against a prior page_state.id
+   * that no longer matches the current DOM epoch. Caller must re-inspect.
+   * retryable=true after a fresh inspect.
+   */
+  ERR_STALE_PAGE_STATE: 'ERR_STALE_PAGE_STATE',
+
+  /**
+   * Multiple equally-ranked locator candidates matched; cannot pick one safely.
+   * Caller must disambiguate using a more specific selector or candidate_id.
+   */
+  ERR_AMBIGUOUS_TARGET: 'ERR_AMBIGUOUS_TARGET',
+
+  /** No element matched any locator strategy in the resolution chain. */
+  ERR_ELEMENT_NOT_FOUND: 'ERR_ELEMENT_NOT_FOUND',
+
+  /**
+   * interact completed without observing the expected state change.
+   * The action may have had no effect; the model should inspect before retrying.
+   */
+  ERR_INTERACTION_UNVERIFIED: 'ERR_INTERACTION_UNVERIFIED',
+
+  /**
+   * A bot-detection challenge (CAPTCHA, Turnstile, DDoS Guard, etc.) was
+   * detected. The sidecar captures a screenshot and access_state proof then
+   * returns this code. No automatic bypass is attempted.
+   * recommended_action = "operator_handoff"
+   */
+  ERR_CHALLENGE_PRESENT: 'ERR_CHALLENGE_PRESENT',
+
+  /** The tool operation exceeded its configured timeout_ms. retryable=true */
+  ERR_TOOL_TIMEOUT: 'ERR_TOOL_TIMEOUT',
+
+  /**
+   * The result payload exceeds the per-tool budget after truncation.
+   * pagination.has_more=true and a cursor are set; caller should paginate.
+   */
+  ERR_PAYLOAD_BUDGET: 'ERR_PAYLOAD_BUDGET',
+});
+
+/** Set of tool-layer codes that are retryable after a fresh inspect. */
+export const RETRYABLE_TOOL_CODES = new Set([
+  TOOL_ERROR_CODES.ERR_STALE_PAGE_STATE,
+  TOOL_ERROR_CODES.ERR_TOOL_TIMEOUT,
+]);
+
+/**
+ * Return true when the given code (Chrome or tool-layer) is retryable.
+ * Merges the existing Chrome-layer classification with tool-layer knowledge.
+ */
+export function isToolErrorRetryable(code) {
+  if (!code) return false;
+  if (RETRYABLE_TOOL_CODES.has(code)) return true;
+  const chrome = classifyChromeError({ message: code });
+  return chrome.retryable;
+}

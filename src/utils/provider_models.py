@@ -914,71 +914,132 @@ def find_provider_model_entry(
     return None
 
 
+def resolve_model_runtime_profile(
+    settings: Settings,
+    *,
+    model_id: str,
+    provider: str = "google",
+) -> dict[str, Any]:
+    """Resolve capability profile, tuning keys, and context window for any model/provider."""
+    normalized_provider = str(provider or "google").strip().lower() or "google"
+    if normalized_provider in {"gemini", "google_genai"}:
+        normalized_provider = "google"
+
+    normalized_model = (
+        normalize_gemini_model_id(model_id)
+        if normalized_provider == "google"
+        else str(model_id or "").strip()
+    )
+    model_entry = find_provider_model_entry(
+        settings,
+        provider=normalized_provider,
+        model_id=normalized_model,
+    )
+
+    context_window = resolve_model_context_window(
+        model_id=normalized_model,
+        provider=normalized_provider,
+    )
+
+    default_tuning = (
+        list(GOOGLE_MODEL_TUNING_KEYS)
+        if normalized_provider == "google"
+        else ["temperature", "top_p", "max_tokens"]
+    )
+
+    if model_entry:
+        capabilities = dict(model_entry.get("capabilities") or {})
+        compatibility = dict(model_entry.get("compatibility") or {})
+        supports_reasoning = bool(capabilities.get("supports_thinking_controls", False))
+        supports_cache = bool(capabilities.get("supports_explicit_cache", False))
+        allowed_tuning = list(
+            compatibility.get("allowed_tuning_keys")
+            or capabilities.get("allowed_tuning_keys")
+            or default_tuning
+        )
+        return {
+            "model_id": normalized_model,
+            "provider": normalized_provider,
+            "resolved_from_catalog": True,
+            "catalog_source": model_entry.get("catalog_source", "unknown"),
+            "defaults_source": model_entry.get("defaults_source", "unknown"),
+            "supports_tools": bool(capabilities.get("supports_tools", True)),
+            "supports_json_schema": bool(capabilities.get("supports_json_schema", False)),
+            "supports_parallel_tool_calls": bool(
+                capabilities.get("supports_parallel_tool_calls", False)
+            ),
+            "supports_vision": bool(capabilities.get("supports_vision", False)),
+            "supports_reasoning_controls": supports_reasoning,
+            "supports_prompt_cache": supports_cache,
+            "allowed_tuning_keys": allowed_tuning,
+            "context_window": context_window,
+            "supports_thinking_controls": supports_reasoning,
+            "supports_explicit_cache": supports_cache,
+            "capabilities": capabilities,
+            "compatibility": compatibility,
+            "entry": model_entry,
+        }
+
+    # Heuristic fallback for uncataloged models
+    supports_reasoning, thinking_prov = (
+        _thinking_support_from_model_name(normalized_model)
+        if normalized_provider == "google"
+        else ("r1" in normalized_model.lower(), "Heuristic")
+    )
+    supports_vision = any(
+        t in normalized_model.lower()
+        for t in ("vision", "4o", "claude-3", "gemini-1.5", "gemini-2")
+    )
+    is_4o = "gpt-4o" in normalized_model.lower()
+    supports_json = normalized_provider in {"openai", "google"} or is_4o
+    supports_parallel = normalized_provider in {"openai", "anthropic"}
+    supports_cache = normalized_provider in {"anthropic", "google"}
+
+    return {
+        "model_id": normalized_model,
+        "provider": normalized_provider,
+        "resolved_from_catalog": False,
+        "catalog_source": "unverified_manual",
+        "defaults_source": "unverified_manual",
+        "supports_tools": True,
+        "supports_json_schema": supports_json,
+        "supports_parallel_tool_calls": supports_parallel,
+        "supports_vision": supports_vision,
+        "supports_reasoning_controls": supports_reasoning,
+        "supports_prompt_cache": supports_cache,
+        "allowed_tuning_keys": default_tuning,
+        "context_window": context_window,
+        "supports_thinking_controls": supports_reasoning,
+        "supports_explicit_cache": False,
+        "capabilities": {
+            "supports_tools": True,
+            "supports_vision": supports_vision,
+            "supports_thinking_controls": supports_reasoning,
+            "supports_explicit_cache": False,
+            "allowed_tuning_keys": default_tuning,
+        },
+        "compatibility": {
+            "thinking_controls": "supported" if supports_reasoning else "unsupported",
+            "explicit_cache": "unsupported",
+            "allowed_tuning_keys": default_tuning,
+        },
+        "capability_provenance": {
+            "supports_thinking_controls": thinking_prov,
+            "supports_explicit_cache": "Heuristic",
+            "allowed_tuning_keys": "Heuristic",
+        },
+        "entry": None,
+    }
+
+
 def resolve_google_model_runtime_profile(
     settings: Settings,
     *,
     model_id: str,
     provider: str = "google",
 ) -> dict[str, Any]:
-    normalized_model = normalize_gemini_model_id(model_id)
-    model_entry = find_provider_model_entry(
-        settings,
-        provider=provider,
-        model_id=normalized_model,
-    )
-    if model_entry:
-        capabilities = dict(model_entry.get("capabilities") or {})
-        compatibility = dict(model_entry.get("compatibility") or {})
-        return {
-            "model_id": normalized_model,
-            "resolved_from_catalog": True,
-            "catalog_source": model_entry.get("catalog_source", "unknown"),
-            "defaults_source": model_entry.get("defaults_source", "unknown"),
-            "capabilities": capabilities,
-            "compatibility": compatibility,
-            "allowed_tuning_keys": list(
-                compatibility.get("allowed_tuning_keys")
-                or capabilities.get("allowed_tuning_keys")
-                or GOOGLE_MODEL_TUNING_KEYS
-            ),
-            "supports_thinking_controls": bool(
-                capabilities.get("supports_thinking_controls", False)
-            ),
-            "supports_explicit_cache": bool(
-                capabilities.get("supports_explicit_cache", False)
-            ),
-            "entry": model_entry,
-        }
-
-    supports_thinking_controls, thinking_provenance = _thinking_support_from_model_name(
-        normalized_model
-    )
-    return {
-        "model_id": normalized_model,
-        "resolved_from_catalog": False,
-        "catalog_source": "unverified_manual",
-        "defaults_source": "unverified_manual",
-        "capabilities": {
-            "supports_thinking_controls": supports_thinking_controls,
-            "supports_explicit_cache": False,
-            "allowed_tuning_keys": list(GOOGLE_MODEL_TUNING_KEYS),
-        },
-        "compatibility": {
-            "thinking_controls": "supported" if supports_thinking_controls else "unsupported",
-            "explicit_cache": "unsupported",
-            "allowed_tuning_keys": list(GOOGLE_MODEL_TUNING_KEYS),
-        },
-        "capability_provenance": {
-            "supports_thinking_controls": thinking_provenance,
-            "supports_explicit_cache": "Heuristic",
-            "allowed_tuning_keys": "Heuristic",
-        },
-        "allowed_tuning_keys": list(GOOGLE_MODEL_TUNING_KEYS),
-        "supports_thinking_controls": supports_thinking_controls,
-        "supports_explicit_cache": False,
-        "entry": None,
-    }
-
+    """Backward-compatible wrapper for Google Gemini profiles."""
+    return resolve_model_runtime_profile(settings, model_id=model_id, provider=provider)
 
 def collect_model_config_warnings(settings: Settings) -> list[dict[str, Any]]:
     warnings: list[dict[str, Any]] = []

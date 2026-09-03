@@ -4,12 +4,11 @@ Canonical home for ``ClassificationResult`` — the output of the
 classification agent deciding which downstream agent owns a URL.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
 from pydantic import Field
 
+from src.models.evidence import EvidenceRef
 from src.models.common import (
     AgentType,
     Confidence,
@@ -26,3 +25,4 @@ class ClassificationResult(PipelineModel):
     agent_type: AgentType = AgentType.CLASSIFICATION
     confidence_source: str = "parsed"  # parsed | fallback | heuristic_default
     metadata: dict[str, Any] = Field(default_factory=dict)  # e.g. metadata["ocr"] = OcrResult dump
+    evidence: list[EvidenceRef] = Field(default_factory=list)

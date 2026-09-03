@@ -7,9 +7,9 @@ from typing import Any
 from fastapi import HTTPException
 from pydantic import BaseModel
 
+from src.tools.mcp_client import load_tool_manifest
 from src.utils.browser_runtime import (
     normalize_browser_runtime,
-    normalize_disabled_tools_by_browser_profile,
 )
 from src.utils.config import (
     Settings,
@@ -45,8 +45,6 @@ class ModelConfigRequest(BaseModel):
     thinking_budget_tokens: int | None = None
     max_parallel_hosting_pages: int | None = None
     browser_engine: str | None = None
-    disabled_tools_by_profile: dict | None = None
-    disabled_tools_by_browser_profile: dict | None = None
     browser_runtime: dict | None = None
     agent_runtime_config: dict | None = None
     # Operations / retention / budgets (task 4).
@@ -139,11 +137,7 @@ def ui_config_payload(
         "browser_engine": settings.browser_engine,
         "max_parallel_hosting_pages": getattr(settings, "max_parallel_hosting_pages", 5),
         "mcp_server_url_playwright": settings.mcp_server_url_playwright,
-        "disabled_tools_by_profile": settings.disabled_tools_by_profile,
-        "disabled_tools_by_browser_profile": normalize_disabled_tools_by_browser_profile(
-            getattr(settings, "disabled_tools_by_browser_profile", {}),
-            legacy=getattr(settings, "disabled_tools_by_profile", {}),
-        ),
+        "browser_manifest": load_tool_manifest(),
         "browser_runtime": normalize_browser_runtime(
             getattr(settings, "browser_runtime", {})
         ),
@@ -282,20 +276,6 @@ def apply_ui_config_update(
         # Playwright-only since ADR-003; other engine values are ignored.
         settings.browser_engine = body.browser_engine
         settings.mcp_server_url = settings.mcp_server_url_playwright
-    if body.disabled_tools_by_profile is not None:
-        settings.disabled_tools_by_profile = body.disabled_tools_by_profile
-    if body.disabled_tools_by_browser_profile is not None:
-        settings.disabled_tools_by_browser_profile = normalize_disabled_tools_by_browser_profile(
-            body.disabled_tools_by_browser_profile,
-            legacy=body.disabled_tools_by_profile
-            if body.disabled_tools_by_profile is not None
-            else settings.disabled_tools_by_profile,
-        )
-    else:
-        settings.disabled_tools_by_browser_profile = normalize_disabled_tools_by_browser_profile(
-            getattr(settings, "disabled_tools_by_browser_profile", {}),
-            legacy=settings.disabled_tools_by_profile,
-        )
     if body.browser_runtime is not None:
         settings.browser_runtime = normalize_browser_runtime(body.browser_runtime)
     else:

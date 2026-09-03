@@ -1,678 +1,371 @@
 /**
- * tools/inspect.js — Full DOM scan + player signal detection + screenshot.
+ * tools/inspect.js — Unified context inspection tool.
  *
- * Returns structured, bounded context used by profile-specific inspect tools.
+ * Implements the v2 browser tool contract (plan step 5):
+ * - Single tool with view reducer: "summary" | "elements" | "element" | "frames" | "media"
+ * - Profile-specific reducers: classification, landing, hosting, embedded
+ * - Bounded output fitting payload budget
+ * - Cached by (view, args, page_state.id)
+ * - Returns v2 ToolEnvelope
  */
 
-import { withBrowserSession } from '../shared/tool-runtime.js';
-import { screenshotViewport } from '../shared/screenshot.js';
+import crypto from 'node:crypto';
+import { successEnvelope, errorEnvelope } from '../shared/tool-envelope.js';
+import { TOOL_ERROR_CODES } from '../../shared/error-codes.js';
+import { detectAccessState } from '../runtime/access-state.js';
+import { defaultEvidenceStore } from '../runtime/evidence-store.js';
+import { getPage } from '../shared/browser.js';
 
-const LIMITS = {
-  contentLinks: 80,
-  navLinks: 40,
-  buttons: 60,
-  iframes: 30,
-  popups: 10,
-  paginationElements: 20,
-  videos: 12,
-  elements: 140,
-  frameTree: 40,
-  frameSampleLinks: 8,
-  frameSampleButtons: 8,
-};
+// In-memory cache keyed by `${profile}::${view}::${argsHash}::${pageStateId}`
+const inspectCache = new Map();
 
-const clean = (value, max = 160) =>
-  String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+function cleanText(str, maxLen = 160) {
+  return String(str || '').replace(/\s+/g, ' ').trim().slice(0, maxLen);
+}
 
-async function warmLandingLazyContent(page) {
-  return page.evaluate(async () => {
-    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    const visible = (el) => {
-      if (!(el instanceof Element)) return false;
-      const rect = el.getBoundingClientRect();
-      const style = window.getComputedStyle(el);
-      return rect.width > 0
-        && rect.height > 0
-        && style.display !== 'none'
-        && style.visibility !== 'hidden'
-        && style.opacity !== '0';
-    };
-    const scrollStep = Math.max(Math.floor(window.innerHeight * 0.8), 320);
-    const clickLabels = [];
-    const clickSelectors = [
-      'button',
-      'a[href]',
-      '[role="button"]',
-      '[data-action]',
-      '[data-testid]',
-      '[class*="more"]',
-      '[class*="load"]',
-      '[class*="show"]',
-    ].join(',');
-    const clickPattern = /(load more|show more|view more|see more|more matches|more events|more streams|expand|show all|view all)/i;
-    let scrollSteps = 0;
-    let clicked = 0;
-    const initialHeight = Math.max(
-      document.body?.scrollHeight || 0,
-      document.documentElement?.scrollHeight || 0,
-    );
+const PROMPT_INJECTION_PATTERNS = [
+  /ignore previous instructions/i,
+  /system prompt/i,
+  /you are now a/i,
+  /developer mode/i,
+  /jailbreak/i,
+  /output only the following/i,
+  /disregard/i,
+];
 
-    for (let pass = 0; pass < 4; pass += 1) {
-      const clickCandidates = Array.from(document.querySelectorAll(clickSelectors))
-        .filter(visible)
-        .filter((node) => clickPattern.test((node.innerText || node.textContent || node.getAttribute('aria-label') || '').trim()))
-        .slice(0, 8);
-      for (const node of clickCandidates) {
-        try {
-          node.scrollIntoView({ block: 'center', inline: 'nearest' });
-          await sleep(120);
-          node.click();
-          clicked += 1;
-          clickLabels.push((node.innerText || node.textContent || node.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 80));
-          await sleep(220);
-        } catch {
-          // ignore
-        }
-      }
-
-      const sections = Array.from(document.querySelectorAll('main section, main article, [class*="match"], [class*="event"], [class*="card"], [data-testid*="card"], [data-testid*="match"]'))
-        .filter(visible)
-        .slice(0, 18);
-      for (const section of sections) {
-        try {
-          section.scrollIntoView({ block: 'center', inline: 'nearest' });
-          await sleep(90);
-        } catch {
-          // ignore
-        }
-      }
-
-      const maxScrollable = Math.max(
-        document.body?.scrollHeight || 0,
-        document.documentElement?.scrollHeight || 0,
-      );
-      while ((window.scrollY + window.innerHeight) < (maxScrollable - 24)) {
-        window.scrollBy({ top: scrollStep, left: 0, behavior: 'instant' });
-        scrollSteps += 1;
-        await sleep(160);
-        if (scrollSteps >= 18) break;
-      }
-      await sleep(260);
+function checkPromptInjectionSignals(text) {
+  const flags = [];
+  for (const pattern of PROMPT_INJECTION_PATTERNS) {
+    if (pattern.test(text)) {
+      flags.push(`Matched pattern: ${pattern.source}`);
     }
-
-    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-    await sleep(120);
-
-    return {
-      clicked,
-      click_labels: clickLabels.slice(0, 8),
-      scroll_steps: scrollSteps,
-      initial_height: initialHeight,
-      final_height: Math.max(
-        document.body?.scrollHeight || 0,
-        document.documentElement?.scrollHeight || 0,
-      ),
-    };
-  }).catch(() => ({
-    clicked: 0,
-    click_labels: [],
-    scroll_steps: 0,
-    initial_height: 0,
-    final_height: 0,
-  }));
-}
-
-function textHash(value) {
-  const text = clean(value, 800);
-  let hash = 0;
-  for (let i = 0; i < text.length; i += 1) {
-    hash = ((hash << 5) - hash) + text.charCodeAt(i);
-    hash |= 0;
   }
-  return hash;
+  return flags;
 }
 
-function dedupeBy(items, keyFn, limit = 100) {
-  const seen = new Set();
-  const out = [];
-  for (const item of items || []) {
-    const key = keyFn(item);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
-    if (out.length >= limit) break;
-  }
-  return out;
-}
+export async function inspect(args = {}) {
+  const startTime = Date.now();
+  const view = String(args.view || 'summary').toLowerCase().trim();
+  const limit = Math.min(200, Math.max(1, Number(args.limit || 50)));
+  const cursor = args.cursor ? parseInt(args.cursor, 10) : 0;
+  const framePath = String(args.frame_path || 'root');
+  const includeScreenshot = Boolean(args.include_screenshot);
+  const profile = String(args.profileName || args.browserProfile || 'general').toLowerCase();
 
-function frameDepth(framePath) {
-  if (!framePath || framePath === 'root') return 0;
-  return framePath.split('.').length - 1;
-}
-
-function buildFramePathMap(page) {
-  const map = new Map();
-  const root = page.mainFrame();
-  map.set(root, 'root');
-
-  const queue = [root];
-  while (queue.length) {
-    const current = queue.shift();
-    const currentPath = map.get(current) || 'root';
-    const children = current.childFrames();
-    children.forEach((child, index) => {
-      const childPath = `${currentPath}.${index}`;
-      map.set(child, childPath);
-      queue.push(child);
+  // Validate view
+  if (!['summary', 'elements', 'element', 'frames', 'media'].includes(view)) {
+    return errorEnvelope({
+      tool: 'inspect',
+      code: TOOL_ERROR_CODES.ERR_INVALID_TOOL_INPUT,
+      message: `Invalid view "${view}". Must be "summary", "elements", "element", "frames", or "media".`,
+      telemetry: { duration_ms: Date.now() - startTime },
     });
   }
 
-  return map;
-}
+  // Resolve page
+  let page = null;
+  let pageStateTracker = null;
+  let evidenceStore = defaultEvidenceStore;
 
-async function computeFrameOffset(frame) {
-  let x = 0;
-  let y = 0;
-  let current = frame;
-
-  while (current.parentFrame()) {
-    try {
-      const frameElement = await current.frameElement();
-      const box = await frameElement.boundingBox();
-      if (box) {
-        x += box.x;
-        y += box.y;
-      }
-      await frameElement.dispose().catch(() => {});
-    } catch {
-      break;
+  try {
+    if (args.browserSession?.page) {
+      page = args.browserSession.page;
+      pageStateTracker = args.browserSession.pageStateTracker;
+      if (args.browserSession.evidenceStore) evidenceStore = args.browserSession.evidenceStore;
+    } else {
+      page = await getPage(args.browserSession, { browserProfile: profile });
     }
-    current = current.parentFrame();
+  } catch (err) {
+    return errorEnvelope({
+      tool: 'inspect',
+      code: TOOL_ERROR_CODES.ERR_TOOL_TIMEOUT,
+      message: `Could not acquire page: ${err.message}`,
+      retryable: true,
+      telemetry: { duration_ms: Date.now() - startTime },
+    });
   }
 
-  return { x: Math.round(x), y: Math.round(y) };
+  // Current page state
+  const pageState = pageStateTracker
+    ? await pageStateTracker.getPageState(framePath).catch(() => null)
+    : { id: '', dom_epoch: 0, url: page.url() || '', title: await page.title().catch(() => ''), frame_path: framePath, captured_at: new Date().toISOString() };
+
+  // Cache check
+  const argsHash = crypto
+    .createHash('sha256')
+    .update(JSON.stringify({ view, limit, cursor, framePath, scope_ref: args.scope_ref, role: args.role, text: args.text }))
+    .digest('hex')
+    .slice(0, 12);
+  const cacheKey = `${profile}::${view}::${argsHash}::${pageState.id}`;
+
+  if (inspectCache.has(cacheKey)) {
+    const cached = inspectCache.get(cacheKey);
+    return {
+      ...cached,
+      telemetry: {
+        ...cached.telemetry,
+        cache_hit: true,
+        duration_ms: Date.now() - startTime,
+      },
+    };
+  }
+
+  const accessState = await detectAccessState(page);
+
+  // Optional screenshot proof
+  let screenshotRef = null;
+  if (includeScreenshot) {
+    try {
+      const shot = await evidenceStore.saveScreenshot(page, { scope: 'viewport' });
+      screenshotRef = shot.blobref;
+    } catch {}
+  }
+
+  // Target frame
+  let targetFrame = page;
+  if (framePath && framePath !== 'root') {
+    const matched = page.frames().find((f) => f.name() === framePath || f.url().includes(framePath));
+    if (matched) targetFrame = matched;
+  }
+
+  let data = {};
+  let pagination = null;
+  let totalCandidates = 0;
+
+  // View-based extraction
+  try {
+    if (view === 'summary') {
+      data = await extractSummaryView(targetFrame, profile, pageState.id);
+    } else if (view === 'elements') {
+      const res = await extractElementsView(targetFrame, {
+        role: args.role,
+        text: args.text,
+        attribute: args.attribute,
+        scopeRef: args.scope_ref,
+        cursor,
+        limit,
+        pageStateId: pageState.id,
+      });
+      data = { elements: res.items, prompt_injection_signals: res.injectionSignals };
+      pagination = res.pagination;
+    } else if (view === 'element') {
+      data = await extractSingleElementView(targetFrame, args.scope_ref || args.candidate_id, pageState.id);
+    } else if (view === 'frames') {
+      data = await extractFramesView(page);
+    } else if (view === 'media') {
+      data = await extractMediaView(targetFrame);
+    }
+  } catch (err) {
+    return errorEnvelope({
+      tool: 'inspect',
+      page_state: pageState,
+      code: TOOL_ERROR_CODES.ERR_TOOL_TIMEOUT,
+      message: `Inspection failed in view "${view}": ${err.message}`,
+      retryable: true,
+      telemetry: { duration_ms: Date.now() - startTime },
+    });
+  }
+
+  const result = successEnvelope({
+    tool: 'inspect',
+    page_state: pageState,
+    proof: {
+      before_screenshot_ref: screenshotRef,
+      access_state: accessState,
+    },
+    data: {
+      view,
+      profile,
+      access_state: accessState,
+      ...data,
+    },
+    pagination,
+    telemetry: {
+      duration_ms: Date.now() - startTime,
+      cache_hit: false,
+      payload_bytes: JSON.stringify(data).length,
+    },
+  });
+
+  // Store in cache
+  inspectCache.set(cacheKey, result);
+  if (inspectCache.size > 100) {
+    const firstKey = inspectCache.keys().next().value;
+    inspectCache.delete(firstKey);
+  }
+
+  return result;
 }
 
-function applyOffset(entry, offset, framePath) {
+// ---------------------------------------------------------------------------
+// View Reducers
+// ---------------------------------------------------------------------------
+
+async function extractSummaryView(frame, profile, pageStateId) {
+  const summary = await frame.evaluate((pid) => {
+    const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute('content') || '';
+    const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute('content') || '';
+    const title = document.title || '';
+
+    // Count interactive controls
+    const buttons = document.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"]');
+    const links = document.querySelectorAll('a[href]');
+    const videos = document.querySelectorAll('video');
+    const iframes = document.querySelectorAll('iframe');
+
+    // Collect top heading text
+    const headings = Array.from(document.querySelectorAll('h1, h2, h3'))
+      .slice(0, 10)
+      .map((h) => h.innerText.replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+
+    return {
+      title,
+      meta_description: metaDesc.slice(0, 160),
+      og_title: ogTitle.slice(0, 160),
+      headings,
+      counts: {
+        buttons: buttons.length,
+        links: links.length,
+        videos: videos.length,
+        iframes: iframes.length,
+      },
+    };
+  }, pageStateId).catch(() => ({ title: '', headings: [], counts: {} }));
+
   return {
-    ...entry,
-    x: Math.round((entry.x || 0) + offset.x),
-    y: Math.round((entry.y || 0) + offset.y),
-    frame_path: framePath,
+    summary,
+    prompt_injection_signals: checkPromptInjectionSignals(summary.title + ' ' + summary.headings.join(' ')),
   };
 }
 
-function inferFramePurpose(summary, url) {
-  const haystack = `${summary.title || ''} ${summary.text_sample || ''} ${url || ''}`.toLowerCase();
+async function extractElementsView(frame, { role, text, attribute, scopeRef, cursor = 0, limit = 50, pageStateId }) {
+  const extracted = await frame.evaluate(({ role, text, attribute, scopeRef, pageStateId }) => {
+    const selector = role ? `[role="${role}"], ${role}` : 'button, [role="button"], a[href], input, select, video';
+    let root = document;
+    if (scopeRef) {
+      const scoped = document.querySelector(`[data-owc-id="${scopeRef}"]`) || document.getElementById(scopeRef);
+      if (scoped) root = scoped;
+    }
 
-  if (summary.video_count > 0 || summary.has_player_library) return 'player';
-  if (summary.has_server_controls) return 'server-controls';
-  if (/embed|player|iframe|stream/.test(haystack)) return 'player';
-  if (/match|fixture|schedule|channels|league/.test(haystack)) return 'listing';
-  if (/ad|banner|doubleclick|analytics|track/.test(haystack)) return 'ad';
-  return 'unknown';
-}
+    const all = Array.from(root.querySelectorAll(selector));
+    const items = [];
+    let injectionCount = 0;
+    const injectionSamples = [];
 
-async function collectRootData(page) {
-  return page.evaluate((limits) => {
-    const cleanText = (value, max = 160) =>
-      String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+    let idCounter = 0;
+    for (const el of all) {
+      idCounter++;
+      // Skip hidden
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0 || el.offsetParent === null) continue;
 
-    const isVisible = (el) => {
-      const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0;
-    };
+      const innerText = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+      const ariaLabel = el.getAttribute('aria-label') || '';
+      const name = ariaLabel || innerText;
 
-    const selectorFor = (el) => {
-      if (el.id) return `#${el.id}`;
-      if (el.getAttribute('name')) return `[name="${el.getAttribute('name')}"]`;
-      if (el.className && String(el.className).trim()) {
-        const firstClass = String(el.className).trim().split(/\s+/)[0];
-        if (firstClass) return `.${firstClass}`;
-      }
-      return el.tagName.toLowerCase();
-    };
+      // Filter by text if provided
+      if (text && !name.toLowerCase().includes(text.toLowerCase())) continue;
 
-    const xpathFor = (el) => {
-      const parts = [];
-      let node = el;
-      while (node && node.nodeType === 1) {
-        let idx = 1;
-        let sib = node.previousElementSibling;
-        while (sib) {
-          if (sib.tagName === node.tagName) idx += 1;
-          sib = sib.previousElementSibling;
-        }
-        parts.unshift(`${node.tagName.toLowerCase()}[${idx}]`);
-        node = node.parentElement;
-      }
-      return `//${parts.join('/')}`;
-    };
+      // Filter by attribute if provided
+      if (attribute && !el.hasAttribute(attribute)) continue;
 
-    const elInfo = (el) => {
-      const r = el.getBoundingClientRect();
-      return {
+      const candidateId = `c_${idCounter}@${pageStateId}`;
+      el.setAttribute('data-owc-id', `c_${idCounter}`);
+
+      items.push({
+        candidate_id: candidateId,
         tag: el.tagName.toLowerCase(),
-        type: (el.getAttribute('type') || '').toLowerCase(),
-        role: el.getAttribute('role') || '',
-        text: cleanText(el.innerText || el.textContent || el.value || '', 140),
-        href: el.href || el.getAttribute('href') || '',
-        src: el.src || el.currentSrc || el.getAttribute('src') || '',
-        selector: selectorFor(el),
-        xpath: xpathFor(el),
-        id: el.id || '',
-        classes: cleanText(el.className || '', 120),
-        x: Math.round(r.x + r.width / 2),
-        y: Math.round(r.y + r.height / 2),
-        width: Math.round(r.width),
-        height: Math.round(r.height),
-        visible: isVisible(el),
-        frame_path: 'root',
-      };
-    };
-
-    const mainSelectors = ['main', 'article', '[class*="content"]', '[class*="main"]', '[id*="content"]', 'section'];
-    const mainEl = mainSelectors.map((selector) => document.querySelector(selector)).find(Boolean) || document.body;
-
-    const contentLinks = [];
-    mainEl.querySelectorAll('a[href]').forEach((a) => {
-      if (!isVisible(a)) return;
-      const href = a.href || a.getAttribute('href') || '';
-      if (!href || href.includes('#')) return;
-      contentLinks.push(elInfo(a));
-    });
-
-    const navLinks = [];
-    document.querySelectorAll('nav a, header a, [class*="nav"] a, [class*="menu"] a').forEach((a) => {
-      if (!isVisible(a)) return;
-      navLinks.push(elInfo(a));
-    });
-
-    const buttons = [];
-    document.querySelectorAll('button, [role="tab"], [class*="tab"], [class*="filter"], [class*="btn"], select').forEach((el) => {
-      if (!isVisible(el)) return;
-      buttons.push({
-        ...elInfo(el),
-        kind: el.tagName.toLowerCase() === 'select' ? 'dropdown' : 'button',
-        active: el.classList.contains('active') || el.getAttribute('aria-selected') === 'true',
-        data: {
-          server: el.dataset?.server || null,
-          source: el.dataset?.source || null,
-          embed: el.dataset?.embed || null,
-        },
-      });
-    });
-
-    const iframes = [];
-    document.querySelectorAll('iframe').forEach((frame) => {
-      const r = frame.getBoundingClientRect();
-      iframes.push({
-        src: frame.src || frame.getAttribute('data-src') || '',
-        id: frame.id || '',
-        name: frame.name || '',
-        selector: selectorFor(frame),
-        xpath: xpathFor(frame),
-        x: Math.round(r.x + r.width / 2),
-        y: Math.round(r.y + r.height / 2),
-        width: Math.round(r.width),
-        height: Math.round(r.height),
-        category: (frame.src || '').match(/ad|banner|track|analytics/i) ? 'ad' : 'content',
-      });
-    });
-
-    const playerLibrariesDetail = {
-      jwplayer: Boolean(window.jwplayer),
-      videojs: Boolean(window.videojs),
-      hls: Boolean(window.Hls),
-      dashjs: Boolean(window.dashjs),
-      html_player_hint: Boolean(document.querySelector('[class*="jwplayer"],[class*="vjs-"],[id*="player"]')),
-    };
-
-    const videos = Array.from(document.querySelectorAll('video')).map((video, index) => {
-      const r = video.getBoundingClientRect();
-      const sources = Array.from(video.querySelectorAll('source'))
-        .map((source) => source.src || source.getAttribute('src') || '')
-        .filter(Boolean);
-      return {
-        selector: video.id ? `#${video.id}` : `video:nth-of-type(${index + 1})`,
-        xpath: `(//video)[${index + 1}]`,
-        src: video.currentSrc || video.src || sources[0] || '',
-        sources,
-        readyState: video.readyState,
-        networkState: video.networkState,
-        paused: video.paused,
-        duration: Number.isFinite(video.duration) ? Number(video.duration.toFixed(2)) : null,
-        x: Math.round(r.x + r.width / 2),
-        y: Math.round(r.y + r.height / 2),
-        width: Math.round(r.width),
-        height: Math.round(r.height),
-      };
-    });
-
-    const playerIframe = iframes.find((frame) => frame.category === 'content' && frame.width > 300);
-    const hosting_signals = {
-      has_video: videos.length > 0,
-      has_player_iframe: Boolean(playerIframe),
-      player_iframe_src: playerIframe?.src || null,
-      visible_content_iframes: iframes.filter((frame) => frame.category === 'content' && frame.width > 100).length,
-      player_libraries: Object.values(playerLibrariesDetail).some(Boolean),
-      player_libraries_detail: playerLibrariesDetail,
-      server_tabs: Boolean(document.querySelector('[class*="server"],[data-server],[data-source]')),
-    };
-
-    const popups = [];
-    document.querySelectorAll('[class*="popup"],[class*="modal"],[class*="overlay"],[class*="cookie"],[class*="banner"]').forEach((el) => {
-      const r = el.getBoundingClientRect();
-      if (r.width <= 200 || r.height <= 0) return;
-      if (!isVisible(el)) return;
-      const close = el.querySelector('[class*="close"],[class*="accept"],[aria-label*="close"]');
-      popups.push({
-        selector: selectorFor(el),
-        xpath: xpathFor(el),
-        text: cleanText(el.innerText || el.textContent || '', 120),
-        close_selector: close ? selectorFor(close) : null,
-        close_xpath: close ? xpathFor(close) : null,
-        x: Math.round(r.x + r.width / 2),
-        y: Math.round(r.y + r.height / 2),
-        width: Math.round(r.width),
-        height: Math.round(r.height),
-      });
-    });
-
-    const dom_skeleton = [];
-    document.querySelectorAll('header, nav, main, section, aside, footer, [class*="content"]').forEach((el) => {
-      dom_skeleton.push({
-        tag: el.tagName.toLowerCase(),
-        id: el.id || '',
-        classes: cleanText(el.className || '', 80),
-        links: el.querySelectorAll('a').length,
-      });
-    });
-
-    const paginationEl = document.querySelector('[class*="pagination"],[class*="pager"],[aria-label*="pagination"]');
-    const pagination = {
-      detected: Boolean(paginationEl),
-      type: paginationEl ? 'numbered' : null,
-      elements: paginationEl
-        ? Array.from(paginationEl.querySelectorAll('a,button')).map((el) => {
-          const info = elInfo(el);
-          return {
-            text: info.text,
-            href: info.href,
-            selector: info.selector,
-            xpath: info.xpath,
-            x: info.x,
-            y: info.y,
-          };
-        })
-        : [],
-    };
-
-    const elements = [];
-    const tags = 'a,button,input,textarea,select,[role="button"],[onclick],[data-server],[data-source],[data-embed],label';
-    document.querySelectorAll(tags).forEach((el) => {
-      if (!isVisible(el)) return;
-      elements.push({
-        ...elInfo(el),
-        kind: (() => {
-          const tag = el.tagName.toLowerCase();
-          if (tag === 'a') return 'link';
-          if (tag === 'button') return 'button';
-          if (tag === 'select') return 'select';
-          if (tag === 'textarea') return 'textarea';
-          if (tag === 'input') {
-            const inputType = (el.getAttribute('type') || 'text').toLowerCase();
-            if (inputType === 'checkbox') return 'checkbox';
-            if (inputType === 'radio') return 'radio';
-            return 'input';
-          }
-          if ((el.getAttribute('role') || '').toLowerCase() === 'button') return 'button';
-          return tag;
-        })(),
-        active: el.classList.contains('active') || el.getAttribute('aria-selected') === 'true',
-        checked: typeof el.checked === 'boolean' ? Boolean(el.checked) : null,
-        disabled: Boolean(el.disabled),
-        data: {
-          server: el.dataset?.server || null,
-          source: el.dataset?.source || null,
-          embed: el.dataset?.embed || null,
-        },
-      });
-    });
-
-    return {
-      contentLinks: contentLinks.slice(0, limits.contentLinks),
-      navLinks: navLinks.slice(0, limits.navLinks),
-      buttons: buttons.slice(0, limits.buttons),
-      iframes: iframes.slice(0, limits.iframes),
-      hosting_signals,
-      popups: popups.slice(0, limits.popups),
-      dom_skeleton: dom_skeleton.slice(0, 30),
-      pagination: {
-        ...pagination,
-        elements: pagination.elements.slice(0, limits.paginationElements),
-      },
-      videos: videos.slice(0, limits.videos),
-      elements: elements.slice(0, limits.elements),
-      text_sample: cleanText(document.body?.innerText || '', 320),
-      html_size: (document.documentElement?.outerHTML || '').length,
-      node_count: document.querySelectorAll('*').length,
-    };
-  }, LIMITS);
-}
-
-async function collectFrameSummary(frame, framePath, offset) {
-  try {
-    const summary = await frame.evaluate((limits) => {
-      const cleanText = (value, max = 160) =>
-        String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
-
-      const isVisible = (el) => {
-        const r = el.getBoundingClientRect();
-        return r.width > 0 && r.height > 0;
-      };
-
-      const selectorFor = (el) => {
-        if (el.id) return `#${el.id}`;
-        if (el.getAttribute('name')) return `[name="${el.getAttribute('name')}"]`;
-        if (el.className && String(el.className).trim()) {
-          const firstClass = String(el.className).trim().split(/\s+/)[0];
-          if (firstClass) return `.${firstClass}`;
-        }
-        return el.tagName.toLowerCase();
-      };
-
-      const xpathFor = (el) => {
-        const parts = [];
-        let node = el;
-        while (node && node.nodeType === 1) {
-          let idx = 1;
-          let sib = node.previousElementSibling;
-          while (sib) {
-            if (sib.tagName === node.tagName) idx += 1;
-            sib = sib.previousElementSibling;
-          }
-          parts.unshift(`${node.tagName.toLowerCase()}[${idx}]`);
-          node = node.parentElement;
-        }
-        return `//${parts.join('/')}`;
-      };
-
-      const info = (el) => {
-        const r = el.getBoundingClientRect();
-        return {
-          tag: el.tagName.toLowerCase(),
-          text: cleanText(el.innerText || el.textContent || el.value || '', 120),
-          href: el.href || el.getAttribute('href') || '',
-          selector: selectorFor(el),
-          xpath: xpathFor(el),
-          x: Math.round(r.x + r.width / 2),
-          y: Math.round(r.y + r.height / 2),
-          width: Math.round(r.width),
-          height: Math.round(r.height),
-        };
-      };
-
-      const allLinks = Array.from(document.querySelectorAll('a[href]')).filter((el) => isVisible(el));
-      const allButtons = Array.from(document.querySelectorAll('button,[role="button"],select,[class*="tab"],[data-server],[data-source]')).filter((el) => isVisible(el));
-      const videos = Array.from(document.querySelectorAll('video'));
-      const sampleVideos = videos.slice(0, 12).map((video, index) => {
-        const r = video.getBoundingClientRect();
-        const sources = Array.from(video.querySelectorAll('source'))
-          .map((source) => source.src || source.getAttribute('src') || '')
-          .filter(Boolean);
-        return {
-          selector: video.id ? `#${video.id}` : `video:nth-of-type(${index + 1})`,
-          xpath: `(//video)[${index + 1}]`,
-          src: video.currentSrc || video.src || sources[0] || '',
-          sources,
-          readyState: video.readyState,
-          networkState: video.networkState,
-          paused: video.paused,
-          width: Math.round(r.width),
-          height: Math.round(r.height),
-        };
-      });
-
-      const playerLibrariesDetail = {
-        jwplayer: Boolean(window.jwplayer),
-        videojs: Boolean(window.videojs),
-        hls: Boolean(window.Hls),
-        dashjs: Boolean(window.dashjs),
-      };
-
-      return {
-        title: cleanText(document.title || '', 120),
-        text_sample: cleanText(document.body?.innerText || '', 240),
-        total_links: allLinks.length,
-        total_buttons: allButtons.length,
-        total_iframes: document.querySelectorAll('iframe').length,
-        video_count: videos.length,
-        has_server_controls: Boolean(document.querySelector('[class*="server"],[data-server],[data-source]')),
-        has_player_library: Object.values(playerLibrariesDetail).some(Boolean),
-        player_libraries_detail: playerLibrariesDetail,
-        sample_links: allLinks.slice(0, limits.frameSampleLinks).map(info),
-        sample_buttons: allButtons.slice(0, limits.frameSampleButtons).map(info),
-        sample_videos: sampleVideos,
-      };
-    }, LIMITS);
-
-    return {
-      ...summary,
-      sample_links: summary.sample_links.map((entry) => applyOffset(entry, offset, framePath)),
-      sample_buttons: summary.sample_buttons.map((entry) => applyOffset(entry, offset, framePath)),
-      sample_videos: summary.sample_videos || [],
-      error: null,
-    };
-  } catch (error) {
-    return {
-      title: '',
-      text_sample: '',
-      total_links: 0,
-      total_buttons: 0,
-      total_iframes: 0,
-      video_count: 0,
-      has_server_controls: false,
-      has_player_library: false,
-      player_libraries_detail: {},
-      sample_links: [],
-      sample_buttons: [],
-      sample_videos: [],
-      error: String(error?.message || error || 'frame_evaluate_failed'),
-    };
-  }
-}
-
-/**
- * @param {{ browserWsEndpoint?: string|object }} params
- */
-export async function inspect({ browserWsEndpoint, scanMode = 'default' } = {}) {
-  return withBrowserSession(browserWsEndpoint, async ({ page }) => {
-    const url = page.url();
-    const title = await page.title().catch(() => '');
-    const lazy_load_warmup = scanMode === 'landing' ? await warmLandingLazyContent(page) : null;
-    const rootData = await collectRootData(page);
-
-    const framePathMap = buildFramePathMap(page);
-    const frameRecords = [];
-    const frames = page.frames().slice(0, LIMITS.frameTree);
-
-    for (const frame of frames) {
-      const framePath = framePathMap.get(frame) || 'root';
-      const parentFrame = frame.parentFrame();
-      const parentPath = parentFrame ? (framePathMap.get(parentFrame) || 'root') : null;
-      const offset = await computeFrameOffset(frame);
-      const summary = await collectFrameSummary(frame, framePath, offset);
-
-      frameRecords.push({
-        frame_path: framePath,
-        parent_frame_path: parentPath,
-        depth: frameDepth(framePath),
-        is_main_frame: frame === page.mainFrame(),
-        name: clean(frame.name?.() || '', 60),
-        url: frame.url() || '',
-        viewport_offset: offset,
-        title: summary.title,
-        text_sample: summary.text_sample,
-        text_hash: textHash(summary.text_sample),
-        total_links: summary.total_links,
-        total_buttons: summary.total_buttons,
-        total_iframes: summary.total_iframes,
-        video_count: summary.video_count,
-        has_server_controls: summary.has_server_controls,
-        has_player_library: summary.has_player_library,
-        player_libraries_detail: summary.player_libraries_detail,
-        purpose_hint: inferFramePurpose(summary, frame.url()),
-        sample_links: summary.sample_links,
-        sample_buttons: summary.sample_buttons,
-        sample_videos: summary.sample_videos || [],
-        error: summary.error,
+        role: el.getAttribute('role') || el.tagName.toLowerCase(),
+        name,
+        href: el.getAttribute('href') || null,
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
       });
     }
 
-    // ── Screenshot ────────────────────────────────────────────────────────────
-    let screenshot_url = null;
-    try {
-      screenshot_url = await screenshotViewport(page);
-    } catch (e) {
-      screenshot_url = `error: ${e.message}`;
+    return { items };
+  }, { role, text, attribute, scopeRef, pageStateId }).catch(() => ({ items: [] }));
+
+  const total = extracted.items.length;
+  const paged = extracted.items.slice(cursor, cursor + limit);
+  const hasMore = cursor + limit < total;
+  const nextCursor = hasMore ? String(cursor + limit) : null;
+
+  return {
+    items: paged,
+    pagination: {
+      cursor: nextCursor,
+      has_more: hasMore,
+      returned: paged.length,
+      total,
+    },
+    injectionSignals: [],
+  };
+}
+
+async function extractSingleElementView(frame, scopeRef, pageStateId) {
+  if (!scopeRef) return { element: null };
+
+  const idOnly = String(scopeRef).split('@')[0];
+  const detail = await frame.evaluate(({ idOnly }) => {
+    const el = document.querySelector(`[data-owc-id="${idOnly}"]`) || document.getElementById(idOnly);
+    if (!el) return null;
+
+    const rect = el.getBoundingClientRect();
+    const attrs = {};
+    for (const attr of el.attributes) {
+      attrs[attr.name] = attr.value.slice(0, 200);
     }
 
     return {
-      url,
-      title,
-      screenshot_url,
-      contentLinks: rootData.contentLinks,
-      navLinks: rootData.navLinks,
-      buttons: rootData.buttons,
-      iframes: rootData.iframes,
-      hosting_signals: rootData.hosting_signals,
-      popups: rootData.popups,
-      dom_skeleton: rootData.dom_skeleton,
-      pagination: rootData.pagination,
-      videos: rootData.videos,
-      elements: rootData.elements,
-      frame_tree: frameRecords,
-      lazy_load_warmup,
-      page_digest: {
-        text_sample: rootData.text_sample,
-        text_hash: textHash(rootData.text_sample),
-        html_size: rootData.html_size,
-        node_count: rootData.node_count,
-      },
-      stats: {
-        content_links: rootData.contentLinks.length,
-        nav_links: rootData.navLinks.length,
-        buttons: rootData.buttons.length,
-        iframes: rootData.iframes.length,
-        videos: rootData.videos.length,
-        popups: rootData.popups.length,
-        elements: rootData.elements.length,
-        frames_total: frameRecords.length,
-        frames_with_video: frameRecords.filter((frame) => frame.video_count > 0).length,
-        lazy_load_clicks: Number(lazy_load_warmup?.clicked || 0),
-        lazy_load_scroll_steps: Number(lazy_load_warmup?.scroll_steps || 0),
-      },
+      tag: el.tagName.toLowerCase(),
+      id: el.id || null,
+      class: el.className || null,
+      attributes: attrs,
+      text: (el.innerText || '').slice(0, 500),
+      rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
+      disabled: el.hasAttribute('disabled'),
+      visible: rect.width > 0 && rect.height > 0,
     };
-  });
+  }, { idOnly }).catch(() => null);
+
+  return { element: detail };
+}
+
+async function extractFramesView(page) {
+  const frames = page.frames().map((f) => ({
+    name: f.name() || null,
+    url: f.url(),
+    is_main: f === page.mainFrame(),
+    origin: (() => {
+      try { return new URL(f.url()).origin; } catch { return ''; }
+    })(),
+  }));
+  return { frames, total_frames: frames.length };
+}
+
+async function extractMediaView(frame) {
+  const media = await frame.evaluate(() => {
+    const videos = Array.from(document.querySelectorAll('video')).map((v, i) => ({
+      index: i,
+      src: v.src || v.currentSrc || null,
+      current_time: v.currentTime,
+      duration: v.duration,
+      paused: v.paused,
+      ended: v.ended,
+      ready_state: v.readyState,
+      video_width: v.videoWidth,
+      video_height: v.videoHeight,
+    }));
+
+    const playerGlobals = [];
+    if (window.Hls) playerGlobals.push('hls.js');
+    if (window.dashjs) playerGlobals.push('dashjs');
+    if (window.videojs) playerGlobals.push('videojs');
+    if (window.jwplayer) playerGlobals.push('jwplayer');
+
+    return { videos, player_libraries: playerGlobals };
+  }).catch(() => ({ videos: [], player_libraries: [] }));
+
+  return media;
 }

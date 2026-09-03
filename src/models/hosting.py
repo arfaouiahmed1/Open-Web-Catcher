@@ -25,6 +25,7 @@ from src.models.common import (
     PageType,
     PipelineModel,
 )
+from src.models.evidence import EvidenceRef
 
 
 class StreamURL(PipelineModel):
@@ -34,6 +35,14 @@ class StreamURL(PipelineModel):
     source_layer: str = ""  # which server/layer captured it
     channel_name: str = ""
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    # v2 evidence fields
+    verified: bool = False
+    http_status: int | None = None
+    content_type: str | None = None
+    source_layers: list[str] = Field(default_factory=list)
+    frame_url: str | None = None
+    sample_sha256: str | None = None
+    sample_bytes: int | None = None
 
 
 class ServerResult(PipelineModel):
@@ -50,7 +59,7 @@ class ServerResult(PipelineModel):
     stream_urls: list[str] = Field(default_factory=list)
     protocol_details: list[dict[str, Any]] = Field(default_factory=list)
     primary_stream: str | None = None
-    screenshot_url: str | None = None  # Cloudinary URL
+    screenshot_url: str | None = None  # evidence ref (blobref:<sha256[:16]>) or legacy Cloudinary URL
     embedded_url: str | None = None  # set when needs_embed_agent
     embedded_url_source: str | None = None
     player_iframe_url: str | None = None
@@ -72,7 +81,7 @@ class ServerResult(PipelineModel):
     network_diagnostics: list[dict[str, Any]] = Field(default_factory=list)
     iframe_diagnostics: list[dict[str, Any]] = Field(default_factory=list)
     popup_window_diagnostics: list[dict[str, Any]] = Field(default_factory=list)
-
+    evidence: list[EvidenceRef] = Field(default_factory=list)
 
 class ExtractionResult(PipelineModel):
     url: str
@@ -80,7 +89,7 @@ class ExtractionResult(PipelineModel):
     status: ExtractionStatus
     servers: list[ServerResult] = Field(default_factory=list)
     streams: list[StreamURL] = Field(default_factory=list)
-    screenshots: list[str] = Field(default_factory=list)  # Cloudinary URLs
+    screenshots: list[str] = Field(default_factory=list)  # evidence refs (blobref:<sha256[:16]>) or legacy URLs
     embedded_urls: list[str] = Field(default_factory=list)  # iframes needing embedded agent
     primary_channel: str = ""
     detected_channels: list[str] = Field(default_factory=list)
@@ -90,3 +99,4 @@ class ExtractionResult(PipelineModel):
     duration_seconds: float = 0.0
     error_message: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
+    evidence: list[EvidenceRef] = Field(default_factory=list)

@@ -24,8 +24,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { chromium } from "playwright-extra";
-import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import { loadBrowserDriver } from "./browser-driver.js";
+import { defaultSessionManager } from "../runtime/session-manager.js";
+import { PageStateTracker } from "../runtime/page-state.js";
+import { NetworkLedger } from "../runtime/network-ledger.js";
+import { PopupLedger } from "../runtime/popup-ledger.js";
+import { LocatorEngine } from "../runtime/locator-engine.js";
+import { detectAccessState } from "../runtime/access-state.js";
+import { defaultEvidenceStore, EvidenceStore } from "../runtime/evidence-store.js";
 import {
   getProxyCandidatePlan,
   markProxyFailure,
@@ -47,13 +53,7 @@ import {
   getEffectiveRuntimeMetadata,
 } from "./runtime-config.js";
 
-const stealthPlugin = StealthPlugin();
-// The pinned persona controls userAgent — stealth's override contradicts it.
-stealthPlugin.enabledEvasions.delete("user-agent-override");
-// Persona init patches own navigator.plugins behavior.
-stealthPlugin.enabledEvasions.delete("navigator.plugins");
-chromium.use(stealthPlugin);
-
+const { chromium } = await loadBrowserDriver();
 const WS_ENDPOINT = process.env.BROWSER_WS_ENDPOINT || "ws://127.0.0.1:9223";
 const EXECUTABLE_PATH =
   process.env.PLAYWRIGHT_EXECUTABLE_PATH ||
@@ -1940,16 +1940,23 @@ export async function closeEphemeralBrowser(session) {
  * Get the active page from the session context.
  * In Playwright, pages are per-context; we pick the most recently navigated one.
  */
+export {
+  defaultSessionManager,
+  PageStateTracker,
+  NetworkLedger,
+  PopupLedger,
+  LocatorEngine,
+  detectAccessState,
+  defaultEvidenceStore,
+  EvidenceStore,
+};
+
 export async function getPage(
   session,
   { targetUrl = "", browserProfile = "" } = {},
 ) {
-  // Accept either a raw context or a { browser, context } session object
-  const context = session?.context ?? session;
-  if (!context || typeof context.pages !== "function") {
-    throw new Error(
-      "Playwright browser context is unavailable for this session.",
-    );
+  if (session?.page && !session.page.isClosed()) {
+    return session.page;
   }
   const sharedConnection = Boolean(session?.sharedConnection);
   const effectiveBrowserProfile =

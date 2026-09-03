@@ -1,117 +1,101 @@
 /**
- * shared/upload.js — Cloudinary upload with timeout.
+ * shared/upload.js — Cloudinary upload with local blob fallback.
+ *
+ * When Cloudinary credentials are provided, uploads to Cloudinary and returns
+ * the public secure URL for visual proof and inspection.
+ * When Cloudinary is not configured or upload fails, falls back cleanly to the
+ * local content-addressed blob store, returning "blobref:<sha256[:16]>".
  */
 
-import { v2 as cloudinary } from 'cloudinary';
+import { writeBlobBuffer } from '../runtime/evidence-store.js';
 
-const CLOUDINARY_UPLOAD_PRESET = (process.env.CLOUDINARY_UPLOAD_PRESET || '').trim();
-const unsignedModeEnv = String(process.env.CLOUDINARY_UNSIGNED_UPLOAD || '').toLowerCase();
-const CLOUDINARY_UNSIGNED_UPLOAD =
-  unsignedModeEnv === 'true' || (CLOUDINARY_UPLOAD_PRESET && unsignedModeEnv !== 'false');
+const CLOUDINARY_CLOUD_NAME = String(process.env.CLOUDINARY_CLOUD_NAME || '').trim();
+const CLOUDINARY_UPLOAD_PRESET = String(process.env.CLOUDINARY_UPLOAD_PRESET || '').trim();
+const CLOUDINARY_API_KEY = String(process.env.CLOUDINARY_API_KEY || '').trim();
+const CLOUDINARY_API_SECRET = String(process.env.CLOUDINARY_API_SECRET || '').trim();
 
-const CLOUDINARY_CONFIGURED = Boolean(
-  process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_CLOUD_NAME !== 'your_cloud_name',
+const IS_CONFIGURED = Boolean(
+  CLOUDINARY_CLOUD_NAME &&
+  CLOUDINARY_CLOUD_NAME !== 'your_cloud_name' &&
+  (CLOUDINARY_UPLOAD_PRESET || (CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET)),
 );
 
-const cloudinaryConfig = {
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  upload_preset: CLOUDINARY_UPLOAD_PRESET || undefined,
-};
-
-if (!CLOUDINARY_UNSIGNED_UPLOAD) {
-  cloudinaryConfig.api_key = process.env.CLOUDINARY_API_KEY;
-  cloudinaryConfig.api_secret = process.env.CLOUDINARY_API_SECRET;
-}
-
-cloudinary.config(cloudinaryConfig);
-
-const DEFAULT_TIMEOUT_MS = 15_000;
-
-function sanitizeCloudinaryError(error) {
-  const raw = error?.message || String(error || 'Cloudinary upload failed');
-  return raw.replace(/api_key\s+[^\s]+/gi, 'api_key <redacted>');
+let _cloudinary = null;
+async function getCloudinary() {
+  if (_cloudinary) return _cloudinary;
+  try {
+    const mod = await import('cloudinary');
+    _cloudinary = mod.v2 ?? mod.default?.v2 ?? mod.default;
+    _cloudinary.config({
+      cloud_name: CLOUDINARY_CLOUD_NAME,
+      api_key: CLOUDINARY_API_KEY || undefined,
+      api_secret: CLOUDINARY_API_SECRET || undefined,
+    });
+    return _cloudinary;
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Upload a base64 data-URI or Buffer to Cloudinary.
+ * Upload image buffer or data URI.
+ * Returns Cloudinary secure URL if configured, otherwise persists locally to
+ * content-addressed blob store and returns a blobref pointer.
+ *
  * @param {string|Buffer} imageData
- * @param {{ timeoutMs?: number, folder?: string }} opts
- * @returns {Promise<string>} public secure URL
+ * @param {{ timeoutMs?: number, folder?: string }} [opts]
+ * @returns {Promise<string>}
  */
-export async function uploadImage(imageData, { timeoutMs = DEFAULT_TIMEOUT_MS, folder = 'owc' } = {}) {
-  // If Cloudinary is not configured, return the image as a data URI so tool
-  // results still carry a usable screenshot instead of an empty string.
-  if (!CLOUDINARY_CONFIGURED) {
-    if (typeof imageData === 'string' && imageData.startsWith('data:')) {
-      return imageData;
-    }
+export async function uploadImage(imageData, { timeoutMs = 15000, folder = 'owc' } = {}) {
+  // If not configured, store locally via blob store
+  if (!IS_CONFIGURED) {
     if (Buffer.isBuffer(imageData)) {
-      return `data:image/png;base64,${imageData.toString('base64')}`;
+      return writeBlobBuffer(imageData);
     }
-    return imageData;
+    const dataUriMatch = String(imageData || '').match(/^data:[^;,]+;base64,(.+)$/s);
+    if (dataUriMatch) {
+      const buf = Buffer.from(dataUriMatch[1], 'base64');
+      return writeBlobBuffer(buf);
+    }
+    return writeBlobBuffer(Buffer.from(String(imageData), 'utf8'));
   }
 
-  const baseOptions = {
-    folder,
-    resource_type: 'image',
-  };
-
-  async function uploadWithOptions(uploadOptions) {
-    const upload = new Promise((resolve, reject) => {
-      if (uploadOptions.unsigned && uploadOptions.upload_preset) {
-        const { upload_preset: uploadPreset, unsigned: _unsigned, ...unsignedOptions } = uploadOptions;
-        cloudinary.uploader.unsigned_upload(
-          imageData,
-          uploadPreset,
-          unsignedOptions,
-          (err, result) => err ? reject(err) : resolve(result.secure_url),
-        );
-        return;
-      }
-
-      cloudinary.uploader.upload(imageData, uploadOptions, (err, result) =>
-        err ? reject(err) : resolve(result.secure_url)
-      );
-    });
-    const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`Cloudinary upload timed out after ${timeoutMs}ms`)), timeoutMs),
-    );
-    try {
-      return await Promise.race([upload, timeout]);
-    } catch (error) {
-      throw new Error(sanitizeCloudinaryError(error));
-    }
-  }
-
-  if (CLOUDINARY_UPLOAD_PRESET) {
-    const unsignedOptions = {
-      ...baseOptions,
-      upload_preset: CLOUDINARY_UPLOAD_PRESET,
-      unsigned: true,
-    };
-
-    try {
-      return await uploadWithOptions(unsignedOptions);
-    } catch (unsignedError) {
-      if (CLOUDINARY_UNSIGNED_UPLOAD) {
-        throw unsignedError;
-      }
-      const signedPresetOptions = {
-        ...baseOptions,
-        upload_preset: CLOUDINARY_UPLOAD_PRESET,
+  // Cloudinary upload with timeout
+  try {
+    const uploadPromise = new Promise((resolve, reject) => {
+      const options = {
+        folder,
+        resource_type: 'image',
+        ...(CLOUDINARY_UPLOAD_PRESET ? { upload_preset: CLOUDINARY_UPLOAD_PRESET } : {}),
       };
-      try {
-        return await uploadWithOptions(signedPresetOptions);
-      } catch {
-        // Final fallback: allow signed upload without preset for accounts
-        // where preset name is invalid but API credentials are valid.
-        return uploadWithOptions(baseOptions);
-      }
-    }
-  }
 
-  const signedOptions = {
-    ...baseOptions,
-  };
-  return uploadWithOptions(signedOptions);
+      getCloudinary().then((cloudinary) => {
+        if (!cloudinary) {
+          reject(new Error('Cloudinary SDK unavailable'));
+          return;
+        }
+        if (CLOUDINARY_UPLOAD_PRESET) {
+          cloudinary.uploader.unsigned_upload(imageData, CLOUDINARY_UPLOAD_PRESET, options, (err, res) => {
+            if (err) reject(err);
+            else resolve(res.secure_url);
+          });
+        } else {
+          cloudinary.uploader.upload(imageData, options, (err, res) => {
+            if (err) reject(err);
+            else resolve(res.secure_url);
+          });
+        }
+      }).catch(reject);
+    });
+
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`Cloudinary upload timed out after ${timeoutMs}ms`)), timeoutMs);
+    });
+
+    return await Promise.race([uploadPromise, timeoutPromise]);
+  } catch (err) {
+    console.warn('[upload] Cloudinary upload failed; falling back to local blob store:', err.message);
+    const buf = Buffer.isBuffer(imageData) ? imageData : Buffer.from(String(imageData), 'utf8');
+    return writeBlobBuffer(buf);
+  }
 }

@@ -70,18 +70,19 @@ services:
     env_file:
       - .env
     environment:
-      # HOST=0.0.0.0 is required for cross-container reachability: the MCP server
-      # defaults to 127.0.0.1 (safe for host runs), but owc probes
-      # http://owc-tools-playwright:3001 over the compose network.
+      # HOST=0.0.0.0 is required for cross-container reachability.
       PORT: 3001
       HOST: 0.0.0.0
-      # Chrome CDP must be reachable by owc over the compose network; local runs
-      # still default to 127.0.0.1 in the entrypoint when this is unset.
+      # Chrome CDP must be reachable by owc over the compose network.
       REMOTE_DEBUGGING_ADDRESS: 0.0.0.0
       MCP_BROWSER_MODE: ${MCP_BROWSER_MODE:-isolated}
       BROWSER_WS_ENDPOINT: ws://127.0.0.1:9223
-      # uBOL adblock options (OWC_UBOL_*) are baked into the image ENV; override
-      # them here only if needed.
+      # Headed under Xvfb is the committed default (plan step 2).
+      # Set OWC_BROWSER_HEADLESS=true to override for headless fixture/unit test runs.
+      OWC_BROWSER_HEADLESS: ${OWC_BROWSER_HEADLESS:-false}
+      OWC_XVFB_SCREEN: ${OWC_XVFB_SCREEN:-1365x768x24}
+      OWC_BROWSER_DRIVER: ${OWC_BROWSER_DRIVER:-playwright}
+      # uBOL adblock options (OWC_UBOL_*) are baked into the image ENV; override here only if needed.
     volumes:
       - ./data:/app/data
     healthcheck:
@@ -98,55 +99,9 @@ services:
         reservations:
           memory: 1g
 
-  # Opt-in headed Playwright tools under Xvfb: `docker compose --profile headed-playwright up`.
-  # Same image as owc-tools-playwright with OWC_BROWSER_HEADLESS=false; host
-  # ports offset (3012/9323) so the default headless service keeps 3002/9223.
-  owc-tools-playwright-headed:
-    image: ${OWC_TOOLS_PW_IMAGE:-open-web-catcher-tools-playwright}:${OWC_TAG:-latest}
-    build:
-      context: .
-      dockerfile: Dockerfile.tools.playwright
-      args:
-        BUILDKIT_INLINE_CACHE: "1"
-      cache_to:
-        - type=inline
-    container_name: ${OWC_TOOLS_PW_HEADED_CONTAINER:-owc-tools-playwright-headed}
-    restart: unless-stopped
-    init: true
-    stop_grace_period: 30s
-    shm_size: "2gb"
-    profiles:
-      - headed-playwright
-    ports:
-      - "${OWC_TOOLS_PW_HEADED_HOST_PORT:-3012}:3001"
-      - "${OWC_TOOLS_PW_HEADED_DEBUG_HOST_PORT:-9323}:9224"
-    env_file:
-      - .env
-    environment:
-      PORT: 3001
-      HOST: 0.0.0.0
-      # Chrome CDP must be reachable by owc over the compose network; local runs
-      # still default to 127.0.0.1 in the entrypoint when this is unset.
-      REMOTE_DEBUGGING_ADDRESS: 0.0.0.0
-      MCP_BROWSER_MODE: ${MCP_BROWSER_MODE:-isolated}
-      BROWSER_WS_ENDPOINT: ws://127.0.0.1:9223
-      OWC_BROWSER_HEADLESS: "false"
-      OWC_XVFB_SCREEN: ${OWC_XVFB_SCREEN:-1280x800x24}
-    volumes:
-      - ./data:/app/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: 4g
-          cpus: '3.0'
-        reservations:
-          memory: 1g
+  # The separate owc-tools-playwright-headed profile service has been removed.
+  # Headed/Xvfb operation is now the default of owc-tools-playwright (plan step 2).
+  # To run headless: set OWC_BROWSER_HEADLESS=true in .env or environment override.
 
   owc:
     image: ${OWC_IMAGE:-open-web-catcher}:${OWC_TAG:-latest}

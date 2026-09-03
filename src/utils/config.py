@@ -530,11 +530,10 @@ class Settings(BaseSettings):
         default="http://localhost:3001,http://127.0.0.1:3001",
         validation_alias=AliasChoices("UI_CORS_ORIGINS"),
     )
-
     cloudinary_cloud_name: str = ""
     cloudinary_api_key: str = ""
     cloudinary_api_secret: str = ""
-
+    cloudinary_upload_preset: str = ""
     browser_ws_endpoint: str = "ws://localhost:9223"
     mcp_server_url: str = "http://localhost:3001"
     # Playwright-only since ADR-003; the puppeteer engine/field pair was removed.
@@ -630,9 +629,6 @@ class Settings(BaseSettings):
     tool_result_cache_min_identical_observations: int = 2
     agent_runtime_config: dict = Field(default_factory=dict)
 
-    # Per-profile disabled tool names: {"landing": ["screenshot", "play_media"], ...}
-    disabled_tools_by_profile: dict = Field(default_factory=dict)
-    disabled_tools_by_browser_profile: dict = Field(default_factory=dict)
     browser_runtime: dict = Field(default_factory=dict)
 
     max_parallel_hosting_pages: int = 5
@@ -707,8 +703,6 @@ class Settings(BaseSettings):
         existing["tool_result_cache_enabled"] = self.tool_result_cache_enabled
         existing["tool_result_cache_min_identical_observations"] = self.tool_result_cache_min_identical_observations
         existing["agent_runtime_config"] = normalize_agent_runtime_config(self.agent_runtime_config)
-        existing["disabled_tools_by_profile"] = self.disabled_tools_by_profile
-        existing["disabled_tools_by_browser_profile"] = self.disabled_tools_by_browser_profile
         existing["browser_runtime"] = self.browser_runtime
         existing["max_parallel_hosting_pages"] = self.max_parallel_hosting_pages
         existing["background_job_concurrency"] = self.background_job_concurrency

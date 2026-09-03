@@ -52,6 +52,35 @@ export const TOKEN_STORAGE_KEY = "owc_token";
 
 let cachedApiBase: string | null = null;
 
+const DEFAULT_CACHE_TTL_MS = 10_000;
+
+const CACHEABLE_GET_PATHS: Record<string, true> = {
+  "/ui/pricing": true,
+  "/api/health": true,
+  "/ui/providers/models": true,
+  "/ui/provider/models": true,
+  "/ui/config": true,
+  "/ui/overview": true,
+};
+
+function isCacheablePath(path: string): boolean {
+  const clean = path.split("?")[0] ?? path;
+  return CACHEABLE_GET_PATHS[clean] === true;
+}
+
+type CacheEntry = { data: unknown; expiresAt: number };
+const responseCache = new Map<string, CacheEntry>();
+const inflightRequests = new Map<string, Promise<unknown>>();
+
+
+export function clearApiCache(): void {
+  responseCache.clear();
+}
+
+export function clearInflightRequests(): void {
+  inflightRequests.clear();
+}
+
 /**
  * Resolve the API base URL from the explicitly configured origin.
  *
@@ -77,8 +106,9 @@ export function resolveApiBase(): string {
 /** Test/SSR helper: forget any memoized base URL. @visibleForTesting */
 export function resetApiBaseCache(): void {
   cachedApiBase = null;
+  responseCache.clear();
+  inflightRequests.clear();
 }
-
 export function apiUrl(path: string): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   // Browser requests stay same-origin through the Next runtime proxy. This
@@ -111,25 +141,105 @@ export interface ApiFetchOptions extends RequestInit {
   query?: Record<string, string | number | boolean | null | undefined>;
   /** Abort signal for request cancellation (T44 perf hygiene). */
   signal?: AbortSignal;
+  /** Optional TTL for GET caching; defaults to 10s for static endpoints. */
+  ttlMs?: number;
+  /** Skip both cache read and dedup for this request. */
+  skipCache?: boolean;
 }
 
 /**
  * Untyped-path fetch used by the legacy JS surface and as the transport for
  * every typed wrapper below. Throws on non-2xx with the response body text
  * and redirects to /login on 401. Supports AbortSignal via options.signal (T44).
+ * Includes in-flight dedup and short-TTL GET caching for static endpoints.
  */
 export async function apiFetch<T = unknown>(
   path: string,
   options: ApiFetchOptions = {},
 ): Promise<T> {
-  const { query, ...init } = options;
+  const { query, ttlMs, skipCache, ...init } = options;
   const url = withQuery(path, query);
+  const method = (init.method ? String(init.method) : "GET").toUpperCase();
+  const isGet = method === "GET";
+  const hasBody = init.body != null;
+  const effectiveTtl =
+    ttlMs !== undefined ? ttlMs : isGet && !hasBody && isCacheablePath(url) ? DEFAULT_CACHE_TTL_MS : undefined;
+  const useCache =
+    isGet &&
+    !hasBody &&
+    !skipCache &&
+    effectiveTtl != null &&
+    effectiveTtl > 0 &&
+    !(init.signal?.aborted ?? false);
+  let cacheKey: string | null = null;
+  if (useCache) {
+    cacheKey = `${method}:${url}`;
+    const cached = responseCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data as T;
+    }
+    if (cached) responseCache.delete(cacheKey);
+  }
+
+  const rawBody = init.body as BodyInit | null | undefined;
+  const bodyKey = typeof rawBody === "string" ? rawBody : rawBody ? String(rawBody) : "";
+  const dedupKey = !skipCache && !init.signal ? `${method}:${url}:${bodyKey}` : null;
+  if (dedupKey && inflightRequests.has(dedupKey)) {
+    return inflightRequests.get(dedupKey) as Promise<T>;
+  }
+
+  const doFetch = async (): Promise<T> => {
+    const token = getToken();
+    const response = await fetch(apiUrl(url), {
+      ...init,
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init.headers || {}),
+      },
+    });
+
+    if (response.status === 401 && typeof window !== "undefined") {
+      const returnPath = encodeURIComponent(window.location.pathname + window.location.search);
+      window.location.href = `/login?next=${returnPath}`;
+      throw new Error("Unauthorized");
+    }
+
+    if (!response.ok) {
+      throw await readApiError(response);
+    }
+
+    const data = (await response.json()) as T;
+    if (cacheKey && effectiveTtl != null && effectiveTtl > 0) {
+      responseCache.set(cacheKey, { data, expiresAt: Date.now() + effectiveTtl });
+    }
+    return data;
+  };
+
+  const promise = doFetch();
+  if (dedupKey) {
+    inflightRequests.set(dedupKey, promise);
+    const cleanup = (): void => {
+      inflightRequests.delete(dedupKey as string);
+    };
+    promise.then(cleanup, cleanup);
+  }
+  return promise;
+}
+
+/** Fetch an authenticated binary response through the same console proxy. */
+export async function apiFetchBlob(
+  path: string,
+  options: ApiFetchOptions = {},
+): Promise<Blob> {
+  const { query, ...init } = options;
   const token = getToken();
-  const response = await fetch(apiUrl(url), {
+  const response = await fetch(apiUrl(withQuery(path, query)), {
     ...init,
     cache: "no-store",
     headers: {
-      "Content-Type": "application/json",
+      Accept: "image/*",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init.headers || {}),
     },
@@ -142,13 +252,21 @@ export async function apiFetch<T = unknown>(
     window.location.href = `/login?next=${returnPath}`;
     throw new Error("Unauthorized");
   }
+  if (!response.ok) throw await readApiError(response);
+  return response.blob();
+}
 
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Request failed with ${response.status}`);
+async function readApiError(response: Response): Promise<Error> {
+  const body = await response.text();
+  let message = body;
+  try {
+    const parsed = JSON.parse(body) as { detail?: unknown; error?: unknown };
+    const detail = parsed.detail ?? parsed.error;
+    if (typeof detail === "string" && detail.trim()) message = detail;
+  } catch {
+    // Keep plain-text backend errors unchanged.
   }
-
-  return (await response.json()) as T;
+  return new Error(message || `Request failed with ${response.status}`);
 }
 
 function withQuery(
@@ -393,11 +511,6 @@ export const memoryApi = {
       body: JSON.stringify(body),
     }),
 
-  update: (body: ApiBody<"update_memory_memory_update_post">) =>
-    apiFetch<ApiSuccess<"update_memory_memory_update_post">>("/memory/update", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
 };
 
 /* ------------------------------------------------------------------ */

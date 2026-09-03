@@ -125,7 +125,14 @@ def remember_agent_run(
             trace=trace,
             actor=actor,
             run_id=observer.run_id if observer is not None else "",
-            short_memory_summary=short_memory.summary() if short_memory is not None else "",
+            short_memory_summary=(
+                (
+                    f"{short_memory.summary(limit=6)} | "
+                    f"{short_memory.working_state(objective='', page_url=url, page_type=page_type, limit=6)}"
+                )
+                if short_memory is not None
+                else ""
+            )[:1400],
         )
         if observer is not None:
             observer.emit(

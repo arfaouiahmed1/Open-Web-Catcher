@@ -41,7 +41,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { apiFetch, apiUrl } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { BrowserTab } from "./tabs/browser-tab";
 import { AccountTab } from "./tabs/account-tab";
 import {
@@ -1191,7 +1191,7 @@ function MiniSegment({  options, active, onChange  }: any) {
               "h-auto flex-1 rounded-[12px] px-3 py-2 text-[12.5px] font-medium sm:flex-none",
               isActive
                 ? "border border-border bg-background text-foreground shadow-sm"
-                : "text-muted-foreground",
+                : "text-muted-foreground/75",
             )}
           >
             {option.label}
@@ -1584,6 +1584,15 @@ export function SettingsPage() {
   const activeTab = SETTINGS_TABS.some((tab) => tab.id === requestedTab)
     ? requestedTab
     : "models";
+
+  useEffect(() => {
+    if (requestedTab === activeTab) return;
+    const params = new URLSearchParams(searchParams.toString());
+    if (activeTab === "models") params.delete("tab");
+    else params.set("tab", activeTab);
+    const query = params.toString();
+    router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
+  }, [activeTab, pathname, requestedTab, router, searchParams]);
 
   function setActiveTab(nextTab: any) {
     if (nextTab === activeTab) return;
@@ -1988,16 +1997,9 @@ export function SettingsPage() {
     setPricingSyncLoading(targetProvider);
     setConfigErr("");
     try {
-      await fetch(apiUrl("/ui/pricing/sync"), {
+      await apiFetch("/ui/pricing/sync", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider: targetProvider }),
-      }).then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.detail || payload.error || `Status ${response.status}`);
-        }
-        return payload;
       });
       await loadPricingStatus();
     } catch (error: any) {
@@ -2007,7 +2009,7 @@ export function SettingsPage() {
     }
   }
 
-  async function hydrateConfig(payload: any) {
+  async function hydrateConfig(payload: any, { refreshCatalogs = true } = {}) {
     const fallbackProvider = payload.llm_provider || "google";
     const fallbackAgentModel = payload.agent_model || "";
     const fallbackOrchestratorModel =
@@ -2046,10 +2048,7 @@ export function SettingsPage() {
     setBrowserSettingsTab(payload.browser_engine || "playwright");
     setBrowserRuntime(normalizeBrowserRuntime(payload.browser_runtime));
     setDisabledToolsByBrowserProfile(
-      normalizeDisabledToolsByBrowserProfile(
-        payload.disabled_tools_by_browser_profile,
-        payload.disabled_tools_by_profile || {},
-      ),
+      normalizeDisabledToolsByBrowserProfile({}, {}),
     );
     setModelConfigWarnings(payload.model_config_warnings || []);
     setActiveMcpBrowserTab(payload.browser_engine || "playwright");
@@ -2057,15 +2056,17 @@ export function SettingsPage() {
     setBaseUrlEdits({});
     setSavedTab("");
 
-    const providersToLoad = [...new Set([
-      fallbackProvider,
-      ...Object.keys(payload.api_keys || {}).filter((providerId) => payload.api_keys[providerId]),
-    ])];
-    await Promise.all(
-      providersToLoad.map((providerId) =>
-        loadProviderCatalog(providerId, { force: true }).catch(() => null),
-      ),
-    );
+    if (refreshCatalogs) {
+      const providersToLoad = [...new Set([
+        fallbackProvider,
+        ...Object.keys(payload.api_keys || {}).filter((providerId) => payload.api_keys[providerId]),
+      ])];
+      await Promise.all(
+        providersToLoad.map((providerId) =>
+          loadProviderCatalog(providerId, { force: true }).catch(() => null),
+        ),
+      );
+    }
     await loadPricingStatus();
   }
 
@@ -2259,10 +2260,7 @@ export function SettingsPage() {
           browser_runtime: serverDraft.browser_runtime,
         };
       case "mcp-tools":
-        return {
-          disabled_tools_by_browser_profile:
-            serverDraft.disabled_tools_by_browser_profile,
-        };
+        return {};
       case "api-keys": {
         const payload: Record<string, any> = {};
         if (keyEdits.google !== null) payload.google_api_key = keyEdits.google;
@@ -2304,14 +2302,10 @@ export function SettingsPage() {
     setConfigErr("");
     setSaveMismatchWarning("");
     try {
-      const response = await fetch(apiUrl("/ui/config"), {
+      const payload = await apiFetch<Record<string, any>>("/ui/config", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payloadToSave),
       });
-      const payload = await response.json();
-      if (!response.ok)
-        throw new Error(payload.detail || `Status ${response.status}`);
       if (tabId === "models") {
         const requestedSnapshot = snapshotServerConfig({
           ...serverDraft,
@@ -2336,8 +2330,7 @@ export function SettingsPage() {
             [],
         );
       }
-      await hydrateConfig(payload);
-      await loadPricingStatus();
+      await hydrateConfig(payload, { refreshCatalogs: false });
       if (payload.config_persisted === false) {
         setConfigErr(
           payload.config_persist_error ||
@@ -2503,12 +2496,11 @@ export function SettingsPage() {
                       {currentTabDirty ? "Unsaved model changes" : "Saved to runtime config"}
                     </Badge>
                     <Badge
-                      // @ts-expect-error -- strict migration
                       tone={
                         sourceTone(activeCatalog?.source || "unavailable") === "ok"
                           ? "success"
                           : sourceTone(activeCatalog?.source || "unavailable") === "error"
-                            ? "destructive"
+                            ? "danger"
                             : "warning"
                       }
                     >
@@ -3573,182 +3565,93 @@ export function SettingsPage() {
           {activeTab === "mcp-tools" ? (
             <section className="space-y-4">
               <div className="flex items-center justify-between">
-                <SectionHeader>MCP Tools</SectionHeader>
+                <SectionHeader>MCP Tools & Manifest</SectionHeader>
                 <span className="text-[11px]" style={{ color: "var(--mute)" }}>
-                  Clean per-profile toggles with faster scanning and fewer accidental disables
+                  Read-only manifest inspection: agents receive the validated least-privilege profile
                 </span>
               </div>
 
-              <MiniSegment
-                active={activeMcpBrowserTab}
-                onChange={setActiveMcpBrowserTab}
-                options={BROWSER_OPTIONS.map((item) => ({
-                  id: item.id,
-                  label: item.name,
-                  badge:
-                    Object.keys(MCP_TOOLS_BY_PROFILE).reduce(
-                      (count, profile) => {
-                        return (
-                          count +
-                          (disabledToolsByBrowserProfile[item.id]?.[profile]
-                            ?.length || 0)
-                        );
-                      },
-                      0,
-                    ) || "",
-                }))}
-              />
-
-              <MiniSegment
-                active={activeProfileTab}
-                onChange={setActiveProfileTab}
-                options={Object.keys(MCP_TOOLS_BY_PROFILE).map((profile) => ({
-                  id: profile,
-                  // @ts-expect-error -- strict migration
-                  label: PROFILE_LABELS[profile],
-                  badge:
-                    disabledToolsByBrowserProfile[activeMcpBrowserTab]?.[
-                      profile
-                    ]?.length ||
-                    0 ||
-                    "",
-                }))}
-              />
-
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <CompactStat label="Enabled" value={`${enabledToolCount}/${((MCP_TOOLS_BY_PROFILE as any)[activeProfileTab] || []).length}`} tone="primary" />
-                <CompactStat label="Disabled" value={`${activeMcpDisabledTools.length}`} />
-                <CompactStat label="Backend" value="Playwright" />
-                <CompactStat label="Profile" value={(PROFILE_LABELS as any)[activeProfileTab]} />
+                <CompactStat label="Runtime Driver" value="Playwright 1.62.1" tone="primary" />
+                <CompactStat label="MCP Transport" value="Streamable HTTP" tone="success" />
+                <CompactStat label="Isolation" value="Isolated Contexts" />
+                <CompactStat label="uBOL Version" value="2026.901.1442" />
               </div>
 
-              <div
-                className="rounded-[18px] border border-border/70 bg-card/95 p-4 shadow-[0_18px_48px_-36px_rgba(0,0,0,0.55)]"
-              >
-                <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="text-[13px] font-semibold text-foreground">
-                        {BROWSER_OPTIONS.find((item) => item.id === activeMcpBrowserTab)?.name}
-                        {" · "}
-                        {/* @ts-expect-error -- strict migration */}
-                        {PROFILE_LABELS[activeProfileTab]}
-                      </span>
-                      <Badge tone="default" className="font-mono text-[10px]">
-                        {enabledToolCount}
-                        {" / "}
-                        {((MCP_TOOLS_BY_PROFILE as any)[activeProfileTab] || []).length} enabled
-                      </Badge>
+              <div className="rounded-[18px] border border-border/70 bg-card/95 p-4 shadow-[0_18px_48px_-36px_rgba(0,0,0,0.55)] space-y-4">
+                <div className="space-y-1">
+                  <h3 className="text-[14px] font-semibold text-foreground">Canonical Tool Manifest (v2)</h3>
+                  <p className="text-[12px] text-muted-foreground">
+                    Authoritative profile definitions from browser-tool-manifest.json. Tools cannot be disabled ad-hoc per run.
+                  </p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-[12px] border border-border/50 bg-background/50 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[12px] text-foreground">Classification</span>
+                      <Badge tone="default" className="text-[10px]">5 tools</Badge>
                     </div>
-                    <p className="max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
-                      Required shared tools should normally stay enabled. Use this screen to trim redundant or risky tools per engine/profile, not to hide core navigation and inspection by default.
-                    </p>
+                    <div className="flex flex-wrap gap-1.5 font-mono text-[11px] text-muted-foreground">
+                      <span className="rounded bg-muted px-1.5 py-0.5">navigate</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">inspect</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">interact</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">screenshot</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">wait</span>
+                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">memory_search</span>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 px-2.5 text-[11px] text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10"
-                      onClick={() => setDisabledToolsForCurrentBrowserProfile([])}
-                    >
-                      Enable all
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 px-2.5 text-[11px]"
-                      // @ts-expect-error -- strict migration
-                      onClick={() => setDisabledToolsForCurrentBrowserProfile(MCP_TOOLS_BY_PROFILE[activeProfileTab])}
-                    >
-                      Disable all
-                    </Button>
+
+                  <div className="rounded-[12px] border border-border/50 bg-background/50 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[12px] text-foreground">Landing Page</span>
+                      <Badge tone="default" className="text-[10px]">5 tools</Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 font-mono text-[11px] text-muted-foreground">
+                      <span className="rounded bg-muted px-1.5 py-0.5">navigate</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">inspect</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">interact</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">screenshot</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">wait</span>
+                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">plan</span>
+                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">memory_search</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[12px] border border-border/50 bg-background/50 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[12px] text-foreground">Hosting Page</span>
+                      <Badge tone="default" className="text-[10px]">6 tools</Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 font-mono text-[11px] text-muted-foreground">
+                      <span className="rounded bg-muted px-1.5 py-0.5">navigate</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">inspect</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">interact</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">harvest</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">screenshot</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">wait</span>
+                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">plan</span>
+                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">memory_search</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[12px] border border-border/50 bg-background/50 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[12px] text-foreground">Embedded Page</span>
+                      <Badge tone="default" className="text-[10px]">6 tools</Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 font-mono text-[11px] text-muted-foreground">
+                      <span className="rounded bg-muted px-1.5 py-0.5">navigate</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">inspect</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">interact</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">harvest</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">screenshot</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">wait</span>
+                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">plan</span>
+                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">memory_search</span>
+                    </div>
                   </div>
                 </div>
-
-                <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70" />
-                    <input
-                      value={mcpToolQuery}
-                      onChange={(event) => setMcpToolQuery(event.target.value)}
-                      placeholder="Filter tools by name, category, or description"
-                      className="h-11 w-full rounded-[14px] border border-border/70 bg-background/75 pl-10 pr-3 text-[13px] text-foreground outline-none transition focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
-                    />
-                  </div>
-                  <div className="rounded-[14px] border border-border/70 bg-background/70 px-3.5 py-3 text-[12px] text-muted-foreground">
-                    Showing <span className="font-semibold text-foreground">{filteredMcpTools.length}</span> of{" "}
-                    {/* @ts-expect-error -- strict migration */}
-                    <span className="font-semibold text-foreground">{(MCP_TOOLS_BY_PROFILE[activeProfileTab] || []).length}</span> tools
-                  </div>
-                </div>
-
-                {(() => {
-                  const categories = [...new Set(filteredMcpTools.map((t: any) => (MCP_TOOL_META as any)[t]?.category || "Other"))];
-                  return categories.map((cat) => {
-                    const catTools = filteredMcpTools.filter((t: any) => ((MCP_TOOL_META as any)[t]?.category || "Other") === cat);
-                    return (
-                      <div key={String(cat)} className="mb-4">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
-                            {String(cat)}
-                          </div>
-                          <Badge tone="default" className="text-[9px] font-mono">
-                            {catTools.filter((toolName: any) => !activeBrowserTools().includes(toolName)).length}/{catTools.length} enabled
-                          </Badge>
-                        </div>
-                        <div className="divide-y divide-border/40 rounded-[14px] border border-border/60 bg-background/65">
-                          {catTools.map((toolName: any) => {
-                            const isDisabled = activeBrowserTools().includes(toolName);
-                            const meta = (MCP_TOOL_META as any)[toolName];
-                            return (
-                              <div
-                                key={toolName}
-                                className="flex items-start gap-3 px-3 py-3 transition-colors hover:bg-muted/25"
-                              >
-                                <Switch
-                                  checked={!isDisabled}
-                                  onCheckedChange={(checked) => {
-                                    const currentDisabled = activeBrowserTools();
-                                    const nextDisabled = checked
-                                      ? currentDisabled.filter((item: any) => item !== toolName)
-                                      : [...currentDisabled, toolName];
-                                    setDisabledToolsForCurrentBrowserProfile(nextDisabled);
-                                  }}
-                                />
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className={cn(
-                                      "font-mono text-[12px] font-medium",
-                                      isDisabled ? "text-muted-foreground/50 line-through" : "text-foreground"
-                                    )}>
-                                      {toolName}
-                                    </span>
-                                    <Badge tone="default" className="text-[9px]">
-                                      {meta?.category || "Other"}
-                                    </Badge>
-                                  </div>
-                                  {meta?.desc ? (
-                                    <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/75">
-                                      {meta.desc}
-                                    </p>
-                                  ) : null}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  });
-                })()}
-                {!filteredMcpTools.length ? (
-                  <div className="rounded-[14px] border border-dashed border-border/70 px-4 py-6 text-center text-[12px] text-muted-foreground">
-                    No tools match this filter.
-                  </div>
-                ) : null}
               </div>
             </section>
           ) : null}

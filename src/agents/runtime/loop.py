@@ -1,13 +1,17 @@
-"""Shared LangGraph-based agent infrastructure."""
+"""LangGraph-based agent loop runtime execution.
+
+Extracted from base.py (plan step 6).
+"""
 
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Annotated, Any, TypedDict
+from typing import TYPE_CHECKING, Annotated, Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, RemoveMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
@@ -15,8 +19,26 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
 from src.agents import cache as cache_helpers
-from src.agents.cache import ToolResultCache
 from src.agents.errors import BudgetExceededError, RunCancelledError
+from src.agents.runtime.models import (
+    AgentGraphState,
+    AgentLoopResult,
+    AgentRuntimePolicy,
+    parse_json_object,
+    _extract_first_balanced_json_object,
+    _try_load_json_object_candidate,
+)
+from src.agents.runtime.provider import build_llm
+from src.agents.runtime.tool_execution import (
+    ToolResultCache,
+    invoke_tool_with_timeout,
+    normalize_envelope_evidence,
+    build_rejected_tool_message,
+    serialize_tool_output,
+    READONLY_TOOLS,
+    MUTATING_TOOLS,
+)
+from src.agents.runtime.output import validate_agent_output, build_repair_prompt
 from src.llm.provider import ChatLiteLLM
 from src.utils.config import Settings, resolve_agent_runtime_config
 from src.utils.instrumentation import (
@@ -32,7 +54,7 @@ from src.utils.provider_models import (
     normalize_gemini_model_id,
     provider_api_key,
     provider_base_url,
-    resolve_google_model_runtime_profile,
+    resolve_model_runtime_profile,
     resolve_agent_model_selection,
     resolve_llm_tuning,
     resolve_model_context_window,
@@ -42,143 +64,6 @@ logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from src.memory.short_term import ShortTermMemory
-
-
-class AgentLoopResult:
-    def __init__(
-        self,
-        final_text: str,
-        tool_calls_made: int,
-        messages: list[BaseMessage],
-        *,
-        bootstrap_tool_calls: int = 0,
-        llm_tool_calls_made: int | None = None,
-        stop_reason: str = "completed",
-        budget_exhausted: bool = False,
-        continuation_count: int = 0,
-        continuation_capsules: list[dict[str, Any]] | None = None,
-    ) -> None:
-        self.final_text = final_text
-        # Total tool calls, including bootstrap calls, for observability/reporting.
-        self.tool_calls_made = tool_calls_made
-        self.bootstrap_tool_calls = bootstrap_tool_calls
-        self.llm_tool_calls_made = (
-            tool_calls_made - bootstrap_tool_calls
-            if llm_tool_calls_made is None
-            else llm_tool_calls_made
-        )
-        self.messages = messages
-        self.stop_reason = stop_reason
-        self.budget_exhausted = budget_exhausted
-        self.parse_error = ""
-        self.continuation_count = max(0, int(continuation_count or 0))
-        self.continuation_capsules = list(continuation_capsules or [])
-
-    def parse_json(self) -> dict[str, Any]:
-        """Parse a JSON object from Gemini output, including fenced/prose-wrapped JSON."""
-        parsed, error = parse_json_object(self.final_text)
-        self.parse_error = error
-        if error:
-            logger.warning("Could not parse agent output as JSON: %s", error)
-        return parsed
-
-
-def parse_json_object(text: str) -> tuple[dict[str, Any], str]:
-    """Best-effort extraction of the first JSON object from LLM text."""
-    raw = str(text or "").strip()
-    if not raw:
-        return {}, "empty_output"
-
-    candidates = [raw]
-    fenced = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", raw, flags=re.IGNORECASE | re.DOTALL)
-    candidates.extend(item.strip() for item in fenced if item.strip())
-
-    balanced = _extract_first_balanced_json_object(raw)
-    if balanced:
-        candidates.append(balanced)
-
-    last_error = ""
-    seen: set[str] = set()
-    for candidate in candidates:
-        if not candidate or candidate in seen:
-            continue
-        seen.add(candidate)
-        payload, error = _try_load_json_object_candidate(candidate)
-        if error:
-            last_error = error
-            continue
-        if isinstance(payload, dict):
-            return payload, ""
-        last_error = f"json_root_not_object:{type(payload).__name__}"
-    return {}, last_error or "no_json_object_found"
-
-
-def _try_load_json_object_candidate(candidate: str) -> tuple[Any, str]:
-    """Load JSON, with a narrow fallback for raw control chars in model output."""
-    try:
-        return json.loads(candidate), ""
-    except json.JSONDecodeError as exc:
-        first_error = f"json_decode_error:{exc.msg}"
-
-    # Some providers occasionally emit visually valid JSON with a raw newline or
-    # tab inside a key/value string. JSON forbids those control characters, but
-    # removing them from the candidate preserves the object structure and avoids
-    # discarding otherwise valid agent evidence.
-    sanitized = re.sub(r"[\x00-\x1f]", "", candidate)
-    if sanitized == candidate:
-        return None, first_error
-    try:
-        return json.loads(sanitized), ""
-    except json.JSONDecodeError as exc:
-        return None, f"{first_error}; sanitized_json_decode_error:{exc.msg}"
-
-
-def _extract_first_balanced_json_object(text: str) -> str:
-    """Return the first balanced top-level JSON object substring, if present."""
-    start = text.find("{")
-    while start != -1:
-        depth = 0
-        in_string = False
-        escape = False
-        for index in range(start, len(text)):
-            char = text[index]
-            if in_string:
-                if escape:
-                    escape = False
-                elif char == "\\":
-                    escape = True
-                elif char == '"':
-                    in_string = False
-                continue
-            if char == '"':
-                in_string = True
-            elif char == "{":
-                depth += 1
-            elif char == "}":
-                depth -= 1
-                if depth == 0:
-                    return text[start : index + 1]
-        start = text.find("{", start + 1)
-    return ""
-
-
-class AgentGraphState(TypedDict):
-    messages: Annotated[list[BaseMessage], add_messages]
-    tool_calls_made: int
-    max_tool_calls: int
-    budget_exhausted: bool
-    stop_reason: str
-    last_tool_batch_signature: str
-    repeated_tool_batch_count: int
-    no_progress_turn_count: int
-    context_compaction_pending: bool
-    context_usage_pct: float
-    last_context_tokens: int
-    continuation_index: int
-    continuation_capsules: list[dict[str, Any]]
-    last_low_specificity_query_signature: str
-    repeated_low_specificity_query_count: int
-
 
 def _json_ready(value: Any) -> Any:
     """Convert provider payloads into JSON-safe data for runtime events."""
@@ -870,7 +755,7 @@ async def run_agent_loop(
             )
 
     if bootstrap_url:
-        nav_tool_name = "navigate" if "navigate" in tool_map else "open_url"
+        nav_tool_name = "navigate"
         status, result = await _run_bootstrap_tool(nav_tool_name, {"url": bootstrap_url})
         bootstrap_messages.append(
             HumanMessage(

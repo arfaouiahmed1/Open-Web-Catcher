@@ -15,7 +15,7 @@ import pytest
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 
-from src.agents.base import build_llm
+from src.agents.runtime import build_llm
 from src.llm.provider import (
     ChatLiteLLM,
     TokenUsage,

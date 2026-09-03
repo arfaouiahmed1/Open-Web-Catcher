@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { makeObservedChange, trackNewTabs } from "../shared/tool-runtime.js";
+import { makeObservedChange, trackNewTabs } from "../runtime/popup-ledger.js";
 
 function fakePage({ url, title = "", blockedAttempts = [] } = {}) {
   let currentUrl = url;
@@ -65,14 +65,13 @@ test("observed_change preserves popup/window telemetry and legacy new_tab_urls",
   assert.equal(observed.opener_url, before.url);
 });
 
-test("play_media registry contract requires an exact target or returns candidates", () => {
+test("interact registry contract provides play action and coordinate support", () => {
   const registryPath = path.resolve("tool-registry.js");
   const text = fs.readFileSync(registryPath, "utf8");
 
-  assert.match(text, /play_media: spec/);
-  assert.match(text, /activation_candidates and needs_agent_choice without clicking guessed controls/);
-  assert.match(text, /x: z\.number\(\)\.optional\(\)/);
-  assert.match(text, /y: z\.number\(\)\.optional\(\)/);
+  assert.match(text, /interact: spec/);
+  assert.match(text, /action: z\.enum/);
+  assert.match(text, /allow_coordinate_fallback/);
 });
 
 test("tab tracker adopts same-content player and closes ad targets", async () => {

@@ -1,6 +1,6 @@
 import json
 
-from src.agents.base import parse_json_object
+from src.agents.runtime import parse_json_object
 from src.agents.embedded_page import _normalize_embedded_output
 from src.agents.hosting_page import _normalize_hosting_output
 from src.agents.landing_page import _augment_landing_output, _normalize_hosting_pages

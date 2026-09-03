@@ -237,60 +237,6 @@ def normalize_browser_runtime(value: Any) -> dict[str, dict[str, Any]]:
     return normalized
 
 
-def normalize_disabled_tools_by_browser_profile(
-    value: Any,
-    *,
-    legacy: Any = None,
-) -> dict[str, dict[str, list[str]]]:
-    """Normalize per-browser MCP tool toggles.
-
-    Legacy profile-only config is copied to both browsers so existing installs
-    keep their previous behavior until operators split the settings.
-    """
-
-    normalized = {
-        browser: {profile: [] for profile in MCP_PROFILE_IDS}
-        for browser in BROWSER_IDS
-    }
-
-    legacy_profiles = _normalize_profile_tool_map(legacy)
-    if legacy_profiles:
-        for browser in BROWSER_IDS:
-            for profile, tools in legacy_profiles.items():
-                normalized[browser][profile] = list(tools)
-
-    if not isinstance(value, dict):
-        return normalized
-
-    top_level_profiles = _normalize_profile_tool_map(value)
-    if top_level_profiles:
-        for browser in BROWSER_IDS:
-            for profile, tools in top_level_profiles.items():
-                normalized[browser][profile] = list(tools)
-
-    for browser in BROWSER_IDS:
-        raw_profiles = value.get(browser, {})
-        if not isinstance(raw_profiles, dict):
-            continue
-        for profile, tools in _normalize_profile_tool_map(raw_profiles).items():
-            normalized[browser][profile] = list(tools)
-
-    return normalized
-
-
-def _normalize_profile_tool_map(value: Any) -> dict[str, list[str]]:
-    if not isinstance(value, dict):
-        return {}
-
-    normalized: dict[str, list[str]] = {}
-    for profile in MCP_PROFILE_IDS:
-        tools = value.get(profile)
-        if tools is None:
-            continue
-        normalized[profile] = _coerce_string_list(tools)
-    return normalized
-
-
 def _coerce_bool(value: Any, fallback: bool) -> bool:
     if isinstance(value, bool):
         return value

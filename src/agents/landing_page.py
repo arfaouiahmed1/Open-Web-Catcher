@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import re
 import json
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
@@ -26,29 +26,7 @@ from src.utils.observability import RunObserver
 
 logger = get_logger(__name__)
 
-PROMPT_PATH = Path("configs/prompts/landing_page_v1.md")
-_AGENT_CONTRACT = """\
-- find and return hosting page URLs from the landing page
-- use navigation and page-inspection tools as needed, but stay within budget
-- inspect screenshots and page structure for repeated watch-page patterns, and keep crawling distinct useful patterns until at least one hosting route is found or the meaningful frontier is exhausted
-- respect the final JSON/output format defined in the base policy
-- do not fabricate hosting links; only return verified live-page findings
-- return channel metadata when it is visible on the landing page or candidate cards
-- default downstream route is `stream_extractor`; landing does not route directly to the embedded agent
-- preserve exact iframe src, frame URL, video src, player URL, and direct stream URLs in structured fields as hosting/provider hints
-- act like a compact AI crawler: maintain a frontier of live/watch/listing patterns, verify representatives, expand siblings, and stop only when distinct useful patterns are exhausted
-- prioritize main body/content candidates before header navigation, sidebars, sticky bars, or footer links; header/footer navigation is a last-resort path only after body rows/cards/sections/tabs/pagination/load-more/reveal controls are exhausted or rejected
-- stay anchored to the main URL's site intent, but allow one external-domain probe when it comes from a visible body watch/play/channel control or popup telemetry tied to the current row/card
-- treat channel-logo grids and channel directory cards as hosting candidate patterns when they lead to same-site watch/channel pages
-- treat channel posters with Play/Watch overlays as hosting candidates and check for loaded server/source/player evidence after a reveal click
-- reject article/news URLs such as /read, /post, /article, and /news unless the specific row/card has explicit match-card, server, player, iframe, or schedule evidence; article pages may contain match widgets, but related news cards and headers are not hosting_pages
-- work across any language or script; use layout, logos, href patterns, and visible controls before English keywords
-- treat opened_targets, blocked_popup_attempts, selected_target, target_decision, active_page_url, extracted_player_urls, and blocked_by_client as popup/window/uBlock evidence; keep same-content hosting/player targets even when the hostname differs, and recover/backtrack once from ad/off-target popups that expose no candidates
-- treat any full-page blocker that hides body candidates or steals clicks as a landing blocker; clear safe same-page dismissal controls before crawling, then verify the revealed page state before returning sparse or empty hosting_pages
-- do not trust same hostname alone for a new tab/window; compare URL, title, screenshot/layout, live row context, and media/frame signals
-- once a hosting pattern is verified, collect the best same-pattern siblings and keep checking other distinct live/watchable patterns instead of re-proving low-value alternatives
-- if no verified hosting targets remain after crawling useful patterns, return an empty result and stop instead of inventing a next hop
-"""
+PROMPT_PATH = Path("configs/prompts/landing_page_v2.md")
 
 
 def _normalize_domain(url: str) -> str:
@@ -656,7 +634,8 @@ def _augment_landing_output(
     run_memory: dict[str, Any],
 ) -> tuple[dict[str, Any], int]:
     output = dict(output_json or {})
-    hosting_pages = _normalize_hosting_pages(output.get("hosting_pages", []), source_url=source_url)
+    raw_candidates = output.get("hosting_pages") or output.get("matches", [])
+    hosting_pages = _normalize_hosting_pages(raw_candidates, source_url=source_url)
     existing_urls = {str(page.get("url") or "").strip() for page in hosting_pages}
 
     recovered_from_short_memory = 0
@@ -979,7 +958,7 @@ class LandingPageAgent:
         observer: RunObserver | None = None,
         orchestrator_handoff: str = "",
     ) -> ExtractionResult:
-        from src.agents.base import build_llm, run_agent_loop
+        from src.agents.runtime import build_llm, run_agent_loop
         from src.tools.mcp_client import agent_tools
 
         if self.llm is None:
@@ -994,6 +973,7 @@ class LandingPageAgent:
                     "Landing agent received orchestrator guidance",
                     details={"handoff_preview": orchestrator_handoff[:800]},
                 )
+        from src.tools.mcp_client import derive_browser_scope_id
 
         with using_observability_context(
             session_id=observer.run_id if observer is not None else "",
@@ -1001,7 +981,7 @@ class LandingPageAgent:
             tags=["landing", "agent"],
         ):
             with observability_span(
-                "landing_page_agent.run",
+                "landing_page_agent",
                 kind="agent",
                 input_value={"url": url},
                 attributes={"owc.agent_type": AgentType.LANDING_PAGE.value},
@@ -1021,7 +1001,6 @@ class LandingPageAgent:
                     settings=self.settings,
                     agent_id=AgentType.LANDING_PAGE.value,
                     base_policy=self._system_prompt,
-                    agent_contract=_AGENT_CONTRACT,
                     task_brief=build_task_brief(
                         url=url,
                         page_type=AgentType.LANDING_PAGE.value,
@@ -1053,8 +1032,9 @@ class LandingPageAgent:
                         f"{orchestrator_handoff}\n"
                         "Use this context as guidance and verify all findings with live tool evidence."
                     )
+                scope_id = derive_browser_scope_id("landing", url)
                 async with agent_tools(
-                    "landing", self.settings, observer=observer, target_url=url
+                    "landing", self.settings, observer=observer, target_url=url, browser_scope_id=scope_id
                 ) as tools:
                     result = await run_agent_loop(
                         settings=self.settings,

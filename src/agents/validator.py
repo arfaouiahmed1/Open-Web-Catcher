@@ -24,7 +24,7 @@ from typing import Any
 import httpx
 from langchain_core.messages import HumanMessage
 
-from src.agents.base import build_llm, parse_json_object
+from src.agents.runtime import build_llm, parse_json_object
 from src.models.judge import (
     JudgeVerdict,
     ReachabilityProbe,
@@ -32,7 +32,7 @@ from src.models.judge import (
 )
 from src.utils.config import Settings
 
-PROMPT_PATH = Path("configs/prompts/evidence_validation_v1.md")
+PROMPT_PATH = Path("configs/prompts/evidence_validation_v2.md")
 
 #: Bounded replan budget per stage (plan D14): exactly one retry allowed.
 MAX_REPLANS_PER_STAGE = 1

@@ -207,17 +207,6 @@ class MemorySearchRequest(BaseModel):
     limit: int = 8
 
 
-class MemoryUpdateRequest(BaseModel):
-    """Write payload for the Node memory_update proxy (plan task 18 phase 2)."""
-
-    url: str
-    page_type: str = "unknown"
-    refresh_reason: str = ""
-    status: str = "success"
-    selectors: list[str] = []
-    navigation_steps: list[str] = []
-    playbook_steps: list[str] = []
-
 
 class PromptDryRunRequest(BaseModel):
     agent: str
@@ -280,15 +269,7 @@ def reset_settings_cache() -> None:
 def _playground_tool_session_key(profile: str, settings: Settings) -> str:
     browser = str(getattr(settings, "browser_engine", "") or "playwright").strip().lower()
     mcp_url = str(getattr(settings, "mcp_server_url", "") or "").strip()
-    disabled_signature = json.dumps(
-        {
-            "legacy": getattr(settings, "disabled_tools_by_profile", {}) or {},
-            "by_browser": getattr(settings, "disabled_tools_by_browser_profile", {}) or {},
-        },
-        sort_keys=True,
-        default=str,
-    )
-    return f"{browser}|{mcp_url}|{profile}|{disabled_signature}"
+    return f"{browser}|{mcp_url}|{profile}"
 
 
 async def _close_playground_tool_session(session_key: str) -> None:
@@ -2442,7 +2423,12 @@ def read_blob_endpoint(key: str):
     if data is None:
         raise HTTPException(status_code=410, detail="blob unavailable")
     _PNG_MAGIC = b"\x89PNG\x0d\x0a\x1a\x0a"
-    media_type = "image/png" if data[:8] == _PNG_MAGIC else "application/octet-stream"
+    if data[:8] == _PNG_MAGIC:
+        media_type = "image/png"
+    elif len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        media_type = "image/webp"
+    else:
+        media_type = "application/octet-stream"
     return Response(
         content=data,
         media_type=media_type,
@@ -2648,36 +2634,6 @@ def search_memory(req: MemorySearchRequest):
         limit=req.limit,
     )
 
-
-@app.post("/memory/update")
-def update_memory(req: MemoryUpdateRequest):
-    """Write path for the Node memory_update proxy — distills the patch into a
-    site_hints row via write_site_hint (legacy JSON store is gone)."""
-    from src.memory.site_hint_writer import write_site_hint
-
-    raw_entry = {
-        "url": req.url,
-        "page_type": req.page_type,
-        "status": req.status,
-        "success": req.status in {"success", "partial"},
-        "short_memory_summary": req.refresh_reason,
-        "selectors": req.selectors,
-        "playbook_steps": [*req.playbook_steps, *req.navigation_steps],
-        "tool_steps": req.navigation_steps,
-    }
-    session = get_session()
-    try:
-        record = write_site_hint(
-            session, domain=req.url, page_type=req.page_type, raw_entry=raw_entry
-        )
-        return {
-            "ok": True,
-            "domain": record.domain,
-            "page_type": record.page_type,
-            "summary_text": record.summary_text,
-        }
-    finally:
-        session.close()
 
 
 
@@ -3279,7 +3235,7 @@ async def ui_cancel_dataset_batch(batch_id: str):
     session = get_session()
     try:
         dataset_repo = DatasetRepository(session)
-        cancel_payload = dataset_repo.cancel_batch(batch_id, reason=reason)
+        cancel_payload = dataset_repo.cancel_batch(batch_id, reason=reason, include_runs=False)
         run_ids = [str(run_id) for run_id in cancel_payload.get("run_ids", []) if run_id]
         job_repo = BackgroundJobRepository(session)
         for run_id in run_ids:
@@ -3587,7 +3543,7 @@ def ui_get_config():
     payload = ui_config_payload(settings)
     raw_sources = read_settings_with_sources(settings)
     # Mask provider keys in provenance payload — never ship raw secrets to the browser
-    for _k in ("google_api_key", "google_vertex_api_key", "openai_api_key", "anthropic_api_key", "openrouter_api_key", "nvidia_api_key", "mistral_api_key", "cohere_api_key", "groq_api_key", "together_api_key", "fireworks_api_key", "perplexity_api_key", "deepseek_api_key", "xai_api_key", "upstage_api_key", "azure_api_key", "azure_api_base", "bedrock_api_key", "cloudinary_api_secret", "auth_jwt_secret"):
+    for _k in ("google_api_key", "google_vertex_api_key", "openai_api_key", "anthropic_api_key", "openrouter_api_key", "nvidia_api_key", "mistral_api_key", "cohere_api_key", "groq_api_key", "together_api_key", "fireworks_api_key", "perplexity_api_key", "deepseek_api_key", "xai_api_key", "upstage_api_key", "azure_api_key", "azure_api_base", "bedrock_api_key", "auth_jwt_secret"):
         if _k in raw_sources:
             _v = raw_sources[_k].get("value") if isinstance(raw_sources[_k], dict) else None
             raw_sources[_k] = {**raw_sources[_k], "value": "***" if _v else "", "masked": True} if isinstance(raw_sources[_k], dict) else raw_sources[_k]

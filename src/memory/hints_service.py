@@ -185,7 +185,7 @@ def run_memory_search(
                 "tools only if they fail on the live page."
                 if records
                 else "No matching hints stored; explore lightweight evidence first and "
-                "persist what you learn via memory_update."
+                "persist what you learn via remember_agent_run."
             ),
         }
     except Exception as exc:  # pragma: no cover - runtime safeguard
