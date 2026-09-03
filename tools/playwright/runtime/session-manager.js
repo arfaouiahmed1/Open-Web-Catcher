@@ -102,16 +102,20 @@ export class SessionManager {
       '--window-size=1365,768',
     ];
 
-    // Under patchright, avoid automation flags; under playwright, standard launch
+    // Under patchright, avoid automation flags; under playwright, standard launch.
     if (driverName !== 'patchright') {
       launchArgs.push('--disable-blink-features=AutomationControlled');
     }
 
-    // UBOL extension directory if enabled
+    // The pinned uBOL extension is retained for headless fixture runs. Chrome
+    // 151 currently fails to expose headed CDP when this unpacked extension is
+    // injected under Xvfb; operators can explicitly opt into that benchmark.
     const ubolEnabled = String(process.env.OWC_UBOL_ENABLED || 'true').toLowerCase() !== 'false';
+    const headedUbolEnabled = String(process.env.OWC_UBOL_HEADED_ENABLED || 'false').toLowerCase() === 'true';
+    const useUbol = ubolEnabled && (isHeadless || headedUbolEnabled);
     const ubolDir = process.env.OWC_UBOL_EXTENSION_DIR || '/app/tools/playwright/extensions/ubol';
     let extensionArgs = [];
-    if (ubolEnabled) {
+    if (useUbol) {
       extensionArgs = [
         `--disable-extensions-except=${ubolDir}`,
         `--load-extension=${ubolDir}`,
