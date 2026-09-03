@@ -19,7 +19,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
     "cloudinary": "^2.0.0",
-    "express": "^4.19.0",
+    "express": "^5.2.1",
     "fingerprint-generator": "2.1.88",
     "fingerprint-injector": "2.1.88",
     "fast-xml-parser": "5.11.1",
