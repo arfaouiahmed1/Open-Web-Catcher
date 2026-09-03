@@ -13,7 +13,9 @@
  * Default: "playwright" — only promoted to "patchright" after the explicit
  * three-run parity / improvement gate passes (plan step 2, step 11).
  */
+import { createRequire } from 'node:module';
 
+const require = createRequire(import.meta.url);
 const SUPPORTED_DRIVERS = new Set(['playwright', 'patchright']);
 const DEFAULT_DRIVER = 'playwright';
 
@@ -55,12 +57,11 @@ export async function loadBrowserDriver(name) {
     throw new Error(`Driver "${driverName}" does not export a "chromium" launcher.`);
   }
 
-  // Resolve version string from the driver's internal version module if
-  // available; fall back to the package.json version via the driver name.
+  // Resolve package versions without relying on import-assertion syntax,
+  // which differs between Node 22 and Node 24.
   let version = 'unknown';
   try {
-    const versionMod = await import(`${driverName}/package.json`, { assert: { type: 'json' } });
-    version = versionMod.default?.version ?? 'unknown';
+    version = require(`${driverName}/package.json`).version ?? 'unknown';
   } catch {
     // Version unavailable — not fatal.
   }

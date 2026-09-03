@@ -35,16 +35,24 @@ start_shared_chrome() {
     local port="${REMOTE_DEBUGGING_PORT:-9223}"
     local extension_dir="${OWC_UBOL_EXTENSION_DIR:-/app/tools/playwright/extensions/ubol}"
     local enable_ubol="${OWC_UBOL_ENABLED:-true}"
+    local headed_ubol_enabled="${OWC_UBOL_HEADED_ENABLED:-false}"
     local headless="${OWC_BROWSER_HEADLESS:-true}"
     local extension_args=()
     local chrome_cmd=()
+    local use_ubol="${enable_ubol}"
+
+    if [[ "$(printf '%s' "${headless}" | tr '[:upper:]' '[:lower:]')" != "true" &&
+          "$(printf '%s' "${headed_ubol_enabled}" | tr '[:upper:]' '[:lower:]')" != "true" ]]; then
+        use_ubol="false"
+        log "uBOL disabled for headed Chrome by default; set OWC_UBOL_HEADED_ENABLED=true to benchmark it."
+    fi
 
     if [[ ! -x "${chrome_bin}" ]]; then
         log "Chrome executable not found at ${chrome_bin}."
         return 1
     fi
 
-    case "$(printf '%s' "${enable_ubol}" | tr '[:upper:]' '[:lower:]')" in
+    case "$(printf '%s' "${use_ubol}" | tr '[:upper:]' '[:lower:]')" in
         1|true|yes|on)
             if [[ -f "${extension_dir}/manifest.json" ]]; then
                 extension_args+=("--disable-extensions-except=${extension_dir}")
@@ -93,8 +101,18 @@ start_cdp_proxy() {
 }
 
 start_mcp_server() {
+    local headless="${OWC_BROWSER_HEADLESS:-true}"
     log "Starting Playwright MCP server on port ${PORT:-3001}."
-    node /app/tools/playwright/mcp-server.js &
+    case "$(printf '%s' "${headless}" | tr '[:upper:]' '[:lower:]')" in
+        1|true|yes|on)
+            node /app/tools/playwright/mcp-server.js &
+            ;;
+        *)
+            log "Headed MCP requested; running MCP and isolated contexts under Xvfb."
+            xvfb-run -a --server-args="-screen 0 ${OWC_XVFB_SCREEN:-1280x800x24}" \
+                node /app/tools/playwright/mcp-server.js &
+            ;;
+    esac
     MCP_PID=$!
 }
 
