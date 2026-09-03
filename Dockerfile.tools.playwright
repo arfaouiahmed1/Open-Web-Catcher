@@ -5,15 +5,21 @@
 #  Processes: Chrome (shared fallback) + Node MCP server (port 3001)
 # =============================================================================
 
-# Base pinned to Playwright 1.60.0 on noble.
-# Digest pin placeholder (resolve with: docker buildx imagetools inspect mcr.microsoft.com/playwright:v1.60.0-noble
-# then append @sha256:<digest> to the FROM line below):
-#   mcr.microsoft.com/playwright:v1.60.0-noble@sha256:<TO_FILL_AFTER_VERIFYING>
-FROM mcr.microsoft.com/playwright:v1.60.0-noble
+# Base pinned to Playwright 1.62.1 on noble.
+# Digest verified 2026-09-03:
+#   docker buildx imagetools inspect mcr.microsoft.com/playwright:v1.62.1-noble
+FROM mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
 
 ARG BUILDKIT_INLINE_CACHE=1
 
 WORKDIR /app
+
+# uBOL pin: release 2026.901.1442, asset uBOLite_2026.901.1442.chromium.zip
+# SHA-256: 71a8c65573489e0702f6398d3d744fcbe2bbc48336a75781c90bec50acb00b7e
+ARG UBOL_VERSION=2026.901.1442
+ARG UBOL_SHA256=71a8c65573489e0702f6398d3d744fcbe2bbc48336a75781c90bec50acb00b7e
+ARG UBOL_ASSET_NAME=uBOLite_2026.901.1442.chromium.zip
+ARG UBOL_DOWNLOAD_URL=https://github.com/uBlockOrigin/uBOL-home/releases/download/uBOLite_2026.901.1442/${UBOL_ASSET_NAME}
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
@@ -27,14 +33,16 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     BROWSER_WS_ENDPOINT=ws://127.0.0.1:9223 \
     REMOTE_DEBUGGING_PORT=9223 \
     PORT=3001 \
-    OWC_BROWSER_HEADLESS=true
+    OWC_BROWSER_HEADLESS=false \
+    OWC_XVFB_SCREEN=1365x768x24 \
+    OWC_BROWSER_DRIVER=playwright
 
-# Internal headless default stays true; only profile-gated deployments
-# (owc-tools-playwright-headed in docker-compose.yml) set it to false so the
-# entrypoint launches Chrome under Xvfb instead of --headless=new.
+# Headed under Xvfb is the primary sidecar default (plan step 2).
+# Set OWC_BROWSER_HEADLESS=true only for deterministic local fixtures/unit tests.
+
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl unzip xvfb x11-utils \
+    && apt-get install -y --no-install-recommends curl socat unzip xvfb x11-utils \
     && rm -rf /var/lib/apt/lists/*
 
 COPY tools/playwright/package*.json tools/playwright/
@@ -48,13 +56,11 @@ RUN --mount=type=cache,target=/root/.npm \
     && test -n "${CHROME_BIN}" \
     && ln -sf "${CHROME_BIN}" /usr/local/bin/google-chrome-stable \
     && ln -sf /usr/local/bin/google-chrome-stable /usr/local/bin/google-chrome \
-    && curl -fsSL 'https://api.github.com/repos/uBlockOrigin/uBOL-home/releases?per_page=10' -o /tmp/ubol-releases.json \
-    && UBOL_ASSET_URL="$(node -e "const fs=require('fs'); const releases=JSON.parse(fs.readFileSync('/tmp/ubol-releases.json','utf8')); const pick=(rows, includePrerelease)=>rows.filter((release)=>!release.draft && (includePrerelease || !release.prerelease)).flatMap((release)=>(release.assets||[]).map((asset)=>({ ...asset, release_tag: release.tag_name }))).find((asset)=>/chromium.*\\.zip$/i.test(String(asset.name||''))); const asset=pick(releases,false) || pick(releases,true); if(!asset?.browser_download_url){console.error('No Chromium uBOL asset found in recent releases'); process.exit(1);} process.stdout.write(asset.browser_download_url);")" \
-    && test -n "${UBOL_ASSET_URL}" \
     && mkdir -p /app/tools/playwright/extensions/ubol \
-    && curl -fsSL "${UBOL_ASSET_URL}" -o /tmp/ubol.zip \
+    && curl -fsSL "${UBOL_DOWNLOAD_URL}" -o /tmp/ubol.zip \
+    && echo "${UBOL_SHA256}  /tmp/ubol.zip" | sha256sum -c - \
     && unzip -q /tmp/ubol.zip -d /app/tools/playwright/extensions/ubol \
-    && rm -f /tmp/ubol.zip /tmp/ubol-releases.json \
+    && rm -f /tmp/ubol.zip \
     && test -f /app/tools/playwright/extensions/ubol/manifest.json \
     && test -f /app/tools/playwright/extensions/ubol/rulesets/ruleset-details.json
 
@@ -83,7 +89,7 @@ RUN mkdir -p data/logs \
     && chown -R app:app /etc/opt/chrome /etc/chromium \
     && chown -R app:app /app/data
 
-EXPOSE 3001 9223
+EXPOSE 3001 9223 9224
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
     CMD node -e "fetch('http://127.0.0.1:3001/health').then((r)=>{if(!r.ok)process.exit(1);return r.text();}).then((t)=>{if(!t.includes('\"status\":\"ok\"'))process.exit(1);}).catch(()=>process.exit(1))"

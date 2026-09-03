@@ -74,11 +74,22 @@ start_shared_chrome() {
         --disable-dev-shm-usage \
         --disable-gpu \
         --remote-debugging-port="${port}" \
-        --remote-debugging-address=127.0.0.1 \
+        --remote-debugging-address="${REMOTE_DEBUGGING_ADDRESS:-127.0.0.1}" \
         --user-data-dir=/tmp/chrome-profile-pw \
         "${extension_args[@]}" \
         about:blank &
     CHROME_PID=$!
+}
+
+start_cdp_proxy() {
+    local source_port="${REMOTE_DEBUGGING_PORT:-9223}"
+    local proxy_port="${REMOTE_DEBUGGING_PROXY_PORT:-9224}"
+    # Chromium in this image keeps CDP on loopback even with
+    # --remote-debugging-address=0.0.0.0. Export a separate container-network
+    # port instead of weakening the Chrome listener itself.
+    log "Proxying shared Chrome CDP ${source_port} -> ${proxy_port}."
+    socat "TCP-LISTEN:${proxy_port},fork,reuseaddr,bind=0.0.0.0" "TCP:127.0.0.1:${source_port}" &
+    CDP_PROXY_PID=$!
 }
 
 start_mcp_server() {
@@ -95,6 +106,11 @@ shutdown() {
         wait "${MCP_PID}" 2>/dev/null || true
     fi
 
+    if [[ -n "${CDP_PROXY_PID:-}" ]] && kill -0 "${CDP_PROXY_PID}" 2>/dev/null; then
+        kill "${CDP_PROXY_PID}" 2>/dev/null || true
+        wait "${CDP_PROXY_PID}" 2>/dev/null || true
+    fi
+
     if [[ -n "${CHROME_PID:-}" ]] && kill -0 "${CHROME_PID}" 2>/dev/null; then
         kill "${CHROME_PID}" 2>/dev/null || true
         wait "${CHROME_PID}" 2>/dev/null || true
@@ -108,10 +124,11 @@ trap 'shutdown 0' SIGTERM SIGINT
 prepare_runtime_dirs
 prepare_ubol_policy
 start_shared_chrome
+start_cdp_proxy
 start_mcp_server
 
 set +e
-wait -n "${CHROME_PID}" "${MCP_PID}"
+wait -n "${CHROME_PID}" "${CDP_PROXY_PID}" "${MCP_PID}"
 exit_code=$?
 set -e
 

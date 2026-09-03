@@ -132,12 +132,12 @@ def compile_agent_prompt(
     settings: Settings,
     agent_id: str,
     base_policy: str,
-    agent_contract: str,
+    agent_contract: str = "",
     task_brief: str,
     memory_context: str = "",
     working_state: str = "",
     runtime_context: str = "",
-    output_contract_version: str = "v1",
+    output_contract_version: str = "v2",
 ) -> CompiledPrompt:
     base_policy = prepare_prompt_source(text=base_policy, settings=settings, agent_id=agent_id)
     agent_contract = prepare_prompt_source(

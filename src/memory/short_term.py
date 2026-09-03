@@ -426,7 +426,7 @@ class ShortTermMemory:
             self._capture_server_frontier(payload, base_url=base_url)
             self._capture_server_artifacts(payload)
 
-        if tool_name in {"memory_update", "memory_lookup"}:
+        if tool_name in {"memory_search", "memory_lookup"}:
             self.record_observation(
                 f"memory tool used: {tool_name}",
                 source="memory",

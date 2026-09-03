@@ -1,0 +1,312 @@
+{
+  "schema_version": "owc.browser-manifest.v2",
+  "generated_at": "2026-09-03T00:00:00Z",
+  "tools": [
+    {
+      "name": "navigate",
+      "kind": "mcp",
+      "description": "Navigate the browser to a URL, go back, or reload. Records every redirect attempt and captures before/after proof screenshots. Rejects unsafe destinations (file:, data:, javascript:, loopback, RFC1918, cloud-metadata). Returns access_state and challenge detection.",
+      "mutates_page": true,
+      "cacheable": false,
+      "profiles": ["classification", "landing", "hosting", "embedded"],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "proof_fields": ["before_screenshot_ref", "after_screenshot_ref", "access_state", "observed_change"],
+      "inputSchema": {
+        "type": "object",
+        "required": ["action"],
+        "additionalProperties": false,
+        "properties": {
+          "action": { "type": "string", "enum": ["goto", "back", "reload"] },
+          "url": { "type": "string", "description": "Required when action=goto" },
+          "wait_until": {
+            "type": "string",
+            "enum": ["commit", "domcontentloaded", "load", "networkidle"],
+            "default": "domcontentloaded"
+          },
+          "timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 60000, "default": 30000 },
+          "challenge_policy": {
+            "type": "string",
+            "enum": ["detect", "wait_once"],
+            "default": "detect"
+          },
+          "intent": { "type": "string", "maxLength": 200, "description": "Short model-authored reason for this navigation" }
+        }
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/ToolEnvelopeV2"
+      }
+    },
+    {
+      "name": "inspect",
+      "kind": "mcp",
+      "description": "Read page state, elements, frames, or media from the current page. The server-side profile selects the appropriate reducer (general/landing/hosting/embedded); the model cannot change it. Returns only visible/accessibility-tree-derived content. Never returns scripts, styles, hidden text, or instruction-like page text.",
+      "mutates_page": false,
+      "cacheable": true,
+      "profiles": ["classification", "landing", "hosting", "embedded"],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "proof_fields": ["before_screenshot_ref"],
+      "inputSchema": {
+        "type": "object",
+        "required": ["view"],
+        "additionalProperties": false,
+        "properties": {
+          "view": { "type": "string", "enum": ["summary", "elements", "element", "frames", "media"] },
+          "frame_path": { "type": "string", "default": "root" },
+          "scope_ref": { "type": "string", "description": "Candidate/element ref to scope the inspection" },
+          "role": { "type": "string", "description": "ARIA role filter for elements view" },
+          "text": { "type": "string", "description": "Partial text filter for elements view" },
+          "attribute": { "type": "string", "description": "Attribute name filter for elements view" },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 },
+          "cursor": { "type": "string", "description": "Pagination cursor from previous response" },
+          "include_screenshot": { "type": "boolean", "default": false },
+          "intent": { "type": "string", "maxLength": 200 }
+        }
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/ToolEnvelopeV2"
+      }
+    },
+    {
+      "name": "interact",
+      "kind": "mcp",
+      "description": "Perform a user interaction on a page element: click, fill, select, check, press, hover, scroll, drag, or play media. Resolves elements in order: candidate ref, ARIA role+name, scoped CSS, XPath, visible text, coordinates (only if explicitly allowed). Requires the expected change to be observed or returns an error.",
+      "mutates_page": true,
+      "cacheable": false,
+      "profiles": ["classification", "landing", "hosting", "embedded"],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "proof_fields": ["before_screenshot_ref", "after_screenshot_ref", "observed_change", "network_evidence"],
+      "inputSchema": {
+        "type": "object",
+        "required": ["action"],
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["click", "fill", "select", "check", "press", "hover", "scroll", "drag", "play"]
+          },
+          "candidate_id": { "type": "string", "description": "Candidate ref from an inspect response" },
+          "frame_path": { "type": "string", "default": "root" },
+          "role": { "type": "string" },
+          "name": { "type": "string" },
+          "css": { "type": "string" },
+          "xpath": { "type": "string" },
+          "text": { "type": "string" },
+          "value": { "type": "string", "description": "Text value for fill" },
+          "option": { "type": "string", "description": "Option value or label for select" },
+          "key": { "type": "string", "description": "Key sequence for press, e.g. Enter, Tab" },
+          "scroll_direction": { "type": "string", "enum": ["up", "down", "left", "right"] },
+          "scroll_amount": { "type": "integer", "minimum": 1 },
+          "drag_to": { "type": "string", "description": "Target candidate ref or CSS for drag" },
+          "allow_coordinate_fallback": { "type": "boolean", "default": false },
+          "expected_change": {
+            "type": "string",
+            "enum": ["auto", "navigation", "dom", "media", "network"],
+            "default": "auto"
+          },
+          "intent": { "type": "string", "maxLength": 200 }
+        }
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/ToolEnvelopeV2"
+      }
+    },
+    {
+      "name": "screenshot",
+      "kind": "mcp",
+      "description": "Capture a viewport, full-page, or element screenshot. Returns a blobref (content-addressed evidence store key), dimensions, and current media/access state. For vision-capable models the MCP image block is preserved; for text-only models only the blobref and ARIA/DOM visual_summary are returned.",
+      "mutates_page": false,
+      "cacheable": true,
+      "profiles": ["classification", "landing", "hosting", "embedded"],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "proof_fields": ["before_screenshot_ref", "access_state", "media_state"],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scope": { "type": "string", "enum": ["viewport", "full", "element"], "default": "viewport" },
+          "candidate_id": { "type": "string", "description": "Required when scope=element" },
+          "frame_path": { "type": "string", "default": "root" },
+          "lossless": { "type": "boolean", "default": false, "description": "Use PNG instead of WebP; only for OCR" },
+          "intent": { "type": "string", "maxLength": 200 }
+        }
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/ToolEnvelopeV2"
+      }
+    },
+    {
+      "name": "harvest",
+      "kind": "mcp",
+      "description": "Discover media streams from the always-on network ledger plus DOM video/source scan, iframe scan, player-library inspection, performance entries, and popup-decoded targets. Parses HLS and DASH manifests. Probes each manifest with HEAD then Range: bytes=0-65535. Returns stream URLs with protocol, quality, codecs, encryption hints, expiry, and discovery layer metadata.",
+      "mutates_page": false,
+      "cacheable": false,
+      "profiles": ["hosting", "embedded"],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "proof_fields": ["network_evidence", "before_screenshot_ref"],
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "frame_path": { "type": "string", "default": "root" },
+          "include_expired": { "type": "boolean", "default": false },
+          "probe_manifests": { "type": "boolean", "default": true },
+          "intent": { "type": "string", "maxLength": 200 }
+        }
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/ToolEnvelopeV2"
+      }
+    },
+    {
+      "name": "wait",
+      "kind": "mcp",
+      "description": "Wait for a specific condition before proceeding. Supports: duration (fixed ms delay), text_visible (text appears in DOM), text_gone (text disappears), selector_visible (CSS element visible), media_playing (readyState >= 3), network_quiet (no in-flight requests). Caps consecutive wait calls per repeated_tool_call_limit.",
+      "mutates_page": false,
+      "cacheable": false,
+      "profiles": ["classification", "landing", "hosting", "embedded"],
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "proof_fields": [],
+      "inputSchema": {
+        "type": "object",
+        "required": ["condition"],
+        "additionalProperties": false,
+        "properties": {
+          "condition": {
+            "type": "string",
+            "enum": ["duration", "text_visible", "text_gone", "selector_visible", "media_playing", "network_quiet"]
+          },
+          "value": {
+            "type": "string",
+            "description": "Text string or CSS selector for text_*/selector_visible conditions; absent for duration/network/media"
+          },
+          "frame_path": { "type": "string", "default": "root" },
+          "timeout_ms": { "type": "integer", "minimum": 100, "maximum": 60000, "default": 10000 },
+          "poll_ms": { "type": "integer", "minimum": 100, "maximum": 5000, "default": 500 },
+          "intent": { "type": "string", "maxLength": 200 }
+        }
+      },
+      "outputSchema": {
+        "$ref": "#/$defs/ToolEnvelopeV2"
+      }
+    },
+    {
+      "name": "memory_search",
+      "kind": "langchain",
+      "description": "Search the site-memory vector store for patterns previously observed on this host or related hosts. Returns ranked memory chunks with relevance scores. Available in all profiles; appended by AgentToolSession when memory is enabled.",
+      "mutates_page": false,
+      "cacheable": false,
+      "profiles": ["classification", "landing", "hosting", "embedded"],
+      "proof_fields": []
+    },
+    {
+      "name": "plan",
+      "kind": "langchain",
+      "description": "Manage a short ordered task list (max 12 items, 200 chars each) in working state. Supports write (replace list), append (add items), complete (mark one done by 0-indexed id), and clear. The plan list survives compaction and is injected into every prompt recitation. Available in landing, hosting, and embedded profiles only.",
+      "mutates_page": false,
+      "cacheable": false,
+      "profiles": ["landing", "hosting", "embedded"],
+      "proof_fields": []
+    }
+  ],
+  "$defs": {
+    "ToolEnvelopeV2": {
+      "type": "object",
+      "required": ["schema_version", "ok", "tool", "request_id", "page_state", "proof", "telemetry"],
+      "properties": {
+        "schema_version": { "type": "string", "const": "owc.browser-tool.v2" },
+        "ok": { "type": "boolean" },
+        "tool": { "type": "string" },
+        "request_id": { "type": "string" },
+        "page_state": {
+          "type": "object",
+          "required": ["id", "dom_epoch", "url", "title", "frame_path", "captured_at"],
+          "properties": {
+            "id": { "type": "string" },
+            "dom_epoch": { "type": "integer", "minimum": 0 },
+            "url": { "type": "string" },
+            "title": { "type": "string" },
+            "frame_path": { "type": "string" },
+            "captured_at": { "type": "string", "format": "date-time" }
+          }
+        },
+        "proof": {
+          "type": "object",
+          "properties": {
+            "before_screenshot_ref": { "type": ["string", "null"] },
+            "after_screenshot_ref": { "type": ["string", "null"] },
+            "observed_change": { "type": ["string", "null"] },
+            "access_state": { "type": ["string", "null"] },
+            "media_state": { "type": ["object", "null"] },
+            "network_evidence": { "type": ["array", "null"], "items": { "type": "object" } }
+          }
+        },
+        "data": {},
+        "pagination": {
+          "type": "object",
+          "properties": {
+            "cursor": { "type": ["string", "null"] },
+            "has_more": { "type": "boolean" },
+            "returned": { "type": "integer" },
+            "total": { "type": ["integer", "null"] }
+          }
+        },
+        "telemetry": {
+          "type": "object",
+          "required": ["duration_ms"],
+          "properties": {
+            "duration_ms": { "type": "integer", "minimum": 0 },
+            "cache_hit": { "type": "boolean" },
+            "attempts": { "type": "integer", "minimum": 1 },
+            "payload_bytes": { "type": "integer", "minimum": 0 },
+            "truncated": { "type": "boolean" }
+          }
+        },
+        "error": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["code", "message", "retryable"],
+              "properties": {
+                "code": { "type": "string" },
+                "message": { "type": "string" },
+                "retryable": { "type": "boolean" },
+                "recommended_action": { "type": "string" }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -6,6 +6,22 @@
 :root {
     --radius: 0.5rem;
     --radius-lg: 0.75rem;
+    --radius-xl: 1rem;
+
+    /* layout tokens */
+    --content-max: 1400px;
+    --header-height: 3rem;
+    --space-xs: 0.5rem;
+    --space-sm: 0.75rem;
+    --space-md: 1rem;
+    --space-lg: 1.5rem;
+    --space-xl: 2rem;
+
+    /* motion */
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+    --duration-fast: 120ms;
+    --duration-normal: 220ms;
 
     /* accents stay consistent across themes */
     --signal: oklch(0.76 0.13 64);
@@ -21,6 +37,13 @@
     --status-failed: oklch(0.7 0.15 20);
     --status-idle: oklch(0.5 0.04 240);
     --status-connecting: oklch(0.76 0.12 240);
+
+    /* readable text colors when accents are used as foregrounds */
+    --signal-text: oklch(0.84 0.13 78);
+    --mint-text: oklch(0.8 0.13 170);
+    --violet-text: oklch(0.78 0.14 300);
+    --rose-text: oklch(0.78 0.14 20);
+    --sky-text: oklch(0.8 0.12 240);
 }
 
 :root,
@@ -122,14 +145,21 @@
     --mute-2:  #a1a1aa;   /* zinc-400 */
     --mute-3:  #d4d4d8;   /* zinc-300 */
 
+    /* WCAG-oriented accent foregrounds for light surfaces */
+    --signal-text: oklch(0.45 0.12 64);
+    --mint-text: oklch(0.44 0.11 170);
+    --violet-text: oklch(0.46 0.12 300);
+    --rose-text: oklch(0.46 0.14 20);
+    --sky-text: oklch(0.45 0.11 240);
+
     /* ── shadcn semantic tokens ── */
     --background:          var(--bg);
     --foreground:          var(--ink);
     --card-foreground:     var(--ink);
     --popover:             #ffffff;
     --popover-foreground:  var(--ink);
-    --primary:             var(--signal);
-    --primary-foreground:  #ffffff;
+    --primary:              var(--signal-text);
+    --primary-foreground:   #ffffff;
     --secondary:           var(--panel-2);
     --secondary-foreground: var(--ink);
     --muted:               var(--panel-2);
@@ -178,6 +208,10 @@
     --shadow-glow:
         0 0 0 1px color-mix(in oklch, var(--signal) 35%, transparent),
         0 8px 24px -8px color-mix(in oklch, var(--signal) 25%, transparent);
+
+    /* keep focus and sidebar accents readable on white */
+    --ring: var(--signal-text);
+    --sidebar-primary: var(--signal-text);
 }
 
 * {
@@ -188,6 +222,10 @@
 ::before,
 ::after {
     border-color: var(--border);
+}
+
+::selection {
+    background: color-mix(in oklch, var(--signal) 22%, transparent);
 }
 
 html,
@@ -249,6 +287,15 @@ samp {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
     border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
 }
 
 /* ── light-mode compatibility for existing utility classes ── */

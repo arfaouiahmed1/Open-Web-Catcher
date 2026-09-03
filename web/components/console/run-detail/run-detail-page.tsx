@@ -3,10 +3,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, ExternalLink, RefreshCw, RotateCcw, Trash2, XCircle } from "lucide-react";
 
-import { apiFetch, apiUrl } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { useRunStream } from "@/lib/use-run-stream";
 import { buildLlmRows } from "@/lib/llm-output-rows";
 import { estimateRunCost, getContextWindow, loadPricing, peakContextUsage, synthCallsFromModelUsage } from "@/lib/pricing";
@@ -25,6 +25,11 @@ import { RunEventFeedTab } from "@/components/console/run-detail/tabs/event-feed
 import { ReasoningTraceTab } from "@/components/console/run-detail/tabs/reasoning-trace-tab";
 import { CostMeterTab } from "@/components/console/run-detail/tabs/cost-meter-tab";
 import { ScreenshotGridTab } from "@/components/console/run-detail/tabs/screenshot-grid-tab";
+import { StreamProviderTab } from "@/components/console/run-detail/stream-provider-tab";
+import { AgentOutputTab } from "@/components/console/run-detail/agent-output-tab";
+import { AgentRunGraph } from "@/components/console/run-detail/agent-run-graph";
+import { AgentPlanBoard } from "@/components/console/run-detail/agent-plan-board";
+import { ContextWindowMonitor } from "@/components/console/run-detail/context-window-monitor";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -305,7 +310,6 @@ function RunHeader({
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {run?.final_status ? (
-                // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
                 <Badge tone={runStatusTone(run.final_status)}>{statusLabel(run.final_status)}</Badge>
               ) : null}
               <span
@@ -313,7 +317,7 @@ function RunHeader({
                 style={{
                   borderColor: "var(--line)",
                   color: "var(--mute-2)",
-                  background: "rgba(255,255,255,0.52)",
+                  background: "var(--card-hi)",
                 }}
               >
                 {runMode}
@@ -342,7 +346,7 @@ function RunHeader({
                 style={{
                   borderColor: "var(--line)",
                   color: "var(--mute-2)",
-                  background: "rgba(255,255,255,0.55)",
+                  background: "var(--card-hi)",
                 }}
               >
                 {runId || "--"}
@@ -438,7 +442,7 @@ function DatasetContextCard({  context  }: any) {
         </div>
         {batch.batch_id ? (
           <Button asChild variant="outline" size="sm">
-            <Link href={`/runs?batch=${encodeURIComponent(batch.batch_id)}`}>
+            <Link href={`/runs?tab=batches&batch=${encodeURIComponent(batch.batch_id)}`}>
               Open batch
               <ExternalLink className="h-4 w-4" />
             </Link>
@@ -452,6 +456,18 @@ function DatasetContextCard({  context  }: any) {
 export function RunDetailPage() {
   const { runId } = useParams();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const VALID_TABS = ["timeline", "events", "reasoning", "streams", "output", "costs", "screenshots"] as const;
+  type TabValue = (typeof VALID_TABS)[number];
+  const rawTab = searchParams.get("tab");
+  const activeTab: TabValue = (VALID_TABS as readonly string[]).includes(rawTab || "") ? (rawTab as TabValue) : "timeline";
+  const handleTabChange = (value: string) => {
+    if (!(VALID_TABS as readonly string[]).includes(value)) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", value);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
   const [payload, setPayload] = useState<any>(null);
   const [isLoading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -488,12 +504,22 @@ export function RunDetailPage() {
 
   useEffect(() => {
     if (!runId) return;
+    const controller = new AbortController();
     setLoading(true);
     setError("");
-    apiFetch(`/ui/runs/${runId}`)
-      .then(setPayload)
-      .catch((eventError) => setError(normalizeRunDetailError(eventError.message)))
-      .finally(() => setLoading(false));
+    apiFetch(`/ui/runs/${runId}`, { signal: controller.signal })
+      .then((nextPayload) => {
+        if (!controller.signal.aborted) setPayload(nextPayload);
+      })
+      .catch((eventError) => {
+        if (!controller.signal.aborted && eventError?.name !== "AbortError") {
+          setError(normalizeRunDetailError(eventError instanceof Error ? eventError.message : "Failed to load run detail"));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, [runId]);
 
   const jobStatus = String(payload?.job_state?.status || payload?.job?.status || payload?.run?.job_state || "").toLowerCase();
@@ -936,13 +962,9 @@ export function RunDetailPage() {
     setIsCancelling(true);
     setActionError("");
     try {
-      const response = await fetch(apiUrl(`/ui/runs/${runId}/cancel`), {
+      await apiFetch(`/ui/runs/${runId}/cancel`, {
         method: "POST",
       });
-      if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message || `Cancel failed (${response.status})`);
-      }
       await refreshRun();
     } catch (nextError: any) {
       setActionError(nextError instanceof Error ? nextError.message : "Cancel failed");
@@ -956,13 +978,9 @@ export function RunDetailPage() {
     setIsDeleting(true);
     setActionError("");
     try {
-      const response = await fetch(apiUrl(`/ui/runs/${runId}`), {
+      await apiFetch(`/ui/runs/${runId}`, {
         method: "DELETE",
       });
-      if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message || `Delete failed (${response.status})`);
-      }
       router.push("/runs");
       router.refresh();
     } catch (nextError: any) {
@@ -984,12 +1002,11 @@ export function RunDetailPage() {
         limit: 0,
         urls: [run.url],
       };
-      const created = await apiFetch("/api/datasets/batches", {
+      const created = await apiFetch<{ batch_id: string }>("/api/datasets/batches", {
         method: "POST",
         body: JSON.stringify(nextPayload),
       });
-      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
-      router.push(`/runs?batch=${encodeURIComponent(created.batch_id)}`);
+      router.push(`/runs?tab=batches&batch=${encodeURIComponent(created.batch_id)}`);
       router.refresh();
     } catch (nextError: any) {
       setActionError(nextError instanceof Error ? nextError.message : "Restart failed");
@@ -1060,6 +1077,17 @@ export function RunDetailPage() {
         )}
       />
 
+      <AgentRunGraph
+        runId={typeof runId === "string" ? runId : ""}
+        events={runEvents}
+        agentRollups={agentRollups}
+        rootActor={run.root_actor || "orchestrator"}
+        streamConnected={stream.connected}
+        streamStatus={stream.status}
+        completed={Boolean(trace?.completed || stream.completed || runTerminalState.isTerminal)}
+        runStatus={run.final_status || run.status || ""}
+      />
+
       <DatasetContextCard context={datasetContext} />
 
       {actionError ? (
@@ -1088,14 +1116,20 @@ export function RunDetailPage() {
         onDelete={deleteRun}
       />
 
+      {/* Live Agent Action Plans (Todos) and Context Window Utilization */}
+      <AgentPlanBoard events={runEvents} />
+      <ContextWindowMonitor events={runEvents} />
+
       {/* T40/T41 live composition — SSE-first, library primitives, zero polling.
           Replaces the former RunDetailLive monolith inline; each tab is a focused
           library wrapper driven exclusively by useRunStream events. */}
-      <Tabs defaultValue="timeline" className="w-full">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="w-full justify-start overflow-x-auto">
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="events">Events</TabsTrigger>
           <TabsTrigger value="reasoning">Reasoning</TabsTrigger>
+          <TabsTrigger value="streams">Streams & Providers</TabsTrigger>
+          <TabsTrigger value="output">Agent Output</TabsTrigger>
           <TabsTrigger value="costs">Costs</TabsTrigger>
           <TabsTrigger value="screenshots">Screenshots</TabsTrigger>
         </TabsList>
@@ -1107,6 +1141,23 @@ export function RunDetailPage() {
         </TabsContent>
         <TabsContent value="reasoning">
           <ReasoningTraceTab events={runEvents} />
+        </TabsContent>
+        <TabsContent value="streams">
+          <StreamProviderTab
+            runId={typeof runId === "string" ? runId : Array.isArray(runId) ? runId[0] : ""}
+            runUrl={run?.url || ""}
+            streamUrls={providerUrls.length ? providerUrls : allStreams}
+            providerAnalysis={providerSnapshot.provider_analysis || EMPTY_ARRAY}
+            extractionResults={providerSnapshot.extraction_results || EMPTY_ARRAY}
+          />
+        </TabsContent>
+        <TabsContent value="output">
+          <AgentOutputTab
+            stageRollups={stageRollups}
+            agentRollups={agentRollups}
+            parallelism={parallelism}
+            takedownEmails={providerSnapshot.takedown_emails || EMPTY_ARRAY}
+          />
         </TabsContent>
         <TabsContent value="costs">
                     <CostMeterTab costs={runCosts} metrics={runTokens as any} />

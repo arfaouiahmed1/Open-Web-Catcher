@@ -230,7 +230,7 @@ The SSE stream is a live enhancement. The stable reload contract remains `GET /u
 | `GET` | `/ui/tools/reliability` | aggregate tool reliability |
 | `POST` | `/ui/providers/lookup` | resolve stream URLs to provider/abuse contacts |
 | `GET` | `/ui/providers/history` | persisted provider lookup history |
-| `GET` | `/ui/providers/models?provider=google` | Gemini model catalog and runtime metadata |
+| `GET` | `/ui/providers/models?provider=<id>` | provider model catalog and runtime metadata; direct adapters and generic OpenAI-compatible fallback |
 
 ## Settings And Pricing
 
@@ -247,7 +247,7 @@ The SSE stream is a live enhancement. The stable reload contract remains `GET /u
 flowchart LR
   UI["Settings UI"]
   Config["GET/PUT /ui/config"]
-  ProviderModels["GET /ui/providers/models?provider=google"]
+  ProviderModels["GET /ui/providers/models?provider=<id>"]
   Pricing["GET/PUT /ui/pricing<br/>POST /ui/pricing/sync"]
   Settings["Settings object"]
   Runtime["Agent and browser runtime"]
@@ -257,9 +257,19 @@ flowchart LR
   UI --> Pricing --> Settings
 ```
 
-The current provider/model configuration is Gemini-oriented. `/ui/providers/models?provider=google` pulls Google model metadata for the settings UI. `/ui/pricing` stores and returns pricing rows, including input, output, cached input, cache write, and context-window fields. `/ui/settings/estimate-costs` uses those rows to estimate cost before or after a run.
+The provider/model configuration is provider-agnostic. `/ui/providers/models?provider=<id>` pulls
+metadata for the selected provider. Direct adapters are used where a provider exposes a
+provider-specific API; the generic path calls the configured endpoint's `/models` resource and
+accepts OpenAI-style `data[]` or simple `models[]` rows. `/ui/config` returns a safe 110-provider
+registry, boolean key status, endpoint overrides, model assignments, and masked source metadata.
+It does not return raw provider credentials. `/ui/pricing` stores and returns pricing rows,
+including input, output, cached input, cache write, and context-window fields.
+`/ui/settings/estimate-costs` uses those rows to estimate cost before or after a run.
 
-The backend still has compatibility fields for older provider names in settings, but `build_llm` only instantiates Gemini through `ChatGoogleGenerativeAI`. If a non-Google provider is configured, the runtime logs a warning and falls back to a Gemini-compatible model selection.
+The backend retains compatibility fields for older provider names, but agent traffic is routed
+through the LiteLLM-backed `ChatLiteLLM` seam. OpenCode Zen/Go use their OpenAI-compatible base
+URLs with model-family prefix handling; custom and local OpenAI-compatible servers use the same
+generic endpoint contract. See [Provider Directory](../operations/provider-directory.md).
 
 ## Dataset API
 

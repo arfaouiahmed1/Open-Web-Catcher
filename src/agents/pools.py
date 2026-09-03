@@ -28,7 +28,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from src.agents.base import _assert_not_cancelled
+from src.agents.runtime import _assert_not_cancelled
 from src.agents.errors import RunCancelledError
 from src.models.common import EventKind
 from src.utils.logging import get_logger

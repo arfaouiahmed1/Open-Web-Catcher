@@ -11,6 +11,7 @@ from src.agents.prompting import build_runtime_context, build_task_brief, compil
 from src.memory.long_term import LongTermMemory
 from src.memory.short_term import ShortTermMemory
 from src.models.enums import AgentType, Confidence, PageType
+from src.models.evidence import EvidenceRef
 from src.models.schemas import ClassificationResult
 from src.utils.config import Settings
 from src.utils.instrumentation import (
@@ -23,17 +24,8 @@ from src.utils.observability import RunObserver
 
 logger = get_logger(__name__)
 
-PROMPT_PATH = Path("configs/prompts/classification_v1.md")
-_AGENT_CONTRACT = """\
-- classify the page as exactly one of: `landing_page`, `host_page`, `embed_video_page`, or `other`
-- use live page evidence and tool results before deciding
-- respect the output format defined in the base policy
-- do not attempt downstream extraction in this step
-- when a popup/modal/overlay dominates the screenshot, remove it with the safest same-page continue/close/dismiss control before classifying the underlying page
-- avoid promotional/external popup actions such as Join Discord, Bookmark, Download, Telegram, app-store, or ad buttons unless they are the only verified same-page clearance control
-- treat opened_targets, blocked_popup_attempts, target_decision, and blocked_by_client as popup/window/uBlock evidence; do not classify ad/off-target popups as the underlying page
-- do not trust same hostname alone for a new tab/window; compare URL, title, screenshot/layout, and media/frame signals
-"""
+PROMPT_PATH = Path("configs/prompts/classification_v2.md")
+_AGENT_CONTRACT = ""
 
 
 class ClassificationAgent:
@@ -52,7 +44,7 @@ class ClassificationAgent:
         *,
         instruction_override: str | None = None,
     ) -> ClassificationResult:
-        from src.agents.base import build_llm, run_agent_loop
+        from src.agents.runtime import build_llm, run_agent_loop
         from src.tools.mcp_client import agent_tools
 
         if self.llm is None:
@@ -61,7 +53,7 @@ class ClassificationAgent:
         if observer is not None:
             observer.mark_agent(AgentType.CLASSIFICATION)
             observer.emit("agent_started", f"Classification agent started for {url}")
-
+        from src.tools.mcp_client import derive_browser_scope_id
         with using_observability_context(
             session_id=observer.run_id if observer is not None else "",
             metadata={"agent_type": AgentType.CLASSIFICATION.value, "url": url},
@@ -88,7 +80,6 @@ class ClassificationAgent:
                     settings=self.settings,
                     agent_id=AgentType.CLASSIFICATION.value,
                     base_policy=self._system_prompt,
-                    agent_contract=_AGENT_CONTRACT,
                     task_brief=build_task_brief(
                         url=url,
                         page_type=AgentType.CLASSIFICATION.value,
@@ -111,8 +102,13 @@ class ClassificationAgent:
                         "Compiled layered prompt for classification agent",
                         details=compiled_prompt.model_dump(exclude={"content"}),
                     )
+                scope_id = derive_browser_scope_id("classification", url)
                 async with agent_tools(
-                    "classification", self.settings, observer=observer, target_url=url
+                    "classification",
+                    self.settings,
+                    observer=observer,
+                    target_url=url,
+                    browser_scope_id=scope_id,
                 ) as tools:
                     result = await run_agent_loop(
                         settings=self.settings,
@@ -198,10 +194,29 @@ def _parse_output(text: str, url: str) -> ClassificationResult:
     succeeded, "fallback" for regex-recovered or unparseable output. The
     orchestrator confidence gate treats "fallback" as an unverifiable verdict.
     """
-    from src.agents.base import parse_json_object
+    from src.agents.runtime import parse_json_object
 
     payload, _parse_error = parse_json_object(text)
     if payload:
+        raw_evidence = payload.get("evidence", [])
+        evidence_list = []
+        if isinstance(raw_evidence, list):
+            for item in raw_evidence:
+                if isinstance(item, dict):
+                    try:
+                        evidence_list.append(EvidenceRef.model_validate(item))
+                    except Exception:
+                        pass
+                elif isinstance(item, str) and item.strip():
+                    evidence_list.append(
+                        EvidenceRef(
+                            kind="page_state",
+                            tool_call_id="",
+                            page_state_id="",
+                            ref=item.strip(),
+                            summary=item.strip(),
+                        )
+                    )
         result = ClassificationResult(
             url=url,
             page_type=_PAGE_TYPE_MAP.get(
@@ -210,6 +225,7 @@ def _parse_output(text: str, url: str) -> ClassificationResult:
             confidence=_CONF_MAP.get(str(payload.get("confidence", "")).lower(), Confidence.LOW),
             reasoning=str(payload.get("reasoning", "") or text[:500]),
             confidence_source="parsed",
+            evidence=evidence_list,
         )
         return _surface_structured_fields(result, payload)
 

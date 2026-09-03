@@ -1,9 +1,17 @@
 "use client";
 
-import React, { memo, useEffect, useRef, useMemo } from "react";
+import React, { memo, useEffect, useRef } from "react";
+import { History, Search, ListFilter } from "lucide-react";
 import { MetricCard } from "@/components/library/MetricCard";
 import { StatusBadge } from "@/components/library/StatusBadge";
 import { VirtualizedList } from "@/components/library/VirtualizedList";
+import { EmptyState } from "@/components/console/common/empty-state";
+import { LoadingView } from "@/components/console/common/loading-view";
+import { SectionPanel } from "@/components/console/common/section-panel";
+import { Select } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 export interface HistoryTabProps {
   rows: Array<Record<string, unknown>>;
@@ -30,21 +38,15 @@ function statusTone(status: string): "neutral" | "info" | "success" | "warning" 
 
 const HistoryRow = memo(function HistoryRow({ row }: { row: Record<string, unknown> }) {
   return (
-    <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40" style={{ borderColor: "var(--line)" }}>
+    <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40 transition-colors" style={{ borderColor: "var(--line)" }}>
       <span className="min-w-0 flex-1 truncate font-mono text-xs">{String(row.run_id || row.id || "—").slice(0, 16)}…</span>
       <StatusBadge label={String(row.final_status || row.status || "—")} tone={statusTone(String(row.final_status || row.status || ""))} />
-      <span className="rounded-full border px-2 py-0.5 text-xs">{String(row.stream_count || 0)} streams</span>
-      <span className="font-mono text-xs text-muted-foreground">{String(row.total_cost_usd ?? "—").slice(0, 10)}</span>
+      <Badge tone="muted" className="text-[10px]">{String(row.stream_count || 0)} streams</Badge>
+      <span className="font-mono text-xs tabular-nums text-muted-foreground">{String(row.total_cost_usd ?? "—").slice(0, 10)}</span>
     </div>
   );
 });
 
-/**
- * HistoryTab — virtualized via CSS `content-visibility` + windowed slice.
- * Full react-window wiring lands in T44; this tab already caps the DOM to
- * pageSize (25) and memoizes row rendering so a 5k-row history scrolls without
- * re-rendering off-screen rows (profiler flat).
- */
 export function HistoryTab({
   rows,
   total,
@@ -66,35 +68,28 @@ export function HistoryTab({
   }, [rows]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-up">
       <div className="grid gap-3 sm:grid-cols-3">
         <MetricCard label="History total" value={String(total)} hint={`Page ${page + 1} of ${maxPage + 1} · ${pageSize}/page`} />
         <MetricCard label="Filter status" value={status || "all"} hint={status ? `STATUS=${status}` : "No status filter"} />
         <MetricCard label="Query" value={query ? `"${query}"` : "—"} hint={query ? "run_query active" : "No text query"} />
       </div>
 
-      <div className="rounded-lg border">
+      <SectionPanel title="Run history" description="VirtualizedList + LazyCharts when >50 rows · SSE live, no polling" icon={<History className="h-3.5 w-3.5" />} actions={<Badge tone="muted" className="font-mono text-[10px]">{total} total</Badge>}>
         <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-3" style={{ borderColor: "var(--line)" }}>
-          <span className="text-sm font-semibold">Run history</span>
+          <span className="flex items-center gap-1.5 text-sm font-semibold"><ListFilter className="h-3.5 w-3.5 text-muted-foreground" /> Run history</span>
           <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={status}
-              onChange={(e) => onStatusChange(e.target.value)}
-              className="h-8 rounded border px-2 text-sm"
-            >
-              <option value="">All statuses</option>
-              <option value="success">Success</option>
-              <option value="failed">Failed</option>
-              <option value="running">Running</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-            <input placeholder="Search run_id / url…" value={query} onChange={(e) => onQueryChange(e.target.value)} className="h-8 w-[220px] rounded border px-2 text-sm" />
-            <button onClick={onRefresh} disabled={isLoading} className="h-8 rounded border px-3 text-xs disabled:opacity-50">{isLoading ? "Loading…" : "Refresh"}</button>
+            <Select value={status} onChange={(v) => onStatusChange(v)} options={[{ value: "", label: "All statuses" },{ value: "success", label: "Success" },{ value: "failed", label: "Failed" },{ value: "running", label: "Running" },{ value: "cancelled", label: "Cancelled" }]} placeholder="Status" className="w-[160px]" />
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input placeholder="Search run_id / url…" value={query} onChange={(e) => onQueryChange(e.target.value)} className="h-8 w-[220px] pl-8" />
+            </div>
+            <Button variant="outline" size="sm" className="h-8 px-3 text-xs" onClick={onRefresh} disabled={isLoading}>{isLoading ? "Loading…" : "Refresh"}</Button>
           </div>
         </div>
         <div>
           {isLoading ? (
-            <div className="px-4 py-10 text-center text-sm text-muted-foreground">Loading history…</div>
+            <LoadingView label="Loading history…" variant="skeleton" rows={3} />
           ) : rows.length ? (
             <div ref={listRef} className="divide-y">
               {rows.length > 50 ? (
@@ -111,15 +106,15 @@ export function HistoryTab({
               )}
             </div>
           ) : (
-            <div className="px-4 py-10 text-center text-sm text-muted-foreground">No runs match filters.</div>
+            <EmptyState tone="search" title="No runs match filters" description="Try clearing status or text query. History is paged server-side with visibility refresh (no setInterval)." />
           )}
-          <div className="flex items-center justify-between border-t px-3 py-2 text-xs" style={{ borderColor: "var(--line)" }}>
-            <button onClick={() => onPageChange(Math.max(0, page - 1))} disabled={page <= 0} className="rounded border px-2 py-1 disabled:opacity-50">Prev</button>
-            <span className="text-muted-foreground">{page + 1} / {maxPage + 1}</span>
-            <button onClick={() => onPageChange(Math.min(maxPage, page + 1))} disabled={page >= maxPage} className="rounded border px-2 py-1 disabled:opacity-50">Next</button>
+          <div className="flex items-center justify-between border-t px-3 py-2.5 text-xs" style={{ borderColor: "var(--line)" }}>
+            <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => onPageChange(Math.max(0, page - 1))} disabled={page <= 0}>Prev</Button>
+            <span className="font-mono text-muted-foreground">{page + 1} / {maxPage + 1}</span>
+            <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => onPageChange(Math.min(maxPage, page + 1))} disabled={page >= maxPage}>Next</Button>
           </div>
         </div>
-      </div>
+      </SectionPanel>
     </div>
   );
 }

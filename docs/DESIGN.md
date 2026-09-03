@@ -53,6 +53,19 @@ Tailwind zinc values for shadcn parity.
 | `--status-idle` | `oklch(0.5 0.04 240)` | Desaturated blue-gray |
 | `--status-connecting` | `oklch(0.76 0.12 240)` | = `--sky` |
 
+### Theme-aware accent foregrounds — globals.css
+
+Accents are bright data/status colors in dark mode but need darker foreground values on white
+surfaces. Use these variables when an accent is rendered as text rather than as a dot or fill:
+
+| Token | Dark | Light | Use |
+|---|---|---|---|
+| `--signal-text` | `oklch(0.84 0.13 78)` | `oklch(0.45 0.12 64)` | warning, unsaved, primary text |
+| `--mint-text` | `oklch(0.8 0.13 170)` | `oklch(0.44 0.11 170)` | healthy, live, verified text |
+| `--violet-text` | `oklch(0.78 0.14 300)` | `oklch(0.46 0.12 300)` | model/edited text |
+| `--rose-text` | `oklch(0.78 0.14 20)` | `oklch(0.46 0.14 20)` | failure/destructive text |
+| `--sky-text` | `oklch(0.8 0.12 240)` | `oklch(0.45 0.11 240)` | informational text |
+
 ### Surface ladder (dark default, `:root, .dark`) — globals.css:L31-L37
 
 | Token | Dark value | Zinc ref | Light value (.light, L110-L116) |
@@ -119,6 +132,10 @@ Tailwind as `chart.1..5` in tailwind.config.ts).
 - **Explicit format note:** accents/status/charts are OKLCH; surfaces/text/lines are hex
   zinc literals; shadows use rgba black; all tints go through `color-mix(in oklch ...)`.
   Do not convert one family into the other when editing.
+- Settings and shared form primitives must use semantic foreground/surface/border tokens in both
+  themes. Do not use dark-only light text (`#f7f8f8`, `#8a8f98`) or white-alpha borders on light
+  surfaces. The light theme maps `--primary` and `--ring` through `--signal-text` for readable
+  controls and focus states.
 
 ---
 

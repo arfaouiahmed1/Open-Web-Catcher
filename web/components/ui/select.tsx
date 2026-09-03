@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
-import { Check, ChevronDown, ChevronUp } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 
@@ -24,6 +24,8 @@ export type SelectProps = {
   placeholder?: string;
   emptyMessage?: string;
   disabled?: boolean;
+  searchable?: boolean;
+  searchPlaceholder?: string;
 };
 
 export function Select({
@@ -35,8 +37,18 @@ export function Select({
   placeholder = "Select",
   emptyMessage = "No options available",
   disabled = false,
+  searchable = false,
+  searchPlaceholder = "Search options…",
 }: SelectProps) {
+  const [query, setQuery] = React.useState("");
   const selected = options.find((option) => option.value === value) || null;
+  const visibleOptions = searchable
+    ? options.filter((option) =>
+        `${option.label} ${option.description || ""} ${option.meta || ""}`
+          .toLowerCase()
+          .includes(query.trim().toLowerCase()),
+      )
+    : options;
   const normalizedValue =
     value === "" ? EMPTY_VALUE : value === undefined || value === null ? undefined : value;
 
@@ -47,6 +59,9 @@ export function Select({
       <SelectPrimitive.Root
         value={normalizedValue}
         disabled={disabled}
+        onOpenChange={(open) => {
+          if (!open) setQuery("");
+        }}
         onValueChange={(nextValue: string) => {
           const resolvedValue = nextValue === EMPTY_VALUE ? "" : nextValue;
           const option = options.find((item) => item.value === resolvedValue) || null;
@@ -70,12 +85,29 @@ export function Select({
             position="popper"
             className="z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-md"
           >
+            {searchable ? (
+              <div className="border-b border-border/70 p-2">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    autoFocus
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Escape") event.stopPropagation();
+                    }}
+                    placeholder={searchPlaceholder}
+                    className="h-8 w-full rounded-md border border-border bg-background pl-8 pr-2 text-xs outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+              </div>
+            ) : null}
             <SelectPrimitive.ScrollUpButton className="flex cursor-default items-center justify-center py-1">
               <ChevronUp className="h-4 w-4" />
             </SelectPrimitive.ScrollUpButton>
             <SelectPrimitive.Viewport className="p-1.5">
-              {options.length ? (
-                options.map((option) => (
+              {visibleOptions.length ? (
+                visibleOptions.map((option) => (
                   <SelectPrimitive.Item
                     key={option.value || EMPTY_VALUE}
                     value={option.value === "" ? EMPTY_VALUE : option.value}

@@ -38,7 +38,7 @@ The system splits the investigation into deterministic routing plus smaller agen
 2. FastAPI creates a background job and a `RunObserver`.
 3. The orchestrator checks memory as soft context, then calls classification.
 4. LangGraph routes the run to landing, hosting, embedded, or terminal no-stream paths.
-5. Browser-facing agents compile their prompts, open MCP profile sessions, call Gemini with bound tools, and normalize output into Pydantic schemas.
+5. Browser-facing agents compile their prompts, open MCP profile sessions, call the configured provider with bound tools, and normalize output into Pydantic schemas.
 6. Provider analysis and email generation run only after stream evidence exists.
 7. The repository layer writes normalized records and snapshots to Postgres.
 8. The console reads `GET /ui/runs/{run_id}` and the active SSE stream to show both live progress and persisted evidence.
@@ -99,7 +99,7 @@ The local stack is Docker-first and split by failure domain:
 | `owc-tools` | Puppeteer MCP server plus Chrome | `http://localhost:3001`, DevTools `9222` |
 | `owc-tools-playwright` | Playwright MCP server plus browser runtime | `http://localhost:3002`, DevTools `9223` |
 
-The backend talks to browser tools through MCP service URLs, not direct frontend calls. The web app talks to FastAPI through `web/lib/api.js`. Postgres access stays behind repository classes in `src/storage/`.
+The backend talks to browser tools through MCP service URLs, not direct frontend calls. The web app talks to FastAPI through the typed `web/lib/api.ts` / `web/lib/api-client.ts` transport. Postgres access stays behind repository classes in `src/storage/`.
 
 ### Technology Stack
 
@@ -113,9 +113,25 @@ The backend talks to browser tools through MCP service URLs, not direct frontend
 | Browser tools | Playwright-only MCP (consolidation planned, see [ADR-003](docs/adr/ADR-003-playwright-only-persona.md); puppeteer stack still present) |
 | Frontend | Next.js 15, React 19, shadcn-style components, Radix UI, React Flow, Recharts |
 | Packaging | `uv`, Docker Compose, separate Dockerfiles for API, web, Puppeteer tools, and Playwright tools |
-| Runtime config | `.env`, `configs/settings.yaml`, `data/settings.runtime.yaml`, `data/browser.runtime.json` |
+| Runtime config | `configs/settings.yaml`, `data/settings.runtime.yaml`, `data/browser.runtime.json`; service/bootstrap secrets remain in `.env` |
 
 More detail is in [Deployment And Physical Runtime](docs/system/deployment.md), [Docker And Ports](docs/operations/docker.md), and [Configuration](docs/operations/configuration.md).
+
+## Provider Configuration And Settings UX
+
+Model credentials are configured from **Settings → Provider Keys** and persisted as runtime
+overrides in `data/settings.runtime.yaml`. Provider values are masked in API responses and are
+never included in Docker images or committed source. The Settings UI exposes a 110-provider
+LiteLLM-compatible directory, including OpenCode Zen/Go, LiteLLM Gateway, cloud providers,
+OpenAI-compatible endpoints, and local runtimes such as Ollama, LM Studio, and vLLM.
+
+**Settings → Models** assigns a provider and model independently for each pipeline agent. The
+provider and model selectors are searchable, and a manual model ID remains available when a
+provider does not expose a catalog. Live catalogs use provider-specific adapters where available
+and a generic OpenAI-compatible `GET /v1/models` path otherwise.
+
+See [Provider Directory](docs/operations/provider-directory.md), [Frontend Console](docs/frontend/README.md),
+and [Operator Console API](docs/api/operator-console.md) for the setup and contract details.
 
 ## Evidence And Observability
 

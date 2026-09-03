@@ -10,6 +10,7 @@ from typing import Any
 
 from pydantic import Field
 
+from src.models.evidence import EvidenceRef
 from src.models.common import PipelineModel
 
 
@@ -43,3 +44,4 @@ class MatchInfo(PipelineModel):
     server_hints: list[dict[str, Any]] = Field(default_factory=list)
     patterns: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    evidence: list[EvidenceRef] = Field(default_factory=list)

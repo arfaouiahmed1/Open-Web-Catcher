@@ -17,6 +17,7 @@ import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
 import { OverviewKpisTab } from "./tabs/overview-kpis-tab";
 import { CostsTab } from "./tabs/costs-tab";
 import { TokensTab } from "./tabs/tokens-tab";
+import { DashboardIntro } from "./dashboard-intro";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, XAxis, YAxis } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1742,6 +1743,7 @@ function OverviewPageContent() {
   /* ── render ──────────────────────────────────────────────────────────── */
   return (
     <div className="space-y-6">
+      <DashboardIntro />
       {/* ── page header ── */}
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">

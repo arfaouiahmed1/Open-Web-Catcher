@@ -19,13 +19,30 @@ def cdp_http_url_from_ws_endpoint(ws_endpoint: str) -> str:
     return f"{http_scheme}://{netloc}"
 
 
+def _cdp_probe_headers(base_url: str) -> dict[str, str]:
+    """Use a loopback Host header when CDP is reached through the sidecar proxy.
+
+    Chromium rejects non-local ``Host`` headers for the DevTools HTTP endpoint.
+    The Playwright sidecar deliberately keeps Chrome on 127.0.0.1 and forwards
+    compose traffic through port 9224, so a peer request otherwise returns 500.
+    """
+    hostname = (urlparse(base_url).hostname or "").lower()
+    if hostname not in {"localhost", "127.0.0.1", "::1"}:
+        return {"Host": "127.0.0.1"}
+    return {}
+
+
 def probe_browser(ws_endpoint: str) -> dict:
     """Return browser reachability and metadata without raising."""
     base_url = cdp_http_url_from_ws_endpoint(ws_endpoint)
     probe_url = f"{base_url}/json/version"
 
     try:
-        response = httpx.get(probe_url, timeout=3.0)
+        response = httpx.get(
+            probe_url,
+            headers=_cdp_probe_headers(base_url),
+            timeout=3.0,
+        )
         response.raise_for_status()
         payload = response.json()
         return {

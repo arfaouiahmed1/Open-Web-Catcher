@@ -1,227 +1,291 @@
 /**
- * tools/harvest.js — 6-layer CDP stream detection.
+ * tools/harvest.js — Discover and probe media streams.
  *
- * Layers:
- *   1. CDP Network.requestWillBeSent  (before request leaves browser)
- *   2. Puppeteer response events      (after response headers arrive)
- *   3. <video>/<source> DOM elements
- *   4. iframe src scan
- *   5. JS player object inspection    (hls.js, videojs, jwplayer, dashjs)
- *   6. performance.getEntriesByType retroactive scan
+ * Implements the v2 browser tool contract (plan step 5):
+ * - Always-on network ledger inspection
+ * - DOM video/source scan, iframe scan, player globals, performance entries
+ * - HLS parsing via m3u8-parser, DASH parsing via fast-xml-parser
+ * - Manifest probing (HEAD, Range)
+ * - Returns v2 ToolEnvelope
  */
 
-import {
-  getIframeDiagnostics,
-  getPageNetworkDiagnostics,
-} from '../shared/browser.js';
-import { screenshotViewport } from '../shared/screenshot.js';
-import { withBrowserSession } from '../shared/tool-runtime.js';
+import { successEnvelope, errorEnvelope } from '../shared/tool-envelope.js';
+import { TOOL_ERROR_CODES } from '../../shared/error-codes.js';
+import { classifyStreamPattern } from '../runtime/network-ledger.js';
+import { defaultEvidenceStore } from '../runtime/evidence-store.js';
+import { getPage } from '../shared/browser.js';
 
-const STREAM_PATTERNS = [
-  { re: /\.m3u8(\?|$)/i,   protocol: 'hls'      },
-  { re: /\.mpd(\?|$)/i,    protocol: 'dash'     },
-  { re: /\.mp4(\?|$)/i,    protocol: 'mp4'      },
-  { re: /\.(m4s|ts)(\?|$)/i, protocol: 'segment' },
-  { re: /\.webm(\?|$)/i,   protocol: 'webm'     },
-  { re: /\.ism\/manifest/i, protocol: 'smooth'   },
-  { re: /manifest\.m3u8/i,  protocol: 'hls'     },
-  { re: /\/(?:hls|live|stream|video|broadcast|secure)\/.*(?:master|index|chunklist|playlist|manifest|mono)(?:[.-]|$|\?)/i, protocol: 'hls' },
-  { re: /(?:[?&](?:format|type|protocol)=hls|[?&](?:hls|m3u8|playlist|manifest)=)/i, protocol: 'hls' },
-  { re: /(?:[?&](?:format|type|protocol)=dash|[?&](?:dash|mpd)=)/i, protocol: 'dash' },
-];
+let _M3U8Parser = null;
+let _xmlParser = null;
 
-const isStream = url => STREAM_PATTERNS.some(({ re }) => re.test(url));
-const getProtocol = url => STREAM_PATTERNS.find(({ re }) => re.test(url))?.protocol || 'unknown';
-
-function normalizeHost(value) {
-  const input = String(value || '').trim();
-  if (!input) return '';
-
+async function getM3U8Parser() {
+  if (_M3U8Parser) return _M3U8Parser;
   try {
-    return new URL(input).hostname.replace(/^www\./i, '').toLowerCase();
+    const mod = await import('m3u8-parser');
+    _M3U8Parser = mod.Parser || mod.default?.Parser || mod.default;
+    return _M3U8Parser;
   } catch {
-    return input.replace(/^https?:\/\//i, '').split('/')[0].replace(/^www\./i, '').toLowerCase();
+    return null;
   }
 }
 
-/**
- * @param {{
- *   duration_ms?: number,
- *   player_iframe_url?: string,
- *   browserWsEndpoint?: string,
- * }} params
- */
-export async function harvest({
-  duration_ms = 12_000,
-  player_iframe_url = '',
-  browserWsEndpoint,
-} = {}) {
-  return withBrowserSession(browserWsEndpoint, async ({ page }) => {
-  const targetIframeHost = normalizeHost(player_iframe_url);
+async function getXmlParser() {
+  if (_xmlParser) return _xmlParser;
+  try {
+    const mod = await import('fast-xml-parser');
+    const ParserClass = mod.XMLParser || mod.default?.XMLParser;
+    if (ParserClass) {
+      _xmlParser = new ParserClass({ ignoreAttributes: false, attributeNamePrefix: '@_' });
+    }
+    return _xmlParser;
+  } catch {
+    return null;
+  }
+}
+export async function harvest(args = {}) {
+  const startTime = Date.now();
+  const framePath = String(args.frame_path || 'root');
+  const probeManifests = args.probe_manifests !== false;
 
-  const isTargetIframeUrl = (candidate) => {
-    if (!targetIframeHost) return false;
-    const host = normalizeHost(candidate);
-    return Boolean(host) && (host === targetIframeHost || host.endsWith(`.${targetIframeHost}`));
-  };
+  // Resolve page and runtime modules
+  let page = null;
+  let pageStateTracker = null;
+  let networkLedger = null;
+  let evidenceStore = defaultEvidenceStore;
 
-  const streams = new Map();  // url → stream object
-  const add = (url, layer, metadata = {}) => {
-    if (!url || !isStream(url)) return;
+  try {
+    if (args.browserSession?.page) {
+      page = args.browserSession.page;
+      pageStateTracker = args.browserSession.pageStateTracker;
+      networkLedger = args.browserSession.networkLedger;
+      if (args.browserSession.evidenceStore) evidenceStore = args.browserSession.evidenceStore;
+    } else {
+      page = await getPage(args.browserSession, { browserProfile: args.browserProfile });
+    }
+  } catch (err) {
+    return errorEnvelope({
+      tool: 'harvest',
+      code: TOOL_ERROR_CODES.ERR_TOOL_TIMEOUT,
+      message: `Could not acquire active page: ${err.message}`,
+      retryable: true,
+      telemetry: { duration_ms: Date.now() - startTime },
+    });
+  }
 
-    const existing = streams.get(url);
+  const streamsMap = new Map(); // url -> streamRecord
+
+  function addStream(url, layer, metadata = {}) {
+    if (!url || typeof url !== 'string') return;
+    const cleanUrl = url.trim();
+    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) return;
+
+    const protocol = classifyStreamPattern(cleanUrl, metadata.contentType || '') || 'unknown';
+    if (!protocol || protocol === 'unknown') return;
+
+    const existing = streamsMap.get(cleanUrl);
     if (!existing) {
-      streams.set(url, {
-        url,
-        protocol: getProtocol(url),
+      streamsMap.set(cleanUrl, {
+        url: cleanUrl,
+        protocol,
+        quality: metadata.quality || '',
         source_layer: layer,
         source_layers: [layer],
-        frame_url: metadata.frame_url || '',
-        resource_type: metadata.resource_type || '',
-        status: metadata.status ?? null,
-        error_text: metadata.error_text || '',
+        frame_url: metadata.frameUrl || '',
+        http_status: metadata.status || null,
+        content_type: metadata.contentType || null,
+        verified: false,
+        codecs: metadata.codecs || null,
+        encrypted: Boolean(metadata.encrypted),
+        drm_hint: metadata.drmHint || null,
+        expiry: metadata.expiry || null,
       });
-      return;
+    } else {
+      if (!existing.source_layers.includes(layer)) {
+        existing.source_layers.push(layer);
+      }
+      if (metadata.status && !existing.http_status) existing.http_status = metadata.status;
+      if (metadata.contentType && !existing.content_type) existing.content_type = metadata.contentType;
+      if (metadata.quality && !existing.quality) existing.quality = metadata.quality;
     }
+  }
 
-    if (!existing.source_layers.includes(layer)) {
-      existing.source_layers.push(layer);
+  // 1. Layer: Always-on Network Ledger
+  if (networkLedger) {
+    const entries = networkLedger.getEntries();
+    for (const e of entries) {
+      if (e.streamPattern) {
+        addStream(e.url, 'network_ledger', {
+          status: e.status,
+          contentType: e.contentType,
+          frameUrl: e.frameUrl,
+        });
+      }
     }
-    if (!existing.frame_url && metadata.frame_url) {
-      existing.frame_url = metadata.frame_url;
+  }
+
+  // 2. Layer: DOM Video/Source Scan
+  try {
+    const domMedia = await page.evaluate(() => {
+      const results = [];
+      for (const v of document.querySelectorAll('video, audio')) {
+        if (v.src) results.push({ url: v.src, type: v.getAttribute('type') || '' });
+        if (v.currentSrc) results.push({ url: v.currentSrc, type: '' });
+      }
+      for (const s of document.querySelectorAll('source')) {
+        const src = s.src || s.getAttribute('data-src');
+        if (src) results.push({ url: src, type: s.type || '' });
+      }
+      return results;
+    }).catch(() => []);
+
+    for (const item of domMedia) {
+      addStream(item.url, 'dom_scan', { contentType: item.type });
     }
-    if (!existing.resource_type && metadata.resource_type) {
-      existing.resource_type = metadata.resource_type;
+  } catch {}
+
+  // 3. Layer: Iframe src scan
+  try {
+    const iframes = page.frames().map((f) => f.url()).filter(Boolean);
+    for (const fUrl of iframes) {
+      if (classifyStreamPattern(fUrl)) {
+        addStream(fUrl, 'iframe_scan', { frameUrl: fUrl });
+      }
     }
-    if (existing.status == null && metadata.status != null) {
-      existing.status = metadata.status;
+  } catch {}
+
+  // 4. Layer: Performance entries retroactive scan
+  try {
+    const perfUrls = await page.evaluate(() => {
+      if (!window.performance || !performance.getEntriesByType) return [];
+      return performance.getEntriesByType('resource')
+        .map((r) => r.name)
+        .filter((u) => u && typeof u === 'string');
+    }).catch(() => []);
+
+    for (const u of perfUrls) {
+      if (classifyStreamPattern(u)) {
+        addStream(u, 'performance_entries');
+      }
     }
-    if (!existing.error_text && metadata.error_text) {
-      existing.error_text = metadata.error_text;
-    }
-  };
+  } catch {}
 
-  // Layer 1: CDP network interception
-  const client = await page.context().newCDPSession(page);
-  await client.send('Network.enable');
-  client.on('Network.requestWillBeSent', ({ request, type }) => {
-    const sourceLayer = isTargetIframeUrl(request?.url) ? 'iframe-cdp-request' : 'cdp-request';
-    add(request?.url, sourceLayer, { resource_type: type || '' });
-  });
-  client.on('Network.responseReceived', ({ response, type }) => {
-    const sourceLayer = isTargetIframeUrl(response?.url) ? 'iframe-cdp-response' : 'cdp-response';
-    add(response?.url, sourceLayer, {
-      resource_type: type || '',
-      status: response?.status ?? null,
-    });
-  });
+  // 5. Probe manifests with HEAD / Range and parse playlists
+  const streams = Array.from(streamsMap.values());
+  if (probeManifests && streams.length > 0) {
+    await Promise.all(
+      streams.map(async (st) => {
+        try {
+          // Probe HEAD
+          const headRes = await fetch(st.url, {
+            method: 'HEAD',
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            signal: AbortSignal.timeout(5000),
+          }).catch(() => null);
 
-  // Layer 2: Playwright response events (context-level catches cross-origin iframe responses)
-  const context = page.context();
-  const onContextResponse = (res) => {
-    const frameUrl = res.frame?.()?.url?.() || '';
-    const sourceLayer = isTargetIframeUrl(frameUrl) || isTargetIframeUrl(res.url())
-      ? 'iframe-response'
-      : 'response-intercept';
-    add(res.url(), sourceLayer, {
-      frame_url: frameUrl,
-      status: res.status?.() ?? null,
-      resource_type: res.request?.()?.resourceType?.() || '',
-    });
-  };
-  const onContextRequestFailed = (request) => {
-    const frameUrl = request.frame?.()?.url?.() || '';
-    const sourceLayer = isTargetIframeUrl(frameUrl) || isTargetIframeUrl(request.url?.())
-      ? 'iframe-request-failed'
-      : 'request-failed';
-    add(request.url?.(), sourceLayer, {
-      frame_url: frameUrl,
-      resource_type: request.resourceType?.() || '',
-      error_text: request.failure?.()?.errorText || '',
-    });
-  };
-  context.on('response', onContextResponse);
-  context.on('requestfailed', onContextRequestFailed);
+          if (headRes && headRes.ok) {
+            st.verified = true;
+            st.http_status = headRes.status;
+            st.content_type = headRes.headers.get('content-type') || st.content_type;
+          }
 
-  // Wait for stream traffic
-  await new Promise(r => setTimeout(r, duration_ms));
+          // If HLS, fetch first chunk or manifest text to parse master playlist
+          if (st.protocol === 'hls') {
+            const getRes = await fetch(st.url, {
+              headers: { Range: 'bytes=0-65535' },
+              signal: AbortSignal.timeout(6000),
+            }).catch(() => null);
 
-  // Layer 3: DOM elements
-  const domUrls = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('video, source')).map(el => el.src || el.currentSrc).filter(Boolean)
-  );
-  domUrls.forEach(u => add(u, 'dom-elements'));
+            if (getRes && (getRes.ok || getRes.status === 206)) {
+              const text = await getRes.text().catch(() => '');
+              if (text.includes('#EXTM3U')) {
+                st.verified = true;
+                const ParserClass = await getM3U8Parser();
+                if (ParserClass) {
+                  try {
+                    const parser = new ParserClass();
+                    parser.push(text);
+                    parser.end();
 
-  // Layer 4: iframe srcs
-  const iframeSrcs = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('iframe')).map(f => f.src).filter(Boolean)
-  );
-  iframeSrcs.forEach(u => add(u, 'iframe-src'));
+                    const parsed = parser.manifest;
+                    if (parsed?.playlists?.length > 0) {
+                      const best = parsed.playlists[0];
+                      if (best.attributes?.RESOLUTION) {
+                        st.quality = `${best.attributes.RESOLUTION.width}x${best.attributes.RESOLUTION.height}`;
+                      }
+                      if (best.attributes?.CODECS) {
+                        st.codecs = best.attributes.CODECS;
+                      }
+                    }
+                  } catch {}
+                } else {
+                  const resMatch = text.match(/RESOLUTION=(\d+x\d+)/i);
+                  if (resMatch) st.quality = resMatch[1];
+                  const codecsMatch = text.match(/CODECS="([^"]+)"/i);
+                  if (codecsMatch) st.codecs = codecsMatch[1];
+                }
+                if (text.includes('#EXT-X-KEY')) {
+                  st.encrypted = true;
+                  st.drm_hint = 'EXT-X-KEY present in manifest';
+                }
+              }
+            }
+          } else if (st.protocol === 'dash') {
+            const getRes = await fetch(st.url, {
+              headers: { Range: 'bytes=0-65535' },
+              signal: AbortSignal.timeout(6000),
+            }).catch(() => null);
 
-  // Layer 5: JS player objects
-  const jsUrls = await page.evaluate(() => {
-    const found = [];
-    try {
-      // hls.js
-      if (window.Hls?.instances) window.Hls.instances.forEach(h => h.url && found.push(h.url));
-      // videojs
-      Object.values(window.videojs?.players || {}).forEach(p => {
-        const s = p?.currentSrc?.(); if (s) found.push(s);
-      });
-      // jwplayer
-      const jw = window.jwplayer?.();
-      const jws = jw?.getPlaylistItem?.()?.file; if (jws) found.push(jws);
-      // Generic window property scan
-      const raw = JSON.stringify(window.__streams__ || window.__playlist__ || {});
-      (raw.match(/https?:\/\/[^\s"']+\.m3u8[^\s"']*/gi) || []).forEach(u => found.push(u));
-    } catch (_) {}
-    return found;
-  });
-  jsUrls.forEach(u => u && add(u, 'js-player'));
+            if (getRes && (getRes.ok || getRes.status === 206)) {
+              const text = await getRes.text().catch(() => '');
+              if (text.includes('<MPD')) {
+                st.verified = true;
+                const parser = await getXmlParser();
+                if (parser) {
+                  try {
+                    const parsedXml = parser.parse(text);
+                    if (parsedXml?.MPD && text.includes('ContentProtection')) {
+                      st.encrypted = true;
+                      st.drm_hint = 'ContentProtection tag present';
+                    }
+                  } catch {}
+                }
+              }
+            }
+          }
+        } catch {
+          // Probe error: keep existing metadata
+        }
+      }),
+    );
+  }
 
-  // Layer 6: performance.getEntriesByType retroactive scan
-  const perfUrls = await page.evaluate(() => {
-    try {
-      return performance.getEntriesByType('resource').map(e => e.name);
-    } catch (_) { return []; }
-  });
-  perfUrls.forEach(u => add(u, 'perf-api'));
+  // Current page state
+  const pageState = pageStateTracker
+    ? await pageStateTracker.getPageState(framePath).catch(() => null)
+    : { id: '', dom_epoch: 0, url: page.url() || '', title: await page.title().catch(() => ''), frame_path: framePath, captured_at: new Date().toISOString() };
 
-  // Screenshot of current player state
-  let screenshot_url = null;
-  try { screenshot_url = await screenshotViewport(page); } catch (_) {}
+  // Proof screenshot
+  let beforeScreenshotRef = null;
+  try {
+    const shot = await evidenceStore.saveScreenshot(page, { scope: 'viewport' });
+    beforeScreenshotRef = shot.blobref;
+  } catch {}
 
-  const network_diagnostics = getPageNetworkDiagnostics(page, { limit: 40 });
-  const iframe_diagnostics = await getIframeDiagnostics(page, { limit: 24 });
-
-  // Video state
-  const video_state = await page.evaluate(() => {
-    const v = document.querySelector('video');
-    if (!v) return 'absent';
-    if (v.paused && v.readyState < 2) return 'loading';
-    if (v.paused) return 'paused';
-    return 'playing';
-  });
-
-  context.off('response', onContextResponse);
-  context.off('requestfailed', onContextRequestFailed);
-  await client.detach();
-
-  const result = Array.from(streams.values());
-  const m3u8 = result.filter(s => s.protocol === 'hls').map(s => s.url);
-  const mpd  = result.filter(s => s.protocol === 'dash').map(s => s.url);
-  const mp4  = result.filter(s => ['mp4', 'webm'].includes(s.protocol)).map(s => s.url);
-
-  return {
-    streams: result,
-    m3u8_urls: m3u8,
-    mpd_urls:  mpd,
-    mp4_urls:  mp4,
-    total:     result.length,
-    video_state,
-    screenshot_url,
-    network_diagnostics,
-    iframe_diagnostics,
-  };
+  return successEnvelope({
+    tool: 'harvest',
+    page_state: pageState,
+    proof: {
+      before_screenshot_ref: beforeScreenshotRef,
+      network_evidence: streams.map((s) => ({ url: s.url, protocol: s.protocol, verified: s.verified })),
+    },
+    data: {
+      streams,
+      total_discovered: streams.length,
+      layers_active: ['network_ledger', 'dom_scan', 'iframe_scan', 'performance_entries'],
+    },
+    telemetry: {
+      duration_ms: Date.now() - startTime,
+      payload_bytes: JSON.stringify(streams).length,
+    },
   });
 }

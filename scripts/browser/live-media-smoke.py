@@ -18,7 +18,6 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_API = "http://localhost:8000"
 BROWSERS = ("playwright",)
@@ -74,18 +73,12 @@ def read_url_file(path: str) -> list[str]:
     ]
 
 
-def empty_disabled_tools_by_browser_profile() -> dict[str, dict[str, list[str]]]:
-    return {browser: {profile: [] for profile in PROFILES} for browser in BROWSERS}
-
-
-def configure_engine(api_base: str, engine: str, *, preserve_disabled_tools: bool) -> dict[str, Any]:
+def configure_engine(api_base: str, engine: str) -> dict[str, Any]:
     config = request_json("GET", f"{api_base}/ui/config", timeout=30)
     payload = {
         "browser_engine": engine,
         "browser_runtime": config.get("browser_runtime") or {},
     }
-    if not preserve_disabled_tools:
-        payload["disabled_tools_by_browser_profile"] = empty_disabled_tools_by_browser_profile()
     return request_json(
         "PUT",
         f"{api_base}/ui/config",
@@ -137,31 +130,30 @@ def first_video_ref(context: dict[str, Any]) -> dict[str, str]:
             }
     return {}
 
-
 def smoke_url(api_base: str, url: str, profile: str, capture_ms: int) -> dict[str, Any]:
-    opened = call_tool(api_base, profile, "open_url", {"url": url, "timeout_ms": 45000})
-    context = call_tool(api_base, profile, "get_page_context", {"frame_path": "root"})
-    video = first_video_ref(context)
-    playback = {}
-    if video:
-        playback = call_tool(api_base, profile, "play_media", {**video, "wait_ms": 1500})
-    streams = call_tool(api_base, profile, "capture_streams", {"frame_path": "root", "duration_ms": capture_ms})
+    opened = call_tool(
+        api_base, profile, "navigate", {"action": "goto", "url": url, "timeout_ms": 45000}
+    )
+    context = call_tool(api_base, profile, "inspect", {"view": "media"})
+    playback = call_tool(api_base, profile, "interact", {"action": "play"})
+    streams = call_tool(api_base, profile, "harvest", {"frame_path": "root"})
     stream_data = streams.get("data") if isinstance(streams.get("data"), dict) else streams
     playback_data = playback.get("data") if isinstance(playback.get("data"), dict) else playback
+    video_found = bool(context.get("data", {}).get("videos"))
+    total_streams = len(stream_data.get("streams", []))
     return {
         "url": url,
         "opened": bool(opened.get("ok", True)),
         "open_error": opened.get("error"),
         "final_url": opened.get("final_url") or opened.get("url"),
-        "video_target_found": bool(video),
-        "playback_started": bool(playback_data.get("playback_started")),
-        "playback_ready": bool(playback_data.get("playback_ready")),
+        "video_target_found": video_found,
+        "playback_started": bool(playback_data.get("verified")),
+        "playback_ready": bool(playback_data.get("verified")),
         "playback_error": playback_data.get("error"),
-        "stream_evidence_found": bool(stream_data.get("stream_evidence_found") or stream_data.get("total_streams")),
-        "total_streams": int(stream_data.get("total_streams") or 0),
+        "stream_evidence_found": total_streams > 0,
+        "total_streams": total_streams,
         "capture_error": stream_data.get("error"),
-        "manifest_failure": stream_data.get("manifest_failure") or playback_data.get("manifest_failure"),
-        "ok": bool(playback_data.get("playback_started") or stream_data.get("stream_evidence_found") or stream_data.get("total_streams")),
+        "ok": bool(playback_data.get("verified") or total_streams > 0),
     }
 
 
@@ -200,7 +192,6 @@ def main() -> int:
                 configure_engine(
                     args.api,
                     engine,
-                    preserve_disabled_tools=args.preserve_disabled_tools,
                 )
                 time.sleep(0.5)
                 health = request_json("GET", f"{args.api}/ui/browser/status", timeout=20)
@@ -223,10 +214,6 @@ def main() -> int:
             {
                 "browser_engine": original_config.get("browser_engine") or "playwright",
                 "browser_runtime": original_config.get("browser_runtime") or {},
-                "disabled_tools_by_browser_profile": original_config.get(
-                    "disabled_tools_by_browser_profile"
-                )
-                or {},
             },
             timeout=30,
         )

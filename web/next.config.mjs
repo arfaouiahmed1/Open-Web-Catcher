@@ -13,6 +13,9 @@ try {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  async rewrites() {
+    return [];
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: "2mb"

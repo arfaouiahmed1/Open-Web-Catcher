@@ -477,6 +477,22 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     nvidia_api_key: str = ""
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
+    mistral_api_key: str = ""
+    cohere_api_key: str = ""
+    groq_api_key: str = ""
+    together_api_key: str = ""
+    fireworks_api_key: str = ""
+    perplexity_api_key: str = ""
+    deepseek_api_key: str = ""
+    xai_api_key: str = ""
+    upstage_api_key: str = ""
+    azure_api_key: str = ""
+    azure_api_base: str = ""
+    bedrock_api_key: str = ""
+    # Extensible provider credentials and endpoints configured from Settings UI.
+    # Values are persisted only in the runtime YAML layer and never returned raw.
+    provider_api_keys: dict[str, str] = Field(default_factory=dict)
+    provider_base_urls: dict[str, str] = Field(default_factory=dict)
 
     observability_enabled: bool = Field(
         default=True,
@@ -514,11 +530,10 @@ class Settings(BaseSettings):
         default="http://localhost:3001,http://127.0.0.1:3001",
         validation_alias=AliasChoices("UI_CORS_ORIGINS"),
     )
-
     cloudinary_cloud_name: str = ""
     cloudinary_api_key: str = ""
     cloudinary_api_secret: str = ""
-
+    cloudinary_upload_preset: str = ""
     browser_ws_endpoint: str = "ws://localhost:9223"
     mcp_server_url: str = "http://localhost:3001"
     # Playwright-only since ADR-003; the puppeteer engine/field pair was removed.
@@ -614,9 +629,6 @@ class Settings(BaseSettings):
     tool_result_cache_min_identical_observations: int = 2
     agent_runtime_config: dict = Field(default_factory=dict)
 
-    # Per-profile disabled tool names: {"landing": ["screenshot", "play_media"], ...}
-    disabled_tools_by_profile: dict = Field(default_factory=dict)
-    disabled_tools_by_browser_profile: dict = Field(default_factory=dict)
     browser_runtime: dict = Field(default_factory=dict)
 
     max_parallel_hosting_pages: int = 5
@@ -691,13 +703,53 @@ class Settings(BaseSettings):
         existing["tool_result_cache_enabled"] = self.tool_result_cache_enabled
         existing["tool_result_cache_min_identical_observations"] = self.tool_result_cache_min_identical_observations
         existing["agent_runtime_config"] = normalize_agent_runtime_config(self.agent_runtime_config)
-        existing["disabled_tools_by_profile"] = self.disabled_tools_by_profile
-        existing["disabled_tools_by_browser_profile"] = self.disabled_tools_by_browser_profile
         existing["browser_runtime"] = self.browser_runtime
         existing["max_parallel_hosting_pages"] = self.max_parallel_hosting_pages
         existing["background_job_concurrency"] = self.background_job_concurrency
         existing["thinking_enabled"] = self.thinking_enabled
         existing["thinking_budget_tokens"] = self.thinking_budget_tokens
+        existing["observability_enabled"] = self.observability_enabled
+        existing["background_job_retention_days"] = self.background_job_retention_days
+        existing["retention_days_runs"] = self.retention_days_runs
+        existing["retention_days_run_snapshots"] = self.retention_days_run_snapshots
+        existing["retention_days_llm_calls"] = self.retention_days_llm_calls
+        existing["retention_days_tool_calls"] = self.retention_days_tool_calls
+        existing["retention_days_agent_outputs"] = self.retention_days_agent_outputs
+        existing["payload_cap_bytes"] = self.payload_cap_bytes
+        existing["workflow_max_cost_usd"] = self.workflow_max_cost_usd
+        existing["workflow_max_tokens"] = self.workflow_max_tokens
+        # BYOK — provider keys via Settings UI (runtime yaml), not .env
+        existing["google_api_key"] = self.google_api_key
+        existing["google_vertex_api_key"] = self.google_vertex_api_key
+        existing["openai_api_key"] = self.openai_api_key
+        existing["anthropic_api_key"] = self.anthropic_api_key
+        existing["openrouter_api_key"] = self.openrouter_api_key
+        existing["nvidia_api_key"] = self.nvidia_api_key
+        existing["mistral_api_key"] = self.mistral_api_key
+        existing["cohere_api_key"] = self.cohere_api_key
+        existing["groq_api_key"] = self.groq_api_key
+        existing["together_api_key"] = self.together_api_key
+        existing["fireworks_api_key"] = self.fireworks_api_key
+        existing["perplexity_api_key"] = self.perplexity_api_key
+        existing["deepseek_api_key"] = self.deepseek_api_key
+        existing["xai_api_key"] = self.xai_api_key
+        existing["upstage_api_key"] = self.upstage_api_key
+        existing["azure_api_key"] = self.azure_api_key
+        existing["azure_api_base"] = self.azure_api_base
+        existing["bedrock_api_key"] = self.bedrock_api_key
+        existing["provider_api_keys"] = {
+            key.strip().lower(): value
+            for key, value in self.provider_api_keys.items()
+            if isinstance(key, str) and key.strip() and not is_blank_setting_value(value)
+        }
+        existing["provider_base_urls"] = {
+            key.strip().lower(): value.strip()
+            for key, value in self.provider_base_urls.items()
+            if isinstance(key, str)
+            and key.strip()
+            and isinstance(value, str)
+            and value.strip()
+        }
 
         try:
             primary_path.parent.mkdir(parents=True, exist_ok=True)

@@ -11,45 +11,25 @@ from src.memory.long_term import LongTermMemory
 from src.memory.short_term import ShortTermMemory
 from src.models.enums import AgentType, ExtractionStatus, PageType
 from src.models.schemas import ExtractionResult, ServerResult, StreamURL
-from src.utils.channel_detection import best_channel_match, collect_channel_text_fragments, normalize_channel_name
+from src.utils.channel_detection import (
+    best_channel_match,
+    collect_channel_text_fragments,
+    normalize_channel_name,
+)
 from src.utils.config import Settings
-from src.utils.language_detection import best_language_match, detect_language_candidates
 from src.utils.instrumentation import (
     observability_span,
     set_span_output,
     using_observability_context,
 )
+from src.utils.language_detection import best_language_match, detect_language_candidates
 from src.utils.logging import get_logger
 from src.utils.observability import RunObserver
 
 logger = get_logger(__name__)
 
-PROMPT_PATH = Path("configs/prompts/embedded_page_v1.md")
-_AGENT_CONTRACT = """\
-- work only inside the embedded player URL received from hosting iframe/player evidence and extract verified stream URLs
-- check server switches, player activation, and network evidence before concluding
-- respect the final JSON/output format from the base policy
-- use remembered site hints only as soft guidance
-- stay on the assigned embedded/player URL and recover from off-target drift
-- preserve screenshot, iframe/embed, network, and player-state evidence per server/source when available
-- return detected channel/broadcast metadata per server/source only when the player or screenshot reveals a known broadcaster name
-- crawl visible JS-driven player/source/language controls before falling back to URL-only evidence
-- preserve source language labels when they are shown as flags, country emoji, audio labels, captions, or short codes
-- work across any language or script; verify channel/source labels from player evidence instead of English-only terms
-- keep embedded pages open to server/source controls under or inside the iframe/player; when visible, build a server_frontier and crawl each same-player source
-- after any interaction, react to newly displayed server/source controls by merging them into the current server_frontier and processing them before final JSON
-- preserve source_group, source_index, source_url, route_pattern, and current_marker for every attempted source when visible or inferable
-- activate/play the default player and every switched source before harvest, capture the post-activation screenshot, then harvest that source
-- treat ad redirects, news/article detours, fake downloads, and unrelated provider pages as drift, then recover once unless popup telemetry exposes decoded same-player URLs
-- choose player activation targets from activation_candidates, top_player_targets, exact scoped evidence, or coordinates; bare play_media is only candidate discovery and is not an activation attempt
-- treat opened_targets, blocked_popup_attempts, selected_target, target_decision, active_page_url, extracted_player_urls, and blocked_by_client as popup/window/uBlock evidence; record popup_window_diagnostics per source/server
-- when selected_target.extracted_player_urls or opened_targets[].extracted_player_urls appears after a source/player click, add those decoded URLs to the current server_frontier and try the most direct player URL before declaring failure
-- do not trust same hostname alone for a new tab/window; compare URL, title, screenshot/layout, assigned player, and media/frame signals before adopting it
-- remove anything that blocks the assigned player view or whole viewport, including popups, modals, overlays, consent walls, anti-adblock notices, sticky ads, transparent click shields, and full-screen interstitials, using inspect popup close selectors/xpaths, blocker_candidates, or exact close controls before activation, screenshots, harvest, or failure
-- if a click only dismisses a blocker, do not count it as activation; verify the player is visible and continue activation from the revealed state
-- switch only same-player source/server controls; never navigate to other matches, channels, listings, articles, or homepages
-- if no playable stream is recovered or the full-page embedded URL is blocked, stop with the failure evidence and do not invent another downstream fallback
-"""
+PROMPT_PATH = Path("configs/prompts/embedded_page_v2.md")
+_AGENT_CONTRACT = ""
 
 
 class EmbeddedPageAgent:
@@ -69,8 +49,8 @@ class EmbeddedPageAgent:
         observer: RunObserver | None = None,
         orchestrator_handoff: str = "",
     ) -> ExtractionResult:
-        from src.agents.base import build_llm, run_agent_loop
-        from src.tools.mcp_client import agent_tools
+        from src.agents.runtime import build_llm, run_agent_loop
+        from src.tools.mcp_client import agent_tools, derive_browser_scope_id
 
         if self.llm is None:
             self.llm = build_llm(self.settings, agent_id="embedded")
@@ -111,7 +91,6 @@ class EmbeddedPageAgent:
                     settings=self.settings,
                     agent_id=AgentType.EMBEDDED_PAGE.value,
                     base_policy=self._system_prompt,
-                    agent_contract=_AGENT_CONTRACT,
                     task_brief=build_task_brief(
                         url=url,
                         page_type=AgentType.EMBEDDED_PAGE.value,
@@ -151,8 +130,9 @@ class EmbeddedPageAgent:
                         f"{orchestrator_handoff}\n"
                         "Use this context as guidance and verify findings from live page evidence."
                     )
+                scope_id = derive_browser_scope_id("embedded", url)
                 async with agent_tools(
-                    "embedded", self.settings, observer=observer, target_url=url
+                    "embedded", self.settings, observer=observer, target_url=url, browser_scope_id=scope_id
                 ) as tools:
                     result = await run_agent_loop(
                         settings=self.settings,

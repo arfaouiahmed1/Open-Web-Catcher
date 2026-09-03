@@ -7,7 +7,7 @@ import pytest
 from langchain_core.messages import AIMessage
 
 import src.api.app as api_app
-from src.agents.base import run_agent_loop
+from src.agents.runtime import run_agent_loop
 from src.agents.embedded_page import EmbeddedPageAgent
 from src.agents.errors import RunCancelledError
 from src.agents.hosting_page import HostingPageAgent

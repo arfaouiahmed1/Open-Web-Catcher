@@ -96,6 +96,7 @@ const SETTINGS_TABS: NavChild[] = [
   { href: "/settings?tab=browser", label: "Browser" },
   { href: "/settings?tab=display", label: "Display" },
   { href: "/settings?tab=api-keys", label: "API Keys" },
+  { href: "/settings?tab=account", label: "Account" },
   { href: "/settings?tab=notifications", label: "Notifications" },
   { href: "/settings?tab=mcp-tools", label: "MCP Tools" },
 ];

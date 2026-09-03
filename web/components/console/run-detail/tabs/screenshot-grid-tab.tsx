@@ -1,7 +1,10 @@
 "use client";
 
 import React, { useMemo } from "react";
+import { Image as ImageIcon, Camera } from "lucide-react";
 import { ScreenshotCard } from "@/components/library/ScreenshotCard";
+import { SectionPanel } from "@/components/console/common/section-panel";
+import { Badge } from "@/components/ui/badge";
 import { collectScreenshotUrls } from "@/lib/run-trace";
 
 export interface ScreenshotGridTabProps {
@@ -57,32 +60,33 @@ export function ScreenshotGridTab({ events, screenshots: propShots, title = "Scr
   const hasShots = all.length > 0;
 
   return (
-    <div className="overflow-hidden rounded-xl border bg-card shadow-card" data-testid="screenshot-grid-tab">
-      <div className="border-b px-4 py-3" style={{ borderColor: "var(--line)" }}>
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Annotated captures per tool_call_started — blobref aware (resolves via /blobs/{`{key}`}). Shown inline in Event Feed as well.
-        </p>
-        <div className="text-[11px] text-muted-foreground" data-role="shot-count">
-          {hasShots ? `${all.length} evidence frame${all.length === 1 ? "" : "s"} — live via SSE` : "no screenshots yet"}
+    <SectionPanel
+      title={title}
+      description="Annotated captures per tool_call_started — blobref aware (resolves via /blobs/{key}). Shown inline in Event Feed as well."
+      icon={<ImageIcon className="h-3.5 w-3.5" />}
+      actions={
+        <Badge tone={hasShots ? "success" : "muted"} className="text-[10px] gap-1">
+          <Camera className="h-3 w-3" />
+          <span data-role="shot-count">{hasShots ? `${all.length} evidence frame${all.length === 1 ? "" : "s"} — live` : "no screenshots yet"}</span>
+        </Badge>
+      }
+      className="animate-fade-up"
+      data-testid="screenshot-grid-tab"
+    >
+      {!hasShots ? (
+        <ScreenshotCard alt="" src={null} emptyLabel="No evidence screenshots captured yet." />
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-role="shot-grid">
+          {all.map((src, idx) => (
+            <ScreenshotCard
+              key={`${src}-${idx}`}
+              src={src}
+              alt={`evidence ${idx + 1}`}
+              caption={`frame ${idx + 1} · ${src.startsWith("blobref:") ? "blobref" : "url"}`}
+            />
+          ))}
         </div>
-      </div>
-      <div className="p-3">
-        {!hasShots ? (
-          <ScreenshotCard alt="" src={null} emptyLabel="No evidence screenshots captured yet." />
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-role="shot-grid">
-            {all.map((src, idx) => (
-              <ScreenshotCard
-                key={`${src}-${idx}`}
-                src={src}
-                alt={`evidence ${idx + 1}`}
-                caption={`frame ${idx + 1} · ${src.startsWith("blobref:") ? "blobref" : "url"}`}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+      )}
+    </SectionPanel>
   );
 }

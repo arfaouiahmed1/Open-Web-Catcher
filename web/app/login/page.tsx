@@ -1,8 +1,15 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 import { apiUrl } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { AuthLayout } from "@/components/auth/auth-layout";
 
 const TOKEN_KEY = "owc_token";
 
@@ -11,106 +18,107 @@ function LoginForm(): React.JSX.Element {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
+  const [show, setShow] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [submitting, setSubmitting] = useState<boolean>(false);
 
-  async function onSubmit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>): Promise<void> {
+    e.preventDefault();
     setError("");
     setSubmitting(true);
     try {
-      const response = await fetch(apiUrl("/api/auth/login"), {
+      const res = await fetch(apiUrl("/api/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email: email.trim(), password }),
       });
-      if (!response.ok) {
-        setError(
-          response.status === 401
-            ? "Invalid email or password."
-            : `Login failed (${response.status}).`
-        );
+      if (!res.ok) {
+        setError(res.status === 401 ? "Invalid email or password." : `Login failed (${res.status}).`);
         return;
       }
-      const data: { access_token: string } = await response.json() as { access_token: string };
+      const data: { access_token: string } = (await res.json()) as { access_token: string };
       localStorage.setItem(TOKEN_KEY, data.access_token);
       const next = searchParams.get("next");
       router.push(next && next.startsWith("/") ? next : "/");
     } catch {
-      setError("Could not reach the API.");
+      setError("Could not reach the API. Is the backend running on :8000?");
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <main
-      className="flex min-h-screen items-center justify-center px-4"
-      style={{ background: "var(--bg, #0b0e14)" }}
-    >
-      <form
-        onSubmit={onSubmit}
-        className="w-full max-w-sm rounded-2xl border p-8 shadow-xl"
-        style={{
-          background: "var(--panel, #12161f)",
-          borderColor: "var(--line, #232a38)",
-          color: "var(--ink, #e6e9f0)"
-        }}
-      >
-        <h1 className="text-lg font-semibold">Open Web Catcher</h1>
-        <p className="mt-1 text-xs" style={{ color: "var(--mute, #7a8399)" }}>
-          Sign in to the operator console.
-        </p>
-
-        <label className="mt-6 block text-xs font-medium" htmlFor="email">
-          Email
-        </label>
-        <input
-          id="email"
-          type="email"
-          required
-          autoComplete="username"
-          value={email}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
-          className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-500/40"
-          style={{
-            background: "var(--card, #0f131c)",
-            borderColor: "var(--line, #232a38)"
-          }}
-        />
-
-        <label className="mt-4 block text-xs font-medium" htmlFor="password">
-          Password
-        </label>
-        <input
-          id="password"
-          type="password"
-          required
-          autoComplete="current-password"
-          value={password}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
-          className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-500/40"
-          style={{
-            background: "var(--card, #0f131c)",
-            borderColor: "var(--line, #232a38)"
-          }}
-        />
-
-        {error && (
-          <p className="mt-3 text-xs" style={{ color: "var(--rose, #f87171)" }} role="alert">
-            {error}
-          </p>
-        )}
-
-        <button
-          type="submit"
-          disabled={submitting}
-          className="mt-6 w-full rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-sky-500 disabled:opacity-50"
-        >
-          {submitting ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
-    </main>
+    <AuthLayout>
+      <Card className="w-full max-w-[420px] shadow-xl">
+        <CardHeader className="space-y-2 pb-4">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            <ShieldCheck className="size-3.5 text-primary" /> Secure operator access
+          </div>
+          <CardTitle className="text-xl">Welcome back</CardTitle>
+          <CardDescription>Sign in to the operator console. BYOK — your provider keys stay in Settings.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={onSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                required
+                autoComplete="username"
+                value={email}
+                onChange={(ev) => setEmail(ev.target.value)}
+                placeholder="you@example.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">Password</Label>
+                <button
+                  type="button"
+                  onClick={() => setShow((v) => !v)}
+                  className="text-[11px] text-muted-foreground hover:text-foreground"
+                  aria-label={show ? "Hide password" : "Show password"}
+                >
+                  {show ? <EyeOff className="inline size-3" /> : <Eye className="inline size-3" />} {show ? "Hide" : "Show"}
+                </button>
+              </div>
+              <Input
+                id="password"
+                type={show ? "text" : "password"}
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(ev) => setPassword(ev.target.value)}
+                placeholder="••••••••"
+              />
+            </div>
+            {error ? (
+              <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
+                {error}
+              </p>
+            ) : null}
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? <Loader2 className="size-4 animate-spin" /> : null} {submitting ? "Signing in…" : "Sign in"}
+            </Button>
+            <p className="text-center text-xs text-muted-foreground">
+              No account yet?{" "}
+              <Link href="/signup" className="font-medium text-primary hover:underline">
+                Create account
+              </Link>
+              {" · "}
+              <Link href="/" className="hover:text-foreground">
+                Back to overview
+              </Link>
+            </p>
+          </form>
+        </CardContent>
+      </Card>
+      <p className="mt-4 max-w-[420px] text-center text-[11px] leading-relaxed text-muted-foreground">
+        First user? Use <span className="font-mono text-foreground">Create account</span> — it calls{" "}
+        <span className="font-mono">POST /api/auth/bootstrap-admin</span> atomically (single winner). No default credentials.
+      </p>
+    </AuthLayout>
   );
 }
 

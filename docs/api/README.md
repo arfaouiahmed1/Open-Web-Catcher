@@ -8,6 +8,7 @@ Read this section when you want the backend and frontend contracts. It explains 
 
 1. [FastAPI Contracts](./fastapi.md)
 2. [Operator Console API](./operator-console.md)
+3. [Provider directory contract](../operations/provider-directory.md)
 
 ## API Map
 

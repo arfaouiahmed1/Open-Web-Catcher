@@ -20,7 +20,169 @@ PROVIDER_METADATA: dict[str, dict[str, str]] = {
         "name": "Google Gemini",
         "key_env": "GOOGLE_API_KEY",
     },
+    "openai": {
+        "id": "openai",
+        "name": "OpenAI",
+        "key_env": "OPENAI_API_KEY",
+    },
+    "anthropic": {
+        "id": "anthropic",
+        "name": "Anthropic",
+        "key_env": "ANTHROPIC_API_KEY",
+    },
+    "openrouter": {
+        "id": "openrouter",
+        "name": "OpenRouter",
+        "key_env": "OPENROUTER_API_KEY",
+    },
+    "nvidia": {
+        "id": "nvidia",
+        "name": "NVIDIA NIM",
+        "key_env": "NVIDIA_API_KEY",
+    },
+    "mistral": {
+        "id": "mistral",
+        "name": "Mistral AI",
+        "key_env": "MISTRAL_API_KEY",
+    },
+    "cohere": {
+        "id": "cohere",
+        "name": "Cohere",
+        "key_env": "COHERE_API_KEY",
+    },
+    "groq": {
+        "id": "groq",
+        "name": "Groq",
+        "key_env": "GROQ_API_KEY",
+    },
+    "together": {
+        "id": "together",
+        "name": "Together AI",
+        "key_env": "TOGETHER_API_KEY",
+    },
+    "fireworks": {
+        "id": "fireworks",
+        "name": "Fireworks AI",
+        "key_env": "FIREWORKS_API_KEY",
+    },
+    "perplexity": {
+        "id": "perplexity",
+        "name": "Perplexity",
+        "key_env": "PERPLEXITY_API_KEY",
+    },
+    "deepseek": {
+        "id": "deepseek",
+        "name": "DeepSeek",
+        "key_env": "DEEPSEEK_API_KEY",
+    },
+    "xai": {
+        "id": "xai",
+        "name": "xAI",
+        "key_env": "XAI_API_KEY",
+    },
+    "upstage": {
+        "id": "upstage",
+        "name": "Upstage",
+        "key_env": "UPSTAGE_API_KEY",
+    },
+    "azure": {
+        "id": "azure",
+        "name": "Azure OpenAI",
+        "key_env": "AZURE_API_KEY",
+    },
+    "bedrock": {
+        "id": "bedrock",
+        "name": "AWS Bedrock",
+        "key_env": "BEDROCK_API_KEY",
+    },
 }
+
+# LiteLLM's provider registry is intentionally broader than the curated direct
+# adapters above. These IDs use the generic OpenAI-compatible model catalog
+# path unless a provider-specific adapter exists, so adding a LiteLLM provider
+# does not require another hard-coded UI/API branch.
+LITELLM_PROVIDER_IDS: tuple[str, ...] = (
+    "chatgpt", "openai_like", "xai", "zai", "bytez", "replicate", "huggingface", "portkey", "cohere_chat",
+    "together_ai", "datarobot", "vertex_ai", "vertex_ai_beta", "ai21", "baseten",
+    "azure_ai", "sagemaker", "sagemaker_chat", "sagemaker_nova", "vllm", "nlp_cloud",
+    "petals", "oobabooga", "ollama", "deepinfra", "gigachat", "nvidia_nim",
+    "cerebras", "volcengine", "codestral", "dashscope", "modelscope", "moonshot", "jina_ai",
+    "publicai", "morph", "lambda_ai", "inception", "sambanova", "maritalk", "voyage",
+    "cloudflare", "xinference", "fireworks_ai", "friendliai", "featherless_ai",
+    "watsonx", "predibase", "databricks", "compactifai", "docker_model_runner",
+    "custom", "litellm_proxy", "hosted_vllm", "tencent", "llamafile", "lm_studio",
+    "galadriel", "nebius", "infinity", "novita", "topaz", "sap", "snowflake",
+    "meta_llama", "nscale", "helicone", "hyperbolic", "recraft", "fal_ai", "stability",
+    "aiml", "cometapi", "oci", "vercel_ai_gateway", "manus", "wandb", "ovhcloud",
+    "scaleway", "lemonade", "amazon_nova", "minimax", "synthetic", "apertis",
+    "nano-gpt", "poe", "chutes", "xiaomi_mimo", "tensormesh", "opencode", "opencode-go",
+    "litellm", "ollama", "lmstudio", "vllm-local", "custom-openai",
+)
+
+_PROVIDER_DISPLAY_NAMES: dict[str, str] = {
+    "chatgpt": "ChatGPT Subscription", "openai_like": "OpenAI-compatible", "zai": "Z.AI",
+    "vertex_ai": "Vertex AI", "vertex_ai_beta": "Vertex AI (Beta)", "together_ai": "Together AI",
+    "nvidia_nim": "NVIDIA NIM", "fireworks_ai": "Fireworks AI", "lm_studio": "LM Studio",
+    "lmstudio": "LM Studio", "litellm_proxy": "LiteLLM Proxy", "litellm": "LiteLLM Gateway",
+    "hosted_vllm": "Hosted vLLM", "vllm-local": "vLLM (local)", "custom-openai": "Custom OpenAI-compatible",
+    "opencode": "OpenCode Zen", "opencode-go": "OpenCode Go", "amazon_nova": "Amazon Nova",
+    "xiaomi_mimo": "Xiaomi MiMo", "nano-gpt": "NanoGPT", "vercel_ai_gateway": "Vercel AI Gateway",
+    "ovhcloud": "OVHcloud AI Endpoints", "nscale": "Nscale", "cloudflare": "Cloudflare AI",
+}
+
+_PROVIDER_BASE_URLS: dict[str, str] = {
+    "google": "https://generativelanguage.googleapis.com/v1beta",
+    "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "nvidia": "https://integrate.api.nvidia.com/v1",
+    "nvidia_nim": "https://integrate.api.nvidia.com/v1",
+    "azure": "",
+    "opencode": "https://opencode.ai/zen/v1",
+    "opencode-go": "https://opencode.ai/zen/go/v1",
+    "litellm": "http://localhost:4000/v1",
+    "litellm_proxy": "http://localhost:4000/v1",
+    "ollama": "http://localhost:11434/v1",
+    "lmstudio": "http://localhost:1234/v1",
+    "lm_studio": "http://localhost:1234/v1",
+    "vllm": "http://localhost:8001/v1",
+    "vllm-local": "http://localhost:8001/v1",
+    "llamafile": "http://localhost:8080/v1",
+    "portkey": "https://api.portkey.ai/v1",
+    "deepseek": "https://api.deepseek.com/v1",
+    "mistral": "https://api.mistral.ai/v1",
+    "groq": "https://api.groq.com/openai/v1",
+    "together": "https://api.together.xyz/v1",
+    "together_ai": "https://api.together.xyz/v1",
+    "fireworks": "https://api.fireworks.ai/inference/v1",
+    "fireworks_ai": "https://api.fireworks.ai/inference/v1",
+    "perplexity": "https://api.perplexity.ai",
+    "xai": "https://api.x.ai/v1",
+    "upstage": "https://api.upstage.ai/v1",
+    "cerebras": "https://api.cerebras.ai/v1",
+    "sambanova": "https://api.sambanova.ai/v1",
+    "nebius": "https://api.tokenfactory.nebius.com/v1",
+}
+
+for _provider_id in LITELLM_PROVIDER_IDS:
+    PROVIDER_METADATA.setdefault(
+        _provider_id,
+        {
+            "id": _provider_id,
+            "name": _PROVIDER_DISPLAY_NAMES.get(
+                _provider_id, _provider_id.replace("_", " ").replace("-", " ").title()
+            ),
+            "key_env": f"{_provider_id.replace('-', '_').upper()}_API_KEY",
+            "base_url": _PROVIDER_BASE_URLS.get(_provider_id, ""),
+        },
+    )
+
+for _provider_id, _base_url in _PROVIDER_BASE_URLS.items():
+    if _provider_id in PROVIDER_METADATA and _base_url:
+        PROVIDER_METADATA[_provider_id]["base_url"] = _base_url
+
+SUPPORTED_PROVIDERS: tuple[str, ...] = tuple(PROVIDER_METADATA)
+
 
 
 FALLBACK_MODELS: dict[str, list[dict[str, Any]]] = {
@@ -31,8 +193,126 @@ FALLBACK_MODELS: dict[str, list[dict[str, Any]]] = {
         {"id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash-Lite", "description": "Lower-cost Gemini 3.1 option.", "context_window": 1_048_576},
         {"id": "gemini-2.0-flash", "label": "Gemini 2.0 Flash", "description": "Fast Gemini model.", "context_window": 1_048_576},
     ],
+    "openai": [
+        {"id": "gpt-5", "label": "GPT-5", "description": "Most capable OpenAI model.", "context_window": 1_047_576},
+        {"id": "gpt-5-mini", "label": "GPT-5 Mini", "description": "Lower-cost GPT-5 option.", "context_window": 1_047_576},
+        {"id": "gpt-4.1", "label": "GPT-4.1", "description": "Balanced quality and speed.", "context_window": 1_047_576},
+        {"id": "gpt-4.1-mini", "label": "GPT-4.1 Mini", "description": "Lower-cost GPT-4.1 option.", "context_window": 1_047_576},
+        {"id": "gpt-4o-mini", "label": "GPT-4o Mini", "description": "Fast, economical option.", "context_window": 128_000},
+    ],
+    "anthropic": [
+        {"id": "claude-opus-4", "label": "Claude Opus 4", "description": "Most capable Claude model.", "context_window": 200_000},
+        {"id": "claude-sonnet-4", "label": "Claude Sonnet 4", "description": "Balanced quality and speed.", "context_window": 200_000},
+        {"id": "claude-3-5-haiku-latest", "label": "Claude 3.5 Haiku", "description": "Fast, economical option.", "context_window": 200_000},
+    ],
+    "openrouter": [
+        {"id": "openai/gpt-4o-mini", "label": "GPT-4o Mini (OpenRouter)", "description": "Economical OpenRouter pick.", "context_window": 128_000},
+        {"id": "anthropic/claude-sonnet-4", "label": "Claude Sonnet 4 (OpenRouter)", "description": "Balanced OpenRouter pick.", "context_window": 200_000},
+        {"id": "google/gemini-2.5-flash", "label": "Gemini 2.5 Flash (OpenRouter)", "description": "Fast OpenRouter pick.", "context_window": 1_048_576},
+    ],
+    "nvidia": [
+        {"id": "meta/llama-3.3-70b-instruct", "label": "Llama 3.3 70B Instruct", "description": "General-purpose NIM model.", "context_window": 128_000},
+        {"id": "nvidia/llama-3.1-nemotron-70b-instruct", "label": "Llama 3.1 Nemotron 70B", "description": "NVIDIA-tuned instruct model.", "context_window": 128_000},
+    ],
+    "mistral": [
+        {"id": "mistral-large-latest", "label": "Mistral Large", "description": "Flagship Mistral reasoning.", "context_window": 128_000},
+        {"id": "mistral-small-latest", "label": "Mistral Small", "description": "Fast, cost-effective.", "context_window": 128_000},
+        {"id": "mistral-nemo", "label": "Mistral Nemo", "description": "Small, efficient.", "context_window": 128_000},
+        {"id": "codestral-latest", "label": "Codestral", "description": "Code generation.", "context_window": 256_000},
+    ],
+    "cohere": [
+        {"id": "command-r-plus", "label": "Command R+", "description": "Most capable Cohere.", "context_window": 128_000},
+        {"id": "command-r", "label": "Command R", "description": "Balanced.", "context_window": 128_000},
+        {"id": "command-r7b-12-2024", "label": "Command R7B", "description": "Small, fast.", "context_window": 128_000},
+    ],
+    "groq": [
+        {"id": "llama-3.3-70b-versatile", "label": "Llama 3.3 70B Versatile", "description": "Groq ultra-fast 70B.", "context_window": 128_000},
+        {"id": "llama-3.1-8b-instant", "label": "Llama 3.1 8B Instant", "description": "Fast 8B via LPU.", "context_window": 128_000},
+        {"id": "mixtral-8x7b-32768", "label": "Mixtral 8x7B", "description": "Mixture-of-experts.", "context_window": 32_768},
+    ],
+    "together": [
+        {"id": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", "label": "Llama 3.1 70B Turbo", "description": "Together fast 70B.", "context_window": 128_000},
+        {"id": "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo", "label": "Llama 3.1 8B Turbo", "description": "Fast 8B.", "context_window": 128_000},
+        {"id": "mistralai/Mixtral-8x7B-Instruct-v0.1", "label": "Mixtral 8x7B", "description": "Open MoE.", "context_window": 32_768},
+    ],
+    "fireworks": [
+        {"id": "accounts/fireworks/models/llama-v3p3-70b-instruct", "label": "Llama 3.3 70B", "description": "Fireworks hosted.", "context_window": 128_000},
+        {"id": "accounts/fireworks/models/mixtral-8x7b-instruct", "label": "Mixtral 8x7B", "description": "Fireworks MoE.", "context_window": 32_768},
+    ],
+    "perplexity": [
+        {"id": "sonar-pro", "label": "Sonar Pro", "description": "Search-augmented large.", "context_window": 200_000},
+        {"id": "sonar", "label": "Sonar", "description": "Fast search-augmented.", "context_window": 128_000},
+        {"id": "sonar-reasoning", "label": "Sonar Reasoning", "description": "Reasoning + search.", "context_window": 128_000},
+    ],
+    "deepseek": [
+        {"id": "deepseek-chat", "label": "DeepSeek Chat", "description": "General chat.", "context_window": 64_000},
+        {"id": "deepseek-reasoner", "label": "DeepSeek Reasoner", "description": "Reasoning model.", "context_window": 64_000},
+        {"id": "deepseek-coder", "label": "DeepSeek Coder", "description": "Code generation.", "context_window": 64_000},
+    ],
+    "xai": [
+        {"id": "grok-3", "label": "Grok 3", "description": "Flagship Grok.", "context_window": 131_072},
+        {"id": "grok-3-mini", "label": "Grok 3 Mini", "description": "Fast Grok.", "context_window": 131_072},
+        {"id": "grok-2-vision-1212", "label": "Grok 2 Vision", "description": "Vision-capable.", "context_window": 32_768},
+    ],
+    "upstage": [
+        {"id": "solar-pro", "label": "Solar Pro", "description": "Flagship Solar.", "context_window": 32_768},
+        {"id": "solar-mini", "label": "Solar Mini", "description": "Efficient Solar.", "context_window": 32_768},
+    ],
+    "azure": [
+        {"id": "gpt-4o", "label": "GPT-4o (Azure)", "description": "OpenAI via Azure.", "context_window": 128_000},
+        {"id": "gpt-4o-mini", "label": "GPT-4o Mini (Azure)", "description": "Fast Azure OpenAI.", "context_window": 128_000},
+        {"id": "gpt-35-turbo", "label": "GPT-3.5 Turbo (Azure)", "description": "Legacy Azure.", "context_window": 16_385},
+    ],
+    "bedrock": [
+        {"id": "anthropic.claude-3-5-sonnet-20241022-v2:0", "label": "Claude 3.5 Sonnet (Bedrock)", "description": "Via AWS Bedrock.", "context_window": 200_000},
+        {"id": "meta.llama3-70b-instruct-v1:0", "label": "Llama 3 70B (Bedrock)", "description": "Via Bedrock.", "context_window": 8_192},
+    ],
 }
 
+FALLBACK_MODELS.update(
+    {
+        "opencode": [
+            {"id": "gpt-5.6-luna", "label": "GPT 5.6 Luna", "description": "OpenCode Zen model.", "context_window": 200_000},
+            {"id": "gpt-5.6-sol", "label": "GPT 5.6 Sol", "description": "OpenCode Zen model.", "context_window": 200_000},
+            {"id": "gpt-5.5", "label": "GPT 5.5", "description": "OpenCode Zen model.", "context_window": 200_000},
+            {"id": "claude-opus-4-6", "label": "Claude Opus 4.6", "description": "OpenCode Zen model.", "context_window": 200_000},
+            {"id": "kimi-k2.5", "label": "Kimi K2.5", "description": "OpenCode Zen model.", "context_window": 128_000},
+        ],
+        "opencode-go": [
+            {"id": "glm-5.3-flash", "label": "GLM 5.3 Flash", "description": "OpenCode Go model.", "context_window": 128_000},
+            {"id": "glm-5.3", "label": "GLM 5.3", "description": "OpenCode Go model.", "context_window": 128_000},
+            {"id": "kimi-k3", "label": "Kimi K3", "description": "OpenCode Go model.", "context_window": 128_000},
+            {"id": "longcat-2.0", "label": "LongCat 2.0", "description": "OpenCode Go model.", "context_window": 128_000},
+        ],
+        "litellm": [
+            {"id": "gpt-4o", "label": "GPT-4o", "description": "Model exposed by your LiteLLM gateway.", "context_window": 128_000},
+            {"id": "claude-sonnet-4", "label": "Claude Sonnet 4", "description": "Model exposed by your LiteLLM gateway.", "context_window": 200_000},
+            {"id": "deepseek-chat", "label": "DeepSeek Chat", "description": "Model exposed by your LiteLLM gateway.", "context_window": 64_000},
+        ],
+        "litellm_proxy": [
+            {"id": "gpt-4o", "label": "GPT-4o", "description": "Model exposed by your LiteLLM proxy.", "context_window": 128_000},
+        ],
+        "ollama": [
+            {"id": "llama3.2", "label": "Llama 3.2", "description": "Local Ollama model.", "context_window": 128_000},
+            {"id": "qwen2.5-coder", "label": "Qwen 2.5 Coder", "description": "Local Ollama model.", "context_window": 32_768},
+        ],
+        "lmstudio": [
+            {"id": "local-model", "label": "Local model", "description": "Model served by LM Studio.", "context_window": 32_768},
+        ],
+        "lm_studio": [
+            {"id": "local-model", "label": "Local model", "description": "Model served by LM Studio.", "context_window": 32_768},
+        ],
+        "vllm": [
+            {"id": "local-model", "label": "Local model", "description": "Model served by vLLM.", "context_window": 32_768},
+        ],
+        "vllm-local": [
+            {"id": "local-model", "label": "Local model", "description": "Model served by vLLM.", "context_window": 32_768},
+        ],
+        "custom-openai": [
+            {"id": "your-model", "label": "Your model", "description": "Model from a custom OpenAI-compatible endpoint.", "context_window": 32_768},
+        ],
+    }
+)
 
 GOOGLE_MODEL_TUNING_KEYS = ("temperature", "top_p", "top_k", "max_output_tokens")
 
@@ -408,6 +688,61 @@ PROVIDER_TUNING_FIELDS: dict[str, list[dict[str, Any]]] = {
             "model_patterns": ["^z-ai/glm"],
         },
     ],
+    "mistral": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "cohere": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "p", "label": "P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "groq": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "together": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "fireworks": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "perplexity": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "deepseek": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "xai": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "upstage": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "azure": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
+    "bedrock": [
+        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
+        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
+        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+    ],
 }
 
 AGENT_MODEL_IDS = ("classification", "landing", "hosting", "embedded", "orchestrator")
@@ -533,7 +868,9 @@ def normalize_agent_model_config(settings: Settings, value: Any) -> dict[str, di
         provider = str(raw_config.get("provider") or normalized[agent_id]["provider"] or base_provider).strip().lower()
         if provider in {"gemini", "google_genai"}:
             provider = "google"
-        if provider != "google":
+        # Any catalog-supported provider is allowed per agent; unknown values
+        # fall back to the base provider instead of being silently coerced.
+        if provider not in SUPPORTED_PROVIDERS:
             provider = base_provider
         model = str(raw_config.get("model") or normalized[agent_id]["model"] or "").strip()
         normalized[agent_id] = {
@@ -577,71 +914,132 @@ def find_provider_model_entry(
     return None
 
 
+def resolve_model_runtime_profile(
+    settings: Settings,
+    *,
+    model_id: str,
+    provider: str = "google",
+) -> dict[str, Any]:
+    """Resolve capability profile, tuning keys, and context window for any model/provider."""
+    normalized_provider = str(provider or "google").strip().lower() or "google"
+    if normalized_provider in {"gemini", "google_genai"}:
+        normalized_provider = "google"
+
+    normalized_model = (
+        normalize_gemini_model_id(model_id)
+        if normalized_provider == "google"
+        else str(model_id or "").strip()
+    )
+    model_entry = find_provider_model_entry(
+        settings,
+        provider=normalized_provider,
+        model_id=normalized_model,
+    )
+
+    context_window = resolve_model_context_window(
+        model_id=normalized_model,
+        provider=normalized_provider,
+    )
+
+    default_tuning = (
+        list(GOOGLE_MODEL_TUNING_KEYS)
+        if normalized_provider == "google"
+        else ["temperature", "top_p", "max_tokens"]
+    )
+
+    if model_entry:
+        capabilities = dict(model_entry.get("capabilities") or {})
+        compatibility = dict(model_entry.get("compatibility") or {})
+        supports_reasoning = bool(capabilities.get("supports_thinking_controls", False))
+        supports_cache = bool(capabilities.get("supports_explicit_cache", False))
+        allowed_tuning = list(
+            compatibility.get("allowed_tuning_keys")
+            or capabilities.get("allowed_tuning_keys")
+            or default_tuning
+        )
+        return {
+            "model_id": normalized_model,
+            "provider": normalized_provider,
+            "resolved_from_catalog": True,
+            "catalog_source": model_entry.get("catalog_source", "unknown"),
+            "defaults_source": model_entry.get("defaults_source", "unknown"),
+            "supports_tools": bool(capabilities.get("supports_tools", True)),
+            "supports_json_schema": bool(capabilities.get("supports_json_schema", False)),
+            "supports_parallel_tool_calls": bool(
+                capabilities.get("supports_parallel_tool_calls", False)
+            ),
+            "supports_vision": bool(capabilities.get("supports_vision", False)),
+            "supports_reasoning_controls": supports_reasoning,
+            "supports_prompt_cache": supports_cache,
+            "allowed_tuning_keys": allowed_tuning,
+            "context_window": context_window,
+            "supports_thinking_controls": supports_reasoning,
+            "supports_explicit_cache": supports_cache,
+            "capabilities": capabilities,
+            "compatibility": compatibility,
+            "entry": model_entry,
+        }
+
+    # Heuristic fallback for uncataloged models
+    supports_reasoning, thinking_prov = (
+        _thinking_support_from_model_name(normalized_model)
+        if normalized_provider == "google"
+        else ("r1" in normalized_model.lower(), "Heuristic")
+    )
+    supports_vision = any(
+        t in normalized_model.lower()
+        for t in ("vision", "4o", "claude-3", "gemini-1.5", "gemini-2")
+    )
+    is_4o = "gpt-4o" in normalized_model.lower()
+    supports_json = normalized_provider in {"openai", "google"} or is_4o
+    supports_parallel = normalized_provider in {"openai", "anthropic"}
+    supports_cache = normalized_provider in {"anthropic", "google"}
+
+    return {
+        "model_id": normalized_model,
+        "provider": normalized_provider,
+        "resolved_from_catalog": False,
+        "catalog_source": "unverified_manual",
+        "defaults_source": "unverified_manual",
+        "supports_tools": True,
+        "supports_json_schema": supports_json,
+        "supports_parallel_tool_calls": supports_parallel,
+        "supports_vision": supports_vision,
+        "supports_reasoning_controls": supports_reasoning,
+        "supports_prompt_cache": supports_cache,
+        "allowed_tuning_keys": default_tuning,
+        "context_window": context_window,
+        "supports_thinking_controls": supports_reasoning,
+        "supports_explicit_cache": False,
+        "capabilities": {
+            "supports_tools": True,
+            "supports_vision": supports_vision,
+            "supports_thinking_controls": supports_reasoning,
+            "supports_explicit_cache": False,
+            "allowed_tuning_keys": default_tuning,
+        },
+        "compatibility": {
+            "thinking_controls": "supported" if supports_reasoning else "unsupported",
+            "explicit_cache": "unsupported",
+            "allowed_tuning_keys": default_tuning,
+        },
+        "capability_provenance": {
+            "supports_thinking_controls": thinking_prov,
+            "supports_explicit_cache": "Heuristic",
+            "allowed_tuning_keys": "Heuristic",
+        },
+        "entry": None,
+    }
+
+
 def resolve_google_model_runtime_profile(
     settings: Settings,
     *,
     model_id: str,
     provider: str = "google",
 ) -> dict[str, Any]:
-    normalized_model = normalize_gemini_model_id(model_id)
-    model_entry = find_provider_model_entry(
-        settings,
-        provider=provider,
-        model_id=normalized_model,
-    )
-    if model_entry:
-        capabilities = dict(model_entry.get("capabilities") or {})
-        compatibility = dict(model_entry.get("compatibility") or {})
-        return {
-            "model_id": normalized_model,
-            "resolved_from_catalog": True,
-            "catalog_source": model_entry.get("catalog_source", "unknown"),
-            "defaults_source": model_entry.get("defaults_source", "unknown"),
-            "capabilities": capabilities,
-            "compatibility": compatibility,
-            "allowed_tuning_keys": list(
-                compatibility.get("allowed_tuning_keys")
-                or capabilities.get("allowed_tuning_keys")
-                or GOOGLE_MODEL_TUNING_KEYS
-            ),
-            "supports_thinking_controls": bool(
-                capabilities.get("supports_thinking_controls", False)
-            ),
-            "supports_explicit_cache": bool(
-                capabilities.get("supports_explicit_cache", False)
-            ),
-            "entry": model_entry,
-        }
-
-    supports_thinking_controls, thinking_provenance = _thinking_support_from_model_name(
-        normalized_model
-    )
-    return {
-        "model_id": normalized_model,
-        "resolved_from_catalog": False,
-        "catalog_source": "unverified_manual",
-        "defaults_source": "unverified_manual",
-        "capabilities": {
-            "supports_thinking_controls": supports_thinking_controls,
-            "supports_explicit_cache": False,
-            "allowed_tuning_keys": list(GOOGLE_MODEL_TUNING_KEYS),
-        },
-        "compatibility": {
-            "thinking_controls": "supported" if supports_thinking_controls else "unsupported",
-            "explicit_cache": "unsupported",
-            "allowed_tuning_keys": list(GOOGLE_MODEL_TUNING_KEYS),
-        },
-        "capability_provenance": {
-            "supports_thinking_controls": thinking_provenance,
-            "supports_explicit_cache": "Heuristic",
-            "allowed_tuning_keys": "Heuristic",
-        },
-        "allowed_tuning_keys": list(GOOGLE_MODEL_TUNING_KEYS),
-        "supports_thinking_controls": supports_thinking_controls,
-        "supports_explicit_cache": False,
-        "entry": None,
-    }
-
+    """Backward-compatible wrapper for Google Gemini profiles."""
+    return resolve_model_runtime_profile(settings, model_id=model_id, provider=provider)
 
 def collect_model_config_warnings(settings: Settings) -> list[dict[str, Any]]:
     warnings: list[dict[str, Any]] = []
@@ -752,7 +1150,21 @@ def get_provider_model_catalog(settings: Settings, provider: str, max_models: in
     api_key = _provider_api_key(settings, normalized_provider)
     saved_rows = _saved_catalog_rows(settings, normalized_provider, max_models)
     fallback_rows = _fallback_model_rows(normalized_provider, max_models)
-    if normalized_provider != "openrouter" and not api_key:
+    optional_key_provider = normalized_provider in {
+        "openrouter",
+        "ollama",
+        "lmstudio",
+        "lm_studio",
+        "vllm",
+        "vllm-local",
+        "llamafile",
+        "litellm",
+        "litellm_proxy",
+        "custom",
+        "custom-openai",
+        "openai_like",
+    }
+    if not optional_key_provider and not api_key:
         source = (
             "saved_catalog"
             if saved_rows
@@ -806,9 +1218,62 @@ def fetch_provider_models(settings: Settings, provider: str, max_models: int = 2
 
     if normalized_provider == "google":
         return _fetch_google_models(settings, limit)
-    raise ProviderModelCatalogError(
-        f"Unsupported provider '{provider}'. Only Google Gemini is supported."
+    if normalized_provider == "openai":
+        return _fetch_openai_models(settings, limit)
+    if normalized_provider == "anthropic":
+        return _fetch_anthropic_models(settings, limit)
+    if normalized_provider == "openrouter":
+        return _fetch_openrouter_models(settings, limit)
+    if normalized_provider in {"nvidia", "nvidia_nim"}:
+        return _fetch_nvidia_models(settings, limit, provider=normalized_provider)
+    return _fetch_openai_compatible_models(settings, normalized_provider, limit)
+
+
+def _fetch_openai_compatible_models(
+    settings: Settings, provider: str, max_models: int
+) -> list[dict[str, Any]]:
+    """Fetch ``GET /v1/models`` for LiteLLM/OpenAI-compatible providers."""
+    base_url = provider_base_url(settings, provider).rstrip("/")
+    if not base_url:
+        raise ProviderModelCatalogError(
+            f"{provider} has no model endpoint configured. Add a base URL in Provider Keys."
+        )
+    headers: dict[str, str] = {}
+    api_key = _provider_api_key(settings, provider)
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    payload = _request_json(
+        f"{base_url}/models",
+        headers=headers or None,
+        timeout_seconds=settings.provider_pricing_timeout_seconds,
+        provider=provider,
     )
+    raw_models = payload.get("data") or payload.get("models") or []
+    rows: list[dict[str, Any]] = []
+    for item in raw_models:
+        if isinstance(item, str):
+            model_id = item.strip()
+            item = {}
+        elif isinstance(item, dict):
+            model_id = str(item.get("id") or item.get("name") or "").strip()
+        else:
+            continue
+        if not model_id:
+            continue
+        rows.append(
+            {
+                "id": model_id,
+                "label": str(item.get("name") or item.get("display_name") or model_id).strip(),
+                "description": str(item.get("owned_by") or item.get("description") or "").strip(),
+                "created": item.get("created"),
+                "context_window": item.get("context_length")
+                or item.get("context_window")
+                or resolve_model_context_window(model_id, provider),
+                "pricing": item.get("pricing"),
+            }
+        )
+    rows.sort(key=lambda row: (-int(row.get("created") or 0), row["id"]))
+    return _dedupe_models(rows[:max_models])
 
 
 def _fetch_google_models(settings: Settings, max_models: int) -> list[dict[str, Any]]:
@@ -1078,9 +1543,11 @@ def _fetch_openrouter_models(settings: Settings, max_models: int) -> list[dict[s
     return _dedupe_models(rows[:max_models])
 
 
-def _fetch_nvidia_models(settings: Settings, max_models: int) -> list[dict[str, Any]]:
-    api_key = (settings.nvidia_api_key or "").strip()
-    base_url = (settings.nvidia_base_url or "https://integrate.api.nvidia.com/v1").rstrip("/")
+def _fetch_nvidia_models(
+    settings: Settings, max_models: int, *, provider: str = "nvidia"
+) -> list[dict[str, Any]]:
+    api_key = _provider_api_key(settings, provider)
+    base_url = provider_base_url(settings, provider).rstrip("/")
     headers: dict[str, str] = {}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -1138,11 +1605,83 @@ def _request_json(
     return payload
 
 
+def provider_base_url(settings: Settings, provider: str) -> str:
+    """Resolve an operator-configured or registry-default model endpoint."""
+    normalized_provider = str(provider or "").strip().lower()
+    custom_urls = getattr(settings, "provider_base_urls", {}) or {}
+    if isinstance(custom_urls, dict):
+        configured = custom_urls.get(normalized_provider)
+        if isinstance(configured, str) and configured.strip():
+            return configured.strip()
+    if normalized_provider == "azure" and getattr(settings, "azure_api_base", ""):
+        return str(settings.azure_api_base).strip()
+    if normalized_provider in {"nvidia", "nvidia_nim"} and getattr(settings, "nvidia_base_url", ""):
+        return str(settings.nvidia_base_url).strip()
+    return str(_PROVIDER_BASE_URLS.get(normalized_provider, "") or "").strip()
+
+
 def _provider_api_key(settings: Settings, provider: str) -> str:
     normalized_provider = (provider or "").strip().lower()
-    if normalized_provider == "google":
+    provider_keys = getattr(settings, "provider_api_keys", {}) or {}
+    if isinstance(provider_keys, dict):
+        configured = provider_keys.get(normalized_provider)
+        if isinstance(configured, str) and configured.strip():
+            return configured.strip()
+    if normalized_provider in {"google", "gemini", "google_genai"}:
         return str(settings.google_api_key or "").strip()
+    legacy_provider_aliases = {
+        "nvidia_nim": "nvidia",
+        "together_ai": "together",
+        "fireworks_ai": "fireworks",
+        "cohere_chat": "cohere",
+    }
+    legacy_provider = legacy_provider_aliases.get(normalized_provider, normalized_provider)
+    if legacy_provider != normalized_provider:
+        legacy_value = getattr(settings, f"{legacy_provider}_api_key", "")
+        if legacy_value:
+            return str(legacy_value).strip()
+    if normalized_provider == "openai":
+        return str(settings.openai_api_key or "").strip()
+    if normalized_provider == "anthropic":
+        return str(settings.anthropic_api_key or "").strip()
+    if normalized_provider == "openrouter":
+        return str(settings.openrouter_api_key or "").strip()
+    if normalized_provider == "nvidia":
+        return str(settings.nvidia_api_key or "").strip()
+    if normalized_provider == "mistral":
+        return str(getattr(settings, "mistral_api_key", "") or "").strip()
+    if normalized_provider == "cohere":
+        return str(getattr(settings, "cohere_api_key", "") or "").strip()
+    if normalized_provider == "groq":
+        return str(getattr(settings, "groq_api_key", "") or "").strip()
+    if normalized_provider == "together":
+        return str(getattr(settings, "together_api_key", "") or "").strip()
+    if normalized_provider == "fireworks":
+        return str(getattr(settings, "fireworks_api_key", "") or "").strip()
+    if normalized_provider == "perplexity":
+        return str(getattr(settings, "perplexity_api_key", "") or "").strip()
+    if normalized_provider == "deepseek":
+        return str(getattr(settings, "deepseek_api_key", "") or "").strip()
+    if normalized_provider == "xai":
+        return str(getattr(settings, "xai_api_key", "") or "").strip()
+    if normalized_provider == "upstage":
+        return str(getattr(settings, "upstage_api_key", "") or "").strip()
+    if normalized_provider == "azure":
+        return str(getattr(settings, "azure_api_key", "") or "").strip()
+    if normalized_provider == "bedrock":
+        return str(getattr(settings, "bedrock_api_key", "") or "").strip()
+    if normalized_provider in {"vertex", "google-vertex"}:
+        return str(getattr(settings, "google_vertex_api_key", "") or "").strip()
+    provider_keys = getattr(settings, "provider_api_keys", {}) or {}
+    if isinstance(provider_keys, dict):
+        configured = provider_keys.get(normalized_provider)
+        if isinstance(configured, str) and configured.strip():
+            return configured.strip()
     return ""
+
+
+# Public alias used by src/agents/base.py (runtime key resolution).
+provider_api_key = _provider_api_key
 
 # Hardcoded context window fallbacks for providers whose APIs don't expose it.
 # Values in tokens. Updated periodically; live catalog takes precedence when available.

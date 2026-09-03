@@ -18,6 +18,7 @@ import {
   Search,
   RefreshCw,
   Save,
+  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Wrench,
@@ -40,8 +41,9 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { apiFetch, apiUrl } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { BrowserTab } from "./tabs/browser-tab";
+import { AccountTab } from "./tabs/account-tab";
 import {
   BROWSER_RUNTIME_KEYS,
   buildServerConfigDraft,
@@ -49,15 +51,126 @@ import {
   snapshotServerConfig,
 } from "@/lib/settings-page";
 
-const PROVIDERS = [
-  {
-    id: "google",
-    name: "Google Gemini",
-    keyEnv: "GOOGLE_API_KEY",
-    color: "var(--sky)",
-    features: ["caching", "thinking", "grounding", "vision"],
-  },
+const CORE_PROVIDERS = [
+  { id: "google", name: "Google Gemini", keyEnv: "GOOGLE_API_KEY", color: "#4285F4", features: ["caching", "thinking", "vision"], category: "Frontier" },
+  { id: "openai", name: "OpenAI", keyEnv: "OPENAI_API_KEY", color: "#10a37f", features: ["reasoning", "vision", "tools"], category: "Frontier" },
+  { id: "anthropic", name: "Anthropic", keyEnv: "ANTHROPIC_API_KEY", color: "#d4a574", features: ["thinking", "vision", "tools"], category: "Frontier" },
+  { id: "xai", name: "xAI", keyEnv: "XAI_API_KEY", color: "#000000", features: ["grok", "reasoning"], category: "Frontier" },
+  { id: "deepseek", name: "DeepSeek", keyEnv: "DEEPSEEK_API_KEY", color: "#4d6bfe", features: ["reasoning", "coder"], category: "Frontier" },
+  { id: "upstage", name: "Upstage", keyEnv: "UPSTAGE_API_KEY", color: "#ff6b35", features: ["solar", "reasoning"], category: "Frontier" },
+  { id: "groq", name: "Groq", keyEnv: "GROQ_API_KEY", color: "#f55036", features: ["LPU", "ultra-fast"], category: "Speed" },
+  { id: "together", name: "Together AI", keyEnv: "TOGETHER_API_KEY", color: "#00b4d8", features: ["fast", "open"], category: "Speed" },
+  { id: "fireworks", name: "Fireworks AI", keyEnv: "FIREWORKS_API_KEY", color: "#ff3b30", features: ["fast", "inference"], category: "Speed" },
+  { id: "nvidia", name: "NVIDIA NIM", keyEnv: "NVIDIA_API_KEY", color: "#76b900", features: ["inference", "hosted"], category: "Speed" },
+  { id: "mistral", name: "Mistral AI", keyEnv: "MISTRAL_API_KEY", color: "#ff7000", features: ["open", "european"], category: "Open" },
+  { id: "cohere", name: "Cohere", keyEnv: "COHERE_API_KEY", color: "#39594e", features: ["command", "embed"], category: "Open" },
+  { id: "perplexity", name: "Perplexity", keyEnv: "PERPLEXITY_API_KEY", color: "#1ea2a6", features: ["sonar", "search"], category: "Open" },
+  { id: "openrouter", name: "OpenRouter", keyEnv: "OPENROUTER_API_KEY", color: "var(--signal)", features: ["aggregator", "routing"], category: "Gateway" },
+  { id: "azure", name: "Azure OpenAI", keyEnv: "AZURE_API_KEY", color: "#0078d4", features: ["enterprise", "azure"], category: "Gateway" },
+  { id: "bedrock", name: "AWS Bedrock", keyEnv: "BEDROCK_API_KEY", color: "#ff9900", features: ["aws", "hosted"], category: "Gateway" },
 ];
+
+const DIRECTORY_PROVIDERS = [
+  ["opencode", "OpenCode Zen", "OPENCODE_API_KEY", "Gateway", "curated models", "reasoning"],
+  ["opencode-go", "OpenCode Go", "OPENCODE_API_KEY", "Gateway", "coding models", "subscription"],
+  ["litellm", "LiteLLM Gateway", "LITELLM_API_KEY", "Gateway", "unified gateway", "routing"],
+  ["litellm_proxy", "LiteLLM Proxy", "LITELLM_API_KEY", "Gateway", "OpenAI-compatible", "routing"],
+  ["openai_like", "OpenAI-compatible", "OPENAI_API_KEY", "Gateway", "custom endpoint", "bring your URL"],
+  ["custom-openai", "Custom OpenAI-compatible", "CUSTOM_OPENAI_API_KEY", "Gateway", "custom endpoint", "bring your URL"],
+  ["chatgpt", "ChatGPT Subscription", "CHATGPT_API_KEY", "Frontier", "subscription", "OpenAI"],
+  ["zai", "Z.AI", "ZAI_API_KEY", "Frontier", "GLM", "reasoning"],
+  ["minimax", "MiniMax", "MINIMAX_API_KEY", "Frontier", "M-series", "reasoning"],
+  ["moonshot", "Moonshot AI", "MOONSHOT_API_KEY", "Frontier", "Kimi", "reasoning"],
+  ["amazon_nova", "Amazon Nova", "AMAZON_NOVA_API_KEY", "Cloud", "AWS", "multimodal"],
+  ["ai21", "AI21 Labs", "AI21_API_KEY", "Cloud", "Jamba", "enterprise"],
+  ["cerebras", "Cerebras", "CEREBRAS_API_KEY", "Speed", "wafer-scale", "ultra-fast"],
+  ["sambanova", "SambaNova", "SAMBANOVA_API_KEY", "Speed", "DataScale", "inference"],
+  ["nebius", "Nebius AI Studio", "NEBIUS_API_KEY", "Speed", "EU cloud", "inference"],
+  ["hyperbolic", "Hyperbolic", "HYPERBOLIC_API_KEY", "Speed", "open models", "inference"],
+  ["deepinfra", "DeepInfra", "DEEPINFRA_API_KEY", "Speed", "open models", "inference"],
+  ["replicate", "Replicate", "REPLICATE_API_TOKEN", "Open", "open models", "community"],
+  ["huggingface", "Hugging Face", "HF_TOKEN", "Open", "open models", "inference"],
+  ["featherless_ai", "Featherless AI", "FEATHERLESS_AI_API_KEY", "Open", "open models", "serverless"],
+  ["friendliai", "FriendliAI", "FRIENDLI_TOKEN", "Speed", "inference", "fast"],
+  ["baseten", "Baseten", "BASETEN_API_KEY", "Speed", "deployments", "inference"],
+  ["databricks", "Databricks", "DATABRICKS_API_KEY", "Enterprise", "foundation models", "workspace"],
+  ["snowflake", "Snowflake Cortex", "SNOWFLAKE_API_KEY", "Enterprise", "Cortex", "warehouse"],
+  ["watsonx", "IBM watsonx", "WATSONX_API_KEY", "Enterprise", "Granite", "enterprise"],
+  ["azure_ai", "Azure AI Foundry", "AZURE_AI_API_KEY", "Enterprise", "Azure", "enterprise"],
+  ["sagemaker", "AWS SageMaker", "SAGEMAKER_API_KEY", "Enterprise", "JumpStart", "AWS"],
+  ["cloudflare", "Cloudflare AI", "CLOUDFLARE_API_TOKEN", "Gateway", "Workers AI", "edge"],
+  ["vercel_ai_gateway", "Vercel AI Gateway", "VERCEL_AI_GATEWAY_API_KEY", "Gateway", "unified gateway", "routing"],
+  ["portkey", "Portkey", "PORTKEY_API_KEY", "Gateway", "unified gateway", "routing"],
+  ["helicone", "Helicone", "HELICONE_API_KEY", "Gateway", "observability", "routing"],
+  ["ollama", "Ollama", "OLLAMA_API_KEY", "Local", "local models", "private"],
+  ["lmstudio", "LM Studio", "LMSTUDIO_API_KEY", "Local", "local models", "desktop"],
+  ["lm_studio", "LM Studio (legacy ID)", "LMSTUDIO_API_KEY", "Local", "local models", "desktop"],
+  ["vllm", "vLLM", "VLLM_API_KEY", "Local", "self-hosted", "OpenAI API"],
+  ["vllm-local", "vLLM (local)", "VLLM_API_KEY", "Local", "self-hosted", "private"],
+  ["hosted_vllm", "Hosted vLLM", "VLLM_API_KEY", "Local", "self-hosted", "OpenAI API"],
+  ["llamafile", "Llamafile", "LLAMAFILE_API_KEY", "Local", "local models", "single file"],
+  ["oobabooga", "Text Generation WebUI", "OOBABOOGA_API_KEY", "Local", "local models", "self-hosted"],
+  ["xinference", "Xinference", "XINFERENCE_API_KEY", "Local", "local models", "self-hosted"],
+  ["docker_model_runner", "Docker Model Runner", "DOCKER_MODEL_RUNNER_API_KEY", "Local", "local models", "Docker"],
+  ["nscale", "Nscale", "NSCALE_API_KEY", "Cloud", "EU sovereign", "inference"],
+  ["ovhcloud", "OVHcloud AI Endpoints", "OVHCLOUD_API_KEY", "Cloud", "EU cloud", "sovereign"],
+  ["scaleway", "Scaleway", "SCALEWAY_API_KEY", "Cloud", "EU cloud", "inference"],
+  ["lambda_ai", "Lambda AI", "LAMBDA_API_KEY", "Cloud", "GPU cloud", "inference"],
+  ["volcengine", "Volcano Engine", "VOLCENGINE_API_KEY", "Cloud", "Doubao", "inference"],
+  ["dashscope", "Alibaba DashScope", "DASHSCOPE_API_KEY", "Cloud", "Qwen", "inference"],
+  ["publicai", "PublicAI", "PUBLICAI_API_KEY", "Open", "open models", "inference"],
+  ["together_ai", "Together AI (LiteLLM ID)", "TOGETHER_API_KEY", "Speed", "open models", "inference"],
+  ["fireworks_ai", "Fireworks AI (LiteLLM ID)", "FIREWORKS_API_KEY", "Speed", "open models", "inference"],
+  ["codestral", "Codestral", "CODESTRAL_API_KEY", "Open", "code models", "Mistral"],
+  ["voyage", "Voyage AI", "VOYAGE_API_KEY", "Open", "embeddings", "retrieval"],
+  ["jina_ai", "Jina AI", "JINA_API_KEY", "Open", "embeddings", "retrieval"],
+  ["cohere_chat", "Cohere Chat", "COHERE_API_KEY", "Open", "Command", "chat"],
+  ["meta_llama", "Meta Llama API", "META_API_KEY", "Open", "Llama", "open models"],
+  ["morph", "Morph", "MORPH_API_KEY", "Open", "code models", "fast"],
+  ["synthetic", "Synthetic", "SYNTHETIC_API_KEY", "Open", "open models", "inference"],
+  ["poe", "Poe", "POE_API_KEY", "Gateway", "multi-model", "aggregation"],
+  ["chutes", "Chutes", "CHUTES_API_KEY", "Open", "open models", "inference"],
+  ["galadriel", "Galadriel", "GALADRIEL_API_KEY", "Open", "open models", "inference"],
+  ["cometapi", "CometAPI", "COMETAPI_API_KEY", "Gateway", "multi-model", "aggregation"],
+  ["aiml", "AI/ML API", "AIML_API_KEY", "Gateway", "multi-model", "aggregation"],
+  ["oci", "Oracle OCI Generative AI", "OCI_API_KEY", "Enterprise", "OCI", "enterprise"],
+  ["manus", "Manus", "MANUS_API_KEY", "Gateway", "agent API", "agents"],
+  ["wandb", "W&B Inference", "WANDB_API_KEY", "Gateway", "inference", "observability"],
+  ["lemonade", "Lemonade", "LEMONADE_API_KEY", "Local", "AMD local", "OpenAI API"],
+  ["xiaomi_mimo", "Xiaomi MiMo", "XIAOMI_MIMO_API_KEY", "Open", "MiMo", "multimodal"],
+  ["tensormesh", "TensorMesh", "TENSORMESH_API_KEY", "Open", "inference", "open models"],
+  ["apertis", "Apertis", "APERTIS_API_KEY", "Open", "open models", "inference"],
+  ["bytez", "Bytez", "BYTEZ_API_KEY", "Open", "open models", "inference"],
+  ["compactifai", "CompactifAI", "COMPACTIFAI_API_KEY", "Open", "inference", "optimization"],
+  ["custom", "Custom Provider", "CUSTOM_API_KEY", "Gateway", "custom endpoint", "bring your URL"],
+  ["datarobot", "DataRobot", "DATAROBOT_API_KEY", "Enterprise", "deployment", "enterprise"],
+  ["fal_ai", "fal.ai", "FAL_AI_API_KEY", "Open", "media models", "inference"],
+  ["gigachat", "GigaChat", "GIGACHAT_API_KEY", "Cloud", "chat", "inference"],
+  ["inception", "Inception", "INCEPTION_API_KEY", "Open", "reasoning", "inference"],
+  ["infinity", "Infinity", "INFINITY_API_KEY", "Local", "embeddings", "self-hosted"],
+  ["maritalk", "Maritaca AI", "MARITALK_API_KEY", "Open", "chat", "inference"],
+  ["modelscope", "ModelScope", "MODELSCOPE_API_KEY", "Open", "open models", "inference"],
+  ["nano-gpt", "NanoGPT", "NANO_GPT_API_KEY", "Gateway", "multi-model", "aggregation"],
+  ["nlp_cloud", "NLP Cloud", "NLP_CLOUD_API_KEY", "Cloud", "NLP", "inference"],
+  ["novita", "Novita AI", "NOVITA_API_KEY", "Cloud", "open models", "inference"],
+  ["nvidia_nim", "NVIDIA NIM (LiteLLM ID)", "NVIDIA_API_KEY", "Enterprise", "NIM", "inference"],
+  ["petals", "Petals", "PETALS_API_KEY", "Open", "distributed", "open models"],
+  ["predibase", "Predibase", "PREDIBASE_API_KEY", "Enterprise", "fine-tuning", "inference"],
+  ["recraft", "Recraft", "RECRAFT_API_KEY", "Open", "image models", "generation"],
+  ["sagemaker_chat", "AWS SageMaker Chat", "SAGEMAKER_API_KEY", "Enterprise", "JumpStart", "AWS"],
+  ["sagemaker_nova", "AWS SageMaker Nova", "SAGEMAKER_API_KEY", "Enterprise", "Nova", "AWS"],
+  ["sap", "SAP AI Core", "SAP_API_KEY", "Enterprise", "enterprise", "inference"],
+  ["stability", "Stability AI", "STABILITY_API_KEY", "Open", "image models", "generation"],
+  ["tencent", "Tencent Hunyuan", "TENCENT_API_KEY", "Cloud", "Hunyuan", "inference"],
+  ["topaz", "Topaz", "TOPAZ_API_KEY", "Open", "inference", "open models"],
+  ["vertex_ai", "Vertex AI", "VERTEX_AI_API_KEY", "Cloud", "Gemini", "Google Cloud"],
+  ["vertex_ai_beta", "Vertex AI (Beta)", "VERTEX_AI_API_KEY", "Cloud", "Gemini", "Google Cloud"],
+].map(([id, name, keyEnv, category, featureA, featureB]) => ({
+  id, name, keyEnv, category, features: [featureA, featureB], color: "var(--sky)",
+}));
+
+const PROVIDERS = [...CORE_PROVIDERS, ...DIRECTORY_PROVIDERS];
+const EMPTY_PROVIDER_KEYS = Object.fromEntries(PROVIDERS.map((provider) => [provider.id, null])) as Record<string, string | null>;
 
 const AGENT_SLOTS = [
   { id: "classification", label: "Classification", note: "Page typing" },
@@ -227,12 +340,13 @@ const BROWSER_OPTIONS = [
 ];
 
 const SETTINGS_TABS = [
-  { id: "models", label: "Google Models" },
+  { id: "models", label: "Models" },
+  { id: "api-keys", label: "Provider Keys" },
   { id: "browser", label: "Browser" },
-  { id: "display", label: "Display" },
-  { id: "api-keys", label: "API Keys" },
-  { id: "notifications", label: "Notifications" },
   { id: "mcp-tools", label: "MCP Tools" },
+  { id: "display", label: "Display" },
+  { id: "notifications", label: "Notifications" },
+  { id: "account", label: "Account" },
 ];
 
 const SETTINGS_TAB_ICONS = {
@@ -240,15 +354,16 @@ const SETTINGS_TAB_ICONS = {
   browser: Globe,
   display: Monitor,
   "api-keys": Key,
+  account: ShieldCheck,
   notifications: Bell,
   "mcp-tools": Layers,
 };
 
 const TAB_DETAILS = {
   models: {
-    title: "Google Models",
+    title: "Models",
     description:
-      "Assign live Google models, inspect direct-from-Google defaults, and verify what the runtime actually applies.",
+      "Assign models per agent, inspect live provider defaults, and verify what the runtime actually applies. Keys are BYOK — set them in Provider Keys.",
     storage: "server",
     saveLabel: "Save model settings",
   },
@@ -266,10 +381,18 @@ const TAB_DETAILS = {
     storage: "browser",
   },
   "api-keys": {
-    title: "Gemini API Key",
+    title: "Provider Keys",
     description:
-      "See whether the Gemini API key is configured and ready for live model calls.",
-    storage: "readonly",
+      "BYOK — paste provider keys here. They are saved to runtime config (data/settings.runtime.yaml), masked in the UI, and never baked into images. Leave blank to keep existing, or clear to remove.",
+    storage: "server",
+    saveLabel: "Save provider keys",
+  },
+  account: {
+    title: "Account",
+    description:
+      "Manage password, 2FA (TOTP), and passkeys. BYOK provider keys live in API Keys — this is console login.",
+    storage: "server",
+    saveLabel: "Save account settings",
   },
   notifications: {
     title: "Notifications",
@@ -450,9 +573,11 @@ function normalizeAgentModelConfig(
       // @ts-expect-error -- strict migration
       row?.provider || defaults[id].provider || fallbackProvider,
     ).toLowerCase();
+    const allowedProviders = new Set(PROVIDERS.map((providerOption: any) => providerOption.id));
+    const finalProvider = allowedProviders.has(normalizedProvider) ? normalizedProvider : fallbackProvider;
     // @ts-expect-error -- strict migration
     next[id] = {
-      provider: normalizedProvider === "google" ? "google" : fallbackProvider,
+      provider: finalProvider,
       // @ts-expect-error -- strict migration
       model: String(row?.model || defaults[id].model || ""),
     };
@@ -614,7 +739,7 @@ function sourceTone(source: any) {
 
 function sourceLabel(source: any) {
   if (source === "provider_api") return "Live provider catalog";
-  if (source === "saved_catalog") return "Saved Google snapshot";
+  if (source === "saved_catalog") return "Saved provider snapshot";
   if (source === "fallback_catalog") return "Fallback catalog";
   if (source === "unverified_manual") return "Manual model ID";
   if (source === "unavailable") return "Catalog unavailable";
@@ -835,15 +960,16 @@ function SettingsTabHero({
   );
 }
 
-function SettingsTabBar({ active, onChange, dirtyTabs = {}, mobile = false }: any) {
+function SettingsTabBar({ active, onChange, dirtyTabs = {}, mobile = false, filterIds = null }: any) {
+  const visibleTabs = filterIds ? SETTINGS_TABS.filter((tab: any) => (filterIds as string[]).includes(tab.id)) : SETTINGS_TABS;
   return (
-    <nav className={cn("gap-1.5", mobile ? "flex overflow-x-auto pb-1" : "flex flex-col")}>
-      {mobile ? null : (
-        <div className="mb-2 border-b px-2 pb-3 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground/80">
+    <nav className={cn("gap-1", mobile ? "flex overflow-x-auto pb-1" : "flex flex-col")}>
+      {mobile || filterIds ? null : (
+        <div className="mb-2 border-b border-border/60 px-2 pb-3 text-[11px] font-[600] uppercase tracking-[0.08em] text-muted-foreground/70">
           Configuration
         </div>
       )}
-      {SETTINGS_TABS.map((tab) => {
+      {visibleTabs.map((tab) => {
         const isActive = active === tab.id;
         const isDirty = dirtyTabs[tab.id];
         // @ts-expect-error -- strict migration
@@ -855,27 +981,26 @@ function SettingsTabBar({ active, onChange, dirtyTabs = {}, mobile = false }: an
             key={tab.id}
             type="button"
             onClick={() => onChange(tab.id)}
-            variant={isActive ? "secondary" : "ghost"}
+            variant="ghost"
             className={cn(
-              mobile
-                ? "h-auto shrink-0 rounded-[14px] border px-3.5 py-2.5 text-left"
-                : "h-auto w-full justify-between rounded-[14px] px-3 py-3 text-left",
+              "h-auto w-full justify-between rounded-[6px] border text-left transition-colors",
+              mobile ? "shrink-0 px-3 py-2.5" : "px-2.5 py-2",
               isActive
-                ? "border-border bg-background text-foreground shadow-sm"
-                : "border-transparent text-muted-foreground hover:border-border/70 hover:bg-muted/30",
+                ? "border-border bg-muted/60 text-foreground"
+                : "border-transparent text-muted-foreground hover:bg-muted/40 hover:text-foreground/80",
             )}
           >
             <span className={cn("flex gap-2.5", mobile ? "items-center" : "items-start")}>
               {Icon ? <Icon className="mt-0.5 size-[14px] shrink-0" /> : null}
               <span className="min-w-0">
-                <span className="block text-[13px] font-medium leading-none">{tab.label}</span>
+                <span className="block text-[13px] font-[510] tracking-[-0.12px] leading-none">{tab.label}</span>
                 {mobile ? null : (
-                  <span className="mt-1 block text-[11px] font-normal leading-snug text-muted-foreground/80">
+                  <span className="mt-1 block text-[11px] font-[400] leading-snug tracking-[-0.12px] text-muted-foreground/70">
                     {meta?.storage === "server"
-                      ? "Saved to runtime config"
+                      ? "Runtime config"
                       : meta?.storage === "browser"
-                        ? "Local browser preference"
-                        : "Status only"}
+                        ? "Browser only"
+                        : "Status"}
                   </span>
                 )}
               </span>
@@ -1066,7 +1191,7 @@ function MiniSegment({  options, active, onChange  }: any) {
               "h-auto flex-1 rounded-[12px] px-3 py-2 text-[12.5px] font-medium sm:flex-none",
               isActive
                 ? "border border-border bg-background text-foreground shadow-sm"
-                : "text-muted-foreground",
+                : "text-muted-foreground/75",
             )}
           >
             {option.label}
@@ -1251,8 +1376,8 @@ function FieldGroup({  title, description, children, accent = null  }: any) {
         style={{
           borderColor: "var(--line)",
           background: accent
-            ? `linear-gradient(135deg, color-mix(in oklch, ${accent} 8%, transparent), rgba(255,255,255,0.015))`
-            : "rgba(255,255,255,0.018)",
+            ? `linear-gradient(135deg, color-mix(in oklch, ${accent} 8%, transparent), color-mix(in oklch, var(--background) 98%, transparent))`
+            : "var(--panel-2)",
           boxShadow: accent ? `inset 3px 0 0 ${accent}` : "none",
         }}
       >
@@ -1460,6 +1585,15 @@ export function SettingsPage() {
     ? requestedTab
     : "models";
 
+  useEffect(() => {
+    if (requestedTab === activeTab) return;
+    const params = new URLSearchParams(searchParams.toString());
+    if (activeTab === "models") params.delete("tab");
+    else params.set("tab", activeTab);
+    const query = params.toString();
+    router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
+  }, [activeTab, pathname, requestedTab, router, searchParams]);
+
   function setActiveTab(nextTab: any) {
     if (nextTab === activeTab) return;
 
@@ -1508,6 +1642,13 @@ export function SettingsPage() {
   const [pricingStatus, setPricingStatus] = useState({});
   const [pricingSyncLoading, setPricingSyncLoading] = useState("");
   const [saving, setSaving] = useState(false);
+  const [keyEdits, setKeyEdits] = useState<Record<string, string | null>>(() => ({ ...EMPTY_PROVIDER_KEYS }));
+  const [baseUrlEdits, setBaseUrlEdits] = useState<Record<string, string | null>>({});
+  const [showKey, setShowKey] = useState<Record<string, boolean>>({});
+  const [keyTestState, setKeyTestState] = useState<Record<string, string>>({});
+  const [providerKeyQuery, setProviderKeyQuery] = useState("");
+  const [providerKeyCategory, setProviderKeyCategory] = useState<string>("All");
+  const [providerKeyStatus, setProviderKeyStatus] = useState<string>("All");
   const [savedTab, setSavedTab] = useState("");
   const [configErr, setConfigErr] = useState("");
   const [saveMismatchWarning, setSaveMismatchWarning] = useState("");
@@ -1654,7 +1795,7 @@ export function SettingsPage() {
             : providerDefault !== undefined && providerDefault !== ""
               ? providerDefault
               : liveDefault;
-        let source = "Google live default";
+        let source = "Provider live default";
         if (overrideValue !== undefined && overrideValue !== "") source = "Model override";
         else if (providerDefault !== undefined && providerDefault !== "") source = "Provider default";
         return {
@@ -1678,7 +1819,7 @@ export function SettingsPage() {
         value: formatParameterValue(getModelDefaultValue(selectedCatalogModel, field.key)),
         note: provenanceLabel(
           selectedCatalogModel?.default_parameter_provenance?.[field.key] ||
-            "Pulled from Google catalog",
+            "Pulled from provider catalog",
         ),
       })),
     [selectedCatalogModel, selectedModelFields],
@@ -1782,11 +1923,17 @@ export function SettingsPage() {
     ],
   );
 
-  const dirtyTabs = useMemo(
+  const _baseDirtyTabs = useMemo(
     () => getDirtyTabs(savedConfigSnapshot, serverDraft),
     [savedConfigSnapshot, serverDraft],
   );
-  const currentTabDirty = Boolean(dirtyTabs[activeTab]);
+  const apiKeysDirty = useMemo(
+    () => Object.values(keyEdits).some((value) => value !== null)
+      || Object.values(baseUrlEdits).some((value) => value !== null),
+    [baseUrlEdits, keyEdits],
+  );
+  const dirtyTabs = useMemo(() => ({ ..._baseDirtyTabs, "api-keys": apiKeysDirty }), [_baseDirtyTabs, apiKeysDirty]);
+  const currentTabDirty = Boolean((dirtyTabs as any)[activeTab]);
   const otherDirtyCount = useMemo(
     () =>
       Object.entries(dirtyTabs).filter(
@@ -1796,7 +1943,7 @@ export function SettingsPage() {
   );
 
   useEffect(() => {
-    if (savedTab && dirtyTabs[savedTab]) setSavedTab("");
+    if (savedTab && (dirtyTabs as any)[savedTab]) setSavedTab("");
   }, [dirtyTabs, savedTab]);
 
   async function loadProviderCatalog(providerId: any, { force = false } = {}) {
@@ -1850,16 +1997,9 @@ export function SettingsPage() {
     setPricingSyncLoading(targetProvider);
     setConfigErr("");
     try {
-      await fetch(apiUrl("/ui/pricing/sync"), {
+      await apiFetch("/ui/pricing/sync", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider: targetProvider }),
-      }).then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.detail || payload.error || `Status ${response.status}`);
-        }
-        return payload;
       });
       await loadPricingStatus();
     } catch (error: any) {
@@ -1869,7 +2009,7 @@ export function SettingsPage() {
     }
   }
 
-  async function hydrateConfig(payload: any) {
+  async function hydrateConfig(payload: any, { refreshCatalogs = true } = {}) {
     const fallbackProvider = payload.llm_provider || "google";
     const fallbackAgentModel = payload.agent_model || "";
     const fallbackOrchestratorModel =
@@ -1908,21 +2048,25 @@ export function SettingsPage() {
     setBrowserSettingsTab(payload.browser_engine || "playwright");
     setBrowserRuntime(normalizeBrowserRuntime(payload.browser_runtime));
     setDisabledToolsByBrowserProfile(
-      normalizeDisabledToolsByBrowserProfile(
-        payload.disabled_tools_by_browser_profile,
-        payload.disabled_tools_by_profile || {},
-      ),
+      normalizeDisabledToolsByBrowserProfile({}, {}),
     );
     setModelConfigWarnings(payload.model_config_warnings || []);
     setActiveMcpBrowserTab(payload.browser_engine || "playwright");
+    setKeyEdits({ ...EMPTY_PROVIDER_KEYS });
+    setBaseUrlEdits({});
     setSavedTab("");
 
-    const providersToLoad = ["google"];
-    await Promise.all(
-      providersToLoad.map((providerId) =>
-        loadProviderCatalog(providerId, { force: true }).catch(() => null),
-      ),
-    );
+    if (refreshCatalogs) {
+      const providersToLoad = [...new Set([
+        fallbackProvider,
+        ...Object.keys(payload.api_keys || {}).filter((providerId) => payload.api_keys[providerId]),
+      ])];
+      await Promise.all(
+        providersToLoad.map((providerId) =>
+          loadProviderCatalog(providerId, { force: true }).catch(() => null),
+        ),
+      );
+    }
     await loadPricingStatus();
   }
 
@@ -1949,6 +2093,20 @@ export function SettingsPage() {
         model: modelId,
       },
     }));
+  }
+
+  function updateAgentProvider(agentId: any, nextProvider: any) {
+    const normalized = String(nextProvider || "google").toLowerCase();
+    setAgentModelConfig((current) => ({
+      ...current,
+      [agentId]: {
+        // @ts-expect-error -- strict migration
+        ...(current[agentId] || { provider: normalized, model: "" }),
+        provider: normalized,
+      },
+    }));
+    // preload catalog for the new provider if not already loaded
+    void loadProviderCatalog(normalized).catch(() => null);
   }
 
   function updateAgentProviderDefault(field: any, value: any) {
@@ -2102,10 +2260,35 @@ export function SettingsPage() {
           browser_runtime: serverDraft.browser_runtime,
         };
       case "mcp-tools":
-        return {
-          disabled_tools_by_browser_profile:
-            serverDraft.disabled_tools_by_browser_profile,
-        };
+        return {};
+      case "api-keys": {
+        const payload: Record<string, any> = {};
+        if (keyEdits.google !== null) payload.google_api_key = keyEdits.google;
+        if (keyEdits.openai !== null) payload.openai_api_key = keyEdits.openai;
+        if (keyEdits.anthropic !== null) payload.anthropic_api_key = keyEdits.anthropic;
+        if (keyEdits.openrouter !== null) payload.openrouter_api_key = keyEdits.openrouter;
+        if (keyEdits.nvidia !== null) payload.nvidia_api_key = keyEdits.nvidia;
+        if ((keyEdits as any).mistral !== null) payload.mistral_api_key = (keyEdits as any).mistral;
+        if ((keyEdits as any).cohere !== null) payload.cohere_api_key = (keyEdits as any).cohere;
+        if ((keyEdits as any).groq !== null) payload.groq_api_key = (keyEdits as any).groq;
+        if ((keyEdits as any).together !== null) payload.together_api_key = (keyEdits as any).together;
+        if ((keyEdits as any).fireworks !== null) payload.fireworks_api_key = (keyEdits as any).fireworks;
+        if ((keyEdits as any).perplexity !== null) payload.perplexity_api_key = (keyEdits as any).perplexity;
+        if ((keyEdits as any).deepseek !== null) payload.deepseek_api_key = (keyEdits as any).deepseek;
+        if ((keyEdits as any).xai !== null) payload.xai_api_key = (keyEdits as any).xai;
+        if ((keyEdits as any).upstage !== null) payload.upstage_api_key = (keyEdits as any).upstage;
+        if ((keyEdits as any).azure !== null) payload.azure_api_key = (keyEdits as any).azure;
+        if ((keyEdits as any).bedrock !== null) payload.bedrock_api_key = (keyEdits as any).bedrock;
+        const providerApiKeys = Object.fromEntries(
+          Object.entries(keyEdits).filter(([, value]) => value !== null),
+        );
+        const providerBaseUrls = Object.fromEntries(
+          Object.entries(baseUrlEdits).filter(([, value]) => value !== null),
+        );
+        if (Object.keys(providerApiKeys).length) payload.provider_api_keys = providerApiKeys;
+        if (Object.keys(providerBaseUrls).length) payload.provider_base_urls = providerBaseUrls;
+        return Object.keys(payload).length ? payload : null;
+      }
       default:
         return null;
     }
@@ -2119,14 +2302,10 @@ export function SettingsPage() {
     setConfigErr("");
     setSaveMismatchWarning("");
     try {
-      const response = await fetch(apiUrl("/ui/config"), {
+      const payload = await apiFetch<Record<string, any>>("/ui/config", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payloadToSave),
       });
-      const payload = await response.json();
-      if (!response.ok)
-        throw new Error(payload.detail || `Status ${response.status}`);
       if (tabId === "models") {
         const requestedSnapshot = snapshotServerConfig({
           ...serverDraft,
@@ -2151,8 +2330,7 @@ export function SettingsPage() {
             [],
         );
       }
-      await hydrateConfig(payload);
-      await loadPricingStatus();
+      await hydrateConfig(payload, { refreshCatalogs: false });
       if (payload.config_persisted === false) {
         setConfigErr(
           payload.config_persist_error ||
@@ -2167,6 +2345,30 @@ export function SettingsPage() {
       setConfigErr(error.message || "Could not save config.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function testProvider(providerId: string) {
+    setKeyTestState((state) => ({ ...state, [providerId]: "testing" }));
+    try {
+      if ((keyEdits as any)[providerId] !== null || (baseUrlEdits as any)[providerId] !== null) {
+        await saveConfig("api-keys");
+      }
+      const result = await loadProviderCatalog(providerId, { force: true });
+      if (!result?.available && !result?.models?.length) throw new Error(result?.error || "No models returned");
+      setKeyTestState((state) => ({ ...state, [providerId]: "ok" }));
+      setTimeout(() => setKeyTestState((state) => {
+        const next = { ...state };
+        delete next[providerId];
+        return next;
+      }), 2500);
+    } catch {
+      setKeyTestState((state) => ({ ...state, [providerId]: "error" }));
+      setTimeout(() => setKeyTestState((state) => {
+        const next = { ...state };
+        delete next[providerId];
+        return next;
+      }), 2500);
     }
   }
 
@@ -2210,62 +2412,59 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-[24px] border border-border/70 bg-gradient-to-br from-background via-background to-muted/15 p-5 shadow-[0_20px_60px_-36px_rgba(0,0,0,0.5)]">
-        <div className="flex flex-col gap-4">
-          <div className="space-y-1">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">
-              Operator console
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              Settings
-            </h1>
-            <p className="max-w-3xl text-sm text-muted-foreground">
-              Configure Gemini, browser runtime, local display behavior, and tool availability without losing tab-scoped save behavior.
-            </p>
+    <div className="settings-page space-y-6" style={{ fontFeatureSettings: '"cv01","ss03"' }}>
+      <div className="flex flex-col gap-4 border-b border-border/60 pb-6">
+        <div className="flex flex-wrap items-baseline justify-between gap-4">
+          <div className="space-y-1.5">
+            <h1 className="text-[20px] font-[590] tracking-[-0.24px] text-foreground">Settings</h1>
+            <p className="max-w-[560px] text-[13px] leading-[1.6] tracking-[-0.12px] text-muted-foreground">Provider keys are BYOK in <span className="font-[500] text-foreground/80">Provider Keys</span> — no <span className="font-mono text-[12px] text-foreground/80">.env</span> for models. Browser, tools, and display stay separate.</p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <CompactStat label="Unsaved tabs" value={hasDirty ? `${Object.values(dirtyTabs).filter(Boolean).length}` : "0"} tone={hasDirty ? "primary" : "default"} />
-            <CompactStat label="Active engine" value="Playwright" />
-            <CompactStat label="Catalog" value={activeCatalog?.available ? "Live" : activeCatalog ? "Offline fallback" : "Loading"} />
-            <CompactStat label="MCP tools" value={`${enabledToolCount}/${((MCP_TOOLS_BY_PROFILE as any)[activeProfileTab] || []).length} enabled`} />
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={["inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-[500] tracking-[-0.12px]", hasDirty ? "border-[rgba(245,158,11,0.2)] bg-[rgba(245,158,11,0.12)] text-[var(--signal-text)]" : "border-border bg-muted/30 text-muted-foreground"].join(" ")}>
+              <span className={["size-1.5 rounded-full", hasDirty ? "bg-[#f59e0b]" : "bg-[#10b981]"].join(" ")} />
+              {hasDirty ? `${Object.values(dirtyTabs).filter(Boolean).length} unsaved` : "All saved"}
+            </span>
+            <span className={["inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-[500] tracking-[-0.12px]", activeCatalog?.available ? "border-[rgba(16,185,129,0.2)] bg-[rgba(16,185,129,0.10)] text-[var(--mint-text)]" : "border-border bg-muted/30 text-muted-foreground"].join(" ")}>
+              <span className={["size-1.5 rounded-full", activeCatalog?.available ? "bg-[#10b981]" : "bg-[#62666d]"].join(" ")} />
+              {activeCatalog?.available ? "Catalog live" : activeCatalog ? "Catalog offline" : "Loading catalog"}
+            </span>
           </div>
-          <div className="lg:hidden">
-            <SettingsTabBar
-              active={activeTab}
-              onChange={setActiveTab}
-              dirtyTabs={dirtyTabs}
-              mobile
-            />
-          </div>
+        </div>
+        <div className="lg:hidden">
+          <SettingsTabBar active={activeTab} onChange={setActiveTab} dirtyTabs={dirtyTabs} mobile />
         </div>
       </div>
       <div className="flex items-start gap-6">
-      {/* ── LEFT SIDEBAR NAV ───────────────────────────────────── */}
-      <Card className="sticky top-6 hidden w-64 shrink-0 self-start overflow-hidden rounded-[22px] border-border/70 bg-card/95 shadow-[0_24px_60px_-42px_rgba(0,0,0,0.6)] lg:block">
-        <CardContent className="px-3 pb-2 pt-3">
-          <SettingsTabBar
-            active={activeTab}
-            onChange={setActiveTab}
-            dirtyTabs={dirtyTabs}
-          />
-        </CardContent>
-        <div className="flex flex-col gap-2 border-t border-border/70 px-3 py-3">
-          <Badge tone={activeCatalog?.available ? "success" : activeCatalog ? "warning" : "default"} className="justify-center rounded-lg px-2.5 py-1.5 text-xs">
-            {activeCatalog?.available ? "Catalog ready" : activeCatalog ? "Catalog unavailable" : "Loading..."}
-          </Badge>
-          <Badge tone={pricingStatusTone(activePricingStatus)} className="justify-center rounded-lg px-2.5 py-1.5 text-xs">
-            {activePricingStatus?.model_count > 0
-              ? `${activePricingStatus.model_count} priced models`
-              : activePricingStatus?.api_key_set
-                ? "Pricing not synced"
-                : "Pricing unavailable"}
-          </Badge>
-          <Badge tone={hasDirty ? "warning" : "success"} className="justify-center rounded-lg px-2.5 py-1.5 text-xs">
-            {hasDirty ? "Unsaved changes" : "All synced"}
-          </Badge>
+      {/* ── LEFT NAV — grouped, minimal ─────────────────────────── */}
+      <div className="sticky top-6 hidden w-[220px] shrink-0 self-start lg:block">
+        <div className="space-y-5">
+          <div className="space-y-1.5">
+            <div className="px-2 text-[11px] font-[600] uppercase tracking-[0.08em] text-muted-foreground/70">AI Configuration</div>
+            <SettingsTabBar active={activeTab} onChange={setActiveTab} dirtyTabs={dirtyTabs} filterIds={["models","api-keys"]} />
+          </div>
+          <div className="space-y-1.5">
+            <div className="px-2 text-[11px] font-[600] uppercase tracking-[0.08em] text-muted-foreground/70">Runtime</div>
+            <SettingsTabBar active={activeTab} onChange={setActiveTab} dirtyTabs={dirtyTabs} filterIds={["browser","mcp-tools"]} />
+          </div>
+          <div className="space-y-1.5">
+            <div className="px-2 text-[11px] font-[600] uppercase tracking-[0.08em] text-muted-foreground/70">Preferences</div>
+            <SettingsTabBar active={activeTab} onChange={setActiveTab} dirtyTabs={dirtyTabs} filterIds={["display","notifications"]} />
+          </div>
+          <div className="space-y-1.5">
+            <div className="px-2 text-[11px] font-[600] uppercase tracking-[0.08em] text-muted-foreground/70">Security</div>
+            <SettingsTabBar active={activeTab} onChange={setActiveTab} dirtyTabs={dirtyTabs} filterIds={["account"]} />
+          </div>
+          <div className="rounded-[8px] border border-border bg-muted/20 px-3 py-3">
+            <div className="text-[11px] font-[600] uppercase tracking-[0.06em] text-muted-foreground">Status</div>
+            <div className="mt-3 space-y-2.5">
+              <div className="flex items-center justify-between text-[12px]"><span className="tracking-[-0.12px] text-muted-foreground">Catalog</span><span className={["inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-[500]", activeCatalog?.available ? "bg-[rgba(16,185,129,0.12)] text-[var(--mint-text)]" : "bg-muted/60 text-muted-foreground/70"].join(" ")}><span className={["size-1 rounded-full", activeCatalog?.available ? "bg-[#10b981]" : "bg-[#62666d]"].join(" ")} />{activeCatalog?.available ? "Live" : "Offline"}</span></div>
+              <div className="flex items-center justify-between text-[12px]"><span className="tracking-[-0.12px] text-muted-foreground">Keys</span><span className="font-[500] tracking-[-0.12px] text-foreground">{Object.values(apiKeys).filter(Boolean).length || 0} / {PROVIDERS.length}</span></div>
+              <div className="h-px bg-muted/60" />
+              <div className="flex items-center justify-between text-[12px]"><span className="tracking-[-0.12px] text-muted-foreground">Unsaved</span><span className={["text-[12px] font-[500] tracking-[-0.12px]", hasDirty ? "text-[var(--signal-text)]" : "text-muted-foreground/70"].join(" ")}>{hasDirty ? String(Object.values(dirtyTabs).filter(Boolean).length) : "—"}</span></div>
+            </div>
+          </div>
         </div>
-      </Card>
+      </div>
 
       {/* ── RIGHT CONTENT ─────────────────────────────────────── */}
       <div className="flex-1 min-w-0 space-y-6">
@@ -2288,21 +2487,20 @@ export function SettingsPage() {
           {activeTab === "models" ? (
             <section className="space-y-4">
               <SettingsWorkspaceCard
-                eyebrow="Live Google control plane"
+                eyebrow="Live provider control plane"
                 title="Model assignments that stay current"
-                description="Assignments is the operator view. Runtime Controls holds cache and reasoning knobs. Catalog & Costs pulls the live Google catalog so new models appear as soon as Google exposes them."
+                description="Assignments is the operator view. Runtime Controls holds cache and reasoning knobs. Catalog & Costs pulls the live provider catalog so new models appear as soon as Google exposes them."
                 actions={
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone={currentTabDirty ? "warning" : "success"}>
                       {currentTabDirty ? "Unsaved model changes" : "Saved to runtime config"}
                     </Badge>
                     <Badge
-                      // @ts-expect-error -- strict migration
                       tone={
                         sourceTone(activeCatalog?.source || "unavailable") === "ok"
                           ? "success"
                           : sourceTone(activeCatalog?.source || "unavailable") === "error"
-                            ? "destructive"
+                            ? "danger"
                             : "warning"
                       }
                     >
@@ -2394,7 +2592,7 @@ export function SettingsPage() {
                           key={slot.id}
                           eyebrow={slot.note}
                           title={slot.label}
-                          description="Per-agent model routing with direct Google catalog metadata when available."
+                          description="Per-agent model routing with direct provider catalog metadata when available."
                           actions={
                             <div className="flex flex-wrap items-center gap-2">
                               <Badge tone="default">{selection.provider || "google"}</Badge>
@@ -2405,25 +2603,39 @@ export function SettingsPage() {
                           }
                         >
                           <div className="space-y-4">
-                            <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="grid gap-3 sm:grid-cols-3">
                               <Select
-                                label="Live Google model"
+                                label="Provider"
+                                value={selection.provider}
+                                onChange={(next) => updateAgentProvider(slot.id, next)}
+                                options={PROVIDERS.map((pr) => ({ value: pr.id, label: pr.name, description: pr.category }))}
+                                searchable
+                                searchPlaceholder="Search providers…"
+                                placeholder="Select provider"
+                                emptyMessage="No providers match"
+                              />
+                              <Select
+                                label="Live model"
                                 value={selection.model}
                                 onChange={(next) => updateAgentModel(slot.id, next)}
                                 options={slotOptions}
-                                // @ts-expect-error -- strict migration
                                 searchable
                                 placeholder="Select model"
-                                emptyMessage="No Google models available"
+                                emptyMessage="No models available"
                               />
                               <Input
                                 label="Manual model ID"
                                 value={selection.model}
                                 onChange={(event) => updateAgentModel(slot.id, event.target.value)}
-                                placeholder="Use a newly released or manual Google model ID"
+                                placeholder="Manual model ID"
                                 className="h-10 font-mono text-[12px]"
                               />
                             </div>
+                            {!(apiKeys as any)[selection.provider] ? (
+                              <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                                <span>No key for <span className="font-medium">{selection.provider}</span> — add it in <span className="font-mono">Provider Keys</span> to enable live catalog.</span>
+                              </div>
+                            ) : null}
 
                             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                               <ModelFact label="Selected model" value={selection.model || "Not set"} tone="primary" />
@@ -2446,7 +2658,7 @@ export function SettingsPage() {
                                   </Badge>
                                 </div>
                                 <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
-                                  {selectedModelMeta.description || "No Google description returned for this model."}
+                                  {selectedModelMeta.description || "No provider description returned for this model."}
                                 </p>
                                 <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
                                   <span className="font-mono">{formatTokenCount(selectedModelMeta.context_window)} ctx</span>
@@ -2456,7 +2668,7 @@ export function SettingsPage() {
                               </div>
                             ) : selection.model ? (
                               <div className="rounded-xl border border-border/70 bg-muted/15 p-4 text-[12px] text-muted-foreground">
-                                This model is not in the current Google catalog response yet. It can still be saved, but capabilities remain unverified until Google returns metadata for it.
+                                This model is not in the current provider catalog response yet. It can still be saved, but capabilities remain unverified until Google returns metadata for it.
                               </div>
                             ) : null}
 
@@ -2490,7 +2702,7 @@ export function SettingsPage() {
                           <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                             Fallback Temperature
                           </span>
-                          <HelpIcon tip="Used only when Google does not return a model-specific default and no override is set." />
+                          <HelpIcon tip="Used only when the provider does not return a model-specific default and no override is set." />
                         </div>
                         <Slider
                           value={Number(fallbackTemperature) || 0}
@@ -2499,7 +2711,7 @@ export function SettingsPage() {
                           min={0}
                           max={2}
                           step={0.1}
-                          description="Direct Google defaults still take precedence when present."
+                          description="Direct provider defaults still take precedence when present."
                         />
                       </div>
                       <div>
@@ -2526,7 +2738,7 @@ export function SettingsPage() {
                         label="Provider prompt caching"
                         checked={providerCacheEnabled}
                         onChange={setProviderCacheEnabled}
-                        description="Use Google-native cache hits for repeated shared prompt context."
+                        description="Use provider-native cache hits for repeated shared prompt context."
                       />
                       <ToggleRow
                         label="Deterministic tool result cache"
@@ -2540,7 +2752,7 @@ export function SettingsPage() {
                   <div className="grid gap-4 xl:grid-cols-2">
                     <FieldGroup
                       title="Explicit Cache"
-                      description="Server-side cached context for repeated Google model runs."
+                      description="Server-side cached context for repeated provider model runs."
                       accent="var(--violet)"
                     >
                       <ToggleRow
@@ -2580,7 +2792,7 @@ export function SettingsPage() {
                         label="Enable thinking"
                         checked={thinkingEnabled}
                         onChange={setThinkingEnabled}
-                        description="Only applied where the selected Google model supports it."
+                        description="Only applied where the selected model supports it."
                       />
                       {thinkingEnabled ? (
                         <div className="max-w-sm">
@@ -2601,7 +2813,7 @@ export function SettingsPage() {
 
                   <FieldGroup
                     title="Overrides and Parallelism"
-                    description="Use overrides sparingly. Google live defaults remain the base layer."
+                    description="Use overrides sparingly. Provider live defaults remain the base layer."
                     accent="var(--mint)"
                   >
                     <div className="grid gap-4 xl:grid-cols-2">
@@ -2653,7 +2865,7 @@ export function SettingsPage() {
               {activeModelWorkspaceView === "catalog" ? (
                 <div className="space-y-4">
                   <SettingsWorkspaceCard
-                    eyebrow="Direct from Google"
+                    eyebrow="Direct from provider"
                     title="Live catalog and defaults"
                     description="This view is fed by the Google models API first, then saved snapshot, then fallback catalog. If Google adds a model later today, it should show up here on load or refresh."
                     actions={
@@ -2728,7 +2940,7 @@ export function SettingsPage() {
                           <Input
                             value={catalogQuery}
                             onChange={(event) => setCatalogQuery(event.target.value)}
-                            placeholder="Search Google models"
+                            placeholder="Search models"
                             className="h-10 pl-9"
                           />
                         </div>
@@ -2764,7 +2976,7 @@ export function SettingsPage() {
                                     {isSelected ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" /> : null}
                                   </div>
                                   <div className="mt-2 line-clamp-2 text-[11.5px] leading-relaxed text-muted-foreground">
-                                    {model.description || "No Google description returned."}
+                                    {model.description || "No provider description returned."}
                                   </div>
                                   <div className="mt-3 flex flex-wrap items-center gap-1.5">
                                     <Badge tone="default" className="px-1.5 py-0.5 text-[9px]">{formatTokenCount(model.context_window)} ctx</Badge>
@@ -2778,7 +2990,7 @@ export function SettingsPage() {
                             })
                           ) : (
                             <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-                              No Google models match this search.
+                              No models match this search.
                             </div>
                           )}
                         </div>
@@ -2790,7 +3002,7 @@ export function SettingsPage() {
                             <SettingsWorkspaceCard
                               eyebrow="Selected model"
                               title={selectedCatalogModel.label || selectedCatalogModel.id}
-                              description={selectedCatalogModel.description || "No Google description returned for this model."}
+                              description={selectedCatalogModel.description || "No provider description returned for this model."}
                               actions={
                                 <div className="flex flex-wrap items-center gap-2">
                                   <Badge tone={releaseChannelTone(selectedCatalogModel.release_channel)}>
@@ -2840,7 +3052,7 @@ export function SettingsPage() {
                                       disabled={!selectedModelFields.length}
                                     >
                                       <Sparkles className="h-3.5 w-3.5" />
-                                      Copy Google defaults
+                                      Copy provider defaults
                                     </Button>
                                   </div>
                                 </div>
@@ -2856,7 +3068,7 @@ export function SettingsPage() {
 
                             <div className="grid gap-4 xl:grid-cols-2">
                               <ParameterSummaryCard
-                                title="Google defaults"
+                                title="Provider defaults"
                                 icon={Sparkles}
                                 tone="primary"
                                 rows={selectedModelDefaultRows}
@@ -2873,7 +3085,7 @@ export function SettingsPage() {
                         ) : (
                           <Card className="rounded-[16px] border border-dashed">
                             <CardContent className="px-5 py-10 text-center text-sm text-muted-foreground">
-                              Select a Google model to inspect live defaults, capability provenance, and estimated costs.
+                              Select a model to inspect live defaults, capability provenance, and estimated costs.
                             </CardContent>
                           </Card>
                         )}
@@ -2976,7 +3188,7 @@ export function SettingsPage() {
                   className="rounded-[12px] border p-4 text-[12px]"
                   style={{
                     borderColor: "var(--line)",
-                    background: "rgba(255,255,255,0.02)",
+                    background: "var(--panel-2)",
                   }}
                 >
                   <div className="mb-2 flex items-center gap-2">
@@ -3242,7 +3454,7 @@ export function SettingsPage() {
                       className="rounded-[12px] border p-3.5"
                       style={{
                         borderColor: "var(--line)",
-                        background: "rgba(255,255,255,0.02)",
+                        background: "var(--panel-2)",
                       }}
                     >
                       <div
@@ -3353,244 +3565,257 @@ export function SettingsPage() {
           {activeTab === "mcp-tools" ? (
             <section className="space-y-4">
               <div className="flex items-center justify-between">
-                <SectionHeader>MCP Tools</SectionHeader>
+                <SectionHeader>MCP Tools & Manifest</SectionHeader>
                 <span className="text-[11px]" style={{ color: "var(--mute)" }}>
-                  Clean per-profile toggles with faster scanning and fewer accidental disables
+                  Read-only manifest inspection: agents receive the validated least-privilege profile
                 </span>
               </div>
 
-              <MiniSegment
-                active={activeMcpBrowserTab}
-                onChange={setActiveMcpBrowserTab}
-                options={BROWSER_OPTIONS.map((item) => ({
-                  id: item.id,
-                  label: item.name,
-                  badge:
-                    Object.keys(MCP_TOOLS_BY_PROFILE).reduce(
-                      (count, profile) => {
-                        return (
-                          count +
-                          (disabledToolsByBrowserProfile[item.id]?.[profile]
-                            ?.length || 0)
-                        );
-                      },
-                      0,
-                    ) || "",
-                }))}
-              />
-
-              <MiniSegment
-                active={activeProfileTab}
-                onChange={setActiveProfileTab}
-                options={Object.keys(MCP_TOOLS_BY_PROFILE).map((profile) => ({
-                  id: profile,
-                  // @ts-expect-error -- strict migration
-                  label: PROFILE_LABELS[profile],
-                  badge:
-                    disabledToolsByBrowserProfile[activeMcpBrowserTab]?.[
-                      profile
-                    ]?.length ||
-                    0 ||
-                    "",
-                }))}
-              />
-
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <CompactStat label="Enabled" value={`${enabledToolCount}/${((MCP_TOOLS_BY_PROFILE as any)[activeProfileTab] || []).length}`} tone="primary" />
-                <CompactStat label="Disabled" value={`${activeMcpDisabledTools.length}`} />
-                <CompactStat label="Backend" value="Playwright" />
-                <CompactStat label="Profile" value={(PROFILE_LABELS as any)[activeProfileTab]} />
+                <CompactStat label="Runtime Driver" value="Playwright 1.62.1" tone="primary" />
+                <CompactStat label="MCP Transport" value="Streamable HTTP" tone="success" />
+                <CompactStat label="Isolation" value="Isolated Contexts" />
+                <CompactStat label="uBOL Version" value="2026.901.1442" />
               </div>
 
-              <div
-                className="rounded-[18px] border border-border/70 bg-card/95 p-4 shadow-[0_18px_48px_-36px_rgba(0,0,0,0.55)]"
-              >
-                <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="text-[13px] font-semibold text-foreground">
-                        {BROWSER_OPTIONS.find((item) => item.id === activeMcpBrowserTab)?.name}
-                        {" · "}
-                        {/* @ts-expect-error -- strict migration */}
-                        {PROFILE_LABELS[activeProfileTab]}
-                      </span>
-                      <Badge tone="default" className="font-mono text-[10px]">
-                        {enabledToolCount}
-                        {" / "}
-                        {((MCP_TOOLS_BY_PROFILE as any)[activeProfileTab] || []).length} enabled
-                      </Badge>
+              <div className="rounded-[18px] border border-border/70 bg-card/95 p-4 shadow-[0_18px_48px_-36px_rgba(0,0,0,0.55)] space-y-4">
+                <div className="space-y-1">
+                  <h3 className="text-[14px] font-semibold text-foreground">Canonical Tool Manifest (v2)</h3>
+                  <p className="text-[12px] text-muted-foreground">
+                    Authoritative profile definitions from browser-tool-manifest.json. Tools cannot be disabled ad-hoc per run.
+                  </p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-[12px] border border-border/50 bg-background/50 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[12px] text-foreground">Classification</span>
+                      <Badge tone="default" className="text-[10px]">5 tools</Badge>
                     </div>
-                    <p className="max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
-                      Required shared tools should normally stay enabled. Use this screen to trim redundant or risky tools per engine/profile, not to hide core navigation and inspection by default.
-                    </p>
+                    <div className="flex flex-wrap gap-1.5 font-mono text-[11px] text-muted-foreground">
+                      <span className="rounded bg-muted px-1.5 py-0.5">navigate</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">inspect</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">interact</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">screenshot</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">wait</span>
+                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">memory_search</span>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 px-2.5 text-[11px] text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10"
-                      onClick={() => setDisabledToolsForCurrentBrowserProfile([])}
-                    >
-                      Enable all
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 px-2.5 text-[11px]"
-                      // @ts-expect-error -- strict migration
-                      onClick={() => setDisabledToolsForCurrentBrowserProfile(MCP_TOOLS_BY_PROFILE[activeProfileTab])}
-                    >
-                      Disable all
-                    </Button>
+
+                  <div className="rounded-[12px] border border-border/50 bg-background/50 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[12px] text-foreground">Landing Page</span>
+                      <Badge tone="default" className="text-[10px]">5 tools</Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 font-mono text-[11px] text-muted-foreground">
+                      <span className="rounded bg-muted px-1.5 py-0.5">navigate</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">inspect</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">interact</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">screenshot</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">wait</span>
+                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">plan</span>
+                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">memory_search</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[12px] border border-border/50 bg-background/50 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[12px] text-foreground">Hosting Page</span>
+                      <Badge tone="default" className="text-[10px]">6 tools</Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 font-mono text-[11px] text-muted-foreground">
+                      <span className="rounded bg-muted px-1.5 py-0.5">navigate</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">inspect</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">interact</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">harvest</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">screenshot</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">wait</span>
+                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">plan</span>
+                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">memory_search</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[12px] border border-border/50 bg-background/50 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[12px] text-foreground">Embedded Page</span>
+                      <Badge tone="default" className="text-[10px]">6 tools</Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 font-mono text-[11px] text-muted-foreground">
+                      <span className="rounded bg-muted px-1.5 py-0.5">navigate</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">inspect</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">interact</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">harvest</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">screenshot</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">wait</span>
+                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">plan</span>
+                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">memory_search</span>
+                    </div>
                   </div>
                 </div>
+              </div>
+            </section>
+          ) : null}
 
-                <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
-                  <div className="relative">
+                              {activeTab === "api-keys" ? (
+            <section className="space-y-6" style={{ fontFeatureSettings: '"cv01","ss03"' }}>
+              {/* Header — Linear style: tight, subtle */}
+              <div className="border-b border-border/60 pb-6">
+                <div className="flex flex-wrap items-baseline justify-between gap-3">
+                  <div>
+                    <h2 className="text-[20px] font-[590] tracking-[-0.24px] text-foreground">Provider keys</h2>
+                    <p className="mt-2 max-w-[560px] text-[14px] leading-[1.6] tracking-[-0.13px] text-muted-foreground">BYOK — keys live in <span className="font-mono text-[12px] text-foreground/80">data/settings.runtime.yaml</span>. Never baked into images, never committed. Runtime layer wins over <span className="font-mono text-[12px] text-foreground/80">.env</span>.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/30 px-3 py-1.5 text-[12px] font-[500] tracking-[-0.12px] text-foreground/80">
+                      <span className="size-2 rounded-full bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
+                      {Object.values(apiKeys).filter(Boolean).length} / {PROVIDERS.length} live
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-5 h-1 w-full overflow-hidden rounded-full bg-muted/60">
+                  <div className="h-full rounded-full bg-[#5e6ad2] transition-all duration-500" style={{ width: `${Math.round((Object.values(apiKeys).filter(Boolean).length / PROVIDERS.length) * 100)}%` }} />
+                </div>
+              </div>
+
+              {/* Controls — Linear: ghost pills + subtle search */}
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="relative min-w-[260px] flex-1 max-w-[360px]">
                     <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70" />
-                    <input
-                      value={mcpToolQuery}
-                      onChange={(event) => setMcpToolQuery(event.target.value)}
-                      placeholder="Filter tools by name, category, or description"
-                      className="h-11 w-full rounded-[14px] border border-border/70 bg-background/75 pl-10 pr-3 text-[13px] text-foreground outline-none transition focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
-                    />
+                    <input value={providerKeyQuery} onChange={(e) => setProviderKeyQuery(e.target.value)} placeholder="Search providers, env, features…" className="h-8 w-full rounded-[6px] border border-border bg-muted/20 pl-9 pr-3 text-[13px] font-[400] tracking-[-0.12px] text-foreground placeholder:text-muted-foreground/70 outline-none focus:border-border/80 focus:bg-muted/40" />
                   </div>
-                  <div className="rounded-[14px] border border-border/70 bg-background/70 px-3.5 py-3 text-[12px] text-muted-foreground">
-                    Showing <span className="font-semibold text-foreground">{filteredMcpTools.length}</span> of{" "}
-                    {/* @ts-expect-error -- strict migration */}
-                    <span className="font-semibold text-foreground">{(MCP_TOOLS_BY_PROFILE[activeProfileTab] || []).length}</span> tools
+                  <div className="flex flex-wrap items-center gap-1">
+                    {["All","Configured","Missing"].map((st) => (
+                      <button key={st} onClick={() => setProviderKeyStatus(st)} className={["inline-flex h-6 items-center rounded-full border px-2.5 text-[12px] font-[500] tracking-[-0.12px] transition-colors", providerKeyStatus === st ? "border-border bg-muted/60 text-foreground" : "border-transparent text-muted-foreground hover:bg-muted/40 hover:text-foreground/80"].join(" ")}>{st}</button>
+                    ))}
+                    <span className="mx-1 h-4 w-px bg-muted/60" />
+                    {["All","Frontier","Speed","Open","Cloud","Enterprise","Community","Local","Gateway"].map((cat) => (
+                      <button key={cat} onClick={() => setProviderKeyCategory(cat)} className={["inline-flex h-6 items-center rounded-full border px-2.5 text-[12px] font-[500] tracking-[-0.12px] transition-colors", providerKeyCategory === cat ? "border-border bg-muted/60 text-foreground" : "border-transparent text-muted-foreground hover:bg-muted/40 hover:text-foreground/80"].join(" ")}>{cat}</button>
+                    ))}
                   </div>
                 </div>
+              </div>
 
+              {/* Provider list — grouped, Linear: subtle rows, not cards */}
+              <div className="space-y-8">
                 {(() => {
-                  const categories = [...new Set(filteredMcpTools.map((t: any) => (MCP_TOOL_META as any)[t]?.category || "Other"))];
-                  return categories.map((cat) => {
-                    const catTools = filteredMcpTools.filter((t: any) => ((MCP_TOOL_META as any)[t]?.category || "Other") === cat);
+                  const filtered = PROVIDERS.filter((pr: any) => {
+                    const q = providerKeyQuery.trim().toLowerCase();
+                    const matchesSearch = !q || [pr.name, pr.keyEnv, pr.id, (pr.features || []).join(" "), pr.category].join(" ").toLowerCase().includes(q);
+                    const matchesCat = providerKeyCategory === "All" || pr.category === providerKeyCategory;
+                    const hasKey = !!(apiKeys as any)[pr.id];
+                    const matchesStatus = providerKeyStatus === "All" || (providerKeyStatus === "Configured" ? hasKey : !hasKey);
+                    return matchesSearch && matchesCat && matchesStatus;
+                  });
+                  const groups: Record<string, any[]> = {};
+                  filtered.forEach((pr: any) => {
+                    const g = pr.category || "Other";
+                    if (!groups[g]) groups[g] = [];
+                    groups[g].push(pr);
+                  });
+                  const order = ["Frontier","Speed","Open","Cloud","Enterprise","Community","Local","Gateway"];
+                  const sortedGroups = Object.keys(groups).sort((a,b) => order.indexOf(a) - order.indexOf(b));
+                  if (filtered.length === 0) {
                     return (
-                      <div key={String(cat)} className="mb-4">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
-                            {String(cat)}
-                          </div>
-                          <Badge tone="default" className="text-[9px] font-mono">
-                            {catTools.filter((toolName: any) => !activeBrowserTools().includes(toolName)).length}/{catTools.length} enabled
-                          </Badge>
-                        </div>
-                        <div className="divide-y divide-border/40 rounded-[14px] border border-border/60 bg-background/65">
-                          {catTools.map((toolName: any) => {
-                            const isDisabled = activeBrowserTools().includes(toolName);
-                            const meta = (MCP_TOOL_META as any)[toolName];
-                            return (
-                              <div
-                                key={toolName}
-                                className="flex items-start gap-3 px-3 py-3 transition-colors hover:bg-muted/25"
-                              >
-                                <Switch
-                                  checked={!isDisabled}
-                                  onCheckedChange={(checked) => {
-                                    const currentDisabled = activeBrowserTools();
-                                    const nextDisabled = checked
-                                      ? currentDisabled.filter((item: any) => item !== toolName)
-                                      : [...currentDisabled, toolName];
-                                    setDisabledToolsForCurrentBrowserProfile(nextDisabled);
-                                  }}
-                                />
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className={cn(
-                                      "font-mono text-[12px] font-medium",
-                                      isDisabled ? "text-muted-foreground/50 line-through" : "text-foreground"
-                                    )}>
-                                      {toolName}
-                                    </span>
-                                    <Badge tone="default" className="text-[9px]">
-                                      {meta?.category || "Other"}
-                                    </Badge>
-                                  </div>
-                                  {meta?.desc ? (
-                                    <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/75">
-                                      {meta.desc}
-                                    </p>
-                                  ) : null}
-                                </div>
-                              </div>
-                            );
-                          })}
+                      <div className="rounded-[8px] border border-dashed border-border bg-muted/20 px-6 py-12 text-center">
+                        <div className="mx-auto max-w-sm">
+                          <div className="text-[13px] font-[510] tracking-[-0.12px] text-foreground">No providers match</div>
+                          <p className="mt-1 text-[13px] leading-[1.5] text-muted-foreground">Try a different search or filter. {PROVIDERS.length} total providers available.</p>
+                          <button onClick={() => { setProviderKeyQuery(""); setProviderKeyCategory("All"); setProviderKeyStatus("All"); }} className="mt-4 inline-flex h-7 items-center rounded-[6px] border border-border bg-muted/30 px-3 text-[12px] font-[500] text-foreground/80 hover:bg-muted/60">Clear filters</button>
                         </div>
                       </div>
                     );
-                  });
-                })()}
-                {!filteredMcpTools.length ? (
-                  <div className="rounded-[14px] border border-dashed border-border/70 px-4 py-6 text-center text-[12px] text-muted-foreground">
-                    No tools match this filter.
-                  </div>
-                ) : null}
-              </div>
-            </section>
-          ) : null}
-
-          {activeTab === "api-keys" ? (
-            <section className="space-y-4">
-              <div>
-                <h2 className="text-base font-semibold text-foreground">Gemini API Key Status</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  The key is loaded from environment variables at server start. Add it to your{" "}
-                  <code className="rounded border bg-muted px-1 py-0.5 font-mono text-xs text-foreground">
-                    .env
-                  </code>{" "}
-                  file and rebuild to activate Gemini.
-                </p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {PROVIDERS.map((item) => {
-                  const hasKey = !!apiKeys[item.id];
-                  return (
-                    <div
-                      key={item.id}
-                      className={cn(
-                        "flex items-start gap-3 rounded-lg border bg-card p-4 transition-colors",
-                        hasKey ? "border-mint/30" : ""
-                      )}
-                    >
-                      <span
-                        className="mt-1 h-2 w-2 shrink-0 rounded-full"
-                        style={{
-                          background: hasKey ? (item.color || "var(--mint)") : "var(--mute-3)",
-                        }}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-sm font-medium text-foreground">{item.name}</div>
-                          <KeyStatus set={hasKey} />
-                        </div>
-                        <div className="mt-0.5 font-mono text-[10px] text-muted-foreground/60">
-                          {item.keyEnv}
-                        </div>
-                        {item.features && item.features.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {item.features.map((feat) => (
-                              <span
-                                key={feat}
-                                className="rounded border bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground"
-                              >
-                                {feat}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                  }
+                  return sortedGroups.map((group) => (
+                    <div key={group} className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="text-[11px] font-[600] uppercase tracking-[0.08em] text-muted-foreground">{group}</div>
+                        <div className="h-px flex-1 bg-muted/60" />
+                        <div className="text-[11px] font-[400] tracking-[-0.12px] text-muted-foreground/70">{groups[group].length} providers</div>
+                      </div>
+                      <div className="overflow-hidden rounded-[8px] border border-border bg-muted/20">
+                        {groups[group].map((item: any, idx: number) => {
+                          const hasKey = !!(apiKeys as any)[item.id];
+                          const edited = (keyEdits as any)[item.id];
+                          const isEdited = edited !== null;
+                          const isCleared = edited === "";
+                          const show = !!(showKey as any)[item.id];
+                          const testState = (keyTestState as any)[item.id] || "";
+                          const isTesting = testState === "testing";
+                          const registryProvider = ((config as any)?.provider_registry || []).find((row: any) => row.id === item.id);
+                          const defaultBaseUrl = item.baseUrl || registryProvider?.base_url || "";
+                          const configuredBaseUrl = ((config as any)?.provider_base_urls || {})[item.id] || "";
+                          const editedBaseUrl = (baseUrlEdits as any)[item.id];
+                          const effectiveBaseUrl = editedBaseUrl !== null && editedBaseUrl !== undefined ? editedBaseUrl : configuredBaseUrl;
+                          const showEndpoint = !defaultBaseUrl || !!configuredBaseUrl || editedBaseUrl !== null && editedBaseUrl !== undefined;
+                          return (
+                            <div key={item.id} className={["group relative flex flex-col gap-3 px-4 py-4 transition-colors", idx !== 0 ? "border-t border-border/60" : "", isEdited && !isCleared ? "bg-[rgba(94,106,210,0.04)]" : "hover:bg-muted/30"].join(" ")}>
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex min-w-0 flex-1 items-start gap-3">
+                                  <span className="mt-1.5 size-2 shrink-0 rounded-full" style={{ background: hasKey || (isEdited && !isCleared) ? item.color : "#3f3f46", boxShadow: hasKey ? `0 0 8px ${item.color}40` : "none" }} />
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="text-[13px] font-[510] tracking-[-0.12px] text-foreground">{item.name}</span>
+                                      <span className="inline-flex items-center rounded-[4px] border border-border bg-muted/30 px-1.5 py-0.5 font-mono text-[10px] font-[500] tracking-[-0.08px] text-muted-foreground">{item.keyEnv}</span>
+                                      {isEdited ? <span className={["inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-[600] tracking-[-0.08px]", isCleared ? "bg-[rgba(245,158,11,0.12)] text-[var(--signal-text)] border border-[rgba(245,158,11,0.2)]" : "bg-[rgba(94,106,210,0.12)] text-[var(--violet-text)] border border-[rgba(94,106,210,0.2)]"].join(" ")}>{isCleared ? "will clear" : "edited"}</span> : hasKey ? <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(16,185,129,0.10)] px-2 py-0.5 text-[10px] font-[600] tracking-[-0.08px] text-[var(--mint-text)]"><span className="size-1 rounded-full bg-[#10b981]" /> live</span> : <span className="inline-flex items-center rounded-full border border-border/60 bg-muted/20 px-2 py-0.5 text-[10px] font-[500] tracking-[-0.08px] text-muted-foreground/70">no key</span>}
+                                      {testState === "ok" ? <span className="inline-flex items-center rounded-full bg-[rgba(16,185,129,0.12)] px-2 py-0.5 text-[10px] font-[600] text-[var(--mint-text)]">verified</span> : testState === "error" ? <span className="inline-flex items-center rounded-full bg-[rgba(239,68,68,0.12)] px-2 py-0.5 text-[10px] font-[600] text-[var(--rose-text)]">failed</span> : null}
+                                    </div>
+                                    <div className="mt-1 flex flex-wrap gap-1">
+                                      {(item.features || []).slice(0,3).map((f: string) => (
+                                        <span key={f} className="rounded-[4px] bg-muted/40 px-1.5 py-0.5 text-[10px] font-[400] tracking-[-0.08px] text-muted-foreground">{f}</span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-1">
+                                  <button onClick={() => setShowKey((s: any) => ({ ...s, [item.id]: !(s as any)[item.id] }))} className="inline-flex h-7 items-center rounded-[6px] border border-border bg-muted/20 px-2.5 text-[12px] font-[500] tracking-[-0.12px] text-muted-foreground hover:bg-muted/60 hover:text-foreground">{show ? "Hide" : "Show"}</button>
+                                  <button onClick={() => testProvider(item.id)} disabled={isTesting} className="inline-flex h-7 items-center gap-1 rounded-[6px] border border-border bg-muted/20 px-2.5 text-[12px] font-[500] tracking-[-0.12px] text-muted-foreground hover:bg-muted/60 hover:text-foreground disabled:opacity-50">
+                                    {isTesting ? <Loader2 className="size-3 animate-spin" /> : null} Test
+                                  </button>
+                                  <button onClick={() => setKeyEdits((s: any) => ({ ...s, [item.id]: "" }))} className="inline-flex h-7 items-center rounded-[6px] border border-transparent px-2.5 text-[12px] font-[500] tracking-[-0.12px] text-muted-foreground hover:bg-muted/40 hover:text-foreground/80">Clear</button>
+                                  {isEdited ? <button onClick={() => setKeyEdits((s: any) => ({ ...s, [item.id]: null }))} className="inline-flex h-7 items-center rounded-[6px] bg-[#5e6ad2] px-2.5 text-[12px] font-[500] tracking-[-0.12px] text-white hover:bg-[#828fff]">Undo</button> : null}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="relative flex-1">
+                                  <input value={isEdited ? (edited as string) : ""} onChange={(e) => setKeyEdits((s: any) => ({ ...s, [item.id]: e.target.value }))} placeholder={hasKey ? "•••••••••••••••• — paste new key to replace" : "Paste " + item.keyEnv} type={show ? "text" : "password"} className="h-8 w-full rounded-[6px] border border-border bg-muted/20 px-3 font-mono text-[12px] tracking-[-0.08px] text-foreground placeholder:text-muted-foreground/70 outline-none focus:border-[rgba(94,106,210,0.4)] focus:bg-muted/40" spellCheck={false} autoComplete="off" />
+                                </div>
+                              </div>
+                              {showEndpoint ? (
+                                <div className="relative">
+                                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-[600] uppercase tracking-[0.08em] text-muted-foreground/70">URL</span>
+                                  <input value={effectiveBaseUrl} onChange={(e) => setBaseUrlEdits((s: any) => ({ ...s, [item.id]: e.target.value }))} placeholder={defaultBaseUrl || "https://your-endpoint.example.com/v1"} className="h-7 w-full rounded-[6px] border border-border/60 bg-transparent pl-12 pr-3 font-mono text-[11px] tracking-[-0.08px] text-muted-foreground placeholder:text-muted-foreground/70 outline-none focus:border-[rgba(94,106,210,0.35)]" spellCheck={false} autoComplete="off" />
+                                </div>
+                              ) : null}
+                              <div className="flex items-center justify-between">
+                                <p className="text-[11px] leading-[1.4] tracking-[-0.08px] text-muted-foreground/70">{hasKey ? "Key set — masked. " : "No key — "}{isEdited && !isCleared ? "Will save new value." : isCleared ? "Will remove from runtime on save." : "Leave blank to keep."}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                  );
-                })}
+                  ));
+                })()}
+              </div>
+
+              <div className="rounded-[8px] border border-[rgba(245,158,11,0.18)] bg-[rgba(245,158,11,0.06)] px-4 py-3">
+                <p className="text-[12px] leading-[1.6] tracking-[-0.12px] text-foreground/80"><span className="font-[600] text-foreground">Heads up</span> — Runtime keys win over <span className="font-mono text-[11px] text-foreground">.env</span> (<span className="font-mono text-[11px]">default &lt; env &lt; base_yaml &lt; runtime_yaml</span>). After migrating, remove provider keys from <span className="font-mono text-[11px]">.env</span> and keep only <span className="font-mono text-[11px]">POSTGRES_PASSWORD</span> / <span className="font-mono text-[11px]">AUTH_JWT_SECRET</span> there.</p>
               </div>
             </section>
           ) : null}
 
-          {activeTab === "display" ? <DisplaySettingsSection /> : null}
+{activeTab === "display" ? <DisplaySettingsSection /> : null}
+
+          {activeTab === "account" ? (
+            <section className="space-y-4">
+              <div>
+                <h2 className="text-base font-semibold text-foreground">Account</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Passwords, 2FA, and passkeys for the console login.</p>
+              </div>
+              <AccountTab />
+            </section>
+          ) : null}
 
           {activeTab === "notifications" ? (
             <section className="space-y-4">

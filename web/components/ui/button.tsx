@@ -1,15 +1,16 @@
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
+import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const buttonVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98]",
   {
     variants: {
       variant: {
-        default: "border border-input bg-background text-foreground shadow-sm hover:bg-accent hover:text-accent-foreground",
-        accent: "bg-primary text-primary-foreground shadow-sm hover:opacity-90",
+        default: "border border-input bg-background text-foreground shadow-sm hover:bg-accent hover:text-accent-foreground hover:border-accent",
+        accent: "bg-primary text-primary-foreground shadow-sm hover:opacity-90 hover:shadow-md",
         success: "bg-[var(--mint)] text-[#0d0a04] shadow-sm hover:brightness-95",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         danger: "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
@@ -32,9 +33,44 @@ export const buttonVariants = cva(
 export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean;
+    isLoading?: boolean;
+    loadingLabel?: string;
   };
 
-export function Button({ className, variant, size, asChild = false, ...props }: ButtonProps) {
-  const Comp = asChild ? Slot : "button";
-  return <Comp className={cn(buttonVariants({ variant, size }), className)} {...props} />;
+export function Button({ className, variant, size, asChild = false, isLoading = false, loadingLabel, children, disabled, ...props }: ButtonProps) {
+  const isDisabled = disabled || isLoading;
+  const cls = cn(buttonVariants({ variant, size }), isLoading && "relative", className);
+  const content = (
+    <>
+      {isLoading ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+      {isLoading && loadingLabel ? loadingLabel : children}
+    </>
+  );
+  if (asChild) {
+    // Slot requires single element child; fall back to button if multiple or non-element
+    const childCount = React.Children.count(children);
+    const first = React.Children.only as unknown as (c: React.ReactNode) => React.ReactElement;
+    try {
+      if (childCount === 1 && React.isValidElement(React.Children.toArray(children)[0])) {
+        return (
+          <Slot className={cls} aria-busy={isLoading || undefined} {...(props as unknown as Record<string, unknown>)}>
+            {children as React.ReactElement}
+          </Slot>
+        );
+      }
+    } catch {
+      // fall through to button
+    }
+    // If asChild requested but children invalid for Slot, render as button to avoid crash during prerender
+    return (
+      <button className={cls} disabled={isDisabled} aria-busy={isLoading || undefined} {...props}>
+        {content}
+      </button>
+    );
+  }
+  return (
+    <button className={cls} disabled={isDisabled} aria-busy={isLoading || undefined} {...props}>
+      {content}
+    </button>
+  );
 }

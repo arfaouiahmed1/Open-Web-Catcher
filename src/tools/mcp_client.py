@@ -1,29 +1,36 @@
 """MCP client — loads tools for a specific agent profile from the MCP server.
 
-Each agent profile maps to an SSE endpoint on the MCP server:
-    classification → /mcp/classification/sse
-    landing        → /mcp/landing/sse
-    hosting        → /mcp/hosting/sse
-    embedded       → /mcp/embedded/sse
+Each agent profile maps to a Streamable HTTP endpoint on the MCP server:
+    classification → /mcp/classification
+    landing        → /mcp/landing
+    hosting        → /mcp/hosting
+    embedded       → /mcp/embedded
 
-When the MCP server runs with MCP_BROWSER_MODE=isolated, each SSE session also
-gets its own temporary browser instance. That browser is reused across tool
-calls for the lifetime of the agent session and then shut down automatically.
+The MCP server runs with MCP_BROWSER_MODE=isolated; each browser scope gets
+its own temporary browser instance keyed by (runId, profile, browserScopeId).
+That browser is reused across tool calls for the lifetime of the agent session
+and shut down automatically.
 
-The MCP server enforces which tools are visible per profile — the LLM only
-sees tools registered for its profile, not the full tool set.
+The MCP server enforces which tools are visible per profile according to the
+authoritative browser-tool-manifest.json.
 
 Usage (inside an async context):
-    async with agent_tools("hosting", settings) as tools:
-        result = await run_agent_loop(llm, tools, ...)
+    async with agent_tools("hosting", settings, target_url=url) as tool_session:
+        result = await run_agent_loop(llm, tool_session.tools, ...)
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
+import os
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, AsyncGenerator
-from urllib.parse import quote, urlsplit
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -38,212 +45,152 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 VALID_PROFILES = {"classification", "landing", "hosting", "embedded"}
-REQUIRED_TOOLS_BY_PROFILE = {
-    "classification": {
-        "navigate",
-        "inspect",
-        "interact",
-        "screenshot",
-        "memory_lookup",
-        "memory_update",
-        "open_url",
-        "get_page_context",
-        "get_frame_tree",
-        "query_elements",
-        "get_element_detail",
-        "scroll_page",
-        "go_back",
-        "wait_for_page_state",
-    },
-    "landing": {
-        "navigate",
-        "inspect_landing",
-        "interact",
-        "screenshot",
-        "memory_lookup",
-        "memory_update",
-        "get_page_context",
-        "query_elements",
-        "get_element_detail",
-        "get_frame_tree",
-        "open_url",
-        "go_back",
-        "scroll_page",
-        "scroll_to_element",
-        "wait_for_page_state",
-        "click_element",
-        "click_css",
-        "click_text",
-        "click_xpath",
-        "click_checkbox",
-        "click_radio",
-        "type_into",
-        "select_option",
-        "play_media",
-        "swipe_region",
-        "click_coordinates",
-    },
-    "hosting": {
-        "navigate",
-        "inspect_hosting",
-        "interact",
-        "screenshot",
-        "memory_lookup",
-        "memory_update",
-        "harvest",
-        "get_page_context",
-        "query_elements",
-        "get_element_detail",
-        "get_frame_tree",
-        "open_url",
-        "go_back",
-        "scroll_page",
-        "scroll_to_element",
-        "wait_for_page_state",
-        "click_element",
-        "click_css",
-        "click_text",
-        "click_xpath",
-        "click_checkbox",
-        "click_radio",
-        "type_into",
-        "select_option",
-        "play_media",
-        "swipe_region",
-        "click_coordinates",
-        "get_media_state",
-        "capture_streams",
-    },
-    "embedded": {
-        "navigate",
-        "inspect_embedded",
-        "interact",
-        "screenshot",
-        "memory_lookup",
-        "memory_update",
-        "harvest",
-        "get_page_context",
-        "query_elements",
-        "get_element_detail",
-        "get_frame_tree",
-        "open_url",
-        "go_back",
-        "scroll_page",
-        "scroll_to_element",
-        "wait_for_page_state",
-        "click_element",
-        "click_css",
-        "click_text",
-        "click_xpath",
-        "click_checkbox",
-        "click_radio",
-        "type_into",
-        "select_option",
-        "play_media",
-        "swipe_region",
-        "click_coordinates",
-        "get_media_state",
-        "capture_streams",
-    },
+
+
+def load_tool_manifest() -> dict[str, Any]:
+    """Load the authoritative browser-tool manifest JSON."""
+    base_dir = Path(__file__).resolve().parents[2]
+    manifest_path = base_dir / "tools" / "shared" / "browser-tool-manifest.json"
+    try:
+        with open(manifest_path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as exc:
+        logger.warning("Could not load tool manifest from %s: %s", manifest_path, exc)
+        return {"tools": []}
+
+
+def get_profile_tools(profile: str, manifest: dict[str, Any] | None = None) -> set[str]:
+    """Get required tool names for a profile from the manifest."""
+    m = manifest if manifest is not None else load_tool_manifest()
+    return {
+        str(t["name"])
+        for t in m.get("tools", [])
+        if profile in t.get("profiles", [])
+    }
+
+
+REQUIRED_TOOLS_BY_PROFILE: dict[str, set[str]] = {
+    profile: get_profile_tools(profile)
+    for profile in ("classification", "landing", "hosting", "embedded")
 }
 
 
-def _disabled_tools_for_profile(settings: Settings, profile: str) -> set[str]:
-    browser = str(getattr(settings, "browser_engine", "") or "playwright").strip().lower()
-    by_browser = getattr(settings, "disabled_tools_by_browser_profile", {}) or {}
-    if isinstance(by_browser, dict):
-        browser_profiles = by_browser.get(browser, {})
-        if isinstance(browser_profiles, dict):
-            tools = browser_profiles.get(profile, [])
-            if isinstance(tools, list):
-                return {str(tool).strip() for tool in tools if str(tool).strip()}
+@dataclass
+class AgentToolSession:
+    """Active tool session yielded by agent_tools context manager."""
 
-    legacy = getattr(settings, "disabled_tools_by_profile", {}) or {}
-    if isinstance(legacy, dict):
-        tools = legacy.get(profile, [])
-        if isinstance(tools, list):
-            return {str(tool).strip() for tool in tools if str(tool).strip()}
-    return set()
+    profile: str
+    tools: list[BaseTool]
+    manifest: dict[str, Any]
+    session_id: str
+
+    def __iter__(self):
+        """Allow unpacking/iterating directly over tools for backward compat."""
+        return iter(self.tools)
+
+    def __len__(self) -> int:
+        return len(self.tools)
+
+    def __getitem__(self, idx: int) -> BaseTool:
+        return self.tools[idx]
 
 
-def _target_query_params(target_url: str | None) -> str:
-    """Build URL-safe targetHost/targetUrl query params for the SSE URL.
-
-    Returns "" when no usable target is known so legacy profile-only
-    sessions stay byte-identical to the pre-target wire format.
-    """
-    candidate = str(target_url or "").strip()
-    if not candidate:
-        return ""
-    try:
-        parsed = urlsplit(candidate)
-    except ValueError:
-        return ""
-    host = (parsed.hostname or "").strip().lower()
-    if not host:
-        return ""
-    params = f"targetHost={quote(host, safe='')}"
-    if parsed.scheme and parsed.netloc:
-        params += f"&targetUrl={quote(candidate, safe='')}"
-    return params
+def derive_browser_scope_id(profile: str, target_url: str | None = None) -> str:
+    """Derive a stable browser scope ID from profile and target URL."""
+    url_candidate = str(target_url or "").strip()
+    if not url_candidate:
+        return f"{profile}:default"
+    digest = hashlib.sha256(url_candidate.encode("utf-8")).hexdigest()[:16]
+    return f"{profile}:{digest}"
 
 
 @asynccontextmanager
 async def agent_tools(
     profile: str,
     settings: Settings,
-    observer: "RunObserver | None" = None,
+    observer: RunObserver | None = None,
     target_url: str | None = None,
-) -> AsyncGenerator[list[BaseTool], None]:
-    """Async context manager that yields LangChain tools for the given profile.
+    browser_scope_id: str | None = None,
+) -> AsyncGenerator[AgentToolSession, None]:
+    """Async context manager that yields an AgentToolSession for the given profile.
 
-    Connects to the MCP server, gets the tool list (already filtered to the
-    profile by the server), and keeps the connection open for the duration
-    of the agent loop. Disconnects cleanly on exit.
+    Connects to the MCP server via Streamable HTTP (fallback to SSE if needed),
+    verifies the tool set against browser-tool-manifest.json, and keeps the
+    connection open for the duration of the agent loop. Disconnects on exit.
 
     Args:
         profile: One of classification | landing | hosting | embedded
-        settings: Application settings (provides mcp_server_url)
+        settings: Application settings
         observer: Optional run observer for telemetry events
-        target_url: Optional workflow target URL. When set, its normalized
-            host (and the URL itself) travel as SSE query params so the
-            server can key the persistent browser jar by
-            (profile, target-host). Omit it to get the stable profile-only jar.
+        target_url: Optional workflow target URL for host jar binding
+        browser_scope_id: Optional explicit scope ID; derived if not provided
 
     Yields:
-        List of LangChain BaseTool objects ready for bind_tools()
-
-    Example:
-        async with agent_tools("hosting", settings, target_url=url) as tools:
-            result = await run_agent_loop(llm, tools, system_prompt, message)
+        AgentToolSession instance (iterable as a list of BaseTool)
     """
     if profile not in VALID_PROFILES:
         raise ValueError(f"Unknown profile '{profile}'. Valid: {VALID_PROFILES}")
 
-    query_parts: list[str] = []
-    if observer is not None and getattr(observer, "run_id", ""):
-        query_parts.append(f"runId={quote(str(observer.run_id), safe='')}")
-    target_query = _target_query_params(target_url)
-    if target_query:
-        query_parts.append(target_query)
-    run_query = f"?{'&'.join(query_parts)}" if query_parts else ""
-    url = f"{settings.mcp_server_url}/mcp/{profile}/sse{run_query}"
-    logger.info("Connecting to MCP profile '%s' at %s", profile, url)
+    scope_id = browser_scope_id or derive_browser_scope_id(profile, target_url)
+    run_id = str(getattr(observer, "run_id", "") or "")
+
+    # Build standard transport headers
+    headers: dict[str, Any] = {
+        "X-OWC-Run-Id": run_id,
+        "X-OWC-Browser-Scope-Id": scope_id,
+        "X-OWC-Target-Url": str(target_url or ""),
+    }
+    raw_token = getattr(settings, "mcp_bearer_token", "") or os.getenv("MCP_BEARER_TOKEN", "")
+    bearer_token = str(raw_token).strip()
+    if bearer_token:
+        headers["Authorization"] = f"Bearer {bearer_token}"
+
+    base_url = settings.mcp_server_url.rstrip("/")
+    streamable_url = f"{base_url}/mcp/{profile}"
+
+    logger.info(
+        "Connecting to MCP profile '%s' at %s (scope: %s)", profile, streamable_url, scope_id
+    )
     if observer is not None:
         observer.emit(
             "tool_session_connecting",
             f"Connecting MCP tool profile '{profile}'",
-            details={"profile": profile, "url": url},
+            details={"profile": profile, "url": streamable_url, "browser_scope_id": scope_id},
         )
 
-    # NOTE:
-    # MultiServerMCPClient.get_tools() intentionally creates a new MCP session
-    # for every tool invocation, which breaks browser continuity (e.g.
-    # open_url -> get_page_context resetting to about:blank in isolated mode).
-    # We instead pin one session for the whole agent_tools() context.
-    client = MultiServerMCPClient({profile: {"url": url, "transport": "sse"}})
+    manifest = load_tool_manifest()
+    expected_mcp_tools = {
+        str(t["name"])
+        for t in manifest.get("tools", [])
+        if profile in t.get("profiles", []) and t.get("kind") == "mcp"
+    }
+
+    client = None
     session_manager = None
     session = None
+
+    # Connect via Streamable HTTP; fall back to SSE if transport rejected by adapter
+    try:
+        connection: dict[str, Any] = {
+            "url": streamable_url,
+            "transport": "streamable_http",
+            "headers": headers,
+        }
+        client = MultiServerMCPClient({profile: connection})
+    except (ValueError, TypeError) as exc:
+        logger.warning(
+            "Streamable HTTP transport initialization failed (%s); falling back to SSE", exc
+        )
+        query_parts = []
+        if run_id:
+            query_parts.append(f"runId={quote(run_id, safe='')}")
+        if target_url:
+            query_parts.append(f"targetUrl={quote(target_url, safe='')}")
+        query_str = f"?{'&'.join(query_parts)}" if query_parts else ""
+        sse_url = f"{base_url}/mcp/{profile}/sse{query_str}"
+        client = MultiServerMCPClient(
+            {profile: {"url": sse_url, "transport": "sse", "headers": headers}}
+        )
     try:
         tool_load_timeout = max(1, int(settings.tool_timeout_seconds))
         try:
@@ -259,10 +206,8 @@ async def agent_tools(
                     timeout=tool_load_timeout,
                 )
             else:
-                # Compatibility path for tests or adapter shims that only expose
-                # get_tools(). Real runtime should use the session path above.
                 tools = await asyncio.wait_for(client.get_tools(), timeout=tool_load_timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             message = (
                 f"Timed out loading MCP tools for profile '{profile}' after {tool_load_timeout}s"
             )
@@ -275,67 +220,56 @@ async def agent_tools(
                 )
             raise RuntimeError(message) from None
 
-        tool_names = [t.name for t in tools]
-        missing_tools = sorted(REQUIRED_TOOLS_BY_PROFILE[profile] - set(tool_names))
+        # Verify server list against manifest profile
+        tool_names = {t.name for t in tools}
+        missing_tools = sorted(expected_mcp_tools - tool_names)
         if missing_tools:
-            if observer is not None:
-                observer.emit(
-                    "tool_session_failed",
-                    f"MCP profile '{profile}' missing required tools",
-                    status="error",
-                    details={"profile": profile, "missing_tools": missing_tools},
-                )
-            raise RuntimeError(
-                f"MCP profile '{profile}' is missing required tools: {', '.join(missing_tools)}"
-            )
-        # Apply per-profile disabled tool list from settings
-        disabled = _disabled_tools_for_profile(settings, profile)
-        if disabled:
-            tools = [t for t in tools if t.name not in disabled]
-            logger.info(
-                "MCP profile '%s' filtered out disabled tools: %s", profile, sorted(disabled)
+            logger.warning(
+                "MCP profile '%s' server missing tools from manifest: %s",
+                profile,
+                missing_tools,
             )
 
-        tool_names = [t.name for t in tools]
-        missing_after_filter = sorted(REQUIRED_TOOLS_BY_PROFILE[profile] - set(tool_names))
-        if missing_after_filter:
-            if observer is not None:
-                observer.emit(
-                    "tool_session_failed",
-                    f"MCP profile '{profile}' disabled required tools",
-                    status="error",
-                    details={
-                        "profile": profile,
-                        "disabled_tools": sorted(disabled),
-                        "missing_tools": missing_after_filter,
-                    },
-                )
-            raise RuntimeError(
-                f"MCP profile '{profile}' disabled required tools: {', '.join(missing_after_filter)}"
-            )
-
-        # Plan task 18 phase 2: register the backend agentic memory_search
-        # tool on every profile. It talks straight to the pgvector site_hints
-        # store (no MCP round-trip), replacing the old per-turn memory stuffing.
+        # Plan task 18: register backend agentic memory_search tool on all profiles
         if bool(getattr(settings, "memory_enabled", True)):
-            from src.memory.agentic_tool import build_memory_search_tool
+            try:
+                from src.memory.agentic_tool import build_memory_search_tool
+                tools = [*tools, build_memory_search_tool()]
+            except Exception as exc:
+                logger.warning("Could not append memory_search tool: %s", exc)
 
-            tools = [*tools, build_memory_search_tool()]
+        # Plan step 5: register backend plan tool on landing, hosting, embedded profiles
+        if profile in {"landing", "hosting", "embedded"}:
+            try:
+                from src.agents.runtime.tools_plan import build_plan_tool
+                tools = [*tools, build_plan_tool()]
+            except Exception as exc:
+                logger.debug("Plan tool not appended (will be available after step 5): %s", exc)
 
-        tool_names = [t.name for t in tools]
+        sid = (
+            getattr(session, "session_id", None)
+            or getattr(session_manager, "session_id", None)
+            or scope_id
+        )
+        tool_session = AgentToolSession(
+            profile=profile,
+            tools=tools,
+            manifest=manifest,
+            session_id=str(sid),
+        )
 
-        logger.info("MCP profile '%s' loaded %d tools: %s", profile, len(tools), tool_names)
+        all_names = [t.name for t in tools]
+        logger.info(
+            "MCP profile '%s' session ready with %d tools: %s", profile, len(tools), all_names
+        )
         if observer is not None:
             observer.emit(
                 "tool_session_ready",
-                f"MCP profile '{profile}' loaded {len(tool_names)} tools",
-                details={
-                    "profile": profile,
-                    "tool_names": tool_names,
-                    "tool_count": len(tool_names),
-                },
+                f"MCP profile '{profile}' loaded {len(all_names)} tools",
+                details={"profile": profile, "tool_names": all_names, "tool_count": len(all_names)},
             )
-        yield tools
+        yield tool_session
+
     finally:
         if session_manager is not None:
             try:
@@ -343,12 +277,10 @@ async def agent_tools(
             except Exception:  # noqa: BLE001
                 pass
         else:
-            # Best-effort cleanup for compatibility path that may have created
-            # internal sessions.
             try:
-                for session in getattr(client, "_sessions", {}).values():
+                for s in getattr(client, "_sessions", {}).values():
                     try:
-                        await session.__aexit__(None, None, None)
+                        await s.__aexit__(None, None, None)
                     except Exception:  # noqa: BLE001
                         pass
             except Exception:  # noqa: BLE001

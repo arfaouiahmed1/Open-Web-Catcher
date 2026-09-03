@@ -203,6 +203,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/change-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change Password
+         * @description Change the authenticated user's password after verifying the old one.
+         */
+        post: operations["change_password_api_auth_change_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -641,27 +661,6 @@ export interface paths {
          *     Node-side proxies (plan task 18 phase 2).
          */
         post: operations["search_memory_memory_search_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/memory/update": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Update Memory
-         * @description Write path for the Node memory_update proxy — distills the patch into a
-         *     site_hints row via write_site_hint (legacy JSON store is gone).
-         */
-        post: operations["update_memory_memory_update_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1521,6 +1520,13 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /** ChangePasswordRequest */
+        ChangePasswordRequest: {
+            /** Current Password */
+            current_password: string;
+            /** New Password */
+            new_password: string;
+        };
         /** ClassificationResult */
         ClassificationResult: {
             /** @default classification */
@@ -1531,6 +1537,8 @@ export interface components {
              * @default parsed
              */
             confidence_source: string;
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
             /** Metadata */
             metadata?: {
                 [key: string]: unknown;
@@ -1623,6 +1631,33 @@ export interface components {
              */
             limit: number;
         };
+        /**
+         * EvidenceRef
+         * @description A pointer to one piece of proof emitted by a v2 tool call.
+         */
+        EvidenceRef: {
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at?: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "screenshot" | "network_entry" | "dom_snapshot" | "manifest_probe" | "media_sample" | "page_state";
+            /** Page State Id */
+            page_state_id: string;
+            /** Ref */
+            ref: string;
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /** Tool Call Id */
+            tool_call_id: string;
+        };
         /** ExtractRequest */
         ExtractRequest: {
             /**
@@ -1654,6 +1689,8 @@ export interface components {
              * @default
              */
             error_message: string;
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
             /** Metadata */
             metadata?: {
                 [key: string]: unknown;
@@ -1715,6 +1752,8 @@ export interface components {
              * @default
              */
             entry_point: string;
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
             /** Iframes */
             iframes?: string[];
             /** League */
@@ -1798,44 +1837,6 @@ export interface components {
             /** Query */
             query: string;
         };
-        /**
-         * MemoryUpdateRequest
-         * @description Write payload for the Node memory_update proxy (plan task 18 phase 2).
-         */
-        MemoryUpdateRequest: {
-            /**
-             * Navigation Steps
-             * @default []
-             */
-            navigation_steps: string[];
-            /**
-             * Page Type
-             * @default unknown
-             */
-            page_type: string;
-            /**
-             * Playbook Steps
-             * @default []
-             */
-            playbook_steps: string[];
-            /**
-             * Refresh Reason
-             * @default
-             */
-            refresh_reason: string;
-            /**
-             * Selectors
-             * @default []
-             */
-            selectors: string[];
-            /**
-             * Status
-             * @default success
-             */
-            status: string;
-            /** Url */
-            url: string;
-        };
         /** ModelConfigRequest */
         ModelConfigRequest: {
             /** Agent Model */
@@ -1848,20 +1849,28 @@ export interface components {
             agent_runtime_config?: {
                 [key: string]: unknown;
             } | null;
+            /** Anthropic Api Key */
+            anthropic_api_key?: string | null;
+            /** Azure Api Base */
+            azure_api_base?: string | null;
+            /** Azure Api Key */
+            azure_api_key?: string | null;
+            /** Background Job Retention Days */
+            background_job_retention_days?: number | null;
+            /** Bedrock Api Key */
+            bedrock_api_key?: string | null;
             /** Browser Engine */
             browser_engine?: string | null;
             /** Browser Runtime */
             browser_runtime?: {
                 [key: string]: unknown;
             } | null;
-            /** Disabled Tools By Browser Profile */
-            disabled_tools_by_browser_profile?: {
-                [key: string]: unknown;
-            } | null;
-            /** Disabled Tools By Profile */
-            disabled_tools_by_profile?: {
-                [key: string]: unknown;
-            } | null;
+            /** Cohere Api Key */
+            cohere_api_key?: string | null;
+            /** Deepseek Api Key */
+            deepseek_api_key?: string | null;
+            /** Fireworks Api Key */
+            fireworks_api_key?: string | null;
             /** Gemini Explicit Cache Enabled */
             gemini_explicit_cache_enabled?: boolean | null;
             /** Gemini Explicit Cache Refresh Lead Seconds */
@@ -1870,6 +1879,12 @@ export interface components {
             gemini_explicit_cache_ttl_seconds?: number | null;
             /** Gemini Temperature */
             gemini_temperature?: number | null;
+            /** Google Api Key */
+            google_api_key?: string | null;
+            /** Google Vertex Api Key */
+            google_vertex_api_key?: string | null;
+            /** Groq Api Key */
+            groq_api_key?: string | null;
             /** Llm Provider */
             llm_provider?: string | null;
             /** Llm Tuning */
@@ -1878,18 +1893,60 @@ export interface components {
             } | null;
             /** Max Parallel Hosting Pages */
             max_parallel_hosting_pages?: number | null;
+            /** Mistral Api Key */
+            mistral_api_key?: string | null;
+            /** Nvidia Api Key */
+            nvidia_api_key?: string | null;
+            /** Observability Enabled */
+            observability_enabled?: boolean | null;
+            /** Openai Api Key */
+            openai_api_key?: string | null;
+            /** Openrouter Api Key */
+            openrouter_api_key?: string | null;
             /** Orchestrator Model */
             orchestrator_model?: string | null;
+            /** Payload Cap Bytes */
+            payload_cap_bytes?: number | null;
+            /** Perplexity Api Key */
+            perplexity_api_key?: string | null;
+            /** Provider Api Keys */
+            provider_api_keys?: {
+                [key: string]: string;
+            } | null;
+            /** Provider Base Urls */
+            provider_base_urls?: {
+                [key: string]: string;
+            } | null;
             /** Provider Cache Enabled */
             provider_cache_enabled?: boolean | null;
+            /** Retention Days Agent Outputs */
+            retention_days_agent_outputs?: number | null;
+            /** Retention Days Llm Calls */
+            retention_days_llm_calls?: number | null;
+            /** Retention Days Run Snapshots */
+            retention_days_run_snapshots?: number | null;
+            /** Retention Days Runs */
+            retention_days_runs?: number | null;
+            /** Retention Days Tool Calls */
+            retention_days_tool_calls?: number | null;
             /** Thinking Budget Tokens */
             thinking_budget_tokens?: number | null;
             /** Thinking Enabled */
             thinking_enabled?: boolean | null;
+            /** Together Api Key */
+            together_api_key?: string | null;
             /** Tool Result Cache Enabled */
             tool_result_cache_enabled?: boolean | null;
             /** Tool Result Cache Min Identical Observations */
             tool_result_cache_min_identical_observations?: number | null;
+            /** Upstage Api Key */
+            upstage_api_key?: string | null;
+            /** Workflow Max Cost Usd */
+            workflow_max_cost_usd?: number | null;
+            /** Workflow Max Tokens */
+            workflow_max_tokens?: number | null;
+            /** Xai Api Key */
+            xai_api_key?: string | null;
         };
         /** ModelUsage */
         ModelUsage: {
@@ -2408,6 +2465,8 @@ export interface components {
             embedded_url?: string | null;
             /** Embedded Url Source */
             embedded_url_source?: string | null;
+            /** Evidence */
+            evidence?: components["schemas"]["EvidenceRef"][];
             /** Extraction Method */
             extraction_method?: string | null;
             /** Iframe Diagnostics */
@@ -2589,6 +2648,12 @@ export interface components {
              * @default
              */
             channel_name: string;
+            /** Content Type */
+            content_type?: string | null;
+            /** Frame Url */
+            frame_url?: string | null;
+            /** Http Status */
+            http_status?: number | null;
             /**
              * Protocol
              * @default
@@ -2599,13 +2664,24 @@ export interface components {
              * @default
              */
             quality: string;
+            /** Sample Bytes */
+            sample_bytes?: number | null;
+            /** Sample Sha256 */
+            sample_sha256?: string | null;
             /**
              * Source Layer
              * @default
              */
             source_layer: string;
+            /** Source Layers */
+            source_layers?: string[];
             /** Url */
             url: string;
+            /**
+             * Verified
+             * @default false
+             */
+            verified: boolean;
         };
         /**
          * TakedownEmail
@@ -3159,6 +3235,41 @@ export interface operations {
             };
         };
     };
+    change_password_api_auth_change_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     login_api_auth_login_post: {
         parameters: {
             query?: never;
@@ -3283,7 +3394,9 @@ export interface operations {
     };
     get_batch_api_datasets_batches__batch_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                include_runs?: boolean;
+            };
             header?: never;
             path: {
                 batch_id: string;
@@ -4032,39 +4145,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MemorySearchRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_memory_memory_update_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MemoryUpdateRequest"];
             };
         };
         responses: {
