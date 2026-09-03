@@ -26,6 +26,6 @@
     "m3u8-parser": "7.2.0",
     "playwright": "1.62.1",
     "patchright": "1.62.3",
-    "zod": "3.25.76"
+    "zod": "4.5.4"
   }
 }
