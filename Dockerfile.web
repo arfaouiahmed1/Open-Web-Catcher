@@ -4,7 +4,7 @@
 # Digest pin placeholder (resolve with: docker buildx imagetools inspect node:20-alpine
 # then append @sha256:<digest> to each FROM line below):
 #   node:20-alpine@sha256:<TO_FILL_AFTER_VERIFYING>
-FROM node:20-alpine AS deps
+FROM node:26-alpine AS deps
 
 ARG BUILDKIT_INLINE_CACHE=1
 
@@ -14,7 +14,7 @@ COPY web/package*.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci
 
-FROM node:20-alpine AS builder
+FROM node:26-alpine AS builder
 
 ARG BUILDKIT_INLINE_CACHE=1
 
@@ -29,7 +29,7 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
 
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM node:26-alpine AS runner
 
 ARG BUILDKIT_INLINE_CACHE=1
 
