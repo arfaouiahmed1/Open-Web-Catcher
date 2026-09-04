@@ -345,7 +345,7 @@ function LlmCallCard({  row, defaultExpanded = false  }: any) {
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-[11px] font-semibold text-[var(--signal)]">
+            <span className="font-mono text-[11px] font-semibold text-[var(--signal-text)]">
               #{row.seq || "-"}
             </span>
             <Badge tone="default" className="font-mono">
@@ -401,9 +401,9 @@ function LlmCallCard({  row, defaultExpanded = false  }: any) {
         <div className="flex shrink-0 flex-wrap items-center gap-3 text-right">
           {isResponse ? (
             <div className="text-[10px] text-muted-foreground">
-              <span className="text-[var(--violet)]">{formatNumber(inputTokens)}</span>
+              <span className="text-[var(--violet-text)]">{formatNumber(inputTokens)}</span>
               {" / "}
-              <span className="text-[var(--signal)]">{formatNumber(outputTokens)}</span> tok
+              <span className="text-[var(--signal-text)]">{formatNumber(outputTokens)}</span> tok
             </div>
           ) : (
             <Badge tone={row.kindTone} className="px-1.5 py-0.5 text-[9.5px]">
@@ -429,7 +429,7 @@ function LlmCallCard({  row, defaultExpanded = false  }: any) {
             </div>
           ) : null}
           {cost > 0 ? (
-            <div className="font-mono text-[10px] text-[var(--mint)]">{formatCurrency(cost)}</div>
+            <div className="font-mono text-[10px] text-[var(--mint-text)]">{formatCurrency(cost)}</div>
           ) : null}
         </div>
       </button>
@@ -439,26 +439,26 @@ function LlmCallCard({  row, defaultExpanded = false  }: any) {
           <div className="flex flex-wrap gap-4 border-b border-border bg-muted/20 px-4 py-2.5 text-[10.5px]">
             <span>
               <span className="text-muted-foreground">in </span>
-              <span className="text-[var(--violet)]">{formatNumber(inputTokens)}</span>
+              <span className="text-[var(--violet-text)]">{formatNumber(inputTokens)}</span>
             </span>
             <span>
               <span className="text-muted-foreground">out </span>
-              <span className="text-[var(--signal)]">{formatNumber(outputTokens)}</span>
+              <span className="text-[var(--signal-text)]">{formatNumber(outputTokens)}</span>
             </span>
             {thinkingTokens > 0 ? (
               <span>
                 <span className="text-muted-foreground">think </span>
-                <span className="text-[var(--sky)]">{formatNumber(thinkingTokens)}</span>
+                <span className="text-[var(--sky-text)]">{formatNumber(thinkingTokens)}</span>
               </span>
             ) : null}
             {cost > 0 ? (
               <span>
                 <span className="text-muted-foreground">cost </span>
-                <span className="text-[var(--mint)]">{formatCurrency(cost)}</span>
+                <span className="text-[var(--mint-text)]">{formatCurrency(cost)}</span>
               </span>
             ) : null}
-            {row.providerCacheActive ? <span className="text-[var(--mint)]">provider cache</span> : null}
-            {row.cacheHit ? <span className="text-[var(--sky)]">cache hit</span> : null}
+            {row.providerCacheActive ? <span className="text-[var(--mint-text)]">provider cache</span> : null}
+            {row.cacheHit ? <span className="text-[var(--sky-text)]">cache hit</span> : null}
             {ctxPct !== null ? (
               <span title={`${formatNumber(inputTokens)} / ${formatNumber(contextWindow)} context tokens`}>
                 <span className="text-muted-foreground">ctx </span>
@@ -499,7 +499,7 @@ function LlmCallCard({  row, defaultExpanded = false  }: any) {
 
               {thinkingText ? (
                 <details className="group rounded-lg border border-border">
-                  <summary className="flex cursor-pointer select-none items-center gap-2 bg-muted/30 px-4 py-2 text-[10.5px] font-medium text-[var(--sky)]">
+                  <summary className="flex cursor-pointer select-none items-center gap-2 bg-muted/30 px-4 py-2 text-[10.5px] font-medium text-[var(--sky-text)]">
                     <span>Thinking</span>
                     {thinkingTokens > 0 ? (
                       <span className="font-mono text-[9.5px] text-muted-foreground">

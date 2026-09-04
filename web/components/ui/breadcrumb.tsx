@@ -24,7 +24,7 @@ export type BreadcrumbSeparatorProps = React.ComponentPropsWithoutRef<"li"> & {
 
 export function BreadcrumbSeparator({ className, children, ...props }: BreadcrumbSeparatorProps) {
   return (
-    <li aria-hidden="true" className={cn("text-muted-foreground/60", className)} {...props}>
+    <li aria-hidden="true" className={cn("text-muted-foreground/75", className)} {...props}>
       {children ?? <ChevronRight className="size-3.5" />}
     </li>
   );

@@ -664,10 +664,10 @@ def list_batches(limit: int = Query(20, ge=1, le=200), offset: int = Query(0, ge
 
 
 @router.get("/batches/{batch_id}")
-def get_batch(batch_id: str):
+def get_batch(batch_id: str, include_runs: bool = Query(False)):
     def _handler(_: Any, repo: DatasetRepository):
         try:
-            return repo.get_batch(batch_id)
+            return repo.get_batch(batch_id, include_runs=include_runs)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -716,6 +716,6 @@ def create_batch(req: DatasetBatchRequest):
                 },
                 idempotency_key="",
             )
-        return repo.get_batch(str(created.get("batch_id", "") or ""))
+        return repo.get_batch(str(created.get("batch_id", "") or ""), include_runs=False)
 
     return _with_repo(_handler)

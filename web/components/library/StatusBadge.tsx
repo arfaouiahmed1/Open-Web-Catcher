@@ -8,18 +8,22 @@ import type { ComponentState } from "./types";
 export type StatusTone =
   | "neutral"
   | "info"
+  | "sky"
+  | "signal"
   | "success"
   | "warning"
   | "danger";
 
 const TONE_CLASS: Record<StatusTone, string> = {
   neutral: "bg-muted text-muted-foreground border-border",
-  info: "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400",
+  info: "border-[color-mix(in_oklch,var(--sky)_28%,transparent)] bg-[color-mix(in_oklch,var(--sky)_12%,transparent)] text-[var(--sky-text)]",
+  sky: "border-[color-mix(in_oklch,var(--sky)_28%,transparent)] bg-[color-mix(in_oklch,var(--sky)_12%,transparent)] text-[var(--sky-text)]",
+  signal: "border-[color-mix(in_oklch,var(--signal)_28%,transparent)] bg-[color-mix(in_oklch,var(--signal)_12%,transparent)] text-[var(--signal-text)]",
   success:
-    "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    "border-[color-mix(in_oklch,var(--mint)_28%,transparent)] bg-[color-mix(in_oklch,var(--mint)_12%,transparent)] text-[var(--mint-text)]",
   warning:
-    "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  danger: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400",
+    "border-[color-mix(in_oklch,var(--signal)_28%,transparent)] bg-[color-mix(in_oklch,var(--signal)_12%,transparent)] text-[var(--signal-text)]",
+  danger: "border-[color-mix(in_oklch,var(--rose)_28%,transparent)] bg-[color-mix(in_oklch,var(--rose)_12%,transparent)] text-[var(--rose-text)]",
 };
 
 export interface StatusBadgeProps {
@@ -48,6 +52,7 @@ export function StatusBadge({
     <StateFrame
       component="StatusBadge"
       state={resolved}
+      surface={false}
       loadingLabel={loadingLabel}
       errorLabel={errorLabel}
       emptyLabel={emptyLabel}

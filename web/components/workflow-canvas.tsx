@@ -43,17 +43,17 @@ function statusFromEvents(actorEvents: WorkflowEvent[]): string {
 }
 
 function statusStyle(status: string): string {
-  if (status === "running") return "border border-signal/40 bg-signal/10 animate-pulse";
-  if (status === "succeeded") return "border border-emerald-500/35 bg-emerald-500/10";
-  if (status === "failed") return "border border-ember/35 bg-ember/10";
-  if (status === "connecting") return "border border-sky-400/35 bg-sky-400/10";
+  if (status === "running") return "border border-[color-mix(in_oklch,var(--signal)_40%,transparent)] bg-[color-mix(in_oklch,var(--signal)_10%,transparent)] animate-pulse";
+  if (status === "succeeded") return "border border-[color-mix(in_oklch,var(--mint)_35%,transparent)] bg-[color-mix(in_oklch,var(--mint)_10%,transparent)]";
+  if (status === "failed") return "border border-[color-mix(in_oklch,var(--rose)_35%,transparent)] bg-[color-mix(in_oklch,var(--rose)_10%,transparent)]";
+  if (status === "connecting") return "border border-[color-mix(in_oklch,var(--sky)_35%,transparent)] bg-[color-mix(in_oklch,var(--sky)_10%,transparent)]";
   return "border border-border bg-muted/30";
 }
 
 function StatusIcon({ status }: { status: string }): React.JSX.Element | null {
-  if (status === "running") return <Loader2 className="h-3.5 w-3.5 animate-spin text-signal" />;
-  if (status === "succeeded") return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />;
-  if (status === "failed") return <XCircle className="h-3.5 w-3.5 text-ember" />;
+  if (status === "running") return <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--signal-text)]" />;
+  if (status === "succeeded") return <CheckCircle2 className="h-3.5 w-3.5 text-[var(--mint-text)]" />;
+  if (status === "failed") return <XCircle className="h-3.5 w-3.5 text-[var(--rose-text)]" />;
   return null;
 }
 
@@ -113,9 +113,9 @@ function buildFlow(events: WorkflowEvent[], rootActor: string): { nodes: Array<R
     target: actor,
     animated: rootRunning,
     label: latestTime || "",
-    labelStyle: { fill: "#94a3b8", fontSize: 10 },
-    markerEnd: { type: MarkerType.ArrowClosed, color: "#75a9ff" },
-    style: { stroke: "#75a9ff", strokeWidth: 2 },
+    labelStyle: { fill: "var(--mute-2)", fontSize: 10 },
+    markerEnd: { type: MarkerType.ArrowClosed, color: "var(--sky-text)" },
+    style: { stroke: "var(--sky-text)", strokeWidth: 2 },
   }));
 
   return { nodes, edges };
@@ -133,7 +133,7 @@ export const WorkflowCanvas = memo(function WorkflowCanvas({ events = [], rootAc
     <Card className="h-[420px] overflow-hidden p-0">
       <div className="h-full w-full">
         <ReactFlow nodes={flow.nodes as never} edges={flow.edges as never} nodeTypes={nodeTypes as never} fitView>
-          <Background color="rgba(255,255,255,0.06)" gap={24} />
+          <Background color="var(--line-hi)" gap={24} />
           <Controls />
         </ReactFlow>
       </div>

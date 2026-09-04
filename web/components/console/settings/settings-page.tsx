@@ -43,6 +43,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { apiFetch } from "@/lib/api";
 import { BrowserTab } from "./tabs/browser-tab";
+import { ModelsTab } from "./tabs/models-tab";
+import { DisplayTab } from "./tabs/display-tab";
+import { McpToolsTab } from "./tabs/mcp-tools-tab";
+import { ApiKeysTab } from "./tabs/api-keys-tab";
+import { NotificationsTab } from "./tabs/notifications-tab";
 import { AccountTab } from "./tabs/account-tab";
 import {
   BROWSER_RUNTIME_KEYS,
@@ -289,47 +294,7 @@ const MCP_TOOLS_BY_PROFILE = {
   ],
 };
 
-const PROFILE_LABELS = {
-  classification: "Classification",
-  landing: "Landing Page",
-  hosting: "Hosting Page",
-  embedded: "Embedded Page",
-};
 
-const MCP_TOOL_META = {
-  navigate: { label: "navigate", desc: "Load a URL in the browser tab", category: "Navigation" },
-  inspect: { label: "inspect", desc: "Read the current page DOM structure", category: "Inspection" },
-  inspect_landing: { label: "inspect_landing", desc: "Read DOM for landing-page analysis", category: "Inspection" },
-  inspect_hosting: { label: "inspect_hosting", desc: "Read DOM for hosting-page extraction", category: "Inspection" },
-  inspect_embedded: { label: "inspect_embedded", desc: "Read DOM for embedded-player detection", category: "Inspection" },
-  interact: { label: "interact", desc: "Generic page interaction dispatcher", category: "Interaction" },
-  screenshot: { label: "screenshot", desc: "Capture a browser screenshot", category: "Inspection" },
-  memory_lookup: { label: "memory_lookup", desc: "Retrieve data from agent memory store", category: "Memory" },
-  memory_update: { label: "memory_update", desc: "Write data to agent memory store", category: "Memory" },
-  open_url: { label: "open_url", desc: "Open a URL in a new or existing tab", category: "Navigation" },
-  get_page_context: { label: "get_page_context", desc: "Return page title, URL, and meta tags", category: "Inspection" },
-  get_frame_tree: { label: "get_frame_tree", desc: "List all frames and iframes on the page", category: "Inspection" },
-  query_elements: { label: "query_elements", desc: "CSS/XPath element query with counts", category: "Inspection" },
-  get_element_detail: { label: "get_element_detail", desc: "Deep detail on a single DOM element", category: "Inspection" },
-  scroll_page: { label: "scroll_page", desc: "Scroll the page by amount or to element", category: "Navigation" },
-  scroll_to_element: { label: "scroll_to_element", desc: "Scroll until an element is in view", category: "Navigation" },
-  go_back: { label: "go_back", desc: "Navigate to previous page in history", category: "Navigation" },
-  wait_for_page_state: { label: "wait_for_page_state", desc: "Wait for load/networkidle/selector", category: "Navigation" },
-  click_element: { label: "click_element", desc: "Click a DOM element by selector", category: "Interaction" },
-  click_css: { label: "click_css", desc: "Click by CSS selector", category: "Interaction" },
-  click_text: { label: "click_text", desc: "Click element matching visible text", category: "Interaction" },
-  click_xpath: { label: "click_xpath", desc: "Click element matching XPath expression", category: "Interaction" },
-  click_checkbox: { label: "click_checkbox", desc: "Toggle a checkbox element", category: "Interaction" },
-  click_radio: { label: "click_radio", desc: "Select a radio button", category: "Interaction" },
-  click_coordinates: { label: "click_coordinates", desc: "Click at (x, y) pixel coordinates", category: "Interaction" },
-  type_into: { label: "type_into", desc: "Type text into an input or textarea", category: "Interaction" },
-  select_option: { label: "select_option", desc: "Choose an option from a <select>", category: "Interaction" },
-  play_media: { label: "play_media", desc: "Start playback of a media element", category: "Media" },
-  swipe_region: { label: "swipe_region", desc: "Swipe gesture over a screen region", category: "Interaction" },
-  harvest: { label: "harvest", desc: "Extract structured media data from page", category: "Media" },
-  get_media_state: { label: "get_media_state", desc: "Read playback state of a media element", category: "Media" },
-  capture_streams: { label: "capture_streams", desc: "Intercept and record network media streams", category: "Media" },
-};
 
 const BROWSER_OPTIONS = [
   {
@@ -409,43 +374,6 @@ const TAB_DETAILS = {
   },
 };
 
-const NOTIF_EVENTS = [
-  {
-    key: "pipeline_started",
-    label: "Pipeline started",
-    note: "Fired when a new pipeline begins",
-  },
-  {
-    key: "agent_started",
-    label: "Agent transitions (started)",
-    note: "Each agent activation",
-  },
-  {
-    key: "agent_finished",
-    label: "Agent transitions (finished)",
-    note: "Each agent completion",
-  },
-  {
-    key: "agent_failed",
-    label: "Agent failures",
-    note: "When an agent errors out",
-  },
-  {
-    key: "pipeline_finished",
-    label: "Pipeline completed",
-    note: "Successful pipeline end",
-  },
-  {
-    key: "pipeline_failed",
-    label: "Pipeline failed",
-    note: "Fatal pipeline failure",
-  },
-  {
-    key: "run_cancelled",
-    label: "Run cancelled",
-    note: "User or system cancellation",
-  },
-];
 
 const EMPTY_TUNING = {
   provider_defaults: {},
@@ -453,11 +381,6 @@ const EMPTY_TUNING = {
   agent_overrides: {},
 };
 
-const MODEL_WORKSPACE_VIEWS = [
-  { id: "assignments", label: "Assignments" },
-  { id: "runtime", label: "Runtime Controls" },
-  { id: "catalog", label: "Catalog & Costs" },
-];
 
 const BROWSER_RUNTIME_DEFAULTS = {
   launch_timeout_ms: 45000,
@@ -657,114 +580,22 @@ function normalizeDisabledToolsByBrowserProfile(value: any, legacy = {}) {
   return next;
 }
 
-function modelOverrideKey(provider: any, modelId: any) {
-  return `${provider}::${modelId}`.toLowerCase();
-}
 
-function parseFieldValue(field: any, rawValue: any) {
-  if (rawValue === "") return "";
-  if (field.type === "integer") {
-    const next = Number.parseInt(rawValue, 10);
-    return Number.isNaN(next) ? "" : next;
-  }
-  if (field.type === "number") {
-    const next = Number.parseFloat(rawValue);
-    return Number.isNaN(next) ? "" : next;
-  }
-  return rawValue;
-}
 
-function fieldMatchesModel(field: any, modelId: any) {
-  if (!field?.model_patterns?.length) return true;
-  if (!modelId) return false;
-  return field.model_patterns.some((pattern: any) => {
-    try {
-      return new RegExp(pattern, "i").test(modelId);
-    } catch {
-      return false;
-    }
-  });
-}
 
-function getModelDefaultValue(modelMeta: any, fieldKey: any) {
-  return modelMeta?.default_parameters?.[fieldKey];
-}
 
 function getModelCapabilities(modelMeta: any) {
   return modelMeta?.capabilities || {};
 }
 
-function formatParameterValue(value: any) {
-  if (value === "" || value == null) return "Not set";
-  if (typeof value === "number") {
-    if (Number.isInteger(value)) return value.toLocaleString();
-    return Number(value).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
-  }
-  if (typeof value === "boolean") return value ? "Enabled" : "Disabled";
-  return String(value);
-}
 
-function formatTokenCount(value: any) {
-  if (!Number.isFinite(Number(value))) return "Unknown";
-  return Number(value).toLocaleString();
-}
 
-function releaseChannelTone(channel: any) {
-  if (channel === "stable") return "success";
-  if (channel === "preview") return "warning";
-  return "default";
-}
 
-function ensureSelectedOption(options: any, value: any) {
-  if (!value) return options;
-  if (options.some((option: any) => option.value === value)) return options;
-  return [
-    ...options,
-    {
-      value,
-      label: value,
-      description: "Manual model ID",
-      meta: "custom",
-    },
-  ];
-}
 
-function sourceTone(source: any) {
-  if (source === "provider_api") return "ok";
-  if (source === "saved_catalog") return "ok";
-  if (source === "fallback_catalog") return "warn";
-  if (source === "unavailable") return "error";
-  return "warn";
-}
 
-function sourceLabel(source: any) {
-  if (source === "provider_api") return "Live provider catalog";
-  if (source === "saved_catalog") return "Saved provider snapshot";
-  if (source === "fallback_catalog") return "Fallback catalog";
-  if (source === "unverified_manual") return "Manual model ID";
-  if (source === "unavailable") return "Catalog unavailable";
-  return "Stored catalog";
-}
 
-function provenanceLabel(value: any) {
-  const normalized = String(value || "").trim();
-  if (!normalized) return "Unknown";
-  return normalized;
-}
 
-function capabilityTone(status: any) {
-  if (status === "supported") return "success";
-  if (status === "unsupported") return "warning";
-  if (status === "unverified") return "default";
-  return "default";
-}
 
-function capabilityStatusLabel(value: any, fallback = "Unavailable") {
-  if (value === true || value === "supported") return "Supported";
-  if (value === false || value === "unsupported") return fallback;
-  if (value === "unverified") return "Unverified";
-  return fallback;
-}
 
 function buildCompatibilityWarnings({ 
   thinkingEnabled,
@@ -813,32 +644,8 @@ function buildCompatibilityWarnings({
   return warnings;
 }
 
-function pricingStatusTone(status: any) {
-  if (!status) return "default";
-  if (status.model_count > 0) return "success";
-  if (status.api_key_set) return "warning";
-  return "default";
-}
 
-function KeyStatus({  set  }: any) {
-  return (
-    <Badge tone={set ? "success" : "default"} className="gap-1 text-[11px]">
-      {set ? <CheckCircle2 className="size-3" /> : <AlertCircle className="size-3" />}
-      {set ? "set" : "not set"}
-    </Badge>
-  );
-}
 
-function SectionHeader({  children  }: any) {
-  return (
-    <div className="flex items-center gap-3">
-      <h2 className="shrink-0 text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground/80">
-        {children}
-      </h2>
-      <Separator className="flex-1 opacity-70" />
-    </div>
-  );
-}
 
 function StatusPill({  tone = "neutral", children  }: any) {
   const mappedTone = tone === "success" ? "success" : tone === "warning" ? "warning" : tone === "info" ? "signal" : "default";
@@ -859,27 +666,6 @@ function ErrorNotice({  message  }: any) {
   );
 }
 
-function WarningNotice({  items = []  }: any) {
-  if (!items.length) return null;
-  return (
-    <div className="space-y-2">
-      {items.map((item: any) => (
-        <div
-          key={item.id || item.message}
-          className={cn(
-            "flex items-start gap-2 rounded-xl border px-4 py-3 text-[13px]",
-            item.tone === "warning"
-              ? "border-amber-300/50 bg-amber-100/50 text-amber-900"
-              : "border-border/70 bg-muted/30 text-foreground",
-          )}
-        >
-          <AlertCircle className="mt-0.5 size-4 shrink-0" />
-          <span className="leading-relaxed">{item.message}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function SettingsTabHero({ 
   tabId,
@@ -1015,564 +801,20 @@ function SettingsTabBar({ active, onChange, dirtyTabs = {}, mobile = false, filt
   );
 }
 
-function TuningFieldGrid({  fields, values, onChange  }: any) {
-  if (!fields.length) {
-    return (
-      <div
-        className="rounded-[12px] border px-3 py-4 text-[12px] text-[var(--mute)]"
-        style={{ borderColor: "var(--line)" }}
-      >
-        No provider-aware controls for this selection yet.
-      </div>
-    );
-  }
 
-  const shouldUseSlider = (field: any) => {
-    // Use sliders for temperature, top_p, and similar fractional fields
-    const sliderKeys = ["temperature", "top_p", "top_k"];
-    return (
-      sliderKeys.some((key) => field.key.toLowerCase().includes(key)) &&
-      field.type !== "enum"
-    );
-  };
 
-  return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      {fields.map((field: any) => {
-        const value = values?.[field.key] ?? "";
-        if (field.type === "enum") {
-          return (
-            <Select
-              key={field.key}
-              label={field.label}
-              value={value}
-              onChange={(next) => onChange(field, next)}
-              options={(field.options || []).map((option: any) => ({
-                value: option,
-                label: option,
-                description: field.description,
-              }))}
-              placeholder={`Select ${field.label.toLowerCase()}`}
-            />
-          );
-        }
 
-        // ── temperature / top_p / top_k → styled slider ──────────
-        if (shouldUseSlider(field)) {
-          return (
-            <Slider
-              key={field.key}
-              label={field.label}
-              value={typeof value === "number" ? value : Number(value) || 0}
-              onChange={(next) => onChange(field, next)}
-              min={field.min ?? 0}
-              max={field.max ?? 1}
-              step={field.step ?? 0.01}
-              description={field.description}
-            />
-          );
-        }
 
-        return (
-          <Input
-            key={field.key}
-            label={field.label}
-            description={field.description}
-            type="number"
-            min={field.min}
-            max={field.max}
-            step={field.step || "any"}
-            className="h-11 border-[var(--line)] bg-muted/50 text-[13px] text-[var(--ink-dim)]"
-            value={value}
-            onChange={(event) =>
-              onChange(field, parseFieldValue(field, event.target.value))
-            }
-          />
-        );
-      })}
-    </div>
-  );
-}
 
-function TuningCard({ 
-  title,
-  description,
-  values,
-  fields,
-  onChange,
-  onClear,
-  clearLabel,
- }: any) {
-  return (
-    <Card className="rounded-[12px] border">
-      <CardContent className="flex flex-col gap-4 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[13px] font-semibold text-foreground">{title}</div>
-          {description ? <p className="mt-0.5 text-[12px] text-muted-foreground">{description}</p> : null}
-        </div>
-        {onClear ? (
-          <Button
-            type="button"
-            onClick={onClear}
-            variant="outline"
-            size="sm"
-            className="h-7 px-2.5 text-[11px]"
-          >
-            {clearLabel || "Clear"}
-          </Button>
-        ) : null}
-      </div>
-      <TuningFieldGrid fields={fields} values={values} onChange={onChange} />
-      </CardContent>
-    </Card>
-  );
-}
 
-function ModelFact({  label, value, tone = "default"  }: any) {
-  return (
-    <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2.5">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-        {label}
-      </div>
-      <div className={cn("mt-1 text-sm font-medium", tone === "primary" ? "text-primary" : "text-foreground")}>
-        {value}
-      </div>
-    </div>
-  );
-}
 
-function ParameterSummaryCard({  title, icon: Icon, tone = "default", rows = []  }: any) {
-  return (
-    <Card className="rounded-[14px] border">
-      <CardContent className="space-y-3 p-4">
-        <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              "flex size-8 items-center justify-center rounded-xl border",
-              tone === "primary" ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-muted/40 text-foreground",
-            )}
-          >
-            <Icon className="size-4" />
-          </span>
-          <div className="text-[13px] font-semibold text-foreground">{title}</div>
-        </div>
-        <div className="space-y-2">
-          {rows.map((row: any) => (
-            <div key={row.label} className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/70 px-3 py-2">
-              <div className="min-w-0">
-                <div className="text-[11px] font-medium text-foreground">{row.label}</div>
-                {row.note ? (
-                  <div className="text-[10px] text-muted-foreground">{row.note}</div>
-                ) : null}
-              </div>
-              <div className="shrink-0 font-mono text-[11.5px] text-foreground">{row.value}</div>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
-function MiniSegment({  options, active, onChange  }: any) {
-  return (
-    <div className="flex w-full flex-wrap gap-1.5 rounded-[16px] border border-border/70 bg-muted/25 p-1.5">
-      {options.map((option: any) => {
-        const isActive = option.id === active;
-        return (
-          <Button
-            key={option.id}
-            type="button"
-            onClick={() => onChange(option.id)}
-            variant={isActive ? "secondary" : "ghost"}
-            size="sm"
-            className={cn(
-              "h-auto flex-1 rounded-[12px] px-3 py-2 text-[12.5px] font-medium sm:flex-none",
-              isActive
-                ? "border border-border bg-background text-foreground shadow-sm"
-                : "text-muted-foreground/75",
-            )}
-          >
-            {option.label}
-            {option.badge ? (
-              <Badge tone="danger" className="px-1.5 py-0.5 text-[9px] font-bold">{option.badge}</Badge>
-            ) : null}
-          </Button>
-        );
-      })}
-    </div>
-  );
-}
 
-function FieldNote({  children  }: any) {
-  if (!children) return null;
-  return <p className="text-[11px] text-muted-foreground">{children}</p>;
-}
 
-function ToggleRow({  label, checked, onChange, description = ""  }: any) {
-  return (
-    <div
-      className={cn(
-        "flex items-start gap-3 rounded-lg border bg-card px-4 py-3 transition-colors",
-        checked ? "border-primary/30 bg-primary/5" : ""
-      )}
-    >
-      <Switch
-        checked={checked}
-        onCheckedChange={onChange}
-        className="mt-0.5 data-[state=checked]:bg-primary data-[state=unchecked]:bg-muted"
-      />
-      <div className="min-w-0 flex-1 space-y-0.5">
-        <p className="text-sm font-medium leading-snug text-foreground">{label}</p>
-        {description ? (
-          <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
-        ) : null}
-      </div>
-    </div>
-  );
-}
 
-function CostEstimator({  provider, model  }: any) {
-  const [inputTokens, setInputTokens] = useState(1000);
-  const [outputTokens, setOutputTokens] = useState(1000);
-  const [cachedTokens, setCachedTokens] = useState(0);
-  const [cacheWriteTokens, setCacheWriteTokens] = useState(0);
-  const [costs, setCosts] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
 
-  const fetchCosts = useCallback(async () => {
-    if (!provider || !model) return;
-    setLoading(true);
-    try {
-      const response = await apiFetch(
-        `/ui/settings/estimate-costs?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}&input_tokens=${inputTokens}&output_tokens=${outputTokens}&cached_input_tokens=${cachedTokens}&cache_write_input_tokens=${cacheWriteTokens}`,
-      );
-      setCosts(response);
-    } catch (error: any) {
-      console.error("Cost estimation error:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [provider, model, inputTokens, outputTokens, cachedTokens, cacheWriteTokens]);
 
-  useEffect(() => {
-    const timer = setTimeout(fetchCosts, 500);
-    return () => clearTimeout(timer);
-  }, [fetchCosts]);
 
-  if (!provider || !model) {
-    return null;
-  }
-
-  return (
-    <Card className="rounded-[14px] border">
-      <CardContent className="flex flex-col gap-4 p-4">
-      <div className="text-[13px] font-medium text-foreground">Estimated Cost</div>
-
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Input
-          label="Input tokens"
-          type="number"
-          min="0"
-          step="100"
-          value={inputTokens}
-          onChange={(e) => setInputTokens(parseInt(e.target.value, 10) || 0)}
-          className="h-9 border-[var(--line)] bg-muted/50 text-[12px] text-[var(--ink-dim)]"
-        />
-
-        <Input
-          label="Output tokens"
-          type="number"
-          min="0"
-          step="100"
-          value={outputTokens}
-          onChange={(e) => setOutputTokens(parseInt(e.target.value, 10) || 0)}
-          className="h-9 border-[var(--line)] bg-muted/50 text-[12px] text-[var(--ink-dim)]"
-        />
-
-        <Input
-          label="Cached tokens"
-          type="number"
-          min="0"
-          step="100"
-          value={cachedTokens}
-          onChange={(e) => setCachedTokens(parseInt(e.target.value, 10) || 0)}
-          className="h-9 border-[var(--line)] bg-muted/50 text-[12px] text-[var(--ink-dim)]"
-        />
-
-        <Input
-          label="Cache write tokens"
-          type="number"
-          min="0"
-          step="100"
-          value={cacheWriteTokens}
-          onChange={(e) => setCacheWriteTokens(parseInt(e.target.value, 10) || 0)}
-          className="h-9 border-[var(--line)] bg-muted/50 text-[12px] text-[var(--ink-dim)]"
-        />
-      </div>
-
-      {costs ? (
-        <div className="grid gap-2 rounded-[10px] border bg-muted/20 p-3">
-          <div className="flex items-center justify-between text-[12px]">
-            <span className="text-muted-foreground">Input cost</span>
-            <span className="font-mono text-foreground">
-              ${costs.input_cost_usd.toFixed(6)}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-[12px]">
-            <span className="text-muted-foreground">Cached read cost</span>
-            <span className="font-mono text-foreground">
-              ${(costs.cached_input_cost_usd || 0).toFixed(6)}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-[12px]">
-            <span className="text-muted-foreground">Cache write cost</span>
-            <span className="font-mono text-foreground">
-              ${(costs.cache_write_cost_usd || 0).toFixed(6)}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-[12px]">
-            <span className="text-muted-foreground">Output cost</span>
-            <span className="font-mono text-foreground">
-              ${costs.output_cost_usd.toFixed(6)}
-            </span>
-          </div>
-          <Separator />
-          <div className="flex items-center justify-between text-[12px] font-medium">
-            <span className="text-foreground">Total</span>
-            <span className="font-mono text-sm text-primary">
-              ${costs.total_cost_usd.toFixed(6)}
-            </span>
-          </div>
-          {costs.pricing_source &&
-            costs.pricing_source !== "no_pricing_available" && (
-              <p className="mt-2 text-[10px] text-muted-foreground">
-                Pricing: {costs.pricing_source}
-              </p>
-            )}
-          {provider === "google" ? (
-            <p className="text-[10px] text-muted-foreground">
-              Gemini cache storage retention charges are separate from token charges and are not included in this estimate.
-            </p>
-          ) : null}
-          {costs.pricing_source === "no_pricing_available" && (
-            <p className="mt-2 text-[10px] text-destructive">
-              No pricing available for this model
-            </p>
-          )}
-        </div>
-      ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function FieldGroup({  title, description, children, accent = null  }: any) {
-  return (
-    <Card className="overflow-hidden rounded-[18px] border border-border/70 bg-card/95 shadow-[0_18px_48px_-36px_rgba(0,0,0,0.55)]">
-      <div
-        className="border-b px-5 py-4"
-        style={{
-          borderColor: "var(--line)",
-          background: accent
-            ? `linear-gradient(135deg, color-mix(in oklch, ${accent} 8%, transparent), color-mix(in oklch, var(--background) 98%, transparent))`
-            : "var(--panel-2)",
-          boxShadow: accent ? `inset 3px 0 0 ${accent}` : "none",
-        }}
-      >
-        <div className="text-[14px] font-semibold text-foreground">{title}</div>
-        {description ? <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{description}</p> : null}
-      </div>
-      <CardContent className="flex flex-col gap-4 p-5">{children}</CardContent>
-    </Card>
-  );
-}
-
-function CompactStat({  label, value, tone = "default"  }: any) {
-  return (
-    <div
-      className={cn(
-        "rounded-[14px] border px-3.5 py-3",
-        tone === "primary" ? "border-primary/20 bg-primary/5" : "border-border/70 bg-background/70",
-      )}
-    >
-      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
-        {label}
-      </div>
-      <div className={cn("mt-1 text-[14px] font-semibold", tone === "primary" ? "text-primary" : "text-foreground")}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function SettingsWorkspaceCard({ 
-  eyebrow = "",
-  title,
-  description = "",
-  actions = null,
-  className = "",
-  children,
- }: any) {
-  return (
-    <Card className={cn("overflow-hidden rounded-[20px] border border-border/70 bg-card/95 shadow-[0_18px_48px_-36px_rgba(0,0,0,0.55)]", className)}>
-      {(eyebrow || title || description || actions) ? (
-        <div className="border-b border-border/70 px-5 py-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="space-y-1">
-              {eyebrow ? (
-                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/75">
-                  {eyebrow}
-                </div>
-              ) : null}
-              {title ? <div className="text-[15px] font-semibold text-foreground">{title}</div> : null}
-              {description ? <p className="max-w-2xl text-[12px] leading-relaxed text-muted-foreground">{description}</p> : null}
-            </div>
-            {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
-          </div>
-        </div>
-      ) : null}
-      <CardContent className="p-5">{children}</CardContent>
-    </Card>
-  );
-}
-
-function AgentAssignmentGrid({  assignments = [], selectedModelId = "", onSelectModel = null  }: any) {
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {assignments.map((assignment: any) => {
-        const modelId = assignment.selection?.model || "";
-        const isSelected = selectedModelId && modelId === selectedModelId;
-        return (
-          <button
-            key={assignment.id}
-            type="button"
-            onClick={() => {
-              if (modelId && onSelectModel) onSelectModel(modelId);
-            }}
-            className={cn(
-              "rounded-[16px] border px-3.5 py-3 text-left transition-colors",
-              isSelected
-                ? "border-primary/35 bg-primary/8"
-                : "border-border/70 bg-background/55 hover:bg-muted/35",
-              !modelId && "cursor-default hover:bg-background/55",
-            )}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-[13px] font-semibold text-foreground">{assignment.label}</div>
-                <div className="mt-0.5 text-[11px] text-muted-foreground">{assignment.note}</div>
-              </div>
-              {isSelected ? <Badge tone="signal">selected</Badge> : null}
-            </div>
-            <div className="mt-3 space-y-2">
-              <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Backend model</div>
-                <div className="mt-1 truncate font-mono text-[11.5px] text-foreground">
-                  {modelId || "Not set"}
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
-                <Badge tone="default" className="px-1.5 py-0.5 text-[9px]">
-                  {assignment.selection?.provider || "google"}
-                </Badge>
-                {assignment.modelMeta?.context_window ? (
-                  <span className="font-mono">{assignment.modelMeta.context_window.toLocaleString()} ctx</span>
-                ) : null}
-              </div>
-            </div>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function BrowserRuntimeInput({ 
-  label,
-  value,
-  onChange,
-  type = "text",
-  min,
-  max,
-  step,
-  placeholder = "",
-  description = "",
- }: any) {
-  return (
-    <Input
-      label={label}
-      description={description}
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      type={type}
-      min={min}
-      max={max}
-      step={step}
-      placeholder={placeholder}
-      className="h-9 border-[var(--line-hi)] bg-muted/30 text-[12.5px] text-[var(--ink)]"
-    />
-  );
-}
-
-function BrowserRuntimeTextarea({ 
-  label,
-  value,
-  onChange,
-  placeholder,
-  description = "",
- }: any) {
-  return (
-    <div className="space-y-1.5">
-      <Textarea
-        label={label}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        mono
-        className="min-h-[88px] text-[12px]"
-      />
-      {description ? (
-        <p
-          className="text-[10.5px] leading-relaxed"
-          style={{ color: "var(--mute-2)" }}
-        >
-          {description}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function BrowserRuntimeSelect({ 
-  label,
-  value,
-  onChange,
-  options,
-  placeholder = "Select option",
-  description = "",
- }: any) {
-  return (
-    <div className="space-y-1.5">
-      <Select
-        label={label}
-        value={value}
-        onChange={onChange}
-        options={options}
-        placeholder={placeholder}
-      />
-      {description ? (
-        <p
-          className="text-[10.5px] leading-relaxed"
-          style={{ color: "var(--mute-2)" }}
-        >
-          {description}
-        </p>
-      ) : null}
-    </div>
-  );
-}
 
 export function SettingsPage() {
   const searchParams = useSearchParams();
@@ -1680,25 +922,6 @@ export function SettingsPage() {
       diffs.push("media CORS diagnostics patch enabled");
     return diffs;
   }, [activeBrowserRuntime, browserSettingsTab]);
-  const filteredMcpTools = useMemo(() => {
-    const query = mcpToolQuery.trim().toLowerCase();
-    // @ts-expect-error -- strict migration
-    const tools = MCP_TOOLS_BY_PROFILE[activeProfileTab] || [];
-    if (!query) return tools;
-    return tools.filter((toolName: any) => {
-      // @ts-expect-error -- strict migration
-      const meta = MCP_TOOL_META[toolName] || {};
-      return [
-        toolName,
-        meta.label,
-        meta.desc,
-        meta.category,
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(query);
-    });
-  }, [activeProfileTab, mcpToolQuery]);
   const enabledToolCount =
     // @ts-expect-error -- strict migration
     (MCP_TOOLS_BY_PROFILE[activeProfileTab] || []).length -
@@ -1767,63 +990,8 @@ export function SettingsPage() {
 
   const selectedCatalogModel =
     catalogModels.find((item: any) => item.id === selectedCatalogModelId) || null;
-  const selectedModelFields = useMemo(
-    () =>
-      (activeCatalog?.hyperparameters || []).filter((field: any) =>
-        fieldMatchesModel(field, selectedCatalogModel?.id),
-      ),
-    [activeCatalog, selectedCatalogModel],
-  );
-  const selectedModelOverrideValues = useMemo(
-    () =>
-      // @ts-expect-error -- strict migration
-      llmTuning.model_overrides[
-        modelOverrideKey(provider, selectedCatalogModel?.id || "")
-      ] || {},
-    [llmTuning.model_overrides, provider, selectedCatalogModel],
-  );
-  const selectedModelEffectiveRows = useMemo(
-    () =>
-      selectedModelFields.map((field: any) => {
-        const liveDefault = getModelDefaultValue(selectedCatalogModel, field.key);
-        // @ts-expect-error -- strict migration
-        const providerDefault = llmTuning.provider_defaults[provider]?.[field.key];
-        const overrideValue = selectedModelOverrideValues[field.key];
-        const effectiveValue =
-          overrideValue !== undefined && overrideValue !== ""
-            ? overrideValue
-            : providerDefault !== undefined && providerDefault !== ""
-              ? providerDefault
-              : liveDefault;
-        let source = "Provider live default";
-        if (overrideValue !== undefined && overrideValue !== "") source = "Model override";
-        else if (providerDefault !== undefined && providerDefault !== "") source = "Provider default";
-        return {
-          label: field.label,
-          value: formatParameterValue(effectiveValue),
-          note: source,
-        };
-      }),
-    [
-      llmTuning.provider_defaults,
-      provider,
-      selectedCatalogModel,
-      selectedModelFields,
-      selectedModelOverrideValues,
-    ],
-  );
-  const selectedModelDefaultRows = useMemo(
-    () =>
-      selectedModelFields.map((field: any) => ({
-        label: field.label,
-        value: formatParameterValue(getModelDefaultValue(selectedCatalogModel, field.key)),
-        note: provenanceLabel(
-          selectedCatalogModel?.default_parameter_provenance?.[field.key] ||
-            "Pulled from provider catalog",
-        ),
-      })),
-    [selectedCatalogModel, selectedModelFields],
-  );
+
+
   const assignmentRows = useMemo(
     () =>
       AGENT_SLOTS.map((slot) => {
@@ -2109,95 +1277,6 @@ export function SettingsPage() {
     void loadProviderCatalog(normalized).catch(() => null);
   }
 
-  function updateAgentProviderDefault(field: any, value: any) {
-    setLlmTuning((current) => {
-      const next = normalizeTuning(current);
-      // @ts-expect-error -- strict migration
-      const providerDefaults = { ...(next.provider_defaults[provider] || {}) };
-      if (value === "") delete providerDefaults[field.key];
-      else providerDefaults[field.key] = value;
-      return {
-        ...next,
-        provider_defaults: {
-          ...next.provider_defaults,
-          [provider]: providerDefaults,
-        },
-      };
-    });
-  }
-
-  function updateModelOverride(modelId: any, field: any, value: any) {
-    const key = modelOverrideKey(provider, modelId);
-    setLlmTuning((current) => {
-      const next = normalizeTuning(current);
-      // @ts-expect-error -- strict migration
-      const modelOverrides = { ...(next.model_overrides[key] || {}) };
-      if (value === "") delete modelOverrides[field.key];
-      else modelOverrides[field.key] = value;
-      return {
-        ...next,
-        model_overrides: {
-          ...next.model_overrides,
-          [key]: modelOverrides,
-        },
-      };
-    });
-  }
-
-  function clearModelOverride(modelId: any) {
-    const key = modelOverrideKey(provider, modelId);
-    setLlmTuning((current) => {
-      const next = normalizeTuning(current);
-      const modelOverrides = { ...next.model_overrides };
-      // @ts-expect-error -- strict migration
-      delete modelOverrides[key];
-      return { ...next, model_overrides: modelOverrides };
-    });
-  }
-
-  function applyLiveDefaultsToModelOverride(modelMeta: any) {
-    if (!modelMeta?.id) return;
-    const key = modelOverrideKey(provider, modelMeta.id);
-    const liveDefaults = modelMeta.default_parameters || {};
-    setLlmTuning((current) => {
-      const next = normalizeTuning(current);
-      return {
-        ...next,
-        model_overrides: {
-          ...next.model_overrides,
-          [key]: { ...liveDefaults },
-        },
-      };
-    });
-  }
-
-  function updateAgentOverride(agentId: any, field: any, value: any) {
-    setLlmTuning((current) => {
-      const next = normalizeTuning(current);
-      // @ts-expect-error -- strict migration
-      const agentOverrides = { ...(next.agent_overrides[agentId] || {}) };
-      if (value === "") delete agentOverrides[field.key];
-      else agentOverrides[field.key] = value;
-      return {
-        ...next,
-        agent_overrides: {
-          ...next.agent_overrides,
-          [agentId]: agentOverrides,
-        },
-      };
-    });
-  }
-
-  function clearAgentOverride(agentId: any) {
-    setLlmTuning((current) => {
-      const next = normalizeTuning(current);
-      const agentOverrides = { ...next.agent_overrides };
-      // @ts-expect-error -- strict migration
-      delete agentOverrides[agentId];
-      return { ...next, agent_overrides: agentOverrides };
-    });
-  }
-
   function updateBrowserRuntime(browserId: any, key: any, value: any) {
     setBrowserRuntime((current) => ({
       ...current,
@@ -2258,6 +1337,7 @@ export function SettingsPage() {
         return {
           browser_engine: serverDraft.browser_engine,
           browser_runtime: serverDraft.browser_runtime,
+          max_parallel_hosting_pages: serverDraft.max_parallel_hosting_pages,
         };
       case "mcp-tools":
         return {};
@@ -2411,6 +1491,42 @@ export function SettingsPage() {
     updateAgentModel(catalogAssignmentTarget, modelId);
   }
 
+  function applyGlobalDefaultToAllAgents() {
+    setConfigErr("");
+    setSaveMismatchWarning("");
+    setAgentModelConfig((current: any) => {
+      const global = current?.classification || { provider, model: "" };
+      const next: any = { ...current };
+      AGENT_SLOTS.forEach(({ id }: any) => {
+        next[id] = { ...(next[id] || { provider, model: "" }), provider: global.provider, model: global.model };
+      });
+      return next;
+    });
+  }
+
+  function handleGlobalProviderChange(nextProvider: string) {
+    const normalized = String(nextProvider || "google").toLowerCase();
+    setProvider(normalized);
+    updateAgentProvider("classification", normalized);
+  }
+
+  function handleAgentInheritToggle(agentId: string, inherit: boolean) {
+    if (!inherit) return;
+    setAgentModelConfig((current: any) => ({
+      ...current,
+      [agentId]: { ...(current?.classification || { provider, model: "" }) },
+    }));
+  }
+
+  function discardModelChanges() {
+    if (!config) return;
+    void hydrateConfig(config, { refreshCatalogs: false });
+  }
+
+  function handleAgentSlotProvider(agentId: string, nextProvider: string) {
+    updateAgentProvider(agentId, nextProvider);
+  }
+
   return (
     <div className="settings-page space-y-6" style={{ fontFeatureSettings: '"cv01","ss03"' }}>
       <div className="flex flex-col gap-4 border-b border-border/60 pb-6">
@@ -2485,1327 +1601,108 @@ export function SettingsPage() {
 
         <div key={activeTab} className="animate-fade-up space-y-8">
           {activeTab === "models" ? (
-            <section className="space-y-4">
-              <SettingsWorkspaceCard
-                eyebrow="Live provider control plane"
-                title="Model assignments that stay current"
-                description="Assignments is the operator view. Runtime Controls holds cache and reasoning knobs. Catalog & Costs pulls the live provider catalog so new models appear as soon as Google exposes them."
-                actions={
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone={currentTabDirty ? "warning" : "success"}>
-                      {currentTabDirty ? "Unsaved model changes" : "Saved to runtime config"}
-                    </Badge>
-                    <Badge
-                      tone={
-                        sourceTone(activeCatalog?.source || "unavailable") === "ok"
-                          ? "success"
-                          : sourceTone(activeCatalog?.source || "unavailable") === "error"
-                            ? "danger"
-                            : "warning"
-                      }
-                    >
-                      {sourceLabel(activeCatalog?.source || "unavailable")}
-                    </Badge>
-                  </div>
-                }
-              >
-                <div className="space-y-4">
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <CompactStat label="Selected global" value={activeGlobalModel || "Not set"} tone="primary" />
-                    <CompactStat label="Saved global" value={config?.agent_model || "Not set"} />
-                    <CompactStat label="Effective orchestrator" value={modelSelectionDetails?.orchestrator?.model || activeOrchestratorModel || "Not set"} />
-                    <CompactStat label="Live models" value={String(catalogModels.length || 0)} />
-                  </div>
-                  <MiniSegment
-                    options={MODEL_WORKSPACE_VIEWS}
-                    active={activeModelWorkspaceView}
-                    onChange={setActiveModelWorkspaceView}
-                  />
-                </div>
-              </SettingsWorkspaceCard>
-
-              {saveMismatchWarning ? (
-                <WarningNotice items={[{ id: "save-mismatch", tone: "warning", message: saveMismatchWarning }]} />
-              ) : null}
-              <WarningNotice items={mergedModelWarnings} />
-
-              {activeModelWorkspaceView === "assignments" ? (
-                <div className="space-y-4">
-                  <SettingsWorkspaceCard
-                    eyebrow="Apply state"
-                    title="Selected, saved, and effective runtime state"
-                    description="The form state can differ from saved config until you save. Effective runtime state comes back from the backend after re-hydration."
-                  >
-                    <div className="grid gap-4 lg:grid-cols-3">
-                      <ParameterSummaryCard
-                        title="Selected in form"
-                        icon={Cpu}
-                        tone="primary"
-                        rows={[
-                          { label: "Global default", value: activeGlobalModel || "Not set", note: "Current unsaved form state" },
-                          { label: "Orchestrator", value: activeOrchestratorModel || "Not set", note: "Current unsaved form state" },
-                        ]}
-                      />
-                      <ParameterSummaryCard
-                        title="Saved to config"
-                        icon={Save}
-                        rows={[
-                          { label: "Global default", value: config?.agent_model || "Not set", note: "Last backend config payload" },
-                          { label: "Orchestrator", value: config?.orchestrator_model || "Not set", note: "Last backend config payload" },
-                        ]}
-                      />
-                      <ParameterSummaryCard
-                        title="Effective runtime"
-                        icon={CheckCircle2}
-                        rows={[
-                          { label: "Classification", value: modelSelectionDetails?.classification?.model || "Not set", note: sourceLabel(modelSelectionDetails?.classification?.catalog_source) },
-                          { label: "Orchestrator", value: modelSelectionDetails?.orchestrator?.model || "Not set", note: sourceLabel(modelSelectionDetails?.orchestrator?.catalog_source) },
-                        ]}
-                      />
-                    </div>
-                  </SettingsWorkspaceCard>
-
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    {assignmentRows.map((slot) => {
-                      const selection = slot.selection || { provider, model: "" };
-                      // @ts-expect-error -- strict migration
-                      const slotCatalog = providerCatalogs[selection.provider] || null;
-                      const slotOptions = ensureSelectedOption(
-                        (slotCatalog?.models || []).map((model: any) => ({
-                          value: model.id,
-                          label: model.label || model.id,
-                        })),
-                        selection.model,
-                      );
-                      const selectedModelMeta = slot.modelMeta;
-                      const slotFields = (slotCatalog?.hyperparameters || []).filter((field: any) =>
-                        fieldMatchesModel(field, selection.model),
-                      );
-                      // @ts-expect-error -- strict migration
-                      const slotOverrides = llmTuning.agent_overrides[slot.id] || {};
-                      const slotDetail = slot.detail || {};
-                      const slotCapabilities = getModelCapabilities(selectedModelMeta);
-                      const isManual = slotDetail.catalog_status === "unverified_manual" || (!selectedModelMeta && selection.model);
-
-                      return (
-                        <SettingsWorkspaceCard
-                          key={slot.id}
-                          eyebrow={slot.note}
-                          title={slot.label}
-                          description="Per-agent model routing with direct provider catalog metadata when available."
-                          actions={
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge tone="default">{selection.provider || "google"}</Badge>
-                              <Badge tone={isManual ? "default" : "success"}>
-                                {isManual ? "Manual ID" : sourceLabel(slotDetail.catalog_source || slotCatalog?.source)}
-                              </Badge>
-                            </div>
-                          }
-                        >
-                          <div className="space-y-4">
-                            <div className="grid gap-3 sm:grid-cols-3">
-                              <Select
-                                label="Provider"
-                                value={selection.provider}
-                                onChange={(next) => updateAgentProvider(slot.id, next)}
-                                options={PROVIDERS.map((pr) => ({ value: pr.id, label: pr.name, description: pr.category }))}
-                                searchable
-                                searchPlaceholder="Search providers…"
-                                placeholder="Select provider"
-                                emptyMessage="No providers match"
-                              />
-                              <Select
-                                label="Live model"
-                                value={selection.model}
-                                onChange={(next) => updateAgentModel(slot.id, next)}
-                                options={slotOptions}
-                                searchable
-                                placeholder="Select model"
-                                emptyMessage="No models available"
-                              />
-                              <Input
-                                label="Manual model ID"
-                                value={selection.model}
-                                onChange={(event) => updateAgentModel(slot.id, event.target.value)}
-                                placeholder="Manual model ID"
-                                className="h-10 font-mono text-[12px]"
-                              />
-                            </div>
-                            {!(apiKeys as any)[selection.provider] ? (
-                              <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                                <span>No key for <span className="font-medium">{selection.provider}</span> — add it in <span className="font-mono">Provider Keys</span> to enable live catalog.</span>
-                              </div>
-                            ) : null}
-
-                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                              <ModelFact label="Selected model" value={selection.model || "Not set"} tone="primary" />
-                              <ModelFact label="Catalog status" value={isManual ? "Unverified manual ID" : "Verified"} />
-                              <ModelFact label="Thinking" value={capabilityStatusLabel(slotCapabilities.supports_thinking_controls, "Ignored")} />
-                              <ModelFact label="Explicit cache" value={capabilityStatusLabel(slotCapabilities.supports_explicit_cache)} />
-                            </div>
-
-                            {selectedModelMeta ? (
-                              <div className="rounded-xl border border-border/70 bg-muted/15 p-4">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <Badge tone={releaseChannelTone(selectedModelMeta.release_channel)}>
-                                    {selectedModelMeta.release_channel || "stable"}
-                                  </Badge>
-                                  <Badge tone={capabilityTone(selectedModelMeta.compatibility?.thinking_controls)}>
-                                    thinking {capabilityStatusLabel(selectedModelMeta.compatibility?.thinking_controls, "ignored").toLowerCase()}
-                                  </Badge>
-                                  <Badge tone={capabilityTone(selectedModelMeta.compatibility?.explicit_cache)}>
-                                    cache {capabilityStatusLabel(selectedModelMeta.compatibility?.explicit_cache).toLowerCase()}
-                                  </Badge>
-                                </div>
-                                <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
-                                  {selectedModelMeta.description || "No provider description returned for this model."}
-                                </p>
-                                <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-                                  <span className="font-mono">{formatTokenCount(selectedModelMeta.context_window)} ctx</span>
-                                  <span className="font-mono">{formatTokenCount(selectedModelMeta.output_limit)} out</span>
-                                  <span>Defaults: {sourceLabel(selectedModelMeta.defaults_source)}</span>
-                                </div>
-                              </div>
-                            ) : selection.model ? (
-                              <div className="rounded-xl border border-border/70 bg-muted/15 p-4 text-[12px] text-muted-foreground">
-                                This model is not in the current provider catalog response yet. It can still be saved, but capabilities remain unverified until Google returns metadata for it.
-                              </div>
-                            ) : null}
-
-                            <TuningCard
-                              title={`${slot.label} override`}
-                              description="Applied after provider defaults and model defaults."
-                              values={slotOverrides}
-                              fields={slotFields}
-                              onChange={(field: any, value: any) => updateAgentOverride(slot.id, field, value)}
-                              onClear={() => clearAgentOverride(slot.id)}
-                              clearLabel="Clear override"
-                            />
-                          </div>
-                        </SettingsWorkspaceCard>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : null}
-
-              {activeModelWorkspaceView === "runtime" ? (
-                <div className="space-y-4">
-                  <FieldGroup
-                    title="Runtime Defaults"
-                    description="Global settings applied before per-model and per-agent overrides."
-                    accent="var(--signal)"
-                  >
-                    <div className="grid gap-6 sm:grid-cols-2">
-                      <div>
-                        <div className="mb-3 flex items-center gap-2">
-                          <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                            Fallback Temperature
-                          </span>
-                          <HelpIcon tip="Used only when the provider does not return a model-specific default and no override is set." />
-                        </div>
-                        <Slider
-                          value={Number(fallbackTemperature) || 0}
-                          // @ts-expect-error -- strict migration
-                          onChange={(next) => setFallbackTemperature(next)}
-                          min={0}
-                          max={2}
-                          step={0.1}
-                          description="Direct provider defaults still take precedence when present."
-                        />
-                      </div>
-                      <div>
-                        <div className="mb-3 flex items-center gap-2">
-                          <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                            Tool Cache Stabilization
-                          </span>
-                          <HelpIcon tip="How many identical consecutive tool results must be seen before the response is cached." />
-                        </div>
-                        <Slider
-                          value={Number(toolCacheStable) || 1}
-                          // @ts-expect-error -- strict migration
-                          onChange={(next) => setToolCacheStable(next)}
-                          min={1}
-                          max={10}
-                          step={1}
-                          description="Higher values are more conservative."
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <ToggleRow
-                        label="Provider prompt caching"
-                        checked={providerCacheEnabled}
-                        onChange={setProviderCacheEnabled}
-                        description="Use provider-native cache hits for repeated shared prompt context."
-                      />
-                      <ToggleRow
-                        label="Deterministic tool result cache"
-                        checked={toolCacheEnabled}
-                        onChange={setToolCacheEnabled}
-                        description="Cache repeated browser-tool responses within the same run session."
-                      />
-                    </div>
-                  </FieldGroup>
-
-                  <div className="grid gap-4 xl:grid-cols-2">
-                    <FieldGroup
-                      title="Explicit Cache"
-                      description="Server-side cached context for repeated provider model runs."
-                      accent="var(--violet)"
-                    >
-                      <ToggleRow
-                        label="Enabled"
-                        checked={geminiExplicitCacheEnabled}
-                        onChange={setGeminiExplicitCacheEnabled}
-                        description="Auto-adjusted at runtime when a selected model does not support explicit cache."
-                      />
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <BrowserRuntimeInput
-                          label="Cache TTL (seconds)"
-                          value={geminiExplicitCacheTtl}
-                          onChange={setGeminiExplicitCacheTtl}
-                          type="number"
-                          min="60"
-                          step="60"
-                          description="How long the server keeps the cached context alive."
-                        />
-                        <BrowserRuntimeInput
-                          label="Refresh lead (seconds)"
-                          value={geminiExplicitCacheRefreshLead}
-                          onChange={setGeminiExplicitCacheRefreshLead}
-                          type="number"
-                          min="5"
-                          step="5"
-                          description="How early the runtime pre-warms a replacement cache."
-                        />
-                      </div>
-                    </FieldGroup>
-
-                    <FieldGroup
-                      title="Thinking"
-                      description="Global reasoning control. Unsupported models keep the selection but ignore the thinking budget."
-                      accent="var(--sky)"
-                    >
-                      <ToggleRow
-                        label="Enable thinking"
-                        checked={thinkingEnabled}
-                        onChange={setThinkingEnabled}
-                        description="Only applied where the selected model supports it."
-                      />
-                      {thinkingEnabled ? (
-                        <div className="max-w-sm">
-                          <BrowserRuntimeInput
-                            label="Thinking budget (tokens)"
-                            value={thinkingBudgetTokens}
-                            onChange={setThinkingBudgetTokens}
-                            type="number"
-                            min="1000"
-                            max="32000"
-                            step="1000"
-                            description="Higher values allow deeper reasoning with higher cost."
-                          />
-                        </div>
-                      ) : null}
-                    </FieldGroup>
-                  </div>
-
-                  <FieldGroup
-                    title="Overrides and Parallelism"
-                    description="Use overrides sparingly. Provider live defaults remain the base layer."
-                    accent="var(--mint)"
-                  >
-                    <div className="grid gap-4 xl:grid-cols-2">
-                      <TuningCard
-                        title={`${activeProvider.name} provider defaults`}
-                        description="Applied before model-specific and agent-specific overrides."
-                        // @ts-expect-error -- strict migration
-                        values={llmTuning.provider_defaults[provider] || {}}
-                        fields={providerDefaultFields}
-                        onChange={updateAgentProviderDefault}
-                      />
-                      <div className="space-y-4">
-                        <BrowserRuntimeInput
-                          label="Max parallel hosting pages"
-                          value={maxParallelHostingPages}
-                          onChange={setMaxParallelHostingPages}
-                          type="number"
-                          min="1"
-                          max="20"
-                          step="1"
-                          description="Caps simultaneous hosting-page and embedded-page executions."
-                        />
-                        {modelOverrideTargets.map((target) => {
-                          const fields = (activeCatalog?.hyperparameters || []).filter((field: any) =>
-                            fieldMatchesModel(field, target.id),
-                          );
-                          const values =
-                            // @ts-expect-error -- strict migration
-                            llmTuning.model_overrides[modelOverrideKey(provider, target.id)] || {};
-                          return (
-                            <TuningCard
-                              key={target.id}
-                              title={`Model override - ${target.title}`}
-                              description={target.description}
-                              values={values}
-                              fields={fields}
-                              onChange={(field: any, value: any) => updateModelOverride(target.id, field, value)}
-                              onClear={() => clearModelOverride(target.id)}
-                              clearLabel="Clear override"
-                            />
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </FieldGroup>
-                </div>
-              ) : null}
-
-              {activeModelWorkspaceView === "catalog" ? (
-                <div className="space-y-4">
-                  <SettingsWorkspaceCard
-                    eyebrow="Direct from provider"
-                    title="Live catalog and defaults"
-                    description="This view is fed by the Google models API first, then saved snapshot, then fallback catalog. If Google adds a model later today, it should show up here on load or refresh."
-                    actions={
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => loadProviderCatalog(provider, { force: true })}
-                          disabled={catalogLoading === provider}
-                        >
-                          {catalogLoading === provider ? (
-                            <>
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              Refreshing
-                            </>
-                          ) : (
-                            <>
-                              <RefreshCw className="h-3.5 w-3.5" />
-                              Refresh live catalog
-                            </>
-                          )}
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => syncPricing(provider)}
-                          disabled={pricingSyncLoading === provider}
-                        >
-                          {pricingSyncLoading === provider ? (
-                            <>
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              Syncing pricing
-                            </>
-                          ) : (
-                            <>
-                              <RefreshCw className="h-3.5 w-3.5" />
-                              Sync pricing
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    }
-                  >
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                      <ModelFact label="Catalog source" value={sourceLabel(activeCatalog?.source || "unavailable")} tone="primary" />
-                      <ModelFact label="Defaults source" value={sourceLabel(activeCatalog?.defaults_source || "unavailable")} />
-                      <ModelFact label="Priced models" value={String(activePricingStatus?.model_count || 0)} />
-                      <ModelFact label="Last pricing sync" value={activePricingStatus?.last_sync_at || "Not recorded"} />
-                    </div>
-
-                    {!apiKeys[provider] ? (
-                      <div className="flex items-start gap-2 rounded-lg border border-primary/35 bg-primary/10 px-3 py-2.5 text-sm text-primary">
-                        <Key className="mt-0.5 size-4 shrink-0" />
-                        <span>
-                          <strong>{activeProvider.keyEnv}</strong> not set. {activeCatalog?.source === "saved_catalog"
-                            ? "Using the last saved Google snapshot."
-                            : "Live Google defaults are unavailable; fallback rows are shown."}
-                        </span>
-                      </div>
-                    ) : null}
-
-                    {activeCatalog?.error ? (
-                      <div className="rounded-lg border border-destructive/35 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
-                        {activeCatalog.error}
-                      </div>
-                    ) : null}
-
-                    <div className="grid gap-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(360px,1.08fr)]">
-                      <div className="space-y-3">
-                        <div className="relative">
-                          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                          <Input
-                            value={catalogQuery}
-                            onChange={(event) => setCatalogQuery(event.target.value)}
-                            placeholder="Search models"
-                            className="h-10 pl-9"
-                          />
-                        </div>
-                        <div className="space-y-2 rounded-2xl border border-border/70 bg-muted/15 p-2">
-                          {filteredCatalogModels.length ? (
-                            filteredCatalogModels.map((model: any) => {
-                              const isSelected = model.id === selectedCatalogModelId;
-                              const capabilities = getModelCapabilities(model);
-                              const isAssigned = modelOverrideTargets.some((target) => target.id === model.id);
-                              return (
-                                <button
-                                  key={model.id}
-                                  type="button"
-                                  onClick={() => setSelectedCatalogModelId(model.id)}
-                                  className={cn(
-                                    "w-full rounded-xl border px-3 py-3 text-left transition-colors",
-                                    isSelected
-                                      ? "border-primary/40 bg-primary/8"
-                                      : "border-border/60 bg-background hover:bg-muted/35",
-                                  )}
-                                >
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <div className="text-sm font-semibold text-foreground">{model.label || model.id}</div>
-                                        <Badge tone={releaseChannelTone(model.release_channel)} className="px-1.5 py-0.5 text-[9px] uppercase tracking-wide">
-                                          {model.release_channel || "stable"}
-                                        </Badge>
-                                        {isAssigned ? <Badge tone="signal" className="px-1.5 py-0.5 text-[9px]">in use</Badge> : null}
-                                      </div>
-                                      <div className="mt-1 font-mono text-[11px] text-muted-foreground">{model.id}</div>
-                                    </div>
-                                    {isSelected ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" /> : null}
-                                  </div>
-                                  <div className="mt-2 line-clamp-2 text-[11.5px] leading-relaxed text-muted-foreground">
-                                    {model.description || "No provider description returned."}
-                                  </div>
-                                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                                    <Badge tone="default" className="px-1.5 py-0.5 text-[9px]">{formatTokenCount(model.context_window)} ctx</Badge>
-                                    <Badge tone="default" className="px-1.5 py-0.5 text-[9px]">{formatTokenCount(model.output_limit)} out</Badge>
-                                    <Badge tone={capabilityTone(model.compatibility?.thinking_controls)} className="px-1.5 py-0.5 text-[9px]">
-                                      thinking {capabilityStatusLabel(capabilities.supports_thinking_controls, "off").toLowerCase()}
-                                    </Badge>
-                                  </div>
-                                </button>
-                              );
-                            })
-                          ) : (
-                            <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-                              No models match this search.
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        {selectedCatalogModel ? (
-                          <>
-                            <SettingsWorkspaceCard
-                              eyebrow="Selected model"
-                              title={selectedCatalogModel.label || selectedCatalogModel.id}
-                              description={selectedCatalogModel.description || "No provider description returned for this model."}
-                              actions={
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <Badge tone={releaseChannelTone(selectedCatalogModel.release_channel)}>
-                                    {selectedCatalogModel.release_channel || "stable"}
-                                  </Badge>
-                                  <Badge tone="default">{sourceLabel(selectedCatalogModel.catalog_source)}</Badge>
-                                </div>
-                              }
-                            >
-                              <div className="space-y-4">
-                                <div className="font-mono text-[11px] text-muted-foreground">
-                                  {selectedCatalogModel.id}
-                                </div>
-                                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                                  <ModelFact label="Context window" value={formatTokenCount(selectedCatalogModel.context_window)} />
-                                  <ModelFact label="Output limit" value={formatTokenCount(selectedCatalogModel.output_limit)} />
-                                  <ModelFact label="Cache API" value={capabilityStatusLabel(getModelCapabilities(selectedCatalogModel).supports_explicit_cache)} />
-                                  <ModelFact label="Thinking controls" value={capabilityStatusLabel(getModelCapabilities(selectedCatalogModel).supports_thinking_controls, "Ignored")} />
-                                </div>
-                                <div className="grid gap-3 sm:grid-cols-2">
-                                  <Select
-                                    label="Assign selected model to"
-                                    value={catalogAssignmentTarget}
-                                    onChange={setCatalogAssignmentTarget}
-                                    options={[
-                                      { value: "global", label: "Global default" },
-                                      ...AGENT_SLOTS.map((slot) => ({
-                                        value: slot.id,
-                                        label: slot.label,
-                                      })),
-                                    ]}
-                                  />
-                                  <div className="flex items-end gap-2">
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      onClick={applySelectedCatalogModelToTarget}
-                                      disabled={!selectedCatalogModelId}
-                                    >
-                                      Apply assignment
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => applyLiveDefaultsToModelOverride(selectedCatalogModel)}
-                                      disabled={!selectedModelFields.length}
-                                    >
-                                      <Sparkles className="h-3.5 w-3.5" />
-                                      Copy provider defaults
-                                    </Button>
-                                  </div>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  {(selectedCatalogModel.supported_generation_methods || []).map((method: any) => (
-                                    <Badge key={method} tone="default" className="px-1.5 py-0.5 text-[9px]">
-                                      {method}
-                                    </Badge>
-                                  ))}
-                                </div>
-                              </div>
-                            </SettingsWorkspaceCard>
-
-                            <div className="grid gap-4 xl:grid-cols-2">
-                              <ParameterSummaryCard
-                                title="Provider defaults"
-                                icon={Sparkles}
-                                tone="primary"
-                                rows={selectedModelDefaultRows}
-                              />
-                              <ParameterSummaryCard
-                                title="Effective request values"
-                                icon={SlidersHorizontal}
-                                rows={selectedModelEffectiveRows}
-                              />
-                            </div>
-
-                            <CostEstimator provider={provider} model={selectedCatalogModel.id} />
-                          </>
-                        ) : (
-                          <Card className="rounded-[16px] border border-dashed">
-                            <CardContent className="px-5 py-10 text-center text-sm text-muted-foreground">
-                              Select a model to inspect live defaults, capability provenance, and estimated costs.
-                            </CardContent>
-                          </Card>
-                        )}
-                      </div>
-                    </div>
-                  </SettingsWorkspaceCard>
-                </div>
-              ) : null}
-            </section>
+            <ModelsTab
+              provider={provider}
+              providers={PROVIDERS}
+              agentModelConfig={agentModelConfig}
+              fallbackTemperature={fallbackTemperature}
+              providerCacheEnabled={providerCacheEnabled}
+              geminiExplicitCacheEnabled={geminiExplicitCacheEnabled}
+              geminiExplicitCacheTtl={geminiExplicitCacheTtl}
+              geminiExplicitCacheRefreshLead={geminiExplicitCacheRefreshLead}
+              toolCacheEnabled={toolCacheEnabled}
+              toolCacheStable={toolCacheStable}
+              thinkingEnabled={thinkingEnabled}
+              thinkingBudgetTokens={thinkingBudgetTokens}
+              maxParallelHostingPages={maxParallelHostingPages}
+              catalogModels={catalogModels}
+              catalogQuery={catalogQuery}
+              selectedCatalogModelId={selectedCatalogModelId}
+              catalogAssignmentTarget={catalogAssignmentTarget}
+              catalogLoading={catalogLoading}
+              pricingSyncLoading={pricingSyncLoading}
+              activeCatalog={activeCatalog}
+              activePricingStatus={activePricingStatus}
+              apiKeys={apiKeys}
+              dirtyCount={Object.values(dirtyTabs).filter(Boolean).length}
+              dirty={currentTabDirty}
+              saving={saving}
+              warnings={mergedModelWarnings}
+              modelSelectionDetails={modelSelectionDetails}
+              savedGlobal={config?.agent_model}
+              savedOrchestrator={config?.orchestrator_model}
+              onProviderChange={handleGlobalProviderChange}
+              onApplyToAllAgents={applyGlobalDefaultToAllAgents}
+              onUpdateAgentModel={updateAgentModel}
+              onUpdateAgentProvider={handleAgentSlotProvider}
+              onInheritToggle={handleAgentInheritToggle}
+              onFallbackTemperature={setFallbackTemperature}
+              onProviderCache={setProviderCacheEnabled}
+              onGeminiExplicitCache={setGeminiExplicitCacheEnabled}
+              onGeminiExplicitCacheTtl={setGeminiExplicitCacheTtl}
+              onGeminiExplicitCacheRefreshLead={setGeminiExplicitCacheRefreshLead}
+              onToolCache={setToolCacheEnabled}
+              onToolCacheStable={setToolCacheStable}
+              onThinking={setThinkingEnabled}
+              onThinkingBudget={setThinkingBudgetTokens}
+              onMaxParallel={setMaxParallelHostingPages}
+              onCatalogQuery={setCatalogQuery}
+              onSelectCatalogModel={setSelectedCatalogModelId}
+              onCatalogTarget={setCatalogAssignmentTarget}
+              onApplyCatalogToTarget={applySelectedCatalogModelToTarget}
+              onRefreshCatalog={() => loadProviderCatalog(provider, { force: true })}
+              onSyncPricing={() => syncPricing(provider)}
+              onDiscard={discardModelChanges}
+              onSave={() => saveConfig("models")}
+            />
           ) : null}
 
           {activeTab === "browser" ? (
-            <section className="space-y-4">
-              <BrowserTab config={config} dirty={Boolean(getDirtyTabs(savedConfigSnapshot, serverDraft)?.browser)} onSave={() => saveConfig("browser")} saving={saving} />
-              <SectionHeader>Engine Selection — Removed (Playwright-only per D15)</SectionHeader>
-              <div className="rounded-lg border border-amber-300/50 bg-amber-50 px-3 py-2 text-xs text-amber-900">Engine selector removed — the console is now Playwright-only (persona spec D15). Server retains internal overrides; UI has no runtime knob.</div>
-              <div className="grid gap-3 sm:grid-cols-2" style={{ display: "none" }}>
-                {BROWSER_OPTIONS.map((engine) => {
-                  const isActive = browserEngine === engine.id;
-                  return (
-                    <button
-                      key={engine.id}
-                      type="button"
-                      onClick={() => {
-                        setBrowserEngine(engine.id);
-                        setBrowserSettingsTab(engine.id);
-                      }}
-                      className="w-full rounded-[13px] border p-4 text-left transition-all duration-150"
-                      style={
-                        isActive
-                          ? {
-                              borderColor:
-                                "color-mix(in oklch, var(--signal) 45%, transparent)",
-                              background:
-                                "color-mix(in oklch, var(--signal) 8%, transparent)",
-                              boxShadow:
-                                "0 0 0 1px color-mix(in oklch, var(--signal) 18%, transparent)",
-                            }
-                          : {
-                              borderColor: "var(--line)",
-                              background: "var(--card)",
-                            }
-                      }
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span
-                          className="text-[14px] font-semibold"
-                          style={{
-                            color: isActive ? "var(--signal)" : "var(--ink)",
-                          }}
-                        >
-                          {engine.name}
-                        </span>
-                        {isActive ? <Badge tone="signal">Active</Badge> : null}
-                      </div>
-                      <p
-                        className="mt-1 text-[12px] leading-relaxed"
-                        style={{ color: "var(--mute)" }}
-                      >
-                        {engine.note}
-                      </p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {engine.id === "playwright" ? (
-                          <>
-                            <Badge tone="signal">iframe recovery</Badge>
-                            <Badge tone="default">context isolation</Badge>
-                          </>
-                        ) : (
-                          <>
-                            <Badge tone="signal">default path</Badge>
-                            <Badge tone="default">legacy CDP</Badge>
-                          </>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <MiniSegment
-                active={browserSettingsTab}
-                onChange={setBrowserSettingsTab}
-                options={BROWSER_OPTIONS.map((item) => ({
-                  id: item.id,
-                  label: item.name,
-                }))}
-              />
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <CompactStat label="Editing runtime" value="Playwright" tone="primary" />
-                <CompactStat label="Streaming-safe mode" value={String(activeBrowserRuntime.streaming_safe_mode || "adaptive")} />
-              </div>
-
-              <FieldGroup
-                title="Runtime Status"
-                description="Bridge sync state for the active backend."
-                accent="var(--sky)"
-              >
-                <div
-                  className="rounded-[12px] border p-4 text-[12px]"
-                  style={{
-                    borderColor: "var(--line)",
-                    background: "var(--panel-2)",
-                  }}
-                >
-                  <div className="mb-2 flex items-center gap-2">
-                    <span
-                      className="h-1.5 w-1.5 rounded-full"
-                      style={{
-                        background: browserRuntimeSyncStatus?.stale
-                          ? "var(--signal)"
-                          : "var(--mint)",
-                      }}
-                    />
-                    <span
-                      className="font-semibold"
-                      style={{ color: "var(--ink)" }}
-                    >
-                      Sync status
-                    </span>
-                  </div>
-                  <p style={{ color: "var(--mute)" }}>
-                    {browserRuntimeSyncStatus?.stale
-                      ? "Bridge looks stale — regenerate before next session."
-                      : "Bridge aligned with API settings."}
-                  </p>
-                  <div
-                    className="mt-3 space-y-0.5 font-mono text-[10.5px]"
-                    style={{ color: "var(--mute-2)" }}
-                  >
-                    <div>
-                      source:{" "}
-                      {browserRuntimeSyncStatus?.active_runtime_source ||
-                        "unknown"}
-                    </div>
-                    <div>
-                      synced:{" "}
-                      {browserRuntimeSyncStatus?.synced_at || "not recorded"}
-                    </div>
-                  </div>
-                </div>
-                {safeStreamingDifferences.length ? (
-                  <div
-                    className="rounded-[10px] border px-4 py-3 text-[12px]"
-                    style={{
-                      borderColor:
-                        "color-mix(in oklch, var(--signal) 28%, transparent)",
-                      background:
-                        "color-mix(in oklch, var(--signal) 7%, transparent)",
-                      color: "var(--ink-dim)",
-                    }}
-                  >
-                    <span
-                      className="font-semibold"
-                      style={{ color: "var(--signal)" }}
-                    >
-                      Differs from safe streaming defaults:{" "}
-                    </span>
-                    {safeStreamingDifferences.join(", ")}.
-                  </div>
-                ) : null}
-              </FieldGroup>
-
-              <FieldGroup
-                title="Adaptive Streaming"
-                description="Prefer direct, browser-like playback on player pages and only escalate when evidence says it is needed."
-                accent="var(--mint)"
-              >
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  <BrowserRuntimeSelect
-                    label="Streaming-safe mode"
-                    value={
-                      activeBrowserRuntime.streaming_safe_mode || "adaptive"
-                    }
-                    onChange={(value: any) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "streaming_safe_mode",
-                        value,
-                      )
-                    }
-                    options={[
-                      {
-                        value: "adaptive",
-                        label: "Adaptive",
-                        description:
-                          "Safe mode for hosting, embedded, player-like pages.",
-                      },
-                      {
-                        value: "always",
-                        label: "Always",
-                        description:
-                          "Always prefer the safer streaming policy.",
-                      },
-                      {
-                        value: "never",
-                        label: "Never",
-                        description:
-                          "Keep standard policy even on player pages.",
-                      },
-                    ]}
-                    placeholder="Select policy mode"
-                    description="When to disable aggressive blockers and relax first-attempt media policy."
-                  />
-                  <ToggleRow
-                    label="Asset diagnostics"
-                    checked={!!activeBrowserRuntime.asset_diagnostics_enabled}
-                    onChange={(value: any) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "asset_diagnostics_enabled",
-                        value,
-                      )
-                    }
-                    description="Return script, stylesheet, and manifest failure summaries to explain blank renders."
-                  />
-                </div>
-              </FieldGroup>
-
-              <FieldGroup
-                title="Cleanup & Launch"
-                description="Keep the browser looking normal, load the real uBOL extension for standard pages, and leave stream-like targets untouched."
-                accent="var(--rose)"
-              >
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <BrowserRuntimeInput
-                    label="Launch timeout (ms)"
-                    value={String(activeBrowserRuntime.launch_timeout_ms ?? "")}
-                    onChange={(value: any) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "launch_timeout_ms",
-                        Number.parseInt(value || "0", 10) || 0,
-                      )
-                    }
-                    type="number"
-                    min="1000"
-                    step="1000"
-                    description="How long the browser gets to launch before the session is abandoned."
-                  />
-                  <BrowserRuntimeTextarea
-                    label="Extra launch args"
-                    value={(activeBrowserRuntime.extra_launch_args || []).join(
-                      ", ",
-                    )}
-                    onChange={(value: any) =>
-                      updateBrowserRuntimeList(
-                        browserSettingsTab,
-                        "extra_launch_args",
-                        value,
-                      )
-                    }
-                    placeholder="--disable-web-security, --lang=en-US"
-                    description="Extra Chromium flags appended at launch. Keep minimal so the browser looks normal."
-                  />
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <ToggleRow
-                    label="uBOL extension"
-                    checked={!!activeBrowserRuntime.ubol_enabled}
-                    onChange={(value: any) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "ubol_enabled",
-                        value,
-                      )
-                    }
-                    description="Load uBlock Origin Lite for standard pages. Landing, hosting, embedded, and streaming-safe cases still stand down automatically."
-                  />
-                  <BrowserRuntimeInput
-                    label="uBOL no-filter hosts"
-                    value={(
-                      activeBrowserRuntime.adblock_allowlist_hosts || []
-                    ).join(", ")}
-                    onChange={(value: any) =>
-                      updateBrowserRuntimeList(
-                        browserSettingsTab,
-                        "adblock_allowlist_hosts",
-                        value,
-                      )
-                    }
-                    placeholder="example.com, cdn.example.com"
-                    description="Pass these hostnames to Chrome managed policy so uBOL leaves them alone even on standard pages."
-                  />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  <ToggleRow
-                    label="Block popups"
-                    checked={!!activeBrowserRuntime.popup_blocking_enabled}
-                    onChange={(value: any) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "popup_blocking_enabled",
-                        value,
-                      )
-                    }
-                    description="Block new tabs, alert-style interruptions, and window.open popups so agents stay on task."
-                  />
-                  <ToggleRow
-                    label="Iframe sandbox patch"
-                    checked={
-                      !!activeBrowserRuntime.iframe_sandbox_patch_enabled
-                    }
-                    onChange={(value: any) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "iframe_sandbox_patch_enabled",
-                        value,
-                      )
-                    }
-                    description="Loosen player iframe sandbox restrictions that block playback."
-                  />
-                  <ToggleRow
-                    label="Stream CORS patch"
-                    checked={
-                      !!browserRuntime.playwright?.stream_cors_patch_enabled
-                    }
-                    onChange={(value: any) =>
-                      updateBrowserRuntime(
-                        "playwright",
-                        "stream_cors_patch_enabled",
-                        value,
-                      )
-                    }
-                    description="Last-resort compatibility patch. Keep off unless diagnostics show a real stream-header issue."
-                  />
-                  <ToggleRow
-                    label="Include stream credentials"
-                    checked={
-                      !!browserRuntime.playwright?.stream_cors_include_credentials
-                    }
-                    onChange={(value: any) =>
-                      updateBrowserRuntime(
-                        "playwright",
-                        "stream_cors_include_credentials",
-                        value,
-                      )
-                    }
-                    description="Include credentials when the stream CORS patch is active."
-                  />
-                </div>
-              </FieldGroup>
-
-              <FieldGroup
-                title="Recovery & Media"
-                description="Give players enough time to load, retry transient failures, and recover cross-frame playback without over-correcting."
-                accent="var(--sky)"
-              >
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {[
-                    {
-                      label: "Transient errors",
-                      note: "Auto-retries for ERR_FAILED, ERR_NETWORK, connection resets, DNS, timeout, and chrome-error:// failures.",
-                    },
-                    {
-                      label: "Limited retries",
-                      note: "ERR_TOO_MANY_REDIRECTS and ERR_UNKNOWN_URL_SCHEME retry fewer times before falling through.",
-                    },
-                    {
-                      label: "Permanent failures",
-                      note: "ERR_BLOCKED_BY_CLIENT, certificate, and invalid-argument failures stop immediately.",
-                    },
-                  ].map(({  label, note  }: any) => (
-                    <div
-                      key={label}
-                      className="rounded-[12px] border p-3.5"
-                      style={{
-                        borderColor: "var(--line)",
-                        background: "var(--panel-2)",
-                      }}
-                    >
-                      <div
-                        className="mb-1.5 text-[12px] font-semibold"
-                        style={{ color: "var(--ink)" }}
-                      >
-                        {label}
-                      </div>
-                      <p
-                        className="text-[11.5px]"
-                        style={{ color: "var(--mute)" }}
-                      >
-                        {note}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-[11.5px]" style={{ color: "var(--mute-2)" }}>
-                  Wait strategy degrades from network idle → DOM loaded → full
-                  load.
-                </p>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <ToggleRow
-                    label="Iframe auto-recovery"
-                    checked={
-                      !!activeBrowserRuntime.iframe_auto_recovery_enabled
-                    }
-                    onChange={(value: any) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "iframe_auto_recovery_enabled",
-                        value,
-                      )
-                    }
-                    description="Retry iframe failures from sandbox, CORS-like blocking, and transient network errors."
-                  />
-                  <BrowserRuntimeInput
-                    label="Iframe recovery timeout (ms)"
-                    value={String(
-                      activeBrowserRuntime.iframe_recovery_timeout_ms ?? "",
-                    )}
-                    onChange={(value: any) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "iframe_recovery_timeout_ms",
-                        Number.parseInt(value || "0", 10) || 0,
-                      )
-                    }
-                    type="number"
-                    min="5000"
-                    max="60000"
-                    step="1000"
-                    description="Max time for a recovery reload before reporting failure."
-                  />
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <BrowserRuntimeInput
-                    label="Media capture timeout (ms)"
-                    value={String(
-                      activeBrowserRuntime.media_capture_timeout_ms ?? "",
-                    )}
-                    onChange={(value: any) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "media_capture_timeout_ms",
-                        Number.parseInt(value || "0", 10) || 0,
-                      )
-                    }
-                    type="number"
-                    min="5000"
-                    max="120000"
-                    step="1000"
-                    description="How long the runtime listens for HLS, DASH, and direct media requests."
-                  />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <ToggleRow
-                    label="Verify media playback"
-                    checked={
-                      !!activeBrowserRuntime.media_playback_verification_enabled
-                    }
-                    onChange={(value: any) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "media_playback_verification_enabled",
-                        value,
-                      )
-                    }
-                    description="Wait for play/playing signals before reporting success."
-                  />
-                  <ToggleRow
-                    label="Detect media CORS errors"
-                    checked={!!activeBrowserRuntime.media_cors_patch_enabled}
-                    onChange={(value: any) =>
-                      updateBrowserRuntime(
-                        browserSettingsTab,
-                        "media_cors_patch_enabled",
-                        value,
-                      )
-                    }
-                    description="Collect cross-origin stream diagnostics and flag suspicious missing CORS headers."
-                  />
-                </div>
-              </FieldGroup>
-            </section>
+            <BrowserTab
+              runtime={activeBrowserRuntime}
+              maxParallelHostingPages={maxParallelHostingPages}
+              source={String(config?.source_layer ?? config?.source ?? "default")}
+              dirty={Boolean((dirtyTabs as any)?.browser)}
+              saving={saving}
+              syncStatus={browserRuntimeSyncStatus}
+              onRuntimeChange={(key, value) => updateBrowserRuntime(browserSettingsTab, key, value)}
+              onRuntimeListChange={(key, value) => updateBrowserRuntimeList(browserSettingsTab, key, value)}
+              onMaxParallelChange={setMaxParallelHostingPages}
+              onSave={() => saveConfig("browser")}
+            />
           ) : null}
 
           {activeTab === "mcp-tools" ? (
-            <section className="space-y-4">
-              <div className="flex items-center justify-between">
-                <SectionHeader>MCP Tools & Manifest</SectionHeader>
-                <span className="text-[11px]" style={{ color: "var(--mute)" }}>
-                  Read-only manifest inspection: agents receive the validated least-privilege profile
-                </span>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <CompactStat label="Runtime Driver" value="Playwright 1.62.1" tone="primary" />
-                <CompactStat label="MCP Transport" value="Streamable HTTP" tone="success" />
-                <CompactStat label="Isolation" value="Isolated Contexts" />
-                <CompactStat label="uBOL Version" value="2026.901.1442" />
-              </div>
-
-              <div className="rounded-[18px] border border-border/70 bg-card/95 p-4 shadow-[0_18px_48px_-36px_rgba(0,0,0,0.55)] space-y-4">
-                <div className="space-y-1">
-                  <h3 className="text-[14px] font-semibold text-foreground">Canonical Tool Manifest (v2)</h3>
-                  <p className="text-[12px] text-muted-foreground">
-                    Authoritative profile definitions from browser-tool-manifest.json. Tools cannot be disabled ad-hoc per run.
-                  </p>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-[12px] border border-border/50 bg-background/50 p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[12px] text-foreground">Classification</span>
-                      <Badge tone="default" className="text-[10px]">5 tools</Badge>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 font-mono text-[11px] text-muted-foreground">
-                      <span className="rounded bg-muted px-1.5 py-0.5">navigate</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">inspect</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">interact</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">screenshot</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">wait</span>
-                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">memory_search</span>
-                    </div>
-                  </div>
-
-                  <div className="rounded-[12px] border border-border/50 bg-background/50 p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[12px] text-foreground">Landing Page</span>
-                      <Badge tone="default" className="text-[10px]">5 tools</Badge>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 font-mono text-[11px] text-muted-foreground">
-                      <span className="rounded bg-muted px-1.5 py-0.5">navigate</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">inspect</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">interact</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">screenshot</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">wait</span>
-                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">plan</span>
-                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">memory_search</span>
-                    </div>
-                  </div>
-
-                  <div className="rounded-[12px] border border-border/50 bg-background/50 p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[12px] text-foreground">Hosting Page</span>
-                      <Badge tone="default" className="text-[10px]">6 tools</Badge>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 font-mono text-[11px] text-muted-foreground">
-                      <span className="rounded bg-muted px-1.5 py-0.5">navigate</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">inspect</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">interact</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">harvest</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">screenshot</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">wait</span>
-                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">plan</span>
-                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">memory_search</span>
-                    </div>
-                  </div>
-
-                  <div className="rounded-[12px] border border-border/50 bg-background/50 p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[12px] text-foreground">Embedded Page</span>
-                      <Badge tone="default" className="text-[10px]">6 tools</Badge>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 font-mono text-[11px] text-muted-foreground">
-                      <span className="rounded bg-muted px-1.5 py-0.5">navigate</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">inspect</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">interact</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">harvest</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">screenshot</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5">wait</span>
-                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">plan</span>
-                      <span className="rounded bg-primary/10 text-primary px-1.5 py-0.5">memory_search</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
+            <McpToolsTab manifestTools={Array.isArray((config as any)?.browser_manifest) ? (config as any).browser_manifest : undefined} />
           ) : null}
 
-                              {activeTab === "api-keys" ? (
-            <section className="space-y-6" style={{ fontFeatureSettings: '"cv01","ss03"' }}>
-              {/* Header — Linear style: tight, subtle */}
-              <div className="border-b border-border/60 pb-6">
-                <div className="flex flex-wrap items-baseline justify-between gap-3">
-                  <div>
-                    <h2 className="text-[20px] font-[590] tracking-[-0.24px] text-foreground">Provider keys</h2>
-                    <p className="mt-2 max-w-[560px] text-[14px] leading-[1.6] tracking-[-0.13px] text-muted-foreground">BYOK — keys live in <span className="font-mono text-[12px] text-foreground/80">data/settings.runtime.yaml</span>. Never baked into images, never committed. Runtime layer wins over <span className="font-mono text-[12px] text-foreground/80">.env</span>.</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/30 px-3 py-1.5 text-[12px] font-[500] tracking-[-0.12px] text-foreground/80">
-                      <span className="size-2 rounded-full bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
-                      {Object.values(apiKeys).filter(Boolean).length} / {PROVIDERS.length} live
-                    </span>
-                  </div>
-                </div>
-                <div className="mt-5 h-1 w-full overflow-hidden rounded-full bg-muted/60">
-                  <div className="h-full rounded-full bg-[#5e6ad2] transition-all duration-500" style={{ width: `${Math.round((Object.values(apiKeys).filter(Boolean).length / PROVIDERS.length) * 100)}%` }} />
-                </div>
-              </div>
-
-              {/* Controls — Linear: ghost pills + subtle search */}
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="relative min-w-[260px] flex-1 max-w-[360px]">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70" />
-                    <input value={providerKeyQuery} onChange={(e) => setProviderKeyQuery(e.target.value)} placeholder="Search providers, env, features…" className="h-8 w-full rounded-[6px] border border-border bg-muted/20 pl-9 pr-3 text-[13px] font-[400] tracking-[-0.12px] text-foreground placeholder:text-muted-foreground/70 outline-none focus:border-border/80 focus:bg-muted/40" />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1">
-                    {["All","Configured","Missing"].map((st) => (
-                      <button key={st} onClick={() => setProviderKeyStatus(st)} className={["inline-flex h-6 items-center rounded-full border px-2.5 text-[12px] font-[500] tracking-[-0.12px] transition-colors", providerKeyStatus === st ? "border-border bg-muted/60 text-foreground" : "border-transparent text-muted-foreground hover:bg-muted/40 hover:text-foreground/80"].join(" ")}>{st}</button>
-                    ))}
-                    <span className="mx-1 h-4 w-px bg-muted/60" />
-                    {["All","Frontier","Speed","Open","Cloud","Enterprise","Community","Local","Gateway"].map((cat) => (
-                      <button key={cat} onClick={() => setProviderKeyCategory(cat)} className={["inline-flex h-6 items-center rounded-full border px-2.5 text-[12px] font-[500] tracking-[-0.12px] transition-colors", providerKeyCategory === cat ? "border-border bg-muted/60 text-foreground" : "border-transparent text-muted-foreground hover:bg-muted/40 hover:text-foreground/80"].join(" ")}>{cat}</button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Provider list — grouped, Linear: subtle rows, not cards */}
-              <div className="space-y-8">
-                {(() => {
-                  const filtered = PROVIDERS.filter((pr: any) => {
-                    const q = providerKeyQuery.trim().toLowerCase();
-                    const matchesSearch = !q || [pr.name, pr.keyEnv, pr.id, (pr.features || []).join(" "), pr.category].join(" ").toLowerCase().includes(q);
-                    const matchesCat = providerKeyCategory === "All" || pr.category === providerKeyCategory;
-                    const hasKey = !!(apiKeys as any)[pr.id];
-                    const matchesStatus = providerKeyStatus === "All" || (providerKeyStatus === "Configured" ? hasKey : !hasKey);
-                    return matchesSearch && matchesCat && matchesStatus;
-                  });
-                  const groups: Record<string, any[]> = {};
-                  filtered.forEach((pr: any) => {
-                    const g = pr.category || "Other";
-                    if (!groups[g]) groups[g] = [];
-                    groups[g].push(pr);
-                  });
-                  const order = ["Frontier","Speed","Open","Cloud","Enterprise","Community","Local","Gateway"];
-                  const sortedGroups = Object.keys(groups).sort((a,b) => order.indexOf(a) - order.indexOf(b));
-                  if (filtered.length === 0) {
-                    return (
-                      <div className="rounded-[8px] border border-dashed border-border bg-muted/20 px-6 py-12 text-center">
-                        <div className="mx-auto max-w-sm">
-                          <div className="text-[13px] font-[510] tracking-[-0.12px] text-foreground">No providers match</div>
-                          <p className="mt-1 text-[13px] leading-[1.5] text-muted-foreground">Try a different search or filter. {PROVIDERS.length} total providers available.</p>
-                          <button onClick={() => { setProviderKeyQuery(""); setProviderKeyCategory("All"); setProviderKeyStatus("All"); }} className="mt-4 inline-flex h-7 items-center rounded-[6px] border border-border bg-muted/30 px-3 text-[12px] font-[500] text-foreground/80 hover:bg-muted/60">Clear filters</button>
-                        </div>
-                      </div>
-                    );
-                  }
-                  return sortedGroups.map((group) => (
-                    <div key={group} className="space-y-3">
-                      <div className="flex items-center gap-3">
-                        <div className="text-[11px] font-[600] uppercase tracking-[0.08em] text-muted-foreground">{group}</div>
-                        <div className="h-px flex-1 bg-muted/60" />
-                        <div className="text-[11px] font-[400] tracking-[-0.12px] text-muted-foreground/70">{groups[group].length} providers</div>
-                      </div>
-                      <div className="overflow-hidden rounded-[8px] border border-border bg-muted/20">
-                        {groups[group].map((item: any, idx: number) => {
-                          const hasKey = !!(apiKeys as any)[item.id];
-                          const edited = (keyEdits as any)[item.id];
-                          const isEdited = edited !== null;
-                          const isCleared = edited === "";
-                          const show = !!(showKey as any)[item.id];
-                          const testState = (keyTestState as any)[item.id] || "";
-                          const isTesting = testState === "testing";
-                          const registryProvider = ((config as any)?.provider_registry || []).find((row: any) => row.id === item.id);
-                          const defaultBaseUrl = item.baseUrl || registryProvider?.base_url || "";
-                          const configuredBaseUrl = ((config as any)?.provider_base_urls || {})[item.id] || "";
-                          const editedBaseUrl = (baseUrlEdits as any)[item.id];
-                          const effectiveBaseUrl = editedBaseUrl !== null && editedBaseUrl !== undefined ? editedBaseUrl : configuredBaseUrl;
-                          const showEndpoint = !defaultBaseUrl || !!configuredBaseUrl || editedBaseUrl !== null && editedBaseUrl !== undefined;
-                          return (
-                            <div key={item.id} className={["group relative flex flex-col gap-3 px-4 py-4 transition-colors", idx !== 0 ? "border-t border-border/60" : "", isEdited && !isCleared ? "bg-[rgba(94,106,210,0.04)]" : "hover:bg-muted/30"].join(" ")}>
-                              <div className="flex items-start justify-between gap-4">
-                                <div className="flex min-w-0 flex-1 items-start gap-3">
-                                  <span className="mt-1.5 size-2 shrink-0 rounded-full" style={{ background: hasKey || (isEdited && !isCleared) ? item.color : "#3f3f46", boxShadow: hasKey ? `0 0 8px ${item.color}40` : "none" }} />
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <span className="text-[13px] font-[510] tracking-[-0.12px] text-foreground">{item.name}</span>
-                                      <span className="inline-flex items-center rounded-[4px] border border-border bg-muted/30 px-1.5 py-0.5 font-mono text-[10px] font-[500] tracking-[-0.08px] text-muted-foreground">{item.keyEnv}</span>
-                                      {isEdited ? <span className={["inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-[600] tracking-[-0.08px]", isCleared ? "bg-[rgba(245,158,11,0.12)] text-[var(--signal-text)] border border-[rgba(245,158,11,0.2)]" : "bg-[rgba(94,106,210,0.12)] text-[var(--violet-text)] border border-[rgba(94,106,210,0.2)]"].join(" ")}>{isCleared ? "will clear" : "edited"}</span> : hasKey ? <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(16,185,129,0.10)] px-2 py-0.5 text-[10px] font-[600] tracking-[-0.08px] text-[var(--mint-text)]"><span className="size-1 rounded-full bg-[#10b981]" /> live</span> : <span className="inline-flex items-center rounded-full border border-border/60 bg-muted/20 px-2 py-0.5 text-[10px] font-[500] tracking-[-0.08px] text-muted-foreground/70">no key</span>}
-                                      {testState === "ok" ? <span className="inline-flex items-center rounded-full bg-[rgba(16,185,129,0.12)] px-2 py-0.5 text-[10px] font-[600] text-[var(--mint-text)]">verified</span> : testState === "error" ? <span className="inline-flex items-center rounded-full bg-[rgba(239,68,68,0.12)] px-2 py-0.5 text-[10px] font-[600] text-[var(--rose-text)]">failed</span> : null}
-                                    </div>
-                                    <div className="mt-1 flex flex-wrap gap-1">
-                                      {(item.features || []).slice(0,3).map((f: string) => (
-                                        <span key={f} className="rounded-[4px] bg-muted/40 px-1.5 py-0.5 text-[10px] font-[400] tracking-[-0.08px] text-muted-foreground">{f}</span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="flex shrink-0 items-center gap-1">
-                                  <button onClick={() => setShowKey((s: any) => ({ ...s, [item.id]: !(s as any)[item.id] }))} className="inline-flex h-7 items-center rounded-[6px] border border-border bg-muted/20 px-2.5 text-[12px] font-[500] tracking-[-0.12px] text-muted-foreground hover:bg-muted/60 hover:text-foreground">{show ? "Hide" : "Show"}</button>
-                                  <button onClick={() => testProvider(item.id)} disabled={isTesting} className="inline-flex h-7 items-center gap-1 rounded-[6px] border border-border bg-muted/20 px-2.5 text-[12px] font-[500] tracking-[-0.12px] text-muted-foreground hover:bg-muted/60 hover:text-foreground disabled:opacity-50">
-                                    {isTesting ? <Loader2 className="size-3 animate-spin" /> : null} Test
-                                  </button>
-                                  <button onClick={() => setKeyEdits((s: any) => ({ ...s, [item.id]: "" }))} className="inline-flex h-7 items-center rounded-[6px] border border-transparent px-2.5 text-[12px] font-[500] tracking-[-0.12px] text-muted-foreground hover:bg-muted/40 hover:text-foreground/80">Clear</button>
-                                  {isEdited ? <button onClick={() => setKeyEdits((s: any) => ({ ...s, [item.id]: null }))} className="inline-flex h-7 items-center rounded-[6px] bg-[#5e6ad2] px-2.5 text-[12px] font-[500] tracking-[-0.12px] text-white hover:bg-[#828fff]">Undo</button> : null}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <div className="relative flex-1">
-                                  <input value={isEdited ? (edited as string) : ""} onChange={(e) => setKeyEdits((s: any) => ({ ...s, [item.id]: e.target.value }))} placeholder={hasKey ? "•••••••••••••••• — paste new key to replace" : "Paste " + item.keyEnv} type={show ? "text" : "password"} className="h-8 w-full rounded-[6px] border border-border bg-muted/20 px-3 font-mono text-[12px] tracking-[-0.08px] text-foreground placeholder:text-muted-foreground/70 outline-none focus:border-[rgba(94,106,210,0.4)] focus:bg-muted/40" spellCheck={false} autoComplete="off" />
-                                </div>
-                              </div>
-                              {showEndpoint ? (
-                                <div className="relative">
-                                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-[600] uppercase tracking-[0.08em] text-muted-foreground/70">URL</span>
-                                  <input value={effectiveBaseUrl} onChange={(e) => setBaseUrlEdits((s: any) => ({ ...s, [item.id]: e.target.value }))} placeholder={defaultBaseUrl || "https://your-endpoint.example.com/v1"} className="h-7 w-full rounded-[6px] border border-border/60 bg-transparent pl-12 pr-3 font-mono text-[11px] tracking-[-0.08px] text-muted-foreground placeholder:text-muted-foreground/70 outline-none focus:border-[rgba(94,106,210,0.35)]" spellCheck={false} autoComplete="off" />
-                                </div>
-                              ) : null}
-                              <div className="flex items-center justify-between">
-                                <p className="text-[11px] leading-[1.4] tracking-[-0.08px] text-muted-foreground/70">{hasKey ? "Key set — masked. " : "No key — "}{isEdited && !isCleared ? "Will save new value." : isCleared ? "Will remove from runtime on save." : "Leave blank to keep."}</p>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ));
-                })()}
-              </div>
-
-              <div className="rounded-[8px] border border-[rgba(245,158,11,0.18)] bg-[rgba(245,158,11,0.06)] px-4 py-3">
-                <p className="text-[12px] leading-[1.6] tracking-[-0.12px] text-foreground/80"><span className="font-[600] text-foreground">Heads up</span> — Runtime keys win over <span className="font-mono text-[11px] text-foreground">.env</span> (<span className="font-mono text-[11px]">default &lt; env &lt; base_yaml &lt; runtime_yaml</span>). After migrating, remove provider keys from <span className="font-mono text-[11px]">.env</span> and keep only <span className="font-mono text-[11px]">POSTGRES_PASSWORD</span> / <span className="font-mono text-[11px]">AUTH_JWT_SECRET</span> there.</p>
-              </div>
-            </section>
+          {activeTab === "api-keys" ? (
+            <ApiKeysTab
+              providers={PROVIDERS}
+              apiKeys={apiKeys}
+              keyEdits={keyEdits}
+              baseUrlEdits={baseUrlEdits}
+              showKey={showKey}
+              keyTestState={keyTestState}
+              providerKeyQuery={providerKeyQuery}
+              providerKeyCategory={providerKeyCategory}
+              providerKeyStatus={providerKeyStatus}
+              configuredBaseUrls={(config as any)?.provider_base_urls || {}}
+              registryBaseUrls={Object.fromEntries(((config as any)?.provider_registry || []).map((row: any) => [row.id, row.base_url || ""]))}
+              onQuery={setProviderKeyQuery}
+              onCategory={setProviderKeyCategory}
+              onStatus={setProviderKeyStatus}
+              onKeyEdit={(id, v) => setKeyEdits((s: any) => ({ ...s, [id]: v }))}
+              onKeyClear={(id) => setKeyEdits((s: any) => ({ ...s, [id]: "" }))}
+              onKeyUndo={(id) => setKeyEdits((s: any) => ({ ...s, [id]: null }))}
+              onToggleShow={(id) => setShowKey((s: any) => ({ ...s, [id]: !(s as any)[id] }))}
+              onBaseUrlEdit={(id, v) => setBaseUrlEdits((s: any) => ({ ...s, [id]: v }))}
+              onTest={testProvider}
+              onClearFilters={() => { setProviderKeyQuery(""); setProviderKeyCategory("All"); setProviderKeyStatus("All"); }}
+            />
           ) : null}
 
-{activeTab === "display" ? <DisplaySettingsSection /> : null}
+{activeTab === "display" ? <DisplayTab /> : null}
 
           {activeTab === "account" ? (
             <section className="space-y-4">
@@ -3818,27 +1715,7 @@ export function SettingsPage() {
           ) : null}
 
           {activeTab === "notifications" ? (
-            <section className="space-y-4">
-              <div>
-                <h2 className="text-base font-semibold text-foreground">Notification Preferences</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Choose which pipeline events trigger toast notifications. Tool call events are
-                  never notified.
-                </p>
-              </div>
-              <div className="space-y-2">
-                {NOTIF_EVENTS.map(({  key, label, note  }: any) => (
-                  <ToggleRow
-                    key={key}
-                    label={label}
-                    // @ts-expect-error -- strict migration
-                    checked={!!notifPrefs[key]}
-                    onChange={(checked: any) => setNotifPrefs({ ...notifPrefs, [key]: checked })}
-                    description={note}
-                  />
-                ))}
-              </div>
-            </section>
+            <NotificationsTab prefs={notifPrefs} onChange={setNotifPrefs} />
           ) : null}
         </div>
       </div>
@@ -3848,57 +1725,3 @@ export function SettingsPage() {
 }
 
 /* ── Display settings section ─────────────────────────────────────────────── */
-function DisplaySettingsSection() {
-  const { settings, update, reset } = useRunViewSettings();
-
-  return (
-    <section className="space-y-6">
-      <div>
-        <SectionHeader>Run View Display</SectionHeader>
-        <p
-          className="mt-1 text-sm leading-relaxed"
-          style={{ color: "var(--mute)" }}
-        >
-          Control what panels and behaviors appear on the run detail pages.
-          Settings are stored in your browser.
-        </p>
-      </div>
-
-      <RunViewSettingsPanel settings={settings} update={update as any} reset={reset} />
-      {/*
-
-          {saved ? "✓ Saved to browser" : "Save display preferences"}
-          (Auto-saved on change — this confirms)
-      */}
-      <div
-        className="rounded-[12px] border p-4 space-y-2"
-        style={{ borderColor: "var(--line)", background: "var(--card)" }}
-      >
-        <div
-          className="text-[12px] font-semibold"
-          style={{ color: "var(--ink-dim)" }}
-        >
-          About Browser Live View
-        </div>
-        <p
-          className="text-[12px] leading-relaxed"
-          style={{ color: "var(--mute)" }}
-        >
-          The browser live view panel polls the active run for the latest
-          screenshot the headless browser captured. It shows the current URL
-          being visited, the tool being executed (with highlights), and
-          auto-refreshes while the run is live. Screenshots are captured by the
-          agent during tool calls — not a continuous screen stream.
-        </p>
-        <p
-          className="text-[12px] leading-relaxed"
-          style={{ color: "var(--mute)" }}
-        >
-          Tool activity overlays display the tool name, action label, and target
-          selector or URL from the tool call arguments so you can follow exactly
-          what the agent is doing in the browser.
-        </p>
-      </div>
-    </section>
-  );
-}

@@ -13,6 +13,9 @@ export interface RunViewSettings {
   showScreenshots: boolean;
   expandTables: boolean;
   showEventStream: boolean;
+  showGraph: boolean;
+  showPlanBoard: boolean;
+  showContextMonitor: boolean;
   liveRefreshMs: number;
   eventLimit: number;
   showTimestamps: boolean;
@@ -29,6 +32,9 @@ export const DEFAULT_RUN_VIEW_SETTINGS: RunViewSettings = {
   showScreenshots: true,
   expandTables: false,
   showEventStream: true,
+  showGraph: true,
+  showPlanBoard: true,
+  showContextMonitor: true,
   liveRefreshMs: 2500,
   eventLimit: 120,
   showTimestamps: true,

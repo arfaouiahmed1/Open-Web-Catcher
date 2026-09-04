@@ -19,12 +19,12 @@ export function LandingHero(): React.JSX.Element {
           {/* Decide/Learn: asymmetric editorial story, not a dashboard-card grid. */}
           <div className="max-w-[660px]">
             <div className="mb-7 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--mute)]">
-              <span className="flex size-8 items-center justify-center rounded-lg bg-[color-mix(in_oklch,var(--signal)_12%,transparent)] text-[var(--signal)] ring-1 ring-[color-mix(in_oklch,var(--signal)_25%,transparent)]">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-[color-mix(in_oklch,var(--signal)_12%,transparent)] text-[var(--signal-text)] ring-1 ring-[color-mix(in_oklch,var(--signal)_25%,transparent)]">
                 <LogoMark className="size-4" />
               </span>
               Open Web Catcher <span className="text-[var(--mute-3)]">/</span> operator console
             </div>
-            <p className="mb-4 font-mono text-[11px] tracking-[0.08em] text-[var(--signal)]">AUTONOMOUS WEB RESEARCH · EVIDENCE FIRST</p>
+            <p className="mb-4 font-mono text-[11px] tracking-[0.08em] text-[var(--signal-text)]">AUTONOMOUS WEB RESEARCH · EVIDENCE FIRST</p>
             <h1 className="max-w-[620px] text-balance text-5xl font-semibold leading-[.96] tracking-[-0.055em] text-[var(--ink)] sm:text-6xl lg:text-7xl">
               Follow the page.
               <span className="block text-[var(--mute)]">Keep the proof.</span>
@@ -33,7 +33,7 @@ export function LandingHero(): React.JSX.Element {
               OWC drives an isolated browser through the web&apos;s dead ends — classifying pages, tracing embeds, and collecting the screenshots, streams, and provider evidence that explain every result.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/signup" className="inline-flex h-11 items-center gap-2 rounded-lg bg-[var(--signal)] px-5 text-sm font-semibold text-[var(--bg)] transition-transform hover:-translate-y-0.5 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--signal)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]">
+              <Link href="/signup" className="inline-flex h-11 items-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background">
                 Create account <ArrowRight className="size-4" />
               </Link>
               <Link href="/login" className="inline-flex h-11 items-center rounded-lg border border-[var(--line-hi)] bg-[var(--card)] px-5 text-sm font-medium text-[var(--ink)] transition-colors hover:bg-[var(--card-hi)]">
@@ -41,9 +41,9 @@ export function LandingHero(): React.JSX.Element {
               </Link>
             </div>
             <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-xs text-[var(--mute-2)]">
-              <span className="inline-flex items-center gap-1.5"><ShieldCheck className="size-3.5 text-[var(--mint)]" /> Isolated browser</span>
-              <span className="inline-flex items-center gap-1.5"><KeyRound className="size-3.5 text-[var(--signal)]" /> Bring your own key</span>
-              <span className="inline-flex items-center gap-1.5"><Eye className="size-3.5 text-[var(--sky)]" /> Auditable output</span>
+              <span className="inline-flex items-center gap-1.5"><ShieldCheck className="size-3.5 text-[var(--mint-text)]" /> Isolated browser</span>
+              <span className="inline-flex items-center gap-1.5"><KeyRound className="size-3.5 text-[var(--signal-text)]" /> Bring your own key</span>
+              <span className="inline-flex items-center gap-1.5"><Eye className="size-3.5 text-[var(--sky-text)]" /> Auditable output</span>
             </div>
           </div>
 
@@ -58,7 +58,7 @@ export function LandingHero(): React.JSX.Element {
                   <span className="size-2 rounded-full bg-[var(--mint)]" />
                   <span className="ml-2 font-mono text-[10px] uppercase tracking-[0.1em] text-[var(--mute-2)]">run / trace_01</span>
                 </div>
-                <span className="rounded-full bg-[color-mix(in_oklch,var(--mint)_12%,transparent)] px-2 py-1 font-mono text-[10px] text-[var(--mint)]">LIVE</span>
+                <span className="rounded-full bg-[color-mix(in_oklch,var(--mint)_12%,transparent)] px-2 py-1 font-mono text-[10px] text-[var(--mint-text)]">LIVE</span>
               </div>
               <div className="p-4 sm:p-5">
                 <div className="rounded-lg border border-[var(--line)] bg-[var(--bg)] p-3">
@@ -90,13 +90,13 @@ export function LandingHero(): React.JSX.Element {
         <section className="border-y border-[var(--line)] py-8 sm:py-10">
           <div className="grid gap-7 lg:grid-cols-[.8fr_1.2fr] lg:gap-12">
             <div>
-              <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-[var(--signal)]">Your key. Your routing.</p>
+              <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-[var(--signal-text)]">Your key. Your routing.</p>
               <h2 className="mt-3 text-2xl font-semibold tracking-[-0.035em] text-[var(--ink)] sm:text-3xl">Configure a model for each agent — not one global black box.</h2>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <p className="text-sm leading-6 text-[var(--mute)]">Choose a provider and model for classification, landing, hosting, embedded, and orchestration. Keys are masked in the console and persisted to the local runtime configuration.</p>
               <Link href="/settings?tab=api-keys" className="group rounded-xl border border-[var(--line-hi)] bg-[var(--card)] p-4 transition-colors hover:bg-[var(--card-hi)]">
-                <span className="inline-flex size-8 items-center justify-center rounded-lg bg-[color-mix(in_oklch,var(--violet)_12%,transparent)] text-[var(--violet)]"><KeyRound className="size-4" /></span>
+                <span className="inline-flex size-8 items-center justify-center rounded-lg bg-[color-mix(in_oklch,var(--violet)_12%,transparent)] text-[var(--violet-text)]"><KeyRound className="size-4" /></span>
                 <div className="mt-3 text-sm font-semibold text-[var(--ink)]">Set up BYOK <ArrowRight className="ml-1 inline size-3 transition-transform group-hover:translate-x-0.5" /></div>
                 <p className="mt-1 text-xs text-[var(--mute)]">No provider key is baked into an image.</p>
               </Link>
@@ -120,7 +120,7 @@ export function LandingHero(): React.JSX.Element {
 
         <section className="grid gap-8 border-t border-[var(--line)] py-12 lg:grid-cols-[.72fr_1.28fr] lg:py-16">
           <div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-[var(--sky)]">How a trace becomes a result</p>
+            <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-[var(--sky-text)]">How a trace becomes a result</p>
             <h2 className="mt-3 text-3xl font-semibold leading-tight tracking-[-0.04em] text-[var(--ink)]">The result is a chain of decisions, not an unexplained answer.</h2>
             <p className="mt-4 text-sm leading-6 text-[var(--mute)]">OWC keeps the context that led an agent from a public URL to a validated stream or a defensible failure state. That lets an operator inspect what happened instead of trusting a black box.</p>
           </div>
@@ -131,7 +131,7 @@ export function LandingHero(): React.JSX.Element {
               ["Validation and outcome", "The validator rejects poisoned URLs and reports whether the pipeline found usable streams, hit a real blocker, or needs a human follow-up."],
             ].map(([label, copy], index) => (
               <div key={label} className="grid gap-3 border-b border-[var(--line)] p-5 last:border-0 sm:grid-cols-[34px_1fr]">
-                <span className="font-mono text-[11px] text-[var(--signal)]">0{index + 1}</span>
+                <span className="font-mono text-[11px] text-[var(--signal-text)]">0{index + 1}</span>
                 <div>
                   <h3 className="text-sm font-semibold text-[var(--ink)]">{label}</h3>
                   <p className="mt-1 text-sm leading-6 text-[var(--mute)]">{copy}</p>
@@ -143,25 +143,25 @@ export function LandingHero(): React.JSX.Element {
 
         <section className="grid gap-7 border-t border-[var(--line)] py-12 lg:grid-cols-2 lg:py-16">
           <div className="rounded-2xl bg-[color-mix(in_oklch,var(--signal)_8%,var(--card))] p-6 ring-1 ring-[color-mix(in_oklch,var(--signal)_20%,transparent)]">
-            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--ink)]"><KeyRound className="size-4 text-[var(--signal)]" /> Bring your own intelligence</div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--ink)]"><KeyRound className="size-4 text-[var(--signal-text)]" /> Bring your own intelligence</div>
             <p className="mt-3 text-sm leading-6 text-[var(--mute)]">Use one provider for fast classification and another for deep extraction. The five agent roles can each select their own provider, model, temperature and token limits in Settings.</p>
-            <Link href="/settings?tab=models" className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[var(--signal)] hover:brightness-110">Configure agent routing <ArrowRight className="size-4" /></Link>
+            <Link href="/settings?tab=models" className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[var(--signal-text)] hover:brightness-110">Configure agent routing <ArrowRight className="size-4" /></Link>
           </div>
           <div className="rounded-2xl border border-[var(--line-hi)] bg-[var(--panel)] p-6">
-            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--ink)]"><Play className="size-4 text-[var(--mint)]" /> A practical first run</div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--ink)]"><Play className="size-4 text-[var(--mint-text)]" /> A practical first run</div>
             <ol className="mt-4 space-y-3 text-sm leading-6 text-[var(--mute)]">
-              <li className="flex gap-3"><Check className="mt-1 size-3.5 shrink-0 text-[var(--mint)]" />Create the first admin account, then add an API key under Settings.</li>
-              <li className="flex gap-3"><Check className="mt-1 size-3.5 shrink-0 text-[var(--mint)]" />Paste an allowed public URL in Live Pipeline and select workflow mode.</li>
-              <li className="flex gap-3"><Check className="mt-1 size-3.5 shrink-0 text-[var(--mint)]" />Follow the live trace, then review screenshots and streams in View Results.</li>
+              <li className="flex gap-3"><Check className="mt-1 size-3.5 shrink-0 text-[var(--mint-text)]" />Create the first admin account, then add an API key under Settings.</li>
+              <li className="flex gap-3"><Check className="mt-1 size-3.5 shrink-0 text-[var(--mint-text)]" />Paste an allowed public URL in Live Pipeline and select workflow mode.</li>
+              <li className="flex gap-3"><Check className="mt-1 size-3.5 shrink-0 text-[var(--mint-text)]" />Follow the live trace, then review screenshots and streams in View Results.</li>
             </ol>
-            <Link href="/live" className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[var(--mint)] hover:brightness-110">Open Live Pipeline <ArrowRight className="size-4" /></Link>
+            <Link href="/live" className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[var(--mint-text)] hover:brightness-110">Open Live Pipeline <ArrowRight className="size-4" /></Link>
           </div>
         </section>
 
         <footer className="flex flex-col gap-4 border-t border-[var(--line)] py-7 text-sm sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2 text-[var(--mute)]"><Sparkles className="size-4 text-[var(--signal)]" /> Start with a provider key, then run your first trace.</div>
+          <div className="flex items-center gap-2 text-[var(--mute)]"><Sparkles className="size-4 text-[var(--signal-text)]" /> Start with a provider key, then run your first trace.</div>
           <div className="flex gap-4">
-            <Link href="/signup" className="font-medium text-[var(--ink)] hover:text-[var(--signal)]">Create account</Link>
+            <Link href="/signup" className="font-medium text-[var(--ink)] hover:text-[var(--signal-text)]">Create account</Link>
             <Link href="/login" className="font-medium text-[var(--mute)] hover:text-[var(--ink)]">Log in</Link>
           </div>
         </footer>

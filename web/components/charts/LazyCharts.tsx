@@ -9,12 +9,13 @@ import React, { Suspense } from "react";
 // Recharts chunk — loaded only when a route actually renders charts (overview).
 export const LazyAreaTrend = dynamic(
   async () => {
+    // next/dynamic code-splitting: recharts heavy, ssr false needs dynamic import
     const mod = await import("./AreaTrendImpl");
     return mod;
   },
   {
     ssr: false,
-    loading: () => <div className="h-[180px] animate-pulse rounded-lg bg-muted/30" />,
+    loading: () => <div className="min-h-[220px] h-[220px] animate-pulse rounded-lg bg-muted/30" />,
   }
 );
 
@@ -22,5 +23,30 @@ export const LazyAreaTrend = dynamic(
 // @ts-expect-error workflow-canvas is JS without types
 export const LazyWorkflowCanvas = dynamic(() => import("@/components/workflow-canvas"), {
   ssr: false,
-  loading: () => <div className="h-[320px] animate-pulse rounded-lg bg-muted/30" />,
+  loading: () => <div className="min-h-[320px] h-[320px] animate-pulse rounded-lg bg-muted/30" />,
 });
+
+export const LazyBarTrend = dynamic(
+  async () => {
+    // next/dynamic code-splitting: recharts heavy, ssr false needs dynamic import
+    const mod = await import("./BarTrendImpl");
+    return mod;
+  },
+  {
+    ssr: false,
+    loading: () => <div className="min-h-[220px] h-[220px] animate-pulse rounded-lg bg-muted/30" />,
+  }
+);
+
+export const LazyPieDistribution = dynamic(
+  async () => {
+    // next/dynamic code-splitting: recharts heavy, ssr false needs dynamic import
+    const mod = await import("./PieDistributionImpl");
+    return mod;
+  },
+  {
+    ssr: false,
+    loading: () => <div className="min-h-[220px] h-[220px] animate-pulse rounded-lg bg-muted/30" />,
+  }
+);
+

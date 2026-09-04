@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleDollarSign, TrendingUp, Layers } from "lucide-react";
+import { CircleDollarSign } from "lucide-react";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { MetricCard } from "@/components/library/MetricCard";
 import { SectionPanel } from "@/components/console/common/section-panel";
@@ -21,24 +21,20 @@ export function CostsTab({ overview, state }: CostsTabProps) {
   const costPer1k = totalTokens ? totalCost / (totalTokens / 1000) : 0;
 
   const kpis = [
-    { label: "Total cost", value: formatCurrency(totalCost), hint: "SUM(estimated_total_cost_usd) — T35 fix (was MAX)" },
-    { label: "Avg cost / run", value: formatCurrency(avgCost), hint: "total_cost_usd / terminal_runs" },
-    { label: "LLM calls", value: formatNumber(Number(summary.total_llm_calls || 0)), hint: "SUM(total_llm_calls)" },
-    { label: "Providers", value: formatNumber(Number(summary.unique_providers || 0)), hint: "COUNT(DISTINCT provider)" },
-    { label: "Cost / 1k tok", value: totalTokens ? formatCurrency(costPer1k) : "$0.000", hint: "total_cost_usd / (total_tokens/1000)" },
-    { label: "Avg LLM / run", value: formatNumber(Math.round(Number(summary.total_llm_calls || 0) / Math.max(Number(summary.total_runs || 1), 1))), hint: "total_llm_calls / total_runs" },
+    { label: "Total cost", value: formatCurrency(totalCost), hint: "Estimated aggregate model spend" },
+    { label: "Avg cost / run", value: formatCurrency(avgCost), hint: "Average spend per pipeline run" },
+    { label: "LLM calls", value: formatNumber(Number(summary.total_llm_calls || 0)), hint: "Total model completions" },
+    { label: "Providers", value: formatNumber(Number(summary.unique_providers || 0)), hint: "Distinct providers observed" },
+    { label: "Cost / 1k tok", value: totalTokens ? formatCurrency(costPer1k) : "$0.000", hint: "Average spend per 1,000 tokens" },
+    { label: "Avg LLM / run", value: formatNumber(Math.round(Number(summary.total_llm_calls || 0) / Math.max(Number(summary.total_runs || 1), 1))), hint: "Average model calls per run" },
   ];
   return (
     <div className="space-y-4 animate-fade-up">
-      <SectionPanel title="Costs" description="Single-endpoint cost rollups (SUM, not MAX — T35 fix)" icon={<CircleDollarSign className="h-3.5 w-3.5" />}>
+      <SectionPanel title="Costs" description="Model spend rolled up across all pipeline runs" icon={<CircleDollarSign className="h-3.5 w-3.5" />}>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {kpis.map((kpi) => (
             <MetricCard key={kpi.label} label={kpi.label} value={kpi.value} hint={kpi.hint} />
           ))}
-        </div>
-        <div className="mt-3 flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-          <TrendingUp className="h-3 w-3" /> Total cost is SUM across pipeline_runs; per-model breakdowns use SUM GROUP BY (provider, model_name).
-          <span className="ml-auto hidden sm:inline-flex items-center gap-1"><Layers className="h-3 w-3" /> T35: MAX→SUM</span>
         </div>
       </SectionPanel>
     </div>

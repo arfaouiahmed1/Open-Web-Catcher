@@ -30,6 +30,7 @@ export interface StateFrameProps {
   loadingLabel?: string;
   errorLabel?: string;
   emptyLabel?: string;
+  surface?: boolean;
   className?: string;
   children?: React.ReactNode;
 }
@@ -53,6 +54,7 @@ export function StateFrame({
   loadingLabel,
   errorLabel,
   emptyLabel,
+  surface = true,
   className,
   children,
 }: StateFrameProps) {
@@ -70,7 +72,7 @@ export function StateFrame({
       data-component={component}
       data-state={state}
       className={cn(
-        "rounded-lg border border-border bg-card text-card-foreground",
+        surface && "rounded-lg border border-border bg-card text-card-foreground",
         state === "loading" && "animate-pulse",
         className,
       )}
@@ -82,7 +84,7 @@ export function StateFrame({
           data-role="state-message"
           className={cn(
             "flex min-h-[2.5rem] items-center gap-2 px-3 py-2 text-sm",
-            state === "error" && "text-red-600 dark:text-red-400",
+            state === "error" && "text-[var(--rose-text)]",
             state === "empty" && "text-muted-foreground",
             state === "loading" && "text-muted-foreground",
           )}
@@ -90,7 +92,7 @@ export function StateFrame({
           {state === "loading" ? (
             <span
               aria-hidden="true"
-              className="h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent"
+              className="h-3 w-3 animate-spin rounded-full border-2 border-[var(--mute)] border-t-transparent"
             />
           ) : null}
           <span>{label}</span>

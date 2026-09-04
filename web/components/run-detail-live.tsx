@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Cpu, Loader2, Square, Wrench, XCircle } from "lucide-react";
-import { apiFetch, apiUrl, eventSourceUrl } from "@/lib/api";
+import { apiFetch, eventSourceUrl } from "@/lib/api";
 import { buildRunDetailFilterOptions } from "@/lib/run-detail-filters";
 import { buildRunDetailTabState } from "@/lib/run-detail-layout";
 import { buildStageView, extractToolCalls, getRunTerminalState, normalizeTraceEvents, STAGE_LABELS, summarizeRunState } from "@/lib/run-trace";
@@ -452,13 +452,9 @@ export function RunDetailLive({
     setIsCancelling(true);
     setActionError("");
     try {
-      const response = await fetch(apiUrl(`/ui/runs/${runId}/cancel`), {
+      await apiFetch(`/ui/runs/${runId}/cancel`, {
         method: "POST",
       });
-      if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message || `Cancel failed (${response.status})`);
-      }
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : "Cancel failed",

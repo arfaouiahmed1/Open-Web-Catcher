@@ -98,7 +98,7 @@ export function CostMeter({
                   <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
                     <span
                       data-share={share}
-                      className="block h-full rounded-full bg-primary/70"
+                      className="block h-full rounded-full bg-[var(--signal)]"
                       style={{ width: `${share}%` }}
                     />
                   </span>

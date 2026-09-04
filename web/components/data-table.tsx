@@ -43,7 +43,7 @@ function fmtCell(key: string, value: unknown): React.ReactNode {
     return <span className="text-muted-foreground">—</span>;
   }
   if (typeof value === "boolean") {
-    return value ? <span className="text-[var(--mint)]">Yes</span> : <span className="text-muted-foreground">No</span>;
+    return value ? <span className="text-[var(--mint-text)]">Yes</span> : <span className="text-muted-foreground">No</span>;
   }
   if (typeof value === "object") {
     return <span className="mono text-[12px] text-muted-foreground">{JSON.stringify(value)}</span>;

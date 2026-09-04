@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from src.storage.models import (
@@ -234,29 +235,25 @@ class DatasetRepository:
             site_query = site_query.filter(DatasetSiteRecord.language == language)
         if label:
             site_query = site_query.filter(DatasetSiteRecord.label == label)
+        search = str(query or "").strip()
+        if search:
+            pattern = f"%{search}%"
+            site_query = site_query.filter(
+                or_(
+                    DatasetSiteRecord.url.ilike(pattern),
+                    DatasetSiteRecord.canonical_url.ilike(pattern),
+                    DatasetSiteRecord.notes.ilike(pattern),
+                    DatasetSiteRecord.language.ilike(pattern),
+                    DatasetSiteRecord.label.ilike(pattern),
+                )
+            )
+
+        total = int(site_query.count() or 0)
         rows = site_query.order_by(
             DatasetSiteRecord.last_tested_at.desc().nullslast(),
             DatasetSiteRecord.updated_at.desc(),
             DatasetSiteRecord.id.asc(),
-        ).all()
-
-        search = str(query or "").strip().lower()
-        if search:
-            rows = [
-                row
-                for row in rows
-                if search in str(row.url or "").lower()
-                or search in str(row.canonical_url or "").lower()
-                or search in str(row.notes or "").lower()
-                or search in str(row.language or "").lower()
-                or search in str(row.label or "").lower()
-            ]
-
-        total = len(rows)
-        if offset:
-            rows = rows[offset:]
-        if limit:
-            rows = rows[:limit]
+        ).offset(max(int(offset or 0), 0)).limit(max(int(limit or 0), 0) or None).all()
         return {"total": total, "sites": [self._site_payload(row) for row in rows]}
 
     def list_sites_by_ids(self, site_ids: list[int]) -> list[dict[str, Any]]:
@@ -701,11 +698,11 @@ class DatasetRepository:
             "batches": [self._batch_payload(row, include_runs=False) for row in rows],
         }
 
-    def get_batch(self, batch_id: str) -> dict[str, Any]:
+    def get_batch(self, batch_id: str, *, include_runs: bool = True) -> dict[str, Any]:
         batch = self._session.query(DatasetBatchRecord).filter_by(batch_id=batch_id).first()
         if batch is None:
             raise ValueError("Batch not found")
-        return self._batch_payload(batch, include_runs=True)
+        return self._batch_payload(batch, include_runs=include_runs)
 
     def mark_site_run_running(self, run_id: str) -> None:
         row = self._session.query(DatasetSiteRunRecord).filter_by(run_id=run_id).first()
@@ -735,7 +732,13 @@ class DatasetRepository:
         self._refresh_batch_metrics(row.batch_id)
         self._session.commit()
 
-    def cancel_batch(self, batch_id: str, *, reason: str = "") -> dict[str, Any]:
+    def cancel_batch(
+        self,
+        batch_id: str,
+        *,
+        reason: str = "",
+        include_runs: bool = True,
+    ) -> dict[str, Any]:
         batch = self._session.query(DatasetBatchRecord).filter_by(batch_id=batch_id).first()
         if batch is None:
             raise ValueError("Batch not found")
@@ -772,7 +775,7 @@ class DatasetRepository:
             "skipped": len(skipped_run_ids),
             "run_ids": cancelled_run_ids,
             "skipped_run_ids": skipped_run_ids,
-            "batch": self.get_batch(batch.batch_id),
+            "batch": self.get_batch(batch.batch_id, include_runs=include_runs),
         }
 
     def finalize_site_run(
@@ -837,13 +840,25 @@ class DatasetRepository:
 
     def _batch_payload(self, row: DatasetBatchRecord, *, include_runs: bool) -> dict[str, Any]:
         payload = _serialize_model(row)
-        runs = (
-            self._session.query(DatasetSiteRunRecord)
-            .filter_by(batch_id=row.id)
-            .order_by(DatasetSiteRunRecord.created_at.asc(), DatasetSiteRunRecord.id.asc())
-            .all()
-        )
-        run_payloads = [self._site_run_payload(item) for item in runs]
+        if include_runs:
+            runs = (
+                self._session.query(DatasetSiteRunRecord)
+                .filter_by(batch_id=row.id)
+                .order_by(DatasetSiteRunRecord.created_at.asc(), DatasetSiteRunRecord.id.asc())
+                .all()
+            )
+            run_payloads = [self._site_run_payload(item) for item in runs]
+        else:
+            run_statuses = (
+                self._session.query(DatasetSiteRunRecord.status, DatasetSiteRunRecord.final_status)
+                .filter_by(batch_id=row.id)
+                .order_by(DatasetSiteRunRecord.created_at.asc(), DatasetSiteRunRecord.id.asc())
+                .all()
+            )
+            run_payloads = [
+                {"status": status, "final_status": final_status}
+                for status, final_status in run_statuses
+            ]
         completed = [
             item
             for item in run_payloads

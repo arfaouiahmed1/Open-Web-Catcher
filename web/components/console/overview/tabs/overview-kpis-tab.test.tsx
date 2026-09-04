@@ -35,7 +35,7 @@ const FIXTURE_OVERVIEW = {
   active_runs: [],
 };
 
-describe("OverviewKpisTab (T43)", () => {
+describe("OverviewKpisTab", () => {
   it("renders 12 KPIs from single /ui/overview payload via MetricCard", () => {
     const markup = html(<OverviewKpisTab overview={FIXTURE_OVERVIEW as unknown as Record<string, unknown>} />);
     // Row1
@@ -54,10 +54,30 @@ describe("OverviewKpisTab (T43)", () => {
     expect(markup).toContain("Stream yield");
     expect(markup).toContain("LLM API");
     expect(markup).toContain("No streams/hosting");
-    // Formula doc must be present (T43 acceptance)
-    expect(markup).toContain("KPI formulas");
-    expect(markup).toContain("SUM(estimated_total_cost_usd)");
-    expect(markup).toContain("T35 fix");
+    // Operator-friendly subtitles (Phase 4 acceptance)
+    expect(markup).toContain("Total pipeline runs executed");
+    expect(markup).toContain("Runs yielding target streams or pages");
+    expect(markup).toContain("Average end-to-end processing time");
+    expect(markup).toContain("Estimated aggregate model spend");
+    expect(markup).toContain("Combined prompt and generation tokens");
+    expect(markup).toContain("Distinct working stream sites");
+    expect(markup).toContain("Failures recorded in the last 24 hours");
+    expect(markup).toContain("Successful MCP tool calls");
+    expect(markup).toContain("Total model completions");
+    expect(markup).toContain("Runs with captured playable streams");
+    expect(markup).toContain("Provider rate limit &amp; availability status");
+    expect(markup).toContain("Runs completed with no stream targets");
+  });
+
+  it("renders no formula, SQL, or aggregation internals", () => {
+    const markup = html(<OverviewKpisTab overview={FIXTURE_OVERVIEW as unknown as Record<string, unknown>} />);
+    expect(markup).not.toContain("KPI formulas");
+    expect(markup).not.toContain("SUM(");
+    expect(markup).not.toContain("COUNT(");
+    expect(markup).not.toContain("AVG(");
+    expect(markup).not.toContain("GROUP BY");
+    expect(markup).not.toContain("T35");
+    expect(markup).not.toContain("<details");
   });
 
   it("shows loading state when overview is null", () => {
@@ -65,13 +85,13 @@ describe("OverviewKpisTab (T43)", () => {
     expect(markup).toContain('data-state="loading"');
   });
 
-  it("surfaces SUM-not-MAX doctrine in hint when recorded cost is zero", () => {
+  it("labels the token-priced fallback in plain language when recorded cost is zero", () => {
     const noCost = {
       ...FIXTURE_OVERVIEW,
       summary: { ...FIXTURE_OVERVIEW.summary, total_cost_usd: 0 },
     };
     const markup = html(<OverviewKpisTab overview={noCost as unknown as Record<string, unknown>} />);
-    expect(markup).toContain("Token-priced estimate");
-    expect(markup).toContain("SUM, not max");
+    expect(markup).toContain("Estimated from token usage");
+    expect(markup).not.toContain("SUM");
   });
 });

@@ -24,9 +24,11 @@ import {
   YAxis,
 } from "recharts";
 
-import { apiFetch, apiUrl } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { formatNumber } from "@/lib/utils";
 import { KpiCard } from "@/components/kpi-card";
+import { PageHeader } from "@/components/console/common/page-header";
+import { LoadingView } from "@/components/console/common/loading-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -54,14 +56,14 @@ import { Textarea } from "@/components/ui/textarea";
 const SAMPLE = `https://cdn.example.com/live/master.m3u8\nhttps://edge.example.net/channel/index.m3u8`;
 
 const CHART_COLORS = [
-  "var(--signal)",
-  "var(--sky)",
-  "var(--mint)",
-  "var(--violet)",
-  "hsl(35 90% 58%)",
-  "hsl(160 60% 50%)",
-  "hsl(260 70% 65%)",
-  "hsl(10 80% 58%)",
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+  "var(--chart-6)",
+  "var(--chart-7)",
+  "var(--chart-8)",
 ];
 
 function CustomBarTooltip({  active, payload, label  }: any) {
@@ -99,17 +101,17 @@ function ProviderBarChart({  rows = [], color = "var(--signal)", maxBars = 12  }
   return (
     <ResponsiveContainer width="100%" height={220}>
       <BarChart data={data} layout="vertical" margin={{ left: 8, right: 16, top: 4, bottom: 4 }}>
-        <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
-        <XAxis type="number" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} />
+        <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke="var(--line)" />
+        <XAxis type="number" tick={{ fontSize: 10, fill: "var(--mute)" }} tickLine={false} axisLine={false} />
         <YAxis
           type="category"
           dataKey="name"
           width={110}
-          tick={{ fontSize: 11, fill: "hsl(var(--foreground))" }}
+          tick={{ fontSize: 11, fill: "var(--ink)" }}
           tickLine={false}
           axisLine={false}
         />
-        <Tooltip content={<CustomBarTooltip />} cursor={{ fill: "hsl(var(--muted))" }} />
+        <Tooltip content={<CustomBarTooltip />} cursor={{ fill: "var(--panel-2)" }} />
         <Bar dataKey="count" radius={[0, 4, 4, 0]} fill={color} />
       </BarChart>
     </ResponsiveContainer>
@@ -188,7 +190,7 @@ function LookupRow({  row  }: any) {
           <span className="text-muted-foreground">{row.country_code || row.country || "--"}</span>
         </span>
       </TableCell>
-      <TableCell className={`px-4 py-2.5 font-mono text-[11px] ${row.abuse_email ? "text-primary" : "text-muted-foreground/40"}`}>
+      <TableCell className={`px-4 py-2.5 font-mono text-[11px] ${row.abuse_email ? "text-primary" : "text-muted-foreground/75"}`}>
         {row.abuse_email || "--"}
       </TableCell>
     </TableRow>
@@ -206,12 +208,18 @@ export function ProvidersPage() {
     country_map: { points: [] },
   });
   const [error, setError] = useState("");
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
 
   async function loadHistory() {
-    const payload = await apiFetch("/ui/providers/history?limit=50&offset=0");
-    // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
-    setHistory(payload);
+    setIsHistoryLoading(true);
+    try {
+      const payload = await apiFetch("/ui/providers/history?limit=50&offset=0");
+      // @ts-expect-error -- strict migration: suppress for T43 batch (cast to any)
+      setHistory(payload);
+    } finally {
+      setIsHistoryLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -226,13 +234,10 @@ export function ProvidersPage() {
     setError("");
     try {
       const streamUrls = urlsText.split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
-      const response = await fetch(apiUrl("/ui/providers/lookup"), {
+      const payload = await apiFetch("/ui/providers/lookup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stream_urls: streamUrls }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail || `Status ${response.status}`);
       setResult(payload);
       await loadHistory();
     } catch (e: any) {
@@ -256,20 +261,22 @@ export function ProvidersPage() {
     : 0;
 
   const kpis = [
-    { label: "Checked URLs", value: formatNumber(stats.total_urls || stats.total_checks || 0), description: "Stream URLs inspected", accent: "signal", icon: Wifi },
-    { label: "Resolved IPs", value: formatNumber(stats.resolved_ips || 0), description: "URLs with a routable IP", accent: "mint", icon: Server },
-    { label: "Provider matches", value: formatNumber(stats.provider_matches || 0), description: "Identified org / hosting", accent: "sky", icon: Globe },
-    { label: "Abuse contacts", value: formatNumber(stats.abuse_contacts_found || 0), description: "Abuse email found", accent: "rose", icon: Shield },
+    { label: "Checked URLs", value: isHistoryLoading ? "—" : formatNumber(stats.total_urls || stats.total_checks || 0), description: "Stream URLs inspected", accent: "signal", icon: Wifi },
+    { label: "Resolved IPs", value: isHistoryLoading ? "—" : formatNumber(stats.resolved_ips || 0), description: "URLs with a routable IP", accent: "mint", icon: Server },
+    { label: "Provider matches", value: isHistoryLoading ? "—" : formatNumber(stats.provider_matches || 0), description: "Identified org / hosting", accent: "sky", icon: Globe },
+    { label: "Abuse contacts", value: isHistoryLoading ? "—" : formatNumber(stats.abuse_contacts_found || 0), description: "Abuse email found", accent: "rose", icon: Shield },
   ];
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Stream URL Intelligence</h1>
-        <p className="mt-1.5 max-w-[62ch] text-sm leading-relaxed text-muted-foreground">
-          Resolve stream URLs to IP, hosting provider, country, and abuse contacts. Visualizes provider and country coverage from the DB-backed lookup history.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="provider intelligence"
+        title="Stream URL Intelligence"
+        description="Resolve stream URLs to IP, hosting provider, country, and abuse contacts. Coverage is backed by the provider lookup history."
+        icon={<Globe className="h-5 w-5" />}
+      />
+
+      {isHistoryLoading ? <LoadingView label="Loading provider history…" variant="shimmer" rows={2} /> : null}
 
       {/* KPIs */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -280,14 +287,14 @@ export function ProvidersPage() {
       {stats.total_urls > 0 ? (
         <div className="grid gap-3 sm:grid-cols-4">
           {[
-            { label: "Resolve rate", value: `${resolveRate}%`, color: resolveRate > 80 ? "var(--mint)" : resolveRate > 50 ? "var(--signal)" : "var(--rose)" },
-            { label: "Match rate", value: `${matchRate}%`, color: matchRate > 60 ? "var(--mint)" : "var(--signal)" },
-            { label: "Unique providers", value: formatNumber(stats.unique_providers || topProviders.length), color: "var(--sky)" },
-            { label: "Countries", value: formatNumber(stats.unique_countries || topCountries.length), color: "var(--violet)" },
+            { label: "Resolve rate", value: `${resolveRate}%`, color: resolveRate > 80 ? "var(--mint-text)" : resolveRate > 50 ? "var(--signal-text)" : "var(--rose-text)" },
+            { label: "Match rate", value: `${matchRate}%`, color: matchRate > 60 ? "var(--mint-text)" : "var(--signal-text)" },
+            { label: "Unique providers", value: formatNumber(stats.unique_providers || topProviders.length), color: "var(--sky-text)" },
+            { label: "Countries", value: formatNumber(stats.unique_countries || topCountries.length), color: "var(--violet-text)" },
           ].map((s) => (
             <Card key={s.label}>
               <CardContent className="px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">{s.label}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75">{s.label}</p>
                 <p className="mt-1 text-[22px] font-semibold tabular-nums" style={{ color: s.color }}>{s.value}</p>
               </CardContent>
             </Card>
@@ -387,7 +394,7 @@ export function ProvidersPage() {
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   {["URL", "IP", "Provider", "Org", "Country", "Abuse contact"].map((h) => (
-                    <TableHead key={h} className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60 whitespace-nowrap">
+                    <TableHead key={h} className="px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75 whitespace-nowrap">
                       {h}
                     </TableHead>
                   ))}

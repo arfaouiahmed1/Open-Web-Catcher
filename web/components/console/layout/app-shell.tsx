@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import * as React from "react";
-import { apiUrl } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
+import { getToken } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/notification-provider";
 import { Badge } from "@/components/ui/badge";
@@ -66,7 +67,7 @@ const NavChildList = React.memo(function NavChildList({ items, pathname, searchP
             aria-current={active ? "page" : undefined}
             className={cn(
               "block rounded-md px-2.5 py-1.5 text-[11.5px] font-medium leading-tight transition-colors duration-150",
-              active ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" : "text-sidebar-foreground/55 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+              active ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm" : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
             )}
           >
             {item.label}
@@ -152,6 +153,13 @@ export interface AppShellProps {
 
 const STANDALONE_PREFIXES = ["/login", "/signup"];
 
+function isStandalonePath(pathname: string): boolean {
+  return STANDALONE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+export function shouldLoadActiveRuns(pathname: string, hasToken: boolean = Boolean(getToken())): boolean {
+  return hasToken && pathname !== "/" && !isStandalonePath(pathname);
+}
 export function AppShell({ children }: AppShellProps): React.JSX.Element {
   const pathname = usePathname();
   const [activeRuns, setActiveRuns] = React.useState(0);
@@ -159,11 +167,7 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
   const [isLanding, setIsLanding] = React.useState(false);
   React.useEffect(() => {
     if (pathname === "/") {
-      try {
-        setIsLanding(!localStorage.getItem("owc_token"));
-      } catch {
-        setIsLanding(false);
-      }
+      setIsLanding(!Boolean(getToken()));
     } else {
       setIsLanding(false);
     }
@@ -171,18 +175,19 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
 
   React.useEffect(() => {
     let cancelled = false;
+    const hasToken = Boolean(getToken());
+    if (!shouldLoadActiveRuns(pathname, hasToken)) {
+      setActiveRuns(0);
+      return () => {
+        cancelled = true;
+      };
+    }
     async function refreshActiveRuns(): Promise<void> {
       try {
-        const res = await fetch(apiUrl("/ui/overview"), { cache: "no-store" });
-        if (!res.ok || cancelled) {
-          if (!cancelled) setConnected(false);
-          return;
-        }
-        const payload: { active_runs?: Array<{ completed?: boolean }> } = await res.json();
-        if (!cancelled) {
-          setActiveRuns((payload?.active_runs || []).filter((item) => !item.completed).length);
-          setConnected(true);
-        }
+        const payload = await apiFetch<{ active_runs?: Array<{ completed?: boolean }> }>("/ui/overview");
+        if (cancelled) return;
+        setActiveRuns((payload?.active_runs || []).filter((item) => !item.completed).length);
+        setConnected(true);
       } catch {
         if (!cancelled) setConnected(false);
       }
@@ -198,10 +203,9 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
       window.removeEventListener("owc:run-state-changed", refreshActiveRuns as EventListener);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, []);
+  }, [pathname]);
 
-  const isStandalone =
-    STANDALONE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`)) || isLanding;
+  const isStandalone = isStandalonePath(pathname) || isLanding;
   if (isStandalone) return <>{children}</>;
 
   const currentSectionKey = pathname.split("/")[1] || "dashboard";
@@ -232,7 +236,7 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
             </span>
             <div className="flex min-w-0 flex-col leading-tight group-data-[collapsible=icon]:hidden">
               <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">OWC</span>
-              <span className="text-[10px] font-medium tracking-wide text-sidebar-foreground/45">Operator Console</span>
+              <span className="text-[10px] font-medium tracking-wide text-sidebar-foreground/65">Operator Console</span>
             </div>
             <span
               className="ml-auto size-1.5 shrink-0 rounded-full group-data-[collapsible=icon]:hidden"
@@ -264,9 +268,8 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
           <div className="flex items-center justify-between gap-2 rounded-lg border border-border/50 bg-muted/20 px-2.5 py-1.5 group-data-[collapsible=icon]:hidden">
             <div className="flex items-center gap-1.5">
               <span className="size-1.5 shrink-0 rounded-full" style={{ background: connected ? "var(--mint)" : "var(--rose)" }} />
-              <span className="text-[10.5px] font-medium text-sidebar-foreground/60">{connected ? "live" : "offline"}</span>
+              <span className="text-[10.5px] font-medium text-sidebar-foreground/75">{connected ? "live" : "offline"}</span>
             </div>
-            <ThemeToggle />
           </div>
         </SidebarFooter>
       </Sidebar>
@@ -299,6 +302,7 @@ export function AppShell({ children }: AppShellProps): React.JSX.Element {
                 {activeRuns} live
               </Badge>
             ) : null}
+            <ThemeToggle />
             <NotificationBell />
           </div>
         </header>

@@ -531,7 +531,7 @@ export function NotificationProvider({ children }: NotificationProviderProps): R
   return (
     <NotifContext.Provider value={{ prefs, setPrefs, history, unreadCount, clearHistory, markAllRead }}>
       {children}
-      <div className="pointer-events-none fixed bottom-6 right-6 z-[9999] flex flex-col-reverse items-end gap-2" aria-live="polite" aria-label="Notifications">
+      <div className="pointer-events-none fixed bottom-6 right-6 z-100 flex flex-col-reverse items-end gap-2" aria-live="polite" aria-label="Notifications">
         {toasts.map((t) => (
           <div key={t.id} className="pointer-events-auto">
             <Toast {...t} onDismiss={dismiss} />

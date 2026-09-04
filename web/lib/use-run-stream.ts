@@ -112,22 +112,44 @@ export function applyRunStreamPayload(
 
 /** True when the folded stream state indicates the run reached a terminal
  * state and no further updates will arrive. Exported for tests. */
+const TERMINAL_DISPLAY_STATUSES: Record<string, true> = {
+  success: true,
+  failed: true,
+  cancelled: true,
+  timeout: true,
+  site_dead: true,
+  page_inaccessible: true,
+  no_streams: true,
+  no_hosting_pages: true,
+  partial: true,
+};
+
 export function isRunStreamTerminal(state: RunStreamState | null | undefined): boolean {
   if (!state) return false;
   if (state.error === "run_not_found" || state.error === "stream_failed") return true;
   if (state.completed) return true;
-  return ["success", "partial", "failed", "cancelled"].includes(
-    String(state.displayStatus ?? "").toLowerCase(),
-  );
+  const display = String(state.displayStatus ?? "").toLowerCase();
+  if (TERMINAL_DISPLAY_STATUSES[display] === true) return true;
+  const job = String(state.jobStatus ?? "").toLowerCase();
+  if (TERMINAL_DISPLAY_STATUSES[job] === true) return true;
+  return false;
 }
 
-const TERMINAL_JOB_STATUSES = new Set<string>([
-  "completed",
-  "failed",
-  "cancelled",
-  "done",
-  "error",
-]);
+const TERMINAL_JOB_STATUSES: Record<string, true> = {
+  completed: true,
+  failed: true,
+  cancelled: true,
+  done: true,
+  error: true,
+  succeeded: true,
+  success: true,
+  timeout: true,
+  site_dead: true,
+  page_inaccessible: true,
+  no_streams: true,
+  no_hosting_pages: true,
+  dead_letter: true,
+};
 
 export interface UseRunStreamOptions {
   enabled?: boolean;
@@ -160,6 +182,64 @@ export function useRunStream(
     setState({ ...EMPTY_RUN_STREAM_STATE });
   }, [runId]);
 
+  const abortRef = useRef<AbortController | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (abortRef.current) {
+        try {
+          abortRef.current.abort();
+        } catch {
+          // ignore
+        }
+        abortRef.current = null;
+      }
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  const isTerminal = isRunStreamTerminal(state);
+  const lowerJob = String(state.jobStatus ?? "").toLowerCase();
+  const terminalJobStatus = TERMINAL_JOB_STATUSES[lowerJob] === true;
+  const shouldStream = enabled && !isTerminal && !terminalJobStatus && Boolean(runId);
+
+  useEffect(() => {
+    if (shouldStream) {
+      abortRef.current = typeof AbortController !== "undefined" ? new AbortController() : null;
+    } else {
+      if (abortRef.current) {
+        try {
+          abortRef.current.abort();
+        } catch {
+          // ignore
+        }
+        abortRef.current = null;
+      }
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    }
+    return () => {
+      if (abortRef.current) {
+        try {
+          abortRef.current.abort();
+        } catch {
+          // ignore
+        }
+        abortRef.current = null;
+      }
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, [shouldStream]);
+
   const handleMessage = useCallback((data: string) => {
     let payload: unknown;
     try {
@@ -168,12 +248,49 @@ export function useRunStream(
       return;
     }
     onPayloadRef.current?.(payload as Record<string, unknown>);
-    setState((prev) => applyRunStreamPayload(prev, payload as RunStreamPayload));
+    setState((prev) => {
+      const next = applyRunStreamPayload(prev, payload as RunStreamPayload);
+      const nextIsTerminal = isRunStreamTerminal(next);
+      const nextLowerJob = String(next.jobStatus ?? "").toLowerCase();
+      const nextJobTerminal = TERMINAL_JOB_STATUSES[nextLowerJob] === true;
+      if (nextIsTerminal || nextJobTerminal) {
+        if (abortRef.current) {
+          try {
+            abortRef.current.abort();
+          } catch {
+            // ignore
+          }
+          abortRef.current = null;
+        }
+        if (timeoutRef.current !== null) {
+          clearTimeout(timeoutRef.current);
+          timeoutRef.current = null;
+        }
+      }
+      return next;
+    });
   }, []);
+
+  useEffect(() => {
+    if (isTerminal || terminalJobStatus) {
+      if (abortRef.current) {
+        try {
+          abortRef.current.abort();
+        } catch {
+          // ignore
+        }
+        abortRef.current = null;
+      }
+      if (timeoutRef.current !== null) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    }
+  }, [isTerminal, terminalJobStatus]);
 
   const { status, connected, reconnects } = useEventStream(
     runId ? `/ui/runs/${runId}/stream` : null,
-    { enabled, onMessage: handleMessage },
+    { enabled: shouldStream, onMessage: handleMessage },
   );
 
   const merged = useMemo(() => ({ ...state, status, connected, reconnects }), [
@@ -183,13 +300,10 @@ export function useRunStream(
     reconnects,
   ]);
 
-  // Context-style memo value for consumers that thread this through providers.
-  const contextValue = merged;
-
   return {
-    ...contextValue,
+    ...merged,
     reset,
-    isTerminal: isRunStreamTerminal(state),
-    terminalJobStatus: TERMINAL_JOB_STATUSES.has(String(state.jobStatus).toLowerCase()),
+    isTerminal,
+    terminalJobStatus,
   };
 }

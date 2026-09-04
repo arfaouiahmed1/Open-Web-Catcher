@@ -37,6 +37,24 @@ def test_created_batch_starts_queued_with_site_runs() -> None:
         session.close()
 
 
+def test_batch_summary_omits_full_run_payloads() -> None:
+    repo, session = _repo_session()
+    try:
+        created = repo.create_batch(
+            urls=["https://summary-one.example/live", "https://summary-two.example/live"],
+            batch_name="Summary batch",
+        )
+
+        payload = repo.get_batch(created["batch_id"], include_runs=False)
+
+        assert payload["status"] == "queued"
+        assert payload["requested_count"] == 2
+        assert payload["completed_count"] == 0
+        assert "runs" not in payload
+    finally:
+        session.close()
+
+
 def test_bulk_delete_sites_removes_unique_matching_rows() -> None:
     repo, session = _repo_session()
     try:
@@ -48,6 +66,24 @@ def test_bulk_delete_sites_removes_unique_matching_rows() -> None:
         remaining = repo.list_sites(limit=0)["sites"]
         assert deleted == 1
         assert [site["id"] for site in remaining] == [second["id"]]
+    finally:
+        session.close()
+
+
+def test_list_sites_filters_and_pages_in_repository_query() -> None:
+    repo, session = _repo_session()
+    try:
+        repo.create_site(url="https://alpha.example/live", language="English", label="Sports", notes="Regional feed")
+        repo.create_site(url="https://beta.example/live", language="French", label="News", notes="Regional backup")
+        repo.create_site(url="https://gamma.example/live", language="English", label="Sports", notes="Archive")
+
+        first_page = repo.list_sites(query="REGIONAL", limit=1, offset=0)
+        second_page = repo.list_sites(query="regional", limit=1, offset=1)
+
+        assert first_page["total"] == 2
+        assert len(first_page["sites"]) == 1
+        assert len(second_page["sites"]) == 1
+        assert first_page["sites"][0]["id"] != second_page["sites"][0]["id"]
     finally:
         session.close()
 

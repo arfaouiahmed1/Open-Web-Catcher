@@ -8,16 +8,16 @@ import type { ComponentState, JudgeVerdictFields } from "./types";
 const VERDICT_TONE = {
   pass: {
     badge:
-      "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-    dot: "bg-emerald-500",
+      "border-[color-mix(in_oklch,var(--mint)_28%,transparent)] bg-[color-mix(in_oklch,var(--mint)_12%,transparent)] text-[var(--mint-text)]",
+    dot: "bg-[var(--mint)]",
   },
   replan: {
-    badge: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
-    dot: "bg-amber-500",
+    badge: "border-[color-mix(in_oklch,var(--signal)_28%,transparent)] bg-[color-mix(in_oklch,var(--signal)_12%,transparent)] text-[var(--signal-text)]",
+    dot: "bg-[var(--signal)]",
   },
   fail: {
-    badge: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400",
-    dot: "bg-red-500",
+    badge: "border-[color-mix(in_oklch,var(--rose)_28%,transparent)] bg-[color-mix(in_oklch,var(--rose)_12%,transparent)] text-[var(--rose-text)]",
+    dot: "bg-[var(--rose)]",
   },
 } as const;
 
@@ -63,6 +63,7 @@ export function ValidationBadge({
     <StateFrame
       component="ValidationBadge"
       state={resolved}
+      surface={false}
       loadingLabel={loadingLabel}
       errorLabel={errorLabel}
       emptyLabel={emptyLabel}
@@ -101,8 +102,8 @@ export function ValidationBadge({
             className={cn(
               "rounded px-1.5 py-0.5 text-xs",
               channel_match
-                ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                : "bg-red-500/10 text-red-700 dark:text-red-400",
+                ? "bg-[color-mix(in_oklch,var(--mint)_12%,transparent)] text-[var(--mint-text)]"
+                : "bg-[color-mix(in_oklch,var(--rose)_12%,transparent)] text-[var(--rose-text)]",
             )}
           >
             channel {channel_match ? "match ✓" : "mismatch ✗"}
@@ -111,7 +112,7 @@ export function ValidationBadge({
         {(required_fixes?.length ?? 0) > 0 ? (
           <span
             data-role="required-fixes"
-            className="rounded bg-amber-500/10 px-1.5 py-0.5 text-xs text-amber-700 dark:text-amber-400"
+            className="rounded bg-[color-mix(in_oklch,var(--signal)_12%,transparent)] px-1.5 py-0.5 text-xs text-[var(--signal-text)]"
           >
             {required_fixes!.length} fix{required_fixes!.length === 1 ? "" : "es"} needed
           </span>
@@ -119,7 +120,7 @@ export function ValidationBadge({
         {(flagged_urls?.length ?? 0) > 0 ? (
           <span
             data-role="flagged-urls"
-            className="rounded bg-red-500/10 px-1.5 py-0.5 text-xs text-red-700 dark:text-red-400"
+            className="rounded bg-[color-mix(in_oklch,var(--rose)_12%,transparent)] px-1.5 py-0.5 text-xs text-[var(--rose-text)]"
           >
             {flagged_urls!.length} flagged URL{flagged_urls!.length === 1 ? "" : "s"}
           </span>

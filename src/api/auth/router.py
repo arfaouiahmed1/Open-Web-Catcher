@@ -26,6 +26,11 @@ class BootstrapAdminRequest(BaseModel):
     password: str = Field(min_length=8, max_length=1024)
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=1024)
+    new_password: str = Field(min_length=8, max_length=1024)
+
+
 @router.post("/login")
 def login(body: LoginRequest) -> dict:
     session = get_session()
@@ -53,6 +58,29 @@ def login(body: LoginRequest) -> dict:
 @router.get("/me")
 def me(user: UserRecord = Depends(get_current_user)) -> dict:
     return {"user": user_payload(user)}
+
+
+@router.post("/change-password")
+def change_password(
+    body: ChangePasswordRequest,
+    user: UserRecord = Depends(get_current_user),
+) -> dict[str, bool]:
+    """Change the authenticated user's password after verifying the old one."""
+    if not auth_security.verify_password(body.current_password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+    if body.current_password == body.new_password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be different")
+
+    session = get_session()
+    try:
+        stored_user = session.query(UserRecord).filter(UserRecord.email == user.email).first()
+        if stored_user is None or not stored_user.is_active:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+        stored_user.password_hash = auth_security.hash_password(body.new_password)
+        session.commit()
+        return {"updated": True}
+    finally:
+        session.close()
 
 
 @router.post("/bootstrap-admin")

@@ -75,7 +75,7 @@ export const TraceExplorer = memo(function TraceExplorer({ events = [] }: TraceE
   if (!steps.length) {
     return (
       <Card>
-        <CardContent className="p-4 text-xs text-muted-foreground/60">Trace explorer is available when trace events are present.</CardContent>
+        <CardContent className="p-4 text-xs text-muted-foreground/75">Trace explorer is available when trace events are present.</CardContent>
       </Card>
     );
   }
@@ -109,7 +109,8 @@ export const TraceExplorer = memo(function TraceExplorer({ events = [] }: TraceE
           <div className="space-y-4 p-4">
             {screenshot ? (
               <div className="overflow-hidden rounded-lg border border-border">
-                <img src={screenshot} alt="Trace screenshot" className="h-48 w-full object-cover" />
+                {/* eslint-disable-next-line @next/next/no-img-element -- arbitrary backend-hosted screenshot URL */}
+                <img src={screenshot} alt="Trace screenshot" className="h-48 w-full object-cover" loading="lazy" decoding="async" />
               </div>
             ) : null}
             <StructuredDataCard title="Selected step details" description="Structured trace fields for the current step." data={active} limit={6} />
@@ -117,7 +118,7 @@ export const TraceExplorer = memo(function TraceExplorer({ events = [] }: TraceE
               <div className="rounded-lg border border-border bg-muted/50 p-3">
                 <div className="mb-2 text-xs font-semibold text-foreground">Step diff</div>
                 <div className="max-h-52 overflow-auto space-y-1 text-xs font-mono">
-                  {diffs.length ? diffs.map((row) => <div key={row.line} className="rounded border border-border p-2"><div className="text-muted-foreground/70">line {row.line}</div><div className="text-rose-400">- {row.before || "∅"}</div><div className="text-emerald-400">+ {row.after || "∅"}</div></div>) : <div className="text-muted-foreground/70">No differences</div>}
+                  {diffs.length ? diffs.map((row) => <div key={row.line} className="rounded border border-border p-2"><div className="text-muted-foreground/70">line {row.line}</div><div className="text-[var(--rose-text)]">- {row.before || "∅"}</div><div className="text-[var(--mint-text)]">+ {row.after || "∅"}</div></div>) : <div className="text-muted-foreground/70">No differences</div>}
                 </div>
               </div>
             ) : null}

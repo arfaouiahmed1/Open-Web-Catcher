@@ -16,7 +16,7 @@ export const SERVER_TAB_FIELDS: Record<string, string[]> = {
     "thinking_budget_tokens",
     "max_parallel_hosting_pages",
   ],
-  browser: ["browser_engine", "browser_runtime"],
+  browser: ["browser_engine", "browser_runtime", "max_parallel_hosting_pages"],
   "mcp-tools": ["disabled_tools_by_browser_profile"],
 };
 

@@ -15,23 +15,23 @@ const STEP_TONE: Record<
     label: "pending",
   },
   in_progress: {
-    dot: "bg-blue-500 animate-pulse",
-    text: "text-blue-700 dark:text-blue-400",
+    dot: "bg-[var(--sky)] animate-pulse",
+    text: "text-[var(--sky-text)]",
     label: "in progress",
   },
   done: {
-    dot: "bg-emerald-500",
-    text: "text-emerald-700 dark:text-emerald-400",
+    dot: "bg-[var(--mint)]",
+    text: "text-[var(--mint-text)]",
     label: "done",
   },
   failed: {
-    dot: "bg-red-500",
-    text: "text-red-700 dark:text-red-400",
+    dot: "bg-[var(--rose)]",
+    text: "text-[var(--rose-text)]",
     label: "failed",
   },
   skipped: {
-    dot: "bg-amber-500",
-    text: "text-amber-700 dark:text-amber-400",
+    dot: "bg-[var(--signal)]",
+    text: "text-[var(--signal-text)]",
     label: "skipped",
   },
 };

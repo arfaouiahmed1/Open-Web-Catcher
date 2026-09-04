@@ -4,6 +4,7 @@ import React, { useMemo } from "react";
 import { Brain, Sparkles } from "lucide-react";
 import { ReasoningTrace } from "@/components/library/ReasoningTrace";
 import { SectionPanel } from "@/components/console/common/section-panel";
+import { EmptyState } from "@/components/console/common/empty-state";
 import { Badge } from "@/components/ui/badge";
 import type { ReasoningEntry } from "@/components/library/types";
 
@@ -63,7 +64,12 @@ export function ReasoningTraceTab({ events, entries: explicitEntries, title = "R
       }
       className="animate-fade-up"
     >
-      <ReasoningTrace entries={entries} title={title} emptyLabel="No reasoning recorded yet — waiting for model turns." />
+      <ReasoningTrace
+        entries={entries}
+        title={title}
+        state={hasEntries ? "success" : "empty"}
+        emptyLabel="No reasoning recorded"
+      />
     </SectionPanel>
   );
 }

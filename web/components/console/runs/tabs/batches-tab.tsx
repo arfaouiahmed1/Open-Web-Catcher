@@ -16,6 +16,7 @@ export interface BatchesTabProps {
   onSelect: (id: string) => void;
   detail: Record<string, unknown> | null;
   isLoading: boolean;
+  onRefresh: () => void;
 }
 
 function statusToneForBadge(status: string): "neutral" | "info" | "success" | "warning" | "danger" {
@@ -42,9 +43,9 @@ const BatchRow = React.memo(function BatchRow({ batch, active, onSelect }: { bat
   );
 });
 
-export function BatchesTab({ batches, selectedBatchId, onSelect, detail, isLoading }: BatchesTabProps) {
+export function BatchesTab({ batches, selectedBatchId, onSelect, detail, isLoading, onRefresh }: BatchesTabProps) {
   if (isLoading) return <LoadingView label="Loading batches…" variant="skeleton" rows={4} />;
-  if (!batches.length) return <EmptyState tone="default" title="No batches yet" description="Create one from Websites — select sites and run a batch pipeline. Batches are SSE-observed, not polled." action={<Button variant="outline" size="sm" onClick={() => onSelect("")}>Refresh</Button>} />;
+  if (!batches.length) return <EmptyState tone="default" title="No batches yet" description="Create one from Websites — select sites and run a batch pipeline. Batches are SSE-observed, not polled." action={<Button variant="outline" size="sm" onClick={onRefresh}>Refresh</Button>} />;
   const activeBatch = batches.find((b) => String(b.batch_id) === selectedBatchId) || batches[0];
 
   return (
@@ -73,7 +74,7 @@ export function BatchesTab({ batches, selectedBatchId, onSelect, detail, isLoadi
           ) : (
             <EmptyState tone="default" title="Select a batch" description="Choose a batch on the left to view its JSON detail (capped & live)." />
           )}
-          <Button variant="outline" size="sm" onClick={() => onSelect(String(activeBatch?.batch_id || ""))} disabled={!activeBatch}>
+          <Button variant="outline" size="sm" onClick={onRefresh} disabled={!activeBatch}>
             Refresh
           </Button>
         </div>

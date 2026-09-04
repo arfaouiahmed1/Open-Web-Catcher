@@ -81,7 +81,7 @@
     --accent:              var(--panel-2);
     --accent-foreground:   var(--ink);
     --destructive:         var(--rose);
-    --destructive-foreground: var(--ink);
+    --destructive-foreground: #09090b;
     --border:              var(--line);
     --input:               var(--line);
     --ring:                var(--signal);
@@ -102,7 +102,9 @@
     --chart-3: oklch(0.72 0.14 300);
     --chart-4: oklch(0.76 0.12 240);
     --chart-5: oklch(0.70 0.15 20);
-
+    --chart-6: oklch(0.80 0.14 85);
+    --chart-7: oklch(0.68 0.16 140);
+    --chart-8: oklch(0.65 0.18 330);
     /* ── atmosphere ── */
     --bg-layer-1: radial-gradient(
         1200px 600px at 15% -10%,
@@ -141,9 +143,9 @@
     /* ── text (zinc) ── */
     --ink:     #09090b;   /* zinc-950 */
     --ink-dim: #18181b;   /* zinc-900 */
-    --mute:    #71717a;   /* zinc-500 */
-    --mute-2:  #a1a1aa;   /* zinc-400 */
-    --mute-3:  #d4d4d8;   /* zinc-300 */
+    --mute:    #52525b;   /* zinc-600: readable secondary text */
+    --mute-2:  #71717a;   /* zinc-500: compact metadata */
+    --mute-3:  #71717a;   /* readable tertiary metadata */
 
     /* WCAG-oriented accent foregrounds for light surfaces */
     --signal-text: oklch(0.45 0.12 64);
@@ -166,7 +168,7 @@
     --muted-foreground:    var(--mute);
     --accent:              var(--panel-2);
     --accent-foreground:   var(--ink);
-    --destructive:         var(--rose);
+    --destructive:         var(--rose-text);
     --destructive-foreground: #ffffff;
     --border:              var(--line);
     --input:               var(--line);
@@ -187,7 +189,9 @@
     --chart-3: oklch(0.72 0.14 300);
     --chart-4: oklch(0.76 0.12 240);
     --chart-5: oklch(0.70 0.15 20);
-
+    --chart-6: oklch(0.80 0.14 85);
+    --chart-7: oklch(0.68 0.16 140);
+    --chart-8: oklch(0.65 0.18 330);
     --bg-layer-1: radial-gradient(
         1000px 520px at 5% -15%,
         color-mix(in oklch, var(--signal) 10%, transparent) 0%,

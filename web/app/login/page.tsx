@@ -5,17 +5,18 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
 import { apiUrl } from "@/lib/api";
+import { TOKEN_STORAGE_KEY } from "@/lib/api-client";
+import { safeReturnPath } from "@/lib/safe-route";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthLayout } from "@/components/auth/auth-layout";
 
-const TOKEN_KEY = "owc_token";
-
 function LoginForm(): React.JSX.Element {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const nextPath = safeReturnPath(searchParams.get("next"));
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [show, setShow] = useState<boolean>(false);
@@ -37,9 +38,8 @@ function LoginForm(): React.JSX.Element {
         return;
       }
       const data: { access_token: string } = (await res.json()) as { access_token: string };
-      localStorage.setItem(TOKEN_KEY, data.access_token);
-      const next = searchParams.get("next");
-      router.push(next && next.startsWith("/") ? next : "/");
+      localStorage.setItem(TOKEN_STORAGE_KEY, data.access_token);
+      router.push(nextPath || "/");
     } catch {
       setError("Could not reach the API. Is the backend running on :8000?");
     } finally {
@@ -103,7 +103,7 @@ function LoginForm(): React.JSX.Element {
             </Button>
             <p className="text-center text-xs text-muted-foreground">
               No account yet?{" "}
-              <Link href="/signup" className="font-medium text-primary hover:underline">
+              <Link href={nextPath ? `/signup?next=${encodeURIComponent(nextPath)}` : "/signup"} className="font-medium text-primary hover:underline">
                 Create account
               </Link>
               {" · "}

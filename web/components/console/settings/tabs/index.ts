@@ -1,3 +1,11 @@
 export { BrowserTab } from "./browser-tab";
-export { GeneralTab } from "./general-tab";
+export type { BrowserTabProps, BrowserRuntimePlaywright, BrowserSyncStatus } from "./browser-tab";
 export { ModelsTab } from "./models-tab";
+export type { ModelsTabProps, AgentSlotSelection, ProviderOption } from "./models-tab";
+export { DisplayTab } from "./display-tab";
+export { McpToolsTab } from "./mcp-tools-tab";
+export { ApiKeysTab } from "./api-keys-tab";
+export type { ApiKeysTabProps, ApiKeysTabProvider } from "./api-keys-tab";
+export { NotificationsTab, NOTIFICATION_EVENTS } from "./notifications-tab";
+export { AccountTab } from "./account-tab";
+export { GeneralTab } from "./general-tab";

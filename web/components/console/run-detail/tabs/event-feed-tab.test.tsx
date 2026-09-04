@@ -47,9 +47,10 @@ describe("RunEventFeedTab", () => {
     expect(markup).toContain('data-kind="player_failed"');
     // Typed badge/data-typed
     expect(markup).toContain('data-typed="true"');
-    // Inline ScreenshotCard for tool_call_started blobref — resolves via apiUrl
-    expect(markup).toContain('src="https://api.test.invalid/blobs/0a1b2c3d4e5f6071"');
-    expect(markup).toContain('data-blob-key="0a1b2c3d4e5f6071"');
+    // Blobrefs load through the authenticated transport instead of an img URL.
+    expect(markup).toContain('data-component="ScreenshotCard"');
+    expect(markup).toContain('data-state="loading"');
+    expect(markup).not.toContain('src="https://api.test.invalid/blobs/0a1b2c3d4e5f6071"');
     expect(markup).toContain('data-role="inline-screenshots"');
   });
 

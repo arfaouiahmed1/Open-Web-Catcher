@@ -2,19 +2,20 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Loader2, ShieldCheck, Sparkles } from "lucide-react";
 import { apiUrl } from "@/lib/api";
+import { TOKEN_STORAGE_KEY } from "@/lib/api-client";
+import { safeReturnPath } from "@/lib/safe-route";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthLayout } from "@/components/auth/auth-layout";
-
-const TOKEN_KEY = "owc_token";
-
 function SignupForm(): React.JSX.Element {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextPath = safeReturnPath(searchParams.get("next"));
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [confirm, setConfirm] = useState<string>("");
@@ -64,12 +65,12 @@ function SignupForm(): React.JSX.Element {
       });
       if (!res.ok) {
         setError("Account created — please log in.");
-        router.push("/login");
+        router.push(nextPath ? `/login?next=${encodeURIComponent(nextPath)}` : "/login");
         return;
       }
       const data: { access_token: string } = (await res.json()) as { access_token: string };
-      localStorage.setItem(TOKEN_KEY, data.access_token);
-      router.push("/");
+      localStorage.setItem(TOKEN_STORAGE_KEY, data.access_token);
+      router.push(nextPath || "/");
     } catch {
       setError("Could not reach the API. Is the backend running on :8000?");
     } finally {
@@ -107,7 +108,12 @@ function SignupForm(): React.JSX.Element {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">Password (8+ chars)</Label>
-                <button type="button" onClick={() => setShow((v) => !v)} className="text-[11px] text-muted-foreground hover:text-foreground">
+                <button
+                  type="button"
+                  onClick={() => setShow((v) => !v)}
+                  className="text-[11px] text-muted-foreground hover:text-foreground"
+                  aria-label={show ? "Hide password" : "Show password"}
+                >
                   {show ? <EyeOff className="inline size-3" /> : <Eye className="inline size-3" />} {show ? "Hide" : "Show"}
                 </button>
               </div>

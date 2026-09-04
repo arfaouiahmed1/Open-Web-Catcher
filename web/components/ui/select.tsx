@@ -17,6 +17,7 @@ export type SelectOption = {
 
 export type SelectProps = {
   className?: string;
+  id?: string;
   label?: string;
   value?: string;
   onChange?: (value: string, option: SelectOption | null) => void;
@@ -30,6 +31,7 @@ export type SelectProps = {
 
 export function Select({
   className,
+  id,
   label,
   value,
   onChange,
@@ -40,6 +42,8 @@ export function Select({
   searchable = false,
   searchPlaceholder = "Search options…",
 }: SelectProps) {
+  const generatedId = React.useId();
+  const selectId = id || `owc-select-${generatedId.replace(/:/g, "")}`;
   const [query, setQuery] = React.useState("");
   const selected = options.find((option) => option.value === value) || null;
   const visibleOptions = searchable
@@ -54,7 +58,7 @@ export function Select({
 
   return (
     <div className={cn(label ? "space-y-2" : undefined, className)}>
-      {label ? <Label className="text-sm font-semibold">{label}</Label> : null}
+      {label ? <Label htmlFor={selectId} className="text-sm font-semibold">{label}</Label> : null}
 
       <SelectPrimitive.Root
         value={normalizedValue}
@@ -68,7 +72,7 @@ export function Select({
           onChange?.(resolvedValue, option);
         }}
       >
-        <SelectPrimitive.Trigger className="flex h-10 w-full items-center justify-between rounded-lg border border-border bg-background px-3.5 py-2.5 text-left text-sm font-medium shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 transition-colors hover:border-input">
+        <SelectPrimitive.Trigger id={selectId} className="flex h-10 w-full items-center justify-between rounded-lg border border-border bg-background px-3.5 py-2.5 text-left text-sm font-medium shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 transition-colors hover:border-input">
           <SelectPrimitive.Value placeholder={placeholder}>
             {selected ? (
               <span className="block truncate font-medium text-foreground">

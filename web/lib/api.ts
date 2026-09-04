@@ -10,6 +10,7 @@
 
 export {
   apiFetch,
+  apiFetchBlob,
   apiUrl,
   eventSourceUrl,
   getToken,

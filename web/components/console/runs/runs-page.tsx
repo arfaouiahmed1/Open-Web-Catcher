@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 
 import { apiFetch, apiUrl, eventSourceUrl } from "@/lib/api";
-import { SitesTab } from "./tabs/sites-tab";
+import { SitesTab, SiteHealthBadge, isHealthDeleteCandidate, type SiteHealth } from "./tabs/sites-tab";
 import { BatchesTab } from "./tabs/batches-tab";
 import { HistoryTab } from "./tabs/history-tab";
 import {
@@ -214,93 +214,6 @@ function datasetStatusLabel(value: any) {
   return statusLabel(status);
 }
 
-function siteHealthLabel(health: any) {
-  if (!health) return "not checked";
-  const status = String(health.status || "").trim().toLowerCase();
-  if (status === "working") return "working";
-  if (status === "blocked" || status === "blocked_access") return "blocked access";
-  if (status === "anti_bot") return "anti-bot";
-  if (status === "limited") return "limited";
-  if (status === "seized") return "seized";
-  if (status === "parked") return "parked";
-  if (status === "empty") return "empty";
-  if (status === "asset_only") return "asset only";
-  return "down";
-}
-
-function siteHealthDetail(health: any) {
-  if (!health) return "Run a health check for this table row";
-  const parts = [];
-  if (health.http_status) parts.push(`HTTP ${health.http_status}`);
-  if (health.method) parts.push(health.method);
-  if (health.latency_ms) parts.push(`${formatNumber(health.latency_ms)}ms`);
-  if (health.sample_size) parts.push(`${formatNumber(health.sample_size)} bytes checked`);
-  if (health.content_reason) parts.push(health.content_reason);
-  if (health.error) parts.push(health.error);
-  return parts.join(" - ") || "No probe details";
-}
-
-function isHealthDeleteCandidate(health: any) {
-  if (!health) return false;
-  const status = String(health.status || "").trim().toLowerCase();
-  if (status === "blocked" || status === "blocked_access" || status === "anti_bot") return false;
-  if (health.delete_candidate === false) return false;
-  return !health.working;
-}
-
-function SiteHealthBadge({ health }: any) {
-  const working = Boolean(health?.working);
-  const tone = health?.tone || (working ? "success" : "warning");
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span>
-          <Badge tone={tone} className="gap-1">
-            <span className={`h-1.5 w-1.5 rounded-full ${tone === "success" ? "bg-[var(--mint)]" : "bg-[var(--signal)]"}`} />
-            {siteHealthLabel(health)}
-          </Badge>
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="right" className="max-w-xs text-xs">
-        {siteHealthDetail(health)}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-function SiteIdentity({ site, health }: any) {
-  return (
-    <div className="min-w-0">
-      <div className="flex items-center gap-2">
-        <Globe2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <a
-          href={(site as any).url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="min-w-0 truncate text-sm font-medium text-foreground hover:underline"
-          title={(site as any).url}
-        >
-          {(site as any).url}
-        </a>
-      </div>
-      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-        <span>#{(site as any).id}</span>
-        <SiteHealthBadge health={health} />
-        {site.source ? <span>{site.source}</span> : null}
-        {site.notes ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="max-w-[280px] truncate">{site.notes}</span>
-            </TooltipTrigger>
-            <TooltipContent side="right" className="max-w-xs text-xs">
-              {site.notes}
-            </TooltipContent>
-          </Tooltip>
-        ) : null}
-      </div>
-    </div>
-  );
-}
 
 function MetricTile({ icon: Icon, label, value, detail }: any) {
   return (
@@ -444,8 +357,10 @@ function SiteDetailSheet({
   runDetail,
   runDetailLoading,
   pricingMap,
+  detailHealth,
   onRunSite,
   onOpenBatch,
+  onOpenEditSite,
 }: any) {
   const site = siteDetail?.site || EMPTY_OBJECT;
   const runs = siteDetail?.runs || EMPTY_ARRAY;
@@ -500,12 +415,21 @@ function SiteDetailSheet({
                       {formatNumber(site.adjusted_success_rate || 0)}% agent
                     </Badge>
                   ) : null}
+                  {detailHealth ? <SiteHealthBadge health={detailHealth} /> : null}
                 </div>
+                {site.notes ? (
+                  <p className="mt-2 max-w-2xl text-xs leading-relaxed text-muted-foreground">{site.notes}</p>
+                ) : null}
               </div>
-              <Button size="sm" variant="accent" onClick={() => onRunSite(site)}>
-                <Play className="h-4 w-4" />
-                Run website
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => onOpenEditSite(site)}>
+                  Edit metadata
+                </Button>
+                <Button size="sm" variant="accent" onClick={() => onRunSite(site)}>
+                  <Play className="h-4 w-4" />
+                  Run website
+                </Button>
+              </div>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -543,6 +467,7 @@ function SiteDetailSheet({
                     Select a run to inspect agents, models, screenshots, and batch context.
                   </CardDescription>
                 </CardHeader>
+                <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -551,6 +476,7 @@ function SiteDetailSheet({
                       <TableHead>Tokens</TableHead>
                       <TableHead>Cost</TableHead>
                       <TableHead>Duration</TableHead>
+                      <TableHead className="text-right">Streams</TableHead>
                       <TableHead />
                     </TableRow>
                   </TableHeader>
@@ -593,6 +519,9 @@ function SiteDetailSheet({
                             <TableCell className="align-top tabular-nums text-xs">
                               {formatDuration(row.duration_seconds || row.run?.duration_seconds)}
                             </TableCell>
+                            <TableCell className="align-top text-right tabular-nums text-xs">
+                              {formatNumber(row.stream_count ?? row.run?.stream_count ?? 0)}
+                            </TableCell>
                             <TableCell className="align-top text-right">
                               <Button size="sm" variant="outline" onClick={() => setSelectedRunId((row as any).run_id)}>
                                 <Eye className="h-3.5 w-3.5" />
@@ -604,15 +533,15 @@ function SiteDetailSheet({
                       })
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                        <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                           No runs logged for this website yet.
                         </TableCell>
                       </TableRow>
                     )}
                   </TableBody>
                 </Table>
+                </div>
               </Card>
-
               <Card className="overflow-hidden">
                 <CardHeader className="border-b px-4 py-3">
                   <div className="flex items-start justify-between gap-3">
@@ -794,7 +723,7 @@ export function RunsPage() {
   const [selectedHistoryRunIds, setSelectedHistoryRunIds] = useState([]);
   const [pricingMap, setPricingMap] = useState<any>(null);
   const [selectedSiteIds, setSelectedSiteIds] = useState([]);
-  const [siteHealthMap, setSiteHealthMap] = useState({});
+  const [siteHealthMap, setSiteHealthMap] = useState<Record<string, SiteHealth>>({});
   const [isSiteHealthChecking, setIsSiteHealthChecking] = useState(false);
   const [siteHealthCheckedAt, setSiteHealthCheckedAt] = useState("");
   const [healthCheckScope, setHealthCheckScope] = useState("all");
@@ -1198,14 +1127,6 @@ export function RunsPage() {
     };
   }, [selectedRunId]);
 
-  function toggleSite(siteId: any, checked: any) {
-    // @ts-expect-error -- strict migration
-    setSelectedSiteIds((current) => {
-      if (checked) return Array.from(new Set([...current, siteId]));
-      return current.filter((id) => id !== siteId);
-    });
-  }
-
   function toggleAllVisible(checked: any) {
     if (!checked) {
       setSelectedSiteIds([]);
@@ -1216,7 +1137,6 @@ export function RunsPage() {
   }
 
   function healthForSite(site: any) {
-    // @ts-expect-error -- strict migration
     return siteHealthMap[String(site?.id ?? "")] || siteHealthMap[String(site?.url ?? "")] || null;
   }
 
@@ -1251,11 +1171,9 @@ export function RunsPage() {
         // @ts-expect-error -- strict migration
         for (const result of payload.results || []) {
           if (result.site_id !== null && result.site_id !== undefined) {
-            // @ts-expect-error -- strict migration
             next[String(result.site_id)] = result;
           }
           if (result.url) {
-            // @ts-expect-error -- strict migration
             next[String(result.url)] = result;
           }
         }
@@ -1369,6 +1287,44 @@ export function RunsPage() {
     }
   }
 
+  async function bulkUpdateSites(siteIds: unknown, patch: Record<string, unknown>) {
+    const list = Array.isArray(siteIds) ? siteIds : [];
+    const ids = Array.from(new Set(list.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
+    if (!ids.length) return;
+    setBusyAction("bulk-update-sites");
+    setActionError("");
+    try {
+      await apiFetch("/api/datasets/sites/bulk-update", {
+        method: "POST",
+        body: JSON.stringify({ ids, ...patch }),
+      });
+      setRefreshTick((value) => value + 1);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Failed to bulk-update websites";
+      setActionError(message);
+      throw new Error(message);
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function runSelectedSites() {
+    const urls = selectedSites
+      .map((site: unknown) => {
+        if (site && typeof site === "object" && "url" in site && typeof site.url === "string") {
+          return site.url;
+        }
+        return "";
+      })
+      .filter((url) => url.length > 0);
+    // @ts-expect-error -- strict migration
+    await createBatch({ urls });
+  }
+
+  async function runFilteredSites() {
+    await createBatch({ urls: [] });
+  }
+
   function removeDeletedSites(siteIds: any) {
     const ids = Array.from(new Set((siteIds || []).map((id: any) => Number(id)).filter(Boolean)));
     if (!ids.length) return;
@@ -1397,11 +1353,9 @@ export function RunsPage() {
     setSiteHealthMap((current) => {
       const next = { ...current };
       for (const id of idSet) {
-        // @ts-expect-error -- strict migration
         delete next[String(id)];
       }
       for (const url of deletedUrls) {
-        // @ts-expect-error -- strict migration
         if (url) delete next[url];
       }
       return next;
@@ -1640,52 +1594,6 @@ export function RunsPage() {
     }
   }
 
-  const allVisibleSelected = sites.length > 0 && selectedSiteIds.length === sites.length;
-  const selectedUrls = selectedSites.map((site) => (site as any).url).filter(Boolean);
-  const visibleHealthRows = sites.map((site) => healthForSite(site)).filter(Boolean);
-  const checkedVisibleCount = visibleHealthRows.length;
-  const workingVisibleCount = visibleHealthRows.filter((health) => health.working).length;
-  const uncheckedVisibleCount = Math.max(0, sites.length - checkedVisibleCount);
-  const notWorkingVisibleCount = visibleHealthRows.filter(isHealthDeleteCandidate).length;
-  const downSiteIds = sites
-    .filter((site) => {
-      const health = healthForSite(site);
-      return isHealthDeleteCandidate(health);
-    })
-    .map((site) => (site as any).id)
-    .filter(Boolean);
-  const healthCheckTargetCount = sitesForHealthCheck().length;
-  const healthCheckScopeOptions = [
-    {
-      value: "all",
-      label: `Check all (${sites.length})`,
-      description: "All filtered websites in this table",
-    },
-    {
-      value: "selected",
-      label: `Check selected (${selectedSites.length})`,
-      description: "Only manually selected websites",
-    },
-    {
-      value: "unchecked",
-      label: `Check unchecked (${uncheckedVisibleCount})`,
-      description: "Rows without a health result yet",
-    },
-    {
-      value: "not_working",
-      label: `Recheck not working (${notWorkingVisibleCount})`,
-      description: "Rows currently yellow",
-    },
-  ];
-  const healthSelectionOptions = [
-    { value: "choose", label: "Select websites", description: "Choose rows by health state" },
-    { value: "working", label: `Working (${workingVisibleCount})` },
-    { value: "not_working", label: `Not working (${notWorkingVisibleCount})` },
-    { value: "checked", label: `Checked (${checkedVisibleCount})` },
-    { value: "unchecked", label: `Unchecked (${uncheckedVisibleCount})` },
-    { value: "all", label: `All filtered (${sites.length})` },
-    { value: "clear", label: "Clear selection" },
-  ];
   const historyPageCount = Math.max(Math.ceil(runHistoryTotal / HISTORY_PAGE_SIZE), 1);
   const historyStart = runHistoryTotal ? historyPage * HISTORY_PAGE_SIZE + 1 : 0;
   const historyEnd = Math.min((historyPage + 1) * HISTORY_PAGE_SIZE, runHistoryTotal);
@@ -1829,261 +1737,37 @@ export function RunsPage() {
               query={query}
               onQueryChange={setQuery}
               language={language}
+              onLanguageChange={setLanguage}
               label={label}
+              onLabelChange={setLabel}
+              languages={languages}
+              labels={labels}
+              onResetFilters={() => { setQuery(""); setLanguage(""); setLabel(""); }}
               isLoading={isLoading}
               actionError={actionError}
+              busyAction={busyAction}
+              healthMap={siteHealthMap}
+              healthCheckedAt={siteHealthCheckedAt}
+              healthCheckScope={healthCheckScope}
+              onHealthCheckScopeChange={setHealthCheckScope}
+              onCheckHealth={checkVisibleSiteHealth}
+              isHealthChecking={isSiteHealthChecking}
+              onHealthSelection={selectSitesByHealth}
               onOpenCreate={() => setSiteDialogOpen(true)}
               onOpenDetail={openSiteDetail}
+              onOpenEdit={openEditSite}
               // @ts-expect-error -- strict migration
               onRunBatch={(site) => createBatch({ site })}
-              healthMap={siteHealthMap}
+              onRunSelected={runSelectedSites}
+              onRunFiltered={runFilteredSites}
+              onDeleteSelected={deleteSelectedSites}
+              onDeleteDown={deleteDownSites}
+              onDeleteSite={deleteSite}
+              onUpdateSite={updateSite}
+              onBulkUpdate={bulkUpdateSites}
+              onToggleAllVisible={toggleAllVisible}
+              pricingMap={pricingMap}
             />
-            <Card>
-              <CardHeader className="pb-3">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <CardTitle className="text-base">Website dataset</CardTitle>
-                    <CardDescription>
-                      The CSV is used as the initial seed only; edits here are stored in the database.
-                    </CardDescription>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Select
-                      className="w-[210px]"
-                      value={healthCheckScope}
-                      onChange={setHealthCheckScope}
-                      options={healthCheckScopeOptions}
-                      disabled={isSiteHealthChecking}
-                    />
-                    <Button
-                      variant="outline"
-                      onClick={checkVisibleSiteHealth}
-                      disabled={!healthCheckTargetCount || isSiteHealthChecking}
-                    >
-                      <Activity className={`h-4 w-4 ${isSiteHealthChecking ? "animate-pulse" : ""}`} />
-                      {isSiteHealthChecking ? "Checking..." : `Check websites (${healthCheckTargetCount})`}
-                    </Button>
-                    <Select
-                      className="w-[190px]"
-                      value={healthSelectionAction}
-                      onChange={selectSitesByHealth}
-                      options={healthSelectionOptions}
-                      disabled={!sites.length || isSiteHealthChecking}
-                    />
-                    <ConfirmAction
-                      title="Delete selected websites?"
-                      description="Selected websites are removed from the dataset. Existing run records remain linked by run ID and batch history."
-                      actionLabel={`Delete ${selectedSiteIds.length} selected`}
-                      onConfirm={deleteSelectedSites}
-                      trigger={(
-                        <Button
-                          variant="danger"
-                          disabled={!selectedSiteIds.length || busyAction === "delete-selected-sites"}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Delete selected ({selectedSiteIds.length})
-                        </Button>
-                      )}
-                    />
-                    <ConfirmAction
-                      title="Delete down websites?"
-                      description="Deletes checked dead/fake-success websites: down, seized, parked, empty, limited, asset-only, or HTTP-error rows. Blocked access and anti-bot rows are kept."
-                      actionLabel={`Delete ${downSiteIds.length} down`}
-                      onConfirm={deleteDownSites}
-                      trigger={(
-                        <Button
-                          variant="danger"
-                          disabled={!downSiteIds.length || busyAction === "delete-down-sites"}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Delete down ({downSiteIds.length})
-                        </Button>
-                      )}
-                    />
-                    <Button
-                      variant="outline"
-                      // @ts-expect-error -- strict migration
-                      onClick={() => createBatch({ urls: selectedUrls })}
-                      disabled={!selectedUrls.length || busyAction === "run-selected"}
-                    >
-                      <Play className="h-4 w-4" />
-                      {busyAction === "run-selected" ? "Launching..." : `Run selected (${selectedUrls.length})`}
-                    </Button>
-                    <Button
-                      variant="accent"
-                      onClick={() => createBatch({ urls: [] })}
-                      disabled={!sites.length || busyAction === "run-filtered"}
-                    >
-                      <Play className="h-4 w-4" />
-                      {busyAction === "run-filtered" ? "Launching..." : "Run all filtered"}
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="relative min-w-[260px] flex-1">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={query}
-                      onChange={(event) => setQuery(event.target.value)}
-                      placeholder="Search URL, language, label, or notes"
-                      className="pl-9"
-                    />
-                  </div>
-                  <Select
-                    className="w-[180px]"
-                    value={language}
-                    onChange={setLanguage}
-                              options={languageOptions(languages as any, true)}
-                  />
-                  <Select
-                    className="w-[180px]"
-                    value={label}
-                    onChange={setLabel}
-                              options={labelOptions(labels as any, true)}
-                  />
-                  <Button variant="ghost" onClick={() => { setQuery(""); setLanguage(""); setLabel(""); }}>
-                    Reset
-                  </Button>
-                  <div className="text-xs text-muted-foreground">
-                    Health: {formatNumber(workingVisibleCount)} working / {formatNumber(checkedVisibleCount)} checked
-                    {siteHealthCheckedAt ? ` - ${formatRelativeTime(siteHealthCheckedAt)}` : ""}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="overflow-hidden">
-              <div className="max-h-[62vh] overflow-auto">
-              <Table className="min-w-[1180px] table-fixed">
-                <TableHeader className="bg-muted/40">
-                  <TableRow>
-                    <TableHead className="w-10">
-                      <Checkbox checked={allVisibleSelected} onCheckedChange={(checked) => toggleAllVisible(checked === true)} aria-label="Select all visible websites" />
-                    </TableHead>
-                    <TableHead className="w-[340px]">Website</TableHead>
-                    <TableHead className="w-[170px]">Language</TableHead>
-                    <TableHead className="w-[160px]">Label</TableHead>
-                    <TableHead className="w-[280px]">Latest run</TableHead>
-                    <TableHead className="w-[95px] text-right">Cost</TableHead>
-                    <TableHead className="w-[95px] text-right">Tokens</TableHead>
-                    <TableHead className="w-[220px]">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {isLoading ? (
-                    Array.from({ length: 7 }).map((_, index) => (
-                      <TableRow key={index}>
-                        <TableCell colSpan={8}><Skeleton className="h-8 w-full" /></TableCell>
-                      </TableRow>
-                    ))
-                  ) : sites.length ? (
-                    sites.map((site) => {
-                      // @ts-expect-error -- strict migration
-                      const latest = site.latest_run || EMPTY_OBJECT;
-                      const status = datasetRunStatus(latest);
-                      const cost = effectiveRunCost(latest, pricingMap);
-                      return (
-                        <TableRow key={(site as any).id} className="h-auto [&>td]:py-2">
-                          <TableCell className="align-middle">
-                            <Checkbox checked={(selectedSiteIds as any).includes((site as any).id)} onCheckedChange={(checked) => toggleSite((site as any).id, checked === true)} aria-label={`Select ${(site as any).url}`} />
-                          </TableCell>
-                          <TableCell className="align-middle">
-                            <SiteIdentity site={site} health={healthForSite(site)} />
-                          </TableCell>
-                          <TableCell className="align-middle">
-                            <Select
-                              value={(site as any).language || ""}
-                              onChange={(value: any) => updateSite((site as any).id, { language: value } as any)}
-                              options={languageOptions(languages as any, false)}
-                            />
-                          </TableCell>
-                          <TableCell className="align-middle">
-                            <Select
-                              value={(site as any).label || ""}
-                              onChange={(value: any) => updateSite((site as any).id, { label: value } as any)}
-                              options={labelOptions(labels as any)}
-                            />
-                          </TableCell>
-                          <TableCell className="align-top">
-                            {latest.run_id ? (
-                              <div>
-                                <Badge tone={statusToneForDataset(status) as any}>{datasetStatusLabel(status)}</Badge>
-                                <div className="mt-1">
-                                  <Link
-                                    href={`/runs/${latest.run_id}`}
-                                    className="block max-w-[260px] break-all font-mono text-[11px] text-primary hover:underline"
-                                    title={latest.run_id}
-                                  >
-                                    {latest.run_id}
-                                  </Link>
-                                </div>
-                                <div className="mt-0.5 text-xs text-muted-foreground">
-                                  {formatDate(latest.created_at)}
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">Not run yet</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="align-top text-right tabular-nums text-xs">
-                            {formatCurrency(cost.total)}
-                            {cost.source === "partial" ? (
-                              <div className="text-[11px] text-muted-foreground">partial</div>
-                            ) : null}
-                          </TableCell>
-                          <TableCell className="align-top text-right tabular-nums text-xs">
-                            {formatNumber(runTokenTotal(latest))}
-                          </TableCell>
-                          <TableCell className="align-middle">
-                            <div className="flex flex-nowrap items-center gap-1.5 whitespace-nowrap">
-                              <Button size="sm" variant="outline" onClick={() => openSiteDetail(site)}>
-                                <Eye className="h-3.5 w-3.5" />
-                                Results
-                              </Button>
-                              <Button size="sm" variant="outline" onClick={() => createBatch({ site })} disabled={busyAction === `run-site-${(site as any).id}`}>
-                                <Play className="h-3.5 w-3.5" />
-                                Run
-                              </Button>
-                              <Button size="icon-sm" variant="ghost" onClick={() => openEditSite(site)} aria-label={`Edit ${(site as any).url}`}>
-                                <Edit3 className="h-3.5 w-3.5" />
-                              </Button>
-                              <ConfirmAction
-                                title="Delete website?"
-                                description="The website is removed from the dataset. Existing run records remain linked by run ID and batch history."
-                                actionLabel="Delete website"
-                                onConfirm={() => deleteSite((site as any).id as any)}
-                                trigger={(
-                                  <Button size="icon-sm" variant="ghost" disabled={busyAction === `delete-site-${(site as any).id}`} aria-label={`Delete ${(site as any).url}`}>
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                )}
-                              />
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={8} className="py-14 text-center">
-                        <div className="space-y-2">
-                          <div className="text-sm font-medium text-foreground">No websites match the current filters</div>
-                          <div className="text-xs text-muted-foreground">Try clearing search, language, or label filters.</div>
-                          <div>
-                            <Button variant="outline" size="sm" onClick={() => { setQuery(""); setLanguage(""); setLabel(""); }}>
-                              Reset filters
-                            </Button>
-                          </div>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-              </div>
-            </Card>
           </TabsContent>
 
           <TabsContent value="batches" className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
@@ -2093,12 +1777,14 @@ export function RunsPage() {
               onSelect={setSelectedBatchId}
               detail={batchDetail}
               isLoading={isBatchLoading}
+              onRefresh={() => setRefreshTick((value) => value + 1)}
             />
             <Card className="overflow-hidden">
               <CardHeader className="border-b px-4 py-3">
                 <CardTitle className="text-base">Batch runs</CardTitle>
                 <CardDescription>Every batch owns site-run rows that link to the same `/runs/id` detail.</CardDescription>
               </CardHeader>
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -2142,6 +1828,7 @@ export function RunsPage() {
                   )}
                 </TableBody>
               </Table>
+              </div>
             </Card>
 
             <Card className="overflow-hidden">
@@ -2561,8 +2248,10 @@ export function RunsPage() {
           runDetail={runDetail}
           runDetailLoading={runDetailLoading}
           pricingMap={pricingMap}
+          detailHealth={siteDetail?.site ? healthForSite(siteDetail.site) : null}
           onRunSite={(site: any) => createBatch({ site })}
           onOpenBatch={openBatch}
+          onOpenEditSite={openEditSite}
         />
       </div>
     </TooltipProvider>

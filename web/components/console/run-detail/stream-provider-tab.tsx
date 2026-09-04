@@ -16,8 +16,10 @@ import {
 } from "recharts";
 import { AlertCircle, Globe, Loader2, Server, Shield, Wifi } from "lucide-react";
 
-import { apiUrl } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { formatNumber } from "@/lib/utils";
+import { isDirectVideoUrl } from "@/lib/run-detail-helpers";
+import { LoadingView } from "@/components/console/common/loading-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,14 +39,14 @@ import {
 } from "@/components/ui/table";
 
 const CHART_COLORS = [
-  "var(--signal)",
-  "var(--sky)",
-  "var(--mint)",
-  "var(--violet)",
-  "hsl(35 90% 58%)",
-  "hsl(160 60% 50%)",
-  "hsl(260 70% 65%)",
-  "hsl(10 80% 58%)",
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+  "var(--chart-6)",
+  "var(--chart-7)",
+  "var(--chart-8)",
 ];
 
 function dedupe(values = []) {
@@ -350,10 +352,23 @@ function StatCard({  label, value, color  }: any) {
   return (
     <Card>
       <CardContent className="px-4 py-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">{label}</p>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75">{label}</p>
         <p className="mt-1 text-xl font-semibold tabular-nums" style={{ color }}>{value}</p>
       </CardContent>
     </Card>
+  );
+}
+
+function StreamPreview({  url  }: any) {
+  if (!isDirectVideoUrl(url)) return null;
+  return (
+    <video
+      controls
+      preload="metadata"
+      src={String(url)}
+      className="mt-2 max-h-64 w-full rounded-lg border border-border bg-black"
+      data-role="stream-preview"
+    />
   );
 }
 
@@ -402,13 +417,10 @@ export function StreamProviderTab({
     setIsLoading(true);
     setError("");
     try {
-      const response = await fetch(apiUrl("/ui/providers/lookup"), {
+      const payload = await apiFetch<Record<string, any>>("/ui/providers/lookup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stream_urls: urls }),
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail || `Status ${response.status}`);
       setData({
         ...payload,
         rows: normalizeProviderRows(payload?.rows || []),
@@ -453,10 +465,11 @@ export function StreamProviderTab({
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center gap-3 py-20 text-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary/60" />
-        <p className="text-sm text-muted-foreground">Resolving stream URLs...</p>
-      </div>
+      <LoadingView
+        variant="skeleton"
+        rows={4}
+        label="Resolving stream URLs and provider intelligence..."
+      />
     );
   }
 
@@ -576,13 +589,14 @@ export function StreamProviderTab({
 
                 {row.sample_streams.length ? (
                   <div className="mt-3 rounded-lg border border-border bg-card px-3 py-2">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75">
                       Sample streams
                     </div>
                     <div className="mt-1 space-y-1 font-mono text-[11px] text-foreground/80">
                       {row.sample_streams.map((streamUrl) => (
                         <div key={streamUrl} className="break-all">
                           {streamUrl}
+                          <StreamPreview url={streamUrl} />
                         </div>
                       ))}
                     </div>
@@ -645,7 +659,7 @@ export function StreamProviderTab({
                         ) : null}
                         {server.ocr_text ? (
                           <div className="mt-2 rounded-md border border-border/70 bg-muted/20 px-2.5 py-2">
-                            <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
+                            <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75">
                               OCR / visual text
                             </div>
                             <div className="mt-1 line-clamp-3 text-[11px] leading-relaxed text-foreground/80">
@@ -726,7 +740,7 @@ export function StreamProviderTab({
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   {["URL", "IP", "Provider", "Org", "Country", "Abuse contact", "Whois"].map((heading) => (
-                    <TableHead key={heading} className="whitespace-nowrap px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
+                    <TableHead key={heading} className="whitespace-nowrap px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75">
                       {heading}
                     </TableHead>
                   ))}
@@ -747,7 +761,7 @@ export function StreamProviderTab({
                         <span className="text-muted-foreground">{row.country_code || row.country || "--"}</span>
                       </span>
                     </TableCell>
-                    <TableCell className={`px-4 py-2.5 font-mono text-[11px] ${row.abuse_email ? "text-primary" : "text-muted-foreground/40"}`}>
+                    <TableCell className={`px-4 py-2.5 font-mono text-[11px] ${row.abuse_email ? "text-primary" : "text-muted-foreground/75"}`}>
                       {row.abuse_email || "--"}
                     </TableCell>
                     <TableCell className="px-4 py-2.5">
@@ -761,7 +775,7 @@ export function StreamProviderTab({
                           </pre>
                         </details>
                       ) : (
-                        <span className="text-[11px] text-muted-foreground/40">--</span>
+                        <span className="text-[11px] text-muted-foreground/75">--</span>
                       )}
                     </TableCell>
                   </TableRow>

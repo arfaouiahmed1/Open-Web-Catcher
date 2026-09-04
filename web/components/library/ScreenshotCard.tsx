@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { apiUrl } from "@/lib/api";
+import { apiFetchBlob, apiUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { StateFrame, resolveState } from "./StateFrame";
 import type { ComponentState } from "./types";
@@ -26,7 +26,7 @@ export function resolveScreenshotSrc(src?: string | null): string | null {
 export interface ScreenshotCardProps {
   /** Full URL, blobref pointer (`blobref:<key>`), or raw blob key. */
   src?: string | null;
-  alt: string;
+  alt?: string;
   caption?: string;
   state?: ComponentState;
   loadingLabel?: string;
@@ -38,7 +38,7 @@ export interface ScreenshotCardProps {
 /** Evidence screenshot with blobref-aware URL resolution. */
 export function ScreenshotCard({
   src,
-  alt,
+  alt = "Screenshot",
   caption,
   state,
   loadingLabel = "Loading screenshot…",
@@ -47,32 +47,66 @@ export function ScreenshotCard({
   className,
 }: ScreenshotCardProps) {
   const resolvedSrc = resolveScreenshotSrc(src);
-  // An explicit error state wins; otherwise a missing/unresolvable src is an
-  // empty frame rather than a broken <img>.
-  const resolved = resolveState(
-    state === undefined && !resolvedSrc ? "empty" : state,
-    Boolean(resolvedSrc),
-  );
   const blobKey =
     resolvedSrc && /^blobref:/i.test((src ?? "").trim())
-      ? ((src ?? "").trim().split(":")[1] ?? "")
+      ? ((src ?? "").trim().replace(/^blobref:/i, "") || undefined)
       : undefined;
+  const [blobSrc, setBlobSrc] = React.useState<string | null>(null);
+  const [blobState, setBlobState] = React.useState<ComponentState>(blobKey ? "loading" : "success");
+  const [blobError, setBlobError] = React.useState("");
+
+  React.useEffect(() => {
+    if (!blobKey) {
+      setBlobSrc(null);
+      setBlobState("success");
+      setBlobError("");
+      return;
+    }
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setBlobSrc(null);
+    setBlobState("loading");
+    setBlobError("");
+    void apiFetchBlob(`/blobs/${encodeURIComponent(blobKey)}`)
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setBlobSrc(objectUrl);
+        setBlobState("success");
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setBlobState("error");
+          setBlobError(error instanceof Error ? error.message : "Failed to load screenshot");
+        }
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [blobKey]);
+
+  const displaySrc = blobKey ? blobSrc : resolvedSrc;
+  const resolved =
+    state ?? (blobKey ? blobState : resolveState(undefined, Boolean(displaySrc)));
   return (
     <StateFrame
       component="ScreenshotCard"
       state={resolved}
       loadingLabel={loadingLabel}
-      errorLabel={errorLabel}
+      errorLabel={blobError || errorLabel}
       emptyLabel={emptyLabel}
       className={cn("max-w-md", className)}
     >
       <figure className="space-y-1 p-2">
         {/* eslint-disable-next-line @next/next/no-img-element -- arbitrary backend-hosted evidence URLs */}
         <img
-          src={resolvedSrc ?? undefined}
+          src={displaySrc ?? undefined}
           alt={alt}
           data-blob-key={blobKey}
           className="w-full rounded-md border border-border object-contain"
+          loading="lazy"
+          decoding="async"
         />
         {caption ? (
           <figcaption className="px-1 text-xs text-muted-foreground">

@@ -288,6 +288,8 @@ generic endpoint contract. See [Provider Directory](../operations/provider-direc
 | `POST` | `/api/datasets/batches` | create batch run |
 | `POST` | `/api/datasets/batches/{batch_id}/cancel` | cancel batch |
 
+`GET /api/datasets/batches/{batch_id}` returns a bounded status summary by default. Pass `include_runs=true` only when the full site-run payloads are explicitly needed. Create and cancel responses also return summaries so large batches do not serialize every run into an operator response.
+
 ## Core Execution Routes
 
 These routes exist below the UI API and are still useful for direct backend tests:

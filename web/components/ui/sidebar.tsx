@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 
 const SIDEBAR_COOKIE_NAME = "owc:sidebar:open";
 const SIDEBAR_WIDTH = "16rem";
+const SIDEBAR_WIDTH_ICON = "3.5rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
@@ -97,7 +98,7 @@ export function SidebarProvider({
       value={{ state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar }}
     >
       <div
-        style={{ "--sidebar-width": SIDEBAR_WIDTH, ...style } as React.CSSProperties}
+        style={{ "--sidebar-width": SIDEBAR_WIDTH, "--sidebar-width-icon": SIDEBAR_WIDTH_ICON, ...style } as React.CSSProperties}
         className={cn("group/sidebar-wrapper flex min-h-svh w-full has-[[data-variant=inset]]:bg-sidebar", className)}
         {...props}
       >
@@ -151,6 +152,7 @@ export function Sidebar({
         className={cn(
           "duration-200 relative h-svh w-[--sidebar-width] bg-transparent transition-[width] ease-linear",
           "group-data-[collapsible=offcanvas]:w-0",
+          "group-data-[collapsible=icon]:w-[--sidebar-width-icon]",
         )}
       />
       <div
@@ -159,6 +161,7 @@ export function Sidebar({
           side === "left"
             ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
             : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
+          "group-data-[collapsible=icon]:w-[--sidebar-width-icon]",
           "border-r border-sidebar-border",
           className,
         )}
@@ -176,12 +179,14 @@ export function Sidebar({
 }
 
 export function SidebarTrigger({ className, onClick, ...props }: React.ComponentPropsWithoutRef<"button">) {
-  const { toggleSidebar } = useSidebar();
+  const { state, toggleSidebar } = useSidebar();
   return (
     <Button
       variant="ghost"
       size="icon-sm"
       className={cn("h-7 w-7", className)}
+      aria-expanded={state === "expanded"}
+      aria-label={state === "expanded" ? "Collapse sidebar" : "Expand sidebar"}
       onClick={(event: React.MouseEvent<HTMLButtonElement>) => { (onClick as ((e: React.MouseEvent<HTMLButtonElement>) => void) | undefined)?.(event); toggleSidebar(); }}
       {...props}
     >
@@ -241,6 +246,7 @@ export function SidebarGroupLabel({ className, asChild = false, ...props }: Side
       data-sidebar="group-label"
       className={cn(
         "duration-200 flex h-8 shrink-0 items-center rounded-md px-2 text-xs font-medium text-sidebar-foreground/70 outline-none ring-sidebar-ring transition-[margin,opacity] ease-linear focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
+        "group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:opacity-0",
         className,
       )}
       {...props}
@@ -295,7 +301,11 @@ export function SidebarMenuButton({ asChild = false, isActive = false, variant, 
       data-sidebar="menu-button"
       data-size={size}
       data-active={isActive}
-      className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
+      className={cn(
+        sidebarMenuButtonVariants({ variant, size }),
+        "group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:[&>span:last-child]:hidden",
+        className,
+      )}
       {...tooltipProps}
       {...props}
     />
@@ -312,6 +322,7 @@ export function SidebarMenuBadge({ className, ...props }: React.HTMLAttributes<H
         "peer-data-[size=sm]/menu-button:top-1",
         "peer-data-[size=default]/menu-button:top-1.5",
         "peer-data-[size=lg]/menu-button:top-2.5",
+        "group-data-[collapsible=icon]:hidden",
         className,
       )}
       {...props}
