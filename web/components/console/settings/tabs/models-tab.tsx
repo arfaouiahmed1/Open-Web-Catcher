@@ -30,10 +30,7 @@ export interface ModelsTabProps {
   providers: ProviderOption[];
   agentModelConfig: Record<string, AgentSlotSelection>;
   fallbackTemperature: string;
-  providerCacheEnabled: boolean;
-  geminiExplicitCacheEnabled: boolean;
-  geminiExplicitCacheTtl: string;
-  geminiExplicitCacheRefreshLead: string;
+  promptCacheEnabled: boolean;
   toolCacheEnabled: boolean;
   toolCacheStable: string;
   thinkingEnabled: boolean;
@@ -61,10 +58,7 @@ export interface ModelsTabProps {
   onUpdateAgentProvider: (agentId: string, provider: string) => void;
   onInheritToggle: (agentId: string, inherit: boolean) => void;
   onFallbackTemperature: (v: string) => void;
-  onProviderCache: (v: boolean) => void;
-  onGeminiExplicitCache: (v: boolean) => void;
-  onGeminiExplicitCacheTtl: (v: string) => void;
-  onGeminiExplicitCacheRefreshLead: (v: string) => void;
+  onPromptCache: (v: boolean) => void;
   onToolCache: (v: boolean) => void;
   onToolCacheStable: (v: string) => void;
   onThinking: (v: boolean) => void;
@@ -96,7 +90,6 @@ function capabilityBadges(model: any): string[] {
   };
   push(caps.supports_vision ?? model?.supports_vision, "Vision");
   push(caps.supports_thinking_controls ?? model?.supports_thinking, "Thinking");
-  push(caps.supports_explicit_cache ?? model?.supports_explicit_cache, "Prompt Cache");
   return out.length ? out : ["Tools"];
 }
 
@@ -191,16 +184,6 @@ export function ModelsTab(props: ModelsTabProps): React.JSX.Element {
     props.thinkingEnabled && (!Number.isInteger(thinkBudget) || thinkBudget < 1000 || thinkBudget > 32000)
       ? "Must be an integer from 1000 to 32000."
       : undefined;
-  const ttl = Number(props.geminiExplicitCacheTtl);
-  const ttlError =
-    props.geminiExplicitCacheEnabled && (!Number.isFinite(ttl) || ttl < 60 || ttl > 7200)
-      ? "Must be between 60 and 7200 seconds."
-      : undefined;
-  const lead = Number(props.geminiExplicitCacheRefreshLead);
-  const leadError =
-    props.geminiExplicitCacheEnabled && (!Number.isFinite(lead) || lead < 5 || lead > 600)
-      ? "Must be between 5 and 600 seconds."
-      : undefined;
   const stable = Number(props.toolCacheStable);
   const stableError =
     props.toolCacheEnabled && (!Number.isInteger(stable) || stable < 2 || stable > 10)
@@ -209,7 +192,7 @@ export function ModelsTab(props: ModelsTabProps): React.JSX.Element {
   const maxParallel = Number(props.maxParallelHostingPages);
   const maxParallelError =
     !Number.isInteger(maxParallel) || maxParallel < 1 || maxParallel > 16 ? "Must be an integer from 1 to 16." : undefined;
-  const hasError = Boolean(tempError || thinkError || ttlError || leadError || stableError || maxParallelError);
+  const hasError = Boolean(tempError || thinkError || stableError || maxParallelError);
 
   return (
     <div className="space-y-4 animate-fade-up">
@@ -315,8 +298,9 @@ export function ModelsTab(props: ModelsTabProps): React.JSX.Element {
                       searchable
                     />
                     <div className="space-y-2">
-                      <label className="block text-sm font-semibold leading-none text-foreground">Model ID</label>
+                      <label htmlFor={`model-${slot.id}`} className="block text-sm font-semibold leading-none text-foreground">Model ID</label>
                       <input
+                        id={`model-${slot.id}`}
                         value={sel.model || ""}
                         onChange={(e) => props.onUpdateAgentModel(slot.id, e.target.value)}
                         placeholder="e.g. gemini-2.5-flash"
@@ -404,10 +388,10 @@ export function ModelsTab(props: ModelsTabProps): React.JSX.Element {
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <ToggleRow
-            label="Provider prompt caching"
-            description="Reuse provider-native cache hits for repeated shared context."
-            checked={props.providerCacheEnabled}
-            onChange={props.onProviderCache}
+            label="LiteLLM prompt caching"
+            description="Provider-agnostic prompt-prefix caching for repeated model context."
+            checked={props.promptCacheEnabled}
+            onChange={props.onPromptCache}
           />
           <ToggleRow
             label="Deterministic tool result cache"
@@ -430,42 +414,6 @@ export function ModelsTab(props: ModelsTabProps): React.JSX.Element {
             {stableError ? <p className="text-xs font-medium text-destructive">{stableError}</p> : null}
           </div>
         ) : null}
-        <div className="space-y-3 rounded-xl border border-border/60 p-3.5">
-          <ToggleRow
-            label="LiteLLM prompt caching"
-            description="Provider-agnostic prompt prefix caching via LiteLLM. Bypasses redundant tokens across repetitive agent turns for Gemini, Claude, and OpenAI."
-            checked={props.geminiExplicitCacheEnabled}
-            onChange={props.onGeminiExplicitCache}
-          />
-          {props.geminiExplicitCacheEnabled ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <Slider
-                  label="Cache TTL (seconds)"
-                  value={Number.isFinite(ttl) ? ttl : 1800}
-                  onChange={(v) => props.onGeminiExplicitCacheTtl(String(Math.round(v)))}
-                  min={60}
-                  max={7200}
-                  step={60}
-                  unit="s"
-                />
-                {ttlError ? <p className="mt-1 text-xs font-medium text-destructive">{ttlError}</p> : null}
-              </div>
-              <div>
-                <Slider
-                  label="Refresh lead (seconds)"
-                  value={Number.isFinite(lead) ? lead : 120}
-                  onChange={(v) => props.onGeminiExplicitCacheRefreshLead(String(Math.round(v)))}
-                  min={5}
-                  max={600}
-                  step={5}
-                  unit="s"
-                />
-                {leadError ? <p className="mt-1 text-xs font-medium text-destructive">{leadError}</p> : null}
-              </div>
-            </div>
-          ) : null}
-        </div>
         <div className="max-w-sm">
           <Input
             label="Max parallel hosting pages"

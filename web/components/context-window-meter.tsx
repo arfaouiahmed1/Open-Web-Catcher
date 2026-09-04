@@ -153,7 +153,7 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
                   </div>
                 </div>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-                  <div className="h-full rounded-full transition-all" style={{ width: `${group.pctClamped * 100}%`, background: c }} />
+                  <div className="h-full rounded-full transition-[width] motion-reduce:transition-none" style={{ width: `${group.pctClamped * 100}%`, background: c }} />
                 </div>
                 <div className="mt-1.5 font-mono text-[10px] text-muted-foreground truncate" title={group.modelLabel}>{group.modelLabel}</div>
               </div>
@@ -176,7 +176,7 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
           <span className="text-[11px] text-muted-foreground">{tokens.toLocaleString()} tokens peak</span>
         </div>
         <div className="h-2 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-          <div className="h-full rounded-full transition-all" style={{ width: `${pctClamped * 100}%`, background: color }} />
+          <div className="h-full rounded-full transition-[width] motion-reduce:transition-none" style={{ width: `${pctClamped * 100}%`, background: color }} />
         </div>
         <div className="font-mono text-[10px] text-muted-foreground">{String(peak.model ?? primaryModel ?? "model")} {contextWindow ? `· ${compact(contextWindow)} window` : ""}</div>
       </CardContent>

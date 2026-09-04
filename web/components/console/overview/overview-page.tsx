@@ -557,7 +557,7 @@ function HBarRow({ label, value, share, color, sub, rank }: any) {
           )}
           <div className="mt-1.5 h-[3px] overflow-hidden rounded-full bg-border">
             <div
-              className="h-full rounded-full transition-all"
+              className="h-full rounded-full transition-[width] motion-reduce:transition-none"
               style={{ width: `${Math.max(share, 0)}%`, background: color }}
             />
           </div>
@@ -2672,7 +2672,7 @@ function OverviewPageContent() {
                           style={{ background: "var(--line)" }}
                         >
                           <div
-                            className="h-full rounded-full transition-all"
+                            className="h-full rounded-full transition-[width] motion-reduce:transition-none"
                             style={{
                               width: row.contextWindow > 0 ? `${Math.min(100, Math.max(0, row.peakContextPct * 100))}%` : "0%",
                               background: contextTone,

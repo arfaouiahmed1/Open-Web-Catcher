@@ -36,10 +36,6 @@ class ModelConfigRequest(BaseModel):
     llm_tuning: dict | None = None
     agent_model_config: dict | None = None
     prompt_cache_enabled: bool | None = None
-    provider_cache_enabled: bool | None = None
-    gemini_explicit_cache_enabled: bool | None = None
-    gemini_explicit_cache_ttl_seconds: int | None = None
-    gemini_explicit_cache_refresh_lead_seconds: int | None = None
     tool_result_cache_enabled: bool | None = None
     tool_result_cache_min_identical_observations: int | None = None
     thinking_enabled: bool | None = None
@@ -124,12 +120,6 @@ def ui_config_payload(
             settings, getattr(settings, "agent_model_config", {})
         ),
         "prompt_cache_enabled": getattr(settings, "prompt_cache_enabled", True),
-        "provider_cache_enabled": settings.provider_cache_enabled,
-        "gemini_explicit_cache_enabled": settings.gemini_explicit_cache_enabled,
-        "gemini_explicit_cache_ttl_seconds": settings.gemini_explicit_cache_ttl_seconds,
-        "gemini_explicit_cache_refresh_lead_seconds": (
-            settings.gemini_explicit_cache_refresh_lead_seconds
-        ),
         "tool_result_cache_enabled": settings.tool_result_cache_enabled,
         "tool_result_cache_min_identical_observations": (
             settings.tool_result_cache_min_identical_observations
@@ -140,26 +130,18 @@ def ui_config_payload(
         "max_parallel_hosting_pages": getattr(settings, "max_parallel_hosting_pages", 5),
         "mcp_server_url_playwright": settings.mcp_server_url_playwright,
         "browser_manifest": load_tool_manifest(),
-        "browser_runtime": normalize_browser_runtime(
-            getattr(settings, "browser_runtime", {})
-        ),
+        "browser_runtime": normalize_browser_runtime(getattr(settings, "browser_runtime", {})),
         "browser_runtime_sync_status": build_browser_runtime_sync_status(),
         "agent_runtime_config": normalize_agent_runtime_config(
             getattr(settings, "agent_runtime_config", {})
         ),
         "observability_enabled": getattr(settings, "observability_enabled", True),
-        "background_job_retention_days": getattr(
-            settings, "background_job_retention_days", 30
-        ),
+        "background_job_retention_days": getattr(settings, "background_job_retention_days", 30),
         "retention_days_runs": getattr(settings, "retention_days_runs", 30),
-        "retention_days_run_snapshots": getattr(
-            settings, "retention_days_run_snapshots", 30
-        ),
+        "retention_days_run_snapshots": getattr(settings, "retention_days_run_snapshots", 30),
         "retention_days_llm_calls": getattr(settings, "retention_days_llm_calls", 30),
         "retention_days_tool_calls": getattr(settings, "retention_days_tool_calls", 30),
-        "retention_days_agent_outputs": getattr(
-            settings, "retention_days_agent_outputs", 30
-        ),
+        "retention_days_agent_outputs": getattr(settings, "retention_days_agent_outputs", 30),
         "payload_cap_bytes": getattr(settings, "payload_cap_bytes", 8192),
         "workflow_max_cost_usd": getattr(settings, "workflow_max_cost_usd", 0.0),
         "workflow_max_tokens": getattr(settings, "workflow_max_tokens", 0),
@@ -174,7 +156,11 @@ def ui_config_payload(
             for provider_id in SUPPORTED_PROVIDERS
         ],
         "provider_base_urls": {
-            **({"azure": settings.azure_api_base} if getattr(settings, "azure_api_base", "") else {}),
+            **(
+                {"azure": settings.azure_api_base}
+                if getattr(settings, "azure_api_base", "")
+                else {}
+            ),
             **dict(getattr(settings, "provider_base_urls", {}) or {}),
         },
         "model_selection_details": build_model_selection_details(settings),
@@ -228,19 +214,6 @@ def apply_ui_config_update(
         )
     if body.prompt_cache_enabled is not None:
         settings.prompt_cache_enabled = body.prompt_cache_enabled
-    if body.provider_cache_enabled is not None:
-        settings.provider_cache_enabled = body.provider_cache_enabled
-    if body.gemini_explicit_cache_enabled is not None:
-        settings.gemini_explicit_cache_enabled = body.gemini_explicit_cache_enabled
-    if body.gemini_explicit_cache_ttl_seconds is not None:
-        settings.gemini_explicit_cache_ttl_seconds = max(
-            60, int(body.gemini_explicit_cache_ttl_seconds)
-        )
-    if body.gemini_explicit_cache_refresh_lead_seconds is not None:
-        settings.gemini_explicit_cache_refresh_lead_seconds = max(
-            5,
-            int(body.gemini_explicit_cache_refresh_lead_seconds),
-        )
     if body.tool_result_cache_enabled is not None:
         settings.tool_result_cache_enabled = body.tool_result_cache_enabled
     if body.tool_result_cache_min_identical_observations is not None:
@@ -251,9 +224,7 @@ def apply_ui_config_update(
     if body.thinking_enabled is not None:
         settings.thinking_enabled = body.thinking_enabled
     if body.thinking_budget_tokens is not None:
-        settings.thinking_budget_tokens = max(
-            1000, min(32000, int(body.thinking_budget_tokens))
-        )
+        settings.thinking_budget_tokens = max(1000, min(32000, int(body.thinking_budget_tokens)))
     if body.max_parallel_hosting_pages is not None:
         settings.max_parallel_hosting_pages = max(1, int(body.max_parallel_hosting_pages))
     if body.observability_enabled is not None:
@@ -287,11 +258,28 @@ def apply_ui_config_update(
             getattr(settings, "browser_runtime", {})
         )
     if body.agent_runtime_config is not None:
-        settings.agent_runtime_config = normalize_agent_runtime_config(
-            body.agent_runtime_config
-        )
+        settings.agent_runtime_config = normalize_agent_runtime_config(body.agent_runtime_config)
     # BYOK: keys come from Settings UI; blank string = clear (remove from runtime yaml)
-    for _key_field in ("google_api_key", "google_vertex_api_key", "openai_api_key", "anthropic_api_key", "openrouter_api_key", "nvidia_api_key", "mistral_api_key", "cohere_api_key", "groq_api_key", "together_api_key", "fireworks_api_key", "perplexity_api_key", "deepseek_api_key", "xai_api_key", "upstage_api_key", "azure_api_key", "azure_api_base", "bedrock_api_key"):
+    for _key_field in (
+        "google_api_key",
+        "google_vertex_api_key",
+        "openai_api_key",
+        "anthropic_api_key",
+        "openrouter_api_key",
+        "nvidia_api_key",
+        "mistral_api_key",
+        "cohere_api_key",
+        "groq_api_key",
+        "together_api_key",
+        "fireworks_api_key",
+        "perplexity_api_key",
+        "deepseek_api_key",
+        "xai_api_key",
+        "upstage_api_key",
+        "azure_api_key",
+        "azure_api_base",
+        "bedrock_api_key",
+    ):
         _val = getattr(body, _key_field, None)
         if _val is not None:
             setattr(settings, _key_field, str(_val or "").strip())
@@ -301,7 +289,9 @@ def apply_ui_config_update(
         for _provider_id, _value in body.provider_api_keys.items():
             _normalized_id = str(_provider_id or "").strip().lower()
             if _normalized_id not in SUPPORTED_PROVIDERS:
-                raise HTTPException(status_code=400, detail=f"Unsupported provider '{_provider_id}'.")
+                raise HTTPException(
+                    status_code=400, detail=f"Unsupported provider '{_provider_id}'."
+                )
             _normalized_value = str(_value or "").strip()
             if _normalized_value:
                 provider_keys[_normalized_id] = _normalized_value
@@ -314,7 +304,9 @@ def apply_ui_config_update(
         for _provider_id, _value in body.provider_base_urls.items():
             _normalized_id = str(_provider_id or "").strip().lower()
             if _normalized_id not in SUPPORTED_PROVIDERS:
-                raise HTTPException(status_code=400, detail=f"Unsupported provider '{_provider_id}'.")
+                raise HTTPException(
+                    status_code=400, detail=f"Unsupported provider '{_provider_id}'."
+                )
             _normalized_value = str(_value or "").strip()
             if _normalized_value:
                 provider_urls[_normalized_id] = _normalized_value
@@ -333,7 +325,26 @@ def apply_ui_config_update(
     # Ensure cleared keys are also removed from runtime yaml (save_yaml writes to base when writable)
     # so a plain "" must not linger in data/settings.runtime.yaml and shadow the clear.
     _clear_fields = []
-    for _k in ("google_api_key", "google_vertex_api_key", "openai_api_key", "anthropic_api_key", "openrouter_api_key", "nvidia_api_key", "mistral_api_key", "cohere_api_key", "groq_api_key", "together_api_key", "fireworks_api_key", "perplexity_api_key", "deepseek_api_key", "xai_api_key", "upstage_api_key", "azure_api_key", "azure_api_base", "bedrock_api_key"):
+    for _k in (
+        "google_api_key",
+        "google_vertex_api_key",
+        "openai_api_key",
+        "anthropic_api_key",
+        "openrouter_api_key",
+        "nvidia_api_key",
+        "mistral_api_key",
+        "cohere_api_key",
+        "groq_api_key",
+        "together_api_key",
+        "fireworks_api_key",
+        "perplexity_api_key",
+        "deepseek_api_key",
+        "xai_api_key",
+        "upstage_api_key",
+        "azure_api_key",
+        "azure_api_base",
+        "bedrock_api_key",
+    ):
         _v = getattr(body, _k, None)
         if _v is not None and not str(_v).strip():
             _clear_fields.append(_k)
@@ -342,11 +353,11 @@ def apply_ui_config_update(
         if _clear_fields:
             try:
                 from pathlib import Path as _P
-                import yaml as _yaml
-                from src.utils.config import is_blank_setting_value as _is_blank
+                from src.utils import config as _cfg
+
                 _rt = _P("data/settings.runtime.yaml")
                 if _rt.exists():
-                    _data = _yaml.safe_load(_rt.read_text(encoding="utf-8")) or {}
+                    _data = _cfg.load_yaml_layer(_rt) or {}
                     if isinstance(_data, dict):
                         _changed = False
                         for _k in _clear_fields:
@@ -354,7 +365,12 @@ def apply_ui_config_update(
                                 _data.pop(_k, None)
                                 _changed = True
                         if _changed:
-                            _rt.write_text(_yaml.safe_dump(_data, default_flow_style=False, allow_unicode=True), encoding="utf-8")
+                            _rt.write_text(
+                                _cfg.yaml.safe_dump(
+                                    _data, default_flow_style=False, allow_unicode=True
+                                ),
+                                encoding="utf-8",
+                            )
             except Exception:
                 pass
         reset_settings_cache()
@@ -400,8 +416,7 @@ def get_ui_provider_models(
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Unsupported provider '{provider}'. "
-                f"Supported: {', '.join(SUPPORTED_PROVIDERS)}."
+                f"Unsupported provider '{provider}'. Supported: {', '.join(SUPPORTED_PROVIDERS)}."
             ),
         )
 

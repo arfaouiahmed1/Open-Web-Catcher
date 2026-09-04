@@ -95,7 +95,7 @@ const AnimBar = memo(function AnimBar({ pct, color }: { pct: number; color: stri
 
   return (
     <div className="mt-3 h-[3px] overflow-hidden rounded-full bg-muted">
-      <span ref={barRef} className="block h-full rounded-full transition-all duration-700" style={{ width: "0%", background: color }} />
+      <span ref={barRef} className="block h-full rounded-full transition-[width] duration-700 motion-reduce:transition-none" style={{ width: "0%", background: color }} />
     </div>
   );
 });

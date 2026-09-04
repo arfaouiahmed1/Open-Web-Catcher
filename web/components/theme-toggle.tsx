@@ -46,7 +46,7 @@ export function ThemeToggle(): React.JSX.Element {
             aria-pressed={selected}
             title={value === "system" ? `System (${mounted ? resolvedTheme : "…"})` : label}
             className={cn(
-              "relative z-10 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium transition-all duration-150",
+              "relative z-10 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium transition-[background-color,color,box-shadow] duration-150 motion-reduce:transition-none",
               selected ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
             )}
           >

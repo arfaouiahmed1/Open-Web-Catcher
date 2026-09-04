@@ -152,7 +152,7 @@ export function ContextWindowMonitor({ events = [], className }: ContextWindowMo
                 <div className="space-y-1">
                   <div className="h-2 w-full overflow-hidden rounded-full bg-muted/60">
                     <div
-                      className="h-full rounded-full transition-all duration-300"
+                      className="h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none"
                       style={{
                         width: `${Math.min(100, Math.max(2, item.usagePct))}%`,
                         backgroundColor: barColor,

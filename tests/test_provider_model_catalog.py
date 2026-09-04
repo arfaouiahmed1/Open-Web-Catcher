@@ -70,7 +70,9 @@ def test_gemini_31_flash_lite_reports_context_window_from_fallbacks() -> None:
     assert row["context_window"] == 1_048_576
     assert resolve_model_context_window("gemini-3.1-flash-lite", "google_genai") == 1_048_576
     assert resolve_model_context_window("google/gemini-3.1-flash-lite", "google") == 1_048_576
-    assert resolve_model_context_window("gemini-3.1-flash-lite-preview", "google_genai") == 1_048_576
+    assert (
+        resolve_model_context_window("gemini-3.1-flash-lite-preview", "google_genai") == 1_048_576
+    )
 
 
 def test_agent_model_config_normalizes_legacy_non_google_provider() -> None:
@@ -105,12 +107,10 @@ def test_saved_catalog_rows_keep_live_default_and_capability_provenance() -> Non
                     },
                     "capabilities": {
                         "supports_generate_content": True,
-                        "supports_explicit_cache": False,
                         "supports_thinking_controls": False,
                     },
                     "capability_provenance": {
                         "supports_generate_content": "Live from Google",
-                        "supports_explicit_cache": "Live from Google",
                         "supports_thinking_controls": "Heuristic",
                     },
                 }
@@ -136,7 +136,6 @@ def test_runtime_profile_uses_saved_catalog_for_gemma_compatibility() -> None:
                     "id": "gemma-4-31b-it",
                     "capabilities": {
                         "supports_generate_content": True,
-                        "supports_explicit_cache": False,
                         "supports_thinking_controls": False,
                         "allowed_tuning_keys": [
                             "temperature",
@@ -147,7 +146,6 @@ def test_runtime_profile_uses_saved_catalog_for_gemma_compatibility() -> None:
                     },
                     "compatibility": {
                         "thinking_controls": "unsupported",
-                        "explicit_cache": "unsupported",
                         "allowed_tuning_keys": [
                             "temperature",
                             "top_p",
@@ -177,7 +175,6 @@ def test_model_selection_details_and_warnings_report_runtime_adjustments() -> No
         "orchestrator": {"provider": "google", "model": "gemma-4-31b-it"},
     }
     settings.thinking_enabled = True
-    settings.gemini_explicit_cache_enabled = True
     settings.provider_model_catalog_cache = {
         "google": {
             "models": [
@@ -186,7 +183,6 @@ def test_model_selection_details_and_warnings_report_runtime_adjustments() -> No
                     "label": "Gemma 4 31B IT",
                     "capabilities": {
                         "supports_generate_content": True,
-                        "supports_explicit_cache": False,
                         "supports_thinking_controls": False,
                         "allowed_tuning_keys": [
                             "temperature",
@@ -197,7 +193,6 @@ def test_model_selection_details_and_warnings_report_runtime_adjustments() -> No
                     },
                     "compatibility": {
                         "thinking_controls": "unsupported",
-                        "explicit_cache": "unsupported",
                         "allowed_tuning_keys": [
                             "temperature",
                             "top_p",
@@ -207,7 +202,6 @@ def test_model_selection_details_and_warnings_report_runtime_adjustments() -> No
                     },
                     "capability_provenance": {
                         "supports_thinking_controls": "Heuristic",
-                        "supports_explicit_cache": "Live from Google",
                     },
                 }
             ]

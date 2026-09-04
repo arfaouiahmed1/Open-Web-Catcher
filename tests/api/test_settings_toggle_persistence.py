@@ -16,14 +16,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 
 from src.api.provider_config import (
     ModelConfigRequest,
     apply_ui_config_update,
 )
 from src.utils.browser_runtime import normalize_browser_runtime
-from src.utils.config import Settings
+from src.utils.config import Settings, load_yaml_layer
 
 pytestmark = pytest.mark.unit
 
@@ -51,10 +50,7 @@ FULL_PATCH: dict[str, Any] = {
         "embedded": {"provider": "mistral", "model": "mistral-large-latest"},
         "orchestrator": {"provider": "anthropic", "model": "claude-sonnet-4-5"},
     },
-    "provider_cache_enabled": False,
-    "gemini_explicit_cache_enabled": False,
-    "gemini_explicit_cache_ttl_seconds": 3600,
-    "gemini_explicit_cache_refresh_lead_seconds": 300,
+    "prompt_cache_enabled": False,
     "tool_result_cache_enabled": False,
     "tool_result_cache_min_identical_observations": 5,
     "thinking_enabled": True,
@@ -131,10 +127,7 @@ def test_full_toggle_patch_persists_and_reads_back_identically(sandbox: Path) ->
     assert reloaded.agent_model == "gpt-4o-mini"
     # agent_model_config routing wins over the flat fields by design.
     assert reloaded.orchestrator_model == "claude-sonnet-4-5"
-    assert reloaded.provider_cache_enabled is False
-    assert reloaded.gemini_explicit_cache_enabled is False
-    assert reloaded.gemini_explicit_cache_ttl_seconds == 3600
-    assert reloaded.gemini_explicit_cache_refresh_lead_seconds == 300
+    assert reloaded.prompt_cache_enabled is False
     assert reloaded.tool_result_cache_enabled is False
     assert reloaded.tool_result_cache_min_identical_observations == 5
     assert reloaded.thinking_enabled is True
@@ -192,14 +185,9 @@ def test_full_toggle_patch_persists_and_reads_back_identically(sandbox: Path) ->
     # The values actually landed on disk in one of the YAML layers.
     on_disk: dict[str, Any] = {}
     for candidate in ("configs/settings.yaml", "data/settings.runtime.yaml"):
-        path = sandbox / candidate
-        if path.exists():
-            loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            if isinstance(loaded, dict):
-                on_disk.update(loaded)
+        on_disk.update(load_yaml_layer(sandbox / candidate))
     assert on_disk.get("max_parallel_hosting_pages") == 9
     assert on_disk.get("thinking_enabled") is True
-    assert on_disk.get("provider_cache_enabled") is False
 
 
 def test_browser_runtime_survives_json_round_trip() -> None:
@@ -217,10 +205,7 @@ def test_model_config_request_accepts_every_phase1_key() -> None:
         "gemini_temperature",
         "llm_tuning",
         "agent_model_config",
-        "provider_cache_enabled",
-        "gemini_explicit_cache_enabled",
-        "gemini_explicit_cache_ttl_seconds",
-        "gemini_explicit_cache_refresh_lead_seconds",
+        "prompt_cache_enabled",
         "tool_result_cache_enabled",
         "tool_result_cache_min_identical_observations",
         "thinking_enabled",

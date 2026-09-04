@@ -67,7 +67,6 @@ function resolveRunnableChromeExecutable() {
   // Mirror shared/browser.js EXECUTABLE_PATH precedence first.
   const configured = [
     process.env.PLAYWRIGHT_EXECUTABLE_PATH,
-    process.env.PUPPETEER_EXECUTABLE_PATH,
   ].filter(Boolean);
   if (configured.length) {
     const explicit = firstExistingFile(configured);
@@ -103,7 +102,7 @@ function resolveRunnableChromeExecutable() {
     : {
         executable: "",
         reason:
-          "no runnable Chrome executable found (PLAYWRIGHT_EXECUTABLE_PATH/PUPPETEER_EXECUTABLE_PATH unset and no well-known install present)",
+          "no runnable Chrome executable found (PLAYWRIGHT_EXECUTABLE_PATH unset and no well-known install present)",
       };
 }
 

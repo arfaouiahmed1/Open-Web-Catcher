@@ -122,7 +122,7 @@ function GraphNode({ data, selected }: { data: AgentRunGraphNode & { onSelect?: 
       <Handle type="target" position={Position.Left} style={{ width: 7, height: 7, border: 0, background: color }} />
       <div className="flex items-start gap-2">
         <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full" style={{ background: `color-mix(in oklch, ${color} 16%, transparent)`, color }}>
-          <Icon className={`h-3.5 w-3.5 ${data.status === "running" ? "animate-spin" : ""}`} />
+          <Icon className={`h-3.5 w-3.5 ${data.status === "running" ? "motion-safe:animate-spin" : ""}`} />
         </span>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color }}>{data.stageLabel}</div>

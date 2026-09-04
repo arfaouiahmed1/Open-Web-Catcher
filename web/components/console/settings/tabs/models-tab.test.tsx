@@ -18,10 +18,7 @@ const baseProps = {
     orchestrator: { provider: "google", model: "gemini-2.5-flash" },
   },
   fallbackTemperature: "0.7",
-  providerCacheEnabled: true,
-  geminiExplicitCacheEnabled: true,
-  geminiExplicitCacheTtl: "1800",
-  geminiExplicitCacheRefreshLead: "120",
+  promptCacheEnabled: true,
   toolCacheEnabled: true,
   toolCacheStable: "2",
   thinkingEnabled: false,
@@ -51,10 +48,7 @@ const baseProps = {
   onUpdateAgentProvider: vi.fn(),
   onInheritToggle: vi.fn(),
   onFallbackTemperature: vi.fn(),
-  onProviderCache: vi.fn(),
-  onGeminiExplicitCache: vi.fn(),
-  onGeminiExplicitCacheTtl: vi.fn(),
-  onGeminiExplicitCacheRefreshLead: vi.fn(),
+  onPromptCache: vi.fn(),
   onToolCache: vi.fn(),
   onToolCacheStable: vi.fn(),
   onThinking: vi.fn(),
@@ -81,7 +75,6 @@ describe("Settings ModelsTab (Phase 1 rebuild)", () => {
     expect(markup).toContain("Inherit");
     expect(markup).toContain("Runtime &amp; caching controls");
     expect(markup).toContain("Temperature");
-    expect(markup).toContain("Provider prompt caching");
     expect(markup).toContain("LiteLLM prompt caching");
     expect(markup).toContain("Live catalog &amp; pricing reference");
   });

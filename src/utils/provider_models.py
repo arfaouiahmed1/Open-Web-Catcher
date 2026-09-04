@@ -102,32 +102,129 @@ PROVIDER_METADATA: dict[str, dict[str, str]] = {
 # path unless a provider-specific adapter exists, so adding a LiteLLM provider
 # does not require another hard-coded UI/API branch.
 LITELLM_PROVIDER_IDS: tuple[str, ...] = (
-    "chatgpt", "openai_like", "xai", "zai", "bytez", "replicate", "huggingface", "portkey", "cohere_chat",
-    "together_ai", "datarobot", "vertex_ai", "vertex_ai_beta", "ai21", "baseten",
-    "azure_ai", "sagemaker", "sagemaker_chat", "sagemaker_nova", "vllm", "nlp_cloud",
-    "petals", "oobabooga", "ollama", "deepinfra", "gigachat", "nvidia_nim",
-    "cerebras", "volcengine", "codestral", "dashscope", "modelscope", "moonshot", "jina_ai",
-    "publicai", "morph", "lambda_ai", "inception", "sambanova", "maritalk", "voyage",
-    "cloudflare", "xinference", "fireworks_ai", "friendliai", "featherless_ai",
-    "watsonx", "predibase", "databricks", "compactifai", "docker_model_runner",
-    "custom", "litellm_proxy", "hosted_vllm", "tencent", "llamafile", "lm_studio",
-    "galadriel", "nebius", "infinity", "novita", "topaz", "sap", "snowflake",
-    "meta_llama", "nscale", "helicone", "hyperbolic", "recraft", "fal_ai", "stability",
-    "aiml", "cometapi", "oci", "vercel_ai_gateway", "manus", "wandb", "ovhcloud",
-    "scaleway", "lemonade", "amazon_nova", "minimax", "synthetic", "apertis",
-    "nano-gpt", "poe", "chutes", "xiaomi_mimo", "tensormesh", "opencode", "opencode-go",
-    "litellm", "ollama", "lmstudio", "vllm-local", "custom-openai",
+    "chatgpt",
+    "openai_like",
+    "xai",
+    "zai",
+    "bytez",
+    "replicate",
+    "huggingface",
+    "portkey",
+    "cohere_chat",
+    "together_ai",
+    "datarobot",
+    "vertex_ai",
+    "vertex_ai_beta",
+    "ai21",
+    "baseten",
+    "azure_ai",
+    "sagemaker",
+    "sagemaker_chat",
+    "sagemaker_nova",
+    "vllm",
+    "nlp_cloud",
+    "petals",
+    "oobabooga",
+    "ollama",
+    "deepinfra",
+    "gigachat",
+    "nvidia_nim",
+    "cerebras",
+    "volcengine",
+    "codestral",
+    "dashscope",
+    "modelscope",
+    "moonshot",
+    "jina_ai",
+    "publicai",
+    "morph",
+    "lambda_ai",
+    "inception",
+    "sambanova",
+    "maritalk",
+    "voyage",
+    "cloudflare",
+    "xinference",
+    "fireworks_ai",
+    "friendliai",
+    "featherless_ai",
+    "watsonx",
+    "predibase",
+    "databricks",
+    "compactifai",
+    "docker_model_runner",
+    "custom",
+    "litellm_proxy",
+    "hosted_vllm",
+    "tencent",
+    "llamafile",
+    "lm_studio",
+    "galadriel",
+    "nebius",
+    "infinity",
+    "novita",
+    "topaz",
+    "sap",
+    "snowflake",
+    "meta_llama",
+    "nscale",
+    "helicone",
+    "hyperbolic",
+    "recraft",
+    "fal_ai",
+    "stability",
+    "aiml",
+    "cometapi",
+    "oci",
+    "vercel_ai_gateway",
+    "manus",
+    "wandb",
+    "ovhcloud",
+    "scaleway",
+    "lemonade",
+    "amazon_nova",
+    "minimax",
+    "synthetic",
+    "apertis",
+    "nano-gpt",
+    "poe",
+    "chutes",
+    "xiaomi_mimo",
+    "tensormesh",
+    "opencode",
+    "opencode-go",
+    "litellm",
+    "ollama",
+    "lmstudio",
+    "vllm-local",
+    "custom-openai",
 )
 
 _PROVIDER_DISPLAY_NAMES: dict[str, str] = {
-    "chatgpt": "ChatGPT Subscription", "openai_like": "OpenAI-compatible", "zai": "Z.AI",
-    "vertex_ai": "Vertex AI", "vertex_ai_beta": "Vertex AI (Beta)", "together_ai": "Together AI",
-    "nvidia_nim": "NVIDIA NIM", "fireworks_ai": "Fireworks AI", "lm_studio": "LM Studio",
-    "lmstudio": "LM Studio", "litellm_proxy": "LiteLLM Proxy", "litellm": "LiteLLM Gateway",
-    "hosted_vllm": "Hosted vLLM", "vllm-local": "vLLM (local)", "custom-openai": "Custom OpenAI-compatible",
-    "opencode": "OpenCode Zen", "opencode-go": "OpenCode Go", "amazon_nova": "Amazon Nova",
-    "xiaomi_mimo": "Xiaomi MiMo", "nano-gpt": "NanoGPT", "vercel_ai_gateway": "Vercel AI Gateway",
-    "ovhcloud": "OVHcloud AI Endpoints", "nscale": "Nscale", "cloudflare": "Cloudflare AI",
+    "chatgpt": "ChatGPT Subscription",
+    "openai_like": "OpenAI-compatible",
+    "zai": "Z.AI",
+    "vertex_ai": "Vertex AI",
+    "vertex_ai_beta": "Vertex AI (Beta)",
+    "together_ai": "Together AI",
+    "nvidia_nim": "NVIDIA NIM",
+    "fireworks_ai": "Fireworks AI",
+    "lm_studio": "LM Studio",
+    "lmstudio": "LM Studio",
+    "litellm_proxy": "LiteLLM Proxy",
+    "litellm": "LiteLLM Gateway",
+    "hosted_vllm": "Hosted vLLM",
+    "vllm-local": "vLLM (local)",
+    "custom-openai": "Custom OpenAI-compatible",
+    "opencode": "OpenCode Zen",
+    "opencode-go": "OpenCode Go",
+    "amazon_nova": "Amazon Nova",
+    "xiaomi_mimo": "Xiaomi MiMo",
+    "nano-gpt": "NanoGPT",
+    "vercel_ai_gateway": "Vercel AI Gateway",
+    "ovhcloud": "OVHcloud AI Endpoints",
+    "nscale": "Nscale",
+    "cloudflare": "Cloudflare AI",
 }
 
 _PROVIDER_BASE_URLS: dict[str, str] = {
@@ -184,138 +281,591 @@ for _provider_id, _base_url in _PROVIDER_BASE_URLS.items():
 SUPPORTED_PROVIDERS: tuple[str, ...] = tuple(PROVIDER_METADATA)
 
 
-
 FALLBACK_MODELS: dict[str, list[dict[str, Any]]] = {
     "google": [
-        {"id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "description": "Most capable Gemini model.", "context_window": 1_048_576},
-        {"id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "description": "Balanced quality and speed.", "context_window": 1_048_576},
-        {"id": "gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash-Lite", "description": "Lower-cost Gemini option.", "context_window": 1_048_576},
-        {"id": "gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash-Lite", "description": "Lower-cost Gemini 3.1 option.", "context_window": 1_048_576},
-        {"id": "gemini-2.0-flash", "label": "Gemini 2.0 Flash", "description": "Fast Gemini model.", "context_window": 1_048_576},
+        {
+            "id": "gemini-2.5-pro",
+            "label": "Gemini 2.5 Pro",
+            "description": "Most capable Gemini model.",
+            "context_window": 1_048_576,
+        },
+        {
+            "id": "gemini-2.5-flash",
+            "label": "Gemini 2.5 Flash",
+            "description": "Balanced quality and speed.",
+            "context_window": 1_048_576,
+        },
+        {
+            "id": "gemini-2.5-flash-lite",
+            "label": "Gemini 2.5 Flash-Lite",
+            "description": "Lower-cost Gemini option.",
+            "context_window": 1_048_576,
+        },
+        {
+            "id": "gemini-3.1-flash-lite",
+            "label": "Gemini 3.1 Flash-Lite",
+            "description": "Lower-cost Gemini 3.1 option.",
+            "context_window": 1_048_576,
+        },
+        {
+            "id": "gemini-2.0-flash",
+            "label": "Gemini 2.0 Flash",
+            "description": "Fast Gemini model.",
+            "context_window": 1_048_576,
+        },
     ],
     "openai": [
-        {"id": "gpt-5", "label": "GPT-5", "description": "Most capable OpenAI model.", "context_window": 1_047_576},
-        {"id": "gpt-5-mini", "label": "GPT-5 Mini", "description": "Lower-cost GPT-5 option.", "context_window": 1_047_576},
-        {"id": "gpt-4.1", "label": "GPT-4.1", "description": "Balanced quality and speed.", "context_window": 1_047_576},
-        {"id": "gpt-4.1-mini", "label": "GPT-4.1 Mini", "description": "Lower-cost GPT-4.1 option.", "context_window": 1_047_576},
-        {"id": "gpt-4o-mini", "label": "GPT-4o Mini", "description": "Fast, economical option.", "context_window": 128_000},
+        {
+            "id": "gpt-5",
+            "label": "GPT-5",
+            "description": "Most capable OpenAI model.",
+            "context_window": 1_047_576,
+        },
+        {
+            "id": "gpt-5-mini",
+            "label": "GPT-5 Mini",
+            "description": "Lower-cost GPT-5 option.",
+            "context_window": 1_047_576,
+        },
+        {
+            "id": "gpt-4.1",
+            "label": "GPT-4.1",
+            "description": "Balanced quality and speed.",
+            "context_window": 1_047_576,
+        },
+        {
+            "id": "gpt-4.1-mini",
+            "label": "GPT-4.1 Mini",
+            "description": "Lower-cost GPT-4.1 option.",
+            "context_window": 1_047_576,
+        },
+        {
+            "id": "gpt-4o-mini",
+            "label": "GPT-4o Mini",
+            "description": "Fast, economical option.",
+            "context_window": 128_000,
+        },
     ],
     "anthropic": [
-        {"id": "claude-3-7-sonnet-latest", "label": "Claude 3.7 Sonnet", "description": "Hybrid reasoning + coding.", "context_window": 200_000},
-        {"id": "claude-sonnet-4", "label": "Claude Sonnet 4", "description": "Balanced quality and speed.", "context_window": 200_000},
-        {"id": "claude-opus-4", "label": "Claude Opus 4", "description": "Most capable Claude model.", "context_window": 200_000},
-        {"id": "claude-3-5-haiku-latest", "label": "Claude 3.5 Haiku", "description": "Fast, economical option.", "context_window": 200_000},
+        {
+            "id": "claude-3-7-sonnet-latest",
+            "label": "Claude 3.7 Sonnet",
+            "description": "Hybrid reasoning + coding.",
+            "context_window": 200_000,
+        },
+        {
+            "id": "claude-sonnet-4",
+            "label": "Claude Sonnet 4",
+            "description": "Balanced quality and speed.",
+            "context_window": 200_000,
+        },
+        {
+            "id": "claude-opus-4",
+            "label": "Claude Opus 4",
+            "description": "Most capable Claude model.",
+            "context_window": 200_000,
+        },
+        {
+            "id": "claude-3-5-haiku-latest",
+            "label": "Claude 3.5 Haiku",
+            "description": "Fast, economical option.",
+            "context_window": 200_000,
+        },
     ],
     "openrouter": [
-        {"id": "openai/gpt-4o-mini", "label": "GPT-4o Mini (OpenRouter)", "description": "Economical OpenRouter pick.", "context_window": 128_000},
-        {"id": "anthropic/claude-sonnet-4", "label": "Claude Sonnet 4 (OpenRouter)", "description": "Balanced OpenRouter pick.", "context_window": 200_000},
-        {"id": "google/gemini-2.5-flash", "label": "Gemini 2.5 Flash (OpenRouter)", "description": "Fast OpenRouter pick.", "context_window": 1_048_576},
+        {
+            "id": "openai/gpt-4o-mini",
+            "label": "GPT-4o Mini (OpenRouter)",
+            "description": "Economical OpenRouter pick.",
+            "context_window": 128_000,
+        },
+        {
+            "id": "anthropic/claude-sonnet-4",
+            "label": "Claude Sonnet 4 (OpenRouter)",
+            "description": "Balanced OpenRouter pick.",
+            "context_window": 200_000,
+        },
+        {
+            "id": "google/gemini-2.5-flash",
+            "label": "Gemini 2.5 Flash (OpenRouter)",
+            "description": "Fast OpenRouter pick.",
+            "context_window": 1_048_576,
+        },
     ],
     "nvidia": [
-        {"id": "meta/llama-3.3-70b-instruct", "label": "Llama 3.3 70B Instruct", "description": "General-purpose NIM model.", "context_window": 128_000},
-        {"id": "nvidia/llama-3.1-nemotron-70b-instruct", "label": "Llama 3.1 Nemotron 70B", "description": "NVIDIA-tuned instruct model.", "context_window": 128_000},
+        {
+            "id": "meta/llama-3.3-70b-instruct",
+            "label": "Llama 3.3 70B Instruct",
+            "description": "General-purpose NIM model.",
+            "context_window": 128_000,
+        },
+        {
+            "id": "nvidia/llama-3.1-nemotron-70b-instruct",
+            "label": "Llama 3.1 Nemotron 70B",
+            "description": "NVIDIA-tuned instruct model.",
+            "context_window": 128_000,
+        },
     ],
     "mistral": [
-        {"id": "mistral-large-latest", "label": "Mistral Large", "description": "Flagship Mistral reasoning.", "context_window": 128_000},
-        {"id": "mistral-small-latest", "label": "Mistral Small", "description": "Fast, cost-effective.", "context_window": 128_000},
-        {"id": "mistral-nemo", "label": "Mistral Nemo", "description": "Small, efficient.", "context_window": 128_000},
-        {"id": "codestral-latest", "label": "Codestral", "description": "Code generation.", "context_window": 256_000},
+        {
+            "id": "mistral-large-latest",
+            "label": "Mistral Large",
+            "description": "Flagship Mistral reasoning.",
+            "context_window": 128_000,
+        },
+        {
+            "id": "mistral-small-latest",
+            "label": "Mistral Small",
+            "description": "Fast, cost-effective.",
+            "context_window": 128_000,
+        },
+        {
+            "id": "mistral-nemo",
+            "label": "Mistral Nemo",
+            "description": "Small, efficient.",
+            "context_window": 128_000,
+        },
+        {
+            "id": "codestral-latest",
+            "label": "Codestral",
+            "description": "Code generation.",
+            "context_window": 256_000,
+        },
     ],
     "cohere": [
-        {"id": "command-r-plus", "label": "Command R+", "description": "Most capable Cohere.", "context_window": 128_000},
-        {"id": "command-r", "label": "Command R", "description": "Balanced.", "context_window": 128_000},
-        {"id": "command-r7b-12-2024", "label": "Command R7B", "description": "Small, fast.", "context_window": 128_000},
+        {
+            "id": "command-r-plus",
+            "label": "Command R+",
+            "description": "Most capable Cohere.",
+            "context_window": 128_000,
+        },
+        {
+            "id": "command-r",
+            "label": "Command R",
+            "description": "Balanced.",
+            "context_window": 128_000,
+        },
+        {
+            "id": "command-r7b-12-2024",
+            "label": "Command R7B",
+            "description": "Small, fast.",
+            "context_window": 128_000,
+        },
     ],
     "groq": [
-        {"id": "llama-3.3-70b-versatile", "label": "Llama 3.3 70B Versatile", "description": "Groq ultra-fast 70B.", "context_window": 128_000},
-        {"id": "llama-3.1-8b-instant", "label": "Llama 3.1 8B Instant", "description": "Fast 8B via LPU.", "context_window": 128_000},
-        {"id": "mixtral-8x7b-32768", "label": "Mixtral 8x7B", "description": "Mixture-of-experts.", "context_window": 32_768},
+        {
+            "id": "llama-3.3-70b-versatile",
+            "label": "Llama 3.3 70B Versatile",
+            "description": "Groq ultra-fast 70B.",
+            "context_window": 128_000,
+        },
+        {
+            "id": "llama-3.1-8b-instant",
+            "label": "Llama 3.1 8B Instant",
+            "description": "Fast 8B via LPU.",
+            "context_window": 128_000,
+        },
+        {
+            "id": "mixtral-8x7b-32768",
+            "label": "Mixtral 8x7B",
+            "description": "Mixture-of-experts.",
+            "context_window": 32_768,
+        },
     ],
     "together": [
-        {"id": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", "label": "Llama 3.1 70B Turbo", "description": "Together fast 70B.", "context_window": 128_000},
-        {"id": "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo", "label": "Llama 3.1 8B Turbo", "description": "Fast 8B.", "context_window": 128_000},
-        {"id": "mistralai/Mixtral-8x7B-Instruct-v0.1", "label": "Mixtral 8x7B", "description": "Open MoE.", "context_window": 32_768},
+        {
+            "id": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+            "label": "Llama 3.1 70B Turbo",
+            "description": "Together fast 70B.",
+            "context_window": 128_000,
+        },
+        {
+            "id": "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+            "label": "Llama 3.1 8B Turbo",
+            "description": "Fast 8B.",
+            "context_window": 128_000,
+        },
+        {
+            "id": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+            "label": "Mixtral 8x7B",
+            "description": "Open MoE.",
+            "context_window": 32_768,
+        },
     ],
     "fireworks": [
-        {"id": "accounts/fireworks/models/llama-v3p3-70b-instruct", "label": "Llama 3.3 70B", "description": "Fireworks hosted.", "context_window": 128_000},
-        {"id": "accounts/fireworks/models/mixtral-8x7b-instruct", "label": "Mixtral 8x7B", "description": "Fireworks MoE.", "context_window": 32_768},
+        {
+            "id": "accounts/fireworks/models/llama-v3p3-70b-instruct",
+            "label": "Llama 3.3 70B",
+            "description": "Fireworks hosted.",
+            "context_window": 128_000,
+        },
+        {
+            "id": "accounts/fireworks/models/mixtral-8x7b-instruct",
+            "label": "Mixtral 8x7B",
+            "description": "Fireworks MoE.",
+            "context_window": 32_768,
+        },
     ],
     "perplexity": [
-        {"id": "sonar-pro", "label": "Sonar Pro", "description": "Search-augmented large.", "context_window": 200_000},
-        {"id": "sonar", "label": "Sonar", "description": "Fast search-augmented.", "context_window": 128_000},
-        {"id": "sonar-reasoning", "label": "Sonar Reasoning", "description": "Reasoning + search.", "context_window": 128_000},
+        {
+            "id": "sonar-pro",
+            "label": "Sonar Pro",
+            "description": "Search-augmented large.",
+            "context_window": 200_000,
+        },
+        {
+            "id": "sonar",
+            "label": "Sonar",
+            "description": "Fast search-augmented.",
+            "context_window": 128_000,
+        },
+        {
+            "id": "sonar-reasoning",
+            "label": "Sonar Reasoning",
+            "description": "Reasoning + search.",
+            "context_window": 128_000,
+        },
     ],
     "deepseek": [
-        {"id": "deepseek-chat", "label": "DeepSeek Chat (V3)", "description": "General chat, 128k context.", "context_window": 128_000},
-        {"id": "deepseek-reasoner", "label": "DeepSeek Reasoner (R1)", "description": "Reasoning model, 128k context.", "context_window": 128_000},
-        {"id": "deepseek-coder", "label": "DeepSeek Coder", "description": "Code generation.", "context_window": 128_000},
+        {
+            "id": "deepseek-chat",
+            "label": "DeepSeek Chat (V3)",
+            "description": "General chat, 128k context.",
+            "context_window": 128_000,
+        },
+        {
+            "id": "deepseek-reasoner",
+            "label": "DeepSeek Reasoner (R1)",
+            "description": "Reasoning model, 128k context.",
+            "context_window": 128_000,
+        },
+        {
+            "id": "deepseek-coder",
+            "label": "DeepSeek Coder",
+            "description": "Code generation.",
+            "context_window": 128_000,
+        },
     ],
     "xai": [
-        {"id": "grok-3", "label": "Grok 3", "description": "Flagship Grok.", "context_window": 131_072},
-        {"id": "grok-3-mini", "label": "Grok 3 Mini", "description": "Fast Grok.", "context_window": 131_072},
-        {"id": "grok-2-vision-1212", "label": "Grok 2 Vision", "description": "Vision-capable.", "context_window": 32_768},
+        {
+            "id": "grok-3",
+            "label": "Grok 3",
+            "description": "Flagship Grok.",
+            "context_window": 131_072,
+        },
+        {
+            "id": "grok-3-mini",
+            "label": "Grok 3 Mini",
+            "description": "Fast Grok.",
+            "context_window": 131_072,
+        },
+        {
+            "id": "grok-2-vision-1212",
+            "label": "Grok 2 Vision",
+            "description": "Vision-capable.",
+            "context_window": 32_768,
+        },
     ],
     "upstage": [
-        {"id": "solar-pro", "label": "Solar Pro", "description": "Flagship Solar.", "context_window": 32_768},
-        {"id": "solar-mini", "label": "Solar Mini", "description": "Efficient Solar.", "context_window": 32_768},
+        {
+            "id": "solar-pro",
+            "label": "Solar Pro",
+            "description": "Flagship Solar.",
+            "context_window": 32_768,
+        },
+        {
+            "id": "solar-mini",
+            "label": "Solar Mini",
+            "description": "Efficient Solar.",
+            "context_window": 32_768,
+        },
     ],
     "azure": [
-        {"id": "gpt-4o", "label": "GPT-4o (Azure)", "description": "OpenAI via Azure.", "context_window": 128_000},
-        {"id": "gpt-4o-mini", "label": "GPT-4o Mini (Azure)", "description": "Fast Azure OpenAI.", "context_window": 128_000},
-        {"id": "gpt-35-turbo", "label": "GPT-3.5 Turbo (Azure)", "description": "Legacy Azure.", "context_window": 16_385},
+        {
+            "id": "gpt-4o",
+            "label": "GPT-4o (Azure)",
+            "description": "OpenAI via Azure.",
+            "context_window": 128_000,
+        },
+        {
+            "id": "gpt-4o-mini",
+            "label": "GPT-4o Mini (Azure)",
+            "description": "Fast Azure OpenAI.",
+            "context_window": 128_000,
+        },
+        {
+            "id": "gpt-35-turbo",
+            "label": "GPT-3.5 Turbo (Azure)",
+            "description": "Legacy Azure.",
+            "context_window": 16_385,
+        },
     ],
     "bedrock": [
-        {"id": "anthropic.claude-3-5-sonnet-20241022-v2:0", "label": "Claude 3.5 Sonnet (Bedrock)", "description": "Via AWS Bedrock.", "context_window": 200_000},
-        {"id": "meta.llama3-70b-instruct-v1:0", "label": "Llama 3 70B (Bedrock)", "description": "Via Bedrock.", "context_window": 8_192},
+        {
+            "id": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "label": "Claude 3.5 Sonnet (Bedrock)",
+            "description": "Via AWS Bedrock.",
+            "context_window": 200_000,
+        },
+        {
+            "id": "meta.llama3-70b-instruct-v1:0",
+            "label": "Llama 3 70B (Bedrock)",
+            "description": "Via Bedrock.",
+            "context_window": 8_192,
+        },
     ],
 }
 
 FALLBACK_MODELS.update(
     {
         "opencode": [
-            {"id": "gpt-5.6-luna", "label": "GPT 5.6 Luna", "description": "OpenCode Zen model.", "context_window": 200_000},
-            {"id": "gpt-5.6-sol", "label": "GPT 5.6 Sol", "description": "OpenCode Zen model.", "context_window": 200_000},
-            {"id": "gpt-5.5", "label": "GPT 5.5", "description": "OpenCode Zen model.", "context_window": 200_000},
-            {"id": "claude-opus-4-6", "label": "Claude Opus 4.6", "description": "OpenCode Zen model.", "context_window": 200_000},
-            {"id": "kimi-k2.5", "label": "Kimi K2.5", "description": "OpenCode Zen model.", "context_window": 128_000},
+            {
+                "id": "gpt-5.6-luna",
+                "label": "GPT 5.6 Luna",
+                "description": "OpenCode Zen model.",
+                "context_window": 200_000,
+            },
+            {
+                "id": "gpt-5.6-sol",
+                "label": "GPT 5.6 Sol",
+                "description": "OpenCode Zen model.",
+                "context_window": 200_000,
+            },
+            {
+                "id": "gpt-5.5",
+                "label": "GPT 5.5",
+                "description": "OpenCode Zen model.",
+                "context_window": 200_000,
+            },
+            {
+                "id": "claude-opus-4-6",
+                "label": "Claude Opus 4.6",
+                "description": "OpenCode Zen model.",
+                "context_window": 200_000,
+            },
+            {
+                "id": "kimi-k2.5",
+                "label": "Kimi K2.5",
+                "description": "OpenCode Zen model.",
+                "context_window": 128_000,
+            },
         ],
         "opencode-go": [
-            {"id": "glm-5.3-flash", "label": "GLM 5.3 Flash", "description": "OpenCode Go model.", "context_window": 128_000},
-            {"id": "glm-5.3", "label": "GLM 5.3", "description": "OpenCode Go model.", "context_window": 128_000},
-            {"id": "kimi-k3", "label": "Kimi K3", "description": "OpenCode Go model.", "context_window": 128_000},
-            {"id": "longcat-2.0", "label": "LongCat 2.0", "description": "OpenCode Go model.", "context_window": 128_000},
+            {
+                "id": "glm-5.3-flash",
+                "label": "GLM 5.3 Flash",
+                "description": "OpenCode Go model.",
+                "context_window": 128_000,
+            },
+            {
+                "id": "glm-5.3",
+                "label": "GLM 5.3",
+                "description": "OpenCode Go model.",
+                "context_window": 128_000,
+            },
+            {
+                "id": "kimi-k3",
+                "label": "Kimi K3",
+                "description": "OpenCode Go model.",
+                "context_window": 128_000,
+            },
+            {
+                "id": "longcat-2.0",
+                "label": "LongCat 2.0",
+                "description": "OpenCode Go model.",
+                "context_window": 128_000,
+            },
         ],
         "litellm": [
-            {"id": "gpt-4o", "label": "GPT-4o", "description": "Model exposed by your LiteLLM gateway.", "context_window": 128_000},
-            {"id": "claude-sonnet-4", "label": "Claude Sonnet 4", "description": "Model exposed by your LiteLLM gateway.", "context_window": 200_000},
-            {"id": "deepseek-chat", "label": "DeepSeek Chat", "description": "Model exposed by your LiteLLM gateway.", "context_window": 64_000},
+            {
+                "id": "gpt-4o",
+                "label": "GPT-4o",
+                "description": "Model exposed by your LiteLLM gateway.",
+                "context_window": 128_000,
+            },
+            {
+                "id": "claude-sonnet-4",
+                "label": "Claude Sonnet 4",
+                "description": "Model exposed by your LiteLLM gateway.",
+                "context_window": 200_000,
+            },
+            {
+                "id": "deepseek-chat",
+                "label": "DeepSeek Chat",
+                "description": "Model exposed by your LiteLLM gateway.",
+                "context_window": 64_000,
+            },
         ],
         "litellm_proxy": [
-            {"id": "gpt-4o", "label": "GPT-4o", "description": "Model exposed by your LiteLLM proxy.", "context_window": 128_000},
+            {
+                "id": "gpt-4o",
+                "label": "GPT-4o",
+                "description": "Model exposed by your LiteLLM proxy.",
+                "context_window": 128_000,
+            },
         ],
         "ollama": [
-            {"id": "llama3.2", "label": "Llama 3.2", "description": "Local Ollama model.", "context_window": 128_000},
-            {"id": "qwen2.5-coder", "label": "Qwen 2.5 Coder", "description": "Local Ollama model.", "context_window": 32_768},
+            {
+                "id": "llama3.2",
+                "label": "Llama 3.2",
+                "description": "Local Ollama model.",
+                "context_window": 128_000,
+            },
+            {
+                "id": "qwen2.5-coder",
+                "label": "Qwen 2.5 Coder",
+                "description": "Local Ollama model.",
+                "context_window": 32_768,
+            },
         ],
         "lmstudio": [
-            {"id": "local-model", "label": "Local model", "description": "Model served by LM Studio.", "context_window": 32_768},
+            {
+                "id": "local-model",
+                "label": "Local model",
+                "description": "Model served by LM Studio.",
+                "context_window": 32_768,
+            },
         ],
         "lm_studio": [
-            {"id": "local-model", "label": "Local model", "description": "Model served by LM Studio.", "context_window": 32_768},
+            {
+                "id": "local-model",
+                "label": "Local model",
+                "description": "Model served by LM Studio.",
+                "context_window": 32_768,
+            },
         ],
         "vllm": [
-            {"id": "local-model", "label": "Local model", "description": "Model served by vLLM.", "context_window": 32_768},
+            {
+                "id": "local-model",
+                "label": "Local model",
+                "description": "Model served by vLLM.",
+                "context_window": 32_768,
+            },
         ],
         "vllm-local": [
-            {"id": "local-model", "label": "Local model", "description": "Model served by vLLM.", "context_window": 32_768},
+            {
+                "id": "local-model",
+                "label": "Local model",
+                "description": "Model served by vLLM.",
+                "context_window": 32_768,
+            },
         ],
         "custom-openai": [
-            {"id": "your-model", "label": "Your model", "description": "Model from a custom OpenAI-compatible endpoint.", "context_window": 32_768},
+            {
+                "id": "your-model",
+                "label": "Your model",
+                "description": "Model from a custom OpenAI-compatible endpoint.",
+                "context_window": 32_768,
+            },
         ],
     }
 )
 
 GOOGLE_MODEL_TUNING_KEYS = ("temperature", "top_p", "top_k", "max_output_tokens")
+
+
+FALLBACK_MODELS.update(
+    {
+        "qwen": [
+            {
+                "id": "qwen-max",
+                "label": "Qwen Max",
+                "description": "Flagship Qwen model.",
+                "context_window": 131_072,
+            },
+            {
+                "id": "qwen-plus",
+                "label": "Qwen Plus",
+                "description": "Balanced Qwen model.",
+                "context_window": 131_072,
+            },
+        ],
+        "dashscope": [
+            {
+                "id": "qwen-max",
+                "label": "Qwen Max",
+                "description": "Alibaba DashScope flagship.",
+                "context_window": 131_072,
+            },
+            {
+                "id": "qwen-plus",
+                "label": "Qwen Plus",
+                "description": "Alibaba DashScope balanced model.",
+                "context_window": 131_072,
+            },
+        ],
+        "moonshot": [
+            {
+                "id": "moonshot-v1-128k",
+                "label": "Moonshot v1 128k",
+                "description": "Long-context Kimi model.",
+                "context_window": 128_000,
+            },
+            {
+                "id": "kimi-k2",
+                "label": "Kimi K2",
+                "description": "Kimi reasoning model.",
+                "context_window": 128_000,
+            },
+        ],
+        "zai": [
+            {
+                "id": "glm-4.5",
+                "label": "GLM 4.5",
+                "description": "Z.AI general model.",
+                "context_window": 128_000,
+            }
+        ],
+        "minimax": [
+            {
+                "id": "MiniMax-M1",
+                "label": "MiniMax M1",
+                "description": "MiniMax reasoning model.",
+                "context_window": 128_000,
+            }
+        ],
+        "cerebras": [
+            {
+                "id": "llama-3.3-70b",
+                "label": "Llama 3.3 70B",
+                "description": "Cerebras hosted model.",
+                "context_window": 128_000,
+            }
+        ],
+        "sambanova": [
+            {
+                "id": "Meta-Llama-3.3-70B-Instruct",
+                "label": "Llama 3.3 70B",
+                "description": "SambaNova hosted model.",
+                "context_window": 128_000,
+            }
+        ],
+        "nebius": [
+            {
+                "id": "meta-llama/Meta-Llama-3.1-70B-Instruct",
+                "label": "Llama 3.1 70B",
+                "description": "Nebius hosted model.",
+                "context_window": 128_000,
+            }
+        ],
+        "deepinfra": [
+            {
+                "id": "meta-llama/Meta-Llama-3.1-70B-Instruct",
+                "label": "Llama 3.1 70B",
+                "description": "DeepInfra hosted model.",
+                "context_window": 128_000,
+            }
+        ],
+        "vertex_ai": [
+            {
+                "id": "gemini-2.5-flash",
+                "label": "Gemini 2.5 Flash",
+                "description": "Vertex AI Gemini model.",
+                "context_window": 1_048_576,
+            }
+        ],
+    }
+)
 
 
 def _source_provenance_label(source: str) -> str:
@@ -350,11 +900,7 @@ def _normalize_google_model_row(
 
     action_rows = item.get("supported_generation_methods") or item.get("supportedActions") or []
     actions = sorted(
-        {
-            str(action or "").strip()
-            for action in action_rows
-            if str(action or "").strip()
-        }
+        {str(action or "").strip() for action in action_rows if str(action or "").strip()}
     )
     default_parameters = dict(item.get("default_parameters") or {})
     default_parameter_provenance = {
@@ -371,9 +917,15 @@ def _normalize_google_model_row(
         for key, value in dict(item.get("capability_provenance") or {}).items()
         if value
     }
-    capability_provenance.setdefault("supports_generate_content", _source_provenance_label(catalog_source))
-    capability_provenance.setdefault("supports_token_count", _source_provenance_label(catalog_source))
-    capability_provenance.setdefault("supports_explicit_cache", _source_provenance_label(catalog_source))
+    capability_provenance.setdefault(
+        "supports_generate_content", _source_provenance_label(catalog_source)
+    )
+    capability_provenance.setdefault(
+        "supports_token_count", _source_provenance_label(catalog_source)
+    )
+    capability_provenance.setdefault(
+        "supports_prompt_cache", _source_provenance_label(catalog_source)
+    )
     capability_provenance.setdefault("supports_batch", _source_provenance_label(catalog_source))
 
     if "supports_thinking_controls" not in capabilities:
@@ -381,7 +933,9 @@ def _normalize_google_model_row(
         capabilities["supports_thinking_controls"] = supports_thinking
         capability_provenance["supports_thinking_controls"] = provenance
     else:
-        capability_provenance.setdefault("supports_thinking_controls", _source_provenance_label(catalog_source))
+        capability_provenance.setdefault(
+            "supports_thinking_controls", _source_provenance_label(catalog_source)
+        )
 
     allowed_tuning_keys = [
         key for key in GOOGLE_MODEL_TUNING_KEYS if default_parameters.get(key) is not None
@@ -396,8 +950,8 @@ def _normalize_google_model_row(
     capabilities["thinking_status"] = (
         "supported" if capabilities.get("supports_thinking_controls") else "unsupported"
     )
-    capabilities["explicit_cache_status"] = (
-        "supported" if capabilities.get("supports_explicit_cache") else "unsupported"
+    capabilities["prompt_cache_status"] = (
+        "supported" if capabilities.get("supports_prompt_cache") else "unsupported"
     )
 
     return {
@@ -414,7 +968,7 @@ def _normalize_google_model_row(
         "defaults_source": defaults_source,
         "compatibility": {
             "thinking_controls": capabilities["thinking_status"],
-            "explicit_cache": capabilities["explicit_cache_status"],
+            "prompt_cache": capabilities["prompt_cache_status"],
             "allowed_tuning_keys": allowed_tuning_keys,
         },
     }
@@ -690,59 +1244,312 @@ PROVIDER_TUNING_FIELDS: dict[str, list[dict[str, Any]]] = {
         },
     ],
     "mistral": [
-        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
-        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
-        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+        {
+            "key": "temperature",
+            "label": "Temperature",
+            "type": "number",
+            "min": 0,
+            "max": 2,
+            "step": 0.1,
+            "description": "Controls randomness.",
+        },
+        {
+            "key": "top_p",
+            "label": "Top P",
+            "type": "number",
+            "min": 0,
+            "max": 1,
+            "step": 0.01,
+            "description": "Nucleus sampling.",
+        },
+        {
+            "key": "max_tokens",
+            "label": "Max Tokens",
+            "type": "integer",
+            "min": 1,
+            "step": 1,
+            "description": "Max output tokens.",
+        },
     ],
     "cohere": [
-        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
-        {"key": "p", "label": "P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
-        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+        {
+            "key": "temperature",
+            "label": "Temperature",
+            "type": "number",
+            "min": 0,
+            "max": 2,
+            "step": 0.1,
+            "description": "Controls randomness.",
+        },
+        {
+            "key": "p",
+            "label": "P",
+            "type": "number",
+            "min": 0,
+            "max": 1,
+            "step": 0.01,
+            "description": "Nucleus sampling.",
+        },
+        {
+            "key": "max_tokens",
+            "label": "Max Tokens",
+            "type": "integer",
+            "min": 1,
+            "step": 1,
+            "description": "Max output tokens.",
+        },
     ],
     "groq": [
-        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
-        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
-        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+        {
+            "key": "temperature",
+            "label": "Temperature",
+            "type": "number",
+            "min": 0,
+            "max": 2,
+            "step": 0.1,
+            "description": "Controls randomness.",
+        },
+        {
+            "key": "top_p",
+            "label": "Top P",
+            "type": "number",
+            "min": 0,
+            "max": 1,
+            "step": 0.01,
+            "description": "Nucleus sampling.",
+        },
+        {
+            "key": "max_tokens",
+            "label": "Max Tokens",
+            "type": "integer",
+            "min": 1,
+            "step": 1,
+            "description": "Max output tokens.",
+        },
     ],
     "together": [
-        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
-        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
-        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+        {
+            "key": "temperature",
+            "label": "Temperature",
+            "type": "number",
+            "min": 0,
+            "max": 2,
+            "step": 0.1,
+            "description": "Controls randomness.",
+        },
+        {
+            "key": "top_p",
+            "label": "Top P",
+            "type": "number",
+            "min": 0,
+            "max": 1,
+            "step": 0.01,
+            "description": "Nucleus sampling.",
+        },
+        {
+            "key": "max_tokens",
+            "label": "Max Tokens",
+            "type": "integer",
+            "min": 1,
+            "step": 1,
+            "description": "Max output tokens.",
+        },
     ],
     "fireworks": [
-        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
-        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
-        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+        {
+            "key": "temperature",
+            "label": "Temperature",
+            "type": "number",
+            "min": 0,
+            "max": 2,
+            "step": 0.1,
+            "description": "Controls randomness.",
+        },
+        {
+            "key": "top_p",
+            "label": "Top P",
+            "type": "number",
+            "min": 0,
+            "max": 1,
+            "step": 0.01,
+            "description": "Nucleus sampling.",
+        },
+        {
+            "key": "max_tokens",
+            "label": "Max Tokens",
+            "type": "integer",
+            "min": 1,
+            "step": 1,
+            "description": "Max output tokens.",
+        },
     ],
     "perplexity": [
-        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
-        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
-        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+        {
+            "key": "temperature",
+            "label": "Temperature",
+            "type": "number",
+            "min": 0,
+            "max": 2,
+            "step": 0.1,
+            "description": "Controls randomness.",
+        },
+        {
+            "key": "top_p",
+            "label": "Top P",
+            "type": "number",
+            "min": 0,
+            "max": 1,
+            "step": 0.01,
+            "description": "Nucleus sampling.",
+        },
+        {
+            "key": "max_tokens",
+            "label": "Max Tokens",
+            "type": "integer",
+            "min": 1,
+            "step": 1,
+            "description": "Max output tokens.",
+        },
     ],
     "deepseek": [
-        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
-        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
-        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+        {
+            "key": "temperature",
+            "label": "Temperature",
+            "type": "number",
+            "min": 0,
+            "max": 2,
+            "step": 0.1,
+            "description": "Controls randomness.",
+        },
+        {
+            "key": "top_p",
+            "label": "Top P",
+            "type": "number",
+            "min": 0,
+            "max": 1,
+            "step": 0.01,
+            "description": "Nucleus sampling.",
+        },
+        {
+            "key": "max_tokens",
+            "label": "Max Tokens",
+            "type": "integer",
+            "min": 1,
+            "step": 1,
+            "description": "Max output tokens.",
+        },
     ],
     "xai": [
-        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
-        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
-        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+        {
+            "key": "temperature",
+            "label": "Temperature",
+            "type": "number",
+            "min": 0,
+            "max": 2,
+            "step": 0.1,
+            "description": "Controls randomness.",
+        },
+        {
+            "key": "top_p",
+            "label": "Top P",
+            "type": "number",
+            "min": 0,
+            "max": 1,
+            "step": 0.01,
+            "description": "Nucleus sampling.",
+        },
+        {
+            "key": "max_tokens",
+            "label": "Max Tokens",
+            "type": "integer",
+            "min": 1,
+            "step": 1,
+            "description": "Max output tokens.",
+        },
     ],
     "upstage": [
-        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
-        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
-        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+        {
+            "key": "temperature",
+            "label": "Temperature",
+            "type": "number",
+            "min": 0,
+            "max": 2,
+            "step": 0.1,
+            "description": "Controls randomness.",
+        },
+        {
+            "key": "top_p",
+            "label": "Top P",
+            "type": "number",
+            "min": 0,
+            "max": 1,
+            "step": 0.01,
+            "description": "Nucleus sampling.",
+        },
+        {
+            "key": "max_tokens",
+            "label": "Max Tokens",
+            "type": "integer",
+            "min": 1,
+            "step": 1,
+            "description": "Max output tokens.",
+        },
     ],
     "azure": [
-        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
-        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
-        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+        {
+            "key": "temperature",
+            "label": "Temperature",
+            "type": "number",
+            "min": 0,
+            "max": 2,
+            "step": 0.1,
+            "description": "Controls randomness.",
+        },
+        {
+            "key": "top_p",
+            "label": "Top P",
+            "type": "number",
+            "min": 0,
+            "max": 1,
+            "step": 0.01,
+            "description": "Nucleus sampling.",
+        },
+        {
+            "key": "max_tokens",
+            "label": "Max Tokens",
+            "type": "integer",
+            "min": 1,
+            "step": 1,
+            "description": "Max output tokens.",
+        },
     ],
     "bedrock": [
-        {"key": "temperature", "label": "Temperature", "type": "number", "min": 0, "max": 2, "step": 0.1, "description": "Controls randomness."},
-        {"key": "top_p", "label": "Top P", "type": "number", "min": 0, "max": 1, "step": 0.01, "description": "Nucleus sampling."},
-        {"key": "max_tokens", "label": "Max Tokens", "type": "integer", "min": 1, "step": 1, "description": "Max output tokens."},
+        {
+            "key": "temperature",
+            "label": "Temperature",
+            "type": "number",
+            "min": 0,
+            "max": 2,
+            "step": 0.1,
+            "description": "Controls randomness.",
+        },
+        {
+            "key": "top_p",
+            "label": "Top P",
+            "type": "number",
+            "min": 0,
+            "max": 1,
+            "step": 0.01,
+            "description": "Nucleus sampling.",
+        },
+        {
+            "key": "max_tokens",
+            "label": "Max Tokens",
+            "type": "integer",
+            "min": 1,
+            "step": 1,
+            "description": "Max output tokens.",
+        },
     ],
 }
 
@@ -866,7 +1673,11 @@ def normalize_agent_model_config(settings: Settings, value: Any) -> dict[str, di
         agent_id = normalize_agent_id(raw_agent)
         if not agent_id or not isinstance(raw_config, dict):
             continue
-        provider = str(raw_config.get("provider") or normalized[agent_id]["provider"] or base_provider).strip().lower()
+        provider = (
+            str(raw_config.get("provider") or normalized[agent_id]["provider"] or base_provider)
+            .strip()
+            .lower()
+        )
         if provider in {"gemini", "google_genai"}:
             provider = "google"
         # Any catalog-supported provider is allowed per agent; unknown values
@@ -890,7 +1701,11 @@ def resolve_agent_model_selection(settings: Settings, agent_id: str) -> dict[str
         return config[normalized_agent]
 
     base_provider = (settings.llm_provider or "google").strip().lower() or "google"
-    base_model = str(settings.orchestrator_model if normalized_agent == "orchestrator" else settings.agent_model or "").strip()
+    base_model = str(
+        settings.orchestrator_model
+        if normalized_agent == "orchestrator"
+        else settings.agent_model or ""
+    ).strip()
     return {"provider": base_provider, "model": base_model}
 
 
@@ -952,7 +1767,7 @@ def resolve_model_runtime_profile(
         capabilities = dict(model_entry.get("capabilities") or {})
         compatibility = dict(model_entry.get("compatibility") or {})
         supports_reasoning = bool(capabilities.get("supports_thinking_controls", False))
-        supports_cache = bool(capabilities.get("supports_explicit_cache", False))
+        supports_cache = bool(capabilities.get("supports_prompt_cache", False))
         allowed_tuning = list(
             compatibility.get("allowed_tuning_keys")
             or capabilities.get("allowed_tuning_keys")
@@ -975,7 +1790,6 @@ def resolve_model_runtime_profile(
             "allowed_tuning_keys": allowed_tuning,
             "context_window": context_window,
             "supports_thinking_controls": supports_reasoning,
-            "supports_explicit_cache": supports_cache,
             "capabilities": capabilities,
             "compatibility": compatibility,
             "entry": model_entry,
@@ -1011,22 +1825,21 @@ def resolve_model_runtime_profile(
         "allowed_tuning_keys": default_tuning,
         "context_window": context_window,
         "supports_thinking_controls": supports_reasoning,
-        "supports_explicit_cache": False,
         "capabilities": {
             "supports_tools": True,
             "supports_vision": supports_vision,
             "supports_thinking_controls": supports_reasoning,
-            "supports_explicit_cache": False,
+            "supports_prompt_cache": supports_cache,
             "allowed_tuning_keys": default_tuning,
         },
         "compatibility": {
             "thinking_controls": "supported" if supports_reasoning else "unsupported",
-            "explicit_cache": "unsupported",
+            "prompt_cache": "supported" if supports_cache else "unsupported",
             "allowed_tuning_keys": default_tuning,
         },
         "capability_provenance": {
             "supports_thinking_controls": thinking_prov,
-            "supports_explicit_cache": "Heuristic",
+            "supports_prompt_cache": "Heuristic",
             "allowed_tuning_keys": "Heuristic",
         },
         "entry": None,
@@ -1041,6 +1854,7 @@ def resolve_google_model_runtime_profile(
 ) -> dict[str, Any]:
     """Backward-compatible wrapper for Google Gemini profiles."""
     return resolve_model_runtime_profile(settings, model_id=model_id, provider=provider)
+
 
 def collect_model_config_warnings(settings: Settings) -> list[dict[str, Any]]:
     warnings: list[dict[str, Any]] = []
@@ -1064,7 +1878,9 @@ def collect_model_config_warnings(settings: Settings) -> list[dict[str, Any]]:
                         f"{agent_id.capitalize()} uses {profile['model_id']}; "
                         "thinking controls will be ignored for this model."
                     ),
-                    "provenance": (profile.get("entry") or {}).get("capability_provenance", {}).get(
+                    "provenance": (profile.get("entry") or {})
+                    .get("capability_provenance", {})
+                    .get(
                         "supports_thinking_controls",
                         profile.get("capability_provenance", {}).get(
                             "supports_thinking_controls", "Heuristic"
@@ -1122,7 +1938,9 @@ def build_model_selection_details(settings: Settings) -> dict[str, Any]:
     return details
 
 
-def get_provider_model_catalog(settings: Settings, provider: str, max_models: int = 200) -> dict[str, Any]:
+def get_provider_model_catalog(
+    settings: Settings, provider: str, max_models: int = 200
+) -> dict[str, Any]:
     """Return provider metadata, live model options, and tuning schema."""
 
     normalized_provider = (provider or "").strip().lower()
@@ -1175,7 +1993,13 @@ def get_provider_model_catalog(settings: Settings, provider: str, max_models: in
         available = True
     except ProviderModelCatalogError as exc:
         models = saved_rows or fallback_rows
-        source = "saved_catalog" if saved_rows else "fallback_catalog" if fallback_rows else "unavailable"
+        source = (
+            "saved_catalog"
+            if saved_rows
+            else "fallback_catalog"
+            if fallback_rows
+            else "unavailable"
+        )
         error = str(exc)
         available = False
 
@@ -1193,7 +2017,9 @@ def get_provider_model_catalog(settings: Settings, provider: str, max_models: in
     }
 
 
-def fetch_provider_models(settings: Settings, provider: str, max_models: int = 200) -> list[dict[str, Any]]:
+def fetch_provider_models(
+    settings: Settings, provider: str, max_models: int = 200
+) -> list[dict[str, Any]]:
     """Fetch live model list for the selected provider."""
 
     normalized_provider = (provider or "").strip().lower()
@@ -1351,7 +2177,6 @@ def _extract_google_model_capabilities(model_id: str, actions: list[Any]) -> dic
     return {
         "supports_generate_content": "generateContent" in action_set,
         "supports_token_count": "countTokens" in action_set,
-        "supports_explicit_cache": "createCachedContent" in action_set,
         "supports_batch": "batchGenerateContent" in action_set,
         "supports_thinking_controls": supports_thinking_controls,
     }
@@ -1365,7 +2190,6 @@ def _extract_google_capability_provenance(model_id: str, actions: list[Any]) -> 
         if "generateContent" in action_set
         else "Live from Google",
         "supports_token_count": "Live from Google",
-        "supports_explicit_cache": "Live from Google",
         "supports_batch": "Live from Google",
         "supports_thinking_controls": thinking_provenance,
     }
@@ -1573,7 +2397,9 @@ def _request_json(
     provider: str,
 ) -> dict[str, Any]:
     try:
-        response = httpx.get(url, headers=headers, params=params, timeout=max(5, int(timeout_seconds or 15)))
+        response = httpx.get(
+            url, headers=headers, params=params, timeout=max(5, int(timeout_seconds or 15))
+        )
         response.raise_for_status()
     except httpx.HTTPError as exc:
         raise ProviderModelCatalogError(f"{provider} model catalog request failed: {exc}") from exc
@@ -1584,7 +2410,9 @@ def _request_json(
         raise ProviderModelCatalogError(f"{provider} model catalog returned invalid JSON.") from exc
 
     if not isinstance(payload, dict):
-        raise ProviderModelCatalogError(f"{provider} model catalog response format was not recognized.")
+        raise ProviderModelCatalogError(
+            f"{provider} model catalog response format was not recognized."
+        )
     return payload
 
 
@@ -1596,9 +2424,9 @@ def provider_base_url(settings: Settings, provider: str) -> str:
         configured = custom_urls.get(normalized_provider)
         if isinstance(configured, str) and configured.strip():
             return configured.strip()
-    if normalized_provider == "azure" and getattr(settings, "azure_api_base", ""):
+    if normalized_provider == "azure" and settings.azure_api_base:
         return str(settings.azure_api_base).strip()
-    if normalized_provider in {"nvidia", "nvidia_nim"} and getattr(settings, "nvidia_base_url", ""):
+    if normalized_provider in {"nvidia", "nvidia_nim"} and settings.nvidia_base_url:
         return str(settings.nvidia_base_url).strip()
     return str(_PROVIDER_BASE_URLS.get(normalized_provider, "") or "").strip()
 

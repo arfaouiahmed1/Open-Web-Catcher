@@ -1041,39 +1041,6 @@
             ],
             "title": "Fireworks Api Key"
           },
-          "gemini_explicit_cache_enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Gemini Explicit Cache Enabled"
-          },
-          "gemini_explicit_cache_refresh_lead_seconds": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Gemini Explicit Cache Refresh Lead Seconds"
-          },
-          "gemini_explicit_cache_ttl_seconds": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Gemini Explicit Cache Ttl Seconds"
-          },
           "gemini_temperature": {
             "anyOf": [
               {
@@ -1240,6 +1207,17 @@
             ],
             "title": "Perplexity Api Key"
           },
+          "prompt_cache_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Cache Enabled"
+          },
           "provider_api_keys": {
             "anyOf": [
               {
@@ -1267,17 +1245,6 @@
               }
             ],
             "title": "Provider Base Urls"
-          },
-          "provider_cache_enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Provider Cache Enabled"
           },
           "retention_days_agent_outputs": {
             "anyOf": [

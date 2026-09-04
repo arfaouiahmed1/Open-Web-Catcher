@@ -53,7 +53,7 @@ const Bar = memo(function Bar({ label, value, total, color }: { label: string; v
         </span>
       </div>
       <div className="h-2 overflow-hidden rounded-full" style={{ background: "var(--line)" }}>
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
+        <div className="h-full rounded-full transition-[width] motion-reduce:transition-none" style={{ width: `${pct}%`, background: color }} />
       </div>
     </div>
   );

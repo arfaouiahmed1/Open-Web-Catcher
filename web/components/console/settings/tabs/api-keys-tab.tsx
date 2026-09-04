@@ -100,14 +100,16 @@ export function ApiKeysTab(props: ApiKeysTabProps): React.JSX.Element {
             value={providerKeyQuery}
             onChange={(e) => props.onQuery(e.target.value)}
             placeholder="Search providers, env, features…"
-            className="h-8 w-full rounded-[6px] border border-border bg-muted/20 pl-9 pr-3 text-[13px] text-foreground outline-none placeholder:text-muted-foreground/70 focus:bg-muted/40"
+            aria-label="Search providers, env, features"
+            className="h-10 w-full rounded-xl border border-border/70 bg-card pl-9 pr-4 text-[13px] outline-none placeholder:text-muted-foreground/70 focus-visible:ring-1 focus-visible:ring-ring"
           />
         </div>
-        <div className="flex flex-wrap items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Provider key status filter">
           {STATUS_FILTERS.map((st) => (
             <button
               key={st}
               onClick={() => props.onStatus(st)}
+              aria-pressed={providerKeyStatus === st}
               className={[
                 "inline-flex h-6 items-center rounded-full border px-2.5 text-[12px] font-[500] transition-colors",
                 providerKeyStatus === st
@@ -118,11 +120,13 @@ export function ApiKeysTab(props: ApiKeysTabProps): React.JSX.Element {
               {st}
             </button>
           ))}
-          <span className="mx-1 h-4 w-px bg-muted/60" />
+          <span className="mx-1 h-4 w-px bg-muted/60" aria-hidden="true" />
           {CATEGORY_FILTERS.map((cat) => (
             <button
               key={cat}
               onClick={() => props.onCategory(cat)}
+              aria-pressed={providerKeyCategory === cat}
+              aria-label={`Filter providers by category ${cat}`}
               className={[
                 "inline-flex h-6 items-center rounded-full border px-2.5 text-[12px] font-[500] transition-colors",
                 providerKeyCategory === cat
@@ -269,10 +273,11 @@ export function ApiKeysTab(props: ApiKeysTabProps): React.JSX.Element {
                             value={isEdited ? (edited as string) : ""}
                             onChange={(e) => props.onKeyEdit(item.id, e.target.value)}
                             placeholder={hasKey ? "•••••••••••••••• — paste new key to replace" : "Paste " + item.keyEnv}
-                            type={show ? "text" : "password"}
-                            className="h-8 w-full rounded-[6px] border border-border bg-muted/20 px-3 font-mono text-[12px] text-foreground outline-none placeholder:text-muted-foreground/70 focus:bg-muted/40"
-                            spellCheck={false}
+                            aria-label={`API key for ${item.name}`}
+                            type="password"
                             autoComplete="off"
+                            spellCheck={false}
+                            className="h-9 w-full rounded-lg border border-border/70 bg-background px-3 font-mono text-[12px] outline-none placeholder:text-muted-foreground/60 focus-visible:ring-1 focus-visible:ring-ring"
                           />
                         </div>
                       </div>
@@ -284,9 +289,10 @@ export function ApiKeysTab(props: ApiKeysTabProps): React.JSX.Element {
                           value={effectiveBaseUrl}
                           onChange={(e) => props.onBaseUrlEdit(item.id, e.target.value)}
                           placeholder={defaultBaseUrl || "https://your-endpoint.example.com/v1"}
-                          className="h-7 w-full rounded-[6px] border border-border/60 bg-transparent pl-12 pr-3 font-mono text-[11px] text-muted-foreground outline-none placeholder:text-muted-foreground/70"
-                          spellCheck={false}
+                          aria-label={`Base URL for ${item.name}`}
                           autoComplete="off"
+                          spellCheck={false}
+                          className="h-9 w-full rounded-lg border border-border/70 bg-background px-3 font-mono text-[12px] outline-none placeholder:text-muted-foreground/50 focus-visible:ring-1 focus-visible:ring-ring"
                         />
                       </div>
                       <p className="text-[11px] leading-[1.4] text-muted-foreground/70">

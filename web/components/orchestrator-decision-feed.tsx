@@ -93,7 +93,7 @@ const DecisionCard = memo(function DecisionCard({ event, isNew = false }: { even
   const reason = decisionReason(event);
 
   return (
-    <div className={cn("group relative flex gap-3 rounded-lg border border-border/60 bg-card px-3.5 py-3 transition-all", isNew && "animate-agent-arrive")} style={{ borderLeftWidth: 2, borderLeftColor: color }}>
+    <div className={cn("group relative flex gap-3 rounded-lg border border-border/60 bg-card px-3.5 py-3 transition-[border-color,background-color,box-shadow] motion-reduce:transition-none", isNew && "animate-agent-arrive")} style={{ borderLeftWidth: 2, borderLeftColor: color }}>
       <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full" style={{ background: `color-mix(in oklch, ${color} 15%, transparent)`, color }}>
         <Icon className="h-3.5 w-3.5" />
       </span>

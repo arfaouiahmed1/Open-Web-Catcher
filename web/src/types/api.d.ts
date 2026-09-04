@@ -1871,12 +1871,6 @@ export interface components {
             deepseek_api_key?: string | null;
             /** Fireworks Api Key */
             fireworks_api_key?: string | null;
-            /** Gemini Explicit Cache Enabled */
-            gemini_explicit_cache_enabled?: boolean | null;
-            /** Gemini Explicit Cache Refresh Lead Seconds */
-            gemini_explicit_cache_refresh_lead_seconds?: number | null;
-            /** Gemini Explicit Cache Ttl Seconds */
-            gemini_explicit_cache_ttl_seconds?: number | null;
             /** Gemini Temperature */
             gemini_temperature?: number | null;
             /** Google Api Key */
@@ -1909,6 +1903,8 @@ export interface components {
             payload_cap_bytes?: number | null;
             /** Perplexity Api Key */
             perplexity_api_key?: string | null;
+            /** Prompt Cache Enabled */
+            prompt_cache_enabled?: boolean | null;
             /** Provider Api Keys */
             provider_api_keys?: {
                 [key: string]: string;
@@ -1917,8 +1913,6 @@ export interface components {
             provider_base_urls?: {
                 [key: string]: string;
             } | null;
-            /** Provider Cache Enabled */
-            provider_cache_enabled?: boolean | null;
             /** Retention Days Agent Outputs */
             retention_days_agent_outputs?: number | null;
             /** Retention Days Llm Calls */

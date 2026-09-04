@@ -41,7 +41,7 @@ function trimText(value: any, max = 180) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (!text) return "";
   if (text.length <= max) return text;
-  return `${text.slice(0, Math.max(0, max - 1)).trim()}...`;
+  return `${text.slice(0, Math.max(0, max - 1)).trim()}…`;
 }
 
 function safeLower(value: any) {

@@ -185,115 +185,6 @@ const AGENT_SLOTS = [
   { id: "orchestrator", label: "Orchestrator", note: "Pipeline default" },
 ];
 
-const MCP_TOOLS_BY_PROFILE = {
-  classification: [
-    "navigate",
-    "inspect",
-    "interact",
-    "screenshot",
-    "memory_lookup",
-    "memory_update",
-    "open_url",
-    "get_page_context",
-    "get_frame_tree",
-    "query_elements",
-    "get_element_detail",
-    "scroll_page",
-    "go_back",
-    "wait_for_page_state",
-  ],
-  landing: [
-    "navigate",
-    "inspect_landing",
-    "interact",
-    "screenshot",
-    "memory_lookup",
-    "memory_update",
-    "get_page_context",
-    "query_elements",
-    "get_element_detail",
-    "get_frame_tree",
-    "open_url",
-    "go_back",
-    "scroll_page",
-    "scroll_to_element",
-    "wait_for_page_state",
-    "click_element",
-    "click_css",
-    "click_text",
-    "click_xpath",
-    "click_checkbox",
-    "click_radio",
-    "type_into",
-    "select_option",
-    "play_media",
-    "swipe_region",
-    "click_coordinates",
-  ],
-  hosting: [
-    "navigate",
-    "inspect_hosting",
-    "interact",
-    "screenshot",
-    "memory_lookup",
-    "memory_update",
-    "harvest",
-    "get_page_context",
-    "query_elements",
-    "get_element_detail",
-    "get_frame_tree",
-    "open_url",
-    "go_back",
-    "scroll_page",
-    "scroll_to_element",
-    "wait_for_page_state",
-    "click_element",
-    "click_css",
-    "click_text",
-    "click_xpath",
-    "click_checkbox",
-    "click_radio",
-    "type_into",
-    "select_option",
-    "play_media",
-    "swipe_region",
-    "click_coordinates",
-    "get_media_state",
-    "capture_streams",
-  ],
-  embedded: [
-    "navigate",
-    "inspect_embedded",
-    "interact",
-    "screenshot",
-    "memory_lookup",
-    "memory_update",
-    "harvest",
-    "get_page_context",
-    "query_elements",
-    "get_element_detail",
-    "get_frame_tree",
-    "open_url",
-    "go_back",
-    "scroll_page",
-    "scroll_to_element",
-    "wait_for_page_state",
-    "click_element",
-    "click_css",
-    "click_text",
-    "click_xpath",
-    "click_checkbox",
-    "click_radio",
-    "type_into",
-    "select_option",
-    "play_media",
-    "swipe_region",
-    "click_coordinates",
-    "get_media_state",
-    "capture_streams",
-  ],
-};
-
 
 
 const BROWSER_OPTIONS = [
@@ -543,45 +434,6 @@ function normalizeBrowserRuntime(value: any) {
   return base;
 }
 
-function normalizeDisabledToolsByBrowserProfile(value: any, legacy = {}) {
-  const next = Object.fromEntries(
-    BROWSER_OPTIONS.map(({  id  }: any) => [
-      id,
-      Object.fromEntries(
-        Object.keys(MCP_TOOLS_BY_PROFILE).map((profile) => [
-          profile,
-          // @ts-expect-error -- strict migration
-          normalizeStringList(legacy[profile] || []),
-        ]),
-      ),
-    ]),
-  );
-
-  if (!value || typeof value !== "object") return next;
-
-  Object.keys(MCP_TOOLS_BY_PROFILE).forEach((profile) => {
-    if (Array.isArray(value[profile])) {
-      BROWSER_OPTIONS.forEach(({  id  }: any) => {
-        next[id][profile] = normalizeStringList(value[profile]);
-      });
-    }
-  });
-
-  BROWSER_OPTIONS.forEach(({  id  }: any) => {
-    const browserRows = value[id];
-    if (!browserRows || typeof browserRows !== "object") return;
-    Object.keys(MCP_TOOLS_BY_PROFILE).forEach((profile) => {
-      if (Array.isArray(browserRows[profile])) {
-        next[id][profile] = normalizeStringList(browserRows[profile]);
-      }
-    });
-  });
-
-  return next;
-}
-
-
-
 
 
 function getModelCapabilities(modelMeta: any) {
@@ -599,7 +451,6 @@ function getModelCapabilities(modelMeta: any) {
 
 function buildCompatibilityWarnings({ 
   thinkingEnabled,
-  explicitCacheEnabled,
   selections,
   catalogModels,
  }: any) {
@@ -842,12 +693,7 @@ export function SettingsPage() {
   const [agentModelConfig, setAgentModelConfig] = useState(
     normalizeAgentModelConfig(null),
   );
-  const [providerCacheEnabled, setProviderCacheEnabled] = useState(true);
-  const [geminiExplicitCacheEnabled, setGeminiExplicitCacheEnabled] =
-    useState(true);
-  const [geminiExplicitCacheTtl, setGeminiExplicitCacheTtl] = useState("1800");
-  const [geminiExplicitCacheRefreshLead, setGeminiExplicitCacheRefreshLead] =
-    useState("120");
+  const [promptCacheEnabled, setPromptCacheEnabled] = useState(true);
   const [toolCacheEnabled, setToolCacheEnabled] = useState(true);
   const [toolCacheStable, setToolCacheStable] = useState("2");
   const [thinkingEnabled, setThinkingEnabled] = useState(false);
@@ -856,10 +702,6 @@ export function SettingsPage() {
   const [browserEngine, setBrowserEngine] = useState("playwright");
   const [browserSettingsTab, setBrowserSettingsTab] = useState("playwright");
   const [browserRuntime, setBrowserRuntime] = useState(cloneBrowserRuntime());
-  const [disabledToolsByBrowserProfile, setDisabledToolsByBrowserProfile] =
-    useState(normalizeDisabledToolsByBrowserProfile({}));
-  const [activeMcpBrowserTab, setActiveMcpBrowserTab] = useState("playwright");
-  const [activeProfileTab, setActiveProfileTab] = useState("classification");
   const [activeModelWorkspaceView, setActiveModelWorkspaceView] =
     useState("assignments");
   const [mcpToolQuery, setMcpToolQuery] = useState("");
@@ -895,9 +737,6 @@ export function SettingsPage() {
     browserRuntime[browserSettingsTab] ||
     // @ts-expect-error -- strict migration
     DEFAULT_BROWSER_RUNTIME[browserSettingsTab];
-  const activeMcpDisabledTools =
-    disabledToolsByBrowserProfile[activeMcpBrowserTab]?.[activeProfileTab] ||
-    [];
   const browserRuntimeSyncStatus = config?.browser_runtime_sync_status || null;
   const safeStreamingDifferences = useMemo(() => {
     const diffs = [];
@@ -909,10 +748,6 @@ export function SettingsPage() {
       diffs.push("media CORS diagnostics patch enabled");
     return diffs;
   }, [activeBrowserRuntime, browserSettingsTab]);
-  const enabledToolCount =
-    // @ts-expect-error -- strict migration
-    (MCP_TOOLS_BY_PROFILE[activeProfileTab] || []).length -
-    activeMcpDisabledTools.length;
   const modelSelectionDetails = useMemo(
     () => config?.model_selection_details || {},
     [config?.model_selection_details],
@@ -1004,11 +839,10 @@ export function SettingsPage() {
     () =>
       buildCompatibilityWarnings({
         thinkingEnabled,
-        explicitCacheEnabled: geminiExplicitCacheEnabled,
         selections: assignmentRows,
         catalogModels,
       }),
-    [assignmentRows, catalogModels, geminiExplicitCacheEnabled, thinkingEnabled],
+    [assignmentRows, catalogModels, thinkingEnabled],
   );
   const mergedModelWarnings = useMemo(() => {
     // @ts-expect-error -- strict migration
@@ -1045,10 +879,7 @@ export function SettingsPage() {
         fallbackTemperature,
         llmTuning,
         agentModelConfig,
-        providerCacheEnabled,
-        geminiExplicitCacheEnabled,
-        geminiExplicitCacheTtl,
-        geminiExplicitCacheRefreshLead,
+        promptCacheEnabled,
         toolCacheEnabled,
         toolCacheStable,
         thinkingEnabled,
@@ -1056,21 +887,16 @@ export function SettingsPage() {
         maxParallelHostingPages,
         browserEngine,
         browserRuntime,
-        disabledToolsByBrowserProfile,
       }),
     [
       agentModelConfig,
       browserEngine,
       browserRuntime,
-      disabledToolsByBrowserProfile,
       fallbackTemperature,
-      geminiExplicitCacheEnabled,
-      geminiExplicitCacheRefreshLead,
-      geminiExplicitCacheTtl,
       llmTuning,
       maxParallelHostingPages,
       provider,
-      providerCacheEnabled,
+      promptCacheEnabled,
       thinkingBudgetTokens,
       thinkingEnabled,
       toolCacheEnabled,
@@ -1182,16 +1008,7 @@ export function SettingsPage() {
     setFallbackTemperature(String(payload.gemini_temperature ?? "0"));
     setLlmTuning(normalizeTuning(payload.llm_tuning));
     setAgentModelConfig(nextAgentConfig);
-    setProviderCacheEnabled(Boolean(payload.provider_cache_enabled ?? true));
-    setGeminiExplicitCacheEnabled(
-      Boolean(payload.gemini_explicit_cache_enabled ?? true),
-    );
-    setGeminiExplicitCacheTtl(
-      String(payload.gemini_explicit_cache_ttl_seconds ?? 1800),
-    );
-    setGeminiExplicitCacheRefreshLead(
-      String(payload.gemini_explicit_cache_refresh_lead_seconds ?? 120),
-    );
+    setPromptCacheEnabled(Boolean(payload.prompt_cache_enabled ?? true));
     setToolCacheEnabled(Boolean(payload.tool_result_cache_enabled ?? true));
     setToolCacheStable(
       String(payload.tool_result_cache_min_identical_observations ?? 2),
@@ -1202,11 +1019,6 @@ export function SettingsPage() {
     setBrowserEngine(payload.browser_engine || "playwright");
     setBrowserSettingsTab(payload.browser_engine || "playwright");
     setBrowserRuntime(normalizeBrowserRuntime(payload.browser_runtime));
-    setDisabledToolsByBrowserProfile(
-      normalizeDisabledToolsByBrowserProfile({}, {}),
-    );
-    setModelConfigWarnings(payload.model_config_warnings || []);
-    setActiveMcpBrowserTab(payload.browser_engine || "playwright");
     setKeyEdits({ ...EMPTY_PROVIDER_KEYS });
     setBaseUrlEdits({});
     setSavedTab("");
@@ -1279,22 +1091,6 @@ export function SettingsPage() {
     updateBrowserRuntime(browserId, key, normalizeStringList(value));
   }
 
-  function activeBrowserTools() {
-    return (
-      disabledToolsByBrowserProfile[activeMcpBrowserTab]?.[activeProfileTab] ||
-      []
-    );
-  }
-
-  function setDisabledToolsForCurrentBrowserProfile(nextTools: any) {
-    setDisabledToolsByBrowserProfile((current: any) => ({
-      ...current,
-      [activeMcpBrowserTab]: {
-        ...current[activeMcpBrowserTab],
-        [activeProfileTab]: normalizeStringList(nextTools),
-      },
-    }));
-  }
 
   function buildSavePayloadForTab(tabId: any) {
     switch (tabId) {
@@ -1306,13 +1102,7 @@ export function SettingsPage() {
           gemini_temperature: serverDraft.gemini_temperature,
           llm_tuning: serverDraft.llm_tuning,
           agent_model_config: serverDraft.agent_model_config,
-          provider_cache_enabled: serverDraft.provider_cache_enabled,
-          gemini_explicit_cache_enabled:
-            serverDraft.gemini_explicit_cache_enabled,
-          gemini_explicit_cache_ttl_seconds:
-            serverDraft.gemini_explicit_cache_ttl_seconds,
-          gemini_explicit_cache_refresh_lead_seconds:
-            serverDraft.gemini_explicit_cache_refresh_lead_seconds,
+          prompt_cache_enabled: serverDraft.prompt_cache_enabled,
           tool_result_cache_enabled: serverDraft.tool_result_cache_enabled,
           tool_result_cache_min_identical_observations:
             serverDraft.tool_result_cache_min_identical_observations,
@@ -1593,10 +1383,7 @@ export function SettingsPage() {
               providers={PROVIDERS}
               agentModelConfig={agentModelConfig}
               fallbackTemperature={fallbackTemperature}
-              providerCacheEnabled={providerCacheEnabled}
-              geminiExplicitCacheEnabled={geminiExplicitCacheEnabled}
-              geminiExplicitCacheTtl={geminiExplicitCacheTtl}
-              geminiExplicitCacheRefreshLead={geminiExplicitCacheRefreshLead}
+              promptCacheEnabled={promptCacheEnabled}
               toolCacheEnabled={toolCacheEnabled}
               toolCacheStable={toolCacheStable}
               thinkingEnabled={thinkingEnabled}
@@ -1624,10 +1411,7 @@ export function SettingsPage() {
               onUpdateAgentProvider={handleAgentSlotProvider}
               onInheritToggle={handleAgentInheritToggle}
               onFallbackTemperature={setFallbackTemperature}
-              onProviderCache={setProviderCacheEnabled}
-              onGeminiExplicitCache={setGeminiExplicitCacheEnabled}
-              onGeminiExplicitCacheTtl={setGeminiExplicitCacheTtl}
-              onGeminiExplicitCacheRefreshLead={setGeminiExplicitCacheRefreshLead}
+              onPromptCache={setPromptCacheEnabled}
               onToolCache={setToolCacheEnabled}
               onToolCacheStable={setToolCacheStable}
               onThinking={setThinkingEnabled}

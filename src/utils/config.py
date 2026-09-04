@@ -37,7 +37,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 from pydantic import AliasChoices, Field, TypeAdapter, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -91,9 +91,7 @@ def load_settings_layers(
     }
     runtime_raw = load_yaml_layer(runtime_yaml_path)
     runtime = {
-        key: value
-        for key, value in runtime_raw.items()
-        if not is_blank_setting_value(value)
+        key: value for key, value in runtime_raw.items() if not is_blank_setting_value(value)
     }
     merged = {**base, **runtime}
     return {"base_yaml": base, "runtime_yaml": runtime, "merged": merged}
@@ -293,7 +291,9 @@ def build_browser_runtime_sync_status(
     runtime_yaml_path: str | Path = "data/settings.runtime.yaml",
 ) -> dict:
     bridge_path = Path(runtime_json_path)
-    source_path = _resolve_runtime_source_path(yaml_path=yaml_path, runtime_yaml_path=runtime_yaml_path)
+    source_path = _resolve_runtime_source_path(
+        yaml_path=yaml_path, runtime_yaml_path=runtime_yaml_path
+    )
     bridge_exists = bridge_path.exists()
     source_exists = source_path.exists()
     bridge_payload = {}
@@ -304,7 +304,9 @@ def build_browser_runtime_sync_status(
         except (OSError, json.JSONDecodeError):
             bridge_payload = {}
 
-    runtime_sync = bridge_payload.get("runtime_sync", {}) if isinstance(bridge_payload, dict) else {}
+    runtime_sync = (
+        bridge_payload.get("runtime_sync", {}) if isinstance(bridge_payload, dict) else {}
+    )
     source_mtime = source_path.stat().st_mtime if source_exists else None
     bridge_mtime = bridge_path.stat().st_mtime if bridge_exists else None
     stale = bool(
@@ -320,10 +322,16 @@ def build_browser_runtime_sync_status(
         "bridge_path": str(bridge_path.resolve()),
         "source_exists": source_exists,
         "bridge_exists": bridge_exists,
-        "source_mtime": datetime.fromtimestamp(source_mtime, tz=UTC).isoformat() if source_mtime else "",
-        "bridge_mtime": datetime.fromtimestamp(bridge_mtime, tz=UTC).isoformat() if bridge_mtime else "",
+        "source_mtime": datetime.fromtimestamp(source_mtime, tz=UTC).isoformat()
+        if source_mtime
+        else "",
+        "bridge_mtime": datetime.fromtimestamp(bridge_mtime, tz=UTC).isoformat()
+        if bridge_mtime
+        else "",
         "synced_at": str(runtime_sync.get("synced_at") or ""),
-        "active_runtime_source": "runtime_yaml" if source_path == Path(runtime_yaml_path) else "base_yaml",
+        "active_runtime_source": "runtime_yaml"
+        if source_path == Path(runtime_yaml_path)
+        else "base_yaml",
         "stale": stale,
     }
 
@@ -621,10 +629,6 @@ class Settings(BaseSettings):
     prompt_cache_enabled: bool = True
     prompt_cache_mode: str = "provider_hook"
     prompt_cache_min_chars: int = 2000
-    provider_cache_enabled: bool = True
-    gemini_explicit_cache_enabled: bool = True
-    gemini_explicit_cache_ttl_seconds: int = 1800
-    gemini_explicit_cache_refresh_lead_seconds: int = 120
     tool_result_cache_enabled: bool = True
     tool_result_cache_min_identical_observations: int = 2
     agent_runtime_config: dict = Field(default_factory=dict)
@@ -697,12 +701,10 @@ class Settings(BaseSettings):
         existing["agent_model_config"] = self.agent_model_config
         existing["provider_model_catalog_cache"] = self.provider_model_catalog_cache
         existing["prompt_cache_enabled"] = self.prompt_cache_enabled
-        existing["provider_cache_enabled"] = self.provider_cache_enabled
-        existing["gemini_explicit_cache_enabled"] = self.gemini_explicit_cache_enabled
-        existing["gemini_explicit_cache_ttl_seconds"] = self.gemini_explicit_cache_ttl_seconds
-        existing["gemini_explicit_cache_refresh_lead_seconds"] = self.gemini_explicit_cache_refresh_lead_seconds
         existing["tool_result_cache_enabled"] = self.tool_result_cache_enabled
-        existing["tool_result_cache_min_identical_observations"] = self.tool_result_cache_min_identical_observations
+        existing["tool_result_cache_min_identical_observations"] = (
+            self.tool_result_cache_min_identical_observations
+        )
         existing["agent_runtime_config"] = normalize_agent_runtime_config(self.agent_runtime_config)
         existing["browser_runtime"] = self.browser_runtime
         existing["max_parallel_hosting_pages"] = self.max_parallel_hosting_pages
@@ -746,10 +748,7 @@ class Settings(BaseSettings):
         existing["provider_base_urls"] = {
             key.strip().lower(): value.strip()
             for key, value in self.provider_base_urls.items()
-            if isinstance(key, str)
-            and key.strip()
-            and isinstance(value, str)
-            and value.strip()
+            if isinstance(key, str) and key.strip() and isinstance(value, str) and value.strip()
         }
 
         try:
@@ -792,7 +791,9 @@ class Settings(BaseSettings):
         """
 
         target_path = Path(runtime_json_path)
-        source_path = _resolve_runtime_source_path(yaml_path=yaml_path, runtime_yaml_path=runtime_yaml_path)
+        source_path = _resolve_runtime_source_path(
+            yaml_path=yaml_path, runtime_yaml_path=runtime_yaml_path
+        )
         synced_at = datetime.now(UTC).isoformat()
         payload = {
             "browser_engine": self.browser_engine,
@@ -801,7 +802,9 @@ class Settings(BaseSettings):
                 "source_path": str(source_path.resolve()),
                 "bridge_path": str(target_path.resolve()),
                 "synced_at": synced_at,
-                "active_runtime_source": "runtime_yaml" if source_path == Path(runtime_yaml_path) else "base_yaml",
+                "active_runtime_source": "runtime_yaml"
+                if source_path == Path(runtime_yaml_path)
+                else "base_yaml",
             },
         }
         target_path.parent.mkdir(parents=True, exist_ok=True)

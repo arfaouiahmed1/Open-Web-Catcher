@@ -497,6 +497,13 @@ export function RunDetailPage() {
       return () => clearTimeout(timer);
     }
   }, [activeTab, pathname, searchParams]);
+
+  useEffect(() => {
+    const next = (VALID_TABS as readonly string[]).includes(rawTab || "")
+      ? (rawTab as TabValue)
+      : LEGACY_TAB_ALIASES[rawTab || ""] || "timeline";
+    setActiveTab((current) => current === next ? current : next);
+  }, [rawTab]);
   const [payload, setPayload] = useState<any>(null);
   const [isLoading, setLoading] = useState(true);
   const [error, setError] = useState("");

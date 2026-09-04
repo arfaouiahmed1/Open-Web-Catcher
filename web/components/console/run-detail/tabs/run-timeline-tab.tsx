@@ -71,7 +71,7 @@ export function RunTimelineTab({ plan, steps: stepsProp, events, title = "Run pl
             data-role="timeline-live-badge"
             data-live={effectiveIsLive ? "true" : "false"}
           >
-            {effectiveIsLive ? <Radio className="h-3 w-3 animate-pulse" /> : null}
+            {effectiveIsLive ? <Radio className="h-3 w-3 motion-safe:animate-pulse" /> : null}
             {liveLabel}
           </Badge>
           <span className="text-[11px] text-muted-foreground" data-role="timeline-count">

@@ -215,7 +215,7 @@ function RuntimeStatusCard({ title, healthy, detail, note, badges = [] }: { titl
   return (
     <div className="rounded-lg border bg-card px-3 py-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-[12.5px] font-semibold text-foreground">{title}</div>
+        <div className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-foreground">{title}</div>
         <HealthPill healthy={healthy} label={healthy ? "ready" : "blocked"} />
       </div>
       <div className="mt-2 break-all font-mono text-[10.5px] text-muted-foreground">
@@ -490,8 +490,9 @@ export function RunLauncher({ defaultMode = "workflow" }: RunLauncherProps): Rea
                         key={opt.value}
                         type="button"
                         onClick={() => { setAgent(opt.value); setError(""); }}
+                        aria-pressed={active}
                         className={cn(
-                          "group rounded-lg border p-3.5 text-left transition-all",
+                          "group rounded-lg border p-3.5 text-left transition-[border-color,background-color,box-shadow,color] motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                           active
                             ? "bg-card ring-1"
                             : "bg-card hover:bg-muted/40",
@@ -579,7 +580,7 @@ export function RunLauncher({ defaultMode = "workflow" }: RunLauncherProps): Rea
                             onClick={() => setSelectedStageId(stage.id)}
                             aria-pressed={active}
                             className={cn(
-                              "w-full rounded-lg border bg-card p-3 text-left transition-all hover:bg-muted/40",
+                              "w-full rounded-lg border bg-card p-3 text-left transition-[border-color,background-color,box-shadow,color] motion-reduce:transition-none hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                               active && "bg-card ring-1",
                             )}
                             style={
@@ -687,7 +688,7 @@ export function RunLauncher({ defaultMode = "workflow" }: RunLauncherProps): Rea
                                 onClick={() => setModelOverride(option.value)}
                                 aria-pressed={active}
                                 className={cn(
-                                  "rounded-lg border bg-card p-2.5 text-left transition-all hover:bg-muted/40",
+                                  "rounded-lg border bg-card p-2.5 text-left transition-[border-color,background-color,box-shadow,color] motion-reduce:transition-none hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                                   active && "border-primary/50 ring-1 ring-primary/30",
                                 )}
                               >

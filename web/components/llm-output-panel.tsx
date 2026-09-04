@@ -417,7 +417,7 @@ function LlmCallCard({  row, defaultExpanded = false  }: any) {
             >
               <div className="h-1 w-14 overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full rounded-full transition-all"
+                  className="h-full rounded-full transition-[width] motion-reduce:transition-none"
                   style={{
                     width: `${ctxPct}%`,
                     background:

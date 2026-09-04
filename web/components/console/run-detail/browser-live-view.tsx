@@ -482,7 +482,7 @@ export function BrowserLiveView({
               aria-label="Refresh screenshot"
             >
               <RefreshCw
-                className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`}
+                className={`h-3.5 w-3.5 ${isLoading ? "motion-safe:animate-spin" : ""}`}
               />
             </Button>
 
@@ -628,7 +628,7 @@ export function BrowserLiveView({
                       setManualStage(selectedStage);
                       setSelectedFrameUrl(frame.url);
                     }}
-                    className="shrink-0 overflow-hidden rounded-lg border transition-all"
+                    className="shrink-0 overflow-hidden rounded-lg border transition-[border-color,background-color,box-shadow] motion-reduce:transition-none"
                     style={{
                       width: 84,
                       height: 56,
@@ -766,7 +766,7 @@ export function ScreenshotGallery({  screenshots = []  }: any) {
                     key={`${src}-${index}`}
                     type="button"
                     onClick={() => setSelected(src)}
-                    className="shrink-0 overflow-hidden rounded-lg border transition-all"
+                    className="shrink-0 overflow-hidden rounded-lg border transition-[border-color,background-color,box-shadow] motion-reduce:transition-none"
                     style={{
                       width: 84,
                       height: 56,

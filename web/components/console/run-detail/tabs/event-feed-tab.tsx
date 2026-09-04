@@ -162,7 +162,7 @@ export function RunEventFeedTab({ events, title = "Event feed", maxItems = 120, 
       actions={
         <div className="flex items-center gap-2">
           <Badge tone={hasEvents ? "success" : "muted"} className="text-[10px] gap-1">
-            <Radio className="h-3 w-3 animate-pulse" />
+            <Radio className="h-3 w-3 motion-safe:animate-pulse" />
             <span data-role="feed-count">{list.length} events</span>
           </Badge>
           {omitted > 0 ? <span className="text-[11px] text-muted-foreground" data-role="feed-omitted">+{omitted} earlier hidden</span> : null}

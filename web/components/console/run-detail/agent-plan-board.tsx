@@ -147,7 +147,7 @@ export function AgentPlanBoard({ events = [], className }: AgentPlanBoardProps) 
               {/* Progress Bar */}
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
                 <div
-                  className="h-full rounded-full transition-all duration-300"
+                  className="h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none"
                   style={{
                     width: `${plan.progressPct}%`,
                     backgroundColor: plan.progressPct === 100 ? "var(--color-emerald-500, #10b981)" : "var(--color-primary, #3b82f6)",
@@ -172,7 +172,7 @@ export function AgentPlanBoard({ events = [], className }: AgentPlanBoardProps) 
                       <span
                         className={
                           isDone
-                            ? "text-muted-foreground line-through transition-all"
+                            ? "text-muted-foreground line-through transition-colors motion-reduce:transition-none"
                             : "text-foreground font-medium"
                         }
                       >

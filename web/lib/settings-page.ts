@@ -7,10 +7,6 @@ export const SERVER_TAB_FIELDS: Record<string, string[]> = {
     "llm_tuning",
     "agent_model_config",
     "prompt_cache_enabled",
-    "provider_cache_enabled",
-    "gemini_explicit_cache_enabled",
-    "gemini_explicit_cache_ttl_seconds",
-    "gemini_explicit_cache_refresh_lead_seconds",
     "tool_result_cache_enabled",
     "tool_result_cache_min_identical_observations",
     "thinking_enabled",
@@ -18,7 +14,7 @@ export const SERVER_TAB_FIELDS: Record<string, string[]> = {
     "max_parallel_hosting_pages",
   ],
   browser: ["browser_engine", "browser_runtime", "max_parallel_hosting_pages"],
-  "mcp-tools": ["disabled_tools_by_browser_profile"],
+  "mcp-tools": [],
 };
 
 // Allowlist of operator-editable browser runtime keys. Fingerprint, proxy,
@@ -89,17 +85,12 @@ export interface ServerConfigState {
   fallbackTemperature?: unknown;
   llmTuning?: unknown;
   promptCacheEnabled?: unknown;
-  providerCacheEnabled?: unknown;
-  geminiExplicitCacheEnabled?: unknown;
-  geminiExplicitCacheTtl?: unknown;
-  geminiExplicitCacheRefreshLead?: unknown;
   toolCacheEnabled?: unknown;
   toolCacheStable?: unknown;
   thinkingEnabled?: unknown;
   thinkingBudgetTokens?: unknown;
   maxParallelHostingPages?: unknown;
   browserEngine?: unknown;
-  disabledToolsByBrowserProfile?: unknown;
   browserRuntime?: unknown;
 }
 
@@ -112,18 +103,12 @@ export function buildServerConfigDraft(state: ServerConfigState): Record<string,
     llm_tuning: state.llmTuning ?? {},
     agent_model_config: state.agentModelConfig ?? {},
     prompt_cache_enabled: Boolean(state.promptCacheEnabled ?? true),
-    provider_cache_enabled: Boolean(state.providerCacheEnabled ?? true),
-    gemini_explicit_cache_enabled: Boolean(state.geminiExplicitCacheEnabled ?? true),
-    gemini_explicit_cache_ttl_seconds: Number((state.geminiExplicitCacheTtl as number | string | undefined) ?? 1800),
-    gemini_explicit_cache_refresh_lead_seconds: Number(
-      (state.geminiExplicitCacheRefreshLead as number | string | undefined) ?? 120,
-    ),
     tool_result_cache_enabled: Boolean(state.toolCacheEnabled ?? true),
     tool_result_cache_min_identical_observations: Number((state.toolCacheStable as number | string | undefined) ?? 2),
     thinking_enabled: Boolean(state.thinkingEnabled ?? false),
+    thinking_budget_tokens: Number((state.thinkingBudgetTokens as number | string | undefined) ?? 8000),
     max_parallel_hosting_pages: Number((state.maxParallelHostingPages as number | string | undefined) ?? 5),
     browser_engine: (state.browserEngine as string | undefined) ?? "playwright",
-    disabled_tools_by_browser_profile: state.disabledToolsByBrowserProfile ?? {},
     browser_runtime: normalizeBrowserRuntimeForSave(state.browserRuntime),
   };
 }
@@ -145,12 +130,6 @@ export function snapshotServerConfig(payload: Record<string, unknown> | null | u
     llm_tuning: p?.llm_tuning ?? {},
     agent_model_config: p?.agent_model_config ?? {},
     prompt_cache_enabled: Boolean(p?.prompt_cache_enabled ?? true),
-    provider_cache_enabled: Boolean(p?.provider_cache_enabled ?? true),
-    gemini_explicit_cache_enabled: Boolean(p?.gemini_explicit_cache_enabled ?? true),
-    gemini_explicit_cache_ttl_seconds: Number((p?.gemini_explicit_cache_ttl_seconds as number | undefined) ?? 1800),
-    gemini_explicit_cache_refresh_lead_seconds: Number(
-      (p?.gemini_explicit_cache_refresh_lead_seconds as number | undefined) ?? 120,
-    ),
     tool_result_cache_enabled: Boolean(p?.tool_result_cache_enabled ?? true),
     tool_result_cache_min_identical_observations: Number(
       (p?.tool_result_cache_min_identical_observations as number | undefined) ?? 2,
@@ -158,8 +137,6 @@ export function snapshotServerConfig(payload: Record<string, unknown> | null | u
     thinking_enabled: Boolean(p?.thinking_enabled ?? false),
     thinking_budget_tokens: Number((p?.thinking_budget_tokens as number | undefined) ?? 8000),
     max_parallel_hosting_pages: Number((p?.max_parallel_hosting_pages as number | undefined) ?? 5),
-    browser_engine: (p?.browser_engine as string | undefined) ?? "playwright",
-    disabled_tools_by_browser_profile: p?.disabled_tools_by_browser_profile ?? {},
     browser_runtime: normalizeBrowserRuntimeForSave(p?.browser_runtime),
   }) as Record<string, unknown>;
 }

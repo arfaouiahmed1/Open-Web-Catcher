@@ -625,6 +625,7 @@ export function SitesTab({
                 value={draftQuery}
                 onChange={(event) => setDraftQuery(event.target.value)}
                 placeholder="Search URL, language, label, or notes"
+                aria-label="Search websites by URL, language, label, or notes"
                 className="pl-9"
               />
             </div>

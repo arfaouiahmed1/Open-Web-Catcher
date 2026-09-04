@@ -57,7 +57,6 @@ const { chromium } = await loadBrowserDriver();
 const WS_ENDPOINT = process.env.BROWSER_WS_ENDPOINT || "ws://127.0.0.1:9223";
 const EXECUTABLE_PATH =
   process.env.PLAYWRIGHT_EXECUTABLE_PATH ||
-  process.env.PUPPETEER_EXECUTABLE_PATH ||
   "/usr/local/bin/google-chrome-stable";
 const CHROME_VERSION_API_URL =
   process.env.OWC_CHROME_VERSION_API_URL ||

@@ -298,7 +298,7 @@ def lc_messages_to_openai_messages(messages: Sequence[BaseMessage]) -> list[dict
                 }
             )
         elif isinstance(message, AIMessage):
-            entry = {"role": "assistant", "content": _stringify_content(message.content)}
+            entry: dict[str, Any] = {"role": "assistant", "content": _stringify_content(message.content)}
             if message.tool_calls:
                 entry["tool_calls"] = [
                     {

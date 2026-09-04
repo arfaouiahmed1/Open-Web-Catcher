@@ -54,7 +54,6 @@ from src.utils.provider_models import (
     normalize_gemini_model_id,
     provider_api_key,
     provider_base_url,
-    resolve_google_model_runtime_profile,
     resolve_model_runtime_profile,
     resolve_agent_model_selection,
     resolve_llm_tuning,
@@ -417,101 +416,6 @@ async def _invoke_tool(tool: BaseTool, tool_args: dict[str, Any]) -> Any:
         return await tool.ainvoke(tool_args)
     except (AttributeError, NotImplementedError, TypeError):
         return await asyncio.to_thread(tool.invoke, tool_args)
-
-
-def build_llm(
-    settings: Settings,
-    temperature: float | None = None,
-    model_override: str | None = None,
-    provider_override: str | None = None,
-    agent_id: str | None = None,
-):
-    """Build the LiteLLM-backed chat model used by all agents.
-
-    Model traffic routes through src/llm/provider.py; agents keep their
-    LangChain call-sites. Legacy bare model names are prefixed for litellm
-    routing at request time.
-    """
-    selection = resolve_agent_model_selection(settings, agent_id or "")
-    provider_hint = (
-        (provider_override or selection.get("provider") or settings.llm_provider or "litellm")
-        .strip()
-        .lower()
-    )
-    if provider_hint in {"gemini", "google_genai"}:
-        provider_hint = "google"
-
-    selection_model = selection.get("model") or ""
-    model_name = model_override or selection_model or settings.agent_model
-    if not model_name:
-        # Last-resort fallback chain (legacy default + gemini_model).
-        model_name = str(settings.agent_model or settings.gemini_model or "").strip()
-    model_name = normalize_gemini_model_id(model_name)
-    tuning = resolve_llm_tuning(
-        settings,
-        provider=provider_hint,
-        model_name=model_name,
-        agent_id=agent_id or "",
-    )
-    is_google = provider_hint == "google"
-    if is_google:
-        model_runtime_profile = resolve_google_model_runtime_profile(
-            settings,
-            model_id=model_name,
-            provider="google",
-        )
-        allowed_tuning_keys = set(
-            model_runtime_profile.get("allowed_tuning_keys")
-            or {"top_p", "top_k", "max_output_tokens"}
-        )
-    else:
-        model_runtime_profile = {
-            "model_id": model_name,
-            "resolved_from_catalog": False,
-            "catalog_source": "non_google",
-            "capabilities": {},
-        }
-        allowed_tuning_keys = {"temperature", "top_p", "max_tokens"}
-    tuned_temperature = tuning.pop("temperature", None)
-    if temperature is not None:
-        temp = temperature
-    elif tuned_temperature is not None:
-        temp = tuned_temperature
-    else:
-        temp = settings.gemini_temperature
-
-    llm_kwargs: dict[str, Any] = _filter_llm_kwargs(tuning, allowed_tuning_keys)
-    if "max_output_tokens" in llm_kwargs:
-        llm_kwargs["max_tokens"] = llm_kwargs.pop("max_output_tokens")
-    thinking_budget = (
-        settings.thinking_budget_tokens
-        if settings.thinking_enabled
-        and is_google
-        and model_runtime_profile.get("supports_thinking_controls")
-        else None
-    )
-
-    api_key = provider_api_key(settings, provider_hint) or None
-    configured_provider_base = (getattr(settings, "provider_base_urls", {}) or {}).get(provider_hint, "")
-    api_base = configured_provider_base or settings.llm_base_url or provider_base_url(settings, provider_hint) or None
-    if provider_hint == "openrouter" and settings.openrouter_base_url:
-        api_base = settings.openrouter_base_url
-    elif provider_hint == "nvidia" and settings.nvidia_base_url:
-        api_base = settings.nvidia_base_url
-    return ChatLiteLLM(
-        model=model_name,
-        provider_prefix=provider_hint,
-        api_key=api_key,
-        api_base=api_base,
-        temperature=temp,
-        caching=bool(settings.prompt_cache_enabled),
-        thinking_budget_tokens=thinking_budget,
-        **llm_kwargs,
-    )
-
-
-def _filter_llm_kwargs(values: dict[str, Any], allowed: set[str]) -> dict[str, Any]:
-    return {key: value for key, value in values.items() if key in allowed and value is not None}
 
 
 async def run_agent_loop(
