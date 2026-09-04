@@ -76,8 +76,7 @@ outputs/
 # Persistent browser state jars (T21)
 data/browser-state/
 
-# Repo hygiene (Task 2, full-audit W1) — thesis material is ignore-ruled only,
-# never untracked or deleted.
+# Legacy report archives and local scratch (untracked)
 Report.zip
 Report/
 tmp/
