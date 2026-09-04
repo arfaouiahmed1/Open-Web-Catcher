@@ -1,0 +1,179 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="520" viewBox="0 0 1120 520" role="img" aria-label="Run Detail Cockpit and Agent Inspector">
+  <defs>
+    <linearGradient id="card-bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.95"/>
+    </linearGradient>
+    <linearGradient id="header-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284c7" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Canvas Background -->
+  <rect width="1120" height="520" rx="16" fill="#0b0f17" stroke="#334155" stroke-width="1.5"/>
+
+  <!-- Command Bar -->
+  <g transform="translate(24, 20)">
+    <rect width="1072" height="64" rx="10" fill="url(#header-grad)" stroke="#38bdf8" stroke-width="0.8" stroke-opacity="0.4"/>
+    <text x="20" y="24" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="11">Console &gt; Runs &gt; <tspan fill="#38bdf8" font-family="monospace">d8057728-8594-4580-967a</tspan></text>
+    
+    <rect x="20" y="32" width="76" height="22" rx="4" fill="#10b981" fill-opacity="0.2"/>
+    <text x="32" y="47" fill="#10b981" font-family="-apple-system,sans-serif" font-size="11" font-weight="700">SUCCESS</text>
+    
+    <text x="108" y="48" fill="#ffffff" font-family="-apple-system,sans-serif" font-size="16" font-weight="700">https://freeshot.live/live-tv</text>
+    
+    <g transform="translate(900, 18)">
+      <rect width="70" height="28" rx="6" fill="#334155" fill-opacity="0.6" stroke="#475569" stroke-width="1"/>
+      <text x="14" y="18" fill="#e2e8f0" font-family="-apple-system,sans-serif" font-size="11">Refresh</text>
+      <rect x="80" y="0" width="70" height="28" rx="6" fill="#0284c7" stroke="#38bdf8" stroke-width="1"/>
+      <text x="96" y="18" fill="#ffffff" font-family="-apple-system,sans-serif" font-size="11" font-weight="600">Restart</text>
+    </g>
+  </g>
+
+  <!-- 6-Tile KPI Ribbon -->
+  <g transform="translate(24, 96)">
+    <!-- Tile 1 -->
+    <g transform="translate(0, 0)">
+      <rect width="170" height="60" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+      <text x="14" y="20" fill="#64748b" font-family="-apple-system,sans-serif" font-size="10" font-weight="600">ESTIMATED COST</text>
+      <text x="14" y="44" fill="#10b981" font-family="monospace" font-size="16" font-weight="700">$0.008</text>
+    </g>
+    <!-- Tile 2 -->
+    <g transform="translate(180, 0)">
+      <rect width="170" height="60" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+      <text x="14" y="20" fill="#64748b" font-family="-apple-system,sans-serif" font-size="10" font-weight="600">DURATION</text>
+      <text x="14" y="44" fill="#ffffff" font-family="monospace" font-size="16" font-weight="700">18.4s</text>
+    </g>
+    <!-- Tile 3 -->
+    <g transform="translate(360, 0)">
+      <rect width="170" height="60" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+      <text x="14" y="20" fill="#64748b" font-family="-apple-system,sans-serif" font-size="10" font-weight="600">TOTAL TOKENS</text>
+      <text x="14" y="44" fill="#ffffff" font-family="monospace" font-size="16" font-weight="700">34,120</text>
+    </g>
+    <!-- Tile 4 -->
+    <g transform="translate(540, 0)">
+      <rect width="170" height="60" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+      <text x="14" y="20" fill="#64748b" font-family="-apple-system,sans-serif" font-size="10" font-weight="600">TOOL CALLS</text>
+      <text x="14" y="44" fill="#38bdf8" font-family="monospace" font-size="16" font-weight="700">12 executions</text>
+    </g>
+    <!-- Tile 5 -->
+    <g transform="translate(720, 0)">
+      <rect width="170" height="60" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+      <text x="14" y="20" fill="#64748b" font-family="-apple-system,sans-serif" font-size="10" font-weight="600">CAPTURED STREAMS</text>
+      <text x="14" y="44" fill="#10b981" font-family="monospace" font-size="16" font-weight="700">3 verified</text>
+    </g>
+    <!-- Tile 6 -->
+    <g transform="translate(900, 0)">
+      <rect width="172" height="60" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+      <text x="14" y="20" fill="#64748b" font-family="-apple-system,sans-serif" font-size="10" font-weight="600">SCREENSHOTS</text>
+      <text x="14" y="44" fill="#c084fc" font-family="monospace" font-size="16" font-weight="700">6 frames</text>
+    </g>
+  </g>
+
+  <!-- Left: Main Panel Tabs -->
+  <g transform="translate(24, 172)">
+    <rect width="640" height="324" rx="10" fill="url(#card-bg)" stroke="#334155" stroke-width="1"/>
+    
+    <!-- Tab Bar -->
+    <g transform="translate(16, 16)">
+      <rect width="80" height="26" rx="5" fill="#38bdf8" fill-opacity="0.2"/>
+      <text x="14" y="17" fill="#38bdf8" font-family="-apple-system,sans-serif" font-size="11" font-weight="600">Timeline</text>
+      <text x="100" y="17" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="11">Browser &amp; Media</text>
+      <text x="210" y="17" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="11">Reasoning &amp; LLM</text>
+      <text x="325" y="17" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="11">Streams (3)</text>
+      <text x="410" y="17" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="11">Event Feed</text>
+      <text x="500" y="17" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="11">Costs &amp; Context</text>
+    </g>
+
+    <!-- Content: Live Stream Preview and Discovered Stream Rows -->
+    <g transform="translate(16, 56)">
+      <rect width="608" height="74" rx="6" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
+      <circle cx="24" cy="24" r="5" fill="#10b981"/>
+      <text x="36" y="27" fill="#e2e8f0" font-family="monospace" font-size="11">https://stream.server1.net/live/ch1/master.m3u8</text>
+      <text x="36" y="48" fill="#64748b" font-family="-apple-system,sans-serif" font-size="10">HLS Stream · 1080p60 · Verified 200 OK (Content-Type: application/vnd.apple.mpegurl)</text>
+      <rect x="520" y="18" width="72" height="24" rx="4" fill="#10b981" fill-opacity="0.2" stroke="#10b981" stroke-width="0.8"/>
+      <text x="532" y="34" fill="#10b981" font-family="-apple-system,sans-serif" font-size="10" font-weight="600">PLAYING</text>
+    </g>
+
+    <!-- Embedded Player Activity Preview -->
+    <g transform="translate(16, 140)">
+      <rect width="608" height="154" rx="6" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
+      <rect x="12" y="12" width="220" height="130" rx="4" fill="#1e293b"/>
+      <!-- Mock Video Screen -->
+      <polygon points="110,65 110,85 130,75" fill="#10b981"/>
+      <text x="12" y="150" fill="#64748b" font-family="monospace" font-size="9">HTML5 Video Player Frame</text>
+      
+      <!-- Telemetry log right -->
+      <g transform="translate(245, 14)">
+        <text x="0" y="12" fill="#38bdf8" font-family="monospace" font-size="10">00:04.2 [navigate] focus embedded iframe</text>
+        <text x="0" y="32" fill="#10b981" font-family="monospace" font-size="10">00:08.1 [interact] click button#vplayer-play</text>
+        <text x="0" y="52" fill="#f59e0b" font-family="monospace" font-size="10">00:09.4 [defense] uBOL blocked 4 ad popups</text>
+        <text x="0" y="72" fill="#38bdf8" font-family="monospace" font-size="10">00:11.8 [harvest] captured .m3u8 playlist manifest</text>
+        <text x="0" y="92" fill="#10b981" font-family="monospace" font-size="10">00:14.0 [verify] sample 65KB chunk OK - SHA256 validated</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Right: Agent Run Graph & Deep Inspector -->
+  <g transform="translate(680, 172)">
+    <rect width="416" height="324" rx="10" fill="url(#card-bg)" stroke="#334155" stroke-width="1"/>
+    
+    <text x="16" y="28" fill="#ffffff" font-family="-apple-system,sans-serif" font-size="12" font-weight="700">Agent Execution Graph</text>
+    <text x="320" y="28" fill="#38bdf8" font-family="-apple-system,sans-serif" font-size="10">Inspect node &gt;</text>
+
+    <!-- Mini Topology -->
+    <g transform="translate(16, 44)">
+      <!-- Root -->
+      <rect x="0" y="15" width="85" height="34" rx="6" fill="#1e293b" stroke="#38bdf8" stroke-width="1"/>
+      <text x="10" y="35" fill="#38bdf8" font-family="-apple-system,sans-serif" font-size="10" font-weight="600">Orchestrator</text>
+      
+      <!-- Arrow -->
+      <line x1="85" y1="32" x2="105" y2="32" stroke="#38bdf8" stroke-width="1.5"/>
+      
+      <!-- Classify -->
+      <rect x="105" y="15" width="85" height="34" rx="6" fill="#1e293b" stroke="#10b981" stroke-width="1"/>
+      <text x="115" y="35" fill="#10b981" font-family="-apple-system,sans-serif" font-size="10" font-weight="600">Classify</text>
+
+      <!-- Arrow -->
+      <line x1="190" y1="32" x2="210" y2="32" stroke="#38bdf8" stroke-width="1.5"/>
+
+      <!-- Hosting Selected -->
+      <rect x="210" y="8" width="95" height="48" rx="6" fill="#0284c7" fill-opacity="0.3" stroke="#38bdf8" stroke-width="2"/>
+      <text x="220" y="28" fill="#ffffff" font-family="-apple-system,sans-serif" font-size="10" font-weight="700">Hosting</text>
+      <text x="220" y="44" fill="#38bdf8" font-family="monospace" font-size="9">6 tools · 14.1s</text>
+
+      <!-- Arrow -->
+      <line x1="305" y1="32" x2="325" y2="32" stroke="#38bdf8" stroke-width="1.5"/>
+
+      <!-- Embedded -->
+      <rect x="325" y="15" width="70" height="34" rx="6" fill="#1e293b" stroke="#c084fc" stroke-width="1"/>
+      <text x="335" y="35" fill="#c084fc" font-family="-apple-system,sans-serif" font-size="10" font-weight="600">Embed</text>
+    </g>
+
+    <!-- Inspector Drawer Preview -->
+    <g transform="translate(16, 115)">
+      <rect width="384" height="190" rx="8" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
+      <rect x="8" y="8" width="110" height="20" rx="4" fill="#38bdf8" fill-opacity="0.2"/>
+      <text x="14" y="22" fill="#38bdf8" font-family="-apple-system,sans-serif" font-size="9" font-weight="700">HOSTING INSPECTOR</text>
+
+      <!-- Sub Tabs -->
+      <text x="14" y="44" fill="#e2e8f0" font-family="-apple-system,sans-serif" font-size="10" font-weight="600">Tools (6) · Reasoning · Artifacts (3)</text>
+      <line x1="14" y1="52" x2="370" y2="52" stroke="#334155" stroke-width="0.8"/>
+
+      <g transform="translate(14, 62)">
+        <text x="0" y="10" fill="#38bdf8" font-family="monospace" font-size="10">navigate(action: "open", url: "...")</text>
+        <text x="0" y="22" fill="#64748b" font-family="-apple-system,sans-serif" font-size="9">200 OK · Duration: 2.1s · Page loaded</text>
+
+        <text x="0" y="42" fill="#38bdf8" font-family="monospace" font-size="10">inspect(action: "detect_servers")</text>
+        <text x="0" y="54" fill="#64748b" font-family="-apple-system,sans-serif" font-size="9">Found 4 server buttons: [Server 1, Server 2, HD-1, HD-2]</text>
+
+        <text x="0" y="74" fill="#38bdf8" font-family="monospace" font-size="10">interact(action: "click", selector: "#btn-s1")</text>
+        <text x="0" y="86" fill="#64748b" font-family="-apple-system,sans-serif" font-size="9">Activated iframe player embed: //player.streamv.net/embed/412</text>
+
+        <text x="0" y="106" fill="#10b981" font-family="monospace" font-size="10">harvest(action: "media_requests")</text>
+        <text x="0" y="118" fill="#10b981" font-family="-apple-system,sans-serif" font-size="9">Captured 3 playable stream URLs</text>
+      </g>
+    </g>
+  </g>
+</svg>

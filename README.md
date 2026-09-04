@@ -1,247 +1,173 @@
+<div align="center">
+
 # Open Web Catcher
 
-Open Web Catcher is a multi-agent evidence collection system for investigating unauthorized streaming pages. It takes a target URL, classifies the page, routes it through specialist browser agents, extracts stream evidence, resolves provider infrastructure, drafts reviewable takedown emails, and persists the whole execution path for inspection in a Next.js operator console.
+### Autonomous Multi-Agent Intelligence for Streaming Piracy Discovery & Verification
 
-The project is not a single scraper. It is a runtime for controlled browser investigation: FastAPI owns execution, LangGraph owns routing, specialist agents use profile-scoped MCP browser tools, Postgres stores evidence and telemetry, and the console shows both the result and the failure path.
+[![Publish Container Images to GHCR](https://github.com/arfaouiahmed1/Open-Web-Catcher/actions/workflows/publish-images.yml/badge.svg)](https://github.com/arfaouiahmed1/Open-Web-Catcher/actions/workflows/publish-images.yml)
+[![CI](https://github.com/arfaouiahmed1/Open-Web-Catcher/actions/workflows/ci.yml/badge.svg)](https://github.com/arfaouiahmed1/Open-Web-Catcher/actions/workflows/ci.yml)
+[![Community Standards](https://img.shields.io/badge/Community%20Standards-100%25-10b981.svg)](https://github.com/arfaouiahmed1/Open-Web-Catcher)
+[![Next.js 15](https://img.shields.io/badge/Next.js-15.5-000000.svg?logo=next.js)](https://nextjs.org/)
+[![Playwright](https://img.shields.io/badge/Playwright-1.62.1-2EAD33.svg?logo=playwright)](https://playwright.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Main Idea
+<br/>
 
-Most streaming targets do not expose useful media URLs from the first page. A landing page may only contain match cards, a hosting page may hide players behind server controls, and the playable stream may live inside an iframe or embedded player. Open Web Catcher treats those as different jobs instead of forcing one prompt to do everything.
+<img src="docs/assets/banner-commercial.svg" alt="Open Web Catcher Banner" width="100%" />
 
-The system splits the investigation into deterministic routing plus smaller agent contracts:
+<br/>
 
-- classify the page before extracting anything;
-- discover downstream hosting or player candidates from landing pages;
-- operate hosting pages and server selectors without drifting off target;
-- inspect embedded player contexts where the actual media requests appear;
-- run provider and takedown stages only when concrete stream URLs exist;
-- keep every model call, tool call, screenshot, decision, and final artifact tied to the run.
+<p align="center">
+  <b>Stop losing hours to hostile ad-traps, shifting player embeds, and obfuscated streaming scripts.</b><br/>
+  Open Web Catcher orchestrates bounded specialist browser agents to autonomously hunt, classify, bypass sandboxes, and verify playable live streams (HLS/DASH) with machine-verifiable cryptographic proof.
+</p>
 
-## What It Does
+[Quick Start](#-quick-start-cloud-containers-in-10-seconds) •
+[Features](#-commercial-features) •
+[Architecture](#-autonomous-multi-agent-architecture) •
+[Documentation & Wiki](#-documentation--wiki) •
+[Contributing](#-community--contributing)
 
-| Capability | What happens | Main source |
-| --- | --- | --- |
-| URL classification | Determines whether the target is landing, hosting, embedded, unknown, or unsupported. | `src/agents/classification.py` |
-| Landing discovery | Finds repeated content cards, watch links, hosting pages, iframe hints, and player URL candidates. | `src/agents/landing_page.py` |
-| Hosting extraction | Opens watch pages, handles server/source controls, captures screenshots, and extracts streams or embedded handoffs. | `src/agents/hosting_page.py` |
-| Embedded extraction | Stays on iframe/player URLs and harvests media/network evidence from the player context. | `src/agents/embedded_page.py` |
-| Provider analysis | Resolves concrete stream URLs to provider, IP, RDAP/whois, geography, and abuse contact evidence. | `src/tools/ipinfo_tool.py` |
-| Email drafting | Generates reviewable takedown email drafts from provider, stream, screenshot, and channel evidence. | `src/agents/email_generator.py` |
-| Runtime observability | Persists events, LLM calls, tool calls, prompts, costs, screenshots, decisions, and status rollups. | `src/storage/repositories.py` |
-| Operator console | Provides launch, live trace, run detail, settings, provider, dataset, and history views. | `web/` |
+</div>
 
-## How It Works
+---
 
-![Logical agent workflow](docs/assets/readme-agent-workflow.svg)
+## ⚡ The Challenge: Why Traditional Scrapers Fail
 
-1. The operator starts a workflow from the console.
-2. FastAPI creates a background job and a `RunObserver`.
-3. The orchestrator checks memory as soft context, then calls classification.
-4. LangGraph routes the run to landing, hosting, embedded, or terminal no-stream paths.
-5. Browser-facing agents compile their prompts, open MCP profile sessions, call the configured provider with bound tools, and normalize output into Pydantic schemas.
-6. Provider analysis and email generation run only after stream evidence exists.
-7. The repository layer writes normalized records and snapshots to Postgres.
-8. The console reads `GET /ui/runs/{run_id}` and the active SSE stream to show both live progress and persisted evidence.
-
-## Agent Split
-
-| Runtime unit | Responsibility | Boundary |
-| --- | --- | --- |
-| `OrchestratorAgent` | Owns LangGraph routing, handoffs, aggregation, stop paths, provider/email stages, and final status. | Does not inspect pages directly. |
-| `ClassificationAgent` | Uses classification profile tools to identify page type and route confidence. | Does not extract streams. |
-| `LandingPageAgent` | Finds hosting/watch candidates and explicit iframe/player hints from listing-style pages. | Does not fabricate downstream URLs when evidence is missing. |
-| `HostingPageAgent` | Works on hosting/watch pages, activates players, switches servers, and extracts streams or embedded URLs. | Should not drift into unrelated navigation. |
-| `EmbeddedPageAgent` | Works on direct iframe/player contexts and captures media/network evidence. | Should not crawl general site navigation. |
-| `IPInfoTool` | Resolves stream hosts and provider metadata from concrete media URLs. | Skips when no stream URL exists. |
-| `EmailTool` / email generator | Drafts takedown notices for human review. | Does not send mail automatically. |
-
-The detailed agent docs live in [docs/agents/README.md](docs/agents/README.md).
-
-## Logical Architecture
-
-The logical runtime is centered on a graph, not a linear script. The graph keeps page-type routing, handoff provenance, no-stream handling, and final status deterministic while letting each agent use LLM reasoning and browser tools inside its own bounded task.
+Modern illicit streaming platforms do not expose video files on initial page load. They protect high-value live events behind layers of adversarial defense:
+- **Deceptive Landing Pages**: Catalogs disguise stream destinations behind dynamic JavaScript schedules and decoy listing cards.
+- **Intrusive Ad-Traps & Popups**: Unprotected browsers trigger multiple aggressive window popups and malicious redirect loops on first click.
+- **Hostile Sandboxed Iframes**: Playable media manifests (`.m3u8` / `.mpd`) are isolated inside multi-nested frames utilizing strict `X-Frame-Options` and CSP `frame-ancestors` policies.
 
 ```text
-operator request
-  -> FastAPI background workflow
-  -> RunObserver + trace persistence
-  -> Orchestrator LangGraph
-      -> classification
-      -> landing discovery, hosting extraction, embedded extraction
-      -> provider analysis
-      -> takedown draft generation
-  -> normalized Postgres records + run snapshot
-  -> Next.js run detail and live SSE views
+Single Prompt / Generic Scraper ──► Click ──► Ad Redirect Loop ──► Dead End ❌
+Open Web Catcher (OWC)          ──► Classify ──► Route ──► Bypass & Harvest ──► Verified Stream ✅
 ```
 
-Important runtime rules:
+---
 
-- The orchestrator is the routing source of truth; prompt wording alone does not decide graph transitions.
-- Memory is advisory. Current-page classification still runs before specialist extraction.
-- Browser tools are profile-scoped by agent role.
-- Provider lookup and email generation are skipped when no stream evidence exists.
-- Run detail is backend-backed; the primary page payload is `GET /ui/runs/{run_id}`.
-- SSE is used for active/live updates, not as the only source of run truth.
+## 🌟 Commercial Features
 
-See [System Architecture](docs/system/architecture.md), [Workflow Lifecycle](docs/workflow/run-lifecycle.md), and [LangChain And LangGraph Runtime](docs/system/langchain-langgraph.md) for the deeper diagrams.
+### 1. Ergonomic Run Detail Cockpit & Deep Agent Inspector
+Inspect complete agent execution with zero friction. The newly redesigned cockpit layout provides a 6-tile KPI ribbon (Estimated Cost, Duration, Tokens, Tool Executions, Captured Streams, Screenshots) and an interactive 2-column workspace.
 
-## Physical Architecture
+<img src="docs/assets/feature-cockpit.svg" alt="Run Detail Cockpit and Agent Inspector" width="100%" />
 
-![Physical runtime topology](docs/assets/readme-physical-topology.svg)
+- **Interactive Agent Graph**: Visualizes orchestrator handoffs, active subagents, and fanout trees.
+- **Rich Agent Node Inspector**: Click any agent node (`Classification`, `Landing`, `Hosting`, `Embedded`) to inspect its exact MCP tool calls with input/output payloads, model thought traces, and network/iframe diagnostics.
+- **Built-in HTML5 Video Preview**: Immediately play back captured `.m3u8` and direct media streams with zero third-party player overhead.
 
-The local stack is Docker-first and split by failure domain:
+---
 
-| Service | Role | Host access |
-| --- | --- | --- |
-| `owc-web` | Next.js operator console | `http://localhost:3000` |
-| `owc` | FastAPI backend, jobs, agents, repositories, API contracts | `http://localhost:8000` |
-| `postgres` | Runtime records, evidence, telemetry, datasets, pricing | internal |
-| `owc-tools` | Puppeteer MCP server plus Chrome | `http://localhost:3001`, DevTools `9222` |
-| `owc-tools-playwright` | Playwright MCP server plus browser runtime | `http://localhost:3002`, DevTools `9223` |
+### 2. Autonomous 4-Stage Pipeline Architecture
+Deterministic LangGraph orchestration coordinates four specialized agent contracts. Each agent possesses a bounded execution boundary and role-scoped tool profile, preventing hallucinations and navigation drift.
 
-The backend talks to browser tools through MCP service URLs, not direct frontend calls. The web app talks to FastAPI through the typed `web/lib/api.ts` / `web/lib/api-client.ts` transport. Postgres access stays behind repository classes in `src/storage/`.
+<img src="docs/assets/feature-pipeline.svg" alt="4-Stage Interactive Pipeline Canvas" width="100%" />
 
-### Technology Stack
+| Agent | Role & Responsibility | Model Scope |
+| :--- | :--- | :--- |
+| **01. Classification** | Ingests target URL and determines page type (`Landing`, `Hosting`, `Embedded`) before extraction begins. | Read-only inspect tools |
+| **02. Landing Page** | Parses dynamic schedules (e.g. `streamed.pk`, `freeshot.live`) and extracts event listings and player links. | Navigation & interaction |
+| **03. Hosting Page** | Operates server dropdowns, switches streaming mirrors, and handles click-to-play overlays. | Full interaction & harvest |
+| **04. Embedded Player** | Defeats sandboxed iframe restrictions, recovers media tokens, and captures `.m3u8` / `.mpd` playlists. | Media verification & recovery |
 
-| Layer | Main technology |
-| --- | --- |
-| Agent runtime | Python 3.11, LangChain, LangGraph |
-| LLM layer | LiteLLM (multi-provider, one interface; see [ADR-001](docs/adr/ADR-001-litellm-provider.md)) |
-| API | FastAPI, Pydantic, SSE endpoints, background jobs |
-| Persistence | PostgreSQL, SQLAlchemy, Alembic |
-| Memory | Redis run-state + Postgres pgvector (planned, see [ADR-002](docs/adr/ADR-002-redis-run-state.md); SQLite/JSON stores remain until migration) |
-| Browser tools | Playwright-only MCP (consolidation planned, see [ADR-003](docs/adr/ADR-003-playwright-only-persona.md); puppeteer stack still present) |
-| Frontend | Next.js 15, React 19, shadcn-style components, Radix UI, React Flow, Recharts |
-| Packaging | `uv`, Docker Compose, separate Dockerfiles for API, web, Puppeteer tools, and Playwright tools |
-| Runtime config | `configs/settings.yaml`, `data/settings.runtime.yaml`, `data/browser.runtime.json`; service/bootstrap secrets remain in `.env` |
+---
 
-More detail is in [Deployment And Physical Runtime](docs/system/deployment.md), [Docker And Ports](docs/operations/docker.md), and [Configuration](docs/operations/configuration.md).
+### 3. Executive Dashboard & Real-Time Analytics
+Monitor pipeline health, infrastructure coverage, and model expenditures without mathematical clutter.
 
-## Provider Configuration And Settings UX
+<img src="docs/assets/feature-analytics.svg" alt="Executive Dashboard Analytics Visualizations" width="100%" />
 
-Model credentials are configured from **Settings → Provider Keys** and persisted as runtime
-overrides in `data/settings.runtime.yaml`. Provider values are masked in API responses and are
-never included in Docker images or committed source. The Settings UI exposes a 110-provider
-LiteLLM-compatible directory, including OpenCode Zen/Go, LiteLLM Gateway, cloud providers,
-OpenAI-compatible endpoints, and local runtimes such as Ollama, LM Studio, and vLLM.
+- **7-Day Cost & Token Trend**: Interactive dual-axis Recharts visualization tracking daily model spend against prompt/generation volume.
+- **Outcome Distribution**: Donut breakdown displaying verification success rates and classification categories across all runs.
+- **Latency & Benchmark Tracking**: Bar chart monitoring wall-clock execution time against performance thresholds.
+- **Tool Reliability Matrix**: Real-time reliability and execution frequency tracking across all six MCP tools.
 
-**Settings → Models** assigns a provider and model independently for each pipeline agent. The
-provider and model selectors are searchable, and a manual model ID remains available when a
-provider does not expose a catalog. Live catalogs use provider-specific adapters where available
-and a generic OpenAI-compatible `GET /v1/models` path otherwise.
+---
 
-See [Provider Directory](docs/operations/provider-directory.md), [Frontend Console](docs/frontend/README.md),
-and [Operator Console API](docs/api/operator-console.md) for the setup and contract details.
+### 4. Model Control Plane & Hardened Playwright Runtime
+Take full control over your intelligence stack with enterprise Bring-Your-Own-Key (BYOK) support and browser security policies.
 
-## Evidence And Observability
+<img src="docs/assets/feature-settings.svg" alt="Model Configuration and BYOK Control Plane" width="100%" />
 
-![Evidence and observability loop](docs/assets/readme-evidence-loop.svg)
+- **Multi-Provider BYOK**: Connect 110+ LiteLLM-compatible providers including Google Gemini, Anthropic Claude, OpenAI, OpenRouter, and local runtimes (Ollama, vLLM).
+- **Per-Agent Model Routing**: Assign fast lightweight models (e.g. `gemini-3.1-flash-lite`) to classification while reserving reasoning-heavy models for embedded player extraction.
+- **Hardened Playwright 1.62.1 MCP**: Zero-knob containerized browser execution with isolated contexts per run and **uBlock Origin Lite (MV3)** pre-installed to strip malicious tracking and popups.
+- **Granular Defense Toggles**: Configure Iframe Auto-Recovery, CORS patching, and explicit prompt caching with one-click persistence.
 
-The database is intentionally more detailed than a final JSON blob. The console needs to answer questions like: which agent failed, which tool returned the bad payload, which screenshot belongs to which step, what did Gemini cost, and why did provider analysis skip?
+---
 
-Postgres table families include:
+## 🚀 Quick Start: Cloud Containers in 10 Seconds
 
-- run identity and snapshots: `pipeline_runs`, `run_snapshots`, `background_jobs`;
-- agent telemetry: `agent_runs`, `agent_outputs`, `runtime_events`;
-- model telemetry: `llm_calls`, `run_model_usage`, `prompt_versions`, `prompt_compilations`;
-- tool telemetry: `tool_calls`, `tool_playground_calls`;
-- evidence: `run_streams`, `run_screenshots`, `provider_analyses`, `takedown_emails`;
-- operator state: `run_decisions`, `run_tasks`;
-- datasets and pricing: `dataset_sites`, `dataset_batches`, `dataset_site_runs`, `pricing_configs`.
+Open Web Catcher publishes pre-compiled, production-optimized multi-architecture images to the **GitHub Container Registry (GHCR)** on every release. You never need to compile images locally.
 
-See [Data Model And Persistence](docs/system/data-model.md), [Dashboard Logging And Run Telemetry](docs/workflow/dashboard-logging.md), and [Agent Desk](docs/workflow/agent-desk.md).
-
-## Repository Map
-
-| Path | Purpose |
-| --- | --- |
-| `src/api/` | FastAPI app, UI contracts, workflow launch, run detail, provider/config/dataset endpoints |
-| `src/agents/` | Orchestrator, browser-facing agents, shared loop, prompt compilation, memory, email generation |
-| `src/models/` | Pydantic runtime schemas and enums |
-| `src/storage/` | SQLAlchemy models, repositories, UI read models, dataset persistence |
-| `src/tools/` | MCP client bridge, provider lookup, email tool integration |
-| `tools/puppeteer/` | Puppeteer MCP server, profiles, inspect/action/harvest tools |
-| `tools/playwright/` | Playwright MCP server and equivalent browser tool surface |
-| `web/` | Next.js operator console |
-| `configs/prompts/` | Agent contracts and prompt source files |
-| `configs/settings.yaml` | Non-secret runtime defaults |
-| `data/` | Runtime overrides, memory, generated state, local artifacts |
-| `docs/` | Active documentation |
-| `alembic/` | Database migrations |
-| `datasets/` | Dataset seed inputs for workflow testing |
-
-## Run Locally
-
-### Docker Compose
-
-```powershell
-Copy-Item .env.example .env
-docker compose up --build
-```
-
-Then open:
-
-- console: `http://localhost:3000`;
-- backend health: `http://localhost:8000/health`;
-- browser runtime status: `http://localhost:8000/ui/browser/status`.
-
-### Backend Development
-
-```powershell
-uv venv .venv --python 3.11
-uv pip install --python .venv\Scripts\python.exe -e ".[dev]"
-```
-
-### Frontend Development
-
-```powershell
-cd web
-npm install
-npm run dev
-```
-
-## Validation
-
-Before running anything, create `.env` from `.env.example`. `POSTGRES_PASSWORD` is required; docker-compose fails fast if it is unset and there is no default.
-
+### 1. Configure Environment
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Useful checks:
+Set your credentials in `.env`:
+```env
+# Point to pre-built GitHub Container Registry images
+OWC_IMAGE=ghcr.io/arfaouiahmed1/open-web-catcher
+OWC_WEB_IMAGE=ghcr.io/arfaouiahmed1/open-web-catcher-web
+OWC_TOOLS_PW_IMAGE=ghcr.io/arfaouiahmed1/open-web-catcher-tools-playwright
+OWC_TAG=latest
 
-```powershell
-uv sync --extra dev
-uv run pytest -q
-uv run pytest -m unit
-cd web
-npm run build
+# Database and LLM credentials
+POSTGRES_PASSWORD=your_secure_password
+GOOGLE_API_KEY=your_google_gemini_api_key
 ```
 
-For Docker runtime checks:
-
+### 2. Pull & Launch
 ```powershell
-docker compose ps
-curl.exe http://localhost:8000/health
-curl.exe http://localhost:8000/ui/browser/status
+docker compose pull
+docker compose up -d
 ```
 
-The full validation guide is [docs/operations/validation.md](docs/operations/validation.md).
+### 3. Access Console
+- **Operator Console**: [http://localhost:3005](http://localhost:3005)
+- **FastAPI Backend & Swagger**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Playwright MCP Health**: [http://localhost:3002/health](http://localhost:3002/health)
+- **Headless Chrome CDP Debugger**: [http://localhost:9223](http://localhost:9223)
 
-## Documentation
+---
 
-Start with [docs/README.md](docs/README.md). The active reading path is:
+## 🥊 Scraper Comparison Matrix
 
-1. [System](docs/system/README.md)
-2. [Architecture](docs/system/architecture.md)
-3. [LangChain And LangGraph Runtime](docs/system/langchain-langgraph.md)
-4. [Runtime Classes And Function Map](docs/system/runtime-classes-functions.md)
-5. [Workflow](docs/workflow/README.md)
-6. [Run Lifecycle](docs/workflow/run-lifecycle.md)
-7. [Agent Desk](docs/workflow/agent-desk.md)
-8. [Agents](docs/agents/README.md)
-9. [API Contracts](docs/api/README.md)
-10. [MCP And Browser Tools](docs/tools/README.md)
-11. [Operations](docs/operations/README.md)
+| Feature | Legacy Scrapers (Scrapy / Puppeteer) | Single-Prompt AI Scrapers | Open Web Catcher (OWC) |
+| :--- | :---: | :---: | :---: |
+| **Dynamic Schedule Crawling** | ❌ Fragile CSS Selectors | ⚠️ Prompt Drift / Hallucinations | ✅ Dedicated Landing Agent |
+| **Malicious Ad & Popup Defense** | ❌ Manual Regex / Crashes | ❌ Fails on New Windows | ✅ Built-in uBlock Origin Lite |
+| **Sandboxed Iframe Recovery** | ❌ Blocked by CSP / XFO | ❌ Context Loss | ✅ Automated Context Pivot |
+| **Playable Stream Verification** | ❌ None (Extracts text only) | ❌ Cannot verify media | ✅ Byte-level Chunk & SHA256 Probe |
+| **Takedown & Evidence Export** | ❌ Manual | ❌ Generic Text | ✅ Verifiable DMCA Dossier |
+| **Model Cost Control** | N/A | ❌ Expensive Single Calls | ✅ Role-based Model Routing & Caching |
 
-Historical notes are under [docs/archive/README.md](docs/archive/README.md); they are not the active implementation contract.
+---
+
+## 📚 Documentation & Wiki
+
+Explore our dedicated documentation guides:
+- [**System Architecture**](docs/wiki/Architecture.md) — Multi-tier topology, LangGraph state machine, and data persistence.
+- [**Multi-Agent Pipeline**](docs/wiki/Multi-Agent-Pipeline.md) — Detailed agent contract specifications.
+- [**Playwright MCP Runtime**](docs/wiki/Playwright-MCP-Runtime.md) — The 6 MCP tool contracts and defense mechanisms.
+- [**Operator Console Guide**](docs/wiki/Operator-Console.md) — Live workflow launcher, dataset manager, and telemetry.
+- [**API Reference**](docs/wiki/API-Reference.md) — Complete FastAPI REST and SSE endpoints.
+
+Visit the online [GitHub Project Wiki](https://github.com/arfaouiahmed1/Open-Web-Catcher/wiki) for interactive tutorials.
+
+---
+
+## 🤝 Community & Contributing
+
+We welcome contributions! Please review our community guidelines:
+- [**Contributing Guidelines**](CONTRIBUTING.md)
+- [**Code of Conduct**](CODE_OF_CONDUCT.md)
+- [**Security Policy**](SECURITY.md)
+
+---
+
+## 📄 License
+
+Open Web Catcher is licensed under the [MIT License](LICENSE).

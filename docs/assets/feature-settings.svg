@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="340" viewBox="0 0 1120 340" role="img" aria-label="Model Configuration and BYOK Control Plane">
+  <defs>
+    <linearGradient id="set-bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.95"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1120" height="340" rx="16" fill="#0b0f17" stroke="#334155" stroke-width="1.5"/>
+
+  <!-- Left: Global & Agent Routing Grid -->
+  <g transform="translate(32, 28)">
+    <rect width="530" height="284" rx="10" fill="url(#set-bg)" stroke="#334155" stroke-width="1"/>
+    
+    <text x="20" y="28" fill="#ffffff" font-family="-apple-system,sans-serif" font-size="14" font-weight="700">Model Routing &amp; Agent Assignments</text>
+    <text x="20" y="46" fill="#64748b" font-family="-apple-system,sans-serif" font-size="11">Per-agent LLM routing with BYOK and live provider catalogs</text>
+
+    <!-- Global Default Selector Box -->
+    <g transform="translate(20, 60)">
+      <rect width="490" height="52" rx="8" fill="#0f172a" stroke="#0284c7" stroke-width="1.2"/>
+      <text x="14" y="20" fill="#38bdf8" font-family="-apple-system,sans-serif" font-size="10" font-weight="700">GLOBAL DEFAULT MODEL</text>
+      <text x="14" y="38" fill="#ffffff" font-family="monospace" font-size="12" font-weight="600">google / gemini-3.1-flash-lite</text>
+      <rect x="360" y="14" width="115" height="24" rx="4" fill="#38bdf8" fill-opacity="0.2"/>
+      <text x="372" y="30" fill="#38bdf8" font-family="-apple-system,sans-serif" font-size="10" font-weight="600">Apply to all agents</text>
+    </g>
+
+    <!-- Agent Rows -->
+    <g transform="translate(20, 124)">
+      <!-- Row 1 -->
+      <rect x="0" y="0" width="490" height="32" rx="6" fill="#0f172a" stroke="#1e293b" stroke-width="0.8"/>
+      <text x="14" y="20" fill="#e2e8f0" font-family="-apple-system,sans-serif" font-size="11" font-weight="600">Orchestrator</text>
+      <text x="120" y="20" fill="#64748b" font-family="monospace" font-size="10">Inherited · gemini-3.1-flash-lite</text>
+      <rect x="420" y="6" width="56" height="20" rx="10" fill="#10b981"/>
+      <circle cx="464" cy="16" r="7" fill="#ffffff"/>
+
+      <!-- Row 2 -->
+      <rect x="0" y="38" width="490" height="32" rx="6" fill="#0f172a" stroke="#1e293b" stroke-width="0.8"/>
+      <text x="14" y="20" fill="#e2e8f0" font-family="-apple-system,sans-serif" font-size="11" font-weight="600">Classification</text>
+      <text x="120" y="20" fill="#64748b" font-family="monospace" font-size="10">Inherited · gemini-3.1-flash-lite</text>
+      <rect x="420" y="6" width="56" height="20" rx="10" fill="#10b981"/>
+      <circle cx="464" cy="16" r="7" fill="#ffffff"/>
+
+      <!-- Row 3: Custom Override -->
+      <rect x="0" y="76" width="490" height="32" rx="6" fill="#0284c7" fill-opacity="0.15" stroke="#38bdf8" stroke-width="0.8"/>
+      <text x="14" y="20" fill="#ffffff" font-family="-apple-system,sans-serif" font-size="11" font-weight="700">Embedded Player</text>
+      <text x="120" y="20" fill="#38bdf8" font-family="monospace" font-size="10">Override · anthropic / claude-3-5-sonnet</text>
+      <rect x="420" y="6" width="56" height="20" rx="10" fill="#0284c7"/>
+      <circle cx="464" cy="16" r="7" fill="#ffffff"/>
+
+      <!-- Row 4 -->
+      <rect x="0" y="114" width="490" height="32" rx="6" fill="#0f172a" stroke="#1e293b" stroke-width="0.8"/>
+      <text x="14" y="20" fill="#e2e8f0" font-family="-apple-system,sans-serif" font-size="11" font-weight="600">Hosting Extraction</text>
+      <text x="120" y="20" fill="#64748b" font-family="monospace" font-size="10">Inherited · gemini-3.1-flash-lite</text>
+      <rect x="420" y="6" width="56" height="20" rx="10" fill="#10b981"/>
+      <circle cx="464" cy="16" r="7" fill="#ffffff"/>
+    </g>
+  </g>
+
+  <!-- Right: Runtime & Caching Controls -->
+  <g transform="translate(582, 28)">
+    <rect width="506" height="284" rx="10" fill="url(#set-bg)" stroke="#334155" stroke-width="1"/>
+    
+    <text x="20" y="28" fill="#ffffff" font-family="-apple-system,sans-serif" font-size="14" font-weight="700">Runtime &amp; Defense Controls</text>
+    <text x="20" y="46" fill="#64748b" font-family="-apple-system,sans-serif" font-size="11">Playwright 1.62.1 enforcement and LLM tuning</text>
+
+    <g transform="translate(20, 60)">
+      <!-- Item 1 -->
+      <g transform="translate(0, 0)">
+        <text x="0" y="14" fill="#e2e8f0" font-family="-apple-system,sans-serif" font-size="11" font-weight="600">uBlock Origin Lite (MV3)</text>
+        <text x="0" y="28" fill="#64748b" font-family="-apple-system,sans-serif" font-size="10">Strip malicious tracking &amp; popup traps</text>
+        <rect x="410" y="2" width="56" height="20" rx="10" fill="#10b981"/>
+        <circle cx="454" cy="12" r="7" fill="#ffffff"/>
+      </g>
+      <!-- Item 2 -->
+      <g transform="translate(0, 44)">
+        <text x="0" y="14" fill="#e2e8f0" font-family="-apple-system,sans-serif" font-size="11" font-weight="600">Iframe Auto-Recovery &amp; Sandbox Patch</text>
+        <text x="0" y="28" fill="#64748b" font-family="-apple-system,sans-serif" font-size="10">Overcome frame-ancestors &amp; CSP blocks</text>
+        <rect x="410" y="2" width="56" height="20" rx="10" fill="#10b981"/>
+        <circle cx="454" cy="12" r="7" fill="#ffffff"/>
+      </g>
+      <!-- Item 3 -->
+      <g transform="translate(0, 88)">
+        <text x="0" y="14" fill="#e2e8f0" font-family="-apple-system,sans-serif" font-size="11" font-weight="600">Gemini Explicit Prompt Cache</text>
+        <text x="0" y="28" fill="#64748b" font-family="-apple-system,sans-serif" font-size="10">TTL 1800s · Lead time 120s</text>
+        <rect x="410" y="2" width="56" height="20" rx="10" fill="#10b981"/>
+        <circle cx="454" cy="12" r="7" fill="#ffffff"/>
+      </g>
+      <!-- Item 4 -->
+      <g transform="translate(0, 132)">
+        <text x="0" y="14" fill="#e2e8f0" font-family="-apple-system,sans-serif" font-size="11" font-weight="600">Extended Thinking Budget</text>
+        <text x="0" y="28" fill="#64748b" font-family="-apple-system,sans-serif" font-size="10">8,000 tokens allocation</text>
+        <rect x="410" y="2" width="56" height="20" rx="10" fill="#10b981"/>
+        <circle cx="454" cy="12" r="7" fill="#ffffff"/>
+      </g>
+      <!-- Item 5 -->
+      <g transform="translate(0, 176)">
+        <text x="0" y="14" fill="#e2e8f0" font-family="-apple-system,sans-serif" font-size="11" font-weight="600">Max Parallel Hosting Pages</text>
+        <text x="0" y="28" fill="#64748b" font-family="-apple-system,sans-serif" font-size="10">5 concurrent browser contexts</text>
+        <rect x="410" y="2" width="56" height="22" rx="4" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+        <text x="434" y="17" fill="#ffffff" font-family="monospace" font-size="11" font-weight="700">5</text>
+      </g>
+    </g>
+  </g>
+</svg>

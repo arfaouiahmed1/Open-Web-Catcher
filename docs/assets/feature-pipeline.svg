@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="340" viewBox="0 0 1120 340" role="img" aria-label="4-Stage Interactive Pipeline Canvas">
+  <defs>
+    <linearGradient id="stage-bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.95"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1120" height="340" rx="16" fill="#0b0f17" stroke="#334155" stroke-width="1.5"/>
+
+  <!-- Section Header -->
+  <text x="32" y="42" fill="#ffffff" font-family="-apple-system,sans-serif" font-size="18" font-weight="700">Autonomous 4-Stage Pipeline Architecture</text>
+  <text x="32" y="66" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="12">Deterministic routing around bounded specialist agents with zero prompt leakage.</text>
+
+  <!-- 4 Stage Cards -->
+  <g transform="translate(32, 90)">
+    <!-- Stage 1 -->
+    <g transform="translate(0, 0)">
+      <rect width="245" height="210" rx="12" fill="url(#stage-bg)" stroke="#38bdf8" stroke-width="1.5"/>
+      <circle cx="28" cy="28" r="14" fill="#38bdf8" fill-opacity="0.2"/>
+      <text x="24" y="33" fill="#38bdf8" font-family="monospace" font-size="12" font-weight="700">01</text>
+      <text x="52" y="32" fill="#ffffff" font-family="-apple-system,sans-serif" font-size="13" font-weight="700">Classification</text>
+      <text x="52" y="47" fill="#64748b" font-family="-apple-system,sans-serif" font-size="10">Target Analysis &amp; Ingestion</text>
+
+      <line x1="20" y1="62" x2="225" y2="62" stroke="#334155" stroke-width="0.8"/>
+
+      <text x="20" y="85" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="11">Inspects DOM &amp; metadata</text>
+      <text x="20" y="105" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="11">Categorizes architecture:</text>
+      
+      <rect x="20" y="118" width="80" height="22" rx="4" fill="#0284c7" fill-opacity="0.2"/>
+      <text x="26" y="133" fill="#38bdf8" font-family="monospace" font-size="10">LANDING</text>
+      <rect x="110" y="118" width="80" height="22" rx="4" fill="#10b981" fill-opacity="0.2"/>
+      <text x="116" y="133" fill="#10b981" font-family="monospace" font-size="10">HOSTING</text>
+      <rect x="20" y="146" width="80" height="22" rx="4" fill="#c084fc" fill-opacity="0.2"/>
+      <text x="26" y="161" fill="#c084fc" font-family="monospace" font-size="10">EMBEDDED</text>
+
+      <text x="20" y="192" fill="#64748b" font-family="monospace" font-size="9">Tools: navigate · inspect</text>
+    </g>
+
+    <!-- Connector Arrow 1 -->
+    <path d="M 252 105 L 268 105" stroke="#38bdf8" stroke-width="2" stroke-dasharray="3 3"/>
+
+    <!-- Stage 2 -->
+    <g transform="translate(275, 0)">
+      <rect width="245" height="210" rx="12" fill="url(#stage-bg)" stroke="#818cf8" stroke-width="1.5"/>
+      <circle cx="28" cy="28" r="14" fill="#818cf8" fill-opacity="0.2"/>
+      <text x="24" y="33" fill="#818cf8" font-family="monospace" font-size="12" font-weight="700">02</text>
+      <text x="52" y="32" fill="#ffffff" font-family="-apple-system,sans-serif" font-size="13" font-weight="700">Orchestration</text>
+      <text x="52" y="47" fill="#64748b" font-family="-apple-system,sans-serif" font-size="10">Context &amp; Fanout Control</text>
+
+      <line x1="20" y1="62" x2="225" y2="62" stroke="#334155" stroke-width="0.8"/>
+
+      <text x="20" y="85" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="11">LangGraph state machine</text>
+      <text x="20" y="105" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="11">Allocates isolated sessions</text>
+      <text x="20" y="125" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="11">Bypasses dead ends early</text>
+      
+      <rect x="20" y="142" width="190" height="26" rx="5" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+      <text x="30" y="159" fill="#818cf8" font-family="monospace" font-size="10">State: Concurrency (1..16)</text>
+
+      <text x="20" y="192" fill="#64748b" font-family="monospace" font-size="9">Backend: Redis + Postgres</text>
+    </g>
+
+    <!-- Connector Arrow 2 -->
+    <path d="M 527 105 L 543 105" stroke="#818cf8" stroke-width="2" stroke-dasharray="3 3"/>
+
+    <!-- Stage 3 -->
+    <g transform="translate(550, 0)">
+      <rect width="245" height="210" rx="12" fill="url(#stage-bg)" stroke="#10b981" stroke-width="1.5"/>
+      <circle cx="28" cy="28" r="14" fill="#10b981" fill-opacity="0.2"/>
+      <text x="24" y="33" fill="#10b981" font-family="monospace" font-size="12" font-weight="700">03</text>
+      <text x="52" y="32" fill="#ffffff" font-family="-apple-system,sans-serif" font-size="13" font-weight="700">Extraction</text>
+      <text x="52" y="47" fill="#64748b" font-family="-apple-system,sans-serif" font-size="10">Host &amp; Embedded Bypass</text>
+
+      <line x1="20" y1="62" x2="225" y2="62" stroke="#334155" stroke-width="0.8"/>
+
+      <text x="20" y="85" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="11">uBOL blocks ad traps</text>
+      <text x="20" y="105" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="11">Switches streaming servers</text>
+      <text x="20" y="125" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="11">Harvests .m3u8 &amp; .mpd</text>
+
+      <rect x="20" y="142" width="190" height="26" rx="5" fill="#10b981" fill-opacity="0.15" stroke="#10b981" stroke-width="0.8"/>
+      <text x="30" y="159" fill="#10b981" font-family="monospace" font-size="10">Defense: Sandbox Recovery</text>
+
+      <text x="20" y="192" fill="#64748b" font-family="monospace" font-size="9">Tools: interact · harvest · wait</text>
+    </g>
+
+    <!-- Connector Arrow 3 -->
+    <path d="M 802 105 L 818 105" stroke="#10b981" stroke-width="2" stroke-dasharray="3 3"/>
+
+    <!-- Stage 4 -->
+    <g transform="translate(825, 0)">
+      <rect width="230" height="210" rx="12" fill="url(#stage-bg)" stroke="#f59e0b" stroke-width="1.5"/>
+      <circle cx="28" cy="28" r="14" fill="#f59e0b" fill-opacity="0.2"/>
+      <text x="24" y="33" fill="#f59e0b" font-family="monospace" font-size="12" font-weight="700">04</text>
+      <text x="52" y="32" fill="#ffffff" font-family="-apple-system,sans-serif" font-size="13" font-weight="700">Verification</text>
+      <text x="52" y="47" fill="#64748b" font-family="-apple-system,sans-serif" font-size="10">Machine Proof &amp; Takedown</text>
+
+      <line x1="20" y1="62" x2="210" y2="62" stroke="#334155" stroke-width="0.8"/>
+
+      <text x="20" y="85" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="11">Byte-samples live media</text>
+      <text x="20" y="105" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="11">SHA256 evidence tokens</text>
+      <text x="20" y="125" fill="#94a3b8" font-family="-apple-system,sans-serif" font-size="11">IP &amp; hosting abuse lookup</text>
+
+      <rect x="20" y="142" width="180" height="26" rx="5" fill="#f59e0b" fill-opacity="0.15" stroke="#f59e0b" stroke-width="0.8"/>
+      <text x="28" y="159" fill="#f59e0b" font-family="monospace" font-size="10">DMCA Takedown Draft</text>
+
+      <text x="20" y="192" fill="#64748b" font-family="monospace" font-size="9">Tools: ipinfo · email_draft</text>
+    </g>
+  </g>
+</svg>

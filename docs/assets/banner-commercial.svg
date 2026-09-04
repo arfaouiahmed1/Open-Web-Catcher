@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="420" viewBox="0 0 1280 420" role="img" aria-label="Open Web Catcher Commercial Banner">
+  <defs>
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0f17"/>
+      <stop offset="50%" stop-color="#0e1526"/>
+      <stop offset="100%" stop-color="#080b11"/>
+    </linearGradient>
+    <linearGradient id="brand-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="50%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#c084fc"/>
+    </linearGradient>
+    <linearGradient id="stream-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+    <linearGradient id="radar-beam" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.75" stroke-opacity="0.4"/>
+    </pattern>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1280" height="420" fill="url(#bg-grad)"/>
+  <rect width="1280" height="420" fill="url(#grid)"/>
+
+  <!-- Radar sweep motif right -->
+  <g transform="translate(1020, 210)" opacity="0.85">
+    <circle r="180" fill="none" stroke="#1e293b" stroke-width="1"/>
+    <circle r="130" fill="none" stroke="#1e293b" stroke-width="1"/>
+    <circle r="80" fill="none" stroke="#334155" stroke-width="1.2"/>
+    <circle r="30" fill="none" stroke="#38bdf8" stroke-width="1.5" stroke-opacity="0.6"/>
+    <path d="M 0 0 L 150 -90 A 180 180 0 0 0 90 -150 Z" fill="url(#radar-beam)"/>
+    <circle cx="95" cy="-80" r="4.5" fill="#10b981" filter="url(#glow)"/>
+    <circle cx="50" cy="90" r="3.5" fill="#38bdf8" filter="url(#glow)"/>
+    <circle cx="-110" cy="-30" r="3.5" fill="#f59e0b" filter="url(#glow)"/>
+  </g>
+
+  <!-- Content Left -->
+  <g transform="translate(80, 80)">
+    <!-- Badge -->
+    <rect width="320" height="28" rx="14" fill="#1e293b" fill-opacity="0.6" stroke="#334155" stroke-width="1"/>
+    <circle cx="14" cy="14" r="4" fill="#10b981" filter="url(#glow)"/>
+    <text x="26" y="18" fill="#94a3b8" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" font-weight="600" letter-spacing="0.08em">AUTONOMOUS MULTI-AGENT INTELLIGENCE</text>
+
+    <!-- Main Title -->
+    <text x="0" y="72" fill="#ffffff" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="44" font-weight="800" letter-spacing="-0.03em">
+      Open Web <tspan fill="url(#brand-grad)">Catcher</tspan>
+    </text>
+
+    <!-- Subtitle -->
+    <text x="0" y="108" fill="#94a3b8" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="16" font-weight="400">
+      Enterprise streaming piracy investigation, dynamic sandbox bypass, and machine-verifiable stream verification.
+    </text>
+
+    <!-- Pill Strip -->
+    <g transform="translate(0, 140)">
+      <!-- Pill 1: Playwright MCP -->
+      <g transform="translate(0, 0)">
+        <rect width="180" height="34" rx="8" fill="#1e293b" fill-opacity="0.8" stroke="#334155" stroke-width="1"/>
+        <text x="14" y="21" fill="#38bdf8" font-family="monospace" font-size="12" font-weight="600">⚡ Playwright 1.62.1</text>
+      </g>
+      <!-- Pill 2: uBlock Origin Lite -->
+      <g transform="translate(192, 0)">
+        <rect width="180" height="34" rx="8" fill="#1e293b" fill-opacity="0.8" stroke="#334155" stroke-width="1"/>
+        <text x="14" y="21" fill="#10b981" font-family="monospace" font-size="12" font-weight="600">🛡️ uBOL MV3 Native</text>
+      </g>
+      <!-- Pill 3: Next.js 15 Console -->
+      <g transform="translate(384, 0)">
+        <rect width="180" height="34" rx="8" fill="#1e293b" fill-opacity="0.8" stroke="#334155" stroke-width="1"/>
+        <text x="14" y="21" fill="#c084fc" font-family="monospace" font-size="12" font-weight="600">💻 Next.js 15 Cockpit</text>
+      </g>
+      <!-- Pill 4: Cloud Containers -->
+      <g transform="translate(576, 0)">
+        <rect width="180" height="34" rx="8" fill="#1e293b" fill-opacity="0.8" stroke="#334155" stroke-width="1"/>
+        <text x="14" y="21" fill="#f59e0b" font-family="monospace" font-size="12" font-weight="600">📦 GHCR Cloud Ready</text>
+      </g>
+    </g>
+
+    <!-- Bottom Stat Strip -->
+    <g transform="translate(0, 205)">
+      <text x="0" y="20" fill="#64748b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" font-weight="600" text-transform="uppercase" letter-spacing="0.1em">FOUR SPECIALIST AGENTS</text>
+      <text x="0" y="42" fill="#e2e8f0" font-family="monospace" font-size="14" font-weight="700">Classification · Landing · Hosting · Embedded</text>
+
+      <text x="450" y="20" fill="#64748b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="11" font-weight="600" text-transform="uppercase" letter-spacing="0.1em">TARGET PROTOCOLS</text>
+      <text x="450" y="42" fill="#e2e8f0" font-family="monospace" font-size="14" font-weight="700">HLS (.m3u8) · DASH (.mpd) · MP4 Direct</text>
+    </g>
+  </g>
+</svg>
