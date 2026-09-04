@@ -188,7 +188,7 @@ export const KpiCard = memo(function KpiCard({
         {bar != null ? <AnimBar pct={bar} color={resolvedBarColor} /> : null}
 
         {delta ? (
-          <div className={cn("mt-2.5 inline-flex items-center gap-1 font-mono text-[10.5px]", deltaDir === "down" ? "text-rose-400" : "text-emerald-400")}>
+          <div className={cn("mt-2.5 inline-flex items-center gap-1 font-mono text-[10.5px]", deltaDir === "down" ? "text-[var(--rose-text)]" : "text-[var(--mint-text)]")}>
             {deltaDir === "down" ? "↓" : "↑"} {delta}
           </div>
         ) : null}

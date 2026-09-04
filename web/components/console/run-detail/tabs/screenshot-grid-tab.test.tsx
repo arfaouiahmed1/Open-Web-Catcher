@@ -37,8 +37,8 @@ describe("ScreenshotGridTab", () => {
       />,
     );
     expect(markup).toContain('data-component="ScreenshotCard"');
-    expect(markup).toContain('src="https://api.test.invalid/blobs/aaaa1111bbbb2222"');
-    expect(markup).toContain('data-blob-key="aaaa1111bbbb2222"');
+    expect(markup).toContain('data-state="loading"');
+    expect(markup).not.toContain('src="https://api.test.invalid/blobs/aaaa1111bbbb2222"');
     expect(markup).toContain('src="https://cdn.example/a.png"');
     expect(markup).toContain("2 evidence frames");
     expect(markup).toContain('data-role="shot-grid"');
@@ -51,7 +51,8 @@ describe("ScreenshotGridTab", () => {
         events={[]}
       />,
     );
-    expect(markup).toContain('src="https://api.test.invalid/blobs/deadbeef12345678"');
+    expect(markup).toContain('data-state="loading"');
+    expect(markup).not.toContain('src="https://api.test.invalid/blobs/deadbeef12345678"');
     expect(markup).toContain('src="https://x.example/b.png"');
   });
 

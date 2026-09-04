@@ -1,6 +1,7 @@
 "use client";
 
-import React, { memo, useEffect, useRef } from "react";
+import Link from "next/link";
+import React, { memo, useEffect, useRef, useState } from "react";
 import { History, Search, ListFilter } from "lucide-react";
 import { MetricCard } from "@/components/library/MetricCard";
 import { StatusBadge } from "@/components/library/StatusBadge";
@@ -12,7 +13,7 @@ import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-
+import { statusTone } from "@/lib/run-status";
 export interface HistoryTabProps {
   rows: Array<Record<string, unknown>>;
   total: number;
@@ -26,20 +27,16 @@ export interface HistoryTabProps {
   isLoading: boolean;
   onRefresh: () => void;
 }
-
-function statusTone(status: string): "neutral" | "info" | "success" | "warning" | "danger" {
-  const s = String(status || "").toLowerCase();
-  if (["success","completed","done"].includes(s)) return "success";
-  if (["failed","failure","error"].includes(s)) return "danger";
-  if (["running","queued","retrying"].includes(s)) return "info";
-  if (["partial"].includes(s)) return "warning";
-  return "neutral";
-}
-
 const HistoryRow = memo(function HistoryRow({ row }: { row: Record<string, unknown> }) {
+  const runId = String(row.run_id || row.id || "");
   return (
     <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40 transition-colors" style={{ borderColor: "var(--line)" }}>
-      <span className="min-w-0 flex-1 truncate font-mono text-xs">{String(row.run_id || row.id || "—").slice(0, 16)}…</span>
+      <Link
+        href={`/runs/${encodeURIComponent(runId)}`}
+        className="min-w-0 flex-1 truncate font-mono text-xs hover:underline hover:text-foreground"
+      >
+        {runId ? `${runId.slice(0, 16)}…` : "—"}
+      </Link>
       <StatusBadge label={String(row.final_status || row.status || "—")} tone={statusTone(String(row.final_status || row.status || ""))} />
       <Badge tone="muted" className="text-[10px]">{String(row.stream_count || 0)} streams</Badge>
       <span className="font-mono text-xs tabular-nums text-muted-foreground">{String(row.total_cost_usd ?? "—").slice(0, 10)}</span>
@@ -62,6 +59,17 @@ export function HistoryTab({
 }: HistoryTabProps) {
   const maxPage = Math.max(Math.ceil(total / pageSize) - 1, 0);
   const listRef = useRef<HTMLDivElement>(null);
+  const [queryInput, setQueryInput] = useState(query);
+
+  useEffect(() => {
+    setQueryInput(query);
+  }, [query]);
+
+  useEffect(() => {
+    if (queryInput === query) return;
+    const timeout = window.setTimeout(() => onQueryChange(queryInput), 280);
+    return () => window.clearTimeout(timeout);
+  }, [onQueryChange, query, queryInput]);
 
   useEffect(() => {
     if (listRef.current) listRef.current.style.contentVisibility = "auto";
@@ -82,7 +90,7 @@ export function HistoryTab({
             <Select value={status} onChange={(v) => onStatusChange(v)} options={[{ value: "", label: "All statuses" },{ value: "success", label: "Success" },{ value: "failed", label: "Failed" },{ value: "running", label: "Running" },{ value: "cancelled", label: "Cancelled" }]} placeholder="Status" className="w-[160px]" />
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="Search run_id / url…" value={query} onChange={(e) => onQueryChange(e.target.value)} className="h-8 w-[220px] pl-8" />
+              <Input placeholder="Search run_id / url…" value={queryInput} onChange={(e) => setQueryInput(e.target.value)} className="h-8 w-[220px] pl-8" />
             </div>
             <Button variant="outline" size="sm" className="h-8 px-3 text-xs" onClick={onRefresh} disabled={isLoading}>{isLoading ? "Loading…" : "Refresh"}</Button>
           </div>
@@ -92,16 +100,16 @@ export function HistoryTab({
             <LoadingView label="Loading history…" variant="skeleton" rows={3} />
           ) : rows.length ? (
             <div ref={listRef} className="divide-y">
-              {rows.length > 50 ? (
+              {rows.length > 10 ? (
                 <VirtualizedList
-                  items={rows.slice(0, pageSize)}
+                  items={rows}
                   height={320}
                   itemSize={48}
                   renderItem={(row) => <HistoryRow row={row as Record<string, unknown>} />}
                 />
               ) : (
-                rows.slice(0, pageSize).map((row) => (
-                  <HistoryRow key={String(row.run_id || row.id || Math.random())} row={row} />
+                rows.map((row) => (
+                  <HistoryRow key={String(row.run_id || row.id || Math.random())} row={row as Record<string, unknown>} />
                 ))
               )}
             </div>

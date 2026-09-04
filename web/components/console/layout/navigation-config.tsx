@@ -93,12 +93,12 @@ const RUNS_TABS: NavChild[] = [
 
 const SETTINGS_TABS: NavChild[] = [
   { href: "/settings?tab=models", label: "Models & Providers" },
+  { href: "/settings?tab=api-keys", label: "Provider Keys" },
   { href: "/settings?tab=browser", label: "Browser" },
-  { href: "/settings?tab=display", label: "Display" },
-  { href: "/settings?tab=api-keys", label: "API Keys" },
-  { href: "/settings?tab=account", label: "Account" },
-  { href: "/settings?tab=notifications", label: "Notifications" },
   { href: "/settings?tab=mcp-tools", label: "MCP Tools" },
+  { href: "/settings?tab=display", label: "Display" },
+  { href: "/settings?tab=notifications", label: "Notifications" },
+  { href: "/settings?tab=account", label: "Account" },
 ];
 
 export const NAV_ITEMS: NavItem[] = [

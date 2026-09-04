@@ -4,13 +4,21 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, ExternalLink, RefreshCw, RotateCcw, Trash2, XCircle } from "lucide-react";
+import { AlertCircle, Check, Copy, ExternalLink, MoreHorizontal, RefreshCw, RotateCcw, Trash2, XCircle } from "lucide-react";
 
 import { apiFetch } from "@/lib/api";
 import { useRunStream } from "@/lib/use-run-stream";
 import { buildLlmRows } from "@/lib/llm-output-rows";
-import { estimateRunCost, getContextWindow, loadPricing, peakContextUsage, synthCallsFromModelUsage } from "@/lib/pricing";
+import { getContextWindow, loadPricing, peakContextUsage } from "@/lib/pricing";
 import { formatCurrency, formatNumber } from "@/lib/utils";
+import {
+  resolveRunCost,
+  resolveRunToolCallCount,
+  runCostDetail,
+  runCostSourceLabel,
+} from "@/lib/run-detail-helpers";
+import { useRunViewSettings, type RunViewSettings } from "@/components/run-view-settings";
+import { BrowserLiveView } from "@/components/console/run-detail/browser-live-view";
 import {
   canCancelRun,
   canDeleteRun,
@@ -168,11 +176,12 @@ function HeroMetric({  label, value, description, emphasis = "var(--ink)"  }: an
   );
 }
 
-function DiagnosticsGrid({  items = EMPTY_ARRAY  }: any) {
+function DiagnosticsList({  items = EMPTY_ARRAY  }: any) {
+  if (!Array.isArray(items) || items.length === 0) return null;
   return (
     <Card className="overflow-hidden shadow-card">
       <CardHeader
-        className="border-b px-4 py-4"
+        className="border-b px-4 py-3"
         style={{
           background:
             "linear-gradient(180deg, color-mix(in oklch, var(--signal) 6%, transparent), transparent 76%)",
@@ -180,68 +189,63 @@ function DiagnosticsGrid({  items = EMPTY_ARRAY  }: any) {
       >
         <CardTitle className="text-sm font-medium">Run diagnostics</CardTitle>
         <CardDescription className="mt-1 text-[12px]">
-          Failure context, model attempt, routing progress, and persisted timing for this run.
+          Failure context, model attempt, routing progress, and persisted timing.
         </CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-3 p-4 sm:grid-cols-2 2xl:grid-cols-4">
-        {items.map((item: any) => (
-          <div
-            key={item.label}
-            className="rounded-[14px] border px-3 py-2.5"
-            style={{
-              borderColor: "var(--line)",
-              background: "color-mix(in oklch, var(--bg) 82%, transparent)",
-            }}
-          >
-            <div className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--mute-3)" }}>
-              {item.label}
+      <CardContent className="p-2">
+        <dl className="divide-y divide-border/40" style={{ borderColor: "var(--line)" }}>
+          {items.map((item: any) => (
+            <div key={item.label} className="px-2 py-2">
+              <dt className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--mute-3)" }}>
+                {item.label}
+              </dt>
+              <dd className="mt-0.5 break-words text-[12.5px] font-medium leading-snug" style={{ color: "var(--ink)" }}>
+                {item.value}
+              </dd>
+              {item.note ? (
+                <dd className="mt-0.5 text-[11px] leading-snug" style={{ color: "var(--mute)" }}>
+                  {item.note}
+                </dd>
+              ) : null}
             </div>
-            <div className="mt-1 break-words text-[13px] font-medium leading-snug" style={{ color: "var(--ink)" }}>
-              {item.value}
-            </div>
-            {item.note ? (
-              <div className="mt-1 text-[11px] leading-snug" style={{ color: "var(--mute)" }}>
-                {item.note}
-              </div>
-            ) : null}
-          </div>
-        ))}
+          ))}
+        </dl>
       </CardContent>
     </Card>
   );
 }
 
-function SecondaryActionsCard({ 
+function RunKebabMenu({
   run,
   canDelete,
   isDeleting,
-  isRestarting,
-  onRestart,
   onDelete,
- }: any) {
+}: any) {
   if (!run?.url && !canDelete) return null;
+  const itemClass =
+    "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] transition-colors hover:bg-muted/60";
   return (
-    <Card className="overflow-hidden shadow-card">
-      <CardHeader className="border-b px-4 py-3" style={{ borderColor: "var(--line)" }}>
-        <CardTitle className="text-sm font-medium">Run actions</CardTitle>
-        <CardDescription className="text-[12px]">
-          Secondary actions for replaying or cleaning up this run.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-wrap items-center gap-2 p-4">
+    <details className="relative">
+      <summary
+        aria-label="More run actions"
+        className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md border transition-colors hover:bg-muted/60 [&::-webkit-details-marker]:hidden"
+        style={{ borderColor: "var(--line)", color: "var(--mute-2)" }}
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </summary>
+      <div
+        className="absolute right-0 z-20 mt-1 min-w-[210px] rounded-xl border p-1 shadow-lg"
+        style={{
+          borderColor: "var(--line)",
+          background: "var(--card)",
+          color: "var(--ink)",
+        }}
+      >
         {run?.url ? (
-          <Button type="button" variant="outline" size="sm" onClick={onRestart} disabled={isRestarting}>
-            <RotateCcw className="h-4 w-4" />
-            {isRestarting ? "Restarting..." : "Restart run"}
-          </Button>
-        ) : null}
-        {run?.url ? (
-          <Button asChild type="button" variant="outline" size="sm">
-            <a href={run.url} target="_blank" rel="noopener noreferrer">
-              Open source page
-              <ExternalLink className="h-4 w-4" />
-            </a>
-          </Button>
+          <a href={run.url} target="_blank" rel="noopener noreferrer" className={itemClass}>
+            <ExternalLink className="h-3.5 w-3.5" />
+            Open source page
+          </a>
         ) : null}
         {canDelete ? (
           <ConfirmAction
@@ -250,19 +254,19 @@ function SecondaryActionsCard({
             actionLabel={isDeleting ? "Deleting..." : "Delete run"}
             onConfirm={onDelete}
             trigger={(
-              <Button type="button" variant="outline" size="sm" disabled={isDeleting}>
-                <Trash2 className="h-4 w-4" />
-                Delete run
-              </Button>
+              <button type="button" className={itemClass} disabled={isDeleting} style={{ color: "var(--rose)" }}>
+                <Trash2 className="h-3.5 w-3.5" />
+                {isDeleting ? "Deleting..." : "Delete run"}
+              </button>
             )}
           />
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </details>
   );
 }
 
-function RunHeader({ 
+function RunHeader({
   runId,
   run,
   runMode,
@@ -271,7 +275,7 @@ function RunHeader({
   failureNarrative,
   primaryMetrics = EMPTY_ARRAY,
   actions = null,
- }: any) {
+}: any) {
   const title = parseHostLabel(run?.url);
   const subtitle = cleanInlineText(run?.url || "");
   return (
@@ -458,14 +462,21 @@ export function RunDetailPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const VALID_TABS = ["timeline", "events", "reasoning", "streams", "output", "costs", "screenshots"] as const;
+  const VALID_TABS = ["timeline", "browser", "reasoning", "streams", "events", "costs"] as const;
   type TabValue = (typeof VALID_TABS)[number];
+  // Legacy aliases from the pre-cockpit layout: agent output merged into
+  // Streams & Payloads, screenshot grid merged into Browser & Media.
+  const LEGACY_TAB_ALIASES: Record<string, TabValue> = { output: "streams", screenshots: "browser" };
   const rawTab = searchParams.get("tab");
-  const activeTab: TabValue = (VALID_TABS as readonly string[]).includes(rawTab || "") ? (rawTab as TabValue) : "timeline";
+  const activeTab: TabValue = (VALID_TABS as readonly string[]).includes(rawTab || "")
+    ? (rawTab as TabValue)
+    : LEGACY_TAB_ALIASES[rawTab || ""] || "timeline";
   const handleTabChange = (value: string) => {
-    if (!(VALID_TABS as readonly string[]).includes(value)) return;
+    const canonical: TabValue = (VALID_TABS as readonly string[]).includes(value)
+      ? (value as TabValue)
+      : LEGACY_TAB_ALIASES[value] || "timeline";
     const params = new URLSearchParams(searchParams.toString());
-    params.set("tab", value);
+    params.set("tab", canonical);
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   };
   const [payload, setPayload] = useState<any>(null);
@@ -477,6 +488,16 @@ export function RunDetailPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [actionError, setActionError] = useState("");
   const [pricingMap, setPricingMap] = useState<any>(null);
+  const [copied, setCopied] = useState(false);
+  const { settings: viewSettings } = useRunViewSettings();
+  const extendedView: RunViewSettings & { showGraph?: boolean; showPlanBoard?: boolean; showContextMonitor?: boolean } = viewSettings;
+  const showLiveView = viewSettings.showLiveView !== false;
+  const showScreenshots = viewSettings.showScreenshots !== false;
+  const showEventStream = viewSettings.showEventStream !== false;
+  const showGraph = extendedView.showGraph ?? true;
+  const showPlanBoard = extendedView.showPlanBoard ?? true;
+  const showContextMonitor = extendedView.showContextMonitor ?? true;
+  const showCostEstimate = viewSettings.showCostEstimate !== false;
 
   useEffect(() => {
     let alive = true;
@@ -641,8 +662,26 @@ export function RunDetailPage() {
   const allStreams = providerSnapshot.all_streams || EMPTY_ARRAY;
   const modelUsage = payload?.model_usage || snapshot?.metrics?.model_usage || EMPTY_ARRAY;
 
-  const effectiveCalls = llmCalls.length > 0 ? llmCalls : synthCallsFromModelUsage(modelUsage);
-  const costTotals = estimateRunCost(effectiveCalls, pricingMap);
+  // Cost fallback chain: logged run cost → priced LLM event calls (or
+  // model_usage synthesis) → explicit unpriced / no-billable states. Never
+  // renders `-- (Trace missing)`.
+  const resolvedCost = resolveRunCost({
+    run,
+    modelUsage,
+    llmCalls,
+    pricingMap,
+    liveMetrics: liveMetricsSafe,
+  });
+  const costTotals = {
+    total: resolvedCost.total,
+    input: resolvedCost.input,
+    cached: resolvedCost.cached,
+    cacheWrite: resolvedCost.cacheWrite,
+    output: resolvedCost.output,
+    calls: resolvedCost.calls,
+    computed: resolvedCost.source === "priced" || resolvedCost.source === "logged" ? resolvedCost.calls : 0,
+    unpriced: resolvedCost.unpriced,
+  };
 
   const attemptedModel = (() => {
     const fromTelemetry = [...llmTelemetryRows].reverse().find((row) => row.provider || row.model);
@@ -726,9 +765,12 @@ export function RunDetailPage() {
     (runEvents || []).filter((event) => event?.kind === "llm_turn_started").length,
     llmTelemetryRows.length,
   );
-  const toolCallCount = isActiveTrace
-    ? Math.max(Number(liveMetricsSafe.total_tool_calls || 0), toolCalls.length)
-    : Math.max(Number(run.total_tool_calls || 0), toolCalls.length);
+  // Never reports 0 while tool telemetry exists: persisted counter, persisted
+  // rows, paired start/finish rows, and raw start observations from events.
+  const toolCallCount = Math.max(
+    Number(liveMetricsSafe.total_tool_calls || 0),
+    resolveRunToolCallCount({ run, toolCalls, runEvents }),
+  );
   const screenshotCount = Math.max(Number(run.screenshot_count || 0), screenshots.length);
   const streamCount = Math.max(Number(run.stream_count || 0), allStreams.length);
 
@@ -755,6 +797,25 @@ export function RunDetailPage() {
         .filter(Boolean),
     ),
   );
+  const runTokens = useMemo(() => {
+    let tin = 0, tout = 0;
+    for (const call of llmCalls) {
+      tin += Number(call.input_tokens || call.usage_metadata_json?.input_tokens || 0);
+      tout += Number(call.output_tokens || call.usage_metadata_json?.output_tokens || 0);
+    }
+    if (tin === 0 && tout === 0) {
+      for (const entry of modelUsage) {
+        tin += Number(entry?.input_tokens || 0);
+        tout += Number(entry?.output_tokens || 0);
+      }
+    }
+    // Fallback to liveMetricsSafe if calls are empty but metrics have aggregates
+    if (tin === 0 && tout === 0) {
+      tin = Number(liveMetricsSafe.total_tokens_in || payload?.metrics?.total_tokens_in || 0);
+      tout = Number(liveMetricsSafe.total_tokens_out || payload?.metrics?.total_tokens_out || 0);
+    }
+    return { total_tokens_in: tin, total_tokens_out: tout, total_llm_calls: costTotals.calls || llmAttemptCount };
+  }, [llmCalls, modelUsage, costTotals.calls, llmAttemptCount, liveMetricsSafe, payload?.metrics]);
   const decisionCount = runEvents.filter((event) => event?.kind === "orchestrator_decision").length;
 
   const lastSuccessfulStageRow = [...stageRollups].reverse().find((row) =>
@@ -764,42 +825,42 @@ export function RunDetailPage() {
     ? stageLabel(actorToStage(lastSuccessfulStageRow.agent_type) || lastSuccessfulStageRow.agent_type)
     : "--";
 
+  // Compact 6-tile KPI ribbon: cost (logged → priced → explicit unpriced /
+  // no-billable states), duration, tokens, tool calls (event-backed),
+  // captured streams, screenshots.
+  const costDescription = showCostEstimate
+    ? `${runCostDetail(resolvedCost, llmAttemptCount)} · ${runCostSourceLabel(resolvedCost.source)}`
+    : "Hidden by display settings";
   const heroMetrics = [
     {
       label: "Estimated Cost",
-      value: telemetryMissing ? "--" : formatCurrency(costTotals.total),
-      description:
-        telemetryMissing
-          ? "Trace missing"
-          : llmAttemptCount > 0 && costTotals.calls === 0
-            ? "Attempted but no priced telemetry"
-            : costTotals.calls > 0
-              ? `${formatNumber(costTotals.calls)} priced call${costTotals.calls === 1 ? "" : "s"}`
-              : "No model pricing captured",
+      value: showCostEstimate ? formatCurrency(resolvedCost.total) : "Hidden",
+      description: costDescription,
       emphasis: "var(--mint)",
     },
     {
-      label: "Context Window",
-      value: contextWindow > 0 ? `${formatNumber(contextWindow)}` : "--",
-      description:
-        contextWindow > 0
-          ? `${(contextPct * 100).toFixed(1)}% used`
-          : primaryModel
-            ? `Attempted ${primaryModel}`
-            : "No context telemetry",
-      emphasis: contextWindow > 0 ? "var(--signal)" : "var(--ink)",
+      label: "Duration",
+      value: dur(run.duration_seconds),
+      description: parallelism?.max_parallel_agents > 1 ? `Peak overlap ${formatNumber(parallelism.max_parallel_agents)} agents` : "Wall-clock run time",
+      emphasis: "var(--ink)",
     },
     {
-      label: "LLM Calls",
-      value: formatNumber(llmAttemptCount),
-      description: llmAttemptCount > Number(run.total_llm_calls || 0) ? "Attempts including failures" : "Persisted model calls",
+      label: "Total Tokens",
+      value: formatNumber(runTokens.total_tokens_in + runTokens.total_tokens_out),
+      description: `${formatNumber(runTokens.total_llm_calls)} LLM calls`,
       emphasis: "var(--violet)",
     },
     {
       label: "Tool Calls",
       value: formatNumber(toolCallCount),
-      description: "MCP tool executions",
+      description: toolCallCount > toolCalls.length ? "Including observed events" : "MCP tool executions",
       emphasis: "var(--sky)",
+    },
+    {
+      label: "Captured Streams",
+      value: formatNumber(streamCount),
+      description: streamCount > 0 ? "Provider URLs found" : "No provider URLs found",
+      emphasis: "var(--ink)",
     },
     {
       label: "Screenshots",
@@ -807,30 +868,16 @@ export function RunDetailPage() {
       description: screenshotCount > 0 ? "Captured frames" : "No frames captured",
       emphasis: "var(--ink)",
     },
-    {
-      label: "Streams",
-      value: formatNumber(streamCount),
-      description: streamCount > 0 ? "Provider URLs found" : "No provider URLs found",
-      emphasis: "var(--ink)",
-    },
-    {
-      label: "Agents touched",
-      value: formatNumber(uniqueActors.size),
-      description: uniqueActors.size > 0 ? `${Array.from(uniqueActors).slice(0, 2).join(", ")}${uniqueActors.size > 2 ? "..." : ""}` : "No actor telemetry",
-      emphasis: "var(--signal)",
-    },
-    {
-      label: "Stages reached",
-      value: formatNumber(reachedStages.size),
-      description: reachedStages.size > 0 ? Array.from(reachedStages).map(stageLabel).slice(0, 2).join(", ") : "No stage telemetry",
-      emphasis: "var(--signal)",
-    },
   ];
 
   const diagnosticsItems = [
     { label: "Attempted model", value: attemptedModelLabel, note: primaryModel ? "Derived from LLM attempt events when persisted primary model is empty." : "" },
     { label: "Failure stage", value: runFailed ? failureStageLabel : "--", note: runFailed ? failureText : "" },
     { label: "Last successful stage", value: lastSuccessfulStage, note: lastSuccessfulStage !== "--" ? "Last completed stage before the terminal state." : "" },
+    { label: "LLM calls", value: formatNumber(llmAttemptCount), note: llmAttemptCount > Number(run.total_llm_calls || 0) ? "Attempts including failures." : "Persisted model calls." },
+    { label: "Context window", value: contextWindow > 0 ? formatNumber(contextWindow) : "--", note: contextWindow > 0 ? `${(contextPct * 100).toFixed(1)}% peak used.` : "No context telemetry." },
+    { label: "Agents touched", value: formatNumber(uniqueActors.size), note: uniqueActors.size > 0 ? Array.from(uniqueActors).slice(0, 4).join(", ") : "No actor telemetry." },
+    { label: "Stages reached", value: formatNumber(reachedStages.size), note: reachedStages.size > 0 ? Array.from(reachedStages).map(stageLabel).slice(0, 4).join(", ") : "No stage telemetry." },
     { label: "Routing decisions", value: formatNumber(decisionCount), note: decisionCount > 0 ? "Event-derived orchestrator decisions." : "No decisions recorded." },
     { label: "Tool profiles", value: toolProfiles.length ? toolProfiles.join(", ") : "--", note: toolProfiles.length ? `${formatNumber(toolProfiles.length)} MCP profile${toolProfiles.length === 1 ? "" : "s"} connected.` : "No tool session handshakes recorded." },
     { label: "Duration", value: dur(run.duration_seconds), note: parallelism?.max_parallel_agents > 1 ? `Peak overlap ${formatNumber(parallelism.max_parallel_agents)} agents.` : "" },
@@ -895,20 +942,6 @@ export function RunDetailPage() {
     estimated_output_cost_usd: Number(costTotals.output || 0),
     estimated_total_cost_usd: Number(costTotals.total || 0),
   }), [costTotals]);
-
-  const runTokens = useMemo(() => {
-    let tin = 0, tout = 0;
-    for (const call of effectiveCalls) {
-      tin += Number(call.input_tokens || call.usage_metadata_json?.input_tokens || 0);
-      tout += Number(call.output_tokens || call.usage_metadata_json?.output_tokens || 0);
-    }
-    // Fallback to liveMetricsSafe if calls are empty but metrics have aggregates
-    if (tin === 0 && tout === 0) {
-      tin = Number(liveMetricsSafe.total_tokens_in || payload?.metrics?.total_tokens_in || 0);
-      tout = Number(liveMetricsSafe.total_tokens_out || payload?.metrics?.total_tokens_out || 0);
-    }
-    return { total_tokens_in: tin, total_tokens_out: tout, total_llm_calls: costTotals.calls || llmAttemptCount };
-  }, [effectiveCalls, costTotals.calls, llmAttemptCount, liveMetricsSafe, payload?.metrics]);
 
 
   if (isLoading) {
@@ -1014,6 +1047,27 @@ export function RunDetailPage() {
       setIsRestarting(false);
     }
   }
+  async function copyTargetUrl() {
+    const url = String(run?.url || "");
+    if (!url) return;
+    setActionError("");
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        const fallback = document.createElement("textarea");
+        fallback.value = url;
+        document.body.appendChild(fallback);
+        fallback.select();
+        document.execCommand("copy");
+        document.body.removeChild(fallback);
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch (nextError: unknown) {
+      setActionError(nextError instanceof Error ? nextError.message : "Copy failed");
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -1061,6 +1115,18 @@ export function RunDetailPage() {
               <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
               Refresh
             </Button>
+            {run?.url ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={copyTargetUrl}
+                aria-label="Copy target URL"
+              >
+                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                {copied ? "Copied" : "Copy link"}
+              </Button>
+            ) : null}
             {canCancelRun(run) ? (
               <Button
                 type="button"
@@ -1073,99 +1139,135 @@ export function RunDetailPage() {
                 {isCancelling ? "Stopping..." : "Stop run"}
               </Button>
             ) : null}
+            {run?.url ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={restartRun}
+                disabled={isRestarting}
+              >
+                <RotateCcw className="h-4 w-4" />
+                {isRestarting ? "Restarting..." : "Restart"}
+              </Button>
+            ) : null}
+            <RunKebabMenu
+              run={run}
+              canDelete={canDeleteRun(run)}
+              isDeleting={isDeleting}
+              onDelete={deleteRun}
+            />
           </>
         )}
       />
 
-      <AgentRunGraph
-        runId={typeof runId === "string" ? runId : ""}
-        events={runEvents}
-        agentRollups={agentRollups}
-        rootActor={run.root_actor || "orchestrator"}
-        streamConnected={stream.connected}
-        streamStatus={stream.status}
-        completed={Boolean(trace?.completed || stream.completed || runTerminalState.isTerminal)}
-        runStatus={run.final_status || run.status || ""}
-      />
-
-      <DatasetContextCard context={datasetContext} />
-
-      {actionError ? (
-        <div
-          role="alert"
-          className="flex items-start gap-3 rounded-xl border px-4 py-3 text-sm"
-          style={{
-            borderColor: "color-mix(in oklch, var(--rose) 30%, transparent)",
-            background: "color-mix(in oklch, var(--rose) 8%, transparent)",
-            color: "var(--rose)",
-          }}
-        >
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <div>{actionError}</div>
-        </div>
-      ) : null}
-
-      <DiagnosticsGrid items={diagnosticsItems} />
-
-      <SecondaryActionsCard
-        run={run}
-        canDelete={canDeleteRun(run)}
-        isDeleting={isDeleting}
-        isRestarting={isRestarting}
-        onRestart={restartRun}
-        onDelete={deleteRun}
-      />
-
-      {/* Live Agent Action Plans (Todos) and Context Window Utilization */}
-      <AgentPlanBoard events={runEvents} />
-      <ContextWindowMonitor events={runEvents} />
-
-      {/* T40/T41 live composition — SSE-first, library primitives, zero polling.
-          Replaces the former RunDetailLive monolith inline; each tab is a focused
-          library wrapper driven exclusively by useRunStream events. */}
-      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList className="w-full justify-start overflow-x-auto">
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
-          <TabsTrigger value="events">Events</TabsTrigger>
-          <TabsTrigger value="reasoning">Reasoning</TabsTrigger>
-          <TabsTrigger value="streams">Streams & Providers</TabsTrigger>
-          <TabsTrigger value="output">Agent Output</TabsTrigger>
-          <TabsTrigger value="costs">Costs</TabsTrigger>
-          <TabsTrigger value="screenshots">Screenshots</TabsTrigger>
-        </TabsList>
-        <TabsContent value="timeline">
-          <RunTimelineTab steps={planSteps} events={runEvents} streamStatus={stream.status} connected={stream.connected} />
-        </TabsContent>
-        <TabsContent value="events">
-          <RunEventFeedTab events={runEvents} />
-        </TabsContent>
-        <TabsContent value="reasoning">
-          <ReasoningTraceTab events={runEvents} />
-        </TabsContent>
-        <TabsContent value="streams">
-          <StreamProviderTab
-            runId={typeof runId === "string" ? runId : Array.isArray(runId) ? runId[0] : ""}
-            runUrl={run?.url || ""}
-            streamUrls={providerUrls.length ? providerUrls : allStreams}
-            providerAnalysis={providerSnapshot.provider_analysis || EMPTY_ARRAY}
-            extractionResults={providerSnapshot.extraction_results || EMPTY_ARRAY}
-          />
-        </TabsContent>
-        <TabsContent value="output">
-          <AgentOutputTab
-            stageRollups={stageRollups}
-            agentRollups={agentRollups}
-            parallelism={parallelism}
-            takedownEmails={providerSnapshot.takedown_emails || EMPTY_ARRAY}
-          />
-        </TabsContent>
-        <TabsContent value="costs">
-                    <CostMeterTab costs={runCosts} metrics={runTokens as any} />
-        </TabsContent>
-        <TabsContent value="screenshots">
-          <ScreenshotGridTab events={runEvents} screenshots={screenshots} />
-        </TabsContent>
-      </Tabs>
+      {/* Cockpit workspace: primary tabs sit directly under the KPI ribbon;
+          the agent run map, inspector, and diagnostics dock in the sidebar.
+          SSE-first composition, zero polling. */}
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full min-w-0">
+          <TabsList className="w-full justify-start overflow-x-auto">
+            <TabsTrigger value="timeline">Timeline & Steps</TabsTrigger>
+            <TabsTrigger value="browser">Browser & Media</TabsTrigger>
+            <TabsTrigger value="reasoning">Reasoning & LLM</TabsTrigger>
+            <TabsTrigger value="streams">Streams & Payloads</TabsTrigger>
+            <TabsTrigger value="events">Event Stream</TabsTrigger>
+            <TabsTrigger value="costs">Costs & Context</TabsTrigger>
+          </TabsList>
+          <TabsContent value="timeline">
+            <div className="space-y-5">
+              <RunTimelineTab steps={planSteps} events={runEvents} streamStatus={stream.status} connected={stream.connected} />
+              {showPlanBoard ? <AgentPlanBoard events={runEvents} /> : null}
+            </div>
+          </TabsContent>
+          <TabsContent value="browser">
+            <div className="space-y-5">
+              {showLiveView ? (
+                <BrowserLiveView
+                  runId={typeof runId === "string" ? runId : Array.isArray(runId) ? runId[0] : ""}
+                  events={runEvents}
+                  persistedScreenshots={screenshots}
+                />
+              ) : null}
+              {showScreenshots ? (
+                <ScreenshotGridTab events={runEvents} screenshots={screenshots} />
+              ) : null}
+              {!showLiveView && !showScreenshots ? (
+                <Card>
+                  <CardContent className="px-4 py-8 text-center text-[12.5px]" style={{ color: "var(--mute)" }}>
+                    Browser views are hidden by display settings. Re-enable them under Settings → Display.
+                  </CardContent>
+                </Card>
+              ) : null}
+            </div>
+          </TabsContent>
+          <TabsContent value="reasoning">
+            <ReasoningTraceTab events={runEvents} />
+          </TabsContent>
+          <TabsContent value="streams">
+            <div className="space-y-5">
+              <StreamProviderTab
+                runId={typeof runId === "string" ? runId : Array.isArray(runId) ? runId[0] : ""}
+                runUrl={run?.url || ""}
+                streamUrls={providerUrls.length ? providerUrls : allStreams}
+                providerAnalysis={providerSnapshot.provider_analysis || EMPTY_ARRAY}
+                extractionResults={providerSnapshot.extraction_results || EMPTY_ARRAY}
+              />
+              <AgentOutputTab
+                stageRollups={stageRollups}
+                agentRollups={agentRollups}
+                parallelism={parallelism}
+                takedownEmails={providerSnapshot.takedown_emails || EMPTY_ARRAY}
+              />
+            </div>
+          </TabsContent>
+          <TabsContent value="events">
+            {showEventStream ? (
+              <RunEventFeedTab
+                events={runEvents}
+                maxItems={viewSettings.eventLimit}
+                compact={viewSettings.compactEvents}
+                showTimestamps={viewSettings.showTimestamps}
+                highlightErrors={viewSettings.highlightErrors}
+              />
+            ) : (
+              <Card>
+                <CardContent className="px-4 py-8 text-center text-[12.5px]" style={{ color: "var(--mute)" }}>
+                  The event stream is hidden by display settings. Re-enable it under Settings → Display.
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+          <TabsContent value="costs">
+            <div className="space-y-5">
+              <CostMeterTab costs={runCosts} metrics={runTokens as any} />
+              {showContextMonitor ? <ContextWindowMonitor events={runEvents} /> : null}
+            </div>
+          </TabsContent>
+        </Tabs>
+        <aside className="min-w-0 space-y-5">
+          {showGraph ? (
+            <AgentRunGraph
+              runId={typeof runId === "string" ? runId : ""}
+              events={runEvents}
+              agentRollups={agentRollups}
+              rootActor={run.root_actor || "orchestrator"}
+              streamConnected={stream.connected}
+              streamStatus={stream.status}
+              completed={Boolean(trace?.completed || stream.completed || runTerminalState.isTerminal)}
+              runStatus={run.final_status || run.status || ""}
+              showToolArgs={viewSettings.showToolArgs}
+            />
+          ) : (
+            <Card>
+              <CardContent className="px-4 py-6 text-center text-[12.5px]" style={{ color: "var(--mute)" }}>
+                The agent run map is hidden by display settings. Re-enable it under Settings → Display.
+              </CardContent>
+            </Card>
+          )}
+          <DiagnosticsList items={diagnosticsItems} />
+        </aside>
+      </div>
     </div>
   );
 }

@@ -88,7 +88,7 @@ function EmailDraftCard({ email, index }: EmailDraftCardProps): React.JSX.Elemen
       <CardContent className="space-y-4 px-4 py-4">
         {email?.subject ? (
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75">
               Subject
             </div>
             <div className="mt-1 rounded-lg border border-border bg-muted/20 px-3 py-2 text-[12px]">
@@ -98,7 +98,7 @@ function EmailDraftCard({ email, index }: EmailDraftCardProps): React.JSX.Elemen
         ) : null}
         {email?.body ? (
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75">
               Email body
             </div>
             <pre className="mt-1 overflow-x-auto whitespace-pre-wrap rounded-lg border border-border bg-card px-3 py-3 font-mono text-[11px] leading-relaxed text-foreground/85">
@@ -108,7 +108,7 @@ function EmailDraftCard({ email, index }: EmailDraftCardProps): React.JSX.Elemen
         ) : null}
         {evidenceRows.length ? (
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75">
               Correlated evidence
             </div>
             <div className="mt-2 space-y-3">
@@ -137,7 +137,7 @@ function EmailDraftCard({ email, index }: EmailDraftCardProps): React.JSX.Elemen
                   </div>
                   {row?.ocr_text ? (
                     <div className="mt-3 rounded-lg border border-border bg-card px-3 py-2">
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75">
                         OCR / visual channel text
                       </div>
                       <div className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-foreground/80">
@@ -155,10 +155,13 @@ function EmailDraftCard({ email, index }: EmailDraftCardProps): React.JSX.Elemen
                           rel="noreferrer"
                           className="overflow-hidden rounded-lg border border-border bg-card transition hover:border-primary/50"
                         >
+                          {/* eslint-disable-next-line @next/next/no-img-element -- arbitrary backend-hosted evidence URL */}
                           <img
                             src={screenshotUrl}
                             alt={`Evidence screenshot ${screenshotIndex + 1}`}
                             className="h-32 w-full object-cover"
+                            loading="lazy"
+                            decoding="async"
                           />
                           <div className="border-t border-border px-2 py-1 font-mono text-[10px] text-muted-foreground">
                             Screenshot {screenshotIndex + 1}

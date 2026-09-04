@@ -1,6 +1,6 @@
 "use client";
 
-import { Users, Workflow } from "lucide-react";
+import { Users } from "lucide-react";
 import { MetricCard } from "@/components/library/MetricCard";
 import { SectionPanel } from "@/components/console/common/section-panel";
 import { EmptyState } from "@/components/console/common/empty-state";
@@ -18,10 +18,10 @@ export function AgentsTab({ overview, state, agentRows }: AgentsTabProps) {
   const activeWorkflows = Number(summary.active_workflows || 0);
   return (
     <div className="space-y-4 animate-fade-up">
-      <SectionPanel title="Agents" description="Heartbeats rolled up in /ui/overview (active_agents, active_workflows) · visibility-based refresh, no setInterval" icon={<Users className="h-3.5 w-3.5" />}>
+      <SectionPanel title="Agents" description="Live agent and workflow activity" icon={<Users className="h-3.5 w-3.5" />}>
         <div className="grid gap-3 sm:grid-cols-2">
-          <MetricCard label="Active agents" value={String(activeAgents)} hint="COUNT active agent_runs" />
-          <MetricCard label="Active workflows" value={String(activeWorkflows)} hint="COUNT active workflows" />
+          <MetricCard label="Active agents" value={String(activeAgents)} hint="Agents running right now" />
+          <MetricCard label="Active workflows" value={String(activeWorkflows)} hint="Workflows running right now" />
         </div>
       </SectionPanel>
       <SectionPanel title="Agent rows (on-demand)" description="Detailed rows load when tab is active — up to 8 shown with memoization">
@@ -35,9 +35,8 @@ export function AgentsTab({ overview, state, agentRows }: AgentsTabProps) {
             ))}
           </ul>
         ) : (
-          <EmptyState tone="default" title="No detailed rows" description="Agent heartbeats roll up in summary; detailed agent_runs load on demand via /ui/database/agent_runs when tab is active." />
+          <EmptyState tone="default" title="No detailed rows" description="Agent activity appears here while runs are in flight." />
         )}
-        <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground"><Workflow className="h-3 w-3" /> Source: /ui/overview summary; detailed via /ui/database/agent_runs (SSE/visibility, no polling).</p>
       </SectionPanel>
     </div>
   );

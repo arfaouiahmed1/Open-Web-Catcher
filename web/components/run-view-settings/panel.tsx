@@ -44,6 +44,9 @@ export const RunViewSettingsPanel = React.memo(function RunViewSettingsPanel({
           <div className="pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Panels</div>
           <SettingToggle label="Browser Live View" description="Show the live screenshot of what the browser is doing" value={settings.showLiveView} onChange={(v) => update("showLiveView", v)} />
           <SettingToggle label="Screenshot Gallery" description="Show captured screenshots from the run" value={settings.showScreenshots} onChange={(v) => update("showScreenshots", v)} />
+          <SettingToggle label="Agent Execution Graph" description="Show the agent topology map on run detail" value={settings.showGraph} onChange={(v) => update("showGraph", v)} />
+          <SettingToggle label="Agent Plan Board" description="Show the per-agent plan checklist" value={settings.showPlanBoard} onChange={(v) => update("showPlanBoard", v)} />
+          <SettingToggle label="Context Window Monitor" description="Show token context pressure on run detail" value={settings.showContextMonitor} onChange={(v) => update("showContextMonitor", v)} />
           <SettingToggle label="Event Stream" description="Show the live event feed panel" value={settings.showEventStream} onChange={(v) => update("showEventStream", v)} />
         </div>
 

@@ -55,12 +55,12 @@ describe("ScreenshotCard", () => {
     expect(markup).toContain("t=42s");
   });
 
-  it("stamps data-blob-key for blobref sources and resolves the URL", () => {
+  it("stamps data-blob-key and waits for authenticated blob loading", () => {
     const markup = html(
       <ScreenshotCard src="blobref:0a1b2c3d4e5f6071" alt="frame" />,
     );
-    expect(markup).toContain('src="https://api.test.invalid/blobs/0a1b2c3d4e5f6071"');
-    expect(markup).toContain('data-blob-key="0a1b2c3d4e5f6071"');
+    expect(markup).toContain('data-state="loading"');
+    expect(markup).not.toContain('src="https://api.test.invalid/blobs/0a1b2c3d4e5f6071"');
   });
 
   it("supports loading / error / empty states", () => {

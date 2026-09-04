@@ -113,6 +113,36 @@ def test_login_success_returns_token_and_user(api: TestClient):
     assert body["user"] == {"email": ADMIN_EMAIL, "role": "admin"}
 
 
+def test_change_password_requires_current_password_and_updates_login(api: TestClient):
+    _bootstrap_admin(api)
+    token = _mint_token(ADMIN_EMAIL, "admin")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    incorrect = api.post(
+        "/api/auth/change-password",
+        headers=headers,
+        json={"current_password": "wrong-current-password", "new_password": "new-password-456"},
+    )
+    assert incorrect.status_code == 400
+
+    changed = api.post(
+        "/api/auth/change-password",
+        headers=headers,
+        json={"current_password": ADMIN_PASSWORD, "new_password": "new-password-456"},
+    )
+    assert changed.status_code == 200
+    assert changed.json() == {"updated": True}
+
+    assert api.post(
+        "/api/auth/login",
+        json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+    ).status_code == 401
+    assert api.post(
+        "/api/auth/login",
+        json={"email": ADMIN_EMAIL, "password": "new-password-456"},
+    ).status_code == 200
+
+
 def test_me_returns_current_user_with_token(api: TestClient):
     _bootstrap_admin(api)
     token = _mint_token(ADMIN_EMAIL, "admin")

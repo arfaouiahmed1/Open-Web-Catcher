@@ -117,12 +117,12 @@ const EventRow = memo(function EventRow({ event, index }: { event: TraceEvent; i
   const seq = event?.seq ?? index + 1;
   return (
     <div className="grid items-start gap-2 border-b border-border/60 px-4 py-2.5 transition-colors hover:bg-muted/30 md:grid-cols-[64px_minmax(180px,220px)_1fr_auto]">
-      <div className="font-mono text-[10px] text-muted-foreground/60">#{seq}</div>
+      <div className="font-mono text-[10px] text-muted-foreground/75">#{seq}</div>
       <div className="flex flex-col gap-1">
         <Badge tone={tone as never} className="w-fit font-mono uppercase tracking-wide">
           {event?.kind ?? "event"}
         </Badge>
-        {event?.actor ? <Badge tone={aTone as never} className="w-fit">{event.actor}</Badge> : <span className="text-[10px] text-muted-foreground/60">system</span>}
+        {event?.actor ? <Badge tone={aTone as never} className="w-fit">{event.actor}</Badge> : <span className="text-[10px] text-muted-foreground/75">system</span>}
       </div>
       <div className="min-w-0">
         <div className="truncate text-[12px] text-foreground/90" title={event?.message ?? ""}>
@@ -130,12 +130,12 @@ const EventRow = memo(function EventRow({ event, index }: { event: TraceEvent; i
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-2 font-mono text-[10px] text-muted-foreground/70">
           <span>{fmtTimestamp(event?.timestamp)}</span>
-          {event?.timestamp ? <><span className="text-muted-foreground/40">/</span><span>{fmtRelative(event.timestamp)}</span></> : null}
-          {event?.status && event.status !== "info" ? <><span className="text-muted-foreground/40">/</span><span className="uppercase tracking-wide">{event.status}</span></> : null}
+          {event?.timestamp ? <><span className="text-muted-foreground/75">/</span><span>{fmtRelative(event.timestamp)}</span></> : null}
+          {event?.status && event.status !== "info" ? <><span className="text-muted-foreground/75">/</span><span className="uppercase tracking-wide">{event.status}</span></> : null}
         </div>
       </div>
       <div className="flex justify-end">
-        {detailHasContent(event?.details ?? event?.details_json) ? <EventDetailDialog event={event} /> : <span className="px-2 text-[10px] text-muted-foreground/40">--</span>}
+        {detailHasContent(event?.details ?? event?.details_json) ? <EventDetailDialog event={event} /> : <span className="px-2 text-[10px] text-muted-foreground/75">--</span>}
       </div>
     </div>
   );
@@ -208,7 +208,7 @@ export const RuntimeEventsPanel = memo(function RuntimeEventsPanel({
             </div>
           </ScrollArea>
         ) : (
-          <div className="flex h-36 items-center justify-center text-sm text-muted-foreground/60">{normalized.length ? "No events match the current filters." : "Runtime events will appear here."}</div>
+          <div className="flex h-36 items-center justify-center text-sm text-muted-foreground/75">{normalized.length ? "No events match the current filters." : "Runtime events will appear here."}</div>
         )}
       </CardContent>
     </Card>

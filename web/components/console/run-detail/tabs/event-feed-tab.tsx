@@ -14,33 +14,40 @@ export interface RunEventFeedTabProps {
   events?: Array<Record<string, unknown>>;
   title?: string;
   maxItems?: number;
+  /** Compact row density from display settings. */
+  compact?: boolean;
+  /** Hide per-event timestamps when display settings disable them. */
+  showTimestamps?: boolean;
+  /** Emphasize failed events when display settings enable it. */
+  highlightErrors?: boolean;
 }
 
 function eventLevel(event: Record<string, unknown>): FeedEvent["level"] {
-  const status = String((event as { status?: string })?.status || "").toLowerCase();
-  const kind = String((event as { kind?: string })?.kind || "");
+  const status = String(event.status || "").toLowerCase();
+  const kind = String(event.kind || "");
   if (status === "error" || status === "failed" || kind.includes("failed") || kind === "player_failed") return "error";
   if (status === "warning" || kind.includes("warning")) return "warn";
   if (kind === "llm_response" || kind.includes("debug")) return "debug";
   return "info";
 }
 
-function toFeedEvent(raw: Record<string, unknown>, index: number): FeedEvent {
-  const seq = (raw as { seq?: number })?.seq;
-  const kind = String((raw as { kind?: string })?.kind || "unknown");
-  const timestamp = String((raw as { timestamp?: string })?.timestamp || (raw as { created_at?: string })?.created_at || "");
-  const details = ((raw as { details?: Record<string, unknown> })?.details || (raw as { details_json?: Record<string, unknown> })?.details_json || {}) as Record<string, unknown>;
+function toFeedEvent(raw: Record<string, unknown>, index: number, showTimestamps = true): FeedEvent {
+  const seq = typeof raw.seq === "number" ? raw.seq : undefined;
+  const kind = String(raw.kind || "unknown");
+  const timestamp = String(raw.timestamp || raw.created_at || "");
+  const details = (raw.details || raw.details_json || {}) as Record<string, unknown>;
+  const actor = String(raw.actor || "");
   const message =
-    String((raw as { message?: string })?.message || "") ||
+    String(raw.message || "") ||
     String(details.error_preview || details.error || details.reason || details.url || details.stream_url || "") ||
-    `${kind}${(raw as { actor?: string })?.actor ? ` (${(raw as { actor?: string })?.actor})` : ""}`;
-  const level = eventLevel(raw as Record<string, unknown>);
+    `${kind}${actor ? ` (${actor})` : ""}`;
+  const level = eventLevel(raw);
   return {
     id: String(seq != null ? seq : `ev-${index}`),
     kind,
     message: message.slice(0, 280),
     level,
-    timestamp: timestamp || undefined,
+    timestamp: showTimestamps ? timestamp || undefined : undefined,
   };
 }
 
@@ -86,18 +93,25 @@ const EventRow = memo(function EventRow({
   feed,
   screenshots,
   isTypedKind,
+  compact = false,
+  highlightErrors = true,
 }: {
   raw: Record<string, unknown>;
   feed: FeedEvent;
   screenshots: string[];
   isTypedKind: boolean;
+  compact?: boolean;
+  highlightErrors?: boolean;
 }) {
+  const actor = String(raw.actor || "");
   return (
     <div
       data-event-id={feed.id}
       data-kind={feed.kind}
       data-typed={isTypedKind ? "true" : "false"}
-      className="space-y-2 p-2"
+      data-compact={compact ? "true" : "false"}
+      data-error-emphasis={highlightErrors && feed.level === "error" ? "true" : "false"}
+      className={compact ? "space-y-1 p-1" : "space-y-2 p-2"}
       style={{ containIntrinsicSize: "0 120px", contentVisibility: "auto" } as React.CSSProperties}
     >
       <EventFeedItem event={feed} />
@@ -108,7 +122,7 @@ const EventRow = memo(function EventRow({
               key={`${feed.id}-shot-${sIdx}`}
               src={src}
               alt={`${feed.kind} screenshot ${sIdx + 1}`}
-              caption={`${feed.kind} · ${String((raw as { actor?: string })?.actor || "").slice(0, 32)} · seq ${feed.id}`}
+              caption={`${feed.kind} · ${actor.slice(0, 32)} · seq ${feed.id}`}
             />
           ))}
         </div>
@@ -124,7 +138,7 @@ const EventRow = memo(function EventRow({
   );
 });
 
-export function RunEventFeedTab({ events, title = "Event feed", maxItems = 120 }: RunEventFeedTabProps) {
+export function RunEventFeedTab({ events, title = "Event feed", maxItems = 120, compact = false, showTimestamps = true, highlightErrors = true }: RunEventFeedTabProps) {
   const list = useMemo(() => (Array.isArray(events) ? events : []), [events]);
   const visible = useMemo(() => (maxItems && list.length > maxItems ? list.slice(-maxItems) : list), [list, maxItems]);
   const hasEvents = visible.length > 0;
@@ -132,12 +146,12 @@ export function RunEventFeedTab({ events, title = "Event feed", maxItems = 120 }
   const enriched = useMemo(
     () =>
       visible.map((raw, idx) => {
-        const feed = toFeedEvent(raw as Record<string, unknown>, idx);
-        const screenshots = extractScreenshotSources(raw as Record<string, unknown>);
+        const feed = toFeedEvent(raw, idx, showTimestamps);
+        const screenshots = extractScreenshotSources(raw);
         const isTypedKind = ["server_activated", "stream_extracted", "hosting_page_discovered", "player_failed", "queue_enqueued", "hosting_item_started", "hosting_item_finished", "pool_drained", "plan_step_update", "cost_threshold_exceeded"].includes(feed.kind);
-        return { raw: raw as Record<string, unknown>, feed, screenshots, isTypedKind, key: `${feed.id}-${idx}` };
+        return { raw, feed, screenshots, isTypedKind, key: `${feed.id}-${idx}` };
       }),
-    [visible]
+    [visible, showTimestamps]
   );
 
   return (
@@ -162,17 +176,17 @@ export function RunEventFeedTab({ events, title = "Event feed", maxItems = 120 }
           <EventFeedItem emptyLabel="No events yet — waiting for SSE." />
         </div>
       ) : (
-        <div className="divide-y divide-border/50 -mx-1" data-role="feed-list">
+        <div className="divide-y divide-border/50 -mx-1" data-role="feed-list" data-compact={compact ? "true" : "false"} data-highlight-errors={highlightErrors ? "true" : "false"}>
           {enriched.length > 80 ? (
             <VirtualizedList
               items={enriched}
               height={Math.min(600, enriched.length * 96)}
-              itemSize={128}
+              itemSize={compact ? 84 : 128}
               overscanCount={8}
-              renderItem={(item) => <EventRow raw={item.raw} feed={item.feed} screenshots={item.screenshots} isTypedKind={item.isTypedKind} />}
+              renderItem={(item) => <EventRow raw={item.raw} feed={item.feed} screenshots={item.screenshots} isTypedKind={item.isTypedKind} compact={compact} highlightErrors={highlightErrors} />}
             />
           ) : (
-            enriched.map((item) => <EventRow key={item.key} raw={item.raw} feed={item.feed} screenshots={item.screenshots} isTypedKind={item.isTypedKind} />)
+            enriched.map((item) => <EventRow key={item.key} raw={item.raw} feed={item.feed} screenshots={item.screenshots} isTypedKind={item.isTypedKind} compact={compact} highlightErrors={highlightErrors} />)
           )}
         </div>
       )}

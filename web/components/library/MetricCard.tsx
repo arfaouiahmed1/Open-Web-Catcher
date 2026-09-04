@@ -25,8 +25,8 @@ export interface MetricCardProps {
 }
 
 const DELTA_CLASS: Record<MetricDelta["direction"], string> = {
-  up: "text-emerald-600 dark:text-emerald-400",
-  down: "text-red-600 dark:text-red-400",
+  up: "text-[var(--mint-text)]",
+  down: "text-[var(--rose-text)]",
   flat: "text-muted-foreground",
 };
 

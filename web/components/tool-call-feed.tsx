@@ -74,7 +74,7 @@ const ToolCallRow = memo(function ToolCallRow({ call }: { call: ToolCall }): Rea
             </span>
             {call.actor ? <Badge tone="default" className="font-mono">{call.actor}</Badge> : null}
             <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 font-mono text-[10px] text-foreground/80">{call.toolName}</span>
-            {call.startSeq ? <span className="font-mono text-[10px] text-muted-foreground/60">#{call.startSeq}</span> : null}
+            {call.startSeq ? <span className="font-mono text-[10px] text-muted-foreground/75">#{call.startSeq}</span> : null}
             <Badge tone={tone.badge as never} className="ml-auto uppercase">
               {String(call.status ?? "success")}
             </Badge>
@@ -95,7 +95,8 @@ const ToolCallRow = memo(function ToolCallRow({ call }: { call: ToolCall }): Rea
         <div className="space-y-3 border-t border-border px-3 pb-3 pt-3">
           {activeScreenshot ? (
             <div className="overflow-hidden rounded-lg border border-border bg-muted/20">
-              <img src={activeScreenshot} alt={`${call.toolName} screenshot`} className="max-h-64 w-full object-cover" />
+              {/* eslint-disable-next-line @next/next/no-img-element -- arbitrary backend-hosted screenshot URL */}
+              <img src={activeScreenshot} alt={`${call.toolName} screenshot`} className="max-h-64 w-full object-cover" loading="lazy" decoding="async" />
               <div className="flex items-center gap-2 border-t border-border px-2.5 py-1.5">
                 <span className="truncate font-mono text-[10px] text-muted-foreground">{activeScreenshot}</span>
                 <a href={activeScreenshot} target="_blank" rel="noreferrer" className="ml-auto shrink-0 text-muted-foreground">
@@ -189,7 +190,7 @@ export const ToolCallFeed = memo(function ToolCallFeed({
       </CardHeader>
 
       <CardContent className="space-y-2 overflow-y-auto p-3" style={{ maxHeight }}>
-        {filtered.length ? filtered.map((call) => <ToolCallRow key={call.key} call={call} />) : <div className="flex h-36 items-center justify-center text-sm text-muted-foreground/60">{toolCalls.length ? "No tool calls match the current filters." : emptyLabel}</div>}
+        {filtered.length ? filtered.map((call) => <ToolCallRow key={call.key} call={call} />) : <div className="flex h-36 items-center justify-center text-sm text-muted-foreground/75">{toolCalls.length ? "No tool calls match the current filters." : emptyLabel}</div>}
       </CardContent>
     </Card>
   );

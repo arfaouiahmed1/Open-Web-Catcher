@@ -40,12 +40,12 @@ export const ConsoleTopbar = React.memo(function ConsoleTopbar({
         <span className="h-3.5 w-3.5">{ICONS.hamburger}</span>
       </Button>
 
-      <div key={pathname} className="flex items-center gap-1 font-mono text-[10.5px] animate-fade-up" style={{ color: "var(--mute-2)" }}>
-        <span style={{ color: "var(--mute-3)" }}>owc</span>
+      <div key={pathname} className="flex items-center gap-1 font-mono text-[10.5px] text-muted-foreground animate-fade-up">
+        <span className="text-muted-foreground">owc</span>
         {crumbs.map((crumb, index) => (
           <span key={crumb} className="flex items-center gap-1">
-            <span style={{ color: "var(--mute-3)" }}>/</span>
-            <span style={{ color: index === crumbs.length - 1 ? "var(--ink-dim)" : "var(--mute-2)" }}>{crumb.replace(/-/g, " ")}</span>
+            <span className="text-muted-foreground">/</span>
+            <span className={index === crumbs.length - 1 ? "text-foreground/80" : "text-muted-foreground"}>{crumb.replace(/-/g, " ")}</span>
           </span>
         ))}
       </div>
@@ -60,7 +60,7 @@ export const ConsoleTopbar = React.memo(function ConsoleTopbar({
             boxShadow: `0 0 6px ${connected ? "var(--mint)" : "var(--rose)"}`,
           }}
         />
-        <span style={{ color: "var(--ink-dim)" }}>{connected ? "connected" : "offline"}</span>
+        <span className="text-foreground/80">{connected ? "connected" : "offline"}</span>
       </span>
 
       <ThemeToggle />

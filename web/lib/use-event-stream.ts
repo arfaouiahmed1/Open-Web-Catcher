@@ -83,6 +83,8 @@ export function createEventStreamClient({
   let closed = false;
   let attempt = 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let abortController: AbortController | null =
+    typeof AbortController !== "undefined" ? new AbortController() : null;
 
   function emitStatus(status: EventStreamStatus, info: Record<string, unknown> = {}): void {
     if (typeof onStatus === "function") onStatus(status, { attempt, ...info });
@@ -96,7 +98,7 @@ export function createEventStreamClient({
   }
 
   function connect(): void {
-    if (closed) return;
+    if (closed || abortController?.signal.aborted) return;
     clearReconnectTimer();
     emitStatus(attempt === 0 ? "connecting" : "reconnecting");
     let nextSource: EventSource;
@@ -142,7 +144,7 @@ export function createEventStreamClient({
   }
 
   function scheduleReconnect(cause?: unknown): void {
-    if (closed || reconnectTimer !== null) return;
+    if (closed || abortController?.signal.aborted || reconnectTimer !== null) return;
     const delay = computeBackoffMs(attempt, {
       ...(backoffBaseMs != null ? { baseMs: backoffBaseMs } : {}),
       ...(backoffCapMs != null ? { capMs: backoffCapMs } : {}),
@@ -157,9 +159,25 @@ export function createEventStreamClient({
 
   return {
     close() {
+      if (closed) {
+        clearReconnectTimer();
+        try {
+          abortController?.abort();
+        } catch {
+          // ignore
+        }
+        teardownSource();
+        return;
+      }
       closed = true;
       clearReconnectTimer();
       teardownSource();
+      try {
+        abortController?.abort();
+      } catch {
+        // ignore
+      }
+      abortController = null;
       emitStatus("closed");
     },
     getAttempt() {
@@ -195,9 +213,28 @@ export function useEventStream(
   const [reconnects, setReconnects] = useState<number>(0);
   const handlersRef = useStableRef({ onMessage, onStatus });
   const shouldRun = Boolean(path) && enabled !== false;
+  const clientRef = useRef<EventStreamClient | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (!shouldRun) return undefined;
+    if (!shouldRun) {
+      if (clientRef.current) {
+        clientRef.current.close();
+        clientRef.current = null;
+      }
+      if (abortRef.current) {
+        try {
+          abortRef.current.abort();
+        } catch {
+          // ignore
+        }
+        abortRef.current = null;
+      }
+      setStatus((prev) => (prev === "idle" ? prev : "idle"));
+      return undefined;
+    }
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    abortRef.current = controller;
     const client = createEventStreamClient({
       getUrl: () => eventSourceUrl(path as string),
       onMessage: (data, rawEvent) => handlersRef.current.onMessage?.(data, rawEvent),
@@ -209,9 +246,38 @@ export function useEventStream(
         handlersRef.current.onStatus?.(next, info as Record<string, unknown>);
       },
     });
-    return () => client.close();
+    clientRef.current = client;
+    return () => {
+      if (abortRef.current) {
+        try {
+          abortRef.current.abort();
+        } catch {
+          // ignore
+        }
+        abortRef.current = null;
+      }
+      client.close();
+      if (clientRef.current === client) clientRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, shouldRun]);
+
+  useEffect(() => {
+    return () => {
+      if (abortRef.current) {
+        try {
+          abortRef.current.abort();
+        } catch {
+          // ignore
+        }
+        abortRef.current = null;
+      }
+      if (clientRef.current) {
+        clientRef.current.close();
+        clientRef.current = null;
+      }
+    };
+  }, []);
 
   return { status, connected: status === "open", reconnects };
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { KeyRound, X, Sparkles, Bot, Globe2, Eye, Activity, ArrowRight } from "lucide-react";
-import { apiUrl } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,20 +18,11 @@ function useByokStatus(): { missing: boolean; loading: boolean } {
     let cancelled = false;
     async function check(): Promise<void> {
       try {
-        const res = await fetch(apiUrl("/ui/config"), { cache: "no-store" });
-        if (!res.ok) {
-          if (!cancelled) setMissing(true);
-          return;
-        }
-        const data: {
+        const data = await apiFetch<{
           agent_model_config?: Record<string, { provider?: string; model?: string }>;
           provider_model_catalog_cache?: Record<string, unknown>;
           settings_sources?: Record<string, { value: unknown; source_layer: string }>;
-        } = (await res.json()) as {
-          agent_model_config?: Record<string, { provider?: string; model?: string }>;
-          provider_model_catalog_cache?: Record<string, unknown>;
-          settings_sources?: Record<string, { value: unknown; source_layer: string }>;
-        };
+        }>("/ui/config");
         // BYOK missing if no provider has a key-like source beyond default and no runtime override
         const sources = data.settings_sources;
         const hasKey = sources
@@ -94,9 +85,9 @@ export function DashboardIntro(): React.JSX.Element | null {
 
   const steps = [
     { icon: <Bot className="size-5 text-primary" />, title: "1. Classify", desc: "Is this a landing, hosting, or embedded page? The classifier decides." },
-    { icon: <Globe2 className="size-5 text-sky-500" />, title: "2. Landing", desc: "Find hosting/page links, deduplicate, follow." },
-    { icon: <Eye className="size-5 text-violet-500" />, title: "3. Hosting", desc: "Probe players, detect blocks, wait for streams." },
-    { icon: <Activity className="size-5 text-emerald-500" />, title: "4. Embedded", desc: "Extract HLS/m3u8, screenshots, provider evidence." },
+    { icon: <Globe2 className="size-5 text-[var(--sky-text)]" />, title: "2. Landing", desc: "Find hosting/page links, deduplicate, follow." },
+    { icon: <Eye className="size-5 text-[var(--violet-text)]" />, title: "3. Hosting", desc: "Probe players, detect blocks, wait for streams." },
+    { icon: <Activity className="size-5 text-[var(--mint-text)]" />, title: "4. Embedded", desc: "Extract HLS/m3u8, screenshots, provider evidence." },
   ];
 
   return (

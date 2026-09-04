@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 
-import { apiUrl } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { formatNumber } from "@/lib/utils";
 import { buildStageView, STAGE_LABELS, STAGE_ORDER } from "@/lib/run-trace";
 import { Badge } from "@/components/ui/badge";
@@ -324,17 +324,10 @@ export function BrowserLiveView({
     if ((availableFrames.length > 0 && !standalone) || (!standalone && !runId)) return undefined;
 
     let cancelled = false;
-    let timer = null;
-
     async function fetchScreenshot() {
       setIsLoading(true);
       try {
-        const url = standalone
-          ? apiUrl("/ui/browser/screenshot")
-          : apiUrl(`/ui/runs/${runId}/screenshot`);
-        const response = await fetch(url, { cache: "no-store" });
-        if (!response.ok) return;
-        const payload = await response.json();
+        const payload = await apiFetch<Record<string, any>>(standalone ? "/ui/browser/screenshot" : `/ui/runs/${runId}/screenshot`);
         if (cancelled) return;
         const next = payload?.screenshot || payload?.screenshot_url || "";
         setFallbackScreenshot(next);
@@ -367,7 +360,6 @@ export function BrowserLiveView({
     }
     return () => {
       cancelled = true;
-      if (timer) window.clearInterval(timer);
       if (visibilityHandler) {
         document.removeEventListener("visibilitychange", visibilityHandler);
       }
@@ -630,6 +622,7 @@ export function BrowserLiveView({
                     key={`${frame.url}-${frame.seq}-${index}`}
                     data-frame-index={index}
                     type="button"
+                    aria-label={`View ${selectedStage} frame ${index + 1}`}
                     onClick={() => {
                       setManualMode(true);
                       setManualStage(selectedStage);

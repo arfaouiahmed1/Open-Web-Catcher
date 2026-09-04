@@ -1,9 +1,8 @@
-"use client";
-
 import React, { useMemo } from "react";
 import { Image as ImageIcon, Camera } from "lucide-react";
 import { ScreenshotCard } from "@/components/library/ScreenshotCard";
 import { SectionPanel } from "@/components/console/common/section-panel";
+import { EmptyState } from "@/components/console/common/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { collectScreenshotUrls } from "@/lib/run-trace";
 
@@ -74,16 +73,11 @@ export function ScreenshotGridTab({ events, screenshots: propShots, title = "Scr
       data-testid="screenshot-grid-tab"
     >
       {!hasShots ? (
-        <ScreenshotCard alt="" src={null} emptyLabel="No evidence screenshots captured yet." />
+        <ScreenshotCard alt="evidence screenshot" emptyLabel="No evidence screenshots captured yet" />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-role="shot-grid">
           {all.map((src, idx) => (
-            <ScreenshotCard
-              key={`${src}-${idx}`}
-              src={src}
-              alt={`evidence ${idx + 1}`}
-              caption={`frame ${idx + 1} · ${src.startsWith("blobref:") ? "blobref" : "url"}`}
-            />
+            <ScreenshotCard key={`${src}-${idx}`} src={src} alt={`evidence ${idx + 1}`} />
           ))}
         </div>
       )}

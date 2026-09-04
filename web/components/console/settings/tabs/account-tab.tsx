@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { KeyRound, ShieldCheck, Smartphone, Fingerprint, AlertCircle, Check, Loader2 } from "lucide-react";
-import { apiUrl, getToken } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function AccountTab(): React.JSX.Element {
   const [me, setMe] = useState<{ email: string; role: string } | null>(null);
@@ -18,25 +19,20 @@ export function AccountTab(): React.JSX.Element {
   const [pwMsg, setPwMsg] = useState<string>("");
   const [pwErr, setPwErr] = useState<string>("");
   const [saving, setSaving] = useState<boolean>(false);
-  const [totpSecret, setTotpSecret] = useState<string>("");
-  const [totpUri, setTotpUri] = useState<string>("");
-  const [totpCode, setTotpCode] = useState<string>("");
-  const [totpMsg, setTotpMsg] = useState<string>("");
-  const [passkeyMsg, setPasskeyMsg] = useState<string>("");
+  const [isLoadingMe, setIsLoadingMe] = useState<boolean>(true);
+
 
   useEffect(() => {
     let cancelled = false;
     async function load(): Promise<void> {
       try {
-        const token = getToken();
-        const res = await fetch(apiUrl("/api/auth/me"), {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          cache: "no-store",
-        });
-        if (!res.ok) return;
-        const data = (await res.json()) as { user?: { email: string; role: string } };
+        const data = await apiFetch<{ user?: { email: string; role: string } }>("/api/auth/me");
         if (!cancelled && data.user) setMe(data.user);
-      } catch {}
+      } catch {
+        // The parent console auth boundary handles an expired session.
+      } finally {
+        if (!cancelled) setIsLoadingMe(false);
+      }
     }
     void load();
     return () => {
@@ -58,136 +54,58 @@ export function AccountTab(): React.JSX.Element {
     }
     setSaving(true);
     try {
-      const token = getToken();
-      const res = await fetch(apiUrl("/api/auth/change-password"), {
+      await apiFetch("/api/auth/change-password", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
         body: JSON.stringify({ current_password: oldPw, new_password: newPw }),
       });
-      if (!res.ok) {
-        const t = await res.text();
-        setPwErr(t || `Failed (${res.status}) — endpoint may not exist yet.`);
-        return;
-      }
       setPwMsg("Password updated.");
       setOldPw("");
       setNewPw("");
       setConfirm("");
-    } catch {
-      setPwErr("Could not reach API.");
+    } catch (error) {
+      setPwErr(error instanceof Error ? error.message : "Could not reach API.");
     } finally {
       setSaving(false);
     }
   }
 
-  async function enrollTotp(): Promise<void> {
-    setTotpMsg("");
-    try {
-      const token = getToken();
-      const res = await fetch(apiUrl("/api/auth/2fa/enroll"), {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) {
-        const t = await res.text();
-        setTotpMsg(t || `Enroll failed (${res.status}) — not yet implemented.`);
-        return;
-      }
-      const data = (await res.json()) as { secret?: string; otpauth_url?: string };
-      setTotpSecret(data.secret || "");
-      setTotpUri(data.otpauth_url || "");
-      setTotpMsg("Scan the QR / otpauth URL in your authenticator, then verify a code.");
-    } catch {
-      setTotpMsg("Could not reach API.");
-    }
-  }
-
-  async function verifyTotp(e: React.FormEvent): Promise<void> {
-    e.preventDefault();
-    setTotpMsg("");
-    try {
-      const token = getToken();
-      const res = await fetch(apiUrl("/api/auth/2fa/verify"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ code: totpCode }),
-      });
-      if (!res.ok) {
-        const t = await res.text();
-        setTotpMsg(t || `Verify failed (${res.status}).`);
-        return;
-      }
-      setTotpMsg("2FA verified — TOTP enabled.");
-    } catch {
-      setTotpMsg("Could not reach API.");
-    }
-  }
-
-  async function registerPasskey(): Promise<void> {
-    setPasskeyMsg("");
-    const maybeNav: unknown = navigator as unknown as Record<string, unknown>;
-    const hasWebAuthn =
-      typeof window !== "undefined" &&
-      window.PublicKeyCredential !== undefined &&
-      maybeNav !== null &&
-      typeof (maybeNav as { credentials?: unknown }).credentials !== "undefined";
-    if (!hasWebAuthn) {
-      setPasskeyMsg("Passkeys not supported in this browser/context (need HTTPS + platform authenticator).");
-      return;
-    }
-    try {
-      const token = getToken();
-      const optsRes = await fetch(apiUrl("/api/auth/passkey/register-options"), {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!optsRes.ok) {
-        const t = await optsRes.text();
-        setPasskeyMsg(t || `Passkey not yet implemented (${optsRes.status}).`);
-        return;
-      }
-      const opts = (await optsRes.json()) as unknown;
-      // Simple passthrough — server should return credentialCreationOptions
-      const cred = await (navigator as unknown as { credentials: { create: (o: unknown) => Promise<unknown> } }).credentials.create(
-        opts as unknown as never,
-      );
-      const verifyRes = await fetch(apiUrl("/api/auth/passkey/register-verify"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify(cred),
-      });
-      if (!verifyRes.ok) {
-        const t = await verifyRes.text();
-        setPasskeyMsg(t || `Save failed (${verifyRes.status}).`);
-        return;
-      }
-      setPasskeyMsg("Passkey registered.");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setPasskeyMsg(msg || "Passkey flow failed.");
-    }
-  }
-
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ShieldCheck className="size-4 text-primary" /> Current user
-          </CardTitle>
-          <CardDescription>
-            Signed in as <span className="font-medium text-foreground">{me?.email || "—"}</span>
-            {me?.role ? <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-[11px]">{me.role}</span> : null}
-          </CardDescription>
+    <div className="space-y-5">
+      <Card className="overflow-hidden border-primary/20">
+        <CardHeader className="border-b bg-muted/20 pb-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ShieldCheck className="size-4 text-primary" /> Profile
+              </CardTitle>
+              <CardDescription className="mt-1">Identity and security controls for this operator console.</CardDescription>
+            </div>
+            {me ? <Badge tone="success">Session active</Badge> : null}
+          </div>
         </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-4 p-5">
+          <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl border border-primary/30 bg-primary/10 text-xl font-semibold text-primary">
+            {isLoadingMe ? <Skeleton className="size-7 rounded-full" /> : (me?.email?.slice(0, 1).toUpperCase() || "?")}
+          </div>
+          <div className="min-w-[220px] flex-1">
+            {isLoadingMe ? (
+              <div className="space-y-2"><Skeleton className="h-4 w-48" /><Skeleton className="h-3 w-32" /></div>
+            ) : (
+              <>
+                <p className="font-medium text-foreground">{me?.email || "Account unavailable"}</p>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span>Operator identity</span>
+                  {me?.role ? <Badge tone="muted">{me.role}</Badge> : null}
+                </div>
+              </>
+            )}
+          </div>
+        </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Change password</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-sm"><KeyRound className="size-4 text-primary" /> Change password</CardTitle>
           <CardDescription>Update your console password. No provider keys here — those live in API Keys + per-agent provider.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -218,42 +136,27 @@ export function AccountTab(): React.JSX.Element {
               {saving ? <Loader2 className="size-4 animate-spin" /> : null} Update password
             </Button>
             <p className="text-[11px] text-muted-foreground">
-              Endpoint <span className="font-mono">POST /api/auth/change-password</span> — if 404, backend TODO (see below).
+              Backend route is available and protected by the current session.
             </p>
           </form>
         </CardContent>
       </Card>
 
+      <div className="grid gap-5 xl:grid-cols-2">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-sm">
             <Smartphone className="size-4 text-primary" /> Two-factor (TOTP)
           </CardTitle>
-          <CardDescription>Time-based one-time passwords — authenticator app. Secrets stay server-side.</CardDescription>
+          <CardDescription>Time-based one-time passwords for authenticator apps.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => void enrollTotp()}>
-              Enroll / show QR
-            </Button>
-            <Button variant="ghost" asChild>
-              <Link href="/login">Test logout/login</Link>
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" disabled>Coming soon</Button>
+            <Badge tone="muted">Backend contract pending</Badge>
           </div>
-          {totpUri ? (
-            <div className="rounded-md bg-muted p-3 font-mono text-xs break-all">
-              <div className="text-muted-foreground">otpauth URL (render as QR in app):</div>
-              <div className="mt-1">{totpUri}</div>
-              {totpSecret ? <div className="mt-2 text-muted-foreground">secret: {totpSecret}</div> : null}
-            </div>
-          ) : null}
-          <form onSubmit={verifyTotp} className="flex max-w-[320px] gap-2">
-            <Input value={totpCode} onChange={(e) => setTotpCode(e.target.value)} placeholder="123456" inputMode="numeric" maxLength={6} className="font-mono" />
-            <Button type="submit">Verify</Button>
-          </form>
-          {totpMsg ? <p className="text-xs text-muted-foreground">{totpMsg}</p> : null}
           <p className="text-[11px] text-muted-foreground">
-            Needs <span className="font-mono">POST /api/auth/2fa/enroll</span> + <span className="font-mono">/verify</span> + <span className="font-mono">/disable</span> — pyotp server-side.
+            TOTP is intentionally disabled until server-side enrollment, verification, and recovery storage are implemented.
           </p>
         </CardContent>
       </Card>
@@ -266,16 +169,17 @@ export function AccountTab(): React.JSX.Element {
           <CardDescription>WebAuthn platform authenticator — no password, phishing-resistant. Stored per-user.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Button variant="outline" onClick={() => void registerPasskey()}>
-            Register this device
-          </Button>
-          {passkeyMsg ? <p className="text-xs text-muted-foreground">{passkeyMsg}</p> : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" disabled>Coming soon</Button>
+            <Badge tone="muted">Backend contract pending</Badge>
+          </div>
           <p className="text-[11px] text-muted-foreground">
-            Needs <span className="font-mono">POST /api/auth/passkey/*</span> with <span className="font-mono">@simplewebauthn/server</span> — BYOK stays separate.
+            Passkeys are intentionally disabled until WebAuthn challenge persistence and verification are implemented server-side.
           </p>
         </CardContent>
       </Card>
 
+      </div>
       <Card className="border-dashed">
         <CardContent className="p-4 text-xs text-muted-foreground">
           <div className="flex gap-2">

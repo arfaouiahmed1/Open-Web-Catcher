@@ -7,9 +7,9 @@ import type { ComponentState, FeedEvent } from "./types";
 
 const LEVEL_DOT: Record<NonNullable<FeedEvent["level"]>, string> = {
   debug: "bg-muted-foreground/50",
-  info: "bg-blue-500",
-  warn: "bg-amber-500",
-  error: "bg-red-500",
+  info: "bg-[var(--sky)]",
+  warn: "bg-[var(--signal)]",
+  error: "bg-[var(--rose)]",
 };
 
 export interface EventFeedItemProps {
@@ -38,6 +38,7 @@ export function EventFeedItem({
     <StateFrame
       component="EventFeedItem"
       state={resolved}
+      surface={false}
       loadingLabel={loadingLabel}
       errorLabel={errorLabel}
       emptyLabel={emptyLabel}

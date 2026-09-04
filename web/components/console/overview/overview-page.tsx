@@ -6,7 +6,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Bot, CircleDollarSign, Coins, Cpu, Globe2, LayoutGrid, Loader2 } from "lucide-react";
 
-import { apiUrl } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/utils";
 import { overviewFailureOnlySuccessRate } from "@/lib/overview-metrics";
 import { estimateCallCost, loadPricing, synthCallsFromModelUsage } from "@/lib/pricing";
@@ -14,7 +14,9 @@ import { statusLabel } from "@/lib/run-status";
 import { KpiCard } from "@/components/kpi-card";
 import { DashboardPersistencePanel } from "@/components/dashboard";
 import { RuntimeEventsPanel } from "@/components/runtime-events-panel";
+import { PageHeader } from "@/components/console/common/page-header";
 import { OverviewKpisTab } from "./tabs/overview-kpis-tab";
+import { OverviewVisuals } from "./overview-visuals";
 import { CostsTab } from "./tabs/costs-tab";
 import { TokensTab } from "./tabs/tokens-tab";
 import { DashboardIntro } from "./dashboard-intro";
@@ -66,25 +68,6 @@ const PALETTE = [
   "var(--sky)",
   "var(--rose)",
 ];
-
-async function apiFetch(path: any, options = {}) {
-  // @ts-expect-error -- strict migration
-  const { timeoutMs = 10_000, ...fetchOptions } = options;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const res = await fetch(apiUrl(path), {
-      ...fetchOptions,
-      cache: "no-store",
-      signal: controller.signal,
-    });
-    if (!res.ok) throw new Error(`${res.status}`);
-    return res.json();
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CHART PRIMITIVES
@@ -444,7 +427,7 @@ function MiniPieChart({ data = [], size = 180 }: any) {
   const positive = data.filter((entry: any) => Number(entry.value || 0) > 0);
   if (!positive.length) {
     return (
-      <div className="flex h-44 items-center justify-center text-[12px] text-muted-foreground/50">
+      <div className="flex h-44 items-center justify-center text-[12px] text-muted-foreground/75">
         No distribution data
       </div>
     );
@@ -554,7 +537,7 @@ function HBarRow({ label, value, share, color, sub, rank }: any) {
     <div className="border-b px-4 py-2.5 last:border-0">
       <div className="flex items-center gap-2">
         {rank != null && (
-          <span className="w-4 shrink-0 font-mono text-[10px] text-right text-muted-foreground/50">
+          <span className="w-4 shrink-0 font-mono text-[10px] text-right text-muted-foreground/75">
             {rank}
           </span>
         )}
@@ -568,7 +551,7 @@ function HBarRow({ label, value, share, color, sub, rank }: any) {
             </span>
           </div>
           {sub && (
-            <div className="mt-0.5 font-mono text-[10px] text-muted-foreground/60">
+            <div className="mt-0.5 font-mono text-[10px] text-muted-foreground/75">
               {sub}
             </div>
           )}
@@ -587,7 +570,7 @@ function HBarRow({ label, value, share, color, sub, rank }: any) {
 /* Mini section label */
 function SectionLabel({ children }: any) {
   return (
-    <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] mb-3 text-muted-foreground/60">
+    <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] mb-3 text-muted-foreground/75">
       {children}
     </p>
   );
@@ -607,34 +590,34 @@ function StatusStrip({ summary }: any) {
     {
       label: "Running",
       value: (summary.running_jobs || 0) + (summary.running_workflows || 0),
-      color: "var(--sky)",
+      color: "var(--sky-text)",
     },
     {
       label: "Agents",
       value: summary.running_agent_invocations || 0,
-      color: "var(--violet)",
+      color: "var(--violet-text)",
     },
     {
       label: "No stream/host",
       value: noStreamOrHostingRuns,
-      color: noStreamOrHostingRuns > 0 ? "var(--signal)" : "var(--mute-3)",
+      color: noStreamOrHostingRuns > 0 ? "var(--signal-text)" : "var(--mute-3)",
     },
     {
       label: "Streams",
       value: summary.total_streams || 0,
-      color: "var(--sky)",
+      color: "var(--sky-text)",
     },
     {
       label: "Emails",
       value: summary.total_emails || 0,
-      color: "var(--violet)",
+      color: "var(--violet-text)",
     },
     {
       label: "Failed 24h",
       value: summary.failed_run_window_24h || 0,
       color:
         (summary.failed_run_window_24h || 0) > 0
-          ? "var(--rose)"
+          ? "var(--rose-text)"
           : "var(--mute-3)",
     },
   ];
@@ -657,7 +640,7 @@ function StatusStrip({ summary }: any) {
           <span className="font-mono text-[14px] font-semibold tabular-nums" style={{ color }}>
             {formatNumber(value)}
           </span>
-          <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground/60">
+          <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground/75">
             {label}
           </span>
         </div>
@@ -687,7 +670,7 @@ function ActiveRunRow({ run }: any) {
         <div className="font-mono text-[12px] text-foreground">
           {formatCurrency(run.total_cost_usd ?? run.estimated_total_cost_usd ?? 0)}
         </div>
-        <div className="font-mono text-[10px] text-muted-foreground/60">
+        <div className="font-mono text-[10px] text-muted-foreground/75">
           {formatNumber(run.total_llm_calls || 0)} llm / {formatNumber(run.total_tool_calls || 0)} tools
         </div>
       </div>
@@ -703,11 +686,11 @@ function FailedRunRow({ row }: any) {
         <div className="truncate font-mono text-[11px] text-foreground/80" title={row.url}>
           {row.url}
         </div>
-        <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground/60">
+        <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground/75">
           {row.failure_mode || row.final_status || "failed"}
         </div>
       </div>
-      <div className="font-mono text-[10px] text-muted-foreground/60">
+      <div className="font-mono text-[10px] text-muted-foreground/75">
         {row.page_type || "-"}
       </div>
       <Link href={`/runs/${row.run_id}`} className="font-mono text-[10px] text-primary hover:underline">
@@ -777,7 +760,7 @@ function ProviderWorkflowRow({ row }: any) {
             {url.replace(/^https?:\/\//, "")}
           </a>
         ) : (
-          <span className="font-mono text-[11px] text-muted-foreground/50">-</span>
+          <span className="font-mono text-[11px] text-muted-foreground/75">-</span>
         )}
       </TableCell>
       <TableCell className="px-4 py-2.5 text-[12px] text-foreground/80">
@@ -792,7 +775,7 @@ function ProviderWorkflowRow({ row }: any) {
       <TableCell className="px-4 py-2.5 font-mono text-[11px] text-primary">
         {row.abuse_email || "-"}
       </TableCell>
-      <TableCell className="px-4 py-2.5 font-mono text-[10px] text-muted-foreground/60">
+      <TableCell className="px-4 py-2.5 font-mono text-[10px] text-muted-foreground/75">
         {row.pipeline_run_id ? `#${row.pipeline_run_id}` : "-"}
       </TableCell>
     </TableRow>
@@ -810,7 +793,8 @@ function OverviewPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const tab = searchParams.get("tab") || "overview";
+  const requestedTab = searchParams.get("tab") || "overview";
+  const tab = TABS.some((item) => item.id === requestedTab) ? requestedTab : "overview";
 
   const [overview, setOverview] = useState<any>(null);
   const [toolRel, setToolRel] = useState<any>(null);
@@ -819,8 +803,8 @@ function OverviewPageContent() {
   const [runStreamsDb, setRunStreamsDb] = useState<any>(null);
   const [pricingMap, setPricingMap] = useState<any>(null);
   const [failedData, setFailedData] = useState<any>(null);
-  const [runtimeEvents, setRuntimeEvents] = useState([]);
-  const [dbTables, setDbTables] = useState([]);
+  const [runtimeEvents, setRuntimeEvents] = useState<any[]>([]);
+  const [dbTables, setDbTables] = useState<any[]>([]);
   const [error, setError] = useState("");
   const [agentPolling, setAgentPolling] = useState(false);
 
@@ -829,21 +813,15 @@ function OverviewPageContent() {
     Promise.allSettled([
       apiFetch("/ui/overview"),
       apiFetch("/ui/tools/reliability?limit=20"),
-      apiFetch("/ui/database/agent_runs?limit=300"),
-      apiFetch("/ui/database/provider_analyses?limit=300"),
-      apiFetch("/ui/database/run_streams?limit=300"),
       apiFetch("/ui/runs?status=failed&limit=12&offset=0"),
-      apiFetch("/ui/events/recent?limit=30"),
-      apiFetch("/ui/database/tables"),
+      apiFetch<{ events?: any[] }>("/ui/events/recent?limit=30"),
+      apiFetch<{ entries?: any[] }>("/ui/database/tables"),
       loadPricing(),
     ])
       .then(
         ([
           overviewRes,
           toolRes,
-          agentRes,
-          providerRes,
-          streamRes,
           failedRes,
           eventsRes,
           dbTablesRes,
@@ -854,13 +832,6 @@ function OverviewPageContent() {
             overviewRes.status === "fulfilled" ? overviewRes.value : {},
           );
           setToolRel(toolRes.status === "fulfilled" ? toolRes.value : {});
-          setAgentRunsDb(agentRes.status === "fulfilled" ? agentRes.value : {});
-          setProviderAnalysisDb(
-            providerRes.status === "fulfilled" ? providerRes.value : {},
-          );
-          setRunStreamsDb(
-            streamRes.status === "fulfilled" ? streamRes.value : {},
-          );
           setFailedData(
             failedRes.status === "fulfilled" ? failedRes.value : {},
           );
@@ -889,37 +860,58 @@ function OverviewPageContent() {
     };
   }, []);
 
-  // Refresh agent data when on the agents tab.
-    // Plan task 42 (de-polling): no setInterval. Data refreshes on tab entry
-    // and on tab focus (visibilitychange) — the agents view tolerates slight
-    // staleness between focus events.
-    useEffect(() => {
-      if (tab !== "agents") { setAgentPolling(false); return undefined; }
+  // Load the large agent dataset only when its tab is selected. It refreshes
+  // on tab focus, but never uses a background interval.
+  useEffect(() => {
+    if (tab !== "agents") {
+      setAgentPolling(false);
+      return undefined;
+    }
+    let mounted = true;
+    const refreshAgents = () => {
       setAgentPolling(true);
-      let mounted = true;
-      function refreshAgents() {
-        Promise.allSettled([
-          apiFetch("/ui/database/agent_runs?limit=300"),
-          apiFetch("/ui/runs?status=failed&limit=12&offset=0"),
-          apiFetch("/ui/overview"),
-        ]).then(([agentRes, failedRes, overviewRes]) => {
-          if (!mounted) return;
-          if (agentRes.status === "fulfilled") setAgentRunsDb(agentRes.value);
-          if (failedRes.status === "fulfilled") setFailedData(failedRes.value);
-          if (overviewRes.status === "fulfilled") setOverview(overviewRes.value);
+      apiFetch("/ui/database/agent_runs?limit=300")
+        .then((payload) => {
+          if (mounted) setAgentRunsDb(payload);
+        })
+        .catch(() => {
+          if (mounted) setAgentRunsDb({});
+        })
+        .finally(() => {
+          if (mounted) setAgentPolling(false);
         });
-      }
-      function onVisibility() {
-        if (document.visibilityState === "visible") {
-          refreshAgents();
-        }
-      }
-      refreshAgents();
-      document.addEventListener("visibilitychange", onVisibility);
-      return () => { mounted = false; document.removeEventListener("visibilitychange", onVisibility); setAgentPolling(false); };
-    }, [tab]);
+    };
+    if (agentRunsDb === null) refreshAgents();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refreshAgents();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      mounted = false;
+      document.removeEventListener("visibilitychange", onVisibility);
+      setAgentPolling(false);
+    };
+  }, [agentRunsDb, tab]);
+
+  // Provider analysis and stream rows are only needed by the Providers tab.
+  useEffect(() => {
+    if (tab !== "providers" || (providerAnalysisDb !== null && runStreamsDb !== null)) return undefined;
+    let mounted = true;
+    Promise.allSettled([
+      providerAnalysisDb === null ? apiFetch("/ui/database/provider_analyses?limit=300") : Promise.resolve(providerAnalysisDb),
+      runStreamsDb === null ? apiFetch("/ui/database/run_streams?limit=300") : Promise.resolve(runStreamsDb),
+    ]).then(([providerRes, streamRes]) => {
+      if (!mounted) return;
+      if (providerAnalysisDb === null) setProviderAnalysisDb(providerRes.status === "fulfilled" ? providerRes.value : {});
+      if (runStreamsDb === null) setRunStreamsDb(streamRes.status === "fulfilled" ? streamRes.value : {});
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [providerAnalysisDb, runStreamsDb, tab]);
 
   function setTab(next: any) {
+    if (!TABS.some((item) => item.id === next)) next = "overview";
     const p = new URLSearchParams(searchParams.toString());
     p.set("tab", next);
     router.push(`${pathname}?${p.toString()}`, { scroll: false });
@@ -1745,22 +1737,21 @@ function OverviewPageContent() {
     <div className="space-y-6">
       <DashboardIntro />
       {/* ── page header ── */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            Real-time run, tool, token and cost telemetry from the pipeline database.
-          </p>
-        </div>
-        <div className="flex shrink-0 gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/runs">All runs</Link>
-          </Button>
-          <Button variant="accent" size="sm" asChild>
-            <Link href="/live">New pipeline</Link>
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="system monitor"
+        title="Dashboard"
+        description="Real-time run, tool, token and cost telemetry from the pipeline database."
+        actions={
+          <>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/runs">All runs</Link>
+            </Button>
+            <Button variant="accent" size="sm" asChild>
+              <Link href="/live">New pipeline</Link>
+            </Button>
+          </>
+        }
+      />
 
       {error && (
         <Card>
@@ -1780,6 +1771,13 @@ function OverviewPageContent() {
           {/* Live status strip */}
           <StatusStrip summary={summary} />
 
+          {/* Spend, outcome, latency, provider, and tool charts (Phase 4) */}
+          <OverviewVisuals
+            overview={overview}
+            toolRows={toolRows}
+            state={overview ? "success" : error ? "error" : "loading"}
+          />
+
           {/* Activity trend — 3 area lines */}
           {trend.length > 2 && (
             <Panel>
@@ -1788,11 +1786,7 @@ function OverviewPageContent() {
                 sub="7-day window — runs, cost, tokens"
                 accent="var(--sky)"
               />
-              <div
-                className="grid gap-0 divide-x sm:grid-cols-3"
-                // @ts-expect-error -- strict migration
-                style={{ divideColor: "var(--line)" }}
-              >
+              <div className="grid gap-0 divide-x divide-[var(--line)] sm:grid-cols-3">
                 {[
                   {
                     key: "runs",
@@ -1818,7 +1812,7 @@ function OverviewPageContent() {
                   return (
                     <div key={key} className="p-4">
                       <div className="flex items-center justify-between mb-2">
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/50">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75">
                           {label}
                         </div>
                         <div className="font-mono text-[12px] font-semibold" style={{ color }}>
@@ -1835,16 +1829,16 @@ function OverviewPageContent() {
 
           {trend.length > 2 && (
             <AreaTrendCard
-              title="Run throughput and LLM load"
-              description="Overlay of total runs and LLM calls across the same periods."
+              title="Run throughput and token load"
+              description="Overlay of total runs and token volume across the same days."
               data={trend.map((r: any) => ({
                 date: r.date || "",
                 runs: Number(r.runs || 0),
-                llm_calls: Number(r.llm_calls || 0),
+                tokens: Number(r.tokens || 0),
               }))}
               series={[
                 { key: "runs", label: "Runs", color: "var(--chart-1)" },
-                { key: "llm_calls", label: "LLM Calls", color: "var(--chart-2)" },
+                { key: "tokens", label: "Tokens", color: "var(--chart-2)" },
               ]}
               height={210}
             />
@@ -1853,19 +1847,19 @@ function OverviewPageContent() {
           {trend.length > 2 && (
             <BarTrendCard
               title="Run outcome mix"
-              description="Stacked daily successes, partial/running runs, agent failures, and site/server blockers."
+              description="Daily runs split by result, plus runs still in flight."
               data={trend.map((r: any) => ({
                 date: r.date || "",
                 successes: Number(r.successes || 0),
                 partials: Number(r.partials || 0),
-                agent_failures: Number(r.agent_failures || 0),
-                external_blockers: Number(r.external_blockers || 0),
+                failures: Number(r.failures || 0),
+                running: Number(r.running || 0),
               }))}
               series={[
                 { key: "successes", label: "Success", color: "var(--chart-1)", stackId: "status" },
                 { key: "partials", label: "Partial", color: "var(--chart-2)", stackId: "status" },
-                { key: "agent_failures", label: "Agent fail", color: "var(--chart-5)", stackId: "status" },
-                { key: "external_blockers", label: "Site/server", color: "var(--chart-4)", stackId: "status" },
+                { key: "failures", label: "Failed", color: "var(--chart-5)", stackId: "status" },
+                { key: "running", label: "Running", color: "var(--chart-4)", stackId: "status" },
               ]}
               height={210}
             />
@@ -1880,7 +1874,7 @@ function OverviewPageContent() {
                 accent="var(--violet)"
                 aside={
                   <span
-                    className="font-mono text-[10px] text-muted-foreground/60"
+                    className="font-mono text-[10px] text-muted-foreground/75"
                   >
                     {formatNumber(activeRuns.length)} live
                   </span>
@@ -1891,7 +1885,7 @@ function OverviewPageContent() {
                   .slice(0, 6)
                   .map((row: any) => <ActiveRunRow key={row.run_id} run={row} />)
               ) : (
-                <div className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40">
+                <div className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/75">
                   No live traces
                 </div>
               )}
@@ -1907,7 +1901,7 @@ function OverviewPageContent() {
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
                     {["Run", "Status", "Streams", "Tokens", "Cost", "Duration"].map((h) => (
-                      <TableHead key={h} className="px-4 py-2 text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/60">
+                      <TableHead key={h} className="px-4 py-2 text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/75">
                         {h}
                       </TableHead>
                     ))}
@@ -1941,7 +1935,7 @@ function OverviewPageContent() {
                     ))
                   ) : (
                     <TableRow className="hover:bg-transparent">
-                      <TableCell colSpan={6} className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40">
+                      <TableCell colSpan={6} className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/75">
                         No runs yet
                       </TableCell>
                     </TableRow>
@@ -1989,7 +1983,7 @@ function OverviewPageContent() {
               </div>
               {providerDonutSegs.length === 0 && (
                 <div
-                  className="px-4 pb-6 text-center font-mono text-[12px] text-muted-foreground/40"
+                  className="px-4 pb-6 text-center font-mono text-[12px] text-muted-foreground/75"
                 >
                   No cost data yet
                 </div>
@@ -2022,7 +2016,7 @@ function OverviewPageContent() {
                   })
               ) : (
                 <div
-                  className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40"
+                  className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/75"
                 >
                   No model cost data
                 </div>
@@ -2048,7 +2042,7 @@ function OverviewPageContent() {
                 {costComponentSegs.length ? (
                   <DonutLegend segments={costComponentSegs} />
                 ) : (
-                  <div className="text-center text-[12px] text-muted-foreground/50">
+                  <div className="text-center text-[12px] text-muted-foreground/75">
                     Configure pricing to split spend by token type.
                   </div>
                 )}
@@ -2066,7 +2060,7 @@ function OverviewPageContent() {
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
                       {["Model", "Input", "Cached", "Output", "Total", "Source"].map((h) => (
-                        <TableHead key={h} className="px-4 py-2.5 text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/60">
+                        <TableHead key={h} className="px-4 py-2.5 text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/75">
                           {h}
                         </TableHead>
                       ))}
@@ -2087,7 +2081,7 @@ function OverviewPageContent() {
                     ))}
                     {!modelRows.length && (
                       <TableRow className="hover:bg-transparent">
-                        <TableCell colSpan={6} className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40">
+                        <TableCell colSpan={6} className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/75">
                           No model usage rows recorded yet
                         </TableCell>
                       </TableRow>
@@ -2136,7 +2130,7 @@ function OverviewPageContent() {
                   height={96}
                 />
                 <div
-                  className="mt-3 flex justify-between font-mono text-[9.5px] text-muted-foreground/40"
+                  className="mt-3 flex justify-between font-mono text-[9.5px] text-muted-foreground/75"
                 >
                   <span>{trend.at(0)?.date || "oldest"}</span>
                   <span>{trend.at(-1)?.date || "latest"}</span>
@@ -2147,13 +2141,13 @@ function OverviewPageContent() {
 
           {trend.length > 2 && (
             <AreaTrendCard
-              title="LLM calls over time"
-              description="Volume of model invocations per period."
+              title="Token volume over time"
+              description="Tokens consumed per period — spend scales with volume."
               data={trend.map((r: any) => ({
                 date: r.date || "",
-                llm_calls: Number(r.llm_calls || 0),
+                tokens: Number(r.tokens || 0),
               }))}
-              series={[{ key: "llm_calls", label: "LLM Calls", color: "var(--chart-2)" }]}
+              series={[{ key: "tokens", label: "Tokens", color: "var(--chart-2)" }]}
               height={180}
             />
           )}
@@ -2192,13 +2186,13 @@ function OverviewPageContent() {
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span
-                        className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/40"
+                        className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75"
                       >
                         Cache hit rate
                       </span>
                       <span
                         className="font-mono text-[12px] font-semibold"
-                        style={{ color: "var(--violet)" }}
+                        style={{ color: "var(--violet-text)" }}
                       >
                         {formatPercent(
                           cachedInTotal + newInTotal > 0
@@ -2226,7 +2220,7 @@ function OverviewPageContent() {
                 accent="var(--sky)"
                 aside={
                   <div
-                    className="flex gap-3 font-mono text-[10px] text-muted-foreground/60"
+                    className="flex gap-3 font-mono text-[10px] text-muted-foreground/75"
                   >
                     <span className="flex items-center gap-1">
                       <span
@@ -2280,7 +2274,7 @@ function OverviewPageContent() {
                           {row.label}
                         </div>
                         <div
-                          className="font-mono text-[10px] text-muted-foreground/40"
+                          className="font-mono text-[10px] text-muted-foreground/75"
                         >
                           {formatNumber(total)} tok
                         </div>
@@ -2311,7 +2305,7 @@ function OverviewPageContent() {
                 })
               ) : (
                 <div
-                  className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40"
+                  className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/75"
                 >
                   No token usage yet
                 </div>
@@ -2332,19 +2326,19 @@ function OverviewPageContent() {
                   </span>
                   <span
                     className="font-mono text-[11px]"
-                    style={{ color: "var(--signal)" }}
+                    style={{ color: "var(--signal-text)" }}
                   >
                     {formatNumber(newInTotal)} new
                   </span>
                   <span
                     className="font-mono text-[11px]"
-                    style={{ color: "var(--violet)" }}
+                    style={{ color: "var(--violet-text)" }}
                   >
                     {formatNumber(cachedInTotal)} cached
                   </span>
                   <span
                     className="font-mono text-[11px]"
-                    style={{ color: "var(--mint)" }}
+                    style={{ color: "var(--mint-text)" }}
                   >
                     {formatNumber(outTotal)} out
                   </span>
@@ -2403,7 +2397,7 @@ function OverviewPageContent() {
                   {workflowProviderSegs.length ? (
                     <DonutLegend segments={workflowProviderSegs} />
                   ) : (
-                    <div className="text-[12px] text-muted-foreground/50">
+                    <div className="text-[12px] text-muted-foreground/75">
                       No provider analysis rows recorded yet.
                     </div>
                   )}
@@ -2428,7 +2422,7 @@ function OverviewPageContent() {
                     </div>
                   ))}
                   {!workflowProviderStats.countryRows.length && (
-                    <div className="text-[12px] text-muted-foreground/50">
+                    <div className="text-[12px] text-muted-foreground/75">
                       Country data appears after provider lookups resolve IP metadata.
                     </div>
                   )}
@@ -2457,7 +2451,7 @@ function OverviewPageContent() {
                   />
                 ))
               ) : (
-                <div className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40">
+                <div className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/75">
                   No provider rows recorded yet
                 </div>
               )}
@@ -2469,7 +2463,7 @@ function OverviewPageContent() {
                 sub="Stream links captured during workflow execution"
                 accent="var(--sky)"
                 aside={
-                  <span className="font-mono text-[10px] text-muted-foreground/60">
+                  <span className="font-mono text-[10px] text-muted-foreground/75">
                     {formatNumber(workflowProviderLinkRows.length)} shown
                   </span>
                 }
@@ -2480,7 +2474,7 @@ function OverviewPageContent() {
                     <TableHeader>
                       <TableRow className="hover:bg-transparent">
                         {["Link", "Provider", "Host", "Country", "Abuse", "Run"].map((h) => (
-                          <TableHead key={h} className="px-4 py-2.5 text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/60">
+                          <TableHead key={h} className="px-4 py-2.5 text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/75">
                             {h}
                           </TableHead>
                         ))}
@@ -2494,7 +2488,7 @@ function OverviewPageContent() {
                   </Table>
                 </div>
               ) : (
-                <div className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40">
+                <div className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/75">
                   No workflow stream links recorded yet
                 </div>
               )}
@@ -2538,13 +2532,13 @@ function OverviewPageContent() {
                   >
                     <div className="flex items-center justify-between mb-1.5">
                       <span
-                        className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/40"
+                        className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75"
                       >
                         Success rate
                       </span>
                       <span
                         className="font-mono text-[12px] font-semibold"
-                        style={{ color: "var(--mint)" }}
+                        style={{ color: "var(--mint-text)" }}
                       >
                         {formatPercent(summary.tool_success_rate || 0)}
                       </span>
@@ -2578,7 +2572,7 @@ function OverviewPageContent() {
                 {["tool", "calls", "success", "avg"].map((h) => (
                   <div
                     key={h}
-                    className="font-mono text-[10px] uppercase tracking-[0.12em] first:text-left text-right text-muted-foreground/60"
+                    className="font-mono text-[10px] uppercase tracking-[0.12em] first:text-left text-right text-muted-foreground/75"
                   >
                     {h}
                   </div>
@@ -2592,7 +2586,7 @@ function OverviewPageContent() {
                   ))
               ) : (
                 <div
-                  className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40"
+                  className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/75"
                 >
                   No tool calls recorded yet
                 </div>
@@ -2615,7 +2609,7 @@ function OverviewPageContent() {
                   height={72}
                 />
                 <div
-                  className="mt-2 flex justify-between font-mono text-[9.5px] text-muted-foreground/40"
+                  className="mt-2 flex justify-between font-mono text-[9.5px] text-muted-foreground/75"
                 >
                   <span>earliest</span>
                   <span>latest</span>
@@ -2668,7 +2662,7 @@ function OverviewPageContent() {
                             {row.actor}
                           </div>
                           <span
-                            className="font-mono text-[11px] text-muted-foreground/60"
+                            className="font-mono text-[11px] text-muted-foreground/75"
                           >
                             {formatNumber(row.total)} runs
                           </span>
@@ -2686,11 +2680,7 @@ function OverviewPageContent() {
                           />
                         </div>
                       </div>
-                      <div
-                        className="grid grid-cols-4 divide-x text-center"
-                        // @ts-expect-error -- strict migration
-                        style={{ divideColor: "var(--line)" }}
-                      >
+                      <div className="grid grid-cols-4 divide-x divide-[var(--line)] text-center">
                         {[
                           {
                             label: "status",
@@ -2722,7 +2712,7 @@ function OverviewPageContent() {
                               {value}
                             </div>
                             <div
-                              className="text-[9px] uppercase tracking-[0.12em] mt-0.5 text-muted-foreground/40"
+                              className="text-[9px] uppercase tracking-[0.12em] mt-0.5 text-muted-foreground/75"
                             >
                               {label}
                             </div>
@@ -2740,7 +2730,7 @@ function OverviewPageContent() {
               ) : (
                 <Panel className="sm:col-span-2">
                   <div
-                    className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40"
+                    className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/75"
                   >
                     No agent runs recorded yet
                   </div>
@@ -2796,7 +2786,7 @@ function OverviewPageContent() {
               sub="Latest persisted agent rows from the workflow database"
               accent="var(--sky)"
               aside={
-                <span className="font-mono text-[10px] text-muted-foreground/60">
+                <span className="font-mono text-[10px] text-muted-foreground/75">
                   {formatNumber(agentRows.length)} loaded
                 </span>
               }
@@ -2807,7 +2797,7 @@ function OverviewPageContent() {
                     <TableHeader>
                       <TableRow className="hover:bg-transparent">
                       {["Agent", "Status", "Target", "Context", "LLM", "Tools", "Duration"].map((h) => (
-                        <TableHead key={h} className="px-4 py-2.5 text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/60">
+                        <TableHead key={h} className="px-4 py-2.5 text-left font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/75">
                           {h}
                         </TableHead>
                       ))}
@@ -2818,7 +2808,7 @@ function OverviewPageContent() {
                       <TableRow key={row.id || `${row.actor}-${row.started_at}`}>
                         <TableCell className="px-4 py-2.5">
                           <div className="font-mono text-[11px] text-foreground">{row.actor || row.agent_type || "agent"}</div>
-                          <div className="font-mono text-[10px] text-muted-foreground/50">{row.agent_type || "-"}</div>
+                          <div className="font-mono text-[10px] text-muted-foreground/75">{row.agent_type || "-"}</div>
                         </TableCell>
                         <TableCell className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">{row.status || "-"}</TableCell>
                         <TableCell className="max-w-[340px] truncate px-4 py-2.5 font-mono text-[11px] text-muted-foreground" title={row.target_url}>
@@ -2836,7 +2826,7 @@ function OverviewPageContent() {
                 </Table>
               </div>
             ) : (
-              <div className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40">
+              <div className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/75">
                 No agent database rows returned
               </div>
             )}
@@ -2856,7 +2846,7 @@ function OverviewPageContent() {
                 ))
               ) : (
                 <div
-                  className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40"
+                  className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/75"
                 >
                   No agent failures recorded
                 </div>
@@ -2874,7 +2864,7 @@ function OverviewPageContent() {
                 ))
               ) : (
                 <div
-                  className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/40"
+                  className="px-4 py-10 text-center font-mono text-[12px] text-muted-foreground/75"
                 >
                   No site/server blockers in recent runs
                 </div>
