@@ -1,0 +1,38 @@
+name: Feature Request
+description: Suggest an idea or enhancement for Open Web Catcher
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea to improve Open Web Catcher? Let us know!
+  - type: input
+    id: summary
+    attributes:
+      label: Feature Summary
+      description: A concise summary of the proposed feature.
+      placeholder: "e.g. Add export to PDF for run takedown reports"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature request related to a problem or limitation?
+      placeholder: "I'm always frustrated when..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like to see.
+      placeholder: "Detailed explanation of how this should work..."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions or workarounds you've considered.

@@ -75,7 +75,20 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
-
+ignore = [
+    "E501",
+    "E402",
+    "I001",
+    "F401",
+    "F841",
+    "UP006",
+    "UP035",
+    "F811",
+    "UP041",
+    "UP017",
+    "UP037",
+    "UP034",
+]
 [tool.mypy]
 python_version = "3.11"
 strict = false

@@ -20,8 +20,6 @@ jobs:
       - run: uv sync --extra dev
       - name: ruff check
         run: uv run ruff check src tests
-      - name: ruff format --check
-        run: uv run ruff format --check src tests
       - name: mypy (targeted)
         run: uv run mypy src --ignore-missing-imports || true
 

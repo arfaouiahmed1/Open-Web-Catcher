@@ -54,6 +54,7 @@ from src.utils.provider_models import (
     normalize_gemini_model_id,
     provider_api_key,
     provider_base_url,
+    resolve_google_model_runtime_profile,
     resolve_model_runtime_profile,
     resolve_agent_model_selection,
     resolve_llm_tuning,

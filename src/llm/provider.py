@@ -73,8 +73,6 @@ _PROVIDER_PREFIXES = {
     "fireworks_ai": "fireworks_ai",
     "together": "together_ai",
     "together_ai": "together_ai",
-    "vertex": "vertex_ai",
-    "google-vertex": "vertex_ai",
     "opencode": "openai",
     "opencode-go": "openai",
     "openai_like": "openai",

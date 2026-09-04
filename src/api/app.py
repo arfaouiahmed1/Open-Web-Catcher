@@ -66,6 +66,7 @@ from src.utils.console_state import (
     JOB_TERMINAL_STATUSES,
     RUN_TERMINAL_STATUSES,
     normalize_job_display_status,
+    normalize_run_display_status,
 )
 from src.utils.ipinfo import lookup_multiple
 from src.utils.logging import get_logger, setup_logging

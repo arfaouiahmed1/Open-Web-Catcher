@@ -1,0 +1,54 @@
+name: Bug Report
+description: Report an issue or unexpected behavior in Open Web Catcher
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug in Open Web Catcher!
+  - type: input
+    id: component
+    attributes:
+      label: Affected Component
+      description: Which part of the system is failing?
+      placeholder: "e.g. Next.js Console, Playwright MCP Server, Hosting Agent, FastAPI Backend"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: Describe what happened and what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Start containers with `docker compose up -d`
+        2. Open http://localhost:3005/live?mode=workflow
+        3. Enter URL '...'
+        4. See error
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Info
+      description: OS, Docker version, browser, LLM provider, etc.
+      placeholder: |
+        - OS: Windows 11 / Ubuntu 24.04
+        - Docker: 27.x
+        - LLM: Google Gemini 3.1 Flash Lite
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs / Telemetry
+      description: Paste any error messages, terminal logs, or browser console outputs.
+      render: shell

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/arfaouiahmed1/Open-Web-Catcher/discussions
+    about: Ask questions, share ideas, and engage with the community.
+  - name: Security Vulnerability Reporting
+    url: https://github.com/arfaouiahmed1/Open-Web-Catcher/security/policy
+    about: Privately report security vulnerabilities.
