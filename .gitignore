@@ -100,8 +100,7 @@ build_log*.txt
 tmp_probe/
 .codegraph/
 
-# Generated API artifacts
-openapi.json
+# Generated API artifacts (openapi.json is tracked for Dockerfile.web and web types)
 openapi.json.bak
 
 # Local blobs & runtime captures (content-addressed)
