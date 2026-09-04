@@ -1421,7 +1421,7 @@ export function RunsPage() {
         language,
         label,
         query,
-        limit: 0,
+        limit: urls.length || site ? 0 : Math.max(siteTotal, 1),
         urls: site ? [(site as any).url] : urls,
       };
       const created = await apiFetch("/api/datasets/batches", {

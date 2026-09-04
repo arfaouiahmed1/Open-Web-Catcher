@@ -218,9 +218,6 @@ def test_model_selection_details_and_warnings_report_runtime_adjustments() -> No
     details = build_model_selection_details(settings)
 
     assert any(item["type"] == "thinking_disabled_for_model" for item in warnings)
-    assert any(
-        item["type"] == "explicit_cache_unavailable_for_model" for item in warnings
-    )
     assert details["classification"]["catalog_status"] == "verified"
     assert details["classification"]["warnings"]
 

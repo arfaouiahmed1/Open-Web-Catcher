@@ -251,12 +251,12 @@ function RunKebabMenu({
           <ConfirmAction
             title="Delete this run?"
             description="Removes the run and its persisted telemetry. This cannot be undone."
-            actionLabel={isDeleting ? "Deleting..." : "Delete run"}
+            actionLabel={isDeleting ? "Deleting…" : "Delete run"}
             onConfirm={onDelete}
             trigger={(
               <button type="button" className={itemClass} disabled={isDeleting} style={{ color: "var(--rose)" }}>
                 <Trash2 className="h-3.5 w-3.5" />
-                {isDeleting ? "Deleting..." : "Delete run"}
+                {isDeleting ? "Deleting…" : "Delete run"}
               </button>
             )}
           />

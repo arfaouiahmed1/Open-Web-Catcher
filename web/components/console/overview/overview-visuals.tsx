@@ -329,7 +329,7 @@ function ProviderModelBars({ models }: { models: Row[] }) {
             </div>
             <div className="mt-1.5 h-[3px] overflow-hidden rounded-full bg-border">
               <div
-                className="h-full rounded-full transition-all"
+                className="h-full rounded-full transition-[width] motion-reduce:transition-none"
                 style={{ width: `${Math.min(100, (value / total) * 100)}%`, background: PALETTE[i % PALETTE.length] }}
               />
             </div>
@@ -350,7 +350,7 @@ function ProviderModelBars({ models }: { models: Row[] }) {
             </div>
             <div className="mt-1.5 h-[3px] overflow-hidden rounded-full bg-border">
               <div
-                className="h-full rounded-full transition-all"
+                className="h-full rounded-full transition-[width] motion-reduce:transition-none"
                 style={{ width: `${Math.min(100, (value / total) * 100)}%`, background: PALETTE[(i + 2) % PALETTE.length] }}
               />
             </div>

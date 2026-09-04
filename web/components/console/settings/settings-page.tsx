@@ -627,19 +627,6 @@ function buildCompatibilityWarnings({
         message: `${label} uses ${modelId}; thinking support is unverified until Google returns metadata for it.`,
       });
     }
-    if (explicitCacheEnabled && modelMeta && capabilities.supports_explicit_cache === false) {
-      warnings.push({
-        id: `${selection.id}-cache`,
-        tone: "warning",
-        message: `${label} uses ${modelId}; explicit cache is unavailable for this model.`,
-      });
-    } else if (explicitCacheEnabled && !modelMeta && status === "unverified") {
-      warnings.push({
-        id: `${selection.id}-cache-unverified`,
-        tone: "default",
-        message: `${label} uses ${modelId}; explicit cache support is unverified until Google returns metadata for it.`,
-      });
-    }
   });
   return warnings;
 }

@@ -547,8 +547,9 @@ export function RunLauncher({ defaultMode = "workflow" }: RunLauncherProps): Rea
                         key={preset.label}
                         type="button"
                         onClick={() => applyPreset(preset.url)}
-                        className="group rounded-lg border bg-card p-3 text-left transition-all hover:bg-muted/40"
+                        className="group rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/40"
                         title={`Load ${preset.url}`}
+                        aria-label={`Load preset ${preset.label}`}
                       >
                         <div className="flex items-center gap-2">
                           <FlaskConical className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />

@@ -201,8 +201,9 @@ FALLBACK_MODELS: dict[str, list[dict[str, Any]]] = {
         {"id": "gpt-4o-mini", "label": "GPT-4o Mini", "description": "Fast, economical option.", "context_window": 128_000},
     ],
     "anthropic": [
-        {"id": "claude-opus-4", "label": "Claude Opus 4", "description": "Most capable Claude model.", "context_window": 200_000},
+        {"id": "claude-3-7-sonnet-latest", "label": "Claude 3.7 Sonnet", "description": "Hybrid reasoning + coding.", "context_window": 200_000},
         {"id": "claude-sonnet-4", "label": "Claude Sonnet 4", "description": "Balanced quality and speed.", "context_window": 200_000},
+        {"id": "claude-opus-4", "label": "Claude Opus 4", "description": "Most capable Claude model.", "context_window": 200_000},
         {"id": "claude-3-5-haiku-latest", "label": "Claude 3.5 Haiku", "description": "Fast, economical option.", "context_window": 200_000},
     ],
     "openrouter": [
@@ -245,9 +246,9 @@ FALLBACK_MODELS: dict[str, list[dict[str, Any]]] = {
         {"id": "sonar-reasoning", "label": "Sonar Reasoning", "description": "Reasoning + search.", "context_window": 128_000},
     ],
     "deepseek": [
-        {"id": "deepseek-chat", "label": "DeepSeek Chat", "description": "General chat.", "context_window": 64_000},
-        {"id": "deepseek-reasoner", "label": "DeepSeek Reasoner", "description": "Reasoning model.", "context_window": 64_000},
-        {"id": "deepseek-coder", "label": "DeepSeek Coder", "description": "Code generation.", "context_window": 64_000},
+        {"id": "deepseek-chat", "label": "DeepSeek Chat (V3)", "description": "General chat, 128k context.", "context_window": 128_000},
+        {"id": "deepseek-reasoner", "label": "DeepSeek Reasoner (R1)", "description": "Reasoning model, 128k context.", "context_window": 128_000},
+        {"id": "deepseek-coder", "label": "DeepSeek Coder", "description": "Code generation.", "context_window": 128_000},
     ],
     "xai": [
         {"id": "grok-3", "label": "Grok 3", "description": "Flagship Grok.", "context_window": 131_072},
@@ -1071,24 +1072,6 @@ def collect_model_config_warnings(settings: Settings) -> list[dict[str, Any]]:
                     ),
                 }
             )
-        if settings.gemini_explicit_cache_enabled and not profile["supports_explicit_cache"]:
-            warnings.append(
-                {
-                    "agent_id": agent_id,
-                    "model": profile["model_id"],
-                    "type": "explicit_cache_unavailable_for_model",
-                    "message": (
-                        f"{agent_id.capitalize()} uses {profile['model_id']}; "
-                        "explicit cache is unavailable for this model."
-                    ),
-                    "provenance": (profile.get("entry") or {}).get("capability_provenance", {}).get(
-                        "supports_explicit_cache",
-                        profile.get("capability_provenance", {}).get(
-                            "supports_explicit_cache", "Heuristic"
-                        ),
-                    ),
-                }
-            )
     return warnings
 
 
@@ -1754,14 +1737,7 @@ _CONTEXT_WINDOW_PREFIXES: list[tuple[str, int]] = [
     ("anthropic/claude-", 200_000),
     ("gpt-5", 1_047_576),
     ("openai/gpt-5", 1_047_576),
-    ("gpt-4.1", 1_047_576),
-    ("openai/gpt-4.1", 1_047_576),
-    ("gpt-4o", 128_000),
-    ("openai/gpt-4o", 128_000),
-    ("gpt-4-turbo", 128_000),
-    ("o4", 200_000),
-    ("o3", 200_000),
-    ("o1", 200_000),
+    ("deepseek", 128_000),
     ("gemini-2.5", 1_048_576),
     ("gemini-3", 1_048_576),
     ("gemini-2.0", 1_048_576),
