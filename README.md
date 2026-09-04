@@ -24,7 +24,8 @@
 
 [Quick Start](#-quick-start-cloud-containers-in-10-seconds) •
 [Features](#-commercial-features) •
-[Architecture](#-autonomous-multi-agent-architecture) •
+[Architecture](#-autonomous-4-stage-pipeline-architecture) •
+[Comparison](#-scraper-comparison-matrix) •
 [Documentation & Wiki](#-documentation--wiki) •
 [Contributing](#-community--contributing)
 
@@ -51,49 +52,69 @@ Open Web Catcher (OWC)          ──► Classify ──► Route ──► Byp
 ### 1. Ergonomic Run Detail Cockpit & Deep Agent Inspector
 Inspect complete agent execution with zero friction. The newly redesigned cockpit layout provides a 6-tile KPI ribbon (Estimated Cost, Duration, Tokens, Tool Executions, Captured Streams, Screenshots) and an interactive 2-column workspace.
 
-<img src="docs/assets/feature-cockpit.svg" alt="Run Detail Cockpit and Agent Inspector" width="100%" />
+<img src="docs/assets/screenshots/07-run-detail-cockpit.png" alt="Live Run Detail Cockpit and Agent Inspector" width="100%" />
 
-- **Interactive Agent Graph**: Visualizes orchestrator handoffs, active subagents, and fanout trees.
-- **Rich Agent Node Inspector**: Click any agent node (`Classification`, `Landing`, `Hosting`, `Embedded`) to inspect its exact MCP tool calls with input/output payloads, model thought traces, and network/iframe diagnostics.
-- **Built-in HTML5 Video Preview**: Immediately play back captured `.m3u8` and direct media streams with zero third-party player overhead.
+- **Interactive Agent Execution Graph**: Visual topology map displaying orchestrator handoffs, active subagents, and fanout trees.
+- **Rich Agent Node Inspector**: Click any agent node (`Classification`, `Landing`, `Hosting`, `Embedded`) in the graph to inspect its exact MCP tool calls with input/output payloads, model thought traces, and network/iframe diagnostics.
+- **Built-in HTML5 Video Preview**: Immediately play back captured `.m3u8` and direct media streams directly inside the console.
 
 ---
 
 ### 2. Autonomous 4-Stage Pipeline Architecture
 Deterministic LangGraph orchestration coordinates four specialized agent contracts. Each agent possesses a bounded execution boundary and role-scoped tool profile, preventing hallucinations and navigation drift.
 
-<img src="docs/assets/feature-pipeline.svg" alt="4-Stage Interactive Pipeline Canvas" width="100%" />
+<img src="docs/assets/screenshots/02-live-workflow.png" alt="Live 4-Stage Workflow Pipeline Canvas" width="100%" />
 
-| Agent | Role & Responsibility | Model Scope |
-| :--- | :--- | :--- |
-| **01. Classification** | Ingests target URL and determines page type (`Landing`, `Hosting`, `Embedded`) before extraction begins. | Read-only inspect tools |
-| **02. Landing Page** | Parses dynamic schedules (e.g. `streamed.pk`, `freeshot.live`) and extracts event listings and player links. | Navigation & interaction |
-| **03. Hosting Page** | Operates server dropdowns, switches streaming mirrors, and handles click-to-play overlays. | Full interaction & harvest |
-| **04. Embedded Player** | Defeats sandboxed iframe restrictions, recovers media tokens, and captures `.m3u8` / `.mpd` playlists. | Media verification & recovery |
+| Stage | Specialist Agent | Role & Responsibility | Model Scope |
+| :---: | :--- | :--- | :--- |
+| **01** | **Classification** | Ingests target URL and determines page type (`Landing`, `Hosting`, `Embedded`) before extraction begins. | Read-only inspect tools |
+| **02** | **Landing Page** | Parses dynamic schedules (e.g. `streamed.pk`, `freeshot.live`) and extracts event listings and player links. | Navigation & interaction |
+| **03** | **Hosting Page** | Operates server dropdowns, switches streaming mirrors, and handles click-to-play overlays. | Full interaction & harvest |
+| **04** | **Embedded Player** | Defeats sandboxed iframe restrictions, recovers media tokens, and captures `.m3u8` / `.mpd` playlists. | Media verification & recovery |
 
 ---
 
 ### 3. Executive Dashboard & Real-Time Analytics
-Monitor pipeline health, infrastructure coverage, and model expenditures without mathematical clutter.
+Monitor pipeline health, infrastructure coverage, and model expenditures with operator-grade telemetry.
 
-<img src="docs/assets/feature-analytics.svg" alt="Executive Dashboard Analytics Visualizations" width="100%" />
+<img src="docs/assets/screenshots/01-dashboard-overview.png" alt="Live Executive Dashboard Overview" width="100%" />
 
-- **7-Day Cost & Token Trend**: Interactive dual-axis Recharts visualization tracking daily model spend against prompt/generation volume.
+- **7-Day Spend & Token Trend**: Interactive dual-axis Recharts visualization tracking daily model spend against prompt/generation volume.
 - **Outcome Distribution**: Donut breakdown displaying verification success rates and classification categories across all runs.
-- **Latency & Benchmark Tracking**: Bar chart monitoring wall-clock execution time against performance thresholds.
+- **Latency & Benchmark Tracking**: Bar chart monitoring wall-clock execution time against the 30s benchmark target.
 - **Tool Reliability Matrix**: Real-time reliability and execution frequency tracking across all six MCP tools.
 
 ---
 
-### 4. Model Control Plane & Hardened Playwright Runtime
+### 4. Enterprise Model Control Plane & 110+ Provider BYOK
 Take full control over your intelligence stack with enterprise Bring-Your-Own-Key (BYOK) support and browser security policies.
 
-<img src="docs/assets/feature-settings.svg" alt="Model Configuration and BYOK Control Plane" width="100%" />
+<img src="docs/assets/screenshots/04-settings-models.png" alt="Live Model Control Plane and Agent Routing" width="100%" />
 
 - **Multi-Provider BYOK**: Connect 110+ LiteLLM-compatible providers including Google Gemini, Anthropic Claude, OpenAI, OpenRouter, and local runtimes (Ollama, vLLM).
 - **Per-Agent Model Routing**: Assign fast lightweight models (e.g. `gemini-3.1-flash-lite`) to classification while reserving reasoning-heavy models for embedded player extraction.
-- **Hardened Playwright 1.62.1 MCP**: Zero-knob containerized browser execution with isolated contexts per run and **uBlock Origin Lite (MV3)** pre-installed to strip malicious tracking and popups.
-- **Granular Defense Toggles**: Configure Iframe Auto-Recovery, CORS patching, and explicit prompt caching with one-click persistence.
+- **Runtime & Caching Sliders**: Configure Temperature presets (Deterministic 0.0, Balanced 0.7, Creative 1.0), Extended Thinking budgets (1,000–32,000 tokens), Provider Prompt Caching, and Gemini Explicit Caching with one-click persistence.
+
+---
+
+### 5. Hardened Playwright 1.62.1 MCP Runtime with uBlock Origin Lite
+Containerized headless browser execution with isolated contexts per run and **uBlock Origin Lite (MV3)** pre-installed to strip malicious tracking, crypto-miners, and popup traps before execution.
+
+<img src="docs/assets/screenshots/05-settings-browser.png" alt="Live Playwright Browser Runtime Controls" width="100%" />
+
+- **Zero-Knob Playwright Policy**: Single coherent browser persona eliminates engine switching drift.
+- **Granular Defense Toggles**: Configure Iframe Auto-Recovery, Sandbox Patches, and Streaming Safe Mode with reactive backend synchronization via `PUT /ui/config`.
+
+---
+
+### 6. Unified Website Dataset & Health Monitoring
+Centrally manage your catalog of target streaming platforms with real-time reachability and infrastructure probing.
+
+<img src="docs/assets/screenshots/03-websites-dataset.png" alt="Live Website Dataset Workspace" width="100%" />
+
+- **Instant Health Checks**: Concurrently probe site reachability via `POST /api/datasets/sites/health-check` to detect seized, parked, or anti-bot states.
+- **Batch Operations**: Launch multi-site parallel extraction batches, perform bulk metadata edits, and prune down/dead domains with one click.
+- **Slide-over Site Detail Drawer**: Inspect historical stream yields, latency records, and operator notes per domain.
 
 ---
 
@@ -153,6 +174,7 @@ Explore our dedicated documentation guides:
 - [**Multi-Agent Pipeline**](docs/wiki/Multi-Agent-Pipeline.md) — Detailed agent contract specifications.
 - [**Playwright MCP Runtime**](docs/wiki/Playwright-MCP-Runtime.md) — The 6 MCP tool contracts and defense mechanisms.
 - [**Operator Console Guide**](docs/wiki/Operator-Console.md) — Live workflow launcher, dataset manager, and telemetry.
+- [**Deployment & Docker Guide**](docs/wiki/Deployment-and-Docker.md) — Docker Compose and cloud GHCR deployment.
 - [**API Reference**](docs/wiki/API-Reference.md) — Complete FastAPI REST and SSE endpoints.
 
 Visit the online [GitHub Project Wiki](https://github.com/arfaouiahmed1/Open-Web-Catcher/wiki) for interactive tutorials.
