@@ -68,6 +68,8 @@ jobs:
     name: Web (types + tsc + lint + build + vitest)
     runs-on: ubuntu-latest
     needs: [pytest-integration]
+    env:
+      NEXT_PUBLIC_API_BASE_URL: https://api.test.invalid
     defaults:
       run:
         working-directory: web
