@@ -2258,13 +2258,17 @@ class OrchestratorAgent:
                     # SSE timeline (plan_step_update events) reflects the
                     # canonical execution graph.
                     if self.observer is not None:
-                        emit_run_plan(
-                            self.observer,
-                            get_session(),
-                            run_id,
-                            "sequential",
-                            _RUN_PLAN_STEPS,
-                        )
+                        _plan_session = get_session()
+                        try:
+                            emit_run_plan(
+                                self.observer,
+                                _plan_session,
+                                run_id,
+                                "sequential",
+                                _RUN_PLAN_STEPS,
+                            )
+                        finally:
+                            _plan_session.close()
                     workflow_deadline = max(
                         1,
                         int(getattr(self.settings, "workflow_timeout_seconds", 3600) or 3600),

@@ -24,6 +24,7 @@ these helpers directly (tests do; production nodes do not yet).
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -32,6 +33,8 @@ from src.storage.repositories import RunPlanRepository
 from src.utils.observability import RunObserver, RuntimeEvent
 
 #: SSE-visible event kinds this module emits through the observer.
+logger = logging.getLogger(__name__)
+
 RUN_PLAN_CREATED_KIND = "run_plan_created"
 PLAN_STEP_UPDATE_KIND = "plan_step_update"
 
@@ -79,8 +82,11 @@ def emit_run_plan(
     without announcing (useful for backfills and pure-persistence callers).
     """
     normalized = _normalize_steps(steps)
-    repo = RunPlanRepository(session)
-    repo.create_plan(run_id, strategy, normalized)
+    try:
+        repo = RunPlanRepository(session)
+        repo.create_plan(run_id, strategy, normalized)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Skipping run plan persistence: %s", exc)
 
     if observer is None:
         return None
