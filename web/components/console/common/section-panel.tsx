@@ -37,15 +37,15 @@ export function SectionPanel({
   return (
     <Card className={cn("overflow-hidden", className)}>
       {title || description ? (
-        <CardHeader className={cn("flex flex-row items-start justify-between gap-3 space-y-0 pb-3", headerClassName)}>
-          <div className="flex min-w-0 items-start gap-3">
+        <CardHeader className={cn("flex flex-col gap-3 space-y-0 pb-3 lg:flex-row lg:items-start lg:justify-between", headerClassName)}>
+          <div className="flex min-w-0 flex-1 items-start gap-3">
             {icon ? <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border bg-muted/40 text-muted-foreground">{icon}</span> : null}
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               {title ? <CardTitle className="text-sm font-semibold">{title}</CardTitle> : null}
               {description ? <CardDescription className="text-xs leading-relaxed">{description}</CardDescription> : null}
             </div>
           </div>
-          {actions ? <div className="shrink-0">{actions}</div> : null}
+          {actions ? <div className="min-w-0 w-full lg:w-auto shrink-0">{actions}</div> : null}
         </CardHeader>
       ) : null}
       <CardContent className={cn(hasState && !title && !description ? "pt-6" : undefined, contentClassName)}>

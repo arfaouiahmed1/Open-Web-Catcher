@@ -6,6 +6,7 @@ export const SERVER_TAB_FIELDS: Record<string, string[]> = {
     "gemini_temperature",
     "llm_tuning",
     "agent_model_config",
+    "prompt_cache_enabled",
     "provider_cache_enabled",
     "gemini_explicit_cache_enabled",
     "gemini_explicit_cache_ttl_seconds",
@@ -87,6 +88,7 @@ export interface ServerConfigState {
   agentModelConfig?: Record<string, Record<string, unknown>>;
   fallbackTemperature?: unknown;
   llmTuning?: unknown;
+  promptCacheEnabled?: unknown;
   providerCacheEnabled?: unknown;
   geminiExplicitCacheEnabled?: unknown;
   geminiExplicitCacheTtl?: unknown;
@@ -109,6 +111,7 @@ export function buildServerConfigDraft(state: ServerConfigState): Record<string,
     gemini_temperature: Number.parseFloat(String(state.fallbackTemperature ?? "0")) || 0,
     llm_tuning: state.llmTuning ?? {},
     agent_model_config: state.agentModelConfig ?? {},
+    prompt_cache_enabled: Boolean(state.promptCacheEnabled ?? true),
     provider_cache_enabled: Boolean(state.providerCacheEnabled ?? true),
     gemini_explicit_cache_enabled: Boolean(state.geminiExplicitCacheEnabled ?? true),
     gemini_explicit_cache_ttl_seconds: Number((state.geminiExplicitCacheTtl as number | string | undefined) ?? 1800),
@@ -142,8 +145,8 @@ export function snapshotServerConfig(payload: Record<string, unknown> | null | u
     gemini_temperature: Number.parseFloat(String(p?.gemini_temperature ?? "0")) || 0,
     llm_tuning: p?.llm_tuning ?? {},
     agent_model_config: p?.agent_model_config ?? {},
+    prompt_cache_enabled: Boolean(p?.prompt_cache_enabled ?? true),
     provider_cache_enabled: Boolean(p?.provider_cache_enabled ?? true),
-    gemini_explicit_cache_enabled: Boolean(p?.gemini_explicit_cache_enabled ?? true),
     gemini_explicit_cache_ttl_seconds: Number((p?.gemini_explicit_cache_ttl_seconds as number | undefined) ?? 1800),
     gemini_explicit_cache_refresh_lead_seconds: Number(
       (p?.gemini_explicit_cache_refresh_lead_seconds as number | undefined) ?? 120,

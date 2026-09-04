@@ -95,9 +95,8 @@ function capabilityBadges(model: any): string[] {
     if (cond === true || cond === "supported") out.push(label);
   };
   push(caps.supports_vision ?? model?.supports_vision, "Vision");
-  push(caps.supports_tools ?? model?.supports_tools ?? true, "Tools");
-  push(caps.supports_thinking_controls ?? model?.supports_thinking, "Reasoning");
-  push(caps.supports_explicit_cache ?? model?.supports_explicit_cache, "Thinking");
+  push(caps.supports_thinking_controls ?? model?.supports_thinking, "Thinking");
+  push(caps.supports_explicit_cache ?? model?.supports_explicit_cache, "Prompt Cache");
   return out.length ? out : ["Tools"];
 }
 
@@ -163,9 +162,16 @@ export function ModelsTab(props: ModelsTabProps): React.JSX.Element {
   }));
   const globalSlot = agentModelConfig.classification ?? { provider, model: "" };
   const globalModelOptions = React.useMemo(() => {
-    const base = (catalogModels || []).map((m: any) => ({ value: String(m.id), label: String(m.label || m.id) }));
+    const base = (catalogModels || []).map((m: any) => {
+      const ctx = m.context_window ? ` (${formatTokens(m.context_window)} ctx)` : "";
+      return {
+        value: String(m.id),
+        label: `${String(m.label || m.id)}${ctx}`,
+        description: m.description ? String(m.description) : undefined,
+      };
+    });
     if (globalSlot.model && !base.some((o) => o.value === globalSlot.model)) {
-      base.push({ value: globalSlot.model, label: `${globalSlot.model} (manual)` });
+      base.push({ value: globalSlot.model, label: `${globalSlot.model} (manual)`, description: "Custom configured model ID" });
     }
     return base;
   }, [catalogModels, globalSlot.model]);
@@ -325,10 +331,15 @@ export function ModelsTab(props: ModelsTabProps): React.JSX.Element {
                     {globalSlot.model || "global model not set"} · {globalSlot.provider}
                   </p>
                 )}
-                <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
                   <span>
                     Effective: <span className="font-mono">{String(detail?.model || sel.model || "—")}</span>
                   </span>
+                  {detail?.context_window ? (
+                    <Badge tone="default" className="font-mono text-[9px]">
+                      {formatTokens(detail.context_window)} ctx
+                    </Badge>
+                  ) : null}
                   {slotCatalogNote ? <Badge tone="muted">{String(slotCatalogNote)}</Badge> : null}
                 </div>
               </div>
@@ -421,8 +432,8 @@ export function ModelsTab(props: ModelsTabProps): React.JSX.Element {
         ) : null}
         <div className="space-y-3 rounded-xl border border-border/60 p-3.5">
           <ToggleRow
-            label="Gemini explicit cache"
-            description="Server-side cached context for repeated model runs. Auto-adjusted when a model lacks support."
+            label="LiteLLM prompt caching"
+            description="Provider-agnostic prompt prefix caching via LiteLLM. Bypasses redundant tokens across repetitive agent turns for Gemini, Claude, and OpenAI."
             checked={props.geminiExplicitCacheEnabled}
             onChange={props.onGeminiExplicitCache}
           />

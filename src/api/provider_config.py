@@ -35,6 +35,7 @@ class ModelConfigRequest(BaseModel):
     gemini_temperature: float | None = None
     llm_tuning: dict | None = None
     agent_model_config: dict | None = None
+    prompt_cache_enabled: bool | None = None
     provider_cache_enabled: bool | None = None
     gemini_explicit_cache_enabled: bool | None = None
     gemini_explicit_cache_ttl_seconds: int | None = None
@@ -122,6 +123,7 @@ def ui_config_payload(
         "agent_model_config": normalize_agent_model_config(
             settings, getattr(settings, "agent_model_config", {})
         ),
+        "prompt_cache_enabled": getattr(settings, "prompt_cache_enabled", True),
         "provider_cache_enabled": settings.provider_cache_enabled,
         "gemini_explicit_cache_enabled": settings.gemini_explicit_cache_enabled,
         "gemini_explicit_cache_ttl_seconds": settings.gemini_explicit_cache_ttl_seconds,
@@ -224,6 +226,8 @@ def apply_ui_config_update(
         settings.orchestrator_model = orchestrator_selection.get(
             "model", settings.orchestrator_model
         )
+    if body.prompt_cache_enabled is not None:
+        settings.prompt_cache_enabled = body.prompt_cache_enabled
     if body.provider_cache_enabled is not None:
         settings.provider_cache_enabled = body.provider_cache_enabled
     if body.gemini_explicit_cache_enabled is not None:

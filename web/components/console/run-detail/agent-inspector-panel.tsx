@@ -175,7 +175,7 @@ export function AgentInspectorPanel({ node, events = [], totalCostUsd = 0, showT
         ) : null}
       </div>
 
-      <div className="mt-3 grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
+      <div className="mt-3 grid gap-2 grid-cols-2 sm:grid-cols-3">
         {[
           { label: "Events", value: formatNumber(node.eventCount), detail: node.latestKind || "--" },
           { label: "Tool calls", value: formatNumber(node.toolCalls), detail: `${formatNumber(sections.tools.length)} paired` },
@@ -206,7 +206,7 @@ export function AgentInspectorPanel({ node, events = [], totalCostUsd = 0, showT
             >
               {metric.label}
             </div>
-            <div className="mt-1 truncate font-mono text-[16px] font-semibold" style={{ color: "var(--ink)" }}>
+            <div className="mt-1 font-mono text-[14px] font-semibold whitespace-nowrap tabular-nums" style={{ color: "var(--ink)" }} title={metric.value}>
               {metric.value}
             </div>
             <div className="mt-0.5 truncate text-[10px]" style={{ color: "var(--mute)" }}>

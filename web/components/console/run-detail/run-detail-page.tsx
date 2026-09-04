@@ -1,7 +1,7 @@
 /* eslint-disable */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, Check, Copy, ExternalLink, MoreHorizontal, RefreshCw, RotateCcw, Trash2, XCircle } from "lucide-react";
@@ -468,17 +468,35 @@ export function RunDetailPage() {
   // Streams & Payloads, screenshot grid merged into Browser & Media.
   const LEGACY_TAB_ALIASES: Record<string, TabValue> = { output: "streams", screenshots: "browser" };
   const rawTab = searchParams.get("tab");
-  const activeTab: TabValue = (VALID_TABS as readonly string[]).includes(rawTab || "")
+  const initialTab: TabValue = (VALID_TABS as readonly string[]).includes(rawTab || "")
     ? (rawTab as TabValue)
     : LEGACY_TAB_ALIASES[rawTab || ""] || "timeline";
-  const handleTabChange = (value: string) => {
+  const [activeTab, setActiveTab] = useState<TabValue>(initialTab);
+
+  const handleTabChange = useCallback((value: string) => {
     const canonical: TabValue = (VALID_TABS as readonly string[]).includes(value)
       ? (value as TabValue)
       : LEGACY_TAB_ALIASES[value] || "timeline";
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("tab", canonical);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  };
+    setActiveTab(canonical);
+  }, []);
+
+  // Sync tab state to URL quietly without triggering full router re-render loop
+  useEffect(() => {
+    const currentParam = searchParams.get("tab") || "timeline";
+    if (activeTab !== currentParam && (activeTab !== "timeline" || currentParam !== "timeline")) {
+      const timer = setTimeout(() => {
+        const params = new URLSearchParams(searchParams.toString());
+        if (activeTab === "timeline") {
+          params.delete("tab");
+        } else {
+          params.set("tab", activeTab);
+        }
+        const query = params.toString();
+        window.history.replaceState(null, "", `${pathname}${query ? `?${query}` : ""}`);
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab, pathname, searchParams]);
   const [payload, setPayload] = useState<any>(null);
   const [isLoading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -580,14 +598,15 @@ export function RunDetailPage() {
 
   const streamedEvents = stream.events || EMPTY_ARRAY;
   const isActiveTrace = Boolean(payload?.active_trace) || streamedEvents.length > 0;
-  const trace = isActiveTrace
-    ? {
-        ...(payload?.active_trace || EMPTY_OBJECT),
-        events: streamedEvents.length ? streamedEvents : payload?.active_trace?.events || EMPTY_ARRAY,
-        metrics: stream.metrics || payload?.active_trace?.metrics || EMPTY_OBJECT,
-        completed: Boolean(stream.completed || payload?.active_trace?.completed),
-      }
-    : null;
+  const trace = useMemo(() => {
+    if (!isActiveTrace) return null;
+    return {
+      ...(payload?.active_trace || EMPTY_OBJECT),
+      events: streamedEvents.length ? streamedEvents : payload?.active_trace?.events || EMPTY_ARRAY,
+      metrics: stream.metrics || payload?.active_trace?.metrics || EMPTY_OBJECT,
+      completed: Boolean(stream.completed || payload?.active_trace?.completed),
+    };
+  }, [isActiveTrace, payload?.active_trace, streamedEvents, stream.metrics, stream.completed]);
   const snapshot = payload?.snapshot ?? EMPTY_OBJECT;
   const persistedEventsRaw = payload?.events ?? EMPTY_ARRAY;
   const liveMetricsSafe = trace?.metrics || EMPTY_OBJECT;

@@ -520,9 +520,9 @@ export function SitesTab({
           description="The CSV is used as the initial seed only; edits here are stored in the database."
           icon={<Globe2 className="h-3.5 w-3.5" />}
           actions={
-            <div className="flex flex-wrap gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <Select
-                className="w-[210px]"
+                className="w-full sm:w-[210px]"
                 value={healthCheckScope}
                 onChange={onHealthCheckScopeChange}
                 options={[
@@ -547,7 +547,7 @@ export function SitesTab({
                 {isHealthChecking ? "Checking…" : `Check health (${healthCheckTargetCount})`}
               </Button>
               <Select
-                className="w-[190px]"
+                className="w-full sm:w-[190px]"
                 value="choose"
                 onChange={onHealthSelection}
                 options={[

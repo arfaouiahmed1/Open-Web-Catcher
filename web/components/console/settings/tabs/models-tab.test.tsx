@@ -82,7 +82,7 @@ describe("Settings ModelsTab (Phase 1 rebuild)", () => {
     expect(markup).toContain("Runtime &amp; caching controls");
     expect(markup).toContain("Temperature");
     expect(markup).toContain("Provider prompt caching");
-    expect(markup).toContain("Gemini explicit cache");
+    expect(markup).toContain("LiteLLM prompt caching");
     expect(markup).toContain("Live catalog &amp; pricing reference");
   });
 

@@ -696,6 +696,7 @@ class Settings(BaseSettings):
         existing["llm_tuning"] = self.llm_tuning
         existing["agent_model_config"] = self.agent_model_config
         existing["provider_model_catalog_cache"] = self.provider_model_catalog_cache
+        existing["prompt_cache_enabled"] = self.prompt_cache_enabled
         existing["provider_cache_enabled"] = self.provider_cache_enabled
         existing["gemini_explicit_cache_enabled"] = self.gemini_explicit_cache_enabled
         existing["gemini_explicit_cache_ttl_seconds"] = self.gemini_explicit_cache_ttl_seconds

@@ -1,7 +1,7 @@
 /* eslint-disable */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { Activity, Bot, CheckCircle2, Clock3, Cpu, GitBranch, Loader2, Maximize2, Radio, Wrench, XCircle } from "lucide-react";
 import { Background, Controls, Handle, MarkerType, MiniMap, Position } from "reactflow";
@@ -72,9 +72,9 @@ function eventIcon(kind: string) {
 function MetricTile({ label, value, detail, tone = "var(--ink)" }: { label: string; value: string; detail: string; tone?: string }) {
   return (
     <div className="min-w-0 rounded-[12px] border px-3 py-2.5" style={{ borderColor: "var(--line)", background: "color-mix(in oklch, var(--bg) 82%, transparent)" }}>
-      <div className="truncate text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--mute-3)" }}>{label}</div>
-      <div className="mt-1 truncate font-mono text-[16px] font-semibold" style={{ color: tone }}>{value}</div>
-      <div className="mt-0.5 truncate text-[10px]" style={{ color: "var(--mute)" }}>{detail}</div>
+      <div className="truncate text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--mute-3)" }} title={label}>{label}</div>
+      <div className="mt-1 font-mono text-[15px] font-semibold whitespace-nowrap tabular-nums" style={{ color: tone }} title={value}>{value}</div>
+      <div className="mt-0.5 truncate text-[10px]" style={{ color: "var(--mute)" }} title={detail}>{detail}</div>
     </div>
   );
 }
@@ -211,8 +211,8 @@ export function AgentRunGraph({
     setSelectedId(defaultSelectedId);
   }, [defaultSelectedId, runId]);
 
-  const selectNode = (id: string) => setSelectedId(id);
-  const flowNodes = useMemo(() => layoutNodes(graph.nodes, selectNode), [graph.nodes]);
+  const selectNode = useCallback((id: string) => setSelectedId(id), []);
+  const flowNodes = useMemo(() => layoutNodes(graph.nodes, selectNode), [graph.nodes, selectNode]);
   const flowEdges = useMemo(() => graphEdges(graph.edges), [graph.edges]);
   const selectedNode = graph.nodes.find((node) => node.id === selectedId) || graph.nodes[0];
   const normalizedRunStatus = String(runStatus || "").toLowerCase();
@@ -242,7 +242,7 @@ export function AgentRunGraph({
       </CardHeader>
 
       <CardContent className="space-y-4 p-4">
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
+        <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
           <MetricTile label="Agents ran" value={formatNumber(graph.summary.agentCount)} detail={`${formatNumber(graph.summary.completedAgentCount)} completed`} tone="var(--signal)" />
           <MetricTile label="Active now" value={formatNumber(graph.summary.activeAgentCount)} detail={active ? "Live execution" : "No active agents"} tone="var(--mint)" />
           <MetricTile label="Events" value={formatNumber(graph.summary.eventCount)} detail="Observed telemetry" tone="var(--sky)" />
