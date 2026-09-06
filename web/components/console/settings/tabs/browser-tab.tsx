@@ -205,13 +205,15 @@ export function BrowserTab({
             onChange={(v) => onRuntimeChange("streaming_safe_mode", v)}
             options={[
               { value: "adaptive", label: "Adaptive", description: "Safe mode for hosting, embedded, player-like pages." },
-              { value: "always", label: "Always", description: "Always prefer the safer streaming policy." },
-              { value: "never", label: "Never", description: "Keep standard policy even on player pages." },
+              { value: "strict", label: "Strict", description: "Always prefer the safer streaming policy." },
+              { value: "off", label: "Off", description: "Keep the standard policy even on player pages." },
             ]}
           />
           <div className="space-y-1.5">
-            <label className="block text-sm font-semibold leading-none text-foreground">Extra launch args</label>
             <Textarea
+              id="browser-extra-launch-args"
+              name="browser.extra_launch_args"
+              label="Extra launch args"
               value={toListText(rt.extra_launch_args)}
               onChange={(e) => onRuntimeListChange("extra_launch_args", e.target.value)}
               placeholder="--disable-dev-shm-usage, --lang=en-US"
@@ -247,8 +249,10 @@ export function BrowserTab({
           />
         </div>
         <div className="space-y-1.5">
-          <label className="block text-sm font-semibold leading-none text-foreground">Adblock allowlist hosts</label>
           <Textarea
+            id="browser-adblock-allowlist-hosts"
+            name="browser.adblock_allowlist_hosts"
+            label="Adblock allowlist hosts"
             value={toListText(rt.adblock_allowlist_hosts)}
             onChange={(e) => onRuntimeListChange("adblock_allowlist_hosts", e.target.value)}
             placeholder="example.com, cdn.example.com"

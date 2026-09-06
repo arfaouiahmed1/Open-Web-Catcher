@@ -676,14 +676,13 @@ class Settings(BaseSettings):
         yaml_path: str | Path = "configs/settings.yaml",
         runtime_yaml_path: str | Path = "data/settings.runtime.yaml",
     ) -> Path:
-        """Persist non-secret runtime fields.
+        """Persist runtime settings without writing secrets to the base config.
 
-        Preferred target is ``configs/settings.yaml``. If that path is not
-        writable (for example, read-only volume mount), settings are written to
-        ``data/settings.runtime.yaml`` instead.
+        Preferred target is ``data/settings.runtime.yaml``. If that path is not
+        writable, the base config receives only non-secret settings.
         """
-        primary_path = Path(yaml_path)
-        fallback_path = Path(runtime_yaml_path)
+        primary_path = Path(runtime_yaml_path)
+        fallback_path = Path(yaml_path)
 
         existing: dict = {}
         if primary_path.exists():
@@ -751,6 +750,26 @@ class Settings(BaseSettings):
             if isinstance(key, str) and key.strip() and isinstance(value, str) and value.strip()
         }
 
+        secret_keys = {
+            "google_api_key",
+            "google_vertex_api_key",
+            "openai_api_key",
+            "anthropic_api_key",
+            "openrouter_api_key",
+            "nvidia_api_key",
+            "mistral_api_key",
+            "cohere_api_key",
+            "groq_api_key",
+            "together_api_key",
+            "fireworks_api_key",
+            "perplexity_api_key",
+            "deepseek_api_key",
+            "xai_api_key",
+            "upstage_api_key",
+            "azure_api_key",
+            "bedrock_api_key",
+            "provider_api_keys",
+        }
         try:
             primary_path.parent.mkdir(parents=True, exist_ok=True)
             with open(primary_path, "w", encoding="utf-8") as f:
@@ -771,7 +790,12 @@ class Settings(BaseSettings):
                     loaded = yaml.safe_load(f) or {}
                 if isinstance(loaded, dict):
                     fallback_existing = loaded
-            fallback_existing.update(existing)
+            fallback_existing = {
+                key: value for key, value in fallback_existing.items() if key not in secret_keys
+            }
+            fallback_existing.update(
+                {key: value for key, value in existing.items() if key not in secret_keys}
+            )
             fallback_path.parent.mkdir(parents=True, exist_ok=True)
             with open(fallback_path, "w", encoding="utf-8") as f:
                 yaml.safe_dump(fallback_existing, f, default_flow_style=False, allow_unicode=True)

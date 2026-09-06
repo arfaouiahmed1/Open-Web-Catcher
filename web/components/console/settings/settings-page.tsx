@@ -316,7 +316,7 @@ function normalizeStringList(value: any, fallback = []) {
   if (Array.isArray(value))
     rows = value.map((item) => String(item || "").trim());
   else if (typeof value === "string")
-    rows = value.split(",").map((item) => item.trim());
+    rows = value.split(/[\n,]+/).map((item) => item.trim());
   else rows = fallback;
 
   const seen = new Set();
@@ -497,7 +497,7 @@ function StatusPill({  tone = "neutral", children  }: any) {
 function ErrorNotice({  message  }: any) {
   if (!message) return null;
   return (
-    <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-[13px] text-destructive">
+    <div role="alert" className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-[13px] text-destructive">
       <AlertCircle className="mt-0.5 size-4 shrink-0" />
       <span className="leading-relaxed">{message}</span>
     </div>
@@ -515,7 +515,7 @@ function SettingsTabHero({
  }: any) {
   // @ts-expect-error -- strict migration
   const meta = TAB_DETAILS[tabId] || TAB_DETAILS.models;
-  const isServerTab = meta.storage === "server";
+  const isServerTab = meta.storage === "server" && tabId !== "mcp-tools";
   const isBrowserTab = meta.storage === "browser";
   // @ts-expect-error -- strict migration
   const Icon = SETTINGS_TAB_ICONS[tabId] || SlidersHorizontal;
@@ -532,7 +532,7 @@ function SettingsTabHero({
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">
                 Settings workspace
               </div>
-              <h1 className="text-[23px] font-semibold tracking-tight text-foreground">{meta.title}</h1>
+              <h2 className="text-[23px] font-semibold tracking-tight text-foreground">{meta.title}</h2>
             </div>
           {dirty ? (
             <Badge tone="warning" className="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">Unsaved</Badge>
@@ -605,6 +605,7 @@ function SettingsTabBar({ active, onChange, dirtyTabs = {}, mobile = false, filt
             key={tab.id}
             type="button"
             onClick={() => onChange(tab.id)}
+            aria-current={isActive ? "page" : undefined}
             variant="ghost"
             className={cn(
               "h-auto w-full justify-between rounded-[6px] border text-left transition-colors",
@@ -685,6 +686,7 @@ export function SettingsPage() {
     router.push(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
   }
 
+  const [configLoading, setConfigLoading] = useState(true);
   const [config, setConfig] = useState<any>(null);
   const [savedConfigSnapshot, setSavedConfigSnapshot] = useState<any>(null);
   const [provider, setProvider] = useState("google");
@@ -693,6 +695,7 @@ export function SettingsPage() {
   const [agentModelConfig, setAgentModelConfig] = useState(
     normalizeAgentModelConfig(null),
   );
+  const [customAgentOverrides, setCustomAgentOverrides] = useState<Record<string, boolean>>({});
   const [promptCacheEnabled, setPromptCacheEnabled] = useState(true);
   const [toolCacheEnabled, setToolCacheEnabled] = useState(true);
   const [toolCacheStable, setToolCacheStable] = useState("2");
@@ -1008,6 +1011,8 @@ export function SettingsPage() {
     setFallbackTemperature(String(payload.gemini_temperature ?? "0"));
     setLlmTuning(normalizeTuning(payload.llm_tuning));
     setAgentModelConfig(nextAgentConfig);
+    setCustomAgentOverrides({});
+    setModelConfigWarnings(payload.model_config_warnings || payload.apply_adjustments || []);
     setPromptCacheEnabled(Boolean(payload.prompt_cache_enabled ?? true));
     setToolCacheEnabled(Boolean(payload.tool_result_cache_enabled ?? true));
     setToolCacheStable(
@@ -1038,11 +1043,15 @@ export function SettingsPage() {
   }
 
   async function loadConfig() {
+    setConfigLoading(true);
+    setConfigErr("");
     try {
       const payload = await apiFetch("/ui/config");
       await hydrateConfig(payload);
     } catch (error: any) {
       setConfigErr(error.message || "Could not load settings.");
+    } finally {
+      setConfigLoading(false);
     }
   }
 
@@ -1052,6 +1061,9 @@ export function SettingsPage() {
   }, []);
 
   function updateAgentModel(agentId: any, modelId: any) {
+    if (agentId !== "classification") {
+      setCustomAgentOverrides((current) => ({ ...current, [agentId]: true }));
+    }
     setAgentModelConfig((current) => ({
       ...current,
       [agentId]: {
@@ -1063,6 +1075,9 @@ export function SettingsPage() {
   }
 
   function updateAgentProvider(agentId: any, nextProvider: any) {
+    if (agentId !== "classification") {
+      setCustomAgentOverrides((current) => ({ ...current, [agentId]: true }));
+    }
     const normalized = String(nextProvider || "google").toLowerCase();
     setAgentModelConfig((current) => ({
       ...current,
@@ -1187,13 +1202,15 @@ export function SettingsPage() {
             [],
         );
       }
-      await hydrateConfig(payload, { refreshCatalogs: false });
       if (payload.config_persisted === false) {
         setConfigErr(
           payload.config_persist_error ||
-            "Config updated in memory, but could not be persisted to disk.",
+            "Config updated in memory, but could not be persisted to disk. Retry after fixing persistence.",
         );
+        setSavedTab("");
+        return;
       }
+      await hydrateConfig(payload, { refreshCatalogs: false });
       setSavedTab(tabId);
       setTimeout(() => {
         setSavedTab((current) => (current === tabId ? "" : current));
@@ -1288,6 +1305,7 @@ export function SettingsPage() {
   }
 
   function handleAgentInheritToggle(agentId: string, inherit: boolean) {
+    setCustomAgentOverrides((current) => ({ ...current, [agentId]: !inherit }));
     if (!inherit) return;
     setAgentModelConfig((current: any) => ({
       ...current,
@@ -1304,6 +1322,22 @@ export function SettingsPage() {
     updateAgentProvider(agentId, nextProvider);
   }
 
+  if (configLoading) {
+    return (
+      <div className="settings-page flex min-h-[320px] items-center justify-center" role="status" aria-live="polite">
+        <div className="rounded-xl border border-border/70 bg-card px-5 py-4 text-sm text-muted-foreground">Loading settings…</div>
+      </div>
+    );
+  }
+  if (!config && configErr) {
+    return (
+      <div className="settings-page space-y-4" role="alert">
+        <h1 className="text-[20px] font-[590] text-foreground">Settings</h1>
+        <ErrorNotice message={configErr} />
+        <button type="button" className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => void loadConfig()}>Retry loading settings</button>
+      </div>
+    );
+  }
   return (
     <div className="settings-page space-y-6" style={{ fontFeatureSettings: '"cv01","ss03"' }}>
       <div className="flex flex-col gap-4 border-b border-border/60 pb-6">
@@ -1382,6 +1416,7 @@ export function SettingsPage() {
               provider={provider}
               providers={PROVIDERS}
               agentModelConfig={agentModelConfig}
+              customAgentOverrides={customAgentOverrides}
               fallbackTemperature={fallbackTemperature}
               promptCacheEnabled={promptCacheEnabled}
               toolCacheEnabled={toolCacheEnabled}
@@ -1444,7 +1479,7 @@ export function SettingsPage() {
           ) : null}
 
           {activeTab === "mcp-tools" ? (
-            <McpToolsTab manifestTools={Array.isArray((config as any)?.browser_manifest) ? (config as any).browser_manifest : undefined} />
+            <McpToolsTab manifest={(config as any)?.browser_manifest || null} />
           ) : null}
 
           {activeTab === "api-keys" ? (

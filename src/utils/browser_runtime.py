@@ -149,7 +149,7 @@ def normalize_browser_runtime(value: Any) -> dict[str, dict[str, Any]]:
         )
         current["streaming_safe_mode"] = _coerce_choice(
             raw.get("streaming_safe_mode"),
-            allowed={"adaptive", "always", "never"},
+            allowed={"adaptive", "strict", "off"},
             fallback=current["streaming_safe_mode"],
         )
         current["media_proxy_strategy"] = _coerce_choice(

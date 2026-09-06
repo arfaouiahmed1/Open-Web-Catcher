@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 
 export type SliderProps = {
+  id?: string;
   className?: string;
   value?: number;
   onChange?: (value: number) => void;
@@ -21,6 +22,7 @@ export type SliderProps = {
 };
 
 export function Slider({
+  id,
   className,
   value = 0,
   onChange,
@@ -34,6 +36,9 @@ export function Slider({
   formatValue,
   disabled = false,
 }: SliderProps) {
+  const sliderId = id ?? React.useId();
+  const labelId = `${sliderId}-label`;
+  const descriptionId = `${sliderId}-description`;
   const displayValue = formatValue
     ? formatValue(value)
     : typeof value === "number" && !Number.isInteger(value)
@@ -44,7 +49,7 @@ export function Slider({
     <div className="space-y-2">
       {(label || unit) && (
         <div className="flex items-center justify-between gap-2">
-          {label ? <Label>{label}</Label> : <span />}
+          {label ? <Label id={labelId} htmlFor={sliderId}>{label}</Label> : <span />}
           <span
             className="rounded-md border border-input bg-background px-2 py-0.5 font-mono text-xs font-semibold tabular-nums text-foreground"
             style={{ minWidth: "44px", textAlign: "center" } as React.CSSProperties}
@@ -56,6 +61,10 @@ export function Slider({
       )}
 
       <SliderPrimitive.Root
+        id={sliderId}
+        aria-labelledby={label ? labelId : undefined}
+        aria-describedby={description ? descriptionId : undefined}
+        aria-valuetext={`${displayValue}${unit ? ` ${unit}` : ""}`}
         value={[Number(value || 0)]}
         onValueChange={(values: number[]) => onChange?.(values[0] ?? min)}
         min={min}
@@ -79,7 +88,7 @@ export function Slider({
       </div>
 
       {description ? (
-        <p className="text-sm leading-snug text-muted-foreground">{description}</p>
+        <p id={descriptionId} className="text-sm leading-snug text-muted-foreground">{description}</p>
       ) : null}
     </div>
   );

@@ -29,6 +29,7 @@ export interface ModelsTabProps {
   provider: string;
   providers: ProviderOption[];
   agentModelConfig: Record<string, AgentSlotSelection>;
+  customAgentOverrides?: Record<string, boolean>;
   fallbackTemperature: string;
   promptCacheEnabled: boolean;
   toolCacheEnabled: boolean;
@@ -262,7 +263,8 @@ export function ModelsTab(props: ModelsTabProps): React.JSX.Element {
             const sel = agentModelConfig[slot.id] ?? { provider, model: "" };
             const isGlobal = slot.id === "classification";
             const inherit =
-              !isGlobal && sel.provider === globalSlot.provider && (sel.model || "") === (globalSlot.model || "");
+              !isGlobal && !props.customAgentOverrides?.[slot.id] &&
+              sel.provider === globalSlot.provider && (sel.model || "") === (globalSlot.model || "");
             const detail = modelSelectionDetails?.[slot.id];
             const slotCatalogNote = detail?.catalog_source ? String(detail.catalog_source) : activeCatalog?.source;
             return (
@@ -317,7 +319,7 @@ export function ModelsTab(props: ModelsTabProps): React.JSX.Element {
                 )}
                 <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
                   <span>
-                    Effective: <span className="font-mono">{String(detail?.model || sel.model || "—")}</span>
+                    Effective: <span className="font-mono">{String(sel.model || detail?.model || globalSlot.model || "—")}</span>
                   </span>
                   {detail?.context_window ? (
                     <Badge tone="default" className="font-mono text-[9px]">
@@ -430,55 +432,54 @@ export function ModelsTab(props: ModelsTabProps): React.JSX.Element {
       </section>
 
       <section className="rounded-2xl border border-border/70 bg-card/95">
-        <button
-          type="button"
-          onClick={() => setCatalogOpen((v) => !v)}
-          className="flex w-full items-center justify-between gap-3 p-4 text-left"
-          aria-expanded={catalogOpen}
-        >
-          <span>
-            <span className="block text-[14px] font-semibold text-foreground">Live catalog & pricing reference</span>
-            <span className="mt-0.5 block text-[12px] text-muted-foreground">
-              {catalogModels.length} models · {String(activePricingStatus?.model_count ?? 0)} priced · source:{" "}
-              {String(activeCatalog?.source ?? "unavailable")}
+        <div className="flex items-center justify-between gap-3 p-4">
+          <button
+            type="button"
+            onClick={() => setCatalogOpen((v) => !v)}
+            className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-expanded={catalogOpen}
+            aria-controls="catalog-panel"
+          >
+            <span className="min-w-0">
+              <span className="block text-[14px] font-semibold text-foreground">Live catalog & pricing reference</span>
+              <span className="mt-0.5 block truncate text-[12px] text-muted-foreground">
+                {catalogModels.length} models · {String(activePricingStatus?.model_count ?? 0)} priced · source: {String(activeCatalog?.source ?? "unavailable")}
+              </span>
             </span>
-          </span>
-          <span className="flex items-center gap-2">
+            <span aria-hidden="true" className="shrink-0 text-lg leading-none text-muted-foreground">{catalogOpen ? "−" : "+"}</span>
+          </button>
+          <div className="flex shrink-0 items-center gap-2">
             <Button
               type="button"
               variant="secondary"
               size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                props.onRefreshCatalog();
-              }}
+              onClick={props.onRefreshCatalog}
               disabled={catalogLoading === provider}
+              aria-label={`Refresh ${provider} model catalog`}
             >
-              {catalogLoading === provider ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              {catalogLoading === provider ? <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               Refresh
             </Button>
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                props.onSyncPricing();
-              }}
+              onClick={props.onSyncPricing}
               disabled={pricingSyncLoading === provider}
             >
-              {pricingSyncLoading === provider ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              {pricingSyncLoading === provider ? <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin" /> : null}
               Sync pricing
             </Button>
-          </span>
-        </button>
+          </div>
+        </div>
         {catalogOpen ? (
-          <div className="space-y-3 border-t border-border/60 p-4">
+          <div id="catalog-panel" className="space-y-3 border-t border-border/60 p-4">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={catalogQuery}
                 onChange={(e) => props.onCatalogQuery(e.target.value)}
+                label="Search model catalog"
                 placeholder="Search models"
                 className="pl-9"
               />
@@ -489,6 +490,7 @@ export function ModelsTab(props: ModelsTabProps): React.JSX.Element {
                 <span className="font-mono">{String(selectedModel.id)}</span>
                 <span className="ml-auto flex items-center gap-2">
                   <Select
+                    label="Assign selected model to"
                     value={catalogAssignmentTarget}
                     onChange={(v) => props.onCatalogTarget(v)}
                     options={[
@@ -504,7 +506,7 @@ export function ModelsTab(props: ModelsTabProps): React.JSX.Element {
             ) : null}
             <div className="divide-y divide-border/60 rounded-xl border">
               {visibleCatalog.length ? (
-                visibleCatalog.slice(0, 30).map((m: any) => (
+                visibleCatalog.map((m: any) => (
                   <button
                     key={String(m.id)}
                     type="button"

@@ -38,7 +38,6 @@ export interface ApiKeysTabProps {
 }
 
 const STATUS_FILTERS = ["All", "Configured", "Missing"];
-const CATEGORY_FILTERS = ["All", "Frontier", "Speed", "Open", "Cloud", "Enterprise", "Community", "Local", "Gateway"];
 
 export function ApiKeysTab(props: ApiKeysTabProps): React.JSX.Element {
   const {
@@ -55,12 +54,18 @@ export function ApiKeysTab(props: ApiKeysTabProps): React.JSX.Element {
     registryBaseUrls,
   } = props;
 
+  const categoryFilters = [
+    "All",
+    ...Array.from(new Set(providers.map((provider) => provider.category).filter(Boolean))).sort(),
+  ];
+
   const filtered = providers.filter((pr) => {
     const q = providerKeyQuery.trim().toLowerCase();
     const matchesSearch =
       !q || [pr.name, pr.keyEnv, pr.id, (pr.features || []).join(" "), pr.category].join(" ").toLowerCase().includes(q);
     const matchesCat = providerKeyCategory === "All" || pr.category === providerKeyCategory;
-    const hasKey = Boolean(apiKeys[pr.id]);
+    const edited = keyEdits[pr.id];
+    const hasKey = edited !== null && edited !== undefined ? Boolean(edited) : Boolean(apiKeys[pr.id]);
     const matchesStatus =
       providerKeyStatus === "All" || (providerKeyStatus === "Configured" ? hasKey : !hasKey);
     return matchesSearch && matchesCat && matchesStatus;
@@ -121,7 +126,7 @@ export function ApiKeysTab(props: ApiKeysTabProps): React.JSX.Element {
             </button>
           ))}
           <span className="mx-1 h-4 w-px bg-muted/60" aria-hidden="true" />
-          {CATEGORY_FILTERS.map((cat) => (
+          {categoryFilters.map((cat) => (
             <button
               key={cat}
               onClick={() => props.onCategory(cat)}
@@ -240,6 +245,8 @@ export function ApiKeysTab(props: ApiKeysTabProps): React.JSX.Element {
                         <div className="flex shrink-0 items-center gap-1">
                           <button
                             onClick={() => props.onToggleShow(item.id)}
+                            type="button"
+                            aria-pressed={show}
                             className="inline-flex h-7 items-center rounded-[6px] border border-border bg-muted/20 px-2.5 text-[12px] font-[500] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                           >
                             {show ? "Hide" : "Show"}
@@ -274,7 +281,8 @@ export function ApiKeysTab(props: ApiKeysTabProps): React.JSX.Element {
                             onChange={(e) => props.onKeyEdit(item.id, e.target.value)}
                             placeholder={hasKey ? "•••••••••••••••• — paste new key to replace" : "Paste " + item.keyEnv}
                             aria-label={`API key for ${item.name}`}
-                            type="password"
+                            type={show ? "text" : "password"}
+                            name={`provider.${item.id}.apiKey`}
                             autoComplete="off"
                             spellCheck={false}
                             className="h-9 w-full rounded-lg border border-border/70 bg-background px-3 font-mono text-[12px] outline-none placeholder:text-muted-foreground/60 focus-visible:ring-1 focus-visible:ring-ring"
@@ -290,6 +298,9 @@ export function ApiKeysTab(props: ApiKeysTabProps): React.JSX.Element {
                           onChange={(e) => props.onBaseUrlEdit(item.id, e.target.value)}
                           placeholder={defaultBaseUrl || "https://your-endpoint.example.com/v1"}
                           aria-label={`Base URL for ${item.name}`}
+                          type="url"
+                          inputMode="url"
+                          name={`provider.${item.id}.baseUrl`}
                           autoComplete="off"
                           spellCheck={false}
                           className="h-9 w-full rounded-lg border border-border/70 bg-background px-3 font-mono text-[12px] outline-none placeholder:text-muted-foreground/50 focus-visible:ring-1 focus-visible:ring-ring"

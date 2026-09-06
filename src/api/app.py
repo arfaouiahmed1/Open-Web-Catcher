@@ -11,14 +11,28 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Literal
+from typing import Any
 from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from src.api.contracts import (
+    ClassifyRequest,
+    DatasetExportRequest,
+    ExtractRequest,
+    MemorySearchRequest,
+    PricingSyncRequest,
+    PromptDryRunRequest,
+    PromptUpdateRequest,
+    RunAutoDecisionSyncItem,
+    RunAutoLogsSyncRequest,
+    RunDecisionUpsertRequest,
+    RunRequest,
+    RunTaskUpsertRequest,
+)
 from sqlalchemy.exc import SQLAlchemyError
+from src.api.routes.core import CoreRouteDependencies, create_core_router
 
 from src.agents.errors import RunCancelledError
 from src.agents.pools import cancel_run_pools
@@ -179,74 +193,6 @@ def _background_job_payload(job: Any) -> dict[str, Any]:
     }
 
 
-class ClassifyRequest(BaseModel):
-    url: str
-
-
-class ExtractRequest(BaseModel):
-    url: str
-    page_type: Literal["landing_page", "hosting_page", "embedded_page"]
-
-
-class RunRequest(BaseModel):
-    url: str
-
-
-class DatasetExportRequest(BaseModel):
-    dataset_name: str = ""
-    limit: int = 25
-
-
-class PromptUpdateRequest(BaseModel):
-    content: str = ""
-
-
-class MemorySearchRequest(BaseModel):
-    query: str
-    domain: str = ""
-    page_type: str = ""
-    limit: int = 8
-
-
-
-class PromptDryRunRequest(BaseModel):
-    agent: str
-    url: str
-    content: str = ""
-
-
-class RunDecisionUpsertRequest(BaseModel):
-    title: str
-    summary: str = ""
-    actor: str = ""
-    category: str = ""
-    status: str = "open"
-    details: dict[str, Any] = {}
-
-
-class RunTaskUpsertRequest(BaseModel):
-    title: str
-    description: str = ""
-    actor: str = ""
-    priority: str = "medium"
-    status: str = "open"
-    details: dict[str, Any] = {}
-
-
-class RunAutoDecisionSyncItem(BaseModel):
-    auto_key: str
-    title: str
-    summary: str = ""
-    actor: str = ""
-    category: str = ""
-    status: str = "open"
-    details: dict[str, Any] = {}
-
-
-class RunAutoLogsSyncRequest(BaseModel):
-    decisions: list[RunAutoDecisionSyncItem] = []
-
-
 PROMPTS_DIR = Path("configs/prompts").resolve()
 
 
@@ -254,10 +200,6 @@ def get_settings(force_reload: bool = False) -> Settings:
     global _settings
     if _settings is None or force_reload:
         _settings = Settings.from_yaml()
-        try:
-            _settings.save_browser_runtime_bridge()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Could not refresh browser runtime bridge on startup: %s", exc)
     return _settings
 
 
@@ -670,7 +612,9 @@ async def _execute_background_job(job: dict[str, Any]) -> dict[str, Any]:
     if job_type == "workflow":
         execution = await _track_run_task(
             run_id,
-            asyncio.create_task(_background_workflow(run_id, url, max_cost_usd=payload.get("max_cost_usd"))),
+            asyncio.create_task(
+                _background_workflow(run_id, url, max_cost_usd=payload.get("max_cost_usd"))
+            ),
         )
     elif job_type == "agent":
         execution = await _track_run_task(
@@ -788,6 +732,10 @@ async def _background_worker_loop() -> None:
 async def lifespan(app: FastAPI):
     global _background_worker_task
     settings = get_settings()
+    try:
+        settings.save_browser_runtime_bridge()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not refresh browser runtime bridge on startup: %s", exc)
     setup_logging(level=settings.log_level, log_file=settings.log_file)
     create_tables()
     recovered_jobs = _recover_background_jobs()
@@ -880,6 +828,7 @@ async def _security_headers_middleware(request: Request, call_next):
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
     return response
+
 
 # ── Auth foundation (plan T3) ────────────────────────────────────────────────
 # SECURITY-CRITICAL PLACEMENT: FastAPI snapshots router-level dependencies into
@@ -1099,7 +1048,11 @@ def _recover_missing_takedown_emails(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(provider_rows, list) or not provider_rows:
         provider_rows = snapshot.get("provider_analysis") if isinstance(snapshot, dict) else []
     extraction_rows = snapshot.get("extraction_results") if isinstance(snapshot, dict) else []
-    if not isinstance(provider_rows, list) or not provider_rows or not isinstance(extraction_rows, list):
+    if (
+        not isinstance(provider_rows, list)
+        or not provider_rows
+        or not isinstance(extraction_rows, list)
+    ):
         return payload
 
     try:
@@ -1637,7 +1590,9 @@ async def _trace_persist_loop(
         logger.debug("Trace persistence loop failed for run_id=%s: %s", run_id, exc)
 
 
-async def _background_workflow(run_id: str, url: str, max_cost_usd: float | None = None) -> dict[str, Any]:
+async def _background_workflow(
+    run_id: str, url: str, max_cost_usd: float | None = None
+) -> dict[str, Any]:
     from src.agents.orchestrator import run_pipeline as _run_pipeline
 
     settings = get_settings()
@@ -1994,7 +1949,10 @@ def _collect_from_object(value: dict[str, Any], out: list[str]) -> None:
     if item_type == "image":
         data = str(value.get("data") or "").strip()
         if data:
-            mime = str(value.get("mimeType") or value.get("mime_type") or "image/png").strip() or "image/png"
+            mime = (
+                str(value.get("mimeType") or value.get("mime_type") or "image/png").strip()
+                or "image/png"
+            )
             _append_screenshot(f"data:{mime};base64,{data}", out)
 
     for key in _SCREENSHOT_SINGLE_KEYS:
@@ -2177,6 +2135,18 @@ def _background_job_health() -> dict[str, Any]:
         session.close()
 
 
+app.include_router(
+    create_core_router(
+        CoreRouteDependencies(
+            get_settings=get_settings,
+            runtime_dependency_snapshot=_runtime_dependency_snapshot,
+            background_job_health=_background_job_health,
+            observability_status=get_observability_status,
+        )
+    )
+)
+
+
 _PLAN_EVENT_KINDS = frozenset({"run_plan_created", "plan_step_update"})
 
 
@@ -2243,8 +2213,7 @@ async def _stream_trace(run_id: str, request: Request | None = None):
                                 ),
                                 success=(detail_payload.get("run") or {}).get("success"),
                                 failure_mode=str(
-                                    ((detail_payload.get("run") or {}).get("failure_mode"))
-                                    or ""
+                                    ((detail_payload.get("run") or {}).get("failure_mode")) or ""
                                 ),
                                 job_status="",
                             )
@@ -2378,63 +2347,6 @@ async def _stream_trace(run_id: str, request: Request | None = None):
             yield f"data: {json.dumps(payload, default=str)}\n\n"
         except (asyncio.CancelledError, GeneratorExit, BrokenPipeError, ConnectionError):
             return
-
-
-@app.get("/health")
-def health():
-    settings = get_settings()
-    runtime = _runtime_dependency_snapshot(settings)
-    background_status = _background_job_health()
-
-    return {
-        "status": "ok",
-        "orchestrator_model": settings.orchestrator_model,
-        "agent_model": settings.agent_model,
-        "browser_ws_endpoint": settings.browser_ws_endpoint,
-        "mcp_server_url": settings.mcp_server_url,
-        "dependencies": {
-            "browser": runtime["browser"],
-            "mcp": runtime["mcp"],
-            "background_jobs": background_status,
-        },
-        "runtime_preflight": runtime["preflight"],
-        "observability": get_observability_status(settings).model_dump(),
-    }
-
-
-@app.get("/blobs/{key}")
-def read_blob_endpoint(key: str):
-    """Resolve a blobref payload (plan task 32 review fix #2).
-
-    The DB stores ``blobref:<16-hex>`` pointers for oversized payloads and
-    screenshots; this is the single production read path that turns a ref
-    back into bytes. Key is sanitized inside ``read_blob`` (alnum, <=16
-    chars), so no traversal is possible. Auth-gated via the router-level
-    dependency like every other route. 410 signals the backing file was
-    garbage-collected or never landed — callers treat it as missing data.
-
-    Screenshots (the dominant use) are PNGs; serve those with an image type
-    so <img src> works, everything else falls back to octet-stream.
-    """
-    from fastapi.responses import Response
-
-    from src.storage.blob_store import read_blob
-
-    data = read_blob(f"blobref:{key}")
-    if data is None:
-        raise HTTPException(status_code=410, detail="blob unavailable")
-    _PNG_MAGIC = b"\x89PNG\x0d\x0a\x1a\x0a"
-    if data[:8] == _PNG_MAGIC:
-        media_type = "image/png"
-    elif len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        media_type = "image/webp"
-    else:
-        media_type = "application/octet-stream"
-    return Response(
-        content=data,
-        media_type=media_type,
-        headers={"Cache-Control": "private, max-age=86400"},
-    )
 
 
 @app.post("/classify", response_model=ClassificationResult)
@@ -2636,8 +2548,6 @@ def search_memory(req: MemorySearchRequest):
     )
 
 
-
-
 @app.get("/runs/{run_id}/events")
 def get_run_events(run_id: str):
     trace = run_registry.get(run_id)
@@ -2805,17 +2715,25 @@ def ui_runs(
             run_id = str(row.get("run_id", "") or "")
             job = job_map.get(run_id)
             if job is not None:
-                persisted_display_status = str(
-                    row.get("persisted_final_status", "")
-                    or row.get("final_status", "")
-                    or row.get("status", "")
-                    or ""
-                ).strip().lower()
+                persisted_display_status = (
+                    str(
+                        row.get("persisted_final_status", "")
+                        or row.get("final_status", "")
+                        or row.get("status", "")
+                        or ""
+                    )
+                    .strip()
+                    .lower()
+                )
                 persisted_terminal = persisted_display_status in RUN_TERMINAL_STATUSES
                 row = {
                     **row,
-                    "status": row.get("status") if persisted_terminal else _background_job_display_status(job),
-                    "final_status": row.get("final_status") if persisted_terminal else _background_job_display_status(job),
+                    "status": row.get("status")
+                    if persisted_terminal
+                    else _background_job_display_status(job),
+                    "final_status": row.get("final_status")
+                    if persisted_terminal
+                    else _background_job_display_status(job),
                     "job_state": _background_job_display_status(job),
                     "job": _background_job_state(job),
                     "root_actor": str(job.actor or row.get("root_actor", "") or ""),
@@ -2966,45 +2884,47 @@ def ui_run_detail(run_id: str):
                 "max_parallel_agents": 0,
                 "active_parallel_agents": 0,
             }
-            return _recover_missing_takedown_emails({
-                "run": run_row,
-                "snapshot": snapshot,
-                "provider_analysis": snapshot.get("provider_analysis", []) or [],
-                "takedown_emails": snapshot.get("takedown_emails", []) or [],
-                "all_streams": summary["all_streams"],
-                "all_screenshots": summary["all_screenshots"],
-                "agent_runs": [],
-                "agent_outputs": [
-                    {
-                        "agent_run_id": 0,
-                        "actor": str(job.actor or ""),
-                        "agent_type": synthetic_rollup["agent_type"],
-                        "invocation_index": 1,
-                        "summary_text": agent_output_summary,
-                        "validation_status": "ok" if page_type else "missing",
-                        "stream_count": stream_count,
-                        "embedded_url_count": 0,
-                        "hosting_page_count": 0,
-                        "output_json": snapshot,
-                    }
-                ],
-                "agent_rollups": [synthetic_rollup],
-                "stage_rollups": [synthetic_stage],
-                "parallelism": {
-                    "current_parallel_agents": 0,
-                    "max_parallel_agents": 0,
-                    "by_stage": [],
-                },
-                "tool_calls": tool_rows,
-                "llm_calls": llm_rows,
-                "events": events,
-                "job": _background_job_state(job),
-                "job_state": _background_job_state(job),
-                "source": "background_job_result",
-                "telemetry_status": summary["telemetry_status"],
-                "telemetry_message": summary["telemetry_message"],
-                "dataset_context": dataset_context,
-            })
+            return _recover_missing_takedown_emails(
+                {
+                    "run": run_row,
+                    "snapshot": snapshot,
+                    "provider_analysis": snapshot.get("provider_analysis", []) or [],
+                    "takedown_emails": snapshot.get("takedown_emails", []) or [],
+                    "all_streams": summary["all_streams"],
+                    "all_screenshots": summary["all_screenshots"],
+                    "agent_runs": [],
+                    "agent_outputs": [
+                        {
+                            "agent_run_id": 0,
+                            "actor": str(job.actor or ""),
+                            "agent_type": synthetic_rollup["agent_type"],
+                            "invocation_index": 1,
+                            "summary_text": agent_output_summary,
+                            "validation_status": "ok" if page_type else "missing",
+                            "stream_count": stream_count,
+                            "embedded_url_count": 0,
+                            "hosting_page_count": 0,
+                            "output_json": snapshot,
+                        }
+                    ],
+                    "agent_rollups": [synthetic_rollup],
+                    "stage_rollups": [synthetic_stage],
+                    "parallelism": {
+                        "current_parallel_agents": 0,
+                        "max_parallel_agents": 0,
+                        "by_stage": [],
+                    },
+                    "tool_calls": tool_rows,
+                    "llm_calls": llm_rows,
+                    "events": events,
+                    "job": _background_job_state(job),
+                    "job_state": _background_job_state(job),
+                    "source": "background_job_result",
+                    "telemetry_status": summary["telemetry_status"],
+                    "telemetry_message": summary["telemetry_message"],
+                    "dataset_context": dataset_context,
+                }
+            )
         if job_state is not None:
             payload["job_state"] = job_state
             payload["job"] = job_state
@@ -3526,11 +3446,6 @@ def ui_provider_history(
         session.close()
 
 
-class PricingSyncRequest(BaseModel):
-    provider: str = ""
-    max_models: int | None = None
-
-
 @app.get("/ui/config")
 def ui_get_config():
     """Return current LLM provider/model config and API key status.
@@ -3544,10 +3459,34 @@ def ui_get_config():
     payload = ui_config_payload(settings)
     raw_sources = read_settings_with_sources(settings)
     # Mask provider keys in provenance payload — never ship raw secrets to the browser
-    for _k in ("google_api_key", "google_vertex_api_key", "openai_api_key", "anthropic_api_key", "openrouter_api_key", "nvidia_api_key", "mistral_api_key", "cohere_api_key", "groq_api_key", "together_api_key", "fireworks_api_key", "perplexity_api_key", "deepseek_api_key", "xai_api_key", "upstage_api_key", "azure_api_key", "azure_api_base", "bedrock_api_key", "auth_jwt_secret"):
+    for _k in (
+        "google_api_key",
+        "google_vertex_api_key",
+        "openai_api_key",
+        "anthropic_api_key",
+        "openrouter_api_key",
+        "nvidia_api_key",
+        "mistral_api_key",
+        "cohere_api_key",
+        "groq_api_key",
+        "together_api_key",
+        "fireworks_api_key",
+        "perplexity_api_key",
+        "deepseek_api_key",
+        "xai_api_key",
+        "upstage_api_key",
+        "azure_api_key",
+        "azure_api_base",
+        "bedrock_api_key",
+        "auth_jwt_secret",
+    ):
         if _k in raw_sources:
             _v = raw_sources[_k].get("value") if isinstance(raw_sources[_k], dict) else None
-            raw_sources[_k] = {**raw_sources[_k], "value": "***" if _v else "", "masked": True} if isinstance(raw_sources[_k], dict) else raw_sources[_k]
+            raw_sources[_k] = (
+                {**raw_sources[_k], "value": "***" if _v else "", "masked": True}
+                if isinstance(raw_sources[_k], dict)
+                else raw_sources[_k]
+            )
     if "provider_api_keys" in raw_sources:
         _provider_key_values = raw_sources["provider_api_keys"]
         raw_sources["provider_api_keys"] = {
@@ -3786,7 +3725,9 @@ def api_workflows_estimate(
     session = get_session()
     try:
         repo = RunRepository(session)
-        agent_list = [a.strip() for a in agent_set.split(",") if a.strip()] if agent_set.strip() else None
+        agent_list = (
+            [a.strip() for a in agent_set.split(",") if a.strip()] if agent_set.strip() else None
+        )
         stats = repo.cost_stats(agent_set=agent_list)
     finally:
         session.close()

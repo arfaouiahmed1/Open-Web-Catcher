@@ -62,7 +62,7 @@ FULL_PATCH: dict[str, Any] = {
             "launch_timeout_ms": 60000,
             "extra_launch_args": ["--disable-dev-shm-usage"],
             "adblock_allowlist_hosts": ["example.com"],
-            "streaming_safe_mode": "never",
+            "streaming_safe_mode": "off",
             "asset_diagnostics_enabled": False,
             "popup_blocking_enabled": False,
             "ubol_enabled": False,
@@ -161,7 +161,7 @@ def test_full_toggle_patch_persists_and_reads_back_identically(sandbox: Path) ->
     assert playwright["ubol_enabled"] is False
     assert playwright["popup_blocking_enabled"] is False
     assert playwright["asset_diagnostics_enabled"] is False
-    assert playwright["streaming_safe_mode"] == "never"
+    assert playwright["streaming_safe_mode"] == "off"
     assert playwright["stream_cors_patch_enabled"] is True
     assert playwright["stream_cors_include_credentials"] is True
     assert playwright["media_cors_patch_enabled"] is True
