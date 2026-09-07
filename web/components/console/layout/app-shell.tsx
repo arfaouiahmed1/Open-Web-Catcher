@@ -151,7 +151,7 @@ export interface AppShellProps {
   children: React.ReactNode;
 }
 
-const STANDALONE_PREFIXES = ["/login", "/signup"];
+const STANDALONE_PREFIXES = ["/login", "/signup", "/forgot-password", "/reset-password", "/verify-email"];
 
 function isStandalonePath(pathname: string): boolean {
   return STANDALONE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
