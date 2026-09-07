@@ -587,7 +587,8 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = ""
     smtp_use_tls: bool = True
-
+    webauthn_rp_id: str = "localhost"
+    webauthn_origin: str = "http://localhost:3000"
     log_level: str = "INFO"
     log_file: str = "data/logs/app.log"
 

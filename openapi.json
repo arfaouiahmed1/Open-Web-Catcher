@@ -296,6 +296,8 @@
       "ClassifyRequest": {
         "properties": {
           "url": {
+            "maxLength": 2048,
+            "minLength": 1,
             "title": "Url",
             "type": "string"
           }
@@ -401,16 +403,34 @@
         "properties": {
           "dataset_name": {
             "default": "",
+            "maxLength": 255,
             "title": "Dataset Name",
             "type": "string"
           },
           "limit": {
             "default": 25,
+            "maximum": 1000.0,
+            "minimum": 1.0,
             "title": "Limit",
             "type": "integer"
           }
         },
         "title": "DatasetExportRequest",
+        "type": "object"
+      },
+      "EmailVerificationConfirm": {
+        "properties": {
+          "token": {
+            "maxLength": 256,
+            "minLength": 16,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "EmailVerificationConfirm",
         "type": "object"
       },
       "EvidenceRef": {
@@ -473,6 +493,8 @@
             "type": "string"
           },
           "url": {
+            "maxLength": 2048,
+            "minLength": 1,
             "title": "Url",
             "type": "string"
           }
@@ -869,20 +891,26 @@
         "properties": {
           "domain": {
             "default": "",
+            "maxLength": 120,
             "title": "Domain",
             "type": "string"
           },
           "limit": {
             "default": 8,
+            "maximum": 100.0,
+            "minimum": 1.0,
             "title": "Limit",
             "type": "integer"
           },
           "page_type": {
             "default": "",
+            "maxLength": 120,
             "title": "Page Type",
             "type": "string"
           },
           "query": {
+            "maxLength": 4000,
+            "minLength": 1,
             "title": "Query",
             "type": "string"
           }
@@ -1548,6 +1576,100 @@
         "title": "PageType",
         "type": "string"
       },
+      "PasskeyLoginRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "PasskeyLoginRequest",
+        "type": "object"
+      },
+      "PasskeyLoginVerify": {
+        "properties": {
+          "challenge_id": {
+            "maxLength": 64,
+            "minLength": 16,
+            "title": "Challenge Id",
+            "type": "string"
+          },
+          "credential": {
+            "additionalProperties": true,
+            "title": "Credential",
+            "type": "object"
+          }
+        },
+        "required": [
+          "challenge_id",
+          "credential"
+        ],
+        "title": "PasskeyLoginVerify",
+        "type": "object"
+      },
+      "PasskeyRegisterVerify": {
+        "properties": {
+          "challenge_id": {
+            "maxLength": 64,
+            "minLength": 16,
+            "title": "Challenge Id",
+            "type": "string"
+          },
+          "credential": {
+            "additionalProperties": true,
+            "title": "Credential",
+            "type": "object"
+          }
+        },
+        "required": [
+          "challenge_id",
+          "credential"
+        ],
+        "title": "PasskeyRegisterVerify",
+        "type": "object"
+      },
+      "PasswordResetConfirm": {
+        "properties": {
+          "new_password": {
+            "maxLength": 1024,
+            "minLength": 8,
+            "title": "New Password",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 256,
+            "minLength": 16,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "new_password"
+        ],
+        "title": "PasswordResetConfirm",
+        "type": "object"
+      },
+      "PasswordResetRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "PasswordResetRequest",
+        "type": "object"
+      },
       "PipelineResult": {
         "additionalProperties": false,
         "properties": {
@@ -1697,6 +1819,8 @@
           "max_models": {
             "anyOf": [
               {
+                "maximum": 1000.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -1707,6 +1831,7 @@
           },
           "provider": {
             "default": "",
+            "maxLength": 120,
             "title": "Provider",
             "type": "string"
           }
@@ -1717,15 +1842,20 @@
       "PromptDryRunRequest": {
         "properties": {
           "agent": {
+            "maxLength": 120,
+            "minLength": 1,
             "title": "Agent",
             "type": "string"
           },
           "content": {
             "default": "",
+            "maxLength": 200000,
             "title": "Content",
             "type": "string"
           },
           "url": {
+            "maxLength": 2048,
+            "minLength": 1,
             "title": "Url",
             "type": "string"
           }
@@ -1741,6 +1871,7 @@
         "properties": {
           "content": {
             "default": "",
+            "maxLength": 200000,
             "title": "Content",
             "type": "string"
           }
@@ -1826,35 +1957,42 @@
         "properties": {
           "actor": {
             "default": "",
+            "maxLength": 120,
             "title": "Actor",
             "type": "string"
           },
           "auto_key": {
+            "maxLength": 255,
+            "minLength": 1,
             "title": "Auto Key",
             "type": "string"
           },
           "category": {
             "default": "",
+            "maxLength": 120,
             "title": "Category",
             "type": "string"
           },
           "details": {
             "additionalProperties": true,
-            "default": {},
             "title": "Details",
             "type": "object"
           },
           "status": {
             "default": "open",
+            "maxLength": 40,
             "title": "Status",
             "type": "string"
           },
           "summary": {
             "default": "",
+            "maxLength": 20000,
             "title": "Summary",
             "type": "string"
           },
           "title": {
+            "maxLength": 255,
+            "minLength": 1,
             "title": "Title",
             "type": "string"
           }
@@ -1869,10 +2007,10 @@
       "RunAutoLogsSyncRequest": {
         "properties": {
           "decisions": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/RunAutoDecisionSyncItem"
             },
+            "maxItems": 500,
             "title": "Decisions",
             "type": "array"
           }
@@ -1884,31 +2022,36 @@
         "properties": {
           "actor": {
             "default": "",
+            "maxLength": 120,
             "title": "Actor",
             "type": "string"
           },
           "category": {
             "default": "",
+            "maxLength": 120,
             "title": "Category",
             "type": "string"
           },
           "details": {
             "additionalProperties": true,
-            "default": {},
             "title": "Details",
             "type": "object"
           },
           "status": {
             "default": "open",
+            "maxLength": 40,
             "title": "Status",
             "type": "string"
           },
           "summary": {
             "default": "",
+            "maxLength": 20000,
             "title": "Summary",
             "type": "string"
           },
           "title": {
+            "maxLength": 255,
+            "minLength": 1,
             "title": "Title",
             "type": "string"
           }
@@ -2072,6 +2215,8 @@
       "RunRequest": {
         "properties": {
           "url": {
+            "maxLength": 2048,
+            "minLength": 1,
             "title": "Url",
             "type": "string"
           }
@@ -2086,31 +2231,36 @@
         "properties": {
           "actor": {
             "default": "",
+            "maxLength": 120,
             "title": "Actor",
             "type": "string"
           },
           "description": {
             "default": "",
+            "maxLength": 20000,
             "title": "Description",
             "type": "string"
           },
           "details": {
             "additionalProperties": true,
-            "default": {},
             "title": "Details",
             "type": "object"
           },
           "priority": {
             "default": "medium",
+            "maxLength": 40,
             "title": "Priority",
             "type": "string"
           },
           "status": {
             "default": "open",
+            "maxLength": 40,
             "title": "Status",
             "type": "string"
           },
           "title": {
+            "maxLength": 255,
+            "minLength": 1,
             "title": "Title",
             "type": "string"
           }
@@ -2827,6 +2977,58 @@
           "tool_name"
         ],
         "title": "ToolPlaygroundRequest",
+        "type": "object"
+      },
+      "TotpChallenge": {
+        "properties": {
+          "challenge": {
+            "maxLength": 2048,
+            "minLength": 16,
+            "title": "Challenge",
+            "type": "string"
+          },
+          "code": {
+            "maxLength": 64,
+            "minLength": 6,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge",
+          "code"
+        ],
+        "title": "TotpChallenge",
+        "type": "object"
+      },
+      "TotpConfirm": {
+        "properties": {
+          "code": {
+            "maxLength": 8,
+            "minLength": 6,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "TotpConfirm",
+        "type": "object"
+      },
+      "TotpDisable": {
+        "properties": {
+          "password": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "title": "TotpDisable",
         "type": "object"
       },
       "ValidationError": {
@@ -3581,6 +3783,208 @@
         ]
       }
     },
+    "/api/auth/2fa/challenge": {
+      "post": {
+        "description": "Redeem a short-lived 2FA challenge plus TOTP/backup code for a token.",
+        "operationId": "verify_totp_challenge_api_auth_2fa_challenge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpChallenge"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Verify Totp Challenge Api Auth 2Fa Challenge Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Totp Challenge",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/2fa/confirm": {
+      "post": {
+        "description": "Verify a TOTP code against the enrolled secret and enable 2FA.",
+        "operationId": "confirm_totp_api_auth_2fa_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Confirm Totp Api Auth 2Fa Confirm Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Confirm Totp",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/2fa/disable": {
+      "post": {
+        "description": "Disable 2FA after re-authenticating with the account password.",
+        "operationId": "disable_totp_api_auth_2fa_disable_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpDisable"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Disable Totp Api Auth 2Fa Disable Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Disable Totp",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/2fa/enroll": {
+      "post": {
+        "description": "Generate a TOTP secret for the caller; enabled only after confirm.",
+        "operationId": "enroll_totp_api_auth_2fa_enroll_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Enroll Totp Api Auth 2Fa Enroll Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Enroll Totp",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/2fa/status": {
+      "get": {
+        "description": "Return whether the caller has TOTP enabled without revealing secrets.",
+        "operationId": "totp_status_api_auth_2fa_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Totp Status Api Auth 2Fa Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Totp Status",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/auth/bootstrap-admin": {
       "post": {
         "description": "Create the first admin account; no-op success once any user exists.\n\nF-3 (security review): the claim is a single\n``INSERT ... SELECT ... WHERE NOT EXISTS`` statement so concurrent\ndifferent-email requests can create at most one admin while the table is\nempty \u2014 the previous count-then-insert sequence had a TOCTOU window.\nIdentical semantics on SQLite and Postgres.",
@@ -3676,6 +4080,108 @@
         ]
       }
     },
+    "/api/auth/email/status": {
+      "get": {
+        "description": "Report the caller's own email-verification state (no secrets).",
+        "operationId": "email_verification_status_api_auth_email_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Email Verification Status Api Auth Email Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Email Verification Status",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/email/verify-confirm": {
+      "post": {
+        "description": "Redeem a verification token; the token itself is the credential.",
+        "operationId": "confirm_email_verification_api_auth_email_verify_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailVerificationConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Confirm Email Verification Api Auth Email Verify Confirm Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Email Verification",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/email/verify-request": {
+      "post": {
+        "description": "Issue an email-verification token for the caller's own account.",
+        "operationId": "request_email_verification_api_auth_email_verify_request_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Request Email Verification Api Auth Email Verify Request Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Request Email Verification",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/auth/login": {
       "post": {
         "operationId": "login_api_auth_login_post",
@@ -3742,6 +4248,291 @@
           }
         ],
         "summary": "Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/passkeys/login/options": {
+      "post": {
+        "description": "Create a login challenge; unknown emails receive a generic unavailable response.",
+        "operationId": "passkey_login_options_api_auth_passkeys_login_options_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Passkey Login Options Api Auth Passkeys Login Options Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Passkey Login Options",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/passkeys/login/verify": {
+      "post": {
+        "description": "Verify a WebAuthn assertion and issue the normal bearer token.",
+        "operationId": "passkey_login_verify_api_auth_passkeys_login_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyLoginVerify"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Passkey Login Verify Api Auth Passkeys Login Verify Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Passkey Login Verify",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/passkeys/register/options": {
+      "post": {
+        "description": "Create a registration challenge for the authenticated operator.",
+        "operationId": "passkey_register_options_api_auth_passkeys_register_options_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Passkey Register Options Api Auth Passkeys Register Options Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Passkey Register Options",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/passkeys/register/verify": {
+      "post": {
+        "description": "Verify and store one WebAuthn credential for the authenticated user.",
+        "operationId": "passkey_register_verify_api_auth_passkeys_register_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyRegisterVerify"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Passkey Register Verify Api Auth Passkeys Register Verify Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Passkey Register Verify",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/passkeys/status": {
+      "get": {
+        "description": "Return the number of passkeys registered to the caller.",
+        "operationId": "passkey_status_api_auth_passkeys_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "title": "Response Passkey Status Api Auth Passkeys Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Passkey Status",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/password-reset/confirm": {
+      "post": {
+        "description": "Redeem a reset token for a new password (single use, 30 min expiry).",
+        "operationId": "confirm_password_reset_api_auth_password_reset_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Confirm Password Reset Api Auth Password Reset Confirm Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Password Reset",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/password-reset/request": {
+      "post": {
+        "description": "Issue a password-reset token; always succeeds to avoid enumeration.",
+        "operationId": "request_password_reset_api_auth_password_reset_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Request Password Reset Api Auth Password Reset Request Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Password Reset",
         "tags": [
           "auth"
         ]
@@ -4682,7 +5473,7 @@
     },
     "/blobs/{key}": {
       "get": {
-        "description": "Resolve a blobref payload (plan task 32 review fix #2).\n\nThe DB stores ``blobref:<16-hex>`` pointers for oversized payloads and\nscreenshots; this is the single production read path that turns a ref\nback into bytes. Key is sanitized inside ``read_blob`` (alnum, <=16\nchars), so no traversal is possible. Auth-gated via the router-level\ndependency like every other route. 410 signals the backing file was\ngarbage-collected or never landed \u2014 callers treat it as missing data.\n\nScreenshots (the dominant use) are PNGs; serve those with an image type\nso <img src> works, everything else falls back to octet-stream.",
+        "description": "Resolve an authenticated blobref into its stored bytes.",
         "operationId": "read_blob_endpoint_blobs__key__get",
         "parameters": [
           {
@@ -4900,7 +5691,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"

@@ -23,6 +23,12 @@ PUBLIC_ROUTES: set[tuple[str, str]] = {
     ("POST", "/api/auth/login"),
     ("POST", "/api/auth/bootstrap-admin"),
     ("GET", "/health"),
+    ("POST", "/api/auth/password-reset/request"),
+    ("POST", "/api/auth/password-reset/confirm"),
+    ("POST", "/api/auth/email/verify-confirm"),
+    ("POST", "/api/auth/passkeys/login/options"),
+    ("POST", "/api/auth/2fa/challenge"),
+    ("POST", "/api/auth/passkeys/login/verify"),
 }
 
 _INVALID_CREDENTIALS = "Invalid email or password"
@@ -41,9 +47,7 @@ def _accepts_query_token(method: str, path: str) -> bool:
     return method == "GET" and _SSE_QUERY_TOKEN_PATH.fullmatch(path) is not None
 
 
-def _extract_token(
-    request: Request, credentials: HTTPAuthorizationCredentials | None
-) -> str:
+def _extract_token(request: Request, credentials: HTTPAuthorizationCredentials | None) -> str:
     if credentials is not None and credentials.credentials:
         return credentials.credentials
     if _accepts_query_token(request.method, request.url.path):

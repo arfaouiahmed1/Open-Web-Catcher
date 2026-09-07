@@ -710,9 +710,41 @@ class UserRecord(Base):
     email_verification_expires_at: Mapped[datetime | None] = mapped_column(
         TZDateTime, nullable=True, default=None
     )
+    totp_secret: Mapped[str] = mapped_column(String(512), default="", server_default="")
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    totp_backup_codes: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
     __table_args__ = (
         CheckConstraint("role IN ('admin', 'operator', 'viewer')", name="ck_users_role"),
     )
+
+
+class WebAuthnCredentialRecord(Base):
+    """Public WebAuthn credential material registered to an operator."""
+
+    __tablename__ = "webauthn_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    credential_id: Mapped[str] = mapped_column(String(512), unique=True, index=True)
+    public_key: Mapped[str] = mapped_column(Text)
+    sign_count: Mapped[int] = mapped_column(Integer, default=0)
+    transports: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_utc_now)
+
+
+class WebAuthnChallengeRecord(Base):
+    """Short-lived server-side WebAuthn challenge, consumed once."""
+
+    __tablename__ = "webauthn_challenges"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), default="", index=True)
+    purpose: Mapped[str] = mapped_column(String(32), index=True)
+    challenge: Mapped[str] = mapped_column(String(128))
+    expires_at: Mapped[datetime] = mapped_column(TZDateTime, index=True)
+    used: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_utc_now)
 
 
 class SiteHintRecord(Base):

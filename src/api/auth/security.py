@@ -52,6 +52,7 @@ def create_access_token(
     secret: str,
     expires_minutes: int,
     now: Callable[[], datetime] | None = None,
+    purpose: str | None = None,
 ) -> str:
     moment = (now or _default_now)()
     if moment.tzinfo is None:
@@ -62,6 +63,8 @@ def create_access_token(
         "iat": int(moment.timestamp()),
         "exp": int((moment + timedelta(minutes=expires_minutes)).timestamp()),
     }
+    if purpose:
+        payload["purpose"] = purpose
     return jwt.encode(payload, secret, algorithm="HS256")
 
 
