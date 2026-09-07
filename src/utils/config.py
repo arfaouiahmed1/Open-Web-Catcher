@@ -42,6 +42,11 @@ from pydantic import AliasChoices, Field, TypeAdapter, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.utils.browser_runtime import normalize_browser_runtime
+from src.utils.security_crypto import (
+    SECRET_SETTING_KEYS,
+    decrypt_settings_layer,
+    encrypt_settings_layer,
+)
 
 # Weakest -> strongest source layers for every settings value.
 SETTINGS_SOURCE_LAYERS: tuple[str, ...] = ("default", "env", "base_yaml", "runtime_yaml")
@@ -93,6 +98,8 @@ def load_settings_layers(
     runtime = {
         key: value for key, value in runtime_raw.items() if not is_blank_setting_value(value)
     }
+    base = decrypt_settings_layer(base)
+    runtime = decrypt_settings_layer(runtime)
     merged = {**base, **runtime}
     return {"base_yaml": base, "runtime_yaml": runtime, "merged": merged}
 
@@ -257,16 +264,18 @@ def persist_settings_patch(
     """
     validated = validate_settings_patch(payload)
     target = Path(runtime_yaml_path)
-    existing = {
+    existing_raw = {
         key: value
         for key, value in load_yaml_layer(target).items()
         if not is_blank_setting_value(value)
     }
+    existing = decrypt_settings_layer(existing_raw)
     existing.update(validated)
     existing = {key: value for key, value in existing.items() if not is_blank_setting_value(value)}
+    payload_to_write = encrypt_settings_layer(existing)
     target.parent.mkdir(parents=True, exist_ok=True)
     with open(target, "w", encoding="utf-8") as f:
-        yaml.safe_dump(existing, f, default_flow_style=False, allow_unicode=True)
+        yaml.safe_dump(payload_to_write, f, default_flow_style=False, allow_unicode=True)
     return target
 
 
@@ -770,6 +779,7 @@ class Settings(BaseSettings):
             "bedrock_api_key",
             "provider_api_keys",
         }
+        payload_to_write = encrypt_settings_layer(existing)
         try:
             primary_path.parent.mkdir(parents=True, exist_ok=True)
             with open(primary_path, "w", encoding="utf-8") as f:
@@ -777,7 +787,7 @@ class Settings(BaseSettings):
                 # would be ignored on reload anyway (T36 clobber fix), so
                 # dropping it here keeps the YAML layer honest.
                 yaml.safe_dump(
-                    {k: v for k, v in existing.items() if not is_blank_setting_value(v)},
+                    {k: v for k, v in payload_to_write.items() if not is_blank_setting_value(v)},
                     f,
                     default_flow_style=False,
                     allow_unicode=True,
