@@ -39,7 +39,7 @@
     "react-window": "^1.8.11",
     "reactflow": "^11.11.4",
     "recharts": "^3.10.1",
-    "tailwind-merge": "^2.5.4"
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
     "@types/node": "26.4.0",
