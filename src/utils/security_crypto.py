@@ -157,10 +157,8 @@ def decrypt_secret(
         return "" if value is None else str(value)
     if not is_encrypted_secret(value):
         return value
-
     if not value.startswith(ENCRYPTION_PREFIX):
-        logger.warning("Unknown encryption format for secret: %s", value[:16])
-        return ""
+        raise SecretDecryptionError(f"Unsupported encryption scheme for secret: {value[:20]}")
 
     payload_b64 = value[len(ENCRYPTION_PREFIX) :]
     try:
@@ -174,8 +172,9 @@ def decrypt_secret(
         plaintext_bytes = aesgcm.decrypt(nonce, ciphertext, None)
         return plaintext_bytes.decode("utf-8")
     except (InvalidTag, ValueError) as exc:
-        logger.warning("Failed to decrypt secret: %s", exc)
-        return ""
+        raise SecretDecryptionError(
+            f"Failed to authenticate or decrypt secret with active encryption key: {exc}"
+        ) from exc
 
 
 def encrypt_settings_layer(

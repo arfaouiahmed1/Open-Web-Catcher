@@ -81,6 +81,7 @@ Report.zip
 Report/
 tmp/
 data/settings.runtime.yaml
+data/.settings_key
 /*.png
 
 # Agent orchestration state (oh-my-openagent / opencode lead session)

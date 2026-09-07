@@ -13,6 +13,7 @@ from src.utils.config import Settings, load_yaml_layer, persist_settings_patch
 from src.utils.security_crypto import (
     ENCRYPTION_PREFIX,
     SECRET_SETTING_KEYS,
+    SecretDecryptionError,
     decrypt_secret,
     decrypt_settings_layer,
     derive_encryption_key,
@@ -57,15 +58,19 @@ def test_backward_compatibility_unencrypted_plaintext() -> None:
     assert decrypt_secret(legacy_key) == legacy_key
 
 
-def test_tampered_ciphertext_fails_safely() -> None:
+def test_tampered_ciphertext_fails_closed() -> None:
     encrypted = encrypt_secret("my-super-secret-key")
-    # Tamper with the base64 payload
     tampered = encrypted[:-4] + "AAAA"
-    decrypted = decrypt_secret(tampered)
-    # Returns empty string safely on auth tag failure without crashing
-    assert decrypted == ""
+    with pytest.raises(SecretDecryptionError):
+        decrypt_secret(tampered)
 
 
+def test_wrong_key_fails_closed() -> None:
+    key_a = b"A" * 32
+    key_b = b"B" * 32
+    encrypted = encrypt_secret("my-secret-data", key=key_a)
+    with pytest.raises(SecretDecryptionError, match="Failed to authenticate or decrypt"):
+        decrypt_secret(encrypted, key=key_b)
 def test_hkdf_key_derivation_deterministic() -> None:
     passphrase = "my-test-auth-jwt-secret-12345"
     key1 = derive_encryption_key(passphrase)
