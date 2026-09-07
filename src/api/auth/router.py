@@ -110,8 +110,8 @@ def bootstrap_admin(body: BootstrapAdminRequest) -> dict:
             CursorResult,
             session.execute(
                 text(
-                    "INSERT INTO users (email, password_hash, role, is_active, created_at, password_reset_token_hash, password_reset_expires_at) "
-                    "SELECT :email, :password_hash, 'admin', TRUE, :created_at, '', NULL "
+                    "INSERT INTO users (email, password_hash, role, is_active, created_at, password_reset_token_hash, password_reset_expires_at, email_verified, email_verification_token_hash, email_verification_expires_at) "
+                    "SELECT :email, :password_hash, 'admin', TRUE, :created_at, '', NULL, FALSE, '', NULL "
                     "WHERE NOT EXISTS (SELECT 1 FROM users)"
                 ),
                 {
@@ -200,3 +200,88 @@ def confirm_password_reset(body: PasswordResetConfirm) -> dict:
         return {"reset": True}
     finally:
         session.close()
+
+
+EMAIL_VERIFICATION_TTL_HOURS = 24
+
+
+class EmailVerificationConfirm(BaseModel):
+    token: str = Field(min_length=16, max_length=256)
+
+
+@router.post("/email/verify-request")
+def request_email_verification(user: UserRecord = Depends(get_current_user)) -> dict:
+    """Issue an email-verification token for the caller's own account."""
+    from src.utils.mailer import send_email
+
+    session = get_session()
+    try:
+        stored = session.query(UserRecord).filter(UserRecord.email == user.email).first()
+        if stored is None or not stored.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+            )
+        token = secrets.token_urlsafe(32)
+        stored.email_verification_token_hash = _hash_reset_token(token)
+        stored.email_verification_expires_at = datetime.now(timezone.utc) + timedelta(
+            hours=EMAIL_VERIFICATION_TTL_HOURS
+        )
+        session.commit()
+        settings = auth_security._auth_settings()
+        delivered = send_email(
+            settings,
+            to=stored.email,
+            subject="Verify your OWC operator email",
+            body=(
+                f"Confirm your Open Web Catcher operator email with this token "
+                f"(expires in {EMAIL_VERIFICATION_TTL_HOURS} hours):\n\n{token}\n"
+            ),
+        )
+        if not delivered:
+            logger.info("Email verification requested for %s (SMTP not configured)", stored.email)
+        return {"requested": True, "delivered": delivered}
+    finally:
+        session.close()
+
+
+@router.post("/email/verify-confirm")
+def confirm_email_verification(body: EmailVerificationConfirm) -> dict:
+    """Redeem a verification token; the token itself is the credential."""
+    session = get_session()
+    try:
+        token_hash = _hash_reset_token(body.token.strip())
+        candidates = (
+            session.query(UserRecord)
+            .filter(UserRecord.email_verification_token_hash == token_hash)
+            .all()
+        )
+        user = next(
+            (
+                row
+                for row in candidates
+                if hmac.compare_digest(row.email_verification_token_hash or "", token_hash)
+            ),
+            None,
+        )
+        now = datetime.now(timezone.utc)
+        expires_at = user.email_verification_expires_at if user is not None else None
+        if expires_at is not None and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if user is None or not user.is_active or expires_at is None or expires_at <= now:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired verification token",
+            )
+        user.email_verified = True
+        user.email_verification_token_hash = ""
+        user.email_verification_expires_at = None
+        session.commit()
+        return {"verified": True}
+    finally:
+        session.close()
+
+
+@router.get("/email/status")
+def email_verification_status(user: UserRecord = Depends(get_current_user)) -> dict:
+    """Report the caller's own email-verification state (no secrets)."""
+    return {"email": user.email, "email_verified": bool(user.email_verified)}

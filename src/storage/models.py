@@ -703,6 +703,13 @@ class UserRecord(Base):
     password_reset_expires_at: Mapped[datetime | None] = mapped_column(
         TZDateTime, nullable=True, default=None
     )
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    email_verification_token_hash: Mapped[str] = mapped_column(
+        String(128), default="", server_default=""
+    )
+    email_verification_expires_at: Mapped[datetime | None] = mapped_column(
+        TZDateTime, nullable=True, default=None
+    )
     __table_args__ = (
         CheckConstraint("role IN ('admin', 'operator', 'viewer')", name="ck_users_role"),
     )

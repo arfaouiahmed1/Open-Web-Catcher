@@ -579,6 +579,15 @@ class Settings(BaseSettings):
     auth_jwt_secret: str = ""
     auth_token_expiry_minutes: int = 720
 
+    # Outbound email for verification and recovery flows. Empty host disables
+    # delivery; tokens are then server-logged for operator retrieval.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_use_tls: bool = True
+
     log_level: str = "INFO"
     log_file: str = "data/logs/app.log"
 

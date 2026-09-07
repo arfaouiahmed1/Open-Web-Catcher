@@ -20,6 +20,10 @@ export function AccountTab(): React.JSX.Element {
   const [pwErr, setPwErr] = useState<string>("");
   const [saving, setSaving] = useState<boolean>(false);
   const [isLoadingMe, setIsLoadingMe] = useState<boolean>(true);
+  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
+  const [verifyMsg, setVerifyMsg] = useState<string>("");
+  const [verifyErr, setVerifyErr] = useState<string>("");
+  const [verifySending, setVerifySending] = useState<boolean>(false);
 
 
   useEffect(() => {
@@ -33,12 +37,32 @@ export function AccountTab(): React.JSX.Element {
       } finally {
         if (!cancelled) setIsLoadingMe(false);
       }
+      try {
+        const status = await apiFetch<{ email_verified?: boolean }>("/api/auth/email/status");
+        if (!cancelled) setEmailVerified(Boolean(status.email_verified));
+      } catch {
+        if (!cancelled) setEmailVerified(null);
+      }
     }
     void load();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  async function resendVerification(): Promise<void> {
+    setVerifyMsg("");
+    setVerifyErr("");
+    setVerifySending(true);
+    try {
+      await apiFetch("/api/auth/email/verify-request", { method: "POST" });
+      setVerifyMsg("Verification email requested. Check your inbox for the token.");
+    } catch (error) {
+      setVerifyErr(error instanceof Error ? error.message : "Could not request verification.");
+    } finally {
+      setVerifySending(false);
+    }
+  }
 
   async function changePassword(e: React.FormEvent): Promise<void> {
     e.preventDefault();
@@ -139,6 +163,44 @@ export function AccountTab(): React.JSX.Element {
               Backend route is available and protected by the current session.
             </p>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <ShieldCheck className="size-4 text-primary" /> Email verification
+          </CardTitle>
+          <CardDescription>Confirm ownership of your operator email address.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {emailVerified === null ? (
+              <Skeleton className="h-5 w-24" />
+            ) : emailVerified ? (
+              <Badge tone="success">Verified</Badge>
+            ) : (
+              <>
+                <Badge tone="warning">Unverified</Badge>
+                <Button variant="outline" size="sm" onClick={() => void resendVerification()} disabled={verifySending}>
+                  {verifySending ? <Loader2 className="size-3.5 animate-spin" /> : null} Resend verification
+                </Button>
+              </>
+            )}
+            <Link href="/verify-email" className="text-xs font-medium text-primary hover:underline">
+              Enter token
+            </Link>
+          </div>
+          {verifyMsg ? (
+            <p className="flex items-center gap-1.5 text-xs text-emerald-600">
+              <Check className="size-3.5" /> {verifyMsg}
+            </p>
+          ) : null}
+          {verifyErr ? (
+            <p className="flex items-center gap-1.5 text-xs text-destructive" role="alert">
+              <AlertCircle className="size-3.5" /> {verifyErr}
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 
