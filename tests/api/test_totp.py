@@ -70,6 +70,7 @@ def test_totp_enrollment_encrypts_secret_and_requires_confirmation(
     _create_user(session_factory)
     initial = _login(api)
     headers = {"Authorization": f"Bearer {initial['access_token']}"}
+    assert api.get("/api/auth/2fa/status", headers=headers).json() == {"enabled": False}
 
     enrollment = api.post("/api/auth/2fa/enroll", headers=headers)
     assert enrollment.status_code == 200
