@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ArrowRight, Check, Eye, KeyRound, Play, Search, ShieldCheck, Sparkles } from "lucide-react";
+import { AuthBackdrop } from "@/components/auth/auth-backdrop";
 import { LogoMark } from "@/components/console/layout/navigation-config";
 
 const STAGES = [
@@ -13,8 +14,9 @@ const STAGES = [
 
 export function LandingHero(): React.JSX.Element {
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
-      <div className="mx-auto max-w-[var(--content-max)] px-5 sm:px-6">
+    <div className="relative min-h-screen bg-[var(--bg)] text-[var(--ink)]">
+      <AuthBackdrop variant="landing" />
+      <div className="relative mx-auto max-w-[var(--content-max)] px-5 sm:px-6">
         <section className="grid min-h-[min(720px,calc(100vh-3.5rem))] items-center gap-10 py-12 lg:grid-cols-[minmax(0,1.08fr)_minmax(420px,.92fr)] lg:py-16">
           {/* Decide/Learn: asymmetric editorial story, not a dashboard-card grid. */}
           <div className="max-w-[660px]">

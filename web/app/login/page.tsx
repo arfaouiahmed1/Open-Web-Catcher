@@ -93,6 +93,11 @@ function LoginForm(): React.JSX.Element {
                 placeholder="••••••••"
               />
             </div>
+            <div className="flex justify-end">
+              <Link href="/forgot-password" className="text-xs text-muted-foreground hover:text-foreground">
+                Forgot password?
+              </Link>
+            </div>
             {error ? (
               <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
                 {error}

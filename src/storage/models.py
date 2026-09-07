@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-
+from typing import Any
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -20,8 +20,11 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
 
+_PgVector: Any | None
 try:  # pgvector is optional at runtime; SQLite test runs never need it.
-    from pgvector.sqlalchemy import Vector as _PgVector
+    from pgvector.sqlalchemy import Vector as _PgVectorImpl
+
+    _PgVector = _PgVectorImpl
 except ImportError:  # pragma: no cover - exercised only without the package
     _PgVector = None
 
@@ -107,9 +110,6 @@ class TZDateTime(TypeDecorator):
 
 
 class Base(DeclarativeBase):
-
-
-
     pass
 
 
@@ -201,7 +201,9 @@ class RunSnapshotRecord(Base):
     __tablename__ = "run_snapshots"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    pipeline_run_id: Mapped[int] = mapped_column(ForeignKey("pipeline_runs.id", ondelete="CASCADE"), unique=True, index=True)
+    pipeline_run_id: Mapped[int] = mapped_column(
+        ForeignKey("pipeline_runs.id", ondelete="CASCADE"), unique=True, index=True
+    )
     run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_utc_now)
@@ -211,7 +213,9 @@ class AgentRunRecord(Base):
     __tablename__ = "agent_runs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    pipeline_run_id: Mapped[int] = mapped_column(ForeignKey("pipeline_runs.id", ondelete="CASCADE"), index=True)
+    pipeline_run_id: Mapped[int] = mapped_column(
+        ForeignKey("pipeline_runs.id", ondelete="CASCADE"), index=True
+    )
     actor: Mapped[str] = mapped_column(String(64), index=True)
     agent_type: Mapped[str] = mapped_column(String(32), index=True)
     target_url: Mapped[str] = mapped_column(Text, default="")
@@ -242,7 +246,9 @@ class AgentOutputRecord(Base):
     __tablename__ = "agent_outputs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    agent_run_id: Mapped[int] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), unique=True, index=True)
+    agent_run_id: Mapped[int] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), unique=True, index=True
+    )
     output_json: Mapped[dict] = mapped_column(JSON, default=dict)
     summary_text: Mapped[str] = mapped_column(Text, default="")
     stream_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -273,8 +279,12 @@ class PromptCompilationRecord(Base):
     __tablename__ = "prompt_compilations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    prompt_version_id: Mapped[int | None] = mapped_column(ForeignKey("prompt_versions.id", ondelete="SET NULL"), nullable=True, index=True)
-    agent_run_id: Mapped[int] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True)
+    prompt_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("prompt_versions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    agent_run_id: Mapped[int] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True
+    )
     cache_mode: Mapped[str] = mapped_column(String(32), default="")
     compiled_prompt_hash: Mapped[str] = mapped_column(String(128), index=True)
     provider_cache_key: Mapped[str] = mapped_column(Text, default="")
@@ -291,7 +301,9 @@ class LLMCallRecord(Base):
     __tablename__ = "llm_calls"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    agent_run_id: Mapped[int] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True)
+    agent_run_id: Mapped[int] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True
+    )
     seq: Mapped[int] = mapped_column(Integer, index=True)
     provider: Mapped[str] = mapped_column(String(64), default="", index=True)
     model_name: Mapped[str] = mapped_column(String(128), default="", index=True)
@@ -321,7 +333,9 @@ class ToolCallRecord(Base):
     __tablename__ = "tool_calls"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    agent_run_id: Mapped[int] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True)
+    agent_run_id: Mapped[int] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True
+    )
     seq: Mapped[int] = mapped_column(Integer, index=True)
     tool_name: Mapped[str] = mapped_column(String(128), index=True)
     args_json: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -421,8 +435,12 @@ class RuntimeEventRecord(Base):
     __tablename__ = "runtime_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    pipeline_run_id: Mapped[int] = mapped_column(ForeignKey("pipeline_runs.id", ondelete="CASCADE"), index=True)
-    agent_run_id: Mapped[int | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    pipeline_run_id: Mapped[int] = mapped_column(
+        ForeignKey("pipeline_runs.id", ondelete="CASCADE"), index=True
+    )
+    agent_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     actor: Mapped[str] = mapped_column(String(64), index=True)
     seq: Mapped[int] = mapped_column(Integer, index=True)
     kind: Mapped[str] = mapped_column(String(64), index=True)
@@ -436,7 +454,9 @@ class RunModelUsageRecord(Base):
     __tablename__ = "run_model_usage"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    pipeline_run_id: Mapped[int] = mapped_column(ForeignKey("pipeline_runs.id", ondelete="CASCADE"), index=True)
+    pipeline_run_id: Mapped[int] = mapped_column(
+        ForeignKey("pipeline_runs.id", ondelete="CASCADE"), index=True
+    )
     provider: Mapped[str] = mapped_column(String(64), default="", index=True)
     model_name: Mapped[str] = mapped_column(String(128), default="", index=True)
     llm_calls: Mapped[int] = mapped_column(Integer, default=0)
@@ -461,7 +481,9 @@ class RunStreamRecord(Base):
     __tablename__ = "run_streams"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    pipeline_run_id: Mapped[int] = mapped_column(ForeignKey("pipeline_runs.id", ondelete="CASCADE"), index=True)
+    pipeline_run_id: Mapped[int] = mapped_column(
+        ForeignKey("pipeline_runs.id", ondelete="CASCADE"), index=True
+    )
     stream_url: Mapped[str] = mapped_column(Text)
     source_url: Mapped[str] = mapped_column(Text, default="")
     protocol: Mapped[str] = mapped_column(String(32), default="")
@@ -480,8 +502,12 @@ class RunScreenshotRecord(Base):
     __tablename__ = "run_screenshots"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    pipeline_run_id: Mapped[int] = mapped_column(ForeignKey("pipeline_runs.id", ondelete="CASCADE"), index=True)
-    agent_run_id: Mapped[int | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    pipeline_run_id: Mapped[int] = mapped_column(
+        ForeignKey("pipeline_runs.id", ondelete="CASCADE"), index=True
+    )
+    agent_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     screenshot_url: Mapped[str] = mapped_column(Text)
     source_url: Mapped[str] = mapped_column(Text, default="")
     label: Mapped[str] = mapped_column(String(128), default="")
@@ -498,7 +524,9 @@ class ProviderAnalysisRecord(Base):
     __tablename__ = "provider_analyses"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    pipeline_run_id: Mapped[int] = mapped_column(ForeignKey("pipeline_runs.id", ondelete="CASCADE"), index=True)
+    pipeline_run_id: Mapped[int] = mapped_column(
+        ForeignKey("pipeline_runs.id", ondelete="CASCADE"), index=True
+    )
     stream_url: Mapped[str] = mapped_column(Text, default="")
     ip: Mapped[str] = mapped_column(String(128), default="")
     hostname: Mapped[str] = mapped_column(String(255), default="")
@@ -516,7 +544,9 @@ class TakedownEmailRecord(Base):
     __tablename__ = "takedown_emails"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    pipeline_run_id: Mapped[int] = mapped_column(ForeignKey("pipeline_runs.id", ondelete="CASCADE"), index=True)
+    pipeline_run_id: Mapped[int] = mapped_column(
+        ForeignKey("pipeline_runs.id", ondelete="CASCADE"), index=True
+    )
     provider: Mapped[str] = mapped_column(Text, default="")
     abuse_email: Mapped[str] = mapped_column(String(255), default="")
     channel_name: Mapped[str] = mapped_column(String(255), default="", index=True)
@@ -539,7 +569,9 @@ class MemoryEntryRecord(Base):
     domain: Mapped[str] = mapped_column(String(255), index=True)
     page_type: Mapped[str] = mapped_column(String(32), index=True)
     source_run_id: Mapped[str] = mapped_column(String(64), default="", index=True)
-    source_agent_run_id: Mapped[int | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    source_agent_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     status: Mapped[str] = mapped_column(String(32), default="unknown", index=True)
     success: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     url: Mapped[str] = mapped_column(Text, default="")
@@ -552,8 +584,12 @@ class MemoryHintUsedRecord(Base):
     __tablename__ = "memory_hints_used"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    agent_run_id: Mapped[int] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True)
-    memory_entry_id: Mapped[int] = mapped_column(ForeignKey("memory_entries.id", ondelete="CASCADE"), index=True)
+    agent_run_id: Mapped[int] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True
+    )
+    memory_entry_id: Mapped[int] = mapped_column(
+        ForeignKey("memory_entries.id", ondelete="CASCADE"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_utc_now)
 
     __table_args__ = (
@@ -630,8 +666,12 @@ class DatasetSiteRunRecord(Base):
     __tablename__ = "dataset_site_runs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    batch_id: Mapped[int] = mapped_column(ForeignKey("dataset_batches.id", ondelete="CASCADE"), index=True)
-    site_id: Mapped[int | None] = mapped_column(ForeignKey("dataset_sites.id", ondelete="SET NULL"), nullable=True, index=True)
+    batch_id: Mapped[int] = mapped_column(
+        ForeignKey("dataset_batches.id", ondelete="CASCADE"), index=True
+    )
+    site_id: Mapped[int | None] = mapped_column(
+        ForeignKey("dataset_sites.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     url: Mapped[str] = mapped_column(Text, default="")
     language: Mapped[str] = mapped_column(String(32), default="", index=True)
@@ -657,7 +697,12 @@ class UserRecord(Base):
     role: Mapped[str] = mapped_column(String(32), default="viewer")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_utc_now)
-
+    password_reset_token_hash: Mapped[str] = mapped_column(
+        String(128), default="", server_default=""
+    )
+    password_reset_expires_at: Mapped[datetime | None] = mapped_column(
+        TZDateTime, nullable=True, default=None
+    )
     __table_args__ = (
         CheckConstraint("role IN ('admin', 'operator', 'viewer')", name="ck_users_role"),
     )
@@ -688,9 +733,7 @@ class SiteHintRecord(Base):
     ttl_expires_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     embedding = mapped_column(embedding_column(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=_utc_now, index=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        TZDateTime, default=_utc_now, onupdate=_utc_now
-    )
+    updated_at: Mapped[datetime] = mapped_column(TZDateTime, default=_utc_now, onupdate=_utc_now)
 
     __table_args__ = (
         UniqueConstraint("domain", "page_type", name="uq_site_hints_domain_page_type"),
@@ -755,10 +798,6 @@ class PlanStepRecord(Base):
     criteria: Mapped[str] = mapped_column(Text, default="")
     budget: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        TZDateTime, default=_utc_now, onupdate=_utc_now
-    )
+    updated_at: Mapped[datetime] = mapped_column(TZDateTime, default=_utc_now, onupdate=_utc_now)
 
-    __table_args__ = (
-        UniqueConstraint("run_id", "step_id", name="uq_plan_steps_run_step"),
-    )
+    __table_args__ = (UniqueConstraint("run_id", "step_id", name="uq_plan_steps_run_step"),)
