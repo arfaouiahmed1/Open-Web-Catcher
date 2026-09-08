@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 from src.agents.memory import build_memory_context, remember_agent_run
+from src.llm.provider import ChatLiteLLM
 from src.agents.prompting import build_runtime_context, build_task_brief, compile_agent_prompt
 from src.memory.long_term import LongTermMemory
 from src.memory.short_term import ShortTermMemory
@@ -198,7 +199,8 @@ def _has_explicit_player_or_match_evidence(page: dict[str, Any]) -> bool:
     if str(page.get("team1") or "").strip() and str(page.get("team2") or "").strip():
         return True
 
-    metadata = page.get("metadata") if isinstance(page.get("metadata"), dict) else {}
+    raw_metadata = page.get("metadata")
+    metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
     visual = " ".join(str(item or "") for item in page.get("visual_evidence", []) if item)
     structural_haystack = " ".join(
         str(value or "")
@@ -349,7 +351,8 @@ def _looks_like_stream_url(url: str) -> bool:
 def _extract_player_handoff_urls(
     page_dict: dict[str, Any], *, base_url: str
 ) -> tuple[list[str], list[str], list[str], list[str]]:
-    metadata = page_dict.get("metadata") if isinstance(page_dict.get("metadata"), dict) else {}
+    raw_metadata = page_dict.get("metadata")
+    metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
     iframes = _normalize_url_list(
         [
             *_normalize_url_list(page_dict.get("iframes"), base_url=base_url),
@@ -614,8 +617,9 @@ def _normalize_hosting_pages(raw_pages: Any, *, source_url: str) -> list[dict[st
                 ]
             )
         )
+        existing_metadata = page_dict.get("metadata")
         page_dict["metadata"] = {
-            **(page_dict.get("metadata") if isinstance(page_dict.get("metadata"), dict) else {}),
+            **(existing_metadata if isinstance(existing_metadata, dict) else {}),
             "channel_confidence": channel_match.get("channel_confidence", ""),
             "channel_detection_method": channel_match.get("channel_detection_method", ""),
             "channel_evidence": channel_match.get("channel_evidence", []),
@@ -944,7 +948,7 @@ def _collect_landing_streams(output: dict[str, Any]) -> list[StreamURL]:
 class LandingPageAgent:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.llm = None
+        self.llm: ChatLiteLLM | None = None
         self.memory = LongTermMemory(settings.memory_db_path) if settings.memory_enabled else None
         self._system_prompt = (
             PROMPT_PATH.read_text(encoding="utf-8")
@@ -1039,7 +1043,7 @@ class LandingPageAgent:
                     result = await run_agent_loop(
                         settings=self.settings,
                         llm=self.llm,
-                        tools=tools,
+                        tools=tools.tools,
                         system_prompt=compiled_prompt.content,
                         initial_message=initial_message,
                         max_tool_calls=self.settings.landing_page_max_tool_calls,

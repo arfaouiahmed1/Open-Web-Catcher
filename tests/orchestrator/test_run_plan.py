@@ -278,17 +278,21 @@ async def test_step_wrapper_emits_in_progress_then_done(monkeypatch, run_id, ses
     """The node wrapper emits in_progress on entry and done on exit."""
     from src.agents.orchestrator import _RUN_PLAN_STEPS, _wrap_plan_step
     from src.orchestrator.run_plan import emit_run_plan
+    from src.utils.observability import ObservabilityStatus, RunRegistry
 
     transitions: list[tuple[str, str]] = []
 
-    class Obs:
-        run_id = run_id
-        session = session
+    observer = RunRegistry().create(
+        run_id=run_id,
+        root_actor="test",
+        observability=ObservabilityStatus(
+            enabled=True,
+            project="test",
+            default_dataset_name="test-ds",
+        ),
+    )
 
-        def emit(self, kind, message, *, status="info", details=None):
-            return {"kind": kind, "details": details or {}}
-
-    emit_run_plan(Obs(), session, run_id, "sequential", _RUN_PLAN_STEPS)
+    emit_run_plan(observer, session, run_id, "sequential", _RUN_PLAN_STEPS)
 
     def spy(observer, rid, step_id, status):
         transitions.append((step_id, status))
@@ -301,7 +305,7 @@ async def test_step_wrapper_emits_in_progress_then_done(monkeypatch, run_id, ses
         calls.append(state)
         return {"ok": True}
 
-    node = _wrap_plan_step("classify", fake_node, Obs())
+    node = _wrap_plan_step("classify", fake_node, observer)
     await node({"run_id": run_id})
 
     assert ("classify", "in_progress") in transitions

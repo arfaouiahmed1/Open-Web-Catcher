@@ -41,7 +41,7 @@ from collections import OrderedDict
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 from jinja2 import Environment, StrictUndefined, select_autoescape
 from pydantic import BaseModel, ConfigDict
@@ -63,6 +63,11 @@ TEMPLATE_VERSION = "v1"
 TEMPLATES_ROOT = Path(__file__).resolve().parents[2] / "configs" / "email_templates"
 
 TemplateVariant = Literal["hosting", "embedded"]
+
+
+class _GroupedProvider(TypedDict):
+    provider: ProviderInfo
+    rows: list[ProviderInfo]
 
 
 # ── Render input model ───────────────────────────────────────────────────────
@@ -270,7 +275,7 @@ def build_email_contexts(
     generated_at_iso: str,
 ) -> list[dict[str, Any]]:
     """Group evidence into one flat render context per provider/contact pair."""
-    grouped: OrderedDict[tuple[str, str, str], dict[str, object]] = OrderedDict()
+    grouped: OrderedDict[tuple[str, str, str], _GroupedProvider] = OrderedDict()
     all_evidence = collect_stream_evidence(extraction_results)
     evidence_by_url = OrderedDict((row.stream_url, row) for row in all_evidence if row.stream_url)
     fallback_stream_urls = list(evidence_by_url.keys())

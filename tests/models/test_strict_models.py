@@ -10,6 +10,8 @@ Acceptance criteria under test:
 
 from __future__ import annotations
 
+from types import ModuleType
+
 import pytest
 from pydantic import ValidationError
 
@@ -56,7 +58,7 @@ def test_stage_result_rejects_unknown_field(model_cls: type[PipelineModel]) -> N
 def test_every_domain_model_is_strict() -> None:
     """No model in any canonical domain module silently accepts extra fields."""
 
-    def _walk(module: object) -> list[type[PipelineModel]]:
+    def _walk(module: ModuleType) -> list[type[PipelineModel]]:
         found = []
         for name in dir(module):
             obj = getattr(module, name)

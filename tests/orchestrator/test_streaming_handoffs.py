@@ -18,13 +18,14 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from src.agents.errors import RunCancelledError
 from src.agents.orchestrator import (
     OrchestratorAgent,
+    PipelineState,
     embedded_page_node,
     hosting_page_node,
     landing_page_node,
@@ -62,8 +63,8 @@ def _settings(**overrides: Any) -> Settings:
     return Settings(max_parallel_hosting_pages=2, **overrides)
 
 
-def _pipeline_state(**overrides: Any) -> dict[str, Any]:
-    state: dict[str, Any] = {
+def _pipeline_state(**overrides: Any) -> PipelineState:
+    state: PipelineState = {
         "url": ROOT_URL,
         "run_id": "t28",
         "classification": ClassificationResult(
@@ -81,8 +82,8 @@ def _pipeline_state(**overrides: Any) -> dict[str, Any]:
         "error": "",
         "gate_no_target": False,
     }
-    state.update(overrides)
-    return state
+    merged: Any = {**state, **overrides}
+    return cast(PipelineState, merged)
 
 
 def _hosting_result(
@@ -403,6 +404,7 @@ def test_restart_sweep_marks_process_restart_orphan(
 
     trace = run_registry.get(run_id)
     assert trace is not None and trace.completed
+    assert trace.metrics is not None
     assert trace.metrics.failure_mode == "process_restart_orphan"
     kinds = [e.kind for e in trace.events]
     assert "pipeline_failed" in kinds

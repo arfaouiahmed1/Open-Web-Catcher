@@ -363,7 +363,7 @@ def main() -> None:
     observed_tools = len(tool_calls)
     failed_tools = observed_tools - successful_tools
 
-    status_summary = []
+    status_summary: list[dict[str, Any]] = []
     status_order = ["success", "partial", "no_hosting_pages", "no_streams", "page_inaccessible", "failed", "running"]
     for status in status_order + sorted(set(status_counts) - set(status_order)):
         count = status_counts.get(status, 0)
@@ -393,7 +393,7 @@ def main() -> None:
         actor = str(agent.get("actor") or agent.get("agent_type") or "unknown").strip() or "unknown"
         tool_by_actor[actor].append(row)
 
-    agent_summary = []
+    agent_summary: list[dict[str, Any]] = []
     for actor, rows in sorted(agent_groups.items(), key=lambda item: item[0]):
         count = len(rows)
         actor_tool_rows = tool_by_actor.get(actor, [])
@@ -421,7 +421,7 @@ def main() -> None:
     tool_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in tool_calls:
         tool_groups[str(row.get("tool_name") or "unknown").strip() or "unknown"].append(row)
-    tool_summary = []
+    tool_summary: list[dict[str, Any]] = []
     for name, rows in tool_groups.items():
         successes = sum(1 for row in rows if str(row.get("status") or "").lower() == "success")
         tool_summary.append({
@@ -437,7 +437,7 @@ def main() -> None:
     model_groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in model_usage:
         model_groups[(str(row.get("provider") or "").strip(), str(row.get("model_name") or "").strip())].append(row)
-    model_summary = []
+    model_summary: list[dict[str, Any]] = []
     for (provider, model), rows in model_groups.items():
         model_summary.append({
             "provider": provider,
@@ -494,7 +494,7 @@ def main() -> None:
     for row in providers:
         provider = str(row.get("provider") or "unknown").strip() or "unknown"
         provider_groups[provider].add(i(row.get("pipeline_run_id")))
-    provider_summary = [
+    provider_summary: list[dict[str, Any]] = [
         {"provider": name, "provider_rows": sum(1 for row in providers if (str(row.get("provider") or "unknown").strip() or "unknown") == name), "affected_runs": len(run_ids)}
         for name, run_ids in provider_groups.items()
     ]
@@ -509,7 +509,7 @@ def main() -> None:
     )
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    status_chart_rows = []
+    status_chart_rows: list[dict[str, Any]] = []
     status_colors = {
         "success": COLORS["olive"],
         "partial": COLORS["gold"],

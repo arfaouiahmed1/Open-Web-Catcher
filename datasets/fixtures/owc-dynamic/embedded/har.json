@@ -1,0 +1,33 @@
+{
+  "log": {
+    "version": "1.2",
+    "creator": { "name": "OWC Fixture Replay", "version": "2.0.0" },
+    "entries": [
+      {
+        "request": {
+          "method": "GET",
+          "url": "http://embedded.owc.test/embed/player-101"
+        },
+        "response": {
+          "status": 200,
+          "headers": [{ "name": "content-type", "value": "text/html; charset=utf-8" }],
+          "content": { "mimeType": "text/html" }
+        }
+      },
+      {
+        "request": {
+          "method": "GET",
+          "url": "http://embedded.owc.test/hls/live.m3u8"
+        },
+        "response": {
+          "status": 200,
+          "headers": [{ "name": "content-type", "value": "application/vnd.apple.mpegurl" }],
+          "content": {
+            "mimeType": "application/vnd.apple.mpegurl",
+            "text": "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000,\nsegment_0.ts\n"
+          }
+        }
+      }
+    ]
+  }
+}

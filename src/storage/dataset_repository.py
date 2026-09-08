@@ -98,7 +98,7 @@ def _serialize_datetime(value: Any) -> str:
     return iso_z(value)
 
 
-def _terminal_site_status(value: str) -> str:
+def _terminal_site_status(value: Any) -> str:
     status = str(value or "").strip().lower()
     return status if status in TERMINAL_SITE_RUN_STATUSES else ""
 
@@ -923,8 +923,8 @@ class DatasetRepository:
         )
         payload["adjusted_success_rate"] = status_metrics["adjusted_success_rate"]
         if len(completed) == len(run_payloads) and completed:
-            finished_values = [
-                item.get("finished_at")
+            finished_values: list[str] = [
+                str(item.get("finished_at") or "")
                 for item in completed
                 if str(item.get("finished_at", "") or "").strip()
             ]

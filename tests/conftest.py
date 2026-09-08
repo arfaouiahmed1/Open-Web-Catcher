@@ -12,10 +12,8 @@ import time keep a direct reference to the original class and need an explicit
 ``monkeypatch.setattr(<module>, "datetime", ...)`` to observe the fake clock.
 """
 
-from __future__ import annotations
-
-from datetime import datetime, timedelta
-from typing import Any, Callable, Iterator
+from datetime import datetime, timedelta, tzinfo
+from typing import Any, Callable, Iterator, Self
 
 import pytest
 from sqlalchemy import create_engine
@@ -123,16 +121,29 @@ def fake_clock(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeClock]:
 
     class _FakeDateTime(datetime):
         @classmethod
-        def utcnow(cls) -> datetime:
-            return clock()
+        def _from_moment(cls, moment: datetime) -> Self:
+            return cls(
+                moment.year,
+                moment.month,
+                moment.day,
+                moment.hour,
+                moment.minute,
+                moment.second,
+                moment.microsecond,
+                tzinfo=moment.tzinfo,
+                fold=moment.fold,
+            )
 
         @classmethod
-        def now(cls, tz=None) -> datetime:  # type: ignore[override]
+        def utcnow(cls) -> Self:
+            return cls._from_moment(clock())
+
+        @classmethod
+        def now(cls, tz: tzinfo | None = None) -> Self:
             # Plan T33: writers use aware ``datetime.now(timezone.utc)``.
             moment = clock()
             if tz is not None:
-                return moment.replace(tzinfo=tz)
-            return moment
-
+                moment = moment.replace(tzinfo=tz)
+            return cls._from_moment(moment)
     monkeypatch.setattr("datetime.datetime", _FakeDateTime)
     yield clock

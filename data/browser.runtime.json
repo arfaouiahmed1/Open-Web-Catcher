@@ -7,9 +7,9 @@
       "adblock_allowlist_hosts": [],
       "fingerprint_rotation_mode": "origin",
       "fingerprint_fallback_strategy": "profile",
-      "fingerprint_rotation_interval_ms": 180000,
-      "fingerprint_rotation_max_uses": 6,
-      "fingerprint_recent_pool_size": 12,
+      "fingerprint_rotation_interval_ms": 600000,
+      "fingerprint_rotation_max_uses": 8,
+      "fingerprint_recent_pool_size": 18,
       "proxy_enabled": false,
       "proxy_source_mode": "hybrid",
       "proxy_source_order": [
@@ -30,12 +30,12 @@
       "proxy_fetch_timeout_ms": 8000,
       "proxy_validation_timeout_ms": 12000,
       "proxy_cache_ttl_ms": 600000,
-      "proxy_max_candidates": 25,
+      "proxy_max_candidates": 40,
       "proxy_test_url": "https://api.ipify.org?format=json",
       "streaming_safe_mode": "adaptive",
       "media_proxy_strategy": "direct_first",
       "asset_diagnostics_enabled": true,
-      "popup_blocking_enabled": false,
+      "popup_blocking_enabled": true,
       "ubol_enabled": true,
       "stream_cors_patch_enabled": false,
       "stream_cors_include_credentials": false,
@@ -43,11 +43,12 @@
       "iframe_auto_recovery_enabled": true,
       "iframe_recovery_timeout_ms": 20000,
       "media_capture_timeout_ms": 30000,
-      "media_retry_count": 3,
+      "media_retry_count": 4,
       "media_retry_backoff_ms": [
-        1000,
-        2000,
-        4000
+        1200,
+        2500,
+        5000,
+        8000
       ],
       "media_cors_patch_enabled": false,
       "media_playback_verification_enabled": true,
@@ -58,9 +59,9 @@
     }
   },
   "runtime_sync": {
-    "source_path": "C:\\Users\\ahmed\\Desktop\\PFE New Test\\data\\settings.runtime.yaml",
-    "bridge_path": "C:\\Users\\ahmed\\Desktop\\PFE New Test\\data\\browser.runtime.json",
-    "synced_at": "2026-08-29T11:50:16.204563+00:00",
+    "source_path": "/app/data/settings.runtime.yaml",
+    "bridge_path": "/app/data/browser.runtime.json",
+    "synced_at": "2026-09-07T11:51:36.097815+00:00",
     "active_runtime_source": "runtime_yaml"
   }
 }

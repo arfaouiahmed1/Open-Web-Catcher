@@ -11,7 +11,7 @@ def read_csv(filepath: Path) -> List[Dict]:
     """Read CSV file and return list of dicts."""
     rows = []
     try:
-        with open(filepath, 'r', encoding='utf-8-sig') as f:
+        with open(filepath, encoding='utf-8-sig') as f:
             reader = csv.DictReader(f)
             for row in reader:
                 rows.append(row)

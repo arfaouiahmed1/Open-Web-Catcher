@@ -43,9 +43,10 @@ the tick should also run periodically inside ``_background_worker_loop``
 from __future__ import annotations
 
 import logging
-from typing import Any, Final, Protocol
+from typing import Any, Final, Protocol, cast
 
 from sqlalchemy import text
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
@@ -73,7 +74,7 @@ def _prune_orphaned_embeddings(session: Session) -> int:
     other failure propagates so misconfiguration surfaces loudly.
     """
     try:
-        result = session.execute(text(_ORPHAN_EMBEDDINGS_SQL))
+        result = cast(CursorResult[Any], session.execute(text(_ORPHAN_EMBEDDINGS_SQL)))
         session.commit()
     except (OperationalError, ProgrammingError) as exc:
         # Table(s) not created yet (pre-task-18 database): treat as no-op.

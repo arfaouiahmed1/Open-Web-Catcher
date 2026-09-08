@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import threading
 from collections import Counter
+from collections.abc import Generator
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -34,7 +35,7 @@ THREAD_COUNT = 8
 
 
 @pytest.fixture()
-def job_session_factory(tmp_path: Path) -> sessionmaker:
+def job_session_factory(tmp_path: Path) -> Generator[sessionmaker, None, None]:
     """File-based SQLite engine + sessionmaker over a fresh temp database."""
     db_path = tmp_path / "jobs-race.db"
     engine = create_engine(

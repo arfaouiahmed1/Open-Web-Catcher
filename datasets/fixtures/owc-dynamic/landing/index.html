@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Live Sports Hub - Watch Matches Online</title>
+  <meta name="description" content="Watch free live sports streams, football, basketball and more.">
+  <style>
+    body { font-family: sans-serif; margin: 0; padding: 20px; background: #1a1a1a; color: #fff; }
+    .header { font-size: 24px; font-weight: bold; margin-bottom: 20px; }
+    .match-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
+    .match-card { background: #2a2a2a; border-radius: 8px; padding: 15px; border: 1px solid #333; }
+    .match-card a { color: #4dabf7; text-decoration: none; font-size: 18px; font-weight: bold; }
+    .status-live { color: #ff6b6b; font-size: 12px; text-transform: uppercase; font-weight: bold; }
+    .pagination { margin-top: 30px; display: flex; gap: 10px; }
+    .pagination a { color: #fff; background: #333; padding: 8px 16px; text-decoration: none; border-radius: 4px; }
+    #consent-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 9999; }
+    #consent-box { background: #222; padding: 25px; border-radius: 8px; max-width: 400px; text-align: center; }
+    #consent-box button { background: #4dabf7; border: none; color: #fff; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 15px; }
+  </style>
+</head>
+<body>
+  <div id="consent-modal">
+    <div id="consent-box">
+      <h3>Cookie & Privacy Notice</h3>
+      <p>Please accept our cookies to proceed to live streams.</p>
+      <button id="accept-btn" onclick="document.getElementById('consent-modal').style.display='none'">Accept & Continue</button>
+    </div>
+  </div>
+
+  <div class="header">Today's Live Football Matches</div>
+
+  <div class="match-grid">
+    <div class="match-card">
+      <span class="status-live">● LIVE</span>
+      <h3>Arsenal vs Chelsea</h3>
+      <p>Premier League • 75'</p>
+      <a href="http://hosting.owc.test/watch/match-101">Watch Live Stream</a>
+    </div>
+    <div class="match-card">
+      <span class="status-live">● LIVE</span>
+      <h3>Real Madrid vs Barcelona</h3>
+      <p>La Liga • 60'</p>
+      <a href="http://hosting.owc.test/watch/match-102">Watch Live Stream</a>
+    </div>
+    <div class="match-card">
+      <span>Scheduled (20:00)</span>
+      <h3>Bayern Munich vs Dortmund</h3>
+      <p>Bundesliga</p>
+      <a href="http://hosting.owc.test/watch/match-103">Watch Live Stream</a>
+    </div>
+  </div>
+
+  <div class="pagination">
+    <a href="http://landing.owc.test/page/1" class="active">1</a>
+    <a href="http://landing.owc.test/page/2">2</a>
+    <a href="http://landing.owc.test/page/3">3</a>
+  </div>
+</body>
+</html>

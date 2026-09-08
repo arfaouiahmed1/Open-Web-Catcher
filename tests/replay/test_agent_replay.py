@@ -25,6 +25,7 @@ import httpx
 import pytest
 
 from src.agents.orchestrator import (
+    PipelineState,
     build_graph,
     landing_page_node,
     hosting_page_node,
@@ -87,6 +88,25 @@ def _hosting_result(url: str, streams: tuple[str, ...]) -> ExtractionResult:
         streams=[StreamURL(url=s, protocol="hls", source_layer="fake") for s in streams],
         metadata={"decision": "safe_exit"},
     )
+
+
+def _state(url: str, extraction_results: list[ExtractionResult], attempts: int = 0) -> PipelineState:
+    return {
+        "url": url,
+        "run_id": "replay-test",
+        "classification": None,
+        "matches": [],
+        "extraction_results": extraction_results,
+        "pending_hosting_urls": [],
+        "pending_embedded_urls": [],
+        "provider_analysis": [],
+        "takedown_emails": [],
+        "invalid_items": [],
+        "validation_report": None,
+        "validator_replan_attempts": attempts,
+        "error": "",
+        "gate_no_target": False,
+    }
 
 
 def _ledger_hash(extractions: list[ExtractionResult]) -> str:
@@ -153,8 +173,11 @@ async def test_classify_landing_hosting_happy_path_deterministic(monkeypatch) ->
             res = await fake_hosting(None, url=url)  # type: ignore[arg-type]
             results.append(res)
         # Validator drops nothing in happy path
-        report_state = {"url": "https://target.example/listing", "extraction_results": results, "validator_replan_attempts": 0}
-        validated = await validate_evidence_node(report_state, settings=_settings(), observer=obs)
+        validated = await validate_evidence_node(
+            _state("https://target.example/listing", results),
+            settings=_settings(),
+            observer=obs,
+        )
         return validated["extraction_results"], _ledger_hash(validated["extraction_results"])
 
     ext1, h1 = await run_once("replay-happy-1")
@@ -183,7 +206,7 @@ async def test_validator_drops_poisoned_url_in_replay(monkeypatch) -> None:
     )
     obs = _observer("replay-poison-1")
     result = await validate_evidence_node(
-        {"url": "https://target.example/watch/1", "extraction_results": [poisoned], "validator_replan_attempts": 0},
+        _state("https://target.example/watch/1", [poisoned]),
         settings=_settings(),
         observer=obs,
     )
@@ -209,7 +232,7 @@ async def test_judge_flagged_url_dropped_even_when_reachable(monkeypatch) -> Non
         streams=[StreamURL(url=GOOD_STREAM), StreamURL(url=POISONED_STREAM)],
     )
     result = await validate_evidence_node(
-        {"url": "https://target.example/watch/1", "extraction_results": [poisoned], "validator_replan_attempts": 0},
+        _state("https://target.example/watch/1", [poisoned]),
         settings=_settings(),
         observer=None,
     )
@@ -255,9 +278,8 @@ async def test_zero_crashes_with_fake_llm(monkeypatch) -> None:
         agent_type=AgentType.HOSTING_PAGE,
         streams=[],
     )
-    # Should not raise
     result = await validate_evidence_node(
-        {"url": "https://target.example/watch/1", "extraction_results": [empty], "validator_replan_attempts": 1},
+        _state("https://target.example/watch/1", [empty], attempts=1),
         settings=_settings(),
         observer=None,
     )

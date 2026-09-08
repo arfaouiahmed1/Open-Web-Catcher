@@ -11,6 +11,7 @@ real OS-level file locking; they do not rely on tests/conftest.py fixtures.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -24,7 +25,7 @@ from src.storage.repositories import BackgroundJobRepository
 
 
 @pytest.fixture()
-def job_session_factory(tmp_path: Path) -> sessionmaker:
+def job_session_factory(tmp_path: Path) -> Iterator[sessionmaker]:
     """File-based SQLite engine + sessionmaker over a fresh temp database.
 
     A real file (not ``sqlite://``) is required so that multiple sessions map
@@ -119,7 +120,9 @@ def test_claim_next_drains_in_created_at_order_then_returns_none(
         second = repo.claim_next()
         third = repo.claim_next()
         exhausted = repo.claim_next()
-
+        assert first is not None
+        assert second is not None
+        assert third is not None
         assert [r.run_id for r in (first, second, third)] == ["run-0", "run-1", "run-2"]
         assert all(r.status == "running" for r in (first, second, third))
         assert exhausted is None
@@ -161,6 +164,7 @@ def test_claim_next_lease_floor_is_five_seconds(job_session_factory: sessionmake
         claimed = BackgroundJobRepository(session).claim_next(lease_seconds=0)
         assert claimed is not None
         assert claimed.lease_expires_at is not None
+        assert claimed.started_at is not None
         delta = (claimed.lease_expires_at - claimed.started_at).total_seconds()
         # Current semantics: lease floor is max(5, lease_seconds).
         assert 4.5 <= delta <= 10.0, f"unexpected lease length {delta}s"

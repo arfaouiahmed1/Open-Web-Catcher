@@ -261,18 +261,18 @@ def _collect_screenshot_urls_from_object(value: dict[str, Any], out: list[str]) 
                 out.append(candidate)
 
     for key in _SCREENSHOT_SINGLE_KEYS:
-        candidate = value.get(key)
-        if _is_screenshot_url(candidate):
-            text = str(candidate).strip()
+        raw = value.get(key)
+        if _is_screenshot_url(raw):
+            text = str(raw).strip()
             if text not in out:
                 out.append(text)
 
     for key in _SCREENSHOT_MULTI_KEYS:
         urls = value.get(key)
         if isinstance(urls, (list, tuple, set)):
-            for candidate in urls:
-                if _is_screenshot_url(candidate):
-                    text = str(candidate).strip()
+            for item in urls:
+                if _is_screenshot_url(item):
+                    text = str(item).strip()
                     if text not in out:
                         out.append(text)
 
@@ -328,6 +328,7 @@ def _collect_attributed_screenshots(
         details = event.details or {}
         actor = str(event.actor or "")
         stack = pending_by_actor.setdefault(actor, [])
+        started: dict[str, Any] | None = None
         if event.kind == "tool_call_started":
             tool_call_id = str(details.get("tool_call_id", "") or "")
             started = {
@@ -343,8 +344,8 @@ def _collect_attributed_screenshots(
         started = None
         if event.kind == "tool_call_finished":
             tool_call_id = str(details.get("tool_call_id", "") or "")
-            if tool_call_id:
-                started = pending_by_id.pop(tool_call_id, None)
+            if tool_call_id and tool_call_id in pending_by_id:
+                started = pending_by_id.pop(tool_call_id)
             if started is None and stack:
                 started = stack.pop()
             elif started is not None:
@@ -2376,9 +2377,9 @@ def _orchestrator_extraction_checks(result: PipelineResult) -> list[dict[str, An
             [
                 *list(extraction.screenshots or []),
                 *[
-                    server.screenshot_url
+                    url
                     for server in extraction.servers
-                    if getattr(server, "screenshot_url", None)
+                    if (url := getattr(server, "screenshot_url", None))
                 ],
             ]
         )
@@ -2768,7 +2769,8 @@ class SiteHintRepository:
                 # clean slate so the retry takes the UPDATE path.
                 last_exc = exc
                 self._session.rollback()
-        raise last_exc  # pragma: no cover - both attempts lost the race
+        assert last_exc is not None  # pragma: no cover - both attempts lost the race
+        raise last_exc
 
     def prune_expired(self, *, now: datetime | None = None) -> int:
         """Delete hints whose TTL has elapsed; returns how many rows died."""
@@ -2821,7 +2823,7 @@ class SiteHintRepository:
         (0.0 = identical direction). Rows without embeddings never match.
         """
         query_vector = [float(item) for item in query_embedding]
-        filters = [SiteHintRecord.embedding.isnot(None)]
+        filters: list[Any] = [SiteHintRecord.embedding.isnot(None)]
         if domain:
             filters.append(SiteHintRecord.domain == _hint_domain(domain))
         if page_type:

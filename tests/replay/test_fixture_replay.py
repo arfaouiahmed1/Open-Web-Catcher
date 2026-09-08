@@ -20,6 +20,7 @@ import threading
 import time
 import urllib.request
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -32,7 +33,7 @@ try:
     import importlib.util
 
     spec = importlib.util.spec_from_file_location("serve_fixtures", str(ROOT / "scripts" / "serve_fixtures.py"))
-    serve_fixtures = importlib.util.module_from_spec(spec)  # type: ignore
+    serve_fixtures: ModuleType | None = importlib.util.module_from_spec(spec)  # type: ignore
     assert spec and spec.loader
     spec.loader.exec_module(serve_fixtures)  # type: ignore
 except Exception:

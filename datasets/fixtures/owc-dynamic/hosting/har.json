@@ -1,0 +1,47 @@
+{
+  "log": {
+    "version": "1.2",
+    "creator": { "name": "OWC Fixture Replay", "version": "2.0.0" },
+    "entries": [
+      {
+        "request": {
+          "method": "GET",
+          "url": "http://hosting.owc.test/watch/match-101"
+        },
+        "response": {
+          "status": 200,
+          "headers": [{ "name": "content-type", "value": "text/html; charset=utf-8" }],
+          "content": { "mimeType": "text/html" }
+        }
+      },
+      {
+        "request": {
+          "method": "GET",
+          "url": "http://hosting.owc.test/streams/live/master.m3u8"
+        },
+        "response": {
+          "status": 200,
+          "headers": [{ "name": "content-type", "value": "application/vnd.apple.mpegurl" }],
+          "content": {
+            "mimeType": "application/vnd.apple.mpegurl",
+            "text": "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1920x1080,CODECS=\"avc1.640028,mp4a.40.2\"\nchunklist_1080p.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=1200000,RESOLUTION=1280x720,CODECS=\"avc1.4d401f,mp4a.40.2\"\nchunklist_720p.m3u8\n"
+          }
+        }
+      },
+      {
+        "request": {
+          "method": "GET",
+          "url": "http://hosting.owc.test/streams/backup/stream.m3u8"
+        },
+        "response": {
+          "status": 200,
+          "headers": [{ "name": "content-type", "value": "application/vnd.apple.mpegurl" }],
+          "content": {
+            "mimeType": "application/vnd.apple.mpegurl",
+            "text": "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000,\nseg_0.ts\n"
+          }
+        }
+      }
+    ]
+  }
+}

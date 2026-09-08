@@ -33,6 +33,7 @@ _AGENT_CONTRACT = ""
 
 
 class EmbeddedPageAgent:
+    llm: Any | None
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.llm = None
@@ -137,7 +138,7 @@ class EmbeddedPageAgent:
                     result = await run_agent_loop(
                         settings=self.settings,
                         llm=self.llm,
-                        tools=tools,
+                        tools=tools.tools,
                         system_prompt=compiled_prompt.content,
                         initial_message=initial_message,
                         max_tool_calls=self.settings.embedded_page_max_tool_calls,
@@ -378,7 +379,7 @@ def _normalize_protocol_details(
                 or _protocol_from_url(url)
             ).strip()
             role = str(raw.get("role") or _stream_role_from_url(url, protocol)).strip()
-            detail = {
+            detail: dict[str, Any] = {
                 "protocol": protocol,
                 "url": url,
                 "role": role,
@@ -392,7 +393,7 @@ def _normalize_protocol_details(
         else:
             url = str(raw or "").strip()
             protocol = default_protocol or _protocol_from_url(url)
-            detail = {
+            detail: dict[str, Any] = {
                 "protocol": protocol,
                 "url": url,
                 "role": _stream_role_from_url(url, protocol),
@@ -758,12 +759,12 @@ def _normalize_embedded_output(output: dict[str, Any]) -> dict[str, Any]:
             normalize_channel_name(str(normalized.get("primary_channel") or normalized.get("channel") or "").strip())
             or normalize_channel_name(str(channel_match.get("channel_name") or "").strip()),
             *[
-                normalize_channel_name(server.get("detected_channel"))
+                normalize_channel_name(str(server.get("detected_channel") or ""))
                 for server in servers
                 if isinstance(server, dict)
             ],
             *[
-                normalize_channel_name(item)
+                normalize_channel_name(str(item or ""))
                 for item in channel_match.get("channel_candidates", [])
             ],
         ]

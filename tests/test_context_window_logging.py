@@ -179,6 +179,7 @@ def test_context_window_fields_are_persisted_into_llm_calls_and_rollups() -> Non
         assert [row.model_name for row in agent_rows] == ["gemini-test", "gemini-test"]
 
         payload = OperatorConsoleRepository(session).get_run_detail(trace.run_id)
+        assert payload is not None
         rollups = [
             row for row in payload["agent_rollups"]
             if row["actor"] == "landing"

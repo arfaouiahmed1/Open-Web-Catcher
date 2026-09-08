@@ -1,8 +1,10 @@
+from typing import Any, cast
 import pytest
 
 from src.agents.email_generator import generate_takedown_emails
 from src.agents.hosting_page import _normalize_hosting_output
 from src.agents.orchestrator import (
+    PipelineState,
     _build_embedded_handoff,
     _build_hosting_handoff,
     _build_pipeline_result,
@@ -25,6 +27,25 @@ from src.models.schemas import (
     MatchInfo,
 )
 from src.utils.config import Settings
+
+def _make_state(**overrides: Any) -> PipelineState:
+    base: PipelineState = {
+        "url": "https://sports.example",
+        "run_id": "test-run",
+        "classification": None,
+        "matches": [],
+        "extraction_results": [],
+        "pending_hosting_urls": [],
+        "pending_embedded_urls": [],
+        "provider_analysis": [],
+        "takedown_emails": [],
+        "invalid_items": [],
+        "validation_report": None,
+        "validator_replan_attempts": 0,
+        "error": "",
+        "gate_no_target": False,
+    }
+    return cast(PipelineState, {**base, **overrides})
 
 
 def test_hosting_output_promotes_partial_success_embed_decision() -> None:
@@ -58,7 +79,7 @@ def test_hosting_output_promotes_partial_success_embed_decision() -> None:
 
 
 def test_requires_embedded_followup_uses_explicit_triggers_only() -> None:
-    base_kwargs = dict(
+    base_kwargs: dict[str, Any] = dict(
         url="https://host.example.com/watch/1",
         page_type=PageType.HOSTING,
         status=ExtractionStatus.SUCCESS,
@@ -115,7 +136,7 @@ def test_embedded_classification_with_site_shell_video_falls_back_to_hosting() -
         ),
     )
 
-    assert route_after_classification({"classification": classification}) == "queue_root_hosting"
+    assert route_after_classification(_make_state(classification=classification)) == "queue_root_hosting"
 
 
 def test_embedded_classification_with_real_player_stays_embedded() -> None:
@@ -129,20 +150,20 @@ def test_embedded_classification_with_real_player_stays_embedded() -> None:
         ),
     )
 
-    assert route_after_classification({"classification": classification}) == "queue_root_embedded"
+    assert route_after_classification(_make_state(classification=classification)) == "queue_root_embedded"
 
 
 def test_hosting_handoff_preserves_landing_route_and_iframe_context() -> None:
     handoff = _build_hosting_handoff(
-        {
-            "url": "https://istreameast.app/v3",
-            "classification": ClassificationResult(
+        _make_state(
+            url="https://istreameast.app/v3",
+            classification=ClassificationResult(
                 url="https://istreameast.app/v3",
                 page_type=PageType.LANDING,
                 confidence=Confidence.HIGH,
                 reasoning="listing page",
             ),
-            "matches": [
+            matches=[
                 MatchInfo(
                     url="https://istreameast.app/game/123",
                     title="Sweden vs Czechia",
@@ -158,7 +179,7 @@ def test_hosting_handoff_preserves_landing_route_and_iframe_context() -> None:
                     ],
                 )
             ],
-        },
+        ),
         target_url="https://istreameast.app/game/123",
         memory_hint_text="",
     )
@@ -172,15 +193,15 @@ def test_hosting_handoff_preserves_landing_route_and_iframe_context() -> None:
 
 def test_hosting_handoff_preserves_landing_match_metadata() -> None:
     handoff = _build_hosting_handoff(
-        {
-            "url": "https://sports.example",
-            "classification": ClassificationResult(
+        _make_state(
+            url="https://sports.example",
+            classification=ClassificationResult(
                 url="https://sports.example",
                 page_type=PageType.LANDING,
                 confidence=Confidence.HIGH,
                 reasoning="schedule grid with live rows",
             ),
-            "matches": [
+            matches=[
                 MatchInfo(
                     url="https://sports.example/watch/ajax-groningen",
                     title="Eredivisie: Ajax Amsterdam vs Groningen",
@@ -199,7 +220,7 @@ def test_hosting_handoff_preserves_landing_match_metadata() -> None:
                     visual_evidence="green expanded row with four channel links under the live fixture",
                 )
             ],
-        },
+        ),
         target_url="https://sports.example/watch/ajax-groningen",
         memory_hint_text="",
     )
@@ -220,15 +241,15 @@ def test_hosting_handoff_preserves_landing_match_metadata() -> None:
 
 def test_hosting_handoff_preserves_landing_server_hints() -> None:
     handoff = _build_hosting_handoff(
-        {
-            "url": "https://streamed.example",
-            "classification": ClassificationResult(
+        _make_state(
+            url="https://streamed.example",
+            classification=ClassificationResult(
                 url="https://streamed.example",
                 page_type=PageType.LANDING,
                 confidence=Confidence.HIGH,
                 reasoning="event cards",
             ),
-            "matches": [
+            matches=[
                 MatchInfo(
                     url="https://streamed.example/watch/bologna-vs-inter-milan-2265406",
                     title="Bologna vs Inter Milan",
@@ -251,7 +272,7 @@ def test_hosting_handoff_preserves_landing_server_hints() -> None:
                     ],
                 )
             ],
-        },
+        ),
         target_url="https://streamed.example/watch/bologna-vs-inter-milan-2265406",
         memory_hint_text="",
     )
@@ -264,14 +285,14 @@ def test_hosting_handoff_preserves_landing_server_hints() -> None:
 
 def test_embedded_handoff_preserves_landing_match_metadata_from_hosting_source() -> None:
     handoff = _build_embedded_handoff(
-        {
-            "url": "https://sports.example",
-            "classification": ClassificationResult(
+        _make_state(
+            url="https://sports.example",
+            classification=ClassificationResult(
                 url="https://sports.example",
                 page_type=PageType.LANDING,
                 confidence=Confidence.HIGH,
             ),
-            "matches": [
+            matches=[
                 MatchInfo(
                     url="https://sports.example/watch/ajax-groningen",
                     title="Eredivisie: Ajax Amsterdam vs Groningen",
@@ -283,7 +304,7 @@ def test_embedded_handoff_preserves_landing_match_metadata_from_hosting_source()
                     visual_evidence="landing row expanded into server choices",
                 )
             ],
-            "extraction_results": [
+            extraction_results=[
                 ExtractionResult(
                     url="https://sports.example/watch/ajax-groningen",
                     page_type=PageType.HOSTING,
@@ -297,7 +318,7 @@ def test_embedded_handoff_preserves_landing_match_metadata_from_hosting_source()
                     },
                 )
             ],
-        },
+        ),
         target_url="https://embed.example/player/ajax-groningen",
         memory_hint_text="",
     )
@@ -346,14 +367,13 @@ async def test_hosting_page_node_filters_popup_ad_embedded_handoffs(monkeypatch)
     monkeypatch.setattr("src.agents.hosting_page.HostingPageAgent.run", fake_run)
 
     result = await hosting_page_node(
-        {
-            "url": "https://sports.example",
-            "classification": ClassificationResult(
+        _make_state(
+            classification=ClassificationResult(
                 url="https://sports.example",
                 page_type=PageType.LANDING,
                 confidence=Confidence.HIGH,
             ),
-            "matches": [
+            matches=[
                 MatchInfo(
                     url="https://sports.example/watch/ajax-groningen",
                     title="Ajax Amsterdam vs Groningen",
@@ -362,13 +382,8 @@ async def test_hosting_page_node_filters_popup_ad_embedded_handoffs(monkeypatch)
                     status="live",
                 )
             ],
-            "extraction_results": [],
-            "pending_hosting_urls": ["https://sports.example/watch/ajax-groningen"],
-            "pending_embedded_urls": [],
-            "provider_analysis": [],
-            "takedown_emails": [],
-            "error": "",
-        },
+            pending_hosting_urls=["https://sports.example/watch/ajax-groningen"],
+        ),
         settings=Settings(),
         observer=None,
         memory=None,
@@ -403,21 +418,13 @@ async def test_landing_page_node_queues_hosting_pages_with_visual_evidence_list(
     monkeypatch.setattr("src.agents.landing_page.LandingPageAgent.run", fake_run)
 
     result = await landing_page_node(
-        {
-            "url": "https://sports.example",
-            "classification": ClassificationResult(
+        _make_state(
+            classification=ClassificationResult(
                 url="https://sports.example",
                 page_type=PageType.LANDING,
                 confidence=Confidence.HIGH,
             ),
-            "matches": [],
-            "extraction_results": [],
-            "pending_hosting_urls": [],
-            "pending_embedded_urls": [],
-            "provider_analysis": [],
-            "takedown_emails": [],
-            "error": "",
-        },
+        ),
         settings=Settings(),
         observer=None,
         memory=None,
@@ -452,21 +459,15 @@ def test_landing_match_handoff_splits_embeds_from_direct_streams() -> None:
 
 
 def test_embedded_target_requires_hosting_source_unless_root_embedded() -> None:
-    state = {
-        "url": "https://site.example",
-        "classification": ClassificationResult(
+    state = _make_state(
+        url="https://site.example",
+        classification=ClassificationResult(
             url="https://site.example",
             page_type=PageType.LANDING,
             confidence=Confidence.HIGH,
         ),
-        "extraction_results": [],
-        "pending_hosting_urls": [],
-        "pending_embedded_urls": ["https://embed.example/player/1"],
-        "matches": [],
-        "provider_analysis": [],
-        "takedown_emails": [],
-        "error": "",
-    }
+        pending_embedded_urls=["https://embed.example/player/1"],
+    )
 
     assert _embedded_target_allowed(state, "https://embed.example/player/1") is False
 
@@ -540,16 +541,15 @@ def test_provider_analysis_only_receives_protocol_stream_urls() -> None:
 
 def test_pipeline_result_distinguishes_no_hosting_pages() -> None:
     result = _build_pipeline_result(
-        {
-            "run_id": "run-no-hosting",
-            "url": "https://landing.example",
-            "classification": ClassificationResult(
+        _make_state(
+            run_id="run-no-hosting",
+            url="https://landing.example",
+            classification=ClassificationResult(
                 url="https://landing.example",
                 page_type=PageType.LANDING,
                 confidence=Confidence.HIGH,
             ),
-            "matches": [],
-            "extraction_results": [
+            extraction_results=[
                 ExtractionResult(
                     url="https://landing.example",
                     page_type=PageType.LANDING,
@@ -558,12 +558,7 @@ def test_pipeline_result_distinguishes_no_hosting_pages() -> None:
                     metadata={"hosting_pages": []},
                 )
             ],
-            "pending_hosting_urls": [],
-            "pending_embedded_urls": [],
-            "provider_analysis": [],
-            "takedown_emails": [],
-            "error": "",
-        }
+        )
     )
 
     assert result.final_status == ExtractionStatus.NO_HOSTING_PAGES
@@ -571,16 +566,15 @@ def test_pipeline_result_distinguishes_no_hosting_pages() -> None:
 
 def test_pipeline_result_distinguishes_page_inaccessible() -> None:
     result = _build_pipeline_result(
-        {
-            "run_id": "run-inaccessible",
-            "url": "https://dead.example",
-            "classification": ClassificationResult(
+        _make_state(
+            run_id="run-inaccessible",
+            url="https://dead.example",
+            classification=ClassificationResult(
                 url="https://dead.example",
                 page_type=PageType.LANDING,
                 confidence=Confidence.HIGH,
             ),
-            "matches": [],
-            "extraction_results": [
+            extraction_results=[
                 ExtractionResult(
                     url="https://dead.example",
                     page_type=PageType.LANDING,
@@ -590,12 +584,7 @@ def test_pipeline_result_distinguishes_page_inaccessible() -> None:
                     metadata={"hosting_pages": []},
                 )
             ],
-            "pending_hosting_urls": [],
-            "pending_embedded_urls": [],
-            "provider_analysis": [],
-            "takedown_emails": [],
-            "error": "",
-        }
+        )
     )
 
     assert result.final_status == ExtractionStatus.PAGE_INACCESSIBLE
@@ -603,16 +592,15 @@ def test_pipeline_result_distinguishes_page_inaccessible() -> None:
 
 def test_pipeline_result_distinguishes_no_streams() -> None:
     result = _build_pipeline_result(
-        {
-            "run_id": "run-no-streams",
-            "url": "https://host.example/watch/1",
-            "classification": ClassificationResult(
+        _make_state(
+            run_id="run-no-streams",
+            url="https://host.example/watch/1",
+            classification=ClassificationResult(
                 url="https://host.example/watch/1",
                 page_type=PageType.HOSTING,
                 confidence=Confidence.HIGH,
             ),
-            "matches": [],
-            "extraction_results": [
+            extraction_results=[
                 ExtractionResult(
                     url="https://host.example/watch/1",
                     page_type=PageType.HOSTING,
@@ -621,12 +609,7 @@ def test_pipeline_result_distinguishes_no_streams() -> None:
                     metadata={"decision": "no_stream_found"},
                 )
             ],
-            "pending_hosting_urls": [],
-            "pending_embedded_urls": [],
-            "provider_analysis": [],
-            "takedown_emails": [],
-            "error": "",
-        }
+        )
     )
 
     assert result.final_status == ExtractionStatus.NO_STREAMS

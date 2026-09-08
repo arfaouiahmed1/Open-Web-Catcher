@@ -451,7 +451,7 @@ class ShortTermMemory:
             common = run_memory.get("common", {}) if isinstance(run_memory, dict) else {}
             if not any(common.values()) and not run_memory.get("agent_specific"):
                 return ""
-            lines = ["- run memory: structured signals captured"]
+            lines: list[str] = ["- run memory: structured signals captured"]
             if common.get("url_patterns"):
                 lines.append("- run url patterns: " + ", ".join(common["url_patterns"][:4]))
             if common.get("critical_links"):
@@ -468,7 +468,7 @@ class ShortTermMemory:
                     lines.append(f"- server records remembered: {len(server_records)}")
             return "\n".join(lines)
 
-        lines: list[str] = []
+        lines = []
         for entry in recent:
             kind = entry.get("kind")
             if kind == "navigation":
@@ -827,10 +827,9 @@ class ShortTermMemory:
                 ):
                     discovered.append(resolved)
                     if isinstance(entry, dict):
-                        patterns = entry.get("patterns") if isinstance(entry.get("patterns"), dict) else {}
-                        url_pattern = str(
-                            entry.get("url_pattern") or patterns.get("url_pattern") or ""
-                        )
+                        raw_patterns = entry.get("patterns")
+                        patterns: dict[Any, Any] = raw_patterns if isinstance(raw_patterns, dict) else {}
+                        url_pattern = str(entry.get("url_pattern") or patterns.get("url_pattern") or "")
                         record = {
                             "url": resolved,
                             "title": str(

@@ -1,0 +1,11 @@
+{
+  "schema_version": "owc.fixture-oracle.v2",
+  "page_type": "embedded_page",
+  "expected_streams": [
+    {
+      "url": "http://embedded.owc.test/hls/live.m3u8",
+      "protocol": "hls"
+    }
+  ],
+  "mandatory_proof_kinds": ["screenshot", "network_entry"]
+}

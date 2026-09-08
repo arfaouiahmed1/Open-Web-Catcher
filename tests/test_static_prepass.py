@@ -27,6 +27,9 @@ def _landing_state() -> PipelineState:
         "pending_embedded_urls": [],
         "provider_analysis": [],
         "takedown_emails": [],
+        "invalid_items": [],
+        "validation_report": None,
+        "validator_replan_attempts": 0,
         "error": "",
         "gate_no_target": False,
     }

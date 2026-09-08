@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Watch Arsenal vs Chelsea Live Stream</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; padding: 20px; background: #111; color: #fff; }
+    .player-container { max-width: 800px; margin: 0 auto; background: #000; position: relative; }
+    video { width: 100%; height: 450px; display: block; background: #000; }
+    .server-tabs { display: flex; gap: 8px; margin: 15px 0; }
+    .server-btn { background: #333; color: #fff; border: 1px solid #555; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+    .server-btn.active { background: #228be6; border-color: #228be6; font-weight: bold; }
+    #play-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; cursor: pointer; }
+    #play-btn { background: #228be6; color: #fff; border: none; font-size: 20px; padding: 15px 30px; border-radius: 50px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Arsenal vs Chelsea - Live Match Stream</h1>
+  <div class="server-tabs">
+    <button class="server-btn active" id="server-1" onclick="switchServer('server1')">Server 1 (HD)</button>
+    <button class="server-btn" id="server-2" onclick="switchServer('server2')">Server 2 (Backup)</button>
+    <button class="server-btn" id="server-embed" onclick="switchServer('embed')">Server 3 (Embed Player)</button>
+  </div>
+
+  <div class="player-container">
+    <video id="player" controls playsinline></video>
+    <div id="play-overlay" onclick="startPlayback()">
+      <button id="play-btn">▶ Play Stream</button>
+    </div>
+    <iframe id="embed-frame" style="display:none; width: 100%; height: 450px; border:none;" src="about:blank"></iframe>
+  </div>
+
+  <script>
+    const streamUrls = {
+      server1: "http://hosting.owc.test/streams/live/master.m3u8",
+      server2: "http://hosting.owc.test/streams/backup/stream.m3u8",
+      embed: "http://embedded.owc.test/embed/player-101"
+    };
+
+    function startPlayback() {
+      document.getElementById('play-overlay').style.display = 'none';
+      const v = document.getElementById('player');
+      v.src = streamUrls.server1;
+      // Trigger a network request to the m3u8
+      fetch(streamUrls.server1).catch(() => {});
+      v.play().catch(() => {});
+    }
+
+    function switchServer(name) {
+      document.querySelectorAll('.server-btn').forEach(b => b.classList.remove('active'));
+      const btn = document.getElementById(name === 'server1' ? 'server-1' : name === 'server2' ? 'server-2' : 'server-embed');
+      if (btn) btn.classList.add('active');
+
+      if (name === 'embed') {
+        document.getElementById('player').style.display = 'none';
+        const f = document.getElementById('embed-frame');
+        f.style.display = 'block';
+        f.src = streamUrls.embed;
+      } else {
+        document.getElementById('embed-frame').style.display = 'none';
+        const v = document.getElementById('player');
+        v.style.display = 'block';
+        v.src = streamUrls[name];
+        fetch(streamUrls[name]).catch(() => {});
+        v.play().catch(() => {});
+      }
+    }
+  </script>
+</body>
+</html>

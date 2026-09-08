@@ -351,6 +351,12 @@ class HostRoutingHandler(BaseHTTPRequestHandler):
         # Quiet by default; print to stderr for diagnostics
         sys.stderr.write(f"[{self.log_date_time_string()}] {format % args}\n")
 
+    def _server_host_port(self) -> tuple[str, int]:
+        addr = self.server.server_address
+        if isinstance(addr, tuple) and len(addr) >= 2:
+            return (str(addr[0]), int(addr[1]))
+        return (DEFAULT_HOST, DEFAULT_PORT)
+
     def _host_key(self) -> str:
         raw = (self.headers.get("Host") or "").strip()
         if not raw:
@@ -446,7 +452,7 @@ class HostRoutingHandler(BaseHTTPRequestHandler):
                     "error": "no fixture for host",
                     "host": host,
                     "available_hosts": sorted(self.host_map.keys()),
-                    "hint": f"curl -H 'Host: <fixture-host>' http://{DEFAULT_HOST}:{self.server.server_address[1]}{raw_path}",
+                    "hint": f"curl -H 'Host: <fixture-host>' http://{DEFAULT_HOST}:{self._server_host_port()[1]}{raw_path}",
                     "har_note": "HAR replay for stream/embedded pages is via Playwright routeFromHAR, not this server path.",
                 },
                 indent=2,
@@ -560,14 +566,14 @@ class HostRoutingHandler(BaseHTTPRequestHandler):
     def _serve_listing(self) -> None:
         lines = ["<html><head><title>Fixture harness</title></head><body>"]
         lines.append(f"<h1>Snapshot harness — {len(self.host_map)} fixture host(s)</h1>")
-        lines.append(f"<p>Listening on {self.server.server_address[0]}:{self.server.server_address[1]} with Host-header routing.</p>")
+        lines.append(f"<p>Listening on {self._server_host_port()[0]}:{self._server_host_port()[1]} with Host-header routing.</p>")
         lines.append("<p>Use curl -H 'Host: &lt;fixture-host&gt;' to fetch a snapshot:</p>")
         lines.append("<ul>")
         for h, d in sorted(self.host_map.items()):
             rel = str(d.relative_to(ROOT)) if d.is_relative_to(ROOT) else str(d)
             lines.append(f'<li><code>{h}</code> → <code>{rel}</code> — '
                          f'<a href="/__hash?host={h}">hash</a> · '
-                         f'<code>curl -H &#39;Host: {h}&#39; http://127.0.0.1:{self.server.server_address[1]}/</code></li>')
+                         f'<code>curl -H &#39;Host: {h}&#39; http://127.0.0.1:{self._server_host_port()[1]}/</code></li>')
         lines.append("</ul>")
         lines.append("<h3>Bridge</h3>")
         lines.append("<p>host-resolver-rules is injected via <code>data/browser.runtime.json</code> "

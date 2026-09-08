@@ -85,6 +85,8 @@ def test_migration_backfill_stamps_naive_strings(tmp_path) -> None:
         str(Path(__file__).resolve().parents[2] / "alembic" / "versions"
             / "20260826_0020_utc_timestamp_backfill.py"),
     )
+    assert spec is not None
+    assert spec.loader is not None
     rev = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(rev)
 
@@ -113,9 +115,12 @@ def test_migration_backfill_stamps_naive_strings(tmp_path) -> None:
         assert fixed == 1
         # Idempotent: second pass fixes nothing.
         assert rev._backfill_sqlite(conn, "runs", "created_at") == 0
-        rows = dict(
-            conn.execute(sa.text("SELECT run_id, created_at FROM runs")).fetchall()
-        )
+        rows: dict[str, str] = {
+            row[0]: row[1]
+            for row in conn.execute(
+                sa.text("SELECT run_id, created_at FROM runs")
+            ).fetchall()
+        }
     assert rows["naive"] == "2026-05-05 05:05:05.000000+00:00"
     assert rows["aware"] == "2026-05-05 05:05:05+00:00"
 

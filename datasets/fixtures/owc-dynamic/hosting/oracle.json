@@ -1,0 +1,20 @@
+{
+  "schema_version": "owc.fixture-oracle.v2",
+  "page_type": "hosting_page",
+  "expected_servers": [
+    {
+      "label": "Server 1 (HD)",
+      "expected_stream": "http://hosting.owc.test/streams/live/master.m3u8",
+      "protocol": "hls"
+    },
+    {
+      "label": "Server 2 (Backup)",
+      "expected_stream": "http://hosting.owc.test/streams/backup/stream.m3u8",
+      "protocol": "hls"
+    }
+  ],
+  "expected_embedded_urls": [
+    "http://embedded.owc.test/embed/player-101"
+  ],
+  "mandatory_proof_kinds": ["screenshot", "network_entry", "manifest_probe"]
+}

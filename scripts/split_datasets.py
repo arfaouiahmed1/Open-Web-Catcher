@@ -9,7 +9,7 @@ DATASETS_DIR = Path("datasets")
 def read_csv(filepath: Path):
     """Read CSV and return rows."""
     rows = []
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, encoding='utf-8') as f:
         reader = csv.DictReader(f)
         for row in reader:
             rows.append(row)
@@ -49,7 +49,7 @@ write_csv(DATASETS_DIR / "spanish" / "small" / "sites.csv", small_rows, fieldnam
 write_csv(DATASETS_DIR / "spanish" / "medium" / "sites.csv", medium_rows, fieldnames)
 write_csv(DATASETS_DIR / "spanish" / "large" / "sites.csv", large_rows, fieldnames)
 
-print(f"Created datasets:")
+print("Created datasets:")
 print(f"  Arabic: small ({len(small_rows)}), medium ({len(medium_rows)}), large ({len(large_rows)})")
 print(f"  English: small ({len(small_rows)}), medium ({len(medium_rows)}), large ({len(large_rows)})")
 print(f"  Spanish: small ({len(small_rows)}), medium ({len(medium_rows)}), large ({len(large_rows)})")

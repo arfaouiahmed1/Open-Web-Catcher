@@ -31,9 +31,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
-
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.sessions import SSEConnection, StreamableHttpConnection
 from langchain_mcp_adapters.tools import load_mcp_tools
 
 from src.utils.config import Settings
@@ -62,11 +62,7 @@ def load_tool_manifest() -> dict[str, Any]:
 def get_profile_tools(profile: str, manifest: dict[str, Any] | None = None) -> set[str]:
     """Get required tool names for a profile from the manifest."""
     m = manifest if manifest is not None else load_tool_manifest()
-    return {
-        str(t["name"])
-        for t in m.get("tools", [])
-        if profile in t.get("profiles", [])
-    }
+    return {str(t["name"]) for t in m.get("tools", []) if profile in t.get("profiles", [])}
 
 
 REQUIRED_TOOLS_BY_PROFILE: dict[str, set[str]] = {
@@ -234,6 +230,7 @@ async def agent_tools(
         if bool(getattr(settings, "memory_enabled", True)):
             try:
                 from src.memory.agentic_tool import build_memory_search_tool
+
                 tools = [*tools, build_memory_search_tool()]
             except Exception as exc:
                 logger.warning("Could not append memory_search tool: %s", exc)
@@ -242,6 +239,7 @@ async def agent_tools(
         if profile in {"landing", "hosting", "embedded"}:
             try:
                 from src.agents.runtime.tools_plan import build_plan_tool
+
                 tools = [*tools, build_plan_tool()]
             except Exception as exc:
                 logger.debug("Plan tool not appended (will be available after step 5): %s", exc)

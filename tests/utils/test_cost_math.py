@@ -228,6 +228,7 @@ def test_observer_prices_gemini_native_cached_content_payload() -> None:
     assert rollup["estimated_total_cost_usd"] == pytest.approx(1.59)
 
     metrics = observer.trace().metrics
+    assert metrics is not None
     assert metrics.total_cached_input_tokens == 400_000
     assert metrics.total_new_input_tokens == 600_000
     # Thinking dollars fold into the stored output-cost line: 0.50 + 0.25 = 0.75
@@ -261,7 +262,9 @@ def test_observer_prices_anthropic_disjoint_without_clamp_or_double_discount() -
     assert rollup["estimated_output_cost_usd"] == pytest.approx(0.75)
     assert rollup["estimated_total_cost_usd"] == pytest.approx(1.6275)
 
-    model_usage = observer.trace().metrics.model_usage[0]
+    trace_metrics = observer.trace().metrics
+    assert trace_metrics is not None
+    model_usage = trace_metrics.model_usage[0]
     assert model_usage.new_input_tokens == 200_000
     assert model_usage.estimated_total_cost_usd == pytest.approx(1.6275)
 
@@ -284,6 +287,7 @@ def test_unpriced_model_emits_warning_event_once_per_model() -> None:
     assert {event.details["model_name"] for event in warnings} == {"mystery-model", "other-model"}
 
     metrics = observer.trace().metrics
+    assert metrics is not None
     assert metrics.total_llm_calls == 3
     assert metrics.estimated_total_cost_usd == 0.0
 

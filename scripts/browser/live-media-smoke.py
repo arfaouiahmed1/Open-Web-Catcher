@@ -117,8 +117,9 @@ def parse_tool_result(result: Any) -> dict[str, Any]:
 
 
 def first_video_ref(context: dict[str, Any]) -> dict[str, str]:
-    data = context.get("data") if isinstance(context.get("data"), dict) else context
-    candidates = data.get("top_candidates") if isinstance(data, dict) else []
+    raw_data = context.get("data")
+    data: dict[str, Any] = raw_data if isinstance(raw_data, dict) else context
+    candidates = data.get("top_candidates")
     if not isinstance(candidates, list):
         return {}
     for item in candidates:
@@ -137,9 +138,13 @@ def smoke_url(api_base: str, url: str, profile: str, capture_ms: int) -> dict[st
     context = call_tool(api_base, profile, "inspect", {"view": "media"})
     playback = call_tool(api_base, profile, "interact", {"action": "play"})
     streams = call_tool(api_base, profile, "harvest", {"frame_path": "root"})
-    stream_data = streams.get("data") if isinstance(streams.get("data"), dict) else streams
-    playback_data = playback.get("data") if isinstance(playback.get("data"), dict) else playback
-    video_found = bool(context.get("data", {}).get("videos"))
+    raw_stream_data = streams.get("data")
+    stream_data: dict[str, Any] = raw_stream_data if isinstance(raw_stream_data, dict) else streams
+    raw_playback_data = playback.get("data")
+    playback_data: dict[str, Any] = raw_playback_data if isinstance(raw_playback_data, dict) else playback
+    raw_context_data = context.get("data")
+    context_data: dict[str, Any] = raw_context_data if isinstance(raw_context_data, dict) else context
+    video_found = bool(context_data.get("videos"))
     total_streams = len(stream_data.get("streams", []))
     return {
         "url": url,

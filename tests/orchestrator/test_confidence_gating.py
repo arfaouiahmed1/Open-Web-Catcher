@@ -9,10 +9,13 @@ Covers:
 - thresholds come from Settings.
 """
 
+from typing import Any, cast
+
 import pytest
 
 from src.agents.classification import _parse_output
 from src.agents.orchestrator import (
+    PipelineState,
     _build_pipeline_result,
     _confidence_gate_thresholds,
     classify_node,
@@ -24,6 +27,26 @@ from src.models.schemas import ClassificationResult, ExtractionResult, StreamURL
 from src.utils.config import Settings
 
 URL = "https://target.example/watch/1"
+
+def _make_state(**overrides: Any) -> PipelineState:
+    base: dict[str, Any] = {
+        "url": URL,
+        "run_id": "run-1",
+        "classification": None,
+        "matches": [],
+        "extraction_results": [],
+        "pending_hosting_urls": [],
+        "pending_embedded_urls": [],
+        "provider_analysis": [],
+        "takedown_emails": [],
+        "invalid_items": [],
+        "validation_report": None,
+        "validator_replan_attempts": 0,
+        "error": "",
+        "gate_no_target": False,
+    }
+    base.update(overrides)
+    return cast(PipelineState, base)
 
 
 def _classification(
@@ -69,33 +92,31 @@ def test_route_after_classification_transition_table(
     source: str,
     expected: str,
 ) -> None:
-    state = {"classification": _classification(page_type, confidence, source=source)}
+    state = _make_state(classification=_classification(page_type, confidence, source=source))
     assert route_after_classification(state) == expected
 
 
 @pytest.mark.unit
 def test_route_after_classification_missing_classification_legacy_guard() -> None:
-    assert route_after_classification({"classification": None}) == "analyze_providers"
+    assert route_after_classification(_make_state(classification=None)) == "analyze_providers"
 
 
 @pytest.mark.unit
 def test_route_after_classification_embedded_site_shell_fallback_still_applies() -> None:
-    state = {
-        "classification": _classification(
+    state = _make_state(
+        classification=_classification(
             PageType.EMBEDDED,
             Confidence.HIGH,
             reasoning="autoplay background video with nav menu and cookie banner",
         )
-    }
+    )
     assert route_after_classification(state) == "queue_root_hosting"
 
 
 @pytest.mark.unit
 def test_settings_thresholds_are_honored_by_the_real_router() -> None:
     strict = Settings(classification_confidence_gate_low=90)
-    medium_landing = {
-        "classification": _classification(PageType.LANDING, Confidence.MEDIUM)
-    }
+    medium_landing = _make_state(classification=_classification(PageType.LANDING, Confidence.MEDIUM))
     assert route_after_classification(medium_landing) == "landing_page"
     assert route_after_classification(medium_landing, settings=strict) == "no_target"
 
@@ -119,7 +140,7 @@ async def test_classify_node_retries_once_and_recovers(monkeypatch) -> None:
 
     monkeypatch.setattr("src.agents.classification.ClassificationAgent.run", fake_run)
 
-    result = await classify_node({"url": URL}, settings=Settings(), observer=None)
+    result = await classify_node(_make_state(url=URL), settings=Settings(), observer=None)
 
     assert len(calls) == 2
     assert calls[0]["instruction_override"] is None
@@ -128,7 +149,7 @@ async def test_classify_node_retries_once_and_recovers(monkeypatch) -> None:
     assert result["classification"].confidence == Confidence.HIGH
     assert (
         route_after_classification(
-            {"classification": result["classification"]}, settings=Settings()
+            _make_state(classification=result["classification"]), settings=Settings()
         )
         == "queue_root_hosting"
     )
@@ -145,13 +166,13 @@ async def test_classify_node_low_after_retry_routes_to_no_target(monkeypatch) ->
 
     monkeypatch.setattr("src.agents.classification.ClassificationAgent.run", fake_run)
 
-    result = await classify_node({"url": URL}, settings=Settings(), observer=None)
+    result = await classify_node(_make_state(url=URL), settings=Settings(), observer=None)
 
     assert len(calls) == 2
     assert result["classification"].confidence == Confidence.LOW
     assert (
         route_after_classification(
-            {"classification": result["classification"]}, settings=Settings()
+            _make_state(classification=result["classification"]), settings=Settings()
         )
         == "no_target"
     )
@@ -168,7 +189,7 @@ async def test_classify_node_high_confidence_skips_retry(monkeypatch) -> None:
 
     monkeypatch.setattr("src.agents.classification.ClassificationAgent.run", fake_run)
 
-    await classify_node({"url": URL}, settings=Settings(), observer=None)
+    await classify_node(_make_state(url=URL), settings=Settings(), observer=None)
 
     assert len(calls) == 1
 
@@ -177,23 +198,17 @@ async def test_classify_node_high_confidence_skips_retry(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_no_target_node_marks_state_for_terminal_status() -> None:
     update = await no_target_node(
-        {"classification": _classification(PageType.UNKNOWN, Confidence.LOW)}, observer=None
+        _make_state(classification=_classification(PageType.UNKNOWN, Confidence.LOW)),
+        observer=None,
     )
     assert update["gate_no_target"] is True
 
-    state = {
-        "run_id": "run-1",
-        "url": URL,
-        "classification": _classification(PageType.UNKNOWN, Confidence.LOW),
-        "matches": [],
-        "extraction_results": [],
-        "pending_hosting_urls": [],
-        "pending_embedded_urls": [],
-        "provider_analysis": [],
-        "takedown_emails": [],
-        "error": "",
+    state = _make_state(
+        run_id="run-1",
+        url=URL,
+        classification=_classification(PageType.UNKNOWN, Confidence.LOW),
         **update,
-    }
+    )
     assert _build_pipeline_result(state).final_status == ExtractionStatus.NO_TARGET
 
 
@@ -206,19 +221,13 @@ def test_pipeline_result_prefers_streams_over_gate_flag() -> None:
         agent_type=AgentType.HOSTING_PAGE,
         streams=[StreamURL(url="https://cdn.example.com/master.m3u8", protocol="hls")],
     )
-    state = {
-        "run_id": "run-1",
-        "url": URL,
-        "classification": None,
-        "matches": [],
-        "extraction_results": [extraction],
-        "pending_hosting_urls": [],
-        "pending_embedded_urls": [],
-        "provider_analysis": [],
-        "takedown_emails": [],
-        "error": "",
-        "gate_no_target": True,
-    }
+    state = _make_state(
+        run_id="run-1",
+        url=URL,
+        classification=None,
+        extraction_results=[extraction],
+        gate_no_target=True,
+    )
     assert _build_pipeline_result(state).final_status == ExtractionStatus.SUCCESS
 
 

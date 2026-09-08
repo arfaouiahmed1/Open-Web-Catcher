@@ -157,8 +157,8 @@ def import_legacy_site_memory(
             db_path = resolved_db
         if profiles_path is None:
             profiles_path = resolved_profiles
-    db_file = Path(db_path)
-    profiles_file = Path(profiles_path)
+    db_file = Path(db_path) if db_path is not None else None
+    profiles_file = Path(profiles_path) if profiles_path is not None else None
 
     accumulators: dict[tuple[str, str], _HintAccumulator] = {}
 

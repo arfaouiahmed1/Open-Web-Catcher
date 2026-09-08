@@ -1,0 +1,15 @@
+{
+  "cookies": [
+    {
+      "name": "consent_accepted",
+      "value": "1",
+      "domain": "landing.owc.test",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": []
+}

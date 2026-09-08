@@ -49,8 +49,12 @@ class ToolResultCache:
         self._cache: dict[str, str] = {}
         self._current_page_state_id: str = ""
         self._generation: int = 0
-        self.invalidations: int = 0
-        self.last_invalidation_reason: str = ""
+        self.hits = 0
+        self.misses = 0
+        self.bypasses = 0
+        self.writes = 0
+        self.invalidations = 0
+        self.last_invalidation_reason = ""
     @property
     def generation(self) -> int:
         return self._generation
@@ -82,10 +86,13 @@ class ToolResultCache:
 
     def get(self, tool_name: str, args: dict[str, Any]) -> tuple[str | None, str]:
         if not self.is_eligible(tool_name):
+            self.bypasses += 1
             return None, "ineligible"
         key = self._make_key(tool_name, args)
         if key in self._cache:
+            self.hits += 1
             return self._cache[key], "hit"
+        self.misses += 1
         return None, "miss"
 
     def put(self, tool_name: str, args: dict[str, Any], result: str) -> None:
@@ -97,6 +104,7 @@ class ToolResultCache:
             del self._cache[first_key]
         key = self._make_key(tool_name, args)
         self._cache[key] = result
+        self.writes += 1
 
 
 def serialize_tool_output(value: Any) -> str:

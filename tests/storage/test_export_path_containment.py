@@ -21,8 +21,8 @@ class _FrozenDateTime(datetime):
     """Deterministic clock for code that imported ``datetime`` directly."""
 
     @classmethod
-    def utcnow(cls) -> datetime:
-        return datetime(2026, 8, 22, 12, 0, 0)
+    def utcnow(cls) -> _FrozenDateTime:
+        return cls(2026, 8, 22, 12, 0, 0)
 
     @classmethod
     def now(cls, tz=None) -> datetime:  # type: ignore[override]
@@ -69,9 +69,9 @@ def _assert_contained(result: str | Path) -> Path:
     """Assert the export destination is inside ``data/exports/<timestamp>/``."""
     result_path = Path(result)
     assert not result_path.is_absolute(), f"export escaped to absolute path: {result_path}"
-    assert (
-        result_path.parts[:3] == EXPORTS_ROOT_PARTS
-    ), f"export not under server-controlled root: {result_path}"
+    assert result_path.parts[:3] == EXPORTS_ROOT_PARTS, (
+        f"export not under server-controlled root: {result_path}"
+    )
     return result_path
 
 

@@ -10,11 +10,14 @@ the actual ``pgvector`` package are guarded with ``pytest.importorskip``.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.memory.site_hint_writer import summarize_raw_entry, write_site_hint
@@ -23,7 +26,7 @@ from src.storage.repositories import SiteHintRepository
 
 
 @pytest.fixture()
-def session_factory():
+def session_factory() -> Iterator[Callable[[], Session]]:
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -39,7 +42,7 @@ def session_factory():
 
 
 @pytest.fixture()
-def session(session_factory):
+def session(session_factory: Callable[[], Session]) -> Iterator[Session]:
     db = session_factory()
     try:
         yield db
@@ -50,7 +53,7 @@ def session(session_factory):
 # --------------------------------------------------------------------- CRUD
 
 
-def test_upsert_hint_creates_then_updates_same_row(session: object) -> None:
+def test_upsert_hint_creates_then_updates_same_row(session: Session) -> None:
     repo = SiteHintRepository(session)
 
     created = repo.upsert_hint(
@@ -82,7 +85,7 @@ def test_upsert_hint_creates_then_updates_same_row(session: object) -> None:
     assert rows[0].success_rate == pytest.approx(0.5)
 
 
-def test_get_hints_filters_domain_and_page_type_with_limit(session: object) -> None:
+def test_get_hints_filters_domain_and_page_type_with_limit(session: Session) -> None:
     repo = SiteHintRepository(session)
     for page_type in ("landing_page", "hosting_page", "embedded_page"):
         for domain in ("alpha.tv", "beta.tv"):
@@ -104,7 +107,7 @@ def test_get_hints_filters_domain_and_page_type_with_limit(session: object) -> N
     assert len(everything) == 6
 
 
-def test_prune_expired_removes_only_expired_rows(session: object) -> None:
+def test_prune_expired_removes_only_expired_rows(session: Session) -> None:
     repo = SiteHintRepository(session)
     now = datetime.now(UTC)
 
@@ -143,7 +146,7 @@ def _vec(*weights_by_axis: tuple[int, float], dim: int = 8) -> list[float]:
 
 
 def test_search_semantic_orders_by_cosine_distance_and_filters_domain(
-    session: object,
+    session: Session,
 ) -> None:
     repo = SiteHintRepository(session)
     landing_like = _vec((0, 1.0), (1, 0.5))
@@ -175,7 +178,7 @@ def test_search_semantic_orders_by_cosine_distance_and_filters_domain(
     ranked = repo.search_semantic(query)
     assert [row.summary_text for row in ranked][:1] == ["closest match"]
     assert len(ranked) == 3
-    distances = [row.semantic_distance for row in ranked]
+    distances = [float(getattr(row, "semantic_distance")) for row in ranked]
     assert distances == sorted(distances)
 
     scoped = repo.search_semantic(query, domain="far.tv")
@@ -185,7 +188,7 @@ def test_search_semantic_orders_by_cosine_distance_and_filters_domain(
     assert [row.summary_text for row in typed] == ["orthogonal match"]
 
 
-def test_search_semantic_ignores_rows_without_embedding(session: object) -> None:
+def test_search_semantic_ignores_rows_without_embedding(session: Session) -> None:
     repo = SiteHintRepository(session)
     repo.upsert_hint(domain="novec.tv", page_type="unknown", summary_text="no vector")
 
@@ -195,7 +198,7 @@ def test_search_semantic_ignores_rows_without_embedding(session: object) -> None
 # ----------------------------------------------------------------- summarizer
 
 
-def _raw_entry(**overrides: object) -> dict[str, object]:
+def _raw_entry(**overrides: Any) -> dict[str, Any]:
     entry = {
         "domain": "examplestream.tv",
         "url": "https://www.examplestream.tv/watch/live",
@@ -236,7 +239,7 @@ def test_summarize_raw_entry_builds_summary_and_steps() -> None:
     assert failed["success_rate"] == 0.0
 
 
-def test_write_site_hint_persists_through_repository(session: object) -> None:
+def test_write_site_hint_persists_through_repository(session: Session) -> None:
     record = write_site_hint(
         session,
         domain="https://www.examplestream.tv/watch/live",
@@ -257,7 +260,7 @@ def test_write_site_hint_persists_through_repository(session: object) -> None:
     assert [row.id for row in hits] == [record.id]
 
 
-def test_write_site_hint_respects_explicit_ttl(session: object) -> None:
+def test_write_site_hint_respects_explicit_ttl(session: Session) -> None:
     expires = datetime(2030, 1, 1, tzinfo=UTC)
     record = write_site_hint(
         session,
@@ -291,7 +294,9 @@ def test_embedding_type_compiles_to_vector_on_postgres() -> None:
     pytest.importorskip("pgvector")
     from sqlalchemy.dialects import postgresql
 
-    from src.storage.models import EMBEDDING_DIMENSIONS, _PgVector
+    from pgvector.sqlalchemy import Vector as _PgVector  # noqa: PLC0415
+
+    from src.storage.models import EMBEDDING_DIMENSIONS
 
     column_type = EmbeddingVector(EMBEDDING_DIMENSIONS)
     compiled = column_type.load_dialect_impl(postgresql.dialect())
@@ -307,10 +312,7 @@ def test_models_importable_and_metadata_registered() -> None:
 # ------------------------------------------------------------- concurrency
 
 
-def _file_session_factory(db_path: object) -> object:
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-
+def _file_session_factory(db_path: Path) -> sessionmaker[Session]:
     engine = create_engine(
         f"sqlite:///{db_path}",
         connect_args={"check_same_thread": False, "timeout": 30},
@@ -320,7 +322,7 @@ def _file_session_factory(db_path: object) -> object:
     return sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 
-def test_concurrent_upserts_same_domain_stay_race_safe(tmp_path: object) -> None:
+def test_concurrent_upserts_same_domain_stay_race_safe(tmp_path: Path) -> None:
     """Two writers hammering the SAME (domain, page_type) hint must leave
     exactly one row whose EMA success_rate stays within [0, 1] (TXN guard)."""
     import threading
@@ -362,7 +364,9 @@ def test_concurrent_upserts_same_domain_stay_race_safe(tmp_path: object) -> None
 # ----------------------------------------------- run-start hints + agentic tool
 
 
-def test_build_run_start_hint_context_injects_once_per_domain(session_factory: object) -> None:
+def test_build_run_start_hint_context_injects_once_per_domain(
+    session_factory: Callable[[], Session],
+) -> None:
     from src.memory.hints_service import build_run_start_hint_context
 
     write_site_hint(
@@ -391,7 +395,7 @@ def test_build_run_start_hint_context_injects_once_per_domain(session_factory: o
 
 
 def test_memory_search_tool_is_registered_and_returns_ranked_results(
-    session_factory: object,
+    session_factory: Callable[[], Session],
 ) -> None:
     import json as _json
 

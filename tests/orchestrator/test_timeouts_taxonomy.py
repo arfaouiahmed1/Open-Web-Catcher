@@ -104,8 +104,9 @@ async def test_run_terminates_hung_pipeline_at_global_timeout(monkeypatch) -> No
     assert result.failure_kind == FailureKind.WORKFLOW_TIMEOUT.value
     # Partial evidence collected before the deadline survives the abort.
     assert result.final_status in {ExtractionStatus.FAILED, ExtractionStatus.PARTIAL}
-    assert observer.trace().metrics is not None
-    assert observer.trace().metrics.failure_mode == FailureKind.WORKFLOW_TIMEOUT.value
+    metrics = observer.trace().metrics
+    assert metrics is not None
+    assert metrics.failure_mode == FailureKind.WORKFLOW_TIMEOUT.value
     assert not any(event.kind == "pipeline_failed" for event in observer.trace().events)
 
 

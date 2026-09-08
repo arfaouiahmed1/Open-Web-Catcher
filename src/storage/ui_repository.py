@@ -829,10 +829,10 @@ class OperatorConsoleRepository:
                 )
                 .all()
             )
-            for row in usage_rows:
-                pipeline_key = int(row.pipeline_run_id)
+            for usage_row in usage_rows:
+                pipeline_key = int(usage_row.pipeline_run_id)
                 if pipeline_key not in model_map:
-                    model_map[pipeline_key] = (row.provider, row.model_name)
+                    model_map[pipeline_key] = (usage_row.provider, usage_row.model_name)
 
             agent_rows = (
                 self._session.query(
@@ -869,14 +869,14 @@ class OperatorConsoleRepository:
             }
 
         result_rows = []
-        for row in rows:
+        for pipeline_row in rows:
             r = self._run_row(
-                row,
-                root_actor=root_actor_map.get(row.id, ""),
+                pipeline_row,
+                root_actor=root_actor_map.get(pipeline_row.id, ""),
                 job_status="",
-                max_parallel_agents=max_parallelism_map.get(row.id, 0),
+                max_parallel_agents=max_parallelism_map.get(pipeline_row.id, 0),
             )
-            provider, model_name = model_map.get(row.id, ("", ""))
+            provider, model_name = model_map.get(pipeline_row.id, ("", ""))
             r["primary_provider"] = provider
             r["primary_model"] = model_name
             if not apply_status_after_fetch or r["final_status"] == derived_status_filter:
@@ -1239,34 +1239,35 @@ class OperatorConsoleRepository:
             run_payload["primary_model"] = str(primary_usage.model_name or "")
         agent_by_id = {int(row.id): row for row in agent_runs}
         tool_call_rows: list[dict[str, Any]] = []
-        for row in tool_calls:
-            payload = self._serialize_model(row)
-            agent_row = agent_by_id.get(int(row.agent_run_id or 0))
+        for tool_call in tool_calls:
+            payload = self._serialize_model(tool_call)
+            agent_row = agent_by_id.get(int(tool_call.agent_run_id or 0))
             if agent_row is not None:
                 payload["actor"] = str(agent_row.actor or "")
                 payload["agent_type"] = str(agent_row.agent_type or "")
                 payload["invocation_index"] = int(agent_row.invocation_index or 0)
             tool_call_rows.append(payload)
         llm_call_rows: list[dict[str, Any]] = []
-        for row in llm_calls:
-            payload = self._llm_row(row)
-            agent_row = agent_by_id.get(int(row.agent_run_id or 0))
+        for llm_call in llm_calls:
+            payload = self._llm_row(llm_call)
+            agent_row = agent_by_id.get(int(llm_call.agent_run_id or 0))
             if agent_row is not None:
                 payload["actor"] = str(agent_row.actor or "")
                 payload["agent_type"] = str(agent_row.agent_type or "")
                 payload["invocation_index"] = int(agent_row.invocation_index or 0)
             llm_call_rows.append(payload)
         event_rows: list[dict[str, Any]] = []
-        for row in events:
-            payload = self._runtime_event_row(row)
-            agent_row = agent_by_id.get(int(row.agent_run_id or 0))
+        for event in events:
+            payload = self._runtime_event_row(event)
+            agent_row = agent_by_id.get(int(event.agent_run_id or 0))
             if agent_row is not None:
                 payload["agent_type"] = str(agent_row.agent_type or "")
                 payload["invocation_index"] = int(agent_row.invocation_index or 0)
-                details = payload.get("details") if isinstance(payload.get("details"), dict) else {}
+                raw_details = payload.get("details")
+                details: dict[Any, Any] = raw_details if isinstance(raw_details, dict) else {}
                 payload["details"] = {
                     **details,
-                    "agent_run_id": row.agent_run_id,
+                    "agent_run_id": event.agent_run_id,
                     "agent_type": str(agent_row.agent_type or ""),
                     "invocation_index": int(agent_row.invocation_index or 0),
                 }
@@ -2600,15 +2601,15 @@ class OperatorConsoleRepository:
             input_int = int(input_tokens or 0)
             output_int = int(output_tokens or 0)
             new_int = max(input_int - cached_int, 0)
-            rates = rate_by_key.get((provider_key, model_key))
+            matched_rates = rate_by_key.get((provider_key, model_key))
             expected = 0.0
             priced = False
-            if rates is not None:
+            if matched_rates is not None:
                 priced = True
                 expected = (
-                    new_int * rates["input_per_million"]
-                    + cached_int * rates["cached_input_per_million"]
-                    + output_int * rates["output_per_million"]
+                    new_int * matched_rates["input_per_million"]
+                    + cached_int * matched_rates["cached_input_per_million"]
+                    + output_int * matched_rates["output_per_million"]
                 ) / 1_000_000.0
             recorded = float(total_cost or 0.0)
             delta = recorded - expected

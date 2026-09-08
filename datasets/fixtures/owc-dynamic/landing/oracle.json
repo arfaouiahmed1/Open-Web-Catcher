@@ -1,0 +1,21 @@
+{
+  "schema_version": "owc.fixture-oracle.v2",
+  "page_type": "landing_page",
+  "expected_candidate_count": 3,
+  "expected_urls": [
+    "http://hosting.owc.test/watch/match-101",
+    "http://hosting.owc.test/watch/match-102",
+    "http://hosting.owc.test/watch/match-103"
+  ],
+  "expected_blockers": [
+    {
+      "type": "cookie_consent",
+      "dismissal_selector": "#accept-btn"
+    }
+  ],
+  "expected_pagination": {
+    "has_pages": true,
+    "next_page_url": "http://landing.owc.test/page/2"
+  },
+  "mandatory_proof_kinds": ["screenshot", "page_state"]
+}

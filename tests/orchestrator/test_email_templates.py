@@ -339,7 +339,7 @@ def test_render_input_rejects_unknown_fields() -> None:
             infringing_url="https://pirate-stream.example/",
             extraction_results=[],
             provider_analysis=[],
-            not_a_real_field=True,  # type: ignore[arg-type]
+            not_a_real_field=True,  # type: ignore[call-arg]
         )
 
 

@@ -2253,7 +2253,7 @@ class OrchestratorAgent:
                         "owc.runtime": "langgraph",
                     },
                 ) as span:
-                    live_state: PipelineState = dict(initial_state)
+                    live_state = cast(PipelineState, dict(initial_state))
                     # Plan T27: emit the RunPlan artifact once per run so the
                     # SSE timeline (plan_step_update events) reflects the
                     # canonical execution graph.
@@ -2275,7 +2275,7 @@ class OrchestratorAgent:
                     )
                     try:
                         await asyncio.wait_for(
-                            self._consume_graph_stream(initial_state, live_state),
+                            self._consume_graph_stream(initial_state, cast(dict[str, Any], live_state)),
                             timeout=workflow_deadline,
                         )
                     except TimeoutError as exc:
@@ -2342,7 +2342,7 @@ class OrchestratorAgent:
             # Graceful partial completion (T30/AGT-H4/M8): return whatever the
             # completed stages produced instead of surfacing an opaque crash.
             kind = classify_failure_kind(exc)
-            partial_state = live_state if live_state is not None else dict(initial_state)
+            partial_state = cast(PipelineState, live_state if live_state is not None else dict(initial_state))
             result = _build_pipeline_result(
                 partial_state,
                 self.observer.trace().metrics if self.observer else None,
@@ -2563,9 +2563,10 @@ def _build_pipeline_result(state: PipelineState, metrics: Any | None = None) -> 
         for result in extraction_results
     )
     has_timeout = any(result.status == ExtractionStatus.TIMEOUT for result in extraction_results)
+    classification = state.get("classification")
     landing_discovery_exhausted = (
-        state.get("classification") is not None
-        and state["classification"].page_type == PageType.LANDING
+        classification is not None
+        and classification.page_type == PageType.LANDING
         and not extraction_results
         and not pending_followups
     )

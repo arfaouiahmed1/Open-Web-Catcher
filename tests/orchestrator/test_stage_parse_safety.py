@@ -17,9 +17,12 @@ from __future__ import annotations
 
 import json
 
+from typing import Any, cast
+
 import pytest
 
 from src.agents.orchestrator import (
+    PipelineState,
     analyze_providers_node,
     generate_takedown_emails_node,
     repair_malformed_payload,
@@ -54,6 +57,28 @@ def _extraction_result() -> ExtractionResult:
         agent_type=AgentType.ORCHESTRATOR,
         streams=[StreamURL(url=STREAM)],
     )
+
+
+def _state(**overrides: Any) -> PipelineState:
+    """Full ``PipelineState``; partial dicts fail mypy's typeddict-item check."""
+    base: dict[str, Any] = {
+        "url": URL,
+        "run_id": "run-t15",
+        "classification": None,
+        "matches": [],
+        "extraction_results": [_extraction_result()],
+        "pending_hosting_urls": [],
+        "pending_embedded_urls": [],
+        "provider_analysis": [],
+        "takedown_emails": [],
+        "invalid_items": [],
+        "validation_report": None,
+        "validator_replan_attempts": 0,
+        "error": "",
+        "gate_no_target": False,
+    }
+    base.update(overrides)
+    return cast(PipelineState, base)
 
 
 def _valid_provider_item() -> dict[str, object]:
@@ -104,7 +129,7 @@ async def test_poisoned_items_skipped_and_valid_processed(monkeypatch: pytest.Mo
     )
     observer = _observer()
     result = await analyze_providers_node(
-        {"extraction_results": [_extraction_result()], "invalid_items": []},
+        _state(),
         settings=Settings(),
         observer=observer,
     )
@@ -140,7 +165,7 @@ async def test_malformed_json_records_skip_instead_of_crash_or_swallow(
     )
     observer = _observer()
     result = await analyze_providers_node(
-        {"extraction_results": [_extraction_result()], "invalid_items": []},
+        _state(),
         settings=Settings(),
         observer=observer,
     )
@@ -164,7 +189,7 @@ async def test_clean_payload_emits_no_skip_event(monkeypatch: pytest.MonkeyPatch
     )
     observer = _observer()
     result = await analyze_providers_node(
-        {"extraction_results": [_extraction_result()], "invalid_items": []},
+        _state(),
         settings=Settings(),
         observer=observer,
     )
@@ -204,7 +229,7 @@ def test_render_takedown_emails_invalid_sink_skips_failing_draft(
 
     monkeypatch.setattr("src.orchestrator.emailing.render_subject", flaky_render_subject)
 
-    sink: list[dict[str, object]] = []
+    sink: list[dict[str, Any]] = []
     emails = render_takedown_emails(params, invalid_sink=sink)
 
     # One context per provider; the second render blew up but was skipped.
@@ -242,14 +267,11 @@ def test_render_takedown_emails_default_behavior_raises_on_failure(
 @pytest.mark.asyncio
 async def test_generate_takedown_emails_never_crashes_final_stage() -> None:
     """Happy path carries an empty invalid_items list through the update."""
-    state = {
-        "url": URL,
-        "extraction_results": [_extraction_result()],
-        "provider_analysis": [
+    state = _state(
+        provider_analysis=[
             ProviderInfo(stream_url=STREAM, abuse_email="abuse@examplehost.test"),
         ],
-        "invalid_items": [],
-    }
+    )
     result = await generate_takedown_emails_node(state, settings=None, observer=None)
     assert len(result["takedown_emails"]) >= 1
     assert result["invalid_items"] == []
@@ -260,12 +282,7 @@ async def test_generate_takedown_emails_never_crashes_final_stage() -> None:
 async def test_generate_takedown_emails_collects_prior_invalid_items() -> None:
     """Skip records from earlier stages flow through the final-stage update."""
     prior = [{"stage": "analyze_providers", "reason": "x", "item_preview": "y"}]
-    state = {
-        "url": URL,
-        "extraction_results": [_extraction_result()],
-        "provider_analysis": [],
-        "invalid_items": prior,
-    }
+    state = _state(provider_analysis=[], invalid_items=prior)
     result = await generate_takedown_emails_node(state, settings=None, observer=None)
     assert result["takedown_emails"] == []
     assert result["invalid_items"] == prior

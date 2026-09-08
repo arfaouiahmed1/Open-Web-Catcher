@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
+from typing import Any
 
 import httpx
 import pytest
 
 from src.agents.orchestrator import (
+    PipelineState,
     build_graph,
     route_after_validate_evidence,
     validate_evidence_node,
@@ -61,8 +63,8 @@ def _extraction_result(stream_urls: list[str]) -> ExtractionResult:
     )
 
 
-def _verdict(**overrides: object) -> JudgeVerdict:
-    base = {
+def _verdict(**overrides: Any) -> JudgeVerdict:
+    base: dict[str, Any] = {
         "verdict": "pass",
         "evidence_score": 0.9,
         "playback_confidence": 0.85,
@@ -113,7 +115,7 @@ def _install_validator_mocks(
     """Route validator probes through the recorded transport and fake the LLM."""
     real_client = httpx.AsyncClient
 
-    def client_factory(**kwargs: object) -> httpx.AsyncClient:
+    def client_factory(**kwargs: Any) -> httpx.AsyncClient:
         kwargs["transport"] = transport
         return real_client(**kwargs)
 
@@ -125,12 +127,29 @@ def _install_validator_mocks(
         monkeypatch.setattr("src.agents.validator.build_llm", lambda **_: llm)
 
 
-def _state(extraction_results: list[ExtractionResult], *, attempts: int = 0) -> dict:
+def _state(extraction_results: list[ExtractionResult], *, attempts: int = 0) -> PipelineState:
     return {
         "url": URL,
+        "run_id": "run-t24",
+        "classification": None,
+        "matches": [],
         "extraction_results": extraction_results,
+        "pending_hosting_urls": [],
+        "pending_embedded_urls": [],
+        "provider_analysis": [],
+        "takedown_emails": [],
+        "invalid_items": [],
+        "validation_report": None,
         "validator_replan_attempts": attempts,
+        "error": "",
+        "gate_no_target": False,
     }
+
+
+def _route_state(report: ValidationReport) -> PipelineState:
+    state = _state([])
+    state["validation_report"] = report
+    return state
 
 
 # ── Reachability probe ───────────────────────────────────────────────────────
@@ -285,7 +304,7 @@ async def test_hallucinated_well_formed_stream_dropped_before_provider_stage(
     # Probe actually hit both URLs over recorded HTTP before judging.
     probed_hosts = {request.url.host for request in seen}
     assert probed_hosts == {"cdn.target.example", "fake-cdn.example-host.net"}
-    assert route_after_validate_evidence({"validation_report": report}) == "analyze_providers"
+    assert route_after_validate_evidence(_route_state(report)) == "analyze_providers"
 
 
 @pytest.mark.unit
@@ -335,7 +354,7 @@ async def test_bounded_replan_fires_exactly_once_then_degrades(
     assert report_first.replan.attempt == 1
     assert first["validator_replan_attempts"] == 1
     assert first["pending_hosting_urls"] == [URL]
-    assert route_after_validate_evidence({"validation_report": report_first}) == "hosting_page"
+    assert route_after_validate_evidence(_route_state(report_first)) == "hosting_page"
 
     replan_events = [
         e
@@ -354,9 +373,7 @@ async def test_bounded_replan_fires_exactly_once_then_degrades(
     assert report_second.replan is None
     assert second["validator_replan_attempts"] == 1
     assert second["pending_hosting_urls"] == []
-    assert route_after_validate_evidence({"validation_report": report_second}) == (
-        "analyze_providers"
-    )
+    assert route_after_validate_evidence(_route_state(report_second)) == "analyze_providers"
 
 
 @pytest.mark.unit
@@ -382,7 +399,7 @@ async def test_no_streams_still_produces_report_and_routes_forward(
 
     assert seen == []  # nothing to probe, nothing was hit
     assert report.kept_streams == []
-    assert route_after_validate_evidence({"validation_report": report}) == "analyze_providers"
+    assert route_after_validate_evidence(_route_state(report)) == "analyze_providers"
 
 
 # ── Graph wiring ──────────────────────────────────────────────────────────────

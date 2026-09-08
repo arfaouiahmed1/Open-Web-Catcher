@@ -12,10 +12,10 @@ from __future__ import annotations
 import os
 import types
 from pathlib import Path
-from typing import Any, Union, get_args, get_origin
+from typing import Any, Union, cast, get_args, get_origin
 
 import pytest
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from src.utils.config import (
     DEFAULT_BASE_YAML_PATH,
@@ -425,5 +425,5 @@ def test_ui_update_config_validates_patch_server_side(
     with pytest.raises(HTTPException) as excinfo:
         api_sandbox["module"].ui_update_config(_FakeBody())
     assert excinfo.value.status_code == 422
-    detail = excinfo.value.detail
+    detail = cast(dict[str, Any], excinfo.value.detail)
     assert "not_a_settings_field" in "".join(detail["errors"])
