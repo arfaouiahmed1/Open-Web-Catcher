@@ -218,6 +218,7 @@ def _settings_field_adapter(field_name: str) -> TypeAdapter:
         _FIELD_ADAPTERS[field_name] = adapter
     return adapter
 
+RUNTIME_PROTECTED_FIELDS = frozenset({"auth_recovery_dev_mode"})
 
 def validate_settings_patch(payload: Any) -> dict[str, Any]:
     """Validate a partial settings update against the typed Settings model.
@@ -233,7 +234,7 @@ def validate_settings_patch(payload: Any) -> dict[str, Any]:
 
     errors: list[str] = []
     validated: dict[str, Any] = {}
-    protected_fields = {"auth_recovery_dev_mode"}
+    protected_fields = RUNTIME_PROTECTED_FIELDS
     for key, value in payload.items():
         if key in protected_fields:
             errors.append(f"settings field cannot be changed at runtime: {key!r}")

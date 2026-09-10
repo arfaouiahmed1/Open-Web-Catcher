@@ -18,6 +18,7 @@ import pytest
 import yaml  # type: ignore[import-untyped]
 
 from src.utils.config import (
+    RUNTIME_PROTECTED_FIELDS,
     DEFAULT_BASE_YAML_PATH,
     DEFAULT_DOTENV_PATH,
     DEFAULT_RUNTIME_YAML_PATH,
@@ -33,6 +34,7 @@ from src.utils.config import (
 pytestmark = pytest.mark.unit
 
 ALL_FIELDS = sorted(Settings.model_fields)
+PATCHABLE_FIELDS = [name for name in ALL_FIELDS if name not in RUNTIME_PROTECTED_FIELDS]
 
 # from_yaml pins/derives these AFTER layering (ADR-003 Playwright-only rule),
 # so their effective values do not equal the raw persisted key.
@@ -164,8 +166,7 @@ def api_sandbox(sandbox: dict[str, Path], monkeypatch: pytest.MonkeyPatch):
 
 # --------------------------------------------------------------------------- #
 # per-field round-trip contract: set -> persist -> reload -> assert-effective
-# --------------------------------------------------------------------------- #
-@pytest.mark.parametrize("field_name", ALL_FIELDS)
+@pytest.mark.parametrize("field_name", PATCHABLE_FIELDS)
 def test_field_round_trip_set_persist_reload_effective(
     field_name: str, sandbox: dict[str, Path]
 ) -> None:
@@ -189,8 +190,7 @@ def test_field_round_trip_set_persist_reload_effective(
     if field_name not in DERIVED_FROM_FIELDS:
         assert entry["value"] == expected
 
-
-@pytest.mark.parametrize("field_name", ALL_FIELDS)
+@pytest.mark.parametrize("field_name", PATCHABLE_FIELDS)
 def test_read_settings_sources_shape(field_name: str, sandbox: dict[str, Path]) -> None:
     _, sources = _round_trip(field_name, sandbox)
     assert sorted(sources) == ALL_FIELDS
@@ -366,7 +366,9 @@ def test_validate_patch_coerces_known_fields() -> None:
         "thinking_enabled": True,
     }
 
-
+def test_validate_patch_rejects_protected_recovery_mode() -> None:
+    with pytest.raises(SettingsPatchError, match="cannot be changed at runtime"):
+        validate_settings_patch({"auth_recovery_dev_mode": True})
 def test_validate_patch_rejects_unknown_fields_and_reports_all_errors() -> None:
     with pytest.raises(SettingsPatchError) as excinfo:
         validate_settings_patch(
