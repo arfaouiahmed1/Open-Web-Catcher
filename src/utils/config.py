@@ -233,7 +233,11 @@ def validate_settings_patch(payload: Any) -> dict[str, Any]:
 
     errors: list[str] = []
     validated: dict[str, Any] = {}
+    protected_fields = {"auth_recovery_dev_mode"}
     for key, value in payload.items():
+        if key in protected_fields:
+            errors.append(f"settings field cannot be changed at runtime: {key!r}")
+            continue
         if not isinstance(key, str) or key not in Settings.model_fields:
             errors.append(f"unknown settings field: {key!r}")
             continue
