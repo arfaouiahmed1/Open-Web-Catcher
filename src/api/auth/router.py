@@ -163,6 +163,7 @@ def request_password_reset(body: PasswordResetRequest) -> dict:
     try:
         email = body.email.strip().lower()
         user = session.query(UserRecord).filter(UserRecord.email.ilike(email)).first()
+        result: dict[str, Any] = {"requested": True}
         if user is not None and user.is_active:
             token = secrets.token_urlsafe(32)
             user.password_reset_token_hash = _hash_reset_token(token)
@@ -170,8 +171,22 @@ def request_password_reset(body: PasswordResetRequest) -> dict:
                 minutes=RESET_TOKEN_TTL_MINUTES
             )
             session.commit()
+            from src.utils.mailer import send_email
+
+            settings = auth_security._auth_settings()
+            delivered = send_email(
+                settings,
+                to=user.email,
+                subject="Reset your OWC operator password",
+                body=(
+                    "Use this one-time token to reset your password "
+                    f"within {RESET_TOKEN_TTL_MINUTES} minutes:\n\n{token}\n"
+                ),
+            )
+            if not delivered and settings.auth_recovery_dev_mode:
+                result["reset_token"] = token
             logger.info("Password reset requested for %s", email)
-        return {"requested": True}
+        return result
     finally:
         session.close()
 

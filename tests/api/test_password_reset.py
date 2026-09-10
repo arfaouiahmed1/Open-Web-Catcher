@@ -35,6 +35,7 @@ def api(monkeypatch: pytest.MonkeyPatch, session_factory) -> Iterator[TestClient
 
     settings = Settings()
     monkeypatch.setattr(settings, "auth_jwt_secret", TEST_SECRET)
+    monkeypatch.setattr(settings, "auth_recovery_dev_mode", True)
     monkeypatch.setattr(auth_security, "_auth_settings", lambda: settings)
 
     from src.api.app import app
@@ -76,6 +77,7 @@ def test_request_known_email_stores_hash_and_expiry(api: TestClient, session_fac
     _create_user(session_factory)
     response = api.post("/api/auth/password-reset/request", json={"email": USER_EMAIL})
     assert response.status_code == 200
+    assert response.json().get("reset_token")
 
     session = session_factory()
     try:

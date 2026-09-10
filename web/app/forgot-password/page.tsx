@@ -14,6 +14,7 @@ function ForgotPasswordForm(): React.JSX.Element {
   const [email, setEmail] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [sent, setSent] = useState<boolean>(false);
+  const [resetLink, setResetLink] = useState<string>("");
   const [submitting, setSubmitting] = useState<boolean>(false);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>): Promise<void> {
@@ -30,12 +31,15 @@ function ForgotPasswordForm(): React.JSX.Element {
         setError(`Request failed (${res.status}).`);
         return;
       }
+      const payload = (await res.json()) as { reset_token?: string };
+      setResetLink(payload.reset_token ? `/reset-password?token=${encodeURIComponent(payload.reset_token)}` : "");
       setSent(true);
     } catch {
       setError("Could not reach the API. Is the backend running on :8000?");
     } finally {
       setSubmitting(false);
     }
+
   }
 
   return (
@@ -54,9 +58,13 @@ function ForgotPasswordForm(): React.JSX.Element {
           {sent ? (
             <div className="space-y-4">
               <p className="rounded-md bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-400" role="status">
-                If an account exists for that email, a reset link is on its way. It expires in 30
-                minutes and can only be used once.
+                {resetLink ? "Local recovery mode is active. Continue with the one-time reset link below." : "If an account exists for that email, a reset link is on its way. It expires in 30 minutes and can only be used once."}
               </p>
+              {resetLink ? (
+                <Link href={resetLink} className="block rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-center text-xs font-medium text-primary hover:bg-primary/15">
+                  Continue to reset password
+                </Link>
+              ) : null}
               <p className="text-center text-xs text-muted-foreground">
                 Have a token?{" "}
                 <Link href="/reset-password" className="font-medium text-primary hover:underline">
